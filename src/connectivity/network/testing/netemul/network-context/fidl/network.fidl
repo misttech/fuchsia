@@ -184,7 +184,7 @@ closed protocol DeviceProxy {
 
     /// Serve the device's FIDL protocol.
     strict ServeDevice(resource struct {
-        req server_end:fuchsia.hardware.network.DeviceInstance;
+        req server_end:fuchsia.hardware.network.Device;
     });
 };
 

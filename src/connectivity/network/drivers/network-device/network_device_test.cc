@@ -86,18 +86,11 @@ class NetDeviceDriverTest : public ::testing::Test {
   }
 
   zx::result<fidl::WireSyncClient<netdev::Device>> ConnectNetDevice() {
-    auto [inst_client_end, inst_server_end] = fidl::Endpoints<netdev::DeviceInstance>::Create();
-    driver_test().RunInDriverContext(
-        [this, server_end = std::move(inst_server_end)](network::NetworkDevice& driver) mutable {
-          fidl::BindServer(fidl_dispatcher_, std::move(server_end), &driver);
-        });
-    fidl::WireSyncClient instance_client(std::move(inst_client_end));
-
     auto [dev_client_end, dev_server_end] = fidl::Endpoints<netdev::Device>::Create();
-    fidl::Status result = instance_client->GetDevice(std::move(dev_server_end));
-    if (zx_status_t status = result.status(); status != ZX_OK) {
-      return zx::error(status);
-    }
+    driver_test().RunInDriverContext(
+        [server_end = std::move(dev_server_end)](network::NetworkDevice& driver) mutable {
+          driver.GetInterface()->Bind(std::move(server_end));
+        });
 
     return zx::ok(fidl::WireSyncClient(std::move(dev_client_end)));
   }

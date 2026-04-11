@@ -4,7 +4,8 @@
 
 use std::fmt::Display;
 
-use {fidl_fuchsia_device as fdev, fidl_fuchsia_hardware_network as fhwnet};
+use fidl_fuchsia_device as fdev;
+use fidl_fuchsia_hardware_network as fhwnet;
 
 use anyhow::Context as _;
 
@@ -82,22 +83,10 @@ impl NetworkDeviceInstance {
         path: &std::path::PathBuf,
     ) -> Result<impl futures::Stream<Item = Result<Self, errors::Error>> + use<>, errors::Error>
     {
-        let (topological_path, _file_path, device_instance) =
-            get_topo_path_and_device::<fhwnet::DeviceInstanceMarker>(path)
+        let (topological_path, _file_path, device) =
+            get_topo_path_and_device::<fhwnet::DeviceMarker>(path)
                 .await
                 .with_context(|| format!("open netdevice at {:?}", path))?;
-
-        let get_device = || {
-            let (device, device_server_end) =
-                fidl::endpoints::create_endpoints::<fhwnet::DeviceMarker>();
-            device_instance
-                .get_device(device_server_end)
-                .context("calling DeviceInstance get_device")
-                .map_err(errors::Error::NonFatal)?;
-            Ok(device)
-        };
-
-        let device = get_device()?.into_proxy();
 
         let (port_watcher, port_watcher_server_end) =
             fidl::endpoints::create_proxy::<fhwnet::PortWatcherMarker>();
@@ -110,7 +99,12 @@ impl NetworkDeviceInstance {
             fidl_fuchsia_net_interfaces_admin::DeviceControlMarker,
         >();
 
-        let device_for_netstack = get_device()?;
+        let (device_for_netstack, device_server_end) =
+            fidl::endpoints::create_endpoints::<fhwnet::DeviceMarker>();
+        device
+            .clone(device_server_end)
+            .context("calling Device clone")
+            .map_err(errors::Error::NonFatal)?;
         installer
             .install_device(device_for_netstack, device_control_server_end)
             // NB: Failing to communicate with installer is a fatal error, that

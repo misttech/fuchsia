@@ -51,8 +51,7 @@ class Endpoint : public fuchsia::netemul::network::Endpoint,
 
   // fuchsia.netemul.network/DeviceProxy FIDL APIs.
   void ServeController(fidl::InterfaceRequest<fuchsia::device::Controller> controller) override;
-  void ServeDevice(
-      fidl::InterfaceRequest<fuchsia::hardware::network::DeviceInstance> device) override;
+  void ServeDevice(fidl::InterfaceRequest<fuchsia::hardware::network::Device> device) override;
 
   // Installs a data sink on endpoint.
   // Data sinks will be notified via ->Consume of any data that is sent to the

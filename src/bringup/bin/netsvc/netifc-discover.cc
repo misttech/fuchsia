@@ -37,19 +37,7 @@ struct Netdevice {
   static constexpr const char* kDirectory = "/class/network";
 
   static std::optional<Info> get_interface_if_matching(
-      fidl::ClientEnd<fuchsia_hardware_network::DeviceInstance> instance,
-      const std::string& filename) {
-    auto [client_end, server_end] = fidl::Endpoints<fuchsia_hardware_network::Device>::Create();
-
-    {
-      fidl::Status result = fidl::WireCall(instance)->GetDevice(std::move(server_end));
-      if (!result.ok()) {
-        printf("netifc: failed to get NetworkDevice from instance %s: %s\n", filename.c_str(),
-               result.status_string());
-        return std::nullopt;
-      }
-    }
-
+      fidl::ClientEnd<fuchsia_hardware_network::Device> client_end, const std::string& filename) {
     auto [watcher_client_end, watcher_server_end] =
         fidl::Endpoints<fuchsia_hardware_network::PortWatcher>::Create();
 
@@ -189,10 +177,9 @@ std::optional<Netdevice::Info> netifc_evaluate(std::string_view topological_path
                                                const std::string& filename) {
   printf("netifc: ? %s/%s\n", dirname.c_str(), filename.c_str());
 
-  fidl::ClientEnd<fuchsia_hardware_network::DeviceInstance> dev;
+  fidl::ClientEnd<fuchsia_hardware_network::Device> dev;
   {
-    zx::result status =
-        component::ConnectAt<fuchsia_hardware_network::DeviceInstance>(dir, filename);
+    zx::result status = component::ConnectAt<fuchsia_hardware_network::Device>(dir, filename);
     if (status.is_error()) {
       printf("netifc: failed to connect to %s/%s: %s\n", dirname.c_str(), filename.c_str(),
              status.status_string());

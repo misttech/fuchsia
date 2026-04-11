@@ -95,13 +95,9 @@ void NetworkDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
   });
 }
 
-void NetworkDevice::GetDevice(GetDeviceRequestView request, GetDeviceCompleter::Sync& _completer) {
+void NetworkDevice::Connect(fidl::ServerEnd<fuchsia_hardware_network::Device> request) {
   ZX_ASSERT_MSG(device_, "can't serve device if not bound to parent implementation");
-  device_->Bind(std::move(request->device));
-}
-
-void NetworkDevice::Connect(fidl::ServerEnd<fuchsia_hardware_network::DeviceInstance> request) {
-  bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
+  device_->Bind(std::move(request));
 }
 
 zx::result<std::unique_ptr<NetworkDeviceImplBinder>> NetworkDevice::CreateImplBinder() {

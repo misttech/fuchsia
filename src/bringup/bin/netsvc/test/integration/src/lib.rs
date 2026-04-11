@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 use fidl::prelude::*;
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net_tun as fnet_tun;
+use fidl_fuchsia_netemul_network as fnetemul_network;
 use futures::{Future, FutureExt as _, StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_mac, std_ip_v6};
 use net_types::Witness as _;
@@ -22,10 +25,6 @@ use std::num::NonZeroU16;
 use test_case::test_case;
 use zerocopy::byteorder::native_endian::U32;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Ref, Unaligned};
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net_tun as fnet_tun,
-    fidl_fuchsia_netemul_network as fnetemul_network,
-};
 
 const NETSVC_URL: &str = "#meta/netsvc.cm";
 const NETSVC_NAME: &str = "netsvc";
@@ -1025,16 +1024,7 @@ async fn starts_device_in_multicast_promiscuous(name: &str) {
     let connector_fut = connector_stream.for_each_concurrent(None, |r| async move {
         match r.expect("connector error") {
             fnetemul_network::DeviceProxy_Request::ServeDevice { req, control_handle: _ } => {
-                let rs = req.into_stream();
-                rs.for_each(|req| async move {
-                    match req.expect("request error") {
-                        fidl_fuchsia_hardware_network::DeviceInstanceRequest::GetDevice {
-                            device,
-                            control_handle: _,
-                        } => netdevice.clone(device).expect("clone failed"),
-                    }
-                })
-                .await
+                netdevice.clone(req).expect("clone failed")
             }
             fnetemul_network::DeviceProxy_Request::ServeController { req, control_handle: _ } => {
                 let rs = req.into_stream();

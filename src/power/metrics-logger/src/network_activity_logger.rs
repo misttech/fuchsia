@@ -5,6 +5,9 @@
 use crate::MIN_INTERVAL_FOR_SYSLOG_MS;
 use crate::driver_utils::{connect_proxy, list_drivers};
 use anyhow::{Result, format_err};
+use fidl_fuchsia_hardware_network as fhwnet;
+use fidl_fuchsia_power_metrics as fmetrics;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, Property};
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -12,10 +15,6 @@ use log::{error, info};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_hardware_network as fhwnet, fidl_fuchsia_power_metrics as fmetrics,
-    fuchsia_async as fasync,
-};
 
 // TODO(didis): Use netstack API after https://fxbug.dev/42062536 is implemented.
 const NETWORK_SERVICE_DIR: &str = "/dev/class/network";
@@ -26,14 +25,8 @@ pub async fn generate_network_devices() -> Result<Vec<fhwnet::DeviceProxy>> {
     let mut proxies = Vec::new();
     for driver in list_drivers(NETWORK_SERVICE_DIR).await {
         let filepath = format!("{}/{}", NETWORK_SERVICE_DIR, driver);
-        let device_instance_proxy = connect_proxy::<fhwnet::DeviceInstanceMarker>(&filepath)?;
-
-        // Get client proxy from device instance.
-        let (device, device_server_end) =
-            fidl::endpoints::create_endpoints::<fhwnet::DeviceMarker>();
-        device_instance_proxy.get_device(device_server_end)?;
-
-        proxies.push(device.into_proxy());
+        let device_proxy = connect_proxy::<fhwnet::DeviceMarker>(&filepath)?;
+        proxies.push(device_proxy);
     }
     Ok(proxies)
 }

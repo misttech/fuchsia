@@ -34,18 +34,14 @@ async fn find_network_device(
                 let filepath = filepath
                     .to_str()
                     .unwrap_or_else(|| panic!("{} failed to convert to str", filepath.display()));
-                let (netdevice, netdevice_server) = fidl::endpoints::create_proxy::<
-                    fidl_fuchsia_hardware_network::DeviceInstanceMarker,
-                >();
-                fdio::service_connect(filepath, netdevice_server.into_channel())
+                let (device_proxy, device_server) =
+                    fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_network::DeviceMarker>();
+                fdio::service_connect(filepath, device_server.into_channel())
                     .expect("connect to service");
-                netdevice
+                device_proxy
             },
         );
-    let results = futures::stream::iter(devices).filter_map(|netdev_device| async move {
-        let (device_proxy, device_server) =
-            fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_network::DeviceMarker>();
-        netdev_device.get_device(device_server).expect("get device");
+    let results = futures::stream::iter(devices).filter_map(|device_proxy| async move {
         let device_proxy = &device_proxy;
         let client = netdevice_client::Client::new(Clone::clone(device_proxy));
 

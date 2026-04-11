@@ -30,8 +30,7 @@ class FidlNetworkDeviceImplBinder : public NetworkDeviceImplBinder {
   std::weak_ptr<fdf::Namespace> incoming_;
 };
 
-class NetworkDevice : public fdf::DriverBase,
-                      public fidl::WireServer<fuchsia_hardware_network::DeviceInstance> {
+class NetworkDevice : public fdf::DriverBase {
  public:
   NetworkDevice(fdf::DriverStartArgs start_args,
                 fdf::UnownedSynchronizedDispatcher driver_dispatcher);
@@ -40,12 +39,10 @@ class NetworkDevice : public fdf::DriverBase,
   void Start(fdf::StartCompleter completer) override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
-  void GetDevice(GetDeviceRequestView request, GetDeviceCompleter::Sync& _completer) override;
-
   NetworkDeviceInterface* GetInterface() { return device_.get(); }
 
  private:
-  void Connect(fidl::ServerEnd<fuchsia_hardware_network::DeviceInstance> request);
+  void Connect(fidl::ServerEnd<fuchsia_hardware_network::Device> request);
   zx::result<std::unique_ptr<NetworkDeviceImplBinder>> CreateImplBinder();
 
   std::unique_ptr<OwnedDeviceInterfaceDispatchers> dispatchers_;
@@ -55,9 +52,8 @@ class NetworkDevice : public fdf::DriverBase,
   // These are used for the child node created to enable discovery through devfs. The child node has
   // to be kept alive for the child to remain alive and discoverable through devfs.
   fidl::WireSyncClient<fuchsia_driver_framework::Node> child_node_;
-  driver_devfs::Connector<fuchsia_hardware_network::DeviceInstance> devfs_connector_{
+  driver_devfs::Connector<fuchsia_hardware_network::Device> devfs_connector_{
       fit::bind_member<&NetworkDevice::Connect>(this)};
-  fidl::ServerBindingGroup<fuchsia_hardware_network::DeviceInstance> bindings_;
 };
 
 }  // namespace network

@@ -76,17 +76,10 @@ class NetworkDeviceInterface {
   explicit NetworkDeviceInterface(fidl::UnownedClientEnd<fuchsia_io::Directory> directory,
                                   const fbl::String& path, const std::string& session_name)
       : loop_(&kAsyncLoopConfigNoAttachToCurrentThread) {
-    zx::result controller =
-        component::ConnectAt<fuchsia_hardware_network::DeviceInstance>(directory, path);
-    ASSERT_OK(controller);
+    zx::result device = component::ConnectAt<fuchsia_hardware_network::Device>(directory, path);
+    ASSERT_OK(device);
 
-    auto [client_end, server_end] = fidl::Endpoints<fuchsia_hardware_network::Device>::Create();
-
-    fidl::Status device_status =
-        fidl::WireCall(controller.value())->GetDevice(std::move(server_end));
-    ASSERT_OK(device_status.status());
-
-    netdevice_client_.emplace(std::move(client_end), loop_.dispatcher());
+    netdevice_client_.emplace(std::move(device.value()), loop_.dispatcher());
     network::client::NetworkDeviceClient& client = netdevice_client_.value();
     {
       std::optional<zx_status_t> result;

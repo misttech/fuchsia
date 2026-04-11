@@ -28,18 +28,15 @@ pub async fn create_client(
     let dirents = fuchsia_fs::directory::readdir(&directory).await.expect("readdir failed");
     let devices = dirents.into_iter().map(|file| {
         log::info!("Found file name {:?}", file.name);
-        connect_to_named_protocol_at_dir_root::<
-                fidl_fuchsia_hardware_network::DeviceInstanceMarker,
-            >(&directory, &file.name)
-            .expect("creating proxy")
+        connect_to_named_protocol_at_dir_root::<fidl_fuchsia_hardware_network::DeviceMarker>(
+            &directory, &file.name,
+        )
+        .expect("creating proxy")
     });
 
     // TODO(https://fxbug.dev/338700293): Consider looping with a backoff delay if the device is not found
     // on the first try.
-    let results = futures::stream::iter(devices).filter_map(|netdev_device| async move {
-        let (device_proxy, device_server) =
-            fidl::endpoints::create_proxy::<fidl_fuchsia_hardware_network::DeviceMarker>();
-        netdev_device.get_device(device_server).expect("get device");
+    let results = futures::stream::iter(devices).filter_map(|device_proxy| async move {
         let client = netdevice_client::Client::new(device_proxy);
 
         let port_id = match client

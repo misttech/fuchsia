@@ -48,7 +48,7 @@ class EndpointImpl : public data::Consumer {
   virtual void SetLinkUp(bool up, fit::callback<void()> done) = 0;
 
   virtual void ServeDevice(
-      ::fidl::InterfaceRequest<::fuchsia::hardware::network::DeviceInstance> device) = 0;
+      ::fidl::InterfaceRequest<::fuchsia::hardware::network::Device> device) = 0;
   virtual void ServeController(
       fidl::InterfaceRequest<::fuchsia::device::Controller> controller) = 0;
 
@@ -92,9 +92,7 @@ class EndpointImpl : public data::Consumer {
   fit::callback<void()> closed_callback_;
 };
 
-class NetworkDeviceImpl : public EndpointImpl,
-                          public fuchsia::hardware::network::DeviceInstance,
-                          public fuchsia::device::Controller {
+class NetworkDeviceImpl : public EndpointImpl, public fuchsia::device::Controller {
  public:
   explicit NetworkDeviceImpl(Endpoint::Config config) : EndpointImpl(std::move(config)) {}
 
@@ -151,9 +149,11 @@ class NetworkDeviceImpl : public EndpointImpl,
     tun_port_->GetPort(std::move(port));
   }
 
-  void ServeDevice(
-      ::fidl::InterfaceRequest<::fuchsia::hardware::network::DeviceInstance> device) override {
-    instance_bindings_.AddBinding(this, std::move(device));
+  void ServeDevice(::fidl::InterfaceRequest<::fuchsia::hardware::network::Device> device) override {
+    if (!tun_device_.is_bound()) {
+      return;
+    }
+    tun_device_->GetDevice(std::move(device));
   }
 
   void ServeController(
@@ -186,15 +186,6 @@ class NetworkDeviceImpl : public EndpointImpl,
   }
 
   std::string GetName(uint32_t idx) override { return device_name_; }
-
-  /* fuchsia.hardware.network/DeviceInstance */
-
-  void GetDevice(::fidl::InterfaceRequest<fuchsia::hardware::network::Device> device) override {
-    if (!tun_device_.is_bound()) {
-      return;
-    }
-    tun_device_->GetDevice(std::move(device));
-  }
 
   /* fuchsia.device/Controller */
 
@@ -255,7 +246,6 @@ class NetworkDeviceImpl : public EndpointImpl,
   fuchsia::net::tun::DevicePtr tun_device_;
   fuchsia::net::tun::PortPtr tun_port_;
   fidl::BindingSet<fuchsia::device::Controller> device_controller_bindings_;
-  fidl::BindingSet<fuchsia::hardware::network::DeviceInstance> instance_bindings_;
 };
 
 std::unique_ptr<EndpointImpl> MakeImpl(Endpoint::Config config) {
@@ -306,8 +296,7 @@ void Endpoint::GetProxy(fidl::InterfaceRequest<FProxy> proxy) {
 void Endpoint::ServeController(::fidl::InterfaceRequest<::fuchsia::device::Controller> controller) {
   impl_->ServeController(std::move(controller));
 }
-void Endpoint::ServeDevice(
-    fidl::InterfaceRequest<fuchsia::hardware::network::DeviceInstance> device) {
+void Endpoint::ServeDevice(fidl::InterfaceRequest<fuchsia::hardware::network::Device> device) {
   impl_->ServeDevice(std::move(device));
 }
 
