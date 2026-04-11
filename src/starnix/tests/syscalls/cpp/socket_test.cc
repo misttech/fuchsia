@@ -4,6 +4,7 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <lib/fit/defer.h>
 #include <net/ethernet.h>
 #include <netinet/icmp6.h>
 #include <netinet/in.h>
@@ -111,6 +112,48 @@ TEST(UnixSocket, HupEvent) {
 
   close(fds[0]);
   close(epfd);
+}
+
+// Tests the behavior of a unix domain socket after it connects to a peer and that peer is closed.
+TEST(UnixSocket, PeerNameAfterPeerClosed) {
+  char* tmp = getenv("TEST_TMPDIR");
+  auto socket_path =
+      tmp == nullptr ? "/tmp/socktest_stream_hup" : std::string(tmp) + "/socktest_stream_hup";
+  struct sockaddr_un sun;
+  sun.sun_family = AF_UNIX;
+  strcpy(sun.sun_path, socket_path.c_str());
+  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&sun);
+
+  fbl::unique_fd server(SAFE_SYSCALL(socket(AF_UNIX, SOCK_STREAM, 0)));
+  SAFE_SYSCALL(bind(server.get(), addr, sizeof(sun)));
+  auto cleanup_sockpath = fit::defer([&socket_path]() { unlink(socket_path.c_str()); });
+
+  SAFE_SYSCALL(listen(server.get(), 1));
+
+  fbl::unique_fd client(SAFE_SYSCALL(socket(AF_UNIX, SOCK_STREAM, 0)));
+  SAFE_SYSCALL(connect(client.get(), addr, sizeof(sun)));
+
+  fbl::unique_fd accepted(SAFE_SYSCALL(accept(server.get(), nullptr, nullptr)));
+
+  // getpeername() on client while connected.
+  struct sockaddr_un peer_name{};
+  socklen_t peer_name_len = sizeof(peer_name);
+  SAFE_SYSCALL(
+      getpeername(client.get(), reinterpret_cast<struct sockaddr*>(&peer_name), &peer_name_len));
+
+  EXPECT_GT(peer_name_len, sizeof(sa_family_t));
+  EXPECT_STREQ(sun.sun_path, peer_name.sun_path);
+
+  peer_name = {};
+
+  accepted.reset();
+
+  // Even though the peer of |client| is now closed, getpeername() on client still returns the
+  // address that the connection used to have.
+  EXPECT_EQ(
+      0, getpeername(client.get(), reinterpret_cast<struct sockaddr*>(&peer_name), &peer_name_len));
+  EXPECT_GT(peer_name_len, sizeof(sa_family_t));
+  EXPECT_STREQ(sun.sun_path, peer_name.sun_path);
 }
 
 TEST(UnixSocket, ReadConnReset) {
