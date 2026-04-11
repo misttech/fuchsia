@@ -325,7 +325,7 @@ class ChannelCallTest {
     zx::channel server;
     ASSERT_OK(zx::channel::create(0, &server, &client_));
     thread_or_process_.Launch("ChannelCallTest::ThreadFunc", MakeHandleVector(server.release()),
-                              params);
+                              std::move(params));
 
     msg_ = 0;
     args_.wr_bytes = reinterpret_cast<void*>(&msg_);
@@ -735,6 +735,12 @@ void RegisterTests() {
   // only instantiate one of these tests for the same-CPU and
   // different-CPU cases.
   RegisterTestMultiProcSameDiffCpu<ChannelPortTest>("RoundTrip_ChannelPort");
+
+  // This sets a deadline profile for the caller, which should be inherited through a channel call
+  // to the callee - when channel call PI is enabled.
+  RegisterTestWithSchedulerRole<ChannelCallTest>("RoundTrip_ChannelCall_SingleProcess_Deadline",
+                                                 "fuchsia.microbenchmarks.deadline",
+                                                 ThreadOrProcessParams{SingleProcess});
 }
 PERFTEST_CTOR(RegisterTests)
 
