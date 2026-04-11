@@ -308,12 +308,15 @@ async fn wait_for_device_inner(
                     if let WaitFor::DeviceOffline = behavior {
                         Ok(())
                     } else {
-                        if let KnockError::CriticalError(e) = e {
-                            Err(ffx_command_error::Error::Unexpected(e.into()))
-                        } else {
-                            log::debug!("error non-critical. retrying.");
-                            Timer::new(Duration::from_millis(DOWN_REPOLL_DELAY_MS)).await;
-                            continue;
+                        match e {
+                            KnockError::CriticalError(e) => {
+                                Err(ffx_command_error::Error::Unexpected(e.into()))
+                            }
+                            KnockError::NonCriticalError(e) => {
+                                log::debug!("received non-critical error. retrying. error: {e}");
+                                Timer::new(Duration::from_millis(DOWN_REPOLL_DELAY_MS)).await;
+                                continue;
+                            }
                         }
                     }
                 }
