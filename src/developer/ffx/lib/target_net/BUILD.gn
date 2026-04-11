@@ -38,6 +38,7 @@ rustc_library("lib") {
     "src/error.rs",
     "src/lib.rs",
     "src/port_forwarder.rs",
+    "src/port_forwarder/overnet.rs",
     "src/socket_provider.rs",
     "src/socket_provider_fdomain.rs",
   ]
@@ -55,7 +56,10 @@ rustc_library("testutil") {
   deps = [
     ":lib",
     "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust",
+    "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust_fdomain",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
+    "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust_fdomain",
+    "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-hyper",
@@ -73,12 +77,14 @@ rustc_library("testutil") {
 
   sources = [
     "testutil/fake_netstack.rs",
+    "testutil/fake_netstack/fdomain.rs",
     "testutil/hyper_connector.rs",
     "testutil/lib.rs",
   ]
   source_root = "testutil/lib.rs"
 
   test_deps = [
+    "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:test-case",

@@ -1,4 +1,4 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,21 +8,18 @@ use std::num::NonZeroU16;
 use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex};
 
-use ffx_target_net::SocketProvider;
-use fidl::HandleBased as _;
+use fdomain_client::{AsHandleRef as _, HandleBased as _, Peered as _};
+use ffx_target_net::socket_provider_fdomain::SocketProvider;
 use fidl_fuchsia_net_ext::SocketAddress as SocketAddressExt;
-use fuchsia_async::emulated_handle::Peered as _;
 use futures::channel::mpsc;
 use futures::future::{AbortHandle, AbortRegistration};
 use futures::{AsyncReadExt as _, FutureExt as _, StreamExt as _, TryStreamExt as _};
 use log::warn;
 use rand::prelude::*;
 
-use fidl_fuchsia_posix as fposix;
-use fidl_fuchsia_posix_socket as fsock;
+use fdomain_fuchsia_posix as fposix;
+use fdomain_fuchsia_posix_socket as fsock;
 use fuchsia_async as fasync;
-
-pub mod fdomain;
 
 /// A fake netstack for use in tests.
 ///
@@ -36,22 +33,23 @@ pub mod fdomain;
 pub struct FakeNetstack {
     scope: fasync::Scope,
     connections: mpsc::UnboundedSender<Protocol>,
+    client: Arc<fdomain_client::Client>,
 }
 
 impl FakeNetstack {
     /// Creates a new fake netstack.
-    pub fn new() -> Self {
+    pub fn new(client: Arc<fdomain_client::Client>) -> Self {
         let scope = fasync::Scope::new();
         let inner = Inner(Arc::new(State { scope: scope.to_handle(), tcp: Default::default() }));
         let (connections, receiver) = mpsc::unbounded();
         inner.spawn(inner.clone().serve(receiver));
-        Self { scope, connections }
+        Self { scope, connections, client }
     }
 
     /// Connects the provided server end to the fake netstack.
     pub fn connect_socket_provider(
         &self,
-        server_end: fidl::endpoints::ServerEnd<fsock::ProviderMarker>,
+        server_end: fdomain_client::fidl::ServerEnd<fsock::ProviderMarker>,
     ) {
         self.connections
             .unbounded_send(Protocol::SocketProvider(server_end))
@@ -60,20 +58,20 @@ impl FakeNetstack {
 
     /// Returns a [`SocketProvider`] connected to this fake netstack.
     pub fn new_socket_provider(&self) -> SocketProvider {
-        let (client, server) = fidl::endpoints::create_endpoints();
+        let (client, server) = self.client.create_endpoints();
         self.connect_socket_provider(server);
         SocketProvider::new(client.into_proxy())
     }
 
     /// Detaches the netstack, allowing all resources to continue running.
     pub fn detach(self) {
-        let Self { scope, connections: _ } = self;
+        let Self { scope, connections: _, client: _ } = self;
         scope.detach();
     }
 }
 
 enum Protocol {
-    SocketProvider(fidl::endpoints::ServerEnd<fsock::ProviderMarker>),
+    SocketProvider(fdomain_client::fidl::ServerEnd<fsock::ProviderMarker>),
 }
 
 #[derive(Clone)]
@@ -130,34 +128,44 @@ impl TcpState {
         }
     }
 
-    fn connect(
+    async fn connect(
         &self,
+        client: &Arc<fdomain_client::Client>,
         domain: fsock::Domain,
         local_port: NonZeroU16,
         remote_port: NonZeroU16,
-    ) -> Result<(fidl::Socket, AbortRegistration), fposix::Errno> {
-        let mut demux = self.demux.lock().unwrap();
-        let sock = demux.get_mut(&(domain, remote_port)).ok_or(fposix::Errno::Econnrefused)?;
-        match sock {
-            TcpSocketState::Bound => Err(fposix::Errno::Econnrefused),
-            TcpSocketState::Listening { socket, queue } => {
-                let (client, server) = fidl::Socket::create_stream();
-                let (abort_handle, abort_registration) = AbortOnDrop::new_pair();
-                let incoming = fidl::Signals::from_bits(fsock::SIGNAL_STREAM_INCOMING).unwrap();
-                socket.signal_peer(fidl::Signals::empty(), incoming).unwrap_or_else(|e| {
-                    assert_eq!(e, fidl::Status::PEER_CLOSED, "failed to signal peer");
-                });
-                queue.push_back((server, local_port, abort_handle));
-                Ok((client, abort_registration))
+    ) -> Result<(fdomain_client::Socket, AbortRegistration), fposix::Errno> {
+        let (fut, client, abort_registration) = {
+            let mut demux = self.demux.lock().unwrap();
+            let sock = demux.get_mut(&(domain, remote_port)).ok_or(fposix::Errno::Econnrefused)?;
+            match sock {
+                TcpSocketState::Bound => return Err(fposix::Errno::Econnrefused),
+                TcpSocketState::Listening { socket, queue } => {
+                    let (client, server) = client.create_stream_socket();
+                    let (abort_handle, abort_registration) = AbortOnDrop::new_pair();
+                    let incoming = fidl::Signals::from_bits(fsock::SIGNAL_STREAM_INCOMING).unwrap();
+                    let fut = socket.signal_peer(fidl::Signals::empty(), incoming);
+                    queue.push_back((server, local_port, abort_handle));
+                    (fut, client, abort_registration)
+                }
             }
-        }
+        };
+        fut.await.unwrap_or_else(|e| {
+            let fdomain_client::Error::FDomain(fdomain_client::FDomainError::TargetError(e)) = e
+            else {
+                panic!("unexpected error: {e:?}");
+            };
+            let e = fidl::Status::from_raw(e);
+            assert_eq!(e, fidl::Status::PEER_CLOSED, "failed to signal peer");
+        });
+        Ok((client, abort_registration))
     }
 
     fn accept(
         &self,
         domain: fsock::Domain,
         port: NonZeroU16,
-    ) -> Result<(fidl::Socket, NonZeroU16, AbortOnDrop), fposix::Errno> {
+    ) -> Result<(fdomain_client::Socket, NonZeroU16, AbortOnDrop), fposix::Errno> {
         let mut demux = self.demux.lock().unwrap();
         let sock = demux.get_mut(&(domain, port)).ok_or(fposix::Errno::Einval)?;
         match sock {
@@ -172,7 +180,7 @@ impl TcpState {
         &self,
         domain: fsock::Domain,
         port: NonZeroU16,
-        get_socket: impl FnOnce() -> fidl::Socket,
+        get_socket: impl FnOnce() -> fdomain_client::Socket,
     ) -> Result<(), fposix::Errno> {
         let mut demux = self.demux.lock().unwrap();
         let sock = demux.get_mut(&(domain, port)).ok_or(fposix::Errno::Einval)?;
@@ -195,13 +203,16 @@ impl TcpState {
 
 enum TcpSocketState {
     Bound,
-    Listening { socket: fidl::Socket, queue: VecDeque<(fidl::Socket, NonZeroU16, AbortOnDrop)> },
+    Listening {
+        socket: fdomain_client::Socket,
+        queue: VecDeque<(fdomain_client::Socket, NonZeroU16, AbortOnDrop)>,
+    },
 }
 
 struct Connection {
     sockname: NonZeroU16,
     peername: NonZeroU16,
-    sock_client: fidl::Socket,
+    sock_client: fdomain_client::Socket,
     abort: AbortOnDrop,
 }
 
@@ -236,15 +247,15 @@ impl Inner {
 
     async fn serve_socket_provider(
         self,
-        server_end: fidl::endpoints::ServerEnd<fsock::ProviderMarker>,
+        server_end: fdomain_client::fidl::ServerEnd<fsock::ProviderMarker>,
     ) -> Result<(), fidl::Error> {
+        let client = server_end.domain();
         let mut stream = server_end.into_stream();
         while let Some(req) = stream.try_next().await? {
             match req {
                 fsock::ProviderRequest::StreamSocket { domain, proto, responder } => {
                     let fsock::StreamSocketProtocol::Tcp = proto;
-                    let (client, server) =
-                        fidl::endpoints::create_endpoints::<fsock::StreamSocketMarker>();
+                    let (client, server) = client.create_endpoints::<fsock::StreamSocketMarker>();
 
                     self.spawn_tcp_socket(domain, server, None);
                     responder.send(Ok(client))?;
@@ -258,7 +269,7 @@ impl Inner {
     fn spawn_tcp_socket(
         &self,
         domain: fsock::Domain,
-        server_end: fidl::endpoints::ServerEnd<fsock::StreamSocketMarker>,
+        server_end: fdomain_client::fidl::ServerEnd<fsock::StreamSocketMarker>,
         conn: Option<Connection>,
     ) {
         self.spawn_fidl(self.clone().serve_tcp_socket(domain, server_end, conn));
@@ -267,9 +278,10 @@ impl Inner {
     async fn serve_tcp_socket(
         self,
         domain: fsock::Domain,
-        server_end: fidl::endpoints::ServerEnd<fsock::StreamSocketMarker>,
+        server_end: fdomain_client::fidl::ServerEnd<fsock::StreamSocketMarker>,
         conn: Option<Connection>,
     ) -> Result<(), fidl::Error> {
+        let client = server_end.domain();
         let mut stream = server_end.into_stream();
 
         struct SocketState {
@@ -290,7 +302,7 @@ impl Inner {
                 (sock_client, None, state)
             }
             None => {
-                let (sock_client, sock_server) = fidl::Socket::create_stream();
+                let (sock_client, sock_server) = client.create_stream_socket();
                 let state = SocketState {
                     sockname: None,
                     peername: None,
@@ -319,13 +331,14 @@ impl Inner {
                         socket: Some(
                             sock_client
                                 .duplicate_handle(fidl::Rights::SAME_RIGHTS)
+                                .await
                                 .expect("failed to duplicate socket"),
                         ),
                         __source_breaking: fidl::marker::SourceBreaking,
                     })?;
                 }
                 fsock::StreamSocketRequest::Connect { addr, responder } => {
-                    let rsp = (|| {
+                    let rsp = (async {
                         let SocketAddressExt(addr) = addr.into();
                         validate_domain(addr, domain)?;
                         let remote_port =
@@ -345,7 +358,7 @@ impl Inner {
                             return Err(fposix::Errno::Econnrefused);
                         }
                         let (sock_peer, abort_registration) =
-                            self.tcp().connect(domain, local_port, remote_port)?;
+                            self.tcp().connect(&client, domain, local_port, remote_port).await?;
                         state.abort_handle = Some(abort_registration.handle().into());
                         self.spawn(self.clone().run_connection(
                             sock_peer,
@@ -355,7 +368,8 @@ impl Inner {
                         state.peername = Some(remote_port);
 
                         Ok(())
-                    })();
+                    })
+                    .await;
                     responder.send(rsp)?;
                 }
                 fsock::StreamSocketRequest::Accept { want_addr, responder } => {
@@ -381,7 +395,7 @@ impl Inner {
                     })();
                     match rsp {
                         Ok((remote, connection)) => {
-                            let (client, server_end) = fidl::endpoints::create_endpoints();
+                            let (client, server_end) = client.create_endpoints();
                             self.spawn_tcp_socket(domain, server_end, Some(connection));
                             responder.send(Ok((remote.as_ref(), client)))?
                         }
@@ -451,9 +465,14 @@ impl Inner {
         Ok(())
     }
 
-    async fn run_connection(self, a: fidl::Socket, b: fidl::Socket, abort: AbortRegistration) {
-        let (ar, mut aw) = fasync::Socket::from_socket(a).split();
-        let (br, mut bw) = fasync::Socket::from_socket(b).split();
+    async fn run_connection(
+        self,
+        a: fdomain_client::Socket,
+        b: fdomain_client::Socket,
+        abort: AbortRegistration,
+    ) {
+        let (ar, mut aw) = a.split();
+        let (br, mut bw) = b.split();
 
         let fut =
             futures::future::join(futures::io::copy(ar, &mut bw), futures::io::copy(br, &mut aw));
@@ -529,7 +548,8 @@ mod tests {
     #[test_case(fsock::Domain::Ipv6)]
     #[fuchsia::test]
     async fn connect_to_listener(domain: fsock::Domain) {
-        let netstack = FakeNetstack::new();
+        let client = fdomain_local::local_client_empty();
+        let netstack = FakeNetstack::new(client);
         let socket_provider = netstack.new_socket_provider();
 
         let listen_addr = domain_to_sockaddr(domain, 1234);
@@ -565,7 +585,7 @@ mod tests {
     #[test_case(fsock::Domain::Ipv6)]
     #[fuchsia::test]
     async fn connect_without_listener(domain: fsock::Domain) {
-        let netstack = FakeNetstack::new();
+        let netstack = FakeNetstack::new(fdomain_local::local_client_empty());
         let socket_provider = netstack.new_socket_provider();
         assert_matches!(
             socket_provider.connect(domain_to_sockaddr(domain, 1234)).await,
@@ -577,7 +597,7 @@ mod tests {
     #[test_case(fsock::Domain::Ipv6)]
     #[fuchsia::test]
     async fn no_reuse_port(domain: fsock::Domain) {
-        let netstack = FakeNetstack::new();
+        let netstack = FakeNetstack::new(fdomain_local::local_client_empty());
         let socket_provider = netstack.new_socket_provider();
         let addr = domain_to_sockaddr(domain, 1234);
         let listener = socket_provider.listen(addr, None).await.expect("listen");
@@ -595,7 +615,7 @@ mod tests {
     #[test_case(fsock::Domain::Ipv6)]
     #[fuchsia::test]
     async fn drop_listener_with_accept_queue(domain: fsock::Domain) {
-        let netstack = FakeNetstack::new();
+        let netstack = FakeNetstack::new(fdomain_local::local_client_empty());
         let socket_provider = netstack.new_socket_provider();
         let addr = domain_to_sockaddr(domain, 1234);
         let listener = socket_provider.listen(addr, None).await.expect("listen");
@@ -612,7 +632,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn stop_on_drop() {
-        let netstack = FakeNetstack::new();
+        let client = fdomain_local::local_client_empty();
+        let netstack = FakeNetstack::new(client.clone());
         let socket_provider = netstack.new_socket_provider();
         let addr = domain_to_sockaddr(fsock::Domain::Ipv4, 1234);
         let listener = socket_provider.listen(addr, None).await.expect("listen");
@@ -622,13 +643,17 @@ mod tests {
         let mut buf = Vec::new();
         assert_eq!(connected.read_to_end(&mut buf).await.expect("read to end"), 0);
         assert_eq!(accepted.read_to_end(&mut buf).await.expect("read to end"), 0);
-        assert_matches!(socket_provider.connect(addr).await, Err(Error::Fidl(e)) if e.is_closed());
-        assert_matches!(listener.accept().await, Err(Error::Fidl(e)) if e.is_closed());
+        assert_matches!(
+            socket_provider.connect(addr).await,
+            Err(Error::CreateSocket(fposix::Errno::Eio))
+        );
+        assert_matches!(listener.accept().await, Err(Error::Accept(fposix::Errno::Eio)));
     }
 
     #[fuchsia::test]
     async fn detach() {
-        let netstack = FakeNetstack::new();
+        let client = fdomain_local::local_client_empty();
+        let netstack = FakeNetstack::new(client.clone());
         let socket_provider = netstack.new_socket_provider();
         netstack.detach();
         let addr = domain_to_sockaddr(fsock::Domain::Ipv4, 1234);

@@ -1,8 +1,8 @@
-// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use futures::{AsyncReadExt, AsyncWriteExt, StreamExt, TryStreamExt};
 use netext::{TcpListenerStream, TokioAsyncReadExt};
 use std::net::SocketAddr;
@@ -11,10 +11,7 @@ use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 use tokio::net::TcpListener;
 
-use crate::Error;
-use crate::socket_provider_fdomain::{SocketProvider, TargetTcpListener, TargetTcpStream};
-
-pub mod overnet;
+use crate::{Error, SocketProvider, TargetTcpListener, TargetTcpStream};
 
 #[derive(Clone)]
 pub struct PortForwarder {

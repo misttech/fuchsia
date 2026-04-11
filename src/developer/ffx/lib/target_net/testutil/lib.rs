@@ -9,3 +9,7 @@ mod hyper_connector;
 
 pub use fake_netstack::FakeNetstack;
 pub use hyper_connector::TargetHyperConnector;
+
+pub mod fdomain {
+    pub use super::fake_netstack::fdomain::FakeNetstack;
+}

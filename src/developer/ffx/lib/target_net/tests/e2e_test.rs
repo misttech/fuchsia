@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use ffx_e2e_emu::IsolatedEmulator;
-use ffx_target_net::{Bidirectional, Counters, PortForwarder, SocketProvider, TargetTcpStream};
+use ffx_target_net::socket_provider_fdomain::{SocketProvider, TargetTcpStream};
+use ffx_target_net::{Bidirectional, Counters, PortForwarder};
 use fho::TryFromEnv as _;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, StreamExt as _};
 use log::info;
@@ -11,7 +12,7 @@ use net_declare::std_socket_addr;
 use std::net::SocketAddr;
 use std::pin::pin;
 use std::time::Duration;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);

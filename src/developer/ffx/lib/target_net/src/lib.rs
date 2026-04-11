@@ -9,7 +9,7 @@ mod port_forwarder;
 mod socket_provider;
 
 pub use error::Error;
-pub use port_forwarder::PortForwarder;
+pub use port_forwarder::{PortForwarder, overnet as port_forwarder_overnet};
 pub use socket_provider::{SocketProvider, TargetTcpListener, TargetTcpStream};
 
 pub mod socket_provider_fdomain;

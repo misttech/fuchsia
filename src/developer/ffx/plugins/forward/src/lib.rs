@@ -23,7 +23,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use speedtest::{BytesFormatter, Throughput};
 use target_connector::Connector;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 use termion as _;
 
@@ -520,7 +520,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use ffx_forward_args::{Direction, ForwardSpec, ProtoSpec};
-    use ffx_target_net_testutil::FakeNetstack;
+    use ffx_target_net_testutil::fdomain::FakeNetstack;
     use ffx_writer::{Format, TestBuffers};
     use itertools::Itertools;
     use net_declare::{std_ip_v4, std_socket_addr};
@@ -819,7 +819,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_forwarder() -> fho::Result<()> {
-        let fake_netstack = FakeNetstack::new();
+        let fake_netstack = FakeNetstack::new(fdomain_local::local_client_empty());
         let socket = fake_netstack.new_socket_provider();
         let port_forward = PortForwarder::new(socket);
 

@@ -5,7 +5,7 @@
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use ffx_config::ConfigLevel;
-use ffx_target_net::PortForwarder;
+use ffx_target_net::port_forwarder_overnet::PortForwarder;
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_net::SocketAddress;
 use fidl_fuchsia_net_ext::SocketAddress as SocketAddressExt;
@@ -207,11 +207,10 @@ impl FidlProtocol for Forward {
 mod tests {
     use super::*;
     use ffx::DaemonError;
+    use fidl_fuchsia_developer_remotecontrol as rcs;
+    use fidl_fuchsia_posix_socket as fsock;
+    use fidl_fuchsia_sys2 as sys2;
     use futures::StreamExt;
-    use {
-        fidl_fuchsia_developer_remotecontrol as rcs, fidl_fuchsia_posix_socket as fsock,
-        fidl_fuchsia_sys2 as sys2,
-    };
 
     static HOST_ADDRESS: &str = "127.0.0.1:1234";
     static TARGET_ADDRESS: &str = "127.0.0.1:5678";
