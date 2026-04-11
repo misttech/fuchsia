@@ -982,6 +982,15 @@ void LogicalBufferCollection::SetName(uint32_t priority, std::string name) {
 }
 
 void LogicalBufferCollection::SetDebugTimeoutLogDeadline(int64_t deadline) {
+  if (has_allocation_result_) {
+    // too late to complain about allocation taking too long; already done
+    return;
+  }
+  if (creation_timer_run_count_ != 0) {
+    // SetDebugTimeoutLogDeadline is too late to set the initial first timer deadline; the second
+    // deadline is a fixed 30 additional seconds beyond the first time the timer runs.
+    return;
+  }
   creation_timer_.Cancel();
   zx_status_t status =
       creation_timer_.PostForTime(parent_sysmem_->loop_dispatcher(), zx::time(deadline));
@@ -2129,6 +2138,10 @@ void LogicalBufferCollection::SetFailedAllocationResult(Error error) {
   // Was initialized to nullptr.
   ZX_DEBUG_ASSERT(!allocation_result_info_.has_value());
   has_allocation_result_ = true;
+  if (creation_timer_run_count_ != 0) {
+    LogInfo(FROM_HERE, "allocation eventually failed after %" PRId64 " ms",
+            (zx::clock::get_monotonic() - create_time_monotonic_).to_msecs());
+  }
   SendAllocationResult(root_->BreadthFirstOrder());
   return;
 }
@@ -2150,6 +2163,10 @@ void LogicalBufferCollection::SetAllocationResult(
   creation_timer_.Cancel();
   allocation_result_info_.emplace(std::move(info));
   has_allocation_result_ = true;
+  if (creation_timer_run_count_ != 0) {
+    LogInfo(FROM_HERE, "allocation eventually succeeded after %" PRId64 " ms",
+            (zx::clock::get_monotonic() - create_time_monotonic_).to_msecs());
+  }
   SendAllocationResult(std::move(visible_pruned_sub_tree));
 
   std::vector<NodeProperties*>::reverse_iterator next;
@@ -4497,9 +4514,18 @@ void LogicalBufferCollection::CreationTimedOut(async_dispatcher_t* dispatcher,
     return;
   }
 
-  std::string name = name_.has_value() ? name_->name : "Unknown";
+  ZX_DEBUG_ASSERT(creation_timer_run_count_ <= 1);
+  ++creation_timer_run_count_;
+  ZX_DEBUG_ASSERT(creation_timer_run_count_ <= 2);
 
-  LogError(FROM_HERE, "Allocation of %s timed out. Waiting for (connected) tokens: ", name.c_str());
+  std::string name = name_.has_value() ? name_->name : "Unknown";
+  zx::duration duration_so_far = zx::clock::get_monotonic() - create_time_monotonic_;
+
+  LogError(
+      FROM_HERE,
+      "Allocation of %s is taking a while (creation_timer_run_count_: %u, monotonic duration so far: %" PRId64
+      " ms). Waiting for (connected) tokens: ",
+      name.c_str(), creation_timer_run_count_, duration_so_far.to_msecs());
   ZX_DEBUG_ASSERT(root_);
   // Current token Node(s), not logical token nodes that are presently OrphanedNode, as those can't
   // be blocking allocation.
@@ -4565,6 +4591,18 @@ void LogicalBufferCollection::CreationTimedOut(async_dispatcher_t* dispatcher,
       LogError(FROM_HERE, "Name unknown (children%s done creating)", children_created_state_string);
     }
   }
+
+  ZX_DEBUG_ASSERT(creation_timer_run_count_ <= 2);
+  if (creation_timer_run_count_ >= 2) {
+    // we intentionally don't continue complaining after two complaints to the log (by default at
+    // approximately create + 5s and create + 35s)
+    return;
+  }
+
+  // remember to complain one more time later if allocation still hasn't completed by then
+  status = creation_timer_.PostForTime(parent_sysmem_->loop_dispatcher(),
+                                       zx::deadline_after(zx::sec(30)));
+  ZX_ASSERT(status == ZX_OK);
 }
 
 static int32_t clamp_difference(uint64_t a, uint64_t b) {

@@ -950,6 +950,7 @@ class LogicalBufferCollection : public fbl::RefCounted<LogicalBufferCollection> 
   // added below creation_timer_ (so this doesn't actually need to be last).
   async::TaskMethod<LogicalBufferCollection, &LogicalBufferCollection::CreationTimedOut>
       creation_timer_{this};
+  uint32_t creation_timer_run_count_ = 0;
 
   bool is_verbose_logging_ = false;
 
