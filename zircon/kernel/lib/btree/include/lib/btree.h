@@ -935,13 +935,23 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
   bool leaf_insert = true;
   iterator_base<TreeNode> ret(target);
   do {
+    // Helper to split the contents of a node into a newly allocated |right| node, and potentially
+    // updates to provided target iterator if the node it was referring to is now in |right|.
+    auto split_node_contents = [](auto& target, TreeNode* right) {
+      const uint32_t items_to_move = (target.node_->count() + 1) / 2;
+      const uint32_t split_index = target.node_->count() - items_to_move;
+      const bool insert_right = target.index_ > split_index;
+      target.node_->rotate_right(right, items_to_move - (insert_right ? 1 : 0));
+      if (insert_right) {
+        target = {right, target.index_ - split_index - 1};
+      }
+    };
     if (!target.node_->is_full()) {
       BTREE_CHECK(!target.node_->is_leaf());
       BTREE_CHECK(!leaf_insert);
       target.node_->insert(target.index_, item);
       return ret;
     }
-    iterator_base<TreeNode> parent;
     if (target.node_ == root_) {
       // Check if the root can be expanded.
       if (root_->size_class() < kLargestNodeSizeClass) {
@@ -954,31 +964,72 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
         root_ = new_root;
         return ret;
       }
-    } else {
-      // Can re-balance?
-      parent = path.pop();
-      TreeNode* right = right_node(parent.node_, parent.index_);
-      if (right && !right->is_full()) {
-        target.node_->insert_rebalance_right(right, target.index_, item,
-                                             leaf_insert ? &ret : nullptr);
-        parent.node_->update_key(parent.index_ + 1, right->get(0).key);
-        return ret;
+      // Need to allocate a new node.
+      TreeNode* right = allocations.take_next(kLargestNodeSizeClass, leaf_insert);
+      if (leaf_insert) {
+        insert_leaf_list(target.node_, right);
       }
-      TreeNode* left = left_node(parent.node_, parent.index_);
-      if (left && !left->is_full()) {
-        if (target.index_ == TreeNode::kMaxValues && leaf_insert && !target.node_->next()) {
-          // If this is a tail insertion then make as much as space as possible under the
-          // assumption of future tail insertions.
-          target.node_->rotate_left_max(left);
-          ret.index_ = target.node_->count();
-          target.node_->push(item);
-        } else {
-          target.node_->insert_rebalance_left(left, target.index_, item,
-                                              leaf_insert ? &ret : nullptr);
+      // In the case of tail insertion do not re-balance.
+      if (target.index_ == TreeNode::kMaxValues && leaf_insert && !right->next()) {
+        ret = iterator_base(right, 0);
+        right->push(item);
+      } else {
+        split_node_contents(target, right);
+        if (leaf_insert) {
+          ret = target;
         }
-        parent.node_->update_key(parent.index_, target.node_->get(0).key);
-        return ret;
+        target.node_->insert(target.index_, item);
       }
+      item = Item{.key = right->get(0).key, .value = std::bit_cast<uint64_t>(right)};
+      break;
+    }
+    iterator_base<TreeNode> parent = path.pop();
+    // Before splitting, first check if we can rebalance with an adjacent node. Whether balancing
+    // into the left or right we perform the same basic steps.
+    //  1. Calculate, based on key, which node the item we still need to insert will end up.
+    //  2. Based on (1) rotate a certain number of items between the nodes.
+    //  3. Insert our item into its target node.
+    TreeNode* right = right_node(parent.node_, parent.index_);
+    if (right && !right->is_full()) {
+      const uint32_t total_items = target.node_->count() + right->count() + 1;
+      const uint32_t items_to_move = (total_items / 2) - right->count();
+      const uint32_t split_index = target.node_->count() - items_to_move;
+
+      const bool insert_right = target.index_ > split_index;
+      auto insert_target =
+          insert_right ? iterator_base<TreeNode>{right, target.index_ - split_index - 1} : target;
+      target.node_->rotate_right(right, items_to_move - (insert_right ? 1 : 0));
+      insert_target.node_->insert(insert_target.index_, item);
+      if (leaf_insert) {
+        ret = insert_target;
+      }
+      parent.node_->update_key(parent.index_ + 1, right->get(0).key);
+      return ret;
+    }
+    TreeNode* left = left_node(parent.node_, parent.index_);
+    if (left && !left->is_full()) {
+      if (target.index_ == TreeNode::kMaxValues && leaf_insert && !target.node_->next()) {
+        // If this is a tail insertion then make as much as space as possible under the
+        // assumption of future tail insertions.
+        target.node_->rotate_left_max(left);
+        ret.index_ = target.node_->count();
+        target.node_->push(item);
+      } else {
+        const uint32_t total_items = target.node_->count() + left->count() + 1;
+        const uint32_t items_to_move = (total_items / 2) - left->count();
+
+        const bool insert_left = target.index_ < items_to_move;
+        auto insert_target =
+            insert_left ? iterator_base<TreeNode>{left, left->count() + target.index_}
+                        : iterator_base<TreeNode>{target.node_, target.index_ - items_to_move};
+        target.node_->rotate_left(left, items_to_move - (insert_left ? 1 : 0));
+        insert_target.node_->insert(insert_target.index_, item);
+        if (leaf_insert) {
+          ret = insert_target;
+        }
+      }
+      parent.node_->update_key(parent.index_, target.node_->get(0).key);
+      return ret;
     }
 
     // Need to allocate a new node. This is not the root node and so is always the largest size.
@@ -991,8 +1042,11 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
       ret = iterator_base(new_right, 0);
       new_right->push(item);
     } else {
-      target.node_->insert_rebalance_right(new_right, target.index_, item,
-                                           leaf_insert ? &ret : nullptr);
+      split_node_contents(target, new_right);
+      target.node_->insert(target.index_, item);
+      if (leaf_insert) {
+        ret = target;
+      }
     }
     leaf_insert = false;
 
