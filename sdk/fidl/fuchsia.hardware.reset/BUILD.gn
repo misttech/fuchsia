@@ -8,6 +8,10 @@ fidl("fuchsia.hardware.reset") {
   sdk_category = "partner"
   stable = false
   sdk_area = "Drivers"
-  sources = [ "reset.fidl" ]
+  sources = [
+    "metadata.fidl",
+    "overview.fidl",
+    "reset.fidl",
+  ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
