@@ -4,7 +4,8 @@
 
 use derivative::Derivative;
 use std::marker::PhantomData;
-use std::ops::RangeBounds;
+use std::mem::MaybeUninit;
+use std::ops::{Range, RangeBounds};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(target_arch = "aarch64")]
@@ -163,16 +164,12 @@ pub struct EbpfBufferPtr<'a> {
 impl<'a> EbpfBufferPtr<'a> {
     pub const ALIGNMENT: usize = size_of::<u64>();
 
-    /// Creates a new `EbpfBufferPtr` from the specified pointer. `ptr` must be
-    /// 8-byte aligned. `size` must be multiple of 8.
+    /// Creates a new `EbpfBufferPtr` from the specified pointer.
     ///
     /// # Safety
     /// Caller must ensure that the buffer referenced by `ptr` is valid for
     /// lifetime `'a`.
     pub unsafe fn new(ptr: *mut u8, size: usize) -> Self {
-        assert!((ptr as usize) % Self::ALIGNMENT == 0);
-        assert!(size % Self::ALIGNMENT == 0);
-        assert!(size < isize::MAX as usize);
         Self { ptr, size, phantom: PhantomData }
     }
 
@@ -189,10 +186,9 @@ impl<'a> EbpfBufferPtr<'a> {
     // SAFETY: caller must ensure that the value at the specified offset fits
     // the buffer.
     unsafe fn get_ptr_internal<T>(&self, offset: usize) -> EbpfPtr<'a, T> {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            EbpfPtr::new(self.ptr.byte_offset(offset as isize) as *mut T)
-        }
+        // SAFETY: The caller is expected to ensure that the pointer is valid
+        // for the lifetime 'a.
+        unsafe { EbpfPtr::new(self.ptr.byte_offset(offset as isize) as *mut T) }
     }
 
     /// Returns a pointer to a value of type `T` at the specified `offset`.
@@ -206,7 +202,6 @@ impl<'a> EbpfBufferPtr<'a> {
     }
 
     /// Returns pointer to the specified range in the buffer.
-    /// Range bounds must be multiple of 8.
     pub fn slice(&self, range: impl RangeBounds<usize>) -> Option<Self> {
         let start = match range.start_bound() {
             std::ops::Bound::Included(&start) => start,
@@ -234,44 +229,260 @@ impl<'a> EbpfBufferPtr<'a> {
         })
     }
 
-    /// Loads contents of the buffer to a `Vec<u8>`.
-    pub fn load(&self) -> Vec<u8> {
-        let mut result = Vec::with_capacity(self.size);
+    /// Loads contents of the buffer into the specified slice, `dst` must be
+    /// of the same size as `self`.
+    pub fn load_to_slice(&self, dst: &mut [MaybeUninit<u8>]) {
+        assert_eq!(dst.len(), self.size);
 
-        for pos in (0..self.size).step_by(Self::ALIGNMENT) {
-            // SAFETY: the offset is guaranteed to be within the buffer bounds.
-            let value: u64 = unsafe { self.get_ptr_internal::<u64>(pos).load_relaxed() };
-            result.extend_from_slice(value.as_bytes());
+        let mut src_ptr = self.ptr;
+        // SAFETY: `len` is validated above to be within bounds.
+        let src_end = unsafe { src_ptr.add(self.size) };
+
+        let Range { start: dst_ptr, end: dst_end } = dst.as_mut_ptr_range();
+        let mut dst_ptr = dst_ptr as *mut u8;
+        let dst_end = dst_end as *mut u8;
+
+        if src_ptr as usize % 8 > 0 {
+            if src_ptr < src_end && src_ptr as usize % 2 > 0 {
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    let value: u8 = arch::load_u8(src_ptr as *const u8);
+                    std::ptr::write_unaligned(dst_ptr, value);
+                    src_ptr = src_ptr.add(1);
+                    dst_ptr = dst_ptr.add(1);
+                };
+            }
+
+            if src_ptr as usize + 2 <= src_end as usize && src_ptr as usize % 4 > 0 {
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    let value: u16 = arch::load_u16(src_ptr as *const u16);
+                    std::ptr::write_unaligned(dst_ptr as *mut u16, value);
+                    src_ptr = src_ptr.add(2);
+                    dst_ptr = dst_ptr.add(2);
+                }
+            }
+
+            if src_ptr as usize + 4 <= src_end as usize && src_ptr as usize % 8 > 0 {
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    let value: u32 = arch::load_u32(src_ptr as *const u32);
+                    std::ptr::write_unaligned(dst_ptr as *mut u32, value);
+                    src_ptr = src_ptr.add(4);
+                    dst_ptr = dst_ptr.add(4);
+                }
+            }
         }
 
-        result
+        while src_ptr as usize + 8 <= src_end as usize {
+            // SAFETY: Pointers are verified to be within the buffer bounds.
+            unsafe {
+                let value: u64 = arch::load_u64(src_ptr as *const u64);
+                std::ptr::write_unaligned(dst_ptr as *mut u64, value);
+                src_ptr = src_ptr.add(8);
+                dst_ptr = dst_ptr.add(8);
+            }
+        }
+
+        if src_ptr < src_end {
+            if src_ptr as usize + 4 <= src_end as usize {
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    let value: u32 = arch::load_u32(src_ptr as *const u32);
+                    std::ptr::write_unaligned(dst_ptr as *mut u32, value);
+                    src_ptr = src_ptr.add(4);
+                    dst_ptr = dst_ptr.add(4);
+                }
+            }
+
+            if src_ptr as usize + 2 <= src_end as usize {
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    let value: u16 = arch::load_u16(src_ptr as *const u16);
+                    std::ptr::write_unaligned(dst_ptr as *mut u16, value);
+                    src_ptr = src_ptr.add(2);
+                    dst_ptr = dst_ptr.add(2);
+                }
+            }
+
+            if src_ptr < src_end {
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    let value: u8 = arch::load_u8(src_ptr as *const u8);
+                    std::ptr::write_unaligned(dst_ptr, value);
+                    src_ptr = src_ptr.add(1);
+                    dst_ptr = dst_ptr.add(1);
+                }
+            }
+        }
+
+        debug_assert_eq!(src_ptr, src_end);
+        debug_assert_eq!(dst_ptr, dst_end);
     }
 
-    /// Stores `data` in the buffer. `data` must be the same size as the
-    /// buffer.
+    /// Loads all buffer contents into a `SmallVec`.
+    pub fn load(&self) -> Vec<u8> {
+        let mut vec = Vec::<u8>::with_capacity(self.size);
+        self.load_to_slice(vec.spare_capacity_mut());
+        // SAFETY: load() fills the buffer.
+        unsafe { vec.set_len(self.size) };
+        vec
+    }
+
+    /// Stores `data` in the buffer. `data` must not be larger than the buffer.
     pub fn store(&self, data: &[u8]) {
-        assert!(data.len() == self.size);
-        self.store_padded(data);
-    }
-
-    /// Stores `data` at the head of the buffer. If `data` is not multiple of 8
-    /// then it's padded at the end with zeros.
-    pub fn store_padded(&self, data: &[u8]) {
         assert!(data.len() <= self.size);
 
-        let tail = data.len() % 8;
-        let end = data.len() - tail;
-        for pos in (0..end).step_by(Self::ALIGNMENT) {
-            let value = u64::read_from_bytes(&data[pos..(pos + 8)]).unwrap();
-            // SAFETY: pos is guaranteed to be within the buffer bounds.
-            unsafe { self.get_ptr_internal::<u64>(pos).store_relaxed(value) };
+        let mut ptr = self.ptr;
+        // SAFETY: `len` is validated above to be within bounds.
+        let end = unsafe { ptr.add(data.len()) };
+        let mut data_offset = 0;
+
+        // Write the head of the buffer with u8, u16, u32 stores.
+        if ptr as usize % 8 > 0 {
+            if ptr < end && ptr as usize % 2 > 0 {
+                let value = data[data_offset];
+                data_offset += 1;
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    arch::store_u8(ptr, value);
+                    ptr = ptr.add(1)
+                };
+            }
+
+            if (ptr as usize) + 2 <= end as usize && ptr as usize % 4 > 0 {
+                let value = u16::read_from_bytes(&data[data_offset..(data_offset + 2)]).unwrap();
+                data_offset += 2;
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    arch::store_u16(ptr as *mut u16, value);
+                    ptr = ptr.add(2)
+                };
+            }
+
+            if (ptr as usize) + 4 <= end as usize && ptr as usize % 8 > 0 {
+                let value = u32::read_from_bytes(&data[data_offset..(data_offset + 4)]).unwrap();
+                data_offset += 4;
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    arch::store_u32(ptr as *mut u32, value);
+                    ptr = ptr.add(4)
+                };
+            }
         }
 
-        if tail > 0 {
-            let mut value: u64 = 0;
-            value.as_mut_bytes()[..tail].copy_from_slice(&data[(data.len() - tail)..]);
-            // SAFETY: pos is guaranteed to be within the buffer bounds.
-            unsafe { self.get_ptr_internal::<u64>(data.len() - tail).store_relaxed(value) };
+        // Write the body of the buffer with u64 stores.
+        while (ptr as usize) + 8 <= end as usize {
+            let value = u64::read_from_bytes(&data[data_offset..(data_offset + 8)]).unwrap();
+            data_offset += 8;
+            // SAFETY: Pointers are verified to be within the buffer bounds.
+            unsafe {
+                arch::store_u64(ptr as *mut u64, value);
+                ptr = ptr.add(8)
+            };
+        }
+
+        // Write the tail of the buffer with u32, u16, u8 stores.
+        if ptr < end {
+            if (ptr as usize) + 4 <= end as usize {
+                let value = u32::read_from_bytes(&data[data_offset..(data_offset + 4)]).unwrap();
+                data_offset += 4;
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    arch::store_u32(ptr as *mut u32, value);
+                    ptr = ptr.add(4)
+                };
+            }
+
+            if (ptr as usize) + 2 <= end as usize {
+                let value = u16::read_from_bytes(&data[data_offset..(data_offset + 2)]).unwrap();
+                data_offset += 2;
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    arch::store_u16(ptr as *mut u16, value);
+                    ptr = ptr.add(2)
+                };
+            }
+
+            if ptr < end {
+                let value = data[data_offset];
+                data_offset += 1;
+                // SAFETY: Pointers are verified to be within the buffer bounds.
+                unsafe {
+                    arch::store_u8(ptr, value);
+                    ptr = ptr.add(1)
+                };
+            }
+        }
+
+        debug_assert_eq!(ptr, end);
+        debug_assert_eq!(data_offset, data.len());
+    }
+
+    /// Copies the data from another `EbpfBufferPtr`. `src` may be smaller than
+    /// `self`. In this case it's copied to the beginning of `self`.
+    pub fn copy(&self, src: &EbpfBufferPtr<'_>) {
+        assert!(src.len() <= self.size);
+
+        let mut dst_ptr = self.ptr;
+        // SAFETY: src.len() <= self.size is asserted above.
+        let dst_end = unsafe { dst_ptr.add(src.len()) };
+
+        let mut src_ptr = src.ptr;
+        // SAFETY: Calculate ptr to the end of the source buffer.
+        let src_end = unsafe { src_ptr.add(src.len()) };
+
+        // Fast path when both buffers are 8-byte aligned.
+        if (src_ptr as usize) % 8 == 0 && (dst_ptr as usize) % 8 == 0 {
+            while (src_ptr as usize) + 8 <= src_end as usize {
+                // SAFETY: Pointers are verified to be within the bounds of valid buffers.
+                unsafe {
+                    let value: u64 = arch::load_u64(src_ptr as *const u64);
+                    arch::store_u64(dst_ptr as *mut u64, value);
+                    src_ptr = src_ptr.add(8);
+                    dst_ptr = dst_ptr.add(8);
+                }
+            }
+
+            if src_ptr < src_end {
+                if (src_ptr as usize) + 4 <= src_end as usize {
+                    // SAFETY: Pointers are verified to be within the bounds of valid buffers.
+                    unsafe {
+                        let value: u32 = arch::load_u32(src_ptr as *const u32);
+                        arch::store_u32(dst_ptr as *mut u32, value);
+                        src_ptr = src_ptr.add(4);
+                        dst_ptr = dst_ptr.add(4);
+                    }
+                }
+
+                if (src_ptr as usize) + 2 <= src_end as usize {
+                    // SAFETY: Pointers are verified to be within the bounds of valid buffers.
+                    unsafe {
+                        let value: u16 = arch::load_u16(src_ptr as *const u16);
+                        arch::store_u16(dst_ptr as *mut u16, value);
+                        src_ptr = src_ptr.add(2);
+                        dst_ptr = dst_ptr.add(2);
+                    }
+                }
+
+                if src_ptr < src_end {
+                    // SAFETY: Pointers are verified to be within the bounds of valid buffers.
+                    unsafe {
+                        let value: u8 = arch::load_u8(src_ptr as *const u8);
+                        arch::store_u8(dst_ptr as *mut u8, value);
+                        src_ptr = src_ptr.add(1);
+                        dst_ptr = dst_ptr.add(1);
+                    }
+                }
+            }
+
+            debug_assert_eq!(src_ptr, src_end);
+            debug_assert_eq!(dst_ptr, dst_end);
+        } else {
+            // Slow path fallback for unaligned buffers: Load the source values
+            // into a temporary buffer and then store them into the destination
+            // buffer.
+            self.store(&src.load());
         }
     }
 }
@@ -365,9 +576,10 @@ mod test {
         let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), SIZE) };
 
         buf_ptr.slice(8..16).unwrap().store(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        let value = buf_ptr.slice(0..24).unwrap().load();
         assert_eq!(
-            buf_ptr.slice(0..24).unwrap().load(),
-            [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0]
+            &value[..],
+            &[0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0]
         );
 
         assert!(buf_ptr.slice(8..40).is_none());
@@ -375,34 +587,86 @@ mod test {
 
     #[test]
     fn test_buffer_load() {
-        const SIZE: usize = 32;
+        const FULL_SIZE: usize = 40;
+        let mut buf = (0..(FULL_SIZE as u8)).map(|v| v as u8).collect::<Vec<_>>();
+        // SAFETY: Creating EbpfBufferPtr for the buffer allocated above.
+        let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), FULL_SIZE) };
 
-        let mut buf = (0..(SIZE as u8)).map(|v| v as u8).collect::<Vec<_>>();
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), SIZE) };
-        let v = buf_ptr.load();
-        assert_eq!(v, (0..SIZE).map(|v| v as u8).collect::<Vec<_>>());
+        for start in 0..FULL_SIZE {
+            for end in start..=FULL_SIZE {
+                let slice = buf_ptr.slice(start..end).unwrap();
+                let loaded = slice.load();
+
+                let expected = (start..end).map(|v| v as u8).collect::<Vec<_>>();
+                assert_eq!(&loaded[..], &expected[..], "failed for range {}..{}", start, end);
+            }
+        }
     }
 
     #[test]
     fn test_buffer_store() {
-        const SIZE: usize = 32;
+        const FULL_SIZE: usize = 40;
+        let mut buf = [0u8; FULL_SIZE];
+        // SAFETY: Creating EbpfBufferPtr for the buffer allocated above.
+        let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), FULL_SIZE) };
 
-        let mut buf = [0u8; SIZE];
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), SIZE) };
+        for start in 0..FULL_SIZE {
+            for end in start..=FULL_SIZE {
+                let slice = buf_ptr.slice(start..end).unwrap();
+                let data_to_store = (start..end).map(|v| v as u8).collect::<Vec<_>>();
+                slice.store(&data_to_store);
 
-        // Write values from `s` to `e` to range `s..e`.
-        buf_ptr.store(&(0..SIZE).map(|v| v as u8).collect::<Vec<_>>());
+                let loaded = slice.load();
+                assert_eq!(&loaded[..], &data_to_store[..], "failed for range {}..{}", start, end);
+            }
+        }
+    }
 
-        // Read the content and verify that it matches the expectation.
-        let data = buf_ptr.load();
-        assert_eq!(&data, &(0..SIZE).map(|v| v as u8).collect::<Vec<_>>());
+    #[test]
+    fn test_buffer_copy() {
+        const BASE_SIZE: usize = 48;
+        let mut src_buf = (0..(BASE_SIZE as u8)).map(|v| v as u8).collect::<Vec<_>>();
+        let mut dst_buf = [0u8; BASE_SIZE];
+
+        // SAFETY: Creating EbpfBufferPtr for the buffer allocated above.
+        let src_base = unsafe { EbpfBufferPtr::new(src_buf.as_mut_ptr(), BASE_SIZE) };
+
+        // SAFETY: Creating EbpfBufferPtr for the buffer allocated above.
+        let dst_base = unsafe { EbpfBufferPtr::new(dst_buf.as_mut_ptr(), BASE_SIZE) };
+
+        for src_align in 0..8 {
+            for dst_align in 0..8 {
+                for len in 0..=32 {
+                    dst_buf.fill(0);
+
+                    let src_slice = src_base.slice(src_align..(src_align + len)).unwrap();
+                    let dst_slice = dst_base.slice(dst_align..(dst_align + len)).unwrap();
+
+                    dst_slice.copy(&src_slice);
+
+                    let loaded = dst_slice.load();
+                    let expected =
+                        (src_align..(src_align + len)).map(|v| v as u8).collect::<Vec<_>>();
+                    assert_eq!(
+                        &loaded[..],
+                        &expected[..],
+                        "copy failed for length {} with src align {} and dst align {}",
+                        len,
+                        src_align,
+                        dst_align
+                    );
+
+                    for i in 0..BASE_SIZE {
+                        if i < dst_align || i >= dst_align + len {
+                            assert_eq!(
+                                dst_buf[i], 0,
+                                "out-of-bounds memory modified at index {} (dst_align={}, len={})",
+                                i, dst_align, len
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }

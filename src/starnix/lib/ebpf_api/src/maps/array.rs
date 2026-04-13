@@ -83,7 +83,7 @@ impl MapImpl for Array {
             return Err(MapError::EntryExists);
         }
 
-        ptr.store_padded(value);
+        ptr.store(value);
 
         Ok(())
     }

@@ -676,7 +676,7 @@ impl MapImpl for HashMap {
         };
 
         let entry = bucket.insert(free_entry, &key);
-        entry.value().store_padded(value);
+        entry.value().store(value);
 
         Ok(())
     }

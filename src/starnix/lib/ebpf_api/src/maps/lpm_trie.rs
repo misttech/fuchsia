@@ -428,7 +428,7 @@ mod internal {
         // Updates node key to the specified value. If `len` is specified then
         // the key is truncated to that value.
         pub fn set_key(&self, key: &[u8], len: Option<usize>) {
-            self.key.store_padded(key);
+            self.key.store(key);
             if let Some(len) = len {
                 self.key.get_ptr::<u32>(0).unwrap().store_relaxed(len as u32);
             }
@@ -843,7 +843,7 @@ impl MapImpl for LpmTrie {
                 // (if any) to free space in the heap in case it's full.
                 std::mem::drop(state.take_value(&node));
                 let data_entry = self.store().heap().write().alloc().ok_or(MapError::SizeLimit)?;
-                data_entry.ptr().store_padded(value);
+                data_entry.ptr().store(value);
                 node.set_value(data_entry);
 
                 return Ok(());
@@ -859,7 +859,7 @@ impl MapImpl for LpmTrie {
         // succeeds it's safe to assume that we will be able to allocate 1 or
         // 2 new nodes below, so the rest of the operation can't fail.
         let data_entry = self.store().heap().write().alloc().ok_or(MapError::SizeLimit)?;
-        data_entry.ptr().store_padded(value);
+        data_entry.ptr().store(value);
 
         let new_node = state.allocate_node();
         new_node.set_key(key, None);
