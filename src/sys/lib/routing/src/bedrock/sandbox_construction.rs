@@ -1753,7 +1753,13 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
                 });
         }
     }
-    let router = router_builder.build().with_service_renames_and_filter(offer.clone());
+
+    let router = if let cm_rust::OfferDecl::Service(_) = offer {
+        router_builder.build().with_service_renames_and_filter(offer.clone())
+    } else {
+        router_builder.build().into()
+    };
+
     match target_dict.insert_capability(target_name, router.into()) {
         Ok(()) => (),
         Err(e) => warn!("failed to insert {target_name} into target dict: {e:?}"),
