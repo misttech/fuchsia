@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use derivative::Derivative;
+use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Range, RangeBounds};
@@ -321,12 +322,19 @@ impl<'a> EbpfBufferPtr<'a> {
     }
 
     /// Loads all buffer contents into a `SmallVec`.
-    pub fn load(&self) -> Vec<u8> {
-        let mut vec = Vec::<u8>::with_capacity(self.size);
-        self.load_to_slice(vec.spare_capacity_mut());
-        // SAFETY: load() fills the buffer.
-        unsafe { vec.set_len(self.size) };
-        vec
+    pub fn load<const N: usize>(&self) -> SmallVec<[u8; N]> {
+        if self.size <= N {
+            let mut buf = MaybeUninit::<[u8; N]>::uninit();
+            self.load_to_slice(&mut AsMut::<[MaybeUninit<u8>]>::as_mut(&mut buf)[..self.size]);
+            // SAFETY: load() fills the buffer.
+            unsafe { SmallVec::from_buf_and_len_unchecked(buf, self.size) }
+        } else {
+            let mut vec = Vec::<u8>::with_capacity(self.size);
+            self.load_to_slice(vec.spare_capacity_mut());
+            // SAFETY: load() fills the buffer.
+            unsafe { vec.set_len(self.size) };
+            SmallVec::from_vec(vec)
+        }
     }
 
     /// Stores `data` in the buffer. `data` must not be larger than the buffer.
@@ -482,8 +490,37 @@ impl<'a> EbpfBufferPtr<'a> {
             // Slow path fallback for unaligned buffers: Load the source values
             // into a temporary buffer and then store them into the destination
             // buffer.
-            self.store(&src.load());
+            self.store(&src.load::<128>());
         }
+    }
+}
+
+impl<'a> From<&'a mut [u8]> for EbpfBufferPtr<'a> {
+    fn from(value: &'a mut [u8]) -> Self {
+        let ptr = value.as_mut_ptr() as *mut u8;
+        // SAFETY: We borrow a mutable reference to the slice. This guarantees
+        // that the returned pointer is valid for the lifetime 'a and there are
+        // no other mutable references.
+        unsafe { Self::new(ptr, value.len()) }
+    }
+}
+
+impl<'a> From<&'a mut Vec<u8>> for EbpfBufferPtr<'a> {
+    fn from(value: &'a mut Vec<u8>) -> Self {
+        let ptr = value.as_mut_ptr() as *mut u8;
+        // SAFETY: We borrow a mutable reference to the slice. This guarantees
+        // that the returned pointer is valid for the lifetime 'a and there are
+        // no other mutable references.
+        unsafe { Self::new(ptr, value.len()) }
+    }
+}
+impl<'a, const N: usize> From<&'a mut [u8; N]> for EbpfBufferPtr<'a> {
+    fn from(value: &'a mut [u8; N]) -> Self {
+        let ptr = value.as_mut_ptr() as *mut u8;
+        // SAFETY: We borrow a mutable reference to the array. This guarantees
+        // that the returned pointer is valid for the lifetime 'a and there are
+        // no other mutable references.
+        unsafe { Self::new(ptr, N) }
     }
 }
 
@@ -576,7 +613,7 @@ mod test {
         let buf_ptr = unsafe { EbpfBufferPtr::new(buf.as_mut_ptr(), SIZE) };
 
         buf_ptr.slice(8..16).unwrap().store(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        let value = buf_ptr.slice(0..24).unwrap().load();
+        let value = buf_ptr.slice(0..24).unwrap().load::<16>();
         assert_eq!(
             &value[..],
             &[0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -595,7 +632,7 @@ mod test {
         for start in 0..FULL_SIZE {
             for end in start..=FULL_SIZE {
                 let slice = buf_ptr.slice(start..end).unwrap();
-                let loaded = slice.load();
+                let loaded = slice.load::<16>();
 
                 let expected = (start..end).map(|v| v as u8).collect::<Vec<_>>();
                 assert_eq!(&loaded[..], &expected[..], "failed for range {}..{}", start, end);
@@ -616,7 +653,7 @@ mod test {
                 let data_to_store = (start..end).map(|v| v as u8).collect::<Vec<_>>();
                 slice.store(&data_to_store);
 
-                let loaded = slice.load();
+                let loaded = slice.load::<16>();
                 assert_eq!(&loaded[..], &data_to_store[..], "failed for range {}..{}", start, end);
             }
         }
@@ -644,7 +681,7 @@ mod test {
 
                     dst_slice.copy(&src_slice);
 
-                    let loaded = dst_slice.load();
+                    let loaded = dst_slice.load::<16>();
                     let expected =
                         (src_align..(src_align + len)).map(|v| v as u8).collect::<Vec<_>>();
                     assert_eq!(

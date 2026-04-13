@@ -80,7 +80,7 @@
 use super::buffer::{MapBuffer, VmoOrName};
 use super::lock::RwMapLock;
 use super::{MapError, MapImpl, MapKey, MapValueRef};
-use ebpf::MapSchema;
+use ebpf::{EbpfBufferPtr, MapSchema};
 use linux_uapi::{BPF_EXIST, BPF_NOEXIST};
 use siphasher::sip::SipHasher;
 use std::hash::Hasher;
@@ -642,20 +642,20 @@ impl MapImpl for HashMap {
         Some(MapValueRef::new_from_hashmap(value_ref))
     }
 
-    fn update(&self, key: MapKey, value: &[u8], flags: u64) -> Result<(), MapError> {
-        let mut bucket = self.get_bucket_for_key(&key).write();
+    fn update(&self, key: &[u8], value: EbpfBufferPtr<'_>, flags: u64) -> Result<(), MapError> {
+        let mut bucket = self.get_bucket_for_key(key).write();
 
         let mut entry_to_reuse = None;
 
         if flags & (BPF_NOEXIST as u64) != 0 {
-            if bucket.find(&key).is_some() {
+            if bucket.find(key).is_some() {
                 return Err(MapError::EntryExists);
             }
         } else {
             // `update()` must be atomic. The old entry is removed from the
             // bucket and replaced with a new one. The old entry is reused if
             // possible, i.e. if it's not being used by other threads.
-            match bucket.remove(&key) {
+            match bucket.remove(key) {
                 Some(entry_ref) => {
                     if entry_ref.is_only_reference() {
                         entry_to_reuse = Some(entry_ref);
@@ -675,8 +675,8 @@ impl MapImpl for HashMap {
             None => self.store().free_list().write().alloc().ok_or(MapError::SizeLimit)?,
         };
 
-        let entry = bucket.insert(free_entry, &key);
-        entry.value().store(value);
+        let entry = bucket.insert(free_entry, key);
+        entry.value().copy(&value);
 
         Ok(())
     }

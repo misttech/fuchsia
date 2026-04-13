@@ -74,16 +74,16 @@ impl MapImpl for Array {
         self.value_ptr(key).map(|ptr| MapValueRef::new(ptr))
     }
 
-    fn update(&self, key: MapKey, value: &[u8], flags: u64) -> Result<(), MapError> {
+    fn update(&self, key: &[u8], value: EbpfBufferPtr<'_>, flags: u64) -> Result<(), MapError> {
         assert!(value.len() == self.value_size);
 
-        let ptr = self.value_ptr(&key).ok_or(MapError::SizeLimit)?;
+        let ptr = self.value_ptr(key).ok_or(MapError::SizeLimit)?;
 
         if flags == BPF_NOEXIST as u64 {
             return Err(MapError::EntryExists);
         }
 
-        ptr.store(value);
+        ptr.copy(&value);
 
         Ok(())
     }

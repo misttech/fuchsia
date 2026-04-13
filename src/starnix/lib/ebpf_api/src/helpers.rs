@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::maps::{Map, MapKey, MapValueRef, RingBuffer, RingBufferWakeupPolicy};
-use ebpf::{BpfValue, EbpfHelperImpl, EbpfProgramContext, FromBpfValue, HelperSet};
+use crate::MapKey;
+use crate::maps::{Map, MapValueRef, RingBuffer, RingBufferWakeupPolicy};
+use ebpf::{BpfValue, EbpfBufferPtr, EbpfHelperImpl, EbpfProgramContext, FromBpfValue, HelperSet};
 use inspect_stubs::track_stub;
 use linux_uapi::{
     bpf_func_id_BPF_FUNC_get_current_pid_tgid, bpf_func_id_BPF_FUNC_get_current_uid_gid,
@@ -55,12 +56,12 @@ fn bpf_map_lookup_elem<'a, C: MapsProgramContext>(
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
     // SAFETY: safety is ensured by the verifier.
-    let key =
-        unsafe { std::slice::from_raw_parts(key.as_ptr::<u8>(), map.schema.key_size as usize) };
+    let key = unsafe { EbpfBufferPtr::new(key.as_ptr::<u8>(), map.schema.key_size as usize) };
+    let key: MapKey = key.load();
 
     C::on_map_access(context, map);
 
-    let Some(value_ref) = map.lookup(key) else {
+    let Some(value_ref) = map.lookup(&key) else {
         return BpfValue::default();
     };
 
@@ -85,19 +86,18 @@ fn bpf_map_update_elem<C: MapsProgramContext>(
 ) -> BpfValue {
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
-    // SAFETY: safety is ensured by the verifier.
-    let key =
-        unsafe { std::slice::from_raw_parts(key.as_ptr::<u8>(), map.schema.key_size as usize) };
-    // SAFETY: safety is ensured by the verifier.
-    let value =
-        unsafe { std::slice::from_raw_parts(value.as_ptr::<u8>(), map.schema.value_size as usize) };
-    let flags = flags.as_u64();
 
-    let key = MapKey::from_slice(key);
+    // SAFETY: safety is ensured by the verifier.
+    let key = unsafe { EbpfBufferPtr::new(key.as_ptr::<u8>(), map.schema.key_size as usize) };
+    let key: MapKey = key.load();
+
+    // SAFETY: safety is ensured by the verifier.
+    let value = unsafe { EbpfBufferPtr::new(value.as_ptr::<u8>(), map.schema.value_size as usize) };
+    let flags = flags.as_u64();
 
     C::on_map_access(context, map);
 
-    map.update(key, value, flags).map(|_| 0).unwrap_or(u64::MAX).into()
+    map.update(&key, value, flags).map(|_| 0).unwrap_or(u64::MAX).into()
 }
 
 fn bpf_map_delete_elem<C: MapsProgramContext>(
@@ -111,12 +111,12 @@ fn bpf_map_delete_elem<C: MapsProgramContext>(
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
     // SAFETY: safety is ensured by the verifier.
-    let key =
-        unsafe { std::slice::from_raw_parts(key.as_ptr::<u8>(), map.schema.key_size as usize) };
+    let key = unsafe { EbpfBufferPtr::new(key.as_ptr::<u8>(), map.schema.key_size as usize) };
+    let key: MapKey = key.load();
 
     C::on_map_access(context, map);
 
-    map.delete(key).map(|_| 0).unwrap_or(u64::MAX).into()
+    map.delete(&key).map(|_| 0).unwrap_or(u64::MAX).into()
 }
 
 fn bpf_trace_printk<C: EbpfProgramContext>(

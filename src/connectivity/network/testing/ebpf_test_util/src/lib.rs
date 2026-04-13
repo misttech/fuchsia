@@ -161,8 +161,6 @@ impl TestProgram {
     pub fn write_test_config(&self, config: TestConfig) {
         let mut state = self.read_test_state();
         state.config = config;
-        self.maps[0]
-            .update(ebpf_api::MapKey::from_slice(&[0; 4]), state.as_bytes(), 0)
-            .expect("store test state");
+        self.maps[0].update(&[0; 4], state.as_mut_bytes().into(), 0).expect("store test state");
     }
 }

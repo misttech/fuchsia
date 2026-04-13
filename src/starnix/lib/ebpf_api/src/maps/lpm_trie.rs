@@ -819,11 +819,10 @@ impl MapImpl for LpmTrie {
         longest_match.map(|node| MapValueRef::new_from_lpm_trie(state.value(&node).unwrap()))
     }
 
-    fn update(&self, key: MapKey, value: &[u8], flags: u64) -> Result<(), MapError> {
+    fn update(&self, key: &[u8], value: EbpfBufferPtr<'_>, flags: u64) -> Result<(), MapError> {
         let state = self.store().trie().write();
 
         // Validate the key.
-        let key = key.as_slice();
         assert!(key.len() == self.layout.key_size as usize);
         if key.key_len() > 8 * (self.layout.key_size as usize - 4) {
             return Err(MapError::InvalidKey);
@@ -843,7 +842,7 @@ impl MapImpl for LpmTrie {
                 // (if any) to free space in the heap in case it's full.
                 std::mem::drop(state.take_value(&node));
                 let data_entry = self.store().heap().write().alloc().ok_or(MapError::SizeLimit)?;
-                data_entry.ptr().store(value);
+                data_entry.ptr().copy(&value);
                 node.set_value(data_entry);
 
                 return Ok(());
@@ -859,7 +858,7 @@ impl MapImpl for LpmTrie {
         // succeeds it's safe to assume that we will be able to allocate 1 or
         // 2 new nodes below, so the rest of the operation can't fail.
         let data_entry = self.store().heap().write().alloc().ok_or(MapError::SizeLimit)?;
-        data_entry.ptr().store(value);
+        data_entry.ptr().copy(&value);
 
         let new_node = state.allocate_node();
         new_node.set_key(key, None);
@@ -932,9 +931,7 @@ impl MapImpl for LpmTrie {
         let state = self.store().trie().read();
 
         fn key_from_node(node: &LpmTrieNode<'_>, layout: &Layout) -> MapKey {
-            let mut key = node.key().load();
-            key.resize(layout.key_size as usize, 0);
-            MapKey::from_slice(&key)
+            node.key().slice(..layout.key_size as usize).unwrap().load()
         }
 
         fn get_leftmost_node<'a>(
@@ -1081,17 +1078,18 @@ mod test {
         )
         .unwrap();
 
-        let lookup =
-            |trie: &LpmTrie, key: &[u8]| trie.lookup(&key).unwrap().ptr().load()[..4].to_owned();
+        let lookup = |trie: &LpmTrie, key: &[u8]| {
+            trie.lookup(&key).unwrap().ptr().load::<16>()[..4].to_owned()
+        };
 
         let key1 = serialize_key(8, &[0b01010001]);
         assert!(&trie.lookup(&key1).is_none());
-        trie.update(MapKey::from_slice(&key1), &[1, 2, 3, 4], 0).unwrap();
+        trie.update(&key1, (&mut [1, 2, 3, 4]).into(), 0).unwrap();
         assert_eq!(lookup(&trie, &key1), vec![1, 2, 3, 4]);
 
         let key2 = serialize_key(16, &[0b01010001, 0b10101010]);
         assert_eq!(lookup(&trie, &key2), vec![1, 2, 3, 4]);
-        trie.update(MapKey::from_slice(&key2), &[5, 6, 7, 8], 0).unwrap();
+        trie.update(&key2, (&mut [5, 6, 7, 8]).into(), 0).unwrap();
         assert_eq!(lookup(&trie, &key1), vec![1, 2, 3, 4]);
         assert_eq!(lookup(&trie, &key2), vec![5, 6, 7, 8]);
 
@@ -1104,7 +1102,7 @@ mod test {
         assert_eq!(lookup(&trie, &key4), vec![1, 2, 3, 4]);
 
         // Test update for an existing key.
-        trie.update(MapKey::from_slice(&key1), &[9, 10, 11, 12], 0).unwrap();
+        trie.update(&key1, (&mut [9, 10, 11, 12]).into(), 0).unwrap();
         assert_eq!(lookup(&trie, &key1), vec![9, 10, 11, 12]);
 
         let missing_key = serialize_key(6, &[0b01011000]);
@@ -1126,26 +1124,20 @@ mod test {
         .unwrap();
         for i in 0..10 {
             let key = serialize_key(8, &[i]);
-            trie.update(MapKey::from_slice(&key), &[i, 1, 2, 3], 0)
-                .expect("Failed to update map entry");
+            trie.update(&key, (&mut [i, 1, 2, 3]).into(), 0).expect("Failed to update map entry");
         }
 
         // Shouldn't be able to insert another entry since the map is full.
         let key10 = serialize_key(8, &[10]);
-        assert_eq!(
-            trie.update(MapKey::from_slice(&key10), &[10, 1, 2, 3], 0),
-            Err(MapError::SizeLimit)
-        );
+        assert_eq!(trie.update(&key10, (&mut [10, 1, 2, 3]).into(), 0), Err(MapError::SizeLimit));
 
         // It's still possible to update an existing entry.
         let key2 = serialize_key(8, &[2]);
-        trie.update(MapKey::from_slice(&key2), &[5, 1, 2, 3], 0)
-            .expect("Failed to replace map entry");
+        trie.update(&key2, (&mut [5, 1, 2, 3]).into(), 0).expect("Failed to replace map entry");
 
         // Once a value is removed it should be possible to insert another one.
         trie.delete(key2.as_slice()).expect("Failed to delete map entry");
-        trie.update(MapKey::from_slice(&key10), &[10, 1, 2, 3], 0)
-            .expect("Failed to insert map entry");
+        trie.update(&key10, (&mut [10, 1, 2, 3]).into(), 0).expect("Failed to insert map entry");
     }
 
     fn get_short_key(id: usize) -> Vec<u8> {
@@ -1223,22 +1215,21 @@ mod test {
         for id in ids.iter() {
             let id = *id;
             let key = get_key(id as usize);
-            trie.update(MapKey::from_slice(&key), &[id, 1, 2, 3], 0)
-                .expect("Failed to update map entry");
+            trie.update(&key, (&mut [id, 1, 2, 3]).into(), 0).expect("Failed to update map entry");
         }
 
         // Try looking up all entries.
         for id in 0..NUM_ENTRIES {
             let key = get_key(id as usize);
-            let value = trie.lookup(&key).unwrap().ptr().load()[..4].to_owned();
-            assert_eq!(value, vec![id, 1, 2, 3]);
+            let value = trie.lookup(&key).unwrap().ptr().load::<16>()[0..4].to_owned();
+            assert_eq!(&value[..], &[id, 1, 2, 3]);
 
             // Try looking up the same key with an extra bit at the end. This
             // should yield the same result or another key that's longer than the current one.
             let mut key2 = Key::read_from_bytes(&key).unwrap();
             key2.len += 1;
-            let value = trie.lookup(&key2.as_bytes()).unwrap().ptr().load()[..4].to_owned();
-            if value != vec![id, 1, 2, 3] {
+            let value = trie.lookup(&key2.as_bytes()).unwrap().ptr().load::<16>()[0..4].to_owned();
+            if &value[..] != &[id, 1, 2, 3] {
                 let found_id = value[0] as usize;
                 assert!(get_key(found_id).as_slice().key_len() > key.as_slice().key_len());
             }
@@ -1272,15 +1263,14 @@ mod test {
         for id in ids.iter() {
             let id = *id;
             let key = get_key(id as usize);
-            trie.update(MapKey::from_slice(&key), &[id, 1, 2, 3], 0)
-                .expect("Failed to update map entry");
+            trie.update(&key, (&mut [id, 1, 2, 3]).into(), 0).expect("Failed to update map entry");
         }
 
         // Try looking up all entries.
         for id in 0..NUM_ENTRIES {
             let key = get_key(id as usize);
-            let value = trie.lookup(&key).unwrap().ptr().load()[..4].to_owned();
-            assert_eq!(value, vec![id as u8, 1, 2, 3]);
+            let value = trie.lookup(&key).unwrap().ptr().load::<16>()[0..4].to_owned();
+            assert_eq!(&value[..], &[id as u8, 1, 2, 3]);
         }
 
         // Remove all entries in random order.

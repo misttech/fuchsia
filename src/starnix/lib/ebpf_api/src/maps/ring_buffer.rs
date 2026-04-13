@@ -6,7 +6,7 @@ use super::buffer::{MapBuffer, VmoOrName};
 use super::lock::RwMapLock;
 use super::vmar::AllocatedVmar;
 use super::{MapError, MapImpl, MapKey, MapValueRef};
-use ebpf::MapSchema;
+use ebpf::{EbpfBufferPtr, MapSchema};
 use linux_uapi::{
     BPF_RB_FORCE_WAKEUP, BPF_RB_NO_WAKEUP, BPF_RINGBUF_BUSY_BIT, BPF_RINGBUF_DISCARD_BIT,
     BPF_RINGBUF_HDR_SZ,
@@ -342,7 +342,7 @@ impl MapImpl for RingBuffer {
         None
     }
 
-    fn update(&self, _key: MapKey, _value: &[u8], _flags: u64) -> Result<(), MapError> {
+    fn update(&self, _key: &[u8], _value: EbpfBufferPtr<'_>, _flags: u64) -> Result<(), MapError> {
         Err(MapError::InvalidParam)
     }
 

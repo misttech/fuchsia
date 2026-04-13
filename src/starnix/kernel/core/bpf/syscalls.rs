@@ -253,13 +253,13 @@ pub fn sys_bpf(
             // SAFETY: this union object was created with FromBytes so it's safe to access any
             // variant because all variants must be valid with all bit patterns.
             let user_value = UserAddress::from(unsafe { elem_attr.__bindgen_anon_1.value });
-            let value =
+            let mut value =
                 current_task.read_memory_to_vec(user_value, map.schema.value_size as usize)?;
 
             let _suspend_lock =
                 current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock(locked);
 
-            map.update(key, &value, flags).map_err(map_error_to_errno)?;
+            map.update(&key[..], value.as_mut_bytes().into(), flags).map_err(map_error_to_errno)?;
             Ok(SUCCESS)
         }
 
@@ -388,12 +388,14 @@ pub fn sys_bpf(
         // the filesystem.
         bpf_cmd_BPF_OBJ_PIN => {
             let result = (|| {
-                let pin_attr: bpf_attr__bindgen_ty_5 = read_attr(current_task, attr_addr, attr_size)?;
+                let pin_attr: bpf_attr__bindgen_ty_5 =
+                    read_attr(current_task, attr_addr, attr_size)?;
                 log_trace!("BPF_OBJ_PIN {:?}", pin_attr);
                 security::check_bpf_access(current_task, cmd, &pin_attr, attr_size)?;
                 let bpf_fd = FdNumber::from_raw(pin_attr.bpf_fd as i32);
                 let object = get_bpf_object(current_task, bpf_fd)?;
-                let path_addr = UserCString::new(current_task, UserAddress::from(pin_attr.pathname));
+                let path_addr =
+                    UserCString::new(current_task, UserAddress::from(pin_attr.pathname));
                 let pathname = current_task.read_path(path_addr)?;
                 let (parent, basename) = current_task.lookup_parent_at(
                     locked,

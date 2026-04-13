@@ -139,7 +139,7 @@ fn validate_map_flags(schema: &MapSchema) -> Result<(), MapError> {
 
 trait MapImpl: Send + Sync + Debug {
     fn lookup<'a>(&'a self, key: &[u8]) -> Option<MapValueRef<'a>>;
-    fn update(&self, key: MapKey, value: &[u8], flags: u64) -> Result<(), MapError>;
+    fn update(&self, key: &[u8], value: EbpfBufferPtr<'_>, flags: u64) -> Result<(), MapError>;
     fn delete(&self, key: &[u8]) -> Result<(), MapError>;
     fn get_next_key(&self, key: Option<&[u8]>) -> Result<MapKey, MapError>;
     fn vmo(&self) -> &Arc<zx::Vmo>;
@@ -196,6 +196,9 @@ impl MapReference for PinnedMap {
 
 // Avoid allocation for eBPF keys smaller than 16 bytes.
 pub type MapKey = smallvec::SmallVec<[u8; 16]>;
+
+// Avoid allocation for eBPF values smaller than 64 bytes.
+pub type MapValue = smallvec::SmallVec<[u8; 64]>;
 
 // Access rights required for a map VMO handle. Should be consistent with the
 // rights specified in FIDL. READ, WRITE and MAP rights are required to access
@@ -264,16 +267,11 @@ impl Map {
         self.map_impl.lookup(key)
     }
 
-    pub fn load(&self, key: &[u8]) -> Option<Vec<u8>> {
-        let mut result = self.lookup(key)?.ptr().load();
-
-        // Remove padding if any.
-        result.resize(self.schema.value_size as usize, 0);
-
-        Some(result)
+    pub fn load(&self, key: &[u8]) -> Option<MapValue> {
+        self.lookup(key).map(|v| v.ptr().slice(0..self.schema.value_size as usize).unwrap().load())
     }
 
-    pub fn update(&self, key: MapKey, value: &[u8], flags: u64) -> Result<(), MapError> {
+    pub fn update(&self, key: &[u8], value: EbpfBufferPtr<'_>, flags: u64) -> Result<(), MapError> {
         if flags & (BPF_EXIST as u64) > 0 && flags & (BPF_NOEXIST as u64) > 0 {
             return Err(MapError::InvalidParam);
         }
@@ -553,9 +551,9 @@ mod test {
 
         // Set a value in one map and check that it's updated in the other.
         let key = vec![0, 0, 0, 0];
-        let value = [0, 1, 2, 3];
-        map1.update(MapKey::from_vec(key.clone()), &value, 0).unwrap();
-        assert_eq!(&map2.load(&key).unwrap(), &value);
+        let mut value = [0, 1, 2, 3];
+        map1.update(&MapKey::from_vec(key.clone()), (&mut value).into(), 0).unwrap();
+        assert_eq!(&map2.load(&key).unwrap()[..], &value);
     }
 
     #[fuchsia::test]
@@ -574,9 +572,9 @@ mod test {
 
         // Set a value in one map and check that it's updated in the other.
         let key = vec![0, 0, 0, 0];
-        let value = [0, 1, 2, 3];
-        map1.update(MapKey::from_vec(key.clone()), &value, 0).unwrap();
-        assert_eq!(&map2.load(&key).unwrap(), &value);
+        let mut value = [0, 1, 2, 3];
+        map1.update(&MapKey::from_vec(key.clone()), (&mut value).into(), 0).unwrap();
+        assert_eq!(&map2.load(&key).unwrap()[..], &value);
     }
 
     #[fuchsia::test]
@@ -603,22 +601,25 @@ mod test {
         let map = Map::new(schema, "test").unwrap();
 
         for i in 0..10000 {
-            assert!(map.update(get_key(i), &get_value(i, 0), 0).is_ok());
+            assert!(map.update(&get_key(i), (&mut get_value(i, 0)).into(), 0).is_ok());
         }
 
         // Should fail to add another entry when the map is full.
-        assert_eq!(map.update(get_key(10001), &get_value(10001, 1), 0), Err(MapError::SizeLimit));
+        assert_eq!(
+            map.update(&get_key(10001), (&mut get_value(10001, 1)).into(), 0),
+            Err(MapError::SizeLimit)
+        );
 
         for i in 0..10000 {
-            assert_eq!(map.load(&get_key(i)), Some(get_value(i, 0)));
+            assert_eq!(&map.load(&get_key(i)).unwrap()[..], &get_value(i, 0));
         }
 
         // Update some elements.
         for i in 8000..9000 {
-            assert!(map.update(get_key(i), &get_value(i, 1), 0).is_ok());
+            assert!(map.update(&get_key(i), (&mut get_value(i, 1)).into(), 0).is_ok());
         }
         for i in 8000..9000 {
-            assert_eq!(map.load(&get_key(i)), Some(get_value(i, 1)));
+            assert_eq!(&map.load(&get_key(i)).unwrap()[..], &get_value(i, 1));
         }
 
         // Delete half of the entries.
@@ -631,14 +632,14 @@ mod test {
 
         // Replace removed entries with new ones
         for i in 10000..15000 {
-            assert!(map.update(get_key(i), &get_value(i, 2), 0).is_ok());
+            assert!(map.update(&get_key(i), (&mut get_value(i, 2)).into(), 0).is_ok());
         }
 
         for i in 0..5000 {
-            assert_eq!(map.load(&get_key(i)), Some(get_value(i, 0)));
+            assert_eq!(&map.load(&get_key(i)).unwrap()[..], &get_value(i, 0));
         }
         for i in 10000..15000 {
-            assert_eq!(map.load(&get_key(i)), Some(get_value(i, 2)));
+            assert_eq!(&map.load(&get_key(i)).unwrap()[..], &get_value(i, 2));
         }
     }
 
@@ -654,8 +655,8 @@ mod test {
 
         let map = Map::new(schema, "test").unwrap();
         let key = MapKey::from_vec("12345".to_string().into_bytes());
-        let value = (0..11).collect::<Vec<u8>>();
-        assert!(map.update(key.clone(), &value, 0).is_ok());
+        let mut value = (0..11).collect::<Vec<u8>>();
+        assert!(map.update(&key.clone(), (&mut value).into(), 0).is_ok());
 
         // Access a value directly the way eBPF programs do.
         let value_ref = map.lookup(&key).unwrap();
@@ -667,7 +668,7 @@ mod test {
             *value_ref.ptr().get_ptr::<u32>(0).unwrap().deref_mut() = 0xabacadae;
         }
 
-        assert_eq!(map.load(&key), Some(vec![0xae, 0xad, 0xac, 0xab, 4, 5, 6, 7, 8, 9, 10]));
+        assert_eq!(&map.load(&key).unwrap()[..], &[0xae, 0xad, 0xac, 0xab, 4, 5, 6, 7, 8, 9, 10]);
     }
 
     #[fuchsia::test]
@@ -683,18 +684,18 @@ mod test {
         let map = Map::new(schema, "test").unwrap();
         let key = MapKey::from_vec("12345".to_string().into_bytes());
         let key2 = MapKey::from_vec("24122".to_string().into_bytes());
-        let value = (0..11).collect::<Vec<u8>>();
-        assert!(map.update(key.clone(), &value, 0).is_ok());
-        assert!(map.update(key2.clone(), &value, 0).is_ok());
+        let mut value = (0..11).collect::<Vec<u8>>();
+        assert!(map.update(&key.clone(), (&mut value).into(), 0).is_ok());
+        assert!(map.update(&key2.clone(), (&mut value).into(), 0).is_ok());
 
         let value_ref = map.lookup(&key).unwrap();
 
         // Delete an element. The corresponding data entry should not be
         // released until `value_ref` is dropped.
         assert!(map.delete(&key).is_ok());
-        assert_eq!(map.update(key.clone(), &value, 0), Err(MapError::SizeLimit));
+        assert_eq!(map.update(&key.clone(), (&mut value).into(), 0), Err(MapError::SizeLimit));
         drop(value_ref);
-        assert!(map.update(key.clone(), &value, 0).is_ok());
+        assert!(map.update(&key.clone(), (&mut value).into(), 0).is_ok());
     }
 
     #[fuchsia::test]
