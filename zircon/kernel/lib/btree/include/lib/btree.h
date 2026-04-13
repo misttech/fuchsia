@@ -49,7 +49,6 @@
 //  * Keys and values are both exactly 64-bits in size.
 //  * Keys are a plain uint64_t
 //  * Values are either a managed pointer (unique_ptr / RefPtr), raw pointer or a plain uint64_t.
-//  * Node size classes are fixed.
 //  * Key searching within a node is always linear and never a binary search.
 //  * Maximum tree depth is presently fixed at 8.
 //
@@ -80,14 +79,16 @@
 //
 // ## Variable-Sized Root
 //
-// To improve memory efficiency for small collections, the root node is variable-sized. It grows
-// through reallocation as items are added until it reaches the maximum size class. If the tree
-// depth increases, the new root node is again initialized at the smallest size class (on depth
-// growth the new root will always contain two items, the old root and its new sibling).
+// To improve memory efficiency for small collections, the root node is variable-sized. It grows,
+// doubling in size at every step, through reallocation as items are added until it reaches the
+// maximum size. If the tree depth increases, the new root node is again initialized at the smallest
+// size class (on depth growth the new root will always contain two items, the old root and its new
+// sibling).
 //
-// All non-root nodes (both leaf and intermediate) are allocated at the maximum size class. This
-// simplifies balancing and merging logic as it can be assumed that any time this is happening any
-// nodes involved will be of the same (maximum) size.
+// All non-root nodes (both leaf and intermediate) are allocated at the maximum size, which can be
+// controlled through the NodeSize template parameter. This simplifies balancing and merging logic
+// as it can be assumed that any time this is happening any nodes involved will be of the same
+// (maximum) size.
 //
 // ## Operational Optimizations
 //
@@ -126,14 +127,13 @@
 namespace btree {
 
 template <typename ValueType, typename Allocator = GlobalSlabAllocator,
-          typename Traits = DefaultTypeTraits<ValueType>,
+          typename Traits = DefaultTypeTraits<ValueType>, size_t NodeSize = 256,
           IteratorValidation Validation = IteratorValidation::Untracked,
           TreeValidation Validator = TreeValidation::None>
 class BTree {
  public:
-  using ContainerType = BTree<ValueType, Allocator, Traits, Validation, Validator>;
-  using NodeSizeParams = DefaultNodeSizeParams;
-  using TreeNode = Node<NodeSizeParams, Validator>;
+  using ContainerType = BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>;
+  using TreeNode = Node<NodeSize, Validator>;
   using Path = PathTracker<TreeNode>;
 
   template <typename>
@@ -333,21 +333,15 @@ class BTree {
   void clear();
 
   struct Utilization {
-    // The size class of the root node. Uses a signed type because -1 is used
-    // to indicate that the tree is empty and has no root node.
-    int32_t root_size_class;
+    size_t root_size_bytes;
     uint32_t num_non_root_nodes;
     size_t stored_values;
 
     // Helper to calculate, in bytes, the total size of all nodes in the tree. This serves to
     // represent all outstanding allocations against the Allocator interface.
     uint64_t nodes_in_bytes() const {
-      uint64_t bytes = 0;
-      if (root_size_class >= 0) {
-        bytes += NodeSizeParams::kSizeClasses[root_size_class];
-      }
-      bytes += static_cast<uint64_t>(num_non_root_nodes) *
-               NodeSizeParams::kSizeClasses[(std::size(NodeSizeParams::kSizeClasses) - 1)];
+      uint64_t bytes = root_size_bytes;
+      bytes += static_cast<uint64_t>(num_non_root_nodes) * NodeSize;
       return bytes;
     }
   };
@@ -610,10 +604,6 @@ class BTree {
   // in sorted order.
   static bool subtree_valid(TreeNode* node, uint64_t lower_bound, uint64_t upper_bound);
 
-  // The largest possible size class for the root node and the size class to allocate any non-root
-  // node.
-  static constexpr uint32_t kLargestNodeSizeClass = std::size(NodeSizeParams::kSizeClasses) - 1;
-
   // If the tree is empty the root_ is always a nullptr, otherwise root_ can point to one of:
   //  * A leaf node of varying size.
   //  * An intermediate node of varying size.
@@ -639,9 +629,9 @@ class BTree {
   [[no_unique_address]] BTreeGeneration<Validation> generation_;
 };
 
-template <typename ValueType, typename Allocator, typename Traits, IteratorValidation Validation,
-          TreeValidation Validator>
-void BTree<ValueType, Allocator, Traits, Validation, Validator>::clear() {
+template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
+          IteratorValidation Validation, TreeValidation Validator>
+void BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::clear() {
   generation_++;
 
   if (!root_) {
@@ -687,9 +677,10 @@ void BTree<ValueType, Allocator, Traits, Validation, Validator>::clear() {
   }
 }
 
-template <typename ValueType, typename Allocator, typename Traits, IteratorValidation Validation,
-          TreeValidation Validator>
-bool BTree<ValueType, Allocator, Traits, Validation, Validator>::debug_validate_tree() const {
+template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
+          IteratorValidation Validation, TreeValidation Validator>
+bool BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::debug_validate_tree()
+    const {
   if (!root_) {
     return true;
   }
@@ -702,10 +693,11 @@ bool BTree<ValueType, Allocator, Traits, Validation, Validator>::debug_validate_
   return subtree_valid(root_, 0, UINT64_MAX);
 }
 
-template <typename ValueType, typename Allocator, typename Traits, IteratorValidation Validation,
-          TreeValidation Validator>
-iterator_base<typename BTree<ValueType, Allocator, Traits, Validation, Validator>::TreeNode>
-BTree<ValueType, Allocator, Traits, Validation, Validator>::upper_bound_slot_internal(
+template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
+          IteratorValidation Validation, TreeValidation Validator>
+iterator_base<
+    typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::TreeNode>
+BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::upper_bound_slot_internal(
     uint64_t key, TreeNode* target, Path* path) const {
   TreeNode* cur = root_;
   while (true) {
@@ -721,10 +713,11 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::upper_bound_slot_int
   }
 }
 
-template <typename ValueType, typename Allocator, typename Traits, IteratorValidation Validation,
-          TreeValidation Validator>
-iterator_base<typename BTree<ValueType, Allocator, Traits, Validation, Validator>::TreeNode>
-BTree<ValueType, Allocator, Traits, Validation, Validator>::erase_internal(
+template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
+          IteratorValidation Validation, TreeValidation Validator>
+iterator_base<
+    typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::TreeNode>
+BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::erase_internal(
     iterator_base<TreeNode> iter) {
   __UNINITIALIZED Path path;
   if (iter.node_ != root_) {
@@ -864,20 +857,21 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::erase_internal(
   }
 }
 
-template <typename ValueType, typename Allocator, typename Traits, IteratorValidation Validation,
-          TreeValidation Validator>
-iterator_base<typename BTree<ValueType, Allocator, Traits, Validation, Validator>::TreeNode>
-BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item item) {
+template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
+          IteratorValidation Validation, TreeValidation Validator>
+iterator_base<
+    typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::TreeNode>
+BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_internal(Item item) {
   // Handle insertion into an empty tree.
   if (is_empty()) {
     // Start the root node at the smallest size.
     TreeNode* leaf =
-        reinterpret_cast<TreeNode*>(allocator_.allocate(NodeSizeParams::kSizeClasses[0]));
+        reinterpret_cast<TreeNode*>(allocator_.allocate(TreeNode::kSmallestOneItemNode));
     if (unlikely(!leaf)) {
       // Nothing modified yet, can just abort the operation.
       return {nullptr, 0};
     }
-    root_ = std::construct_at(leaf, 0, true, item);
+    root_ = std::construct_at(leaf, TreeNode::kSmallestOneItemNode, true, item);
     return {root_, 0};
   }
   // Search for the insertion slot.
@@ -888,7 +882,7 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
     return target;
   }
   // Pre-allocate our nodes.
-  Allocations<TreeNode, NodeSizeParams, Allocator> allocations(allocator_);
+  Allocations<TreeNode, Allocator> allocations(allocator_);
   {
     TreeNode* node = target.node_;
     // This loop holds the equivalent conditional logic as the actual insertion path, except it
@@ -898,8 +892,9 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
     while (node->is_full()) {
       if (node == root_) {
         // Can the root still be expanded?
-        if (node->size_class() < kLargestNodeSizeClass) {
-          if (!allocations.reserve(node->size_class() + 1)) {
+        const uint64_t root_size = node->size_bytes();
+        if (root_size < NodeSize) {
+          if (!allocations.reserve(root_size << 1)) {
             return {right_most_leaf(), TreeNode::kMaxValues};
           }
         } else {
@@ -907,8 +902,8 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
           if (path.is_full()) {
             return {right_most_leaf(), TreeNode::kMaxValues};
           }
-          if (!allocations.reserve(kLargestNodeSizeClass) ||
-              !allocations.reserve(NodeSizeParams::kFirstNonLeafRootClass)) {
+          if (!allocations.reserve(NodeSize) ||
+              !allocations.reserve(TreeNode::kSmallestTwoItemNode)) {
             return {right_most_leaf(), TreeNode::kMaxValues};
           }
         }
@@ -923,7 +918,7 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
       if (left && !left->is_full()) {
         break;
       }
-      if (!allocations.reserve(kLargestNodeSizeClass)) {
+      if (!allocations.reserve(NodeSize)) {
         return {right_most_leaf(), TreeNode::kMaxValues};
       }
       node = parent;
@@ -954,9 +949,10 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
     }
     if (target.node_ == root_) {
       // Check if the root can be expanded.
-      if (root_->size_class() < kLargestNodeSizeClass) {
+      const size_t root_size = root_->size_bytes();
+      if (root_size < NodeSize) {
         TreeNode* new_root =
-            allocations.take_next(root_->size_class() + 1, std::move(*root_), item, target.index_);
+            allocations.take_next(root_size << 1, std::move(*root_), item, target.index_);
         if (leaf_insert) {
           ret.node_ = new_root;
         }
@@ -965,7 +961,7 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
         return ret;
       }
       // Need to allocate a new node.
-      TreeNode* right = allocations.take_next(kLargestNodeSizeClass, leaf_insert);
+      TreeNode* right = allocations.take_next(NodeSize, leaf_insert);
       if (leaf_insert) {
         insert_leaf_list(target.node_, right);
       }
@@ -1033,7 +1029,7 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
     }
 
     // Need to allocate a new node. This is not the root node and so is always the largest size.
-    TreeNode* new_right = allocations.take_next(kLargestNodeSizeClass, leaf_insert);
+    TreeNode* new_right = allocations.take_next(NodeSize, leaf_insert);
     if (leaf_insert) {
       insert_leaf_list(target.node_, new_right);
     }
@@ -1059,7 +1055,7 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
   // Need to increase the depth with a new root.
   TreeNode* old_root = root_;
   Item left_node{.key = 0, .value = std::bit_cast<uint64_t>(old_root)};
-  root_ = allocations.take_next(NodeSizeParams::kFirstNonLeafRootClass, false, left_node, item);
+  root_ = allocations.take_next(TreeNode::kSmallestTwoItemNode, false, left_node, item);
   // The root_, being a non-leaf node, needs to track the left most and right most leaves. These
   // are either inherited from the old root (if it was an intermediate), or constructed as the
   // two leaf nodes we have.
@@ -1073,10 +1069,11 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_internal(Item
   return ret;
 }
 
-template <typename ValueType, typename Allocator, typename Traits, IteratorValidation Validation,
-          TreeValidation Validator>
-iterator_base<typename BTree<ValueType, Allocator, Traits, Validation, Validator>::TreeNode>
-BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_hint_internal(
+template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
+          IteratorValidation Validation, TreeValidation Validator>
+iterator_base<
+    typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::TreeNode>
+BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_hint_internal(
     iterator_base<TreeNode> hint, Item item) {
   // Skip empty trees and full nodes.
   if (!hint.node_ || hint.node_->is_full()) {
@@ -1118,16 +1115,17 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::insert_hint_internal
   return insert_internal(item);
 }
 
-template <typename ValueType, typename Allocator, typename Traits, IteratorValidation Validation,
-          TreeValidation Validator>
-BTree<ValueType, Allocator, Traits, Validation, Validator>::Utilization
-BTree<ValueType, Allocator, Traits, Validation, Validator>::calculate_utilization_slow() const {
+template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
+          IteratorValidation Validation, TreeValidation Validator>
+typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::Utilization
+BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::calculate_utilization_slow()
+    const {
   __UNINITIALIZED Path path;
   if (!root_) {
-    return Utilization{-1, 0, 0};
+    return Utilization{0, 0, 0};
   }
   Utilization util{0, 0, 0};
-  util.root_size_class = root_->size_class();
+  util.root_size_bytes = root_->size_bytes();
 
   if (root_->is_leaf()) {
     util.stored_values += root_->count();
@@ -1156,9 +1154,9 @@ BTree<ValueType, Allocator, Traits, Validation, Validator>::calculate_utilizatio
   return util;
 }
 
-template <typename ValueType, typename Allocator, typename Traits, IteratorValidation Validation,
-          TreeValidation Validator>
-bool BTree<ValueType, Allocator, Traits, Validation, Validator>::subtree_valid(
+template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
+          IteratorValidation Validation, TreeValidation Validator>
+bool BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::subtree_valid(
     TreeNode* node, uint64_t lower_bound, uint64_t upper_bound) {
   if (!node) {
     return true;

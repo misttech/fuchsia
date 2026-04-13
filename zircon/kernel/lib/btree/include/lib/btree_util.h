@@ -31,21 +31,10 @@ struct GlobalSlabAllocator {
   void deallocate(size_t size_align, void* ptr);
 };
 
-// Although termed 'default', these are currently the only allowed node size parameters.
-// TODO(https://fxbug.dev/494059275): Allow for providing custom parameters through a template
-// argument in BTree.
-struct DefaultNodeSizeParams {
-  // Size classes must be power of two bytes in ascending order.
-  static constexpr uint32_t kSizeClasses[] = {32, 64, 128, 256};
-  // Index into the size classes to use when allocating new root nodes when increasing the depth.
-  // This must be large enough to hold two items.
-  static constexpr uint32_t kFirstNonLeafRootClass = 1;
-};
-
 // Helper object for gathering all the allocations needed to perform an insert. Internally places
 // the allocations in an intrusively linked list until needed. Allocations must be registered, via
-// reserve, in the same order (i.e. size_class) that they are then retrieved with take_next.
-template <typename NodeType, typename NodeSizeParams, typename Allocator>
+// reserve, in the same order (i.e. size_bytes) that they are then retrieved with take_next.
+template <typename NodeType, typename Allocator>
 class Allocations {
  public:
   explicit Allocations(Allocator& allocator) : allocator_(allocator) {}
@@ -53,9 +42,9 @@ class Allocations {
     // Free any remaining allocations.
     while (head_) {
       Alloc* next = head_->next;
-      const uint32_t size_class = head_->size_class;
+      const size_t size_bytes = head_->size_bytes;
       std::destroy_at(head_);
-      allocator_.deallocate(NodeSizeParams::kSizeClasses[size_class], head_);
+      allocator_.deallocate(size_bytes, head_);
       head_ = next;
     }
   }
@@ -66,13 +55,13 @@ class Allocations {
 
   // Register another allocation. This will attempt the allocation and return false if it failed.
   // The allocation is added to the internal list.
-  bool reserve(uint32_t size_class) {
-    void* ptr = allocator_.allocate(NodeSizeParams::kSizeClasses[size_class]);
+  bool reserve(size_t size_bytes) {
+    void* ptr = allocator_.allocate(size_bytes);
     if (!ptr) {
       return false;
     }
 
-    Alloc* alloc = std::construct_at<Alloc>(static_cast<Alloc*>(ptr), nullptr, size_class);
+    Alloc* alloc = std::construct_at<Alloc>(static_cast<Alloc*>(ptr), nullptr, size_bytes);
     if (tail_) {
       tail_->next = alloc;
     } else {
@@ -85,16 +74,16 @@ class Allocations {
   // Retrieves the next allocation in order. It is an error to call this if a matching reserve was
   // not already performed.
   template <typename... Args>
-  NodeType* take_next(uint32_t size_class, Args&&... args) {
+  NodeType* take_next(size_t size_bytes, Args&&... args) {
     ZX_ASSERT(head_);
-    ZX_ASSERT(size_class == head_->size_class);
+    ZX_ASSERT(size_bytes == head_->size_bytes);
     Alloc* alloc = head_;
     head_ = head_->next;
     if (!head_) {
       tail_ = nullptr;
     }
     std::destroy_at(alloc);
-    NodeType* ret = std::construct_at<NodeType>(reinterpret_cast<NodeType*>(alloc), size_class,
+    NodeType* ret = std::construct_at<NodeType>(reinterpret_cast<NodeType*>(alloc), size_bytes,
                                                 std::forward<Args>(args)...);
     return ret;
   }
@@ -102,7 +91,7 @@ class Allocations {
  private:
   struct Alloc {
     Alloc* next;
-    uint32_t size_class;
+    uint32_t size_bytes;
   };
   Alloc* head_ = nullptr;
   Alloc* tail_ = nullptr;

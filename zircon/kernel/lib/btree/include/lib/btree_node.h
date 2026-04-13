@@ -31,22 +31,22 @@ namespace btree {
 // Because intermediate nodes store minimum keys rather than exact keys, symmetric lower_bound
 // operation across both leaf and intermediate nodes is not possible. Search operations therefore
 // always use upper_bound to find the correct subtree.
-template <typename NodeSizeParams, TreeValidation Validator>
+template <size_t NodeSize, TreeValidation Validator>
 class Node {
  public:
   // All node constructors need to be told what size they are and whether or not they are a leaf
   // type. Additional constructors also take various initial items or nodes to copy from.
-  Node(uint32_t size_class, bool leaf) : Node(size_class, nullptr, nullptr, leaf, 0) {}
-  Node(uint32_t size_class, Node&& node, Item item, uint32_t index)
-      : Node(size_class, node.prev(), node.next(), node.is_leaf(), node.count() + 1) {
-    BTREE_CHECK(size_class > node.size_class());
+  Node(size_t size_bytes, bool leaf) : Node(size_bytes, nullptr, nullptr, leaf, 0) {}
+  Node(size_t size_bytes, Node&& node, Item item, uint32_t index)
+      : Node(size_bytes, node.prev(), node.next(), node.is_leaf(), node.count() + 1) {
+    BTREE_CHECK(size_bytes > node.size_bytes());
     copy_insert(0, index, item, node, 0, node.count());
   }
-  Node(uint32_t size_class, bool leaf, Item item) : Node(size_class, nullptr, nullptr, leaf, 1) {
+  Node(size_t size_bytes, bool leaf, Item item) : Node(size_bytes, nullptr, nullptr, leaf, 1) {
     items_[0] = item;
   }
-  Node(uint32_t size_class, bool leaf, Item item1, Item item2)
-      : Node(size_class, nullptr, nullptr, leaf, 2) {
+  Node(size_t size_bytes, bool leaf, Item item1, Item item2)
+      : Node(size_bytes, nullptr, nullptr, leaf, 2) {
     items_[0] = item1;
     items_[1] = item2;
   }
@@ -162,12 +162,36 @@ class Node {
   void set_next(Node* next) { next_.set_ptr(next); }
   void set_prev(Node* prev) { prev_.set_ptr(prev); }
 
-  size_t size_bytes() const { return NodeSizeParams::kSizeClasses[size_class()]; }
-  uint32_t size_class() const { return prev_.data() & kSizeClassMask; }
+  size_t size_bytes() const {
+    return 1ul << (size_class() + std::bit_width(kSmallestOneItemNode) - 1);
+  }
 
-  // Number of bits needed to represent the size class.
-  static constexpr size_t kSizeClassSizeBits =
-      std::bit_width(std::size(NodeSizeParams::kSizeClasses));
+  static_assert(std::has_single_bit(NodeSize), "NodeSize must be power of 2");
+
+  // This is validated in the constructor so that offsetof can see the full definition of Node.
+  static constexpr size_t kHeaderSize = 16;
+
+  static constexpr size_t SizeForCount(size_t count) {
+    return std::bit_ceil(kHeaderSize + (sizeof(Item) * count));
+  }
+
+  // Size of the smallest node that can hold at least 1 item. It is invalid to attempt to create a
+  // node smaller than this.
+  static constexpr size_t kSmallestOneItemNode = SizeForCount(1);
+
+  // Size of the smallest node that can hold at least 2 items.
+  static constexpr size_t kSmallestTwoItemNode = SizeForCount(2);
+
+  static_assert(kSmallestOneItemNode <= NodeSize);
+  static_assert(kSmallestTwoItemNode <= NodeSize);
+
+  // Number of different node sizes possible.
+  static constexpr size_t kNumSizeClasses =
+      std::bit_width(NodeSize) - std::bit_width(kSmallestOneItemNode) + 1;
+
+  // Number of bits needed to represent the different sizes.
+  static constexpr size_t kSizeClassSizeBits = std::bit_width(kNumSizeClasses);
+
   static constexpr size_t kSizeClassMask = (1ul << kSizeClassSizeBits) - 1;
   // Use the next bit as the 'is_leaf' flag. This is the 0-based index of the leaf bit.
   static constexpr size_t kIsLeafBit = kSizeClassSizeBits;
@@ -176,30 +200,34 @@ class Node {
   // The size class and is_leaf flag are stored with the prev_ pointer and must fit into the
   // pointer to every size class, i.e. at least a pointer to the smallest class.
   static constexpr size_t kPrevDataBits = kIsLeafBit + 1;
-  static_assert((1ul << kPrevDataBits) <= NodeSizeParams::kSizeClasses[0]);
+  static_assert((1ul << kPrevDataBits) <= kSmallestOneItemNode);
 
   // Calculates our maximum count given a size in bytes.
   static constexpr uint32_t MaxCountFromSize(size_t bytes) {
-    static_assert(sizeof(Item) == sizeof(uint64_t) * 2);
-    return static_cast<uint32_t>((bytes / sizeof(uint64_t) / 2) - 1);
+    return static_cast<uint32_t>((bytes - kHeaderSize) / sizeof(Item));
   }
-  // Given a size class (index into kSizeClasses) returns the maximum count.
-  static constexpr uint32_t MaxCountFromClass(uint32_t size_class) {
-    return MaxCountFromSize(NodeSizeParams::kSizeClasses[size_class]);
+
+  // Ensure that the largest node can hold a 'decent' number of items. This ensures that a tree is
+  // not accidentally built that will easily overflow the 8 depth limit.
+  static_assert(MaxCountFromSize(NodeSize) >= 10);
+
+  static constexpr size_t SizeBytesToClass(size_t size_bytes) {
+    return std::bit_width(size_bytes) - std::bit_width(kSmallestOneItemNode);
   }
+  static_assert(SizeBytesToClass(kSmallestOneItemNode) == 0);
+  static_assert(SizeBytesToClass(NodeSize) == kNumSizeClasses - 1);
 
   // Similarly the maximum count must fit into a pointer to every size class. This requirement
   // avoids having to dynamically size the mask of the count based on the current size size class.
-  static constexpr uint32_t kMaxValues =
-      MaxCountFromClass((std::size(NodeSizeParams::kSizeClasses) - 1));
+  static constexpr uint32_t kMaxValues = MaxCountFromSize(NodeSize);
   static constexpr size_t kNextDataBits = std::bit_width(kMaxValues);
-  static_assert((1ul << kNextDataBits) <= NodeSizeParams::kSizeClasses[0]);
+  static_assert((1ul << kNextDataBits) <= kSmallestOneItemNode);
 
   // The target min values only applies to non-root nodes, and so is derived from kMaxValues.
   static constexpr uint32_t kTargetMinValues = kMaxValues / 2;
 
   bool is_leaf() const { return prev_.data() & kIsLeafMask; }
-  uint32_t max_count() const { return MaxCountFromClass(size_class()); }
+  uint32_t max_count() const { return MaxCountFromSize(size_bytes()); }
   uint32_t count() const { return static_cast<uint32_t>(next_.data()); }
   void set_count(uint32_t count) {
     BTREE_CHECK(count <= max_count());
@@ -207,11 +235,18 @@ class Node {
   }
 
  private:
-  // All other constructors route here. The size_class indirectly tells us how large the items_
-  // array is by informing us of the total size of the allocation we are situated in. This is stored
-  // with the prev_ pointer along with whether or not this is a leaf node.
-  Node(uint32_t size_class, Node* prev, Node* next, bool is_leaf, size_t initial_count)
-      : prev_(prev, size_class | (is_leaf ? kIsLeafMask : 0)), next_(next, initial_count) {}
+  // All other constructors route here. The size_bytes tells us how large the items_ array is by
+  // informing us of the total size of the allocation we are situated in. This is stored with the
+  // prev_ pointer along with whether or not this is a leaf node.
+  Node(size_t size_bytes, Node* prev, Node* next, bool is_leaf, size_t initial_count)
+      : prev_(prev, SizeBytesToClass(size_bytes) | (is_leaf ? kIsLeafMask : 0)),
+        next_(next, initial_count) {
+    static_assert(offsetof(Node, items_) == kHeaderSize, "kHeaderSize must match offsetof items_");
+    BTREE_CHECK(size_bytes >= kSmallestOneItemNode && size_bytes <= NodeSize &&
+                std::has_single_bit(size_bytes));
+  }
+
+  uint32_t size_class() const { return prev_.data() & kSizeClassMask; }
 
   // Creates |amount| uninitialized slots at |index| by shifting up the existing items. Also updates
   // the count. Caller is responsible for filling in the slots.
@@ -256,7 +291,7 @@ class Node {
 
   // The Node will be allocated in block of memory of varying sizes, which determines how many
   // items_ we are storing and so a flexible array memory is used to support this dynamism. The size
-  // of this array can be inferred from the |size_class| passed into the constructor, which gets
+  // of this array can be inferred from the |size_bytes| passed into the constructor, which gets
   // stored as part of the packed data in the prev_ pointer (this is what the max_count helper
   // does).
   // |Item| itself must be trivially constructible and destructible as the items are implicitly

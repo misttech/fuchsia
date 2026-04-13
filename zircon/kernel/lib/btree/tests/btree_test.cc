@@ -86,7 +86,7 @@ struct IndirectAllocator {
 };
 
 template <typename T>
-using BTree = btree::BTree<T, IndirectAllocator, btree::DefaultTypeTraits<T>,
+using BTree = btree::BTree<T, IndirectAllocator, btree::DefaultTypeTraits<T>, 256,
                            btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
 
 TEST(BTreeTest, Smoke) {
@@ -216,7 +216,7 @@ TEST(BTreeTest, AllocationFailure) {
 
   // Validate allocated nodes are as we expect.
   auto util = tree.calculate_utilization_slow();
-  EXPECT_EQ(util.root_size_class, 1u);
+  EXPECT_EQ(util.root_size_bytes, 64u);
   EXPECT_EQ(util.stored_values, kLeafSlots);
   EXPECT_EQ(util.num_non_root_nodes, kLevel2Nodes + kLevel3Nodes + kLeafNodes);
 
@@ -551,7 +551,7 @@ TEST(BTreeTest, Utilization) {
 
   // Empty tree utilization.
   auto util = tree.calculate_utilization_slow();
-  EXPECT_EQ(util.root_size_class, -1);
+  EXPECT_EQ(util.root_size_bytes, 0u);
   EXPECT_EQ(util.num_non_root_nodes, 0u);
   EXPECT_EQ(util.stored_values, 0u);
   EXPECT_EQ(util.nodes_in_bytes(), 0u);
@@ -560,7 +560,7 @@ TEST(BTreeTest, Utilization) {
   auto it1 = tree.insert(1, 1);
   EXPECT_TRUE(it1 != tree.end());
   util = tree.calculate_utilization_slow();
-  EXPECT_EQ(util.root_size_class, 0);
+  EXPECT_EQ(util.root_size_bytes, 32u);
   EXPECT_EQ(util.num_non_root_nodes, 0u);
   EXPECT_EQ(util.stored_values, 1u);
   EXPECT_EQ(util.nodes_in_bytes(), 32u);
@@ -569,7 +569,7 @@ TEST(BTreeTest, Utilization) {
   auto it2 = tree.insert(2, 2);
   EXPECT_TRUE(it2 != tree.end());
   util = tree.calculate_utilization_slow();
-  EXPECT_EQ(util.root_size_class, 1);
+  EXPECT_EQ(util.root_size_bytes, 64u);
   EXPECT_EQ(util.num_non_root_nodes, 0u);
   EXPECT_EQ(util.stored_values, 2u);
   EXPECT_EQ(util.nodes_in_bytes(), 64u);
@@ -577,7 +577,7 @@ TEST(BTreeTest, Utilization) {
   auto it3 = tree.insert(3, 3);
   EXPECT_TRUE(it3 != tree.end());
   util = tree.calculate_utilization_slow();
-  EXPECT_EQ(util.root_size_class, 1);
+  EXPECT_EQ(util.root_size_bytes, 64u);
   EXPECT_EQ(util.num_non_root_nodes, 0u);
   EXPECT_EQ(util.stored_values, 3u);
   EXPECT_EQ(util.nodes_in_bytes(), 64u);
@@ -593,12 +593,8 @@ TEST(BTreeTest, Utilization) {
   EXPECT_EQ(util.stored_values, 20u);
 
   // Calculate expected bytes.
-  uint64_t expected_bytes = 0;
-  if (util.root_size_class >= 0) {
-    uint32_t kSizeClasses[] = {32, 64, 128, 256};
-    expected_bytes += kSizeClasses[util.root_size_class];
-  }
-  expected_bytes += util.num_non_root_nodes * 256u;  // std::size(kSizeClasses) - 1 is 3 (256 bytes)
+  uint64_t expected_bytes = util.root_size_bytes;
+  expected_bytes += util.num_non_root_nodes * 256u;
 
   EXPECT_EQ(util.nodes_in_bytes(), expected_bytes);
   // Erase all items to test emptiness again.
@@ -606,7 +602,7 @@ TEST(BTreeTest, Utilization) {
     tree.erase(tree.find(i));
   }
   util = tree.calculate_utilization_slow();
-  EXPECT_EQ(util.root_size_class, -1);
+  EXPECT_EQ(util.root_size_bytes, 0u);
   EXPECT_EQ(util.num_non_root_nodes, 0u);
   EXPECT_EQ(util.stored_values, 0u);
   EXPECT_EQ(util.nodes_in_bytes(), 0u);
