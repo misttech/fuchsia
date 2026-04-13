@@ -102,6 +102,7 @@ python_library("honeydew_no_testonly") {
     "affordances/tracing/errors.py",
     "affordances/tracing/tracing.py",
     "affordances/tracing/tracing_using_fc.py",
+    "affordances/tracing/tracing_using_ffx.py",
     "affordances/ui/screenshot/__init__.py",
     "affordances/ui/screenshot/screenshot.py",
     "affordances/ui/screenshot/screenshot_using_ffx.py",
@@ -193,6 +194,7 @@ group("honeydew_ffx_tool_deps") {
     "//src/developer/ffx/plugins/log:ffx_log_tool_test_data",
     "//src/developer/ffx/plugins/session:ffx_session_tool_test_data",
     "//src/developer/ffx/plugins/test:ffx_test_tool_test_data",
+    "//src/developer/ffx/plugins/trace:ffx_trace_tool_test_data",
     "//src/developer/ffx/tools/monitor:ffx_monitor_test_data",
     "//src/developer/ffx/tools/starnix:ffx_starnix_test_data",
   ]
