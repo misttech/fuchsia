@@ -4,9 +4,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+
 from antlion.controllers.ap_lib import dhcp_config
 from antlion.test_utils.dhcp import base_test
-from mobly import asserts, test_runner
+from mobly import asserts, signals, test_runner
 
 
 class Dhcpv4InteropFixtureTest(base_test.Dhcpv4InteropFixture):
@@ -18,6 +19,11 @@ class Dhcpv4InteropFixtureTest(base_test.Dhcpv4InteropFixture):
 
     def test_invalid_options_not_accepted(self) -> None:
         """Ensures the DHCP server doesn't accept invalid options"""
+        if self.openwrt_ap:
+            raise signals.TestSkip(
+                "OpenWrt does not support explicit invalid option validation"
+            )
+
         ap_params = self.setup_ap()
         subnet_conf = dhcp_config.Subnet(
             subnet=ap_params.network,
@@ -30,6 +36,11 @@ class Dhcpv4InteropFixtureTest(base_test.Dhcpv4InteropFixture):
 
     def test_invalid_parameters_not_accepted(self) -> None:
         """Ensures the DHCP server doesn't accept invalid parameters"""
+        if self.openwrt_ap:
+            raise signals.TestSkip(
+                "OpenWrt does not support explicit invalid parameter validation"
+            )
+
         ap_params = self.setup_ap()
         subnet_conf = dhcp_config.Subnet(
             subnet=ap_params.network,

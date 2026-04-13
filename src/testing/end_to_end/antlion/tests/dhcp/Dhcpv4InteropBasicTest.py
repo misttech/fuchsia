@@ -54,10 +54,11 @@ class Dhcpv4InteropBasicTest(base_test.Dhcpv4InteropFixture):
 
         dhcp_logs = self.get_dhcp_logs()
 
-        if hasattr(self, "openwrt_ap"):
+        pattern = ""
+        if self.openwrt_ap:
             # dnsmasq logs "no address available" when dynamic DHCP is disabled and the client is unknown.
             pattern = r"DHCPDISCOVER.*no address available"
-        else:
+        elif self.access_point:
             # ISC DHCPD logs "no free leases" when it cannot offer a lease due to "deny unknown-clients".
             pattern = r"DHCPDISCOVER.*no free leases"
 
