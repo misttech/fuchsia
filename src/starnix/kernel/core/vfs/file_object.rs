@@ -1886,19 +1886,22 @@ impl FileObject {
                 reason = "Force documented unsafe blocks in Starnix"
             )]
             let locked = unsafe { Unlocked::new() };
-            let (_guard, locked) = self.node().append_lock.read_and(locked, current_task)?;
-
-            // According to LTP test pwrite04:
-            //
-            //   POSIX requires that opening a file with the O_APPEND flag should have no effect on the
-            //   location at which pwrite() writes data. However, on Linux, if a file is opened with
-            //   O_APPEND, pwrite() appends data to the end of the file, regardless of the value of offset.
-            if self.flags().contains(OpenFlags::APPEND) && self.ops().is_seekable() {
-                checked_add_offset_and_length(offset, data.available())?;
-                offset = default_eof_offset(locked, self, current_task)? as usize;
+            if self.flags().contains(OpenFlags::APPEND) {
+                let (_guard, locked) = self.node().append_lock.write_and(locked, current_task)?;
+                // According to LTP test pwrite04:
+                //
+                //   POSIX requires that opening a file with the O_APPEND flag should have no effect on the
+                //   location at which pwrite() writes data. However, on Linux, if a file is opened with
+                //   O_APPEND, pwrite() appends data to the end of the file, regardless of the value of offset.
+                if self.ops().is_seekable() {
+                    checked_add_offset_and_length(offset, data.available())?;
+                    offset = default_eof_offset(locked, self, current_task)? as usize;
+                }
+                self.write_common(locked, current_task, offset, data)
+            } else {
+                let (_guard, locked) = self.node().append_lock.read_and(locked, current_task)?;
+                self.write_common(locked, current_task, offset, data)
             }
-
-            self.write_common(locked, current_task, offset, data)
         })
     }
 

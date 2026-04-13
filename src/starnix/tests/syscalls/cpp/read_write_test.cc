@@ -2,9 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/uio.h>
 #include <unistd.h>
+
+#include <cstring>
+#include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -56,8 +62,8 @@ TEST(ReadWriteTest, preadv_pwritev) {
   EXPECT_STREQ(read_buffer, kWriteBuffer);
 }
 
-// TODO(https://fxbug.dev/42068846) implement partial read/write support (we'll also need tests for read(),
-//                        writev(), and readv()).
+// TODO(https://fxbug.dev/42068846) implement partial read/write support (we'll
+// also need tests for read(), writev(), and readv()).
 TEST(ReadWriteTest, DISABLED_PartialWrite) {
   test_helper::ScopedTempFD temp_file;
   ASSERT_TRUE(temp_file);
@@ -88,4 +94,38 @@ TEST(ReadWriteTest, DISABLED_PartialWrite) {
   EXPECT_EQ(off_t(kPageSize), off);
 
   munmap(addr, size);
+}
+
+TEST(ReadWriteTest, PwriteOAppendAtomicity) {
+  test_helper::ScopedTempFD temp_file;
+  ASSERT_TRUE(temp_file);
+
+  int flags = fcntl(temp_file.fd(), F_GETFL);
+  ASSERT_NE(flags, -1);
+  ASSERT_EQ(fcntl(temp_file.fd(), F_SETFL, flags | O_APPEND), 0);
+
+  constexpr size_t kNumThreads = 100;
+  constexpr size_t kWriteSize = 1000;
+  constexpr size_t kNumWrites = 10;
+  std::vector<std::thread> threads;
+
+  for (size_t i = 0; i < kNumThreads; ++i) {
+    threads.emplace_back([fd = temp_file.fd(), i]() {
+      char buf[kWriteSize];
+      memset(buf, static_cast<int>('a' + i), kWriteSize);
+      for (size_t j = 0; j < kNumWrites; ++j) {
+        ssize_t written = pwrite(fd, buf, kWriteSize, 0);
+        EXPECT_EQ(written, static_cast<ssize_t>(kWriteSize));
+      }
+    });
+  }
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  // Check file size. If atomicity fails, size will likely be less than expected.
+  struct stat st;
+  ASSERT_EQ(fstat(temp_file.fd(), &st), 0);
+  EXPECT_EQ(st.st_size, static_cast<off_t>(kNumThreads * kWriteSize * kNumWrites));
 }
