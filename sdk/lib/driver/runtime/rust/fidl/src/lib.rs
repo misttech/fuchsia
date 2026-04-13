@@ -15,6 +15,7 @@ use std::ptr::NonNull;
 use std::slice;
 use std::task::{Context, Poll};
 
+use fidl_next::protocol::NonBlockingTransport;
 use fidl_next::{AsDecoder, Chunk, HasExecutor};
 use zx::Status;
 
@@ -408,19 +409,7 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
         _cx: &mut Context<'_>,
         shared: &Self::Shared,
     ) -> Poll<Result<(), Option<Self::Error>>> {
-        let arena = Arena::new();
-        let message = Message::new_with(arena, |arena| {
-            let data = arena.insert_slice(&buffer.data);
-            let handles = buffer.handles.split_off(0);
-            let handles = arena.insert_from_iter(handles);
-            (Some(data), Some(handles))
-        });
-        let result = match shared.get_locked().channel.write(message) {
-            Ok(()) => Ok(()),
-            Err(Status::PEER_CLOSED) => Err(None),
-            Err(e) => Err(Some(e)),
-        };
-        Poll::Ready(result)
+        Poll::Ready(Self::send_immediately(&mut *buffer, shared))
     }
 
     fn begin_recv(
@@ -475,6 +464,26 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
                 }
             }
             Pending => Pending,
+        }
+    }
+}
+
+impl<D: OnDispatcher> fidl_next::protocol::NonBlockingTransport for DriverChannel<D> {
+    fn send_immediately(
+        future_state: &mut Self::SendFutureState,
+        shared: &Self::Shared,
+    ) -> Result<(), Option<Self::Error>> {
+        let arena = Arena::new();
+        let message = Message::new_with(arena, |arena| {
+            let data = arena.insert_slice(&future_state.data);
+            let handles = future_state.handles.split_off(0);
+            let handles = arena.insert_from_iter(handles);
+            (Some(data), Some(handles))
+        });
+        match shared.get_locked().channel.write(message) {
+            Ok(()) => Ok(()),
+            Err(Status::PEER_CLOSED) => Err(None),
+            Err(e) => Err(Some(e)),
         }
     }
 }
