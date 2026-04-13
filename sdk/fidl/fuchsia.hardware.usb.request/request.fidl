@@ -76,9 +76,18 @@ type Request = resource table {
     /// Data. This array is consumed in-order, and allows for scatter/gather semantics across
     /// physically non-contiguous regions of a large buffer.
     1: data vector<BufferRegion>:MAX;
+
     /// Indicates not to complete this Request when done unless it failed.
     /// All Requests up to the next defer_completion == false are responded to as one unit.
     2: defer_completion bool;
+
     /// Extra information needed for Request.
     3: information RequestInfo;
+
+    /// True if this is a short transfer sending less than what the receiver is
+    /// expecting. Controllers ensure this transfer is terminated by a short
+    /// packet.
+    ///
+    /// Interpreted as false if absent.
+    4: short bool;
 };
