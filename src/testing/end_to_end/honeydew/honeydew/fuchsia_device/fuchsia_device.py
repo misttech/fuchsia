@@ -70,7 +70,12 @@ from honeydew.affordances.rtc import rtc, rtc_using_fc
 from honeydew.affordances.session import session, session_using_ffx
 from honeydew.affordances.starnix import errors as starnix_errors
 from honeydew.affordances.starnix import starnix, starnix_using_ffx
-from honeydew.affordances.tracing import tracing, tracing_using_fc
+from honeydew.affordances.tracing import (
+    tracing,
+    tracing_using_fc,
+    tracing_using_ffx,
+)
+from honeydew.affordances.tracing import types as tracing_types
 from honeydew.affordances.ui.screenshot import screenshot, screenshot_using_ffx
 from honeydew.affordances.ui.user_input import user_input, user_input_using_fc
 from honeydew.affordances.virtual_audio import (
@@ -565,6 +570,13 @@ class FuchsiaDevice(
         Returns:
             tracing.Tracing object
         """
+        impl = self._get_tracing_affordance_implementation()
+        if impl == tracing_types.Implementation.FFX:
+            return tracing_using_ffx.TracingUsingFfx(
+                device_name=self.device_name,
+                ffx_inst=self.ffx,
+                reboot_affordance=self,
+            )
         return tracing_using_fc.TracingUsingFc(
             device_name=self.device_name,
             fuchsia_controller=self.fuchsia_controller,
@@ -1658,6 +1670,32 @@ class FuchsiaDevice(
             raise errors.ConfigError(
                 f"Invalid value passed in config['affordances']['bluetooth']['implementation]. "
                 f"Valid values are: {list(map(str, bluetooth_types.Implementation))}"
+            ) from err
+
+    def _get_tracing_affordance_implementation(
+        self,
+        should_exist: bool = False,
+    ) -> tracing_types.Implementation:
+        """Parses the tracing affordance config and returns which implementation to use."""
+        if self._config is None:
+            return tracing_types.Implementation.FUCHSIA_CONTROLLER
+
+        tracing_affordance_implementation: str | None = common.read_from_dict(
+            self._config,
+            key_path=("affordances", "tracing", "implementation"),
+            should_exist=should_exist,
+        )
+        if tracing_affordance_implementation is None:
+            return tracing_types.Implementation.FUCHSIA_CONTROLLER
+
+        try:
+            return tracing_types.Implementation(
+                tracing_affordance_implementation
+            )
+        except ValueError as err:
+            raise errors.ConfigError(
+                f"Invalid value passed in config['affordances']['tracing']['implementation']. "
+                f"Valid values are: {list(map(str, tracing_types.Implementation))}"
             ) from err
 
     @cached_property

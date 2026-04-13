@@ -103,6 +103,7 @@ python_library("honeydew_no_testonly") {
     "affordances/tracing/tracing.py",
     "affordances/tracing/tracing_using_fc.py",
     "affordances/tracing/tracing_using_ffx.py",
+    "affordances/tracing/types.py",
     "affordances/ui/screenshot/__init__.py",
     "affordances/ui/screenshot/screenshot.py",
     "affordances/ui/screenshot/screenshot_using_ffx.py",
