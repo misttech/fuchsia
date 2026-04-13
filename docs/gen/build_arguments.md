@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:180
+From //build/bazel/bazel_root_targets_list.gni:181
 
 ### bazel_upload_build_events
 
@@ -945,7 +945,7 @@ This should never be set as a build argument.
 }
   aarch64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = ""
+  libunwind_so = "../../../../out/not-default/libunwind.so"
   resource_dir = "lib/clang/23"
   variants = {
   asan = {
@@ -1015,7 +1015,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
@@ -1032,7 +1032,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -2183,6 +2183,13 @@ artifact. Schema is:
 ```none
 [{
   bazel_label = "//zircon/tools/merkleroot"
+}, {
+  bazel_label = "//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:go_example_bin_migrated"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_example_bin_migrated_/go_example_bin_migrated"
+  ninja = "go_example_bin_migrated"
+}]
+  install_host_tool = true
 }, {
   bazel_label = "//tools/rust_test_parser:rust_test_parser"
   copy_outputs = [{
