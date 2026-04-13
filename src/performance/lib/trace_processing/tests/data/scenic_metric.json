@@ -84,7 +84,10 @@
             "pid": 582653,
             "tid": 582658,
             "ph": "X",
-            "dur": 5
+            "dur": 5,
+            "args": {
+                "frame_number": 13
+            }
         },
         {
             "cat": "gfx",
@@ -140,11 +143,26 @@
         {
             "cat": "gfx",
             "name": "ApplyScheduledSessionUpdates",
+            "ts": 10,
+            "pid": 582653,
+            "tid": 582658,
+            "ph": "X",
+            "dur": 5,
+            "args": {
+                "frame_number": 14
+            }
+        },
+        {
+            "cat": "gfx",
+            "name": "ApplyScheduledSessionUpdates",
             "ts": 11,
             "pid": 582653,
             "tid": 582658,
             "ph": "X",
-            "dur": 5
+            "dur": 5,
+            "args": {
+                "frame_number": 14
+            }
         },
         {
             "cat": "gfx",
@@ -240,7 +258,10 @@
             "pid": 582653,
             "tid": 582658,
             "ph": "X",
-            "dur": 5
+            "dur": 5,
+            "args": {
+                "frame_number": 1
+            }
         },
         {
             "cat": "gfx",
@@ -312,7 +333,10 @@
             "pid": 582653,
             "tid": 582658,
             "ph": "X",
-            "dur": 5
+            "dur": 5,
+            "args": {
+                "frame_number": 2
+            }
         },
         {
             "cat": "gfx",
@@ -384,7 +408,10 @@
             "pid": 582653,
             "tid": 582658,
             "ph": "X",
-            "dur": 5
+            "dur": 5,
+            "args": {
+                "frame_number": 3
+            }
         },
         {
             "cat": "gfx",
@@ -481,7 +508,10 @@
             "pid": 582653,
             "tid": 582658,
             "ph": "X",
-            "dur": 5
+            "dur": 5,
+            "args": {
+                "frame_number": 5
+            }
         }
     ]
 }

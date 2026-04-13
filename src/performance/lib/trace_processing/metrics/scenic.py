@@ -18,6 +18,7 @@ _SCENIC_RENDER_EVENT_NAME: str = "RenderFrame"
 _DISPLAY_VSYNC_READY_EVENT_NAME: str = "Flatland::DisplayCompositor::OnVsync"
 _PREP_AND_RENDER_FLOW_NAME: str = "scenic_frame"
 _RENDER_FLOW_NAME: str = "render_frame_to_vsync"
+_FRAME_NUMBER_ARG_NAME: str = "frame_number"
 
 
 class _ScenicTracingEvent:
@@ -86,16 +87,7 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
             type=trace_model.DurationEvent,
         )
 
-        # Since `filter_events()` returns a Generator, make a local copy so we can iterate over the
-        # events more than once.
-        scenic_start_events = list(
-            trace_utils.filter_events(
-                model.all_events(),
-                category=_EVENT_CATEGORY,
-                name=_SCENIC_START_EVENT_NAME,
-                type=trace_model.DurationEvent,
-            )
-        )
+        scenic_start_events = self._get_scenic_start_events(model)
         tracing_events: list[_ScenicTracingEvent] = []
         for e in scenic_start_events:
             render_event = trace_utils.get_nearest_following_flow_event(
@@ -173,3 +165,35 @@ class ScenicMetricsProcessor(trace_metrics.MetricsProcessor):
                 )
 
         return test_case_results
+
+    def _get_scenic_start_events(
+        self, model: trace_model.Model
+    ) -> list[trace_model.DurationEvent]:
+        # Filter out squashed frames by checking for the latest `frame_number` instances.
+        # If Scenic's frame scheduler applies updates and then decides that no frame needs to be
+        # displayed, the frame number is NOT incremented. So, by going through the
+        # _SCENIC_START_EVENT_NAME in chronological order and stomping any earlier one with the same
+        # frame number, we keep only those that have a corresponding _SCENIC_RENDER_EVENT_NAME.
+        rendered_scenic_start_events: dict[int, trace_model.DurationEvent] = {}
+
+        for event in trace_utils.filter_events(
+            model.all_events(),
+            category=_EVENT_CATEGORY,
+            name=_SCENIC_START_EVENT_NAME,
+            type=trace_model.DurationEvent,
+        ):
+            frame_number = event.args.get(_FRAME_NUMBER_ARG_NAME)
+            if frame_number is None:
+                raise ValueError(
+                    f"Trace event '{_SCENIC_START_EVENT_NAME}' at {event.start} is missing the load-bearing '{_FRAME_NUMBER_ARG_NAME}' argument."
+                )
+            if (
+                frame_number not in rendered_scenic_start_events
+                or event.start
+                > rendered_scenic_start_events[frame_number].start
+            ):
+                rendered_scenic_start_events[frame_number] = event
+
+        scenic_start_events = list(rendered_scenic_start_events.values())
+        scenic_start_events.sort(key=lambda e: e.start)
+        return scenic_start_events
