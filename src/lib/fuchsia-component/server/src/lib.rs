@@ -10,6 +10,8 @@ use anyhow::Error;
 use fidl::endpoints::{
     DiscoverableProtocolMarker, Proxy as _, RequestStream, ServerEnd, ServiceMarker, ServiceRequest,
 };
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component_client::connect_channel_to_protocol;
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
@@ -30,7 +32,6 @@ use vfs::name::Name;
 use vfs::remote::remote_dir;
 use vfs::service::endpoint;
 use zx::MonotonicDuration;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 mod service;
 pub use service::{
@@ -476,8 +477,24 @@ macro_rules! add_functions {
                 + 'static,
             H: Send + Sync + 'static,
         {
+            self.add_fidl_next_service_instance_at::<S, H>(S::SERVICE_NAME, instance_name, handler)
+        }
+
+        /// Adds a FIDL service to the directory with a custom service name.
+        pub fn add_fidl_next_service_instance_at<S, H>(
+            &mut self,
+            path: impl Into<String>,
+            instance_name: impl Into<String>,
+            handler: H,
+        ) -> &mut Self
+        where
+            S: ::fidl_next::DiscoverableService
+                + ::fidl_next::DispatchServiceHandler<H, zx::Channel>
+                + 'static,
+            H: Send + Sync + 'static,
+        {
             // Create the service directory, with an instance subdirectory
-            let mut dir = self.dir(S::SERVICE_NAME);
+            let mut dir = self.dir(path);
             let mut dir = dir.dir(instance_name);
 
             let handler = std::sync::Arc::new(

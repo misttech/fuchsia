@@ -9,6 +9,7 @@ fidl("fuchsia.driver.metadata") {
   stable = false
   sdk_area = "Driver SDK"
   sources = [ "fuchsia.driver.metadata.fidl" ]
+  enable_rust_next = true
 
   public_deps = [ "//zircon/vdso/zx" ]
 }

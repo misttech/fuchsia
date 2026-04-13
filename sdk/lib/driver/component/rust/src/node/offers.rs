@@ -62,6 +62,11 @@ impl<S> ServiceOffer<S> {
         Self { service_name, instances, _p: PhantomData }
     }
 
+    /// Builds an offer for a service with a custom service name.
+    pub fn new_with_name(service_name: impl Into<String>) -> Self {
+        Self { service_name: service_name.into(), instances: vec![], _p: PhantomData }
+    }
+
     /// Builds an offer for a zircon transport service based on the given [`ServiceMarker`].
     ///
     /// This is mostly useful if the compiler can't derive the type of `S` on its own.
@@ -101,7 +106,7 @@ impl<S> ServiceOffer<S> {
         FidlServiceMember<F, SR, O::Output>: Into<O>,
     {
         let name = name.into();
-        fs.dir("svc").add_fidl_service_instance(name.clone(), f);
+        fs.dir("svc").add_fidl_service_instance_at(self.service_name.clone(), name.clone(), f);
         self.named_default_instance(name)
     }
 
@@ -123,7 +128,11 @@ impl<S> ServiceOffer<S> {
         H: Send + Sync + 'static,
     {
         let name = name.into();
-        fs.dir("svc").add_fidl_next_service_instance::<S, _>(name.clone(), handler);
+        fs.dir("svc").add_fidl_next_service_instance_at::<S, _>(
+            self.service_name.clone(),
+            name.clone(),
+            handler,
+        );
         self.named_default_instance(name)
     }
 
@@ -143,7 +152,7 @@ impl<S> ServiceOffer<S> {
         FidlServiceMember<F, SR, O::Output>: Into<O>,
     {
         let name = name.into();
-        fs.dir("svc").add_fidl_service_instance(name.clone(), f);
+        fs.dir("svc").add_fidl_service_instance_at(self.service_name.clone(), name.clone(), f);
         self.named_instance(name)
     }
 
@@ -164,7 +173,11 @@ impl<S> ServiceOffer<S> {
         H: Send + Sync + 'static,
     {
         let name = name.into();
-        fs.dir("svc").add_fidl_next_service_instance::<S, _>(name.clone(), handler);
+        fs.dir("svc").add_fidl_next_service_instance_at::<S, _>(
+            self.service_name.clone(),
+            name.clone(),
+            handler,
+        );
         self.named_instance(name)
     }
 
