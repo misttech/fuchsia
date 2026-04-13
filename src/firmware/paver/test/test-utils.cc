@@ -4,6 +4,7 @@
 
 #include "src/firmware/paver/test/test-utils.h"
 
+#include <fcntl.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
@@ -27,6 +28,31 @@
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
 
 namespace {
+
+class RamdiskVolumeConnector : public paver::VolumeConnector {
+ public:
+  explicit RamdiskVolumeConnector(const ramdevice_client::Ramdisk& ramdisk) : ramdisk_(ramdisk) {}
+
+  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const override {
+    return ramdisk_.ConnectBlock();
+  }
+
+  zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>> PartitionManagement()
+      const override {
+    ZX_PANIC("Not implemented");
+  }
+
+  fidl::UnownedClientEnd<fuchsia_device::Controller> Controller() const override {
+    return ramdisk_.LegacyController();
+  }
+
+  fidl::ClientEnd<fuchsia_device::Controller> TakeController() override {
+    ZX_PANIC("Not implemented");
+  }
+
+ private:
+  const ramdevice_client::Ramdisk& ramdisk_;
+};
 
 void CreateBadBlockMap(void* buffer) {
   // Set all entries in first BBT to be good blocks.
@@ -331,4 +357,8 @@ fbl::Array<uint8_t> CreateZbiHeader(paver::Arch arch, size_t payload_size,
   }
 
   return data;
+}
+
+std::unique_ptr<paver::VolumeConnector> BlockDevice::GetConnector() const {
+  return std::make_unique<RamdiskVolumeConnector>(ramdisk_);
 }

@@ -367,28 +367,24 @@ class FixedOffsetBlockPartitionClientTest : public PaverTest {
 
     ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr_));
 
-    ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), "sys/platform/ram-disk/ramctl")
-                  .status_value());
-    ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), "sys/platform").status_value());
-
     constexpr uint8_t kEmptyType[GPT_GUID_LEN] = GUID_EMPTY_VALUE;
-    ASSERT_NO_FATAL_FAILURE(
-        BlockDevice::CreateLegacy(&gpt_dev_, devmgr_.devfs_root(), kEmptyType, 2, 512));
+    fbl::unique_fd svc_root;
+    ASSERT_OK(fdio_fd_create(devmgr_.RealmExposedDir().TakeHandle().release(),
+                             svc_root.reset_and_get_address()));
+    ASSERT_NO_FATAL_FAILURE(BlockDevice::Create(&gpt_dev_, svc_root, kEmptyType, 2, 512));
   }
 
   // Creates a BlockPartitionClient which will read/write the entire device.
   zx::result<std::unique_ptr<paver::BlockPartitionClient>> RawClient() {
-    return paver::BlockPartitionClient::Create(
-        std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToLegacyController()));
+    return paver::BlockPartitionClient::Create(gpt_dev_->GetConnector());
   }
 
   // Creates a FixedOffsetBlockPartitionClient which will read/write with a partition
   // and buffer offset
   zx::result<std::unique_ptr<paver::FixedOffsetBlockPartitionClient>> FixedOffsetClient(
       size_t partition_offset, size_t buffer_offset) {
-    return paver::FixedOffsetBlockPartitionClient::Create(
-        std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToLegacyController()),
-        partition_offset, buffer_offset);
+    return paver::FixedOffsetBlockPartitionClient::Create(gpt_dev_->GetConnector(),
+                                                          partition_offset, buffer_offset);
   }
 
   fidl::ClientEnd<fuchsia_io::Directory> GetSvcRoot() { return devmgr_.RealmExposedDir(); }
@@ -426,7 +422,7 @@ void Read(std::unique_ptr<paver::PartitionClient> client, std::string* data, siz
   ASSERT_OK(vmo.read(data->data(), 0, data->size()));
 }
 
-TEST_F(FixedOffsetBlockPartitionClientTest, DISABLED_GetPartitionSize) {
+TEST_F(FixedOffsetBlockPartitionClientTest, GetPartitionSize) {
   {
     auto status = RawClient()->GetPartitionSize();
     ASSERT_OK(status);
@@ -441,7 +437,7 @@ TEST_F(FixedOffsetBlockPartitionClientTest, DISABLED_GetPartitionSize) {
   }
 }
 
-TEST_F(FixedOffsetBlockPartitionClientTest, DISABLED_ReadOffsetedPartition) {
+TEST_F(FixedOffsetBlockPartitionClientTest, ReadOffsetedPartition) {
   const std::string block0(512, '0');
   const std::string firmware(512, 'F');
 
@@ -457,7 +453,7 @@ TEST_F(FixedOffsetBlockPartitionClientTest, DISABLED_ReadOffsetedPartition) {
   ASSERT_EQ(firmware, actual);
 }
 
-TEST_F(FixedOffsetBlockPartitionClientTest, DISABLED_WriteOffsetdPartition) {
+TEST_F(FixedOffsetBlockPartitionClientTest, WriteOffsetdPartition) {
   const std::string block0(512, '0');
   const std::string firmware(512, 'F');
 

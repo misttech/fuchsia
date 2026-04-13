@@ -115,6 +115,8 @@ class BlockDevice {
     return std::move(*result);
   }
 
+  std::unique_ptr<paver::VolumeConnector> GetConnector() const;
+
   fidl::ClientEnd<fuchsia_device::Controller> ConnectToLegacyController() const {
     fidl::ClientEnd<fuchsia_device::Controller> controller;
     zx::result controller_server = fidl::CreateEndpoints(&controller);
