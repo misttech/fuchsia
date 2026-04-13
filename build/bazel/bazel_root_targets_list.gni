@@ -47,7 +47,8 @@ declare_args() {
   #    install_host_tool [boolean]: Optional, set to true to make it available
   #       to the `fx host-tool <ninja_name>` command.
   #
-  default_bazel_root_host_targets = sdk_host_tool_bazel_targets + [
+  default_bazel_root_host_targets = sdk_host_tool_bazel_targets +
+                                    _migration_example_bazel_targets + [
                                       {
                                         bazel_label = "//tools/rust_test_parser:rust_test_parser"
                                         copy_outputs = [
