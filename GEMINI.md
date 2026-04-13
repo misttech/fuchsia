@@ -11,10 +11,8 @@ build systems. You must not generate Cargo.toml, CMakeLists.txt, or Makefile
 build files.
 
 By default, `fx build` triggers an incremental build. In most cases, `fx build`
-is sufficient for building. While `fx clean && fx build` or `fx clean-build` will
-trigger a full Fuchsia build, it is slow and you should avoid using it.  Always
-ask the user before running `fx clean` or `fx clean-build` and avoid running it
-as much as possible.
+is sufficient for building. If you need a full build, use `fx clean-build`,
+but avoid it as much as possible as it is very slow.
 
 Do not specify individual targets after the `fx build` command. Doing so prevents
 certain Bazel targets from building correctly.
@@ -34,9 +32,19 @@ If you're confused about why a command failed, try taking a look at the logs
 from the device before trying the next command. Device logs often reveal
 information not contained in host-side stdout/stderr.
 
-Always ask for confirmation before running `fx set` or otherwise changing the
-users build settings and before running destructive commands like `ffx target
-flash`.
+### Safety & Confirmations
+
+Follow these rules regarding user confirmations:
+
+1. **Destructive Commands (Always Ask):** Always ask for explicit confirmation
+   from the user before running `fx clean` (wipes global build cache), `ffx
+   target flash` (reboots device), or `fx ota`.
+2. **Build Configuration (`fx set`):**
+   - If changing settings is requested by the user or mandated by a skill
+     being executed, execute it immediately without confirmation.
+   - If exploring autonomously and needing a different build configuration,
+     use a sandboxed directory (e.g., `fx --dir out/agent_sandbox set <args>
+     --no-change-env`) to avoid disrupting the user's default environment.
 
 Documentation for Fuchsia is in the `docs/` subdirectory and the
 `vendor/google/docs/` subdirectory. You should read the documentation if you're
