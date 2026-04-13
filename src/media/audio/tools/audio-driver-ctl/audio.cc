@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <ctype.h>
+#include <dirent.h>
 #include <inttypes.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
@@ -74,6 +75,32 @@ static std::optional<uint64_t> GetUint64(const char* arg) {
     return {};
   }
   return {result};
+}
+
+static std::optional<uint64_t> GetOnlyDevId(bool input) {
+  const char* dev_path = input ? "/dev/class/audio-input" : "/dev/class/audio-output";
+  DIR* dir = opendir(dev_path);
+  if (!dir) {
+    return {};
+  }
+  struct dirent* de;
+  std::optional<uint64_t> first_id;
+  int count = 0;
+  while ((de = readdir(dir)) != nullptr) {
+    if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) {
+      continue;
+    }
+    char* end = nullptr;
+    uint64_t id = strtoull(de->d_name, &end, 16);
+    if (*end == '\0') {
+      if (count == 0) {
+        first_id = id;
+      }
+      count++;
+    }
+  }
+  closedir(dir);
+  return (count == 1) ? first_id : std::optional<uint64_t>{};
 }
 
 // LINT.IfChange
@@ -495,7 +522,7 @@ zx_status_t dump_stream_info(const audio::utils::AudioDeviceStream& stream) {
 
 int main(int argc, const char** argv) {
   Type type = Type::OUTPUT;
-  std::optional<uint64_t> dev_id = 0;
+  std::optional<uint64_t> dev_id;
   std::optional<uint64_t> frame_rate = DEFAULT_FRAME_RATE;
   std::optional<uint64_t> bits_per_sample = DEFAULT_BITS_PER_SAMPLE;
   std::optional<uint64_t> channels;
@@ -791,6 +818,13 @@ int main(int argc, const char** argv) {
 
   // Argument parsing is done, we can cancel the usage dump.
   print_usage.cancel();
+
+  if (!dev_id.has_value()) {
+    dev_id = GetOnlyDevId(type == Type::INPUT);
+    if (!dev_id.has_value()) {
+      dev_id = 0;
+    }
+  }
 
   // Open the selected stream.
   std::unique_ptr<audio::utils::AudioDeviceStream> stream;
