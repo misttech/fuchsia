@@ -204,6 +204,23 @@ TEST_F(OverlayFsTest, ListRoot) {
   EXPECT_EQ(list[2].inode_num, upper_list[1].inode_num);
 }
 
+TEST_F(OverlayFsTest, RootAttributes) {
+  // Use distinct modes for lower and upper roots.
+  ASSERT_THAT(chmod(lower_.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(chmod(upper_.c_str(), 0711), SyscallSucceeds());
+
+  ASSERT_NO_FATAL_FAILURE(Mount());
+
+  struct stat lower_stat, upper_stat, overlay_stat;
+  ASSERT_THAT(stat(lower_.c_str(), &lower_stat), SyscallSucceeds());
+  ASSERT_THAT(stat(upper_.c_str(), &upper_stat), SyscallSucceeds());
+  ASSERT_THAT(stat(overlay_.c_str(), &overlay_stat), SyscallSucceeds());
+  ASSERT_NE(upper_stat.st_mode, lower_stat.st_mode);
+
+  // Overlay root should have the same mode as the upper root.
+  EXPECT_EQ(overlay_stat.st_mode, upper_stat.st_mode);
+}
+
 TEST_F(OverlayFsTest, ListSubdir) {
   ASSERT_THAT(mkdir((lower_ + "/sub").c_str(), 0700), SyscallSucceeds());
   ASSERT_TRUE(files::WriteFile(lower_ + "/sub/a", "a"));
