@@ -526,6 +526,42 @@ TEST(PortStressTest, CancelKeyDuringMatchRace) {
   EXPECT_EQ(race_event_canceled + race_event_cancel_not_found, kIters);
 }
 
+// Test racing zx_port_cancel_key with zx_object_signal when multiple objects share the same key.
+TEST(PortStressTest, CancelKeySharedKeyRace) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  constexpr size_t kNumEvents = 1000;
+  std::vector<zx::event> events(kNumEvents);
+  const uint64_t key = 0x1234;
+
+  for (size_t i = 0; i < kNumEvents; i++) {
+    ASSERT_OK(zx::event::create(0u, &events[i]));
+    ASSERT_OK(events[i].wait_async(port, key, ZX_EVENT_SIGNALED, ZX_WAIT_ASYNC_ONCE));
+  }
+
+  std::atomic<bool> proceed{false};
+  auto signal_thread = std::thread([&]() {
+    while (!proceed.load()) {
+      std::this_thread::yield();
+    }
+    for (size_t i = 0; i < kNumEvents; i++) {
+      events[i].signal(0u, ZX_EVENT_SIGNALED);
+    }
+  });
+
+  proceed.store(true);
+
+  // This should trigger the race
+  zx_status_t status = port.cancel_key(0u, key);
+
+  // Both OK and NOT_FOUND are acceptable depending on timing,
+  // but it should not crash or hang.
+  EXPECT_TRUE(status == ZX_OK || status == ZX_ERR_NOT_FOUND);
+
+  signal_thread.join();
+}
+
 // Tests matching a port observer concurrently with closing the last handle to the port.
 TEST(PortStressTest, MatchHandleCloseRace) {
   zx::port port;

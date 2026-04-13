@@ -445,6 +445,12 @@ void PortDispatcher::MaybeReapLocked(PortObserver* observer, PortPacket* port_pa
                                      object_cache::UniquePtr<PortObserver>& destroyer) {
   canary_.Assert();
 
+  // If the packet's already canceled, we do not have to do anything. The canceling thread
+  // is responsible for reaping the observer - see PortDispatcher::CancelKey().
+  if (port_packet->is_canceled()) {
+    return;
+  }
+
   // We may be racing with on_zero_handles. Whichever one of us unlinks the dispatcher will be
   // responsible for ensuring the observer is cleaned up.
   Dispatcher* dispatcher = observer->UnlinkDispatcherLocked();
