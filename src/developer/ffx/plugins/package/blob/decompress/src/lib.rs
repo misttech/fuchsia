@@ -13,6 +13,7 @@ use std::fs::File;
 use std::io::prelude::*;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct DecompressTool {
     #[command]
     pub cmd: ffx_package_blob_decompress_args::DecompressCommand,
