@@ -22,6 +22,7 @@ class Tracing(abc.ABC):
         start_timeout_milliseconds: int | None = None,
         buffering_mode: f_tracing.BufferingMode | None = None,
         defer_transfer: bool | None = None,
+        compression: bool | None = None,
     ) -> None:
         """Initializes a trace sessions.
 
@@ -38,6 +39,7 @@ class Tracing(abc.ABC):
                 STREAMING - Data is streamed back to the trace_manager. Providers may still drop
                             records if events are produced faster than they can be streamed
             defer_transfer: If true, the trace_manager will delay sending data until tracing has stopped
+            compression: If true, compress the trace data.
 
         Raises:
             TracingStateError: When trace session is already initialized.
