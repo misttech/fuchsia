@@ -58,8 +58,13 @@ Accept a code review URL or ID number (e.g.,
 ### 7. Respond and Upload
 1.  Reply to the review comments on the CL using `fx gh` (e.g.,
     `fx gh pr comment <ID> --path <path> --line <line> -m <message>`).
+    *   **Note**: This command automatically detects existing threads on that
+        line and replies to the latest comment. You do not need to manage
+        thread IDs manually.
 2.  If appropriate, post a comment on the CL overall using `fx gh` (e.g.,
+
     `fx gh pr comment <ID> --body-file -m <message>`).
+
 3.  Upload a new version of the CL using the standard `git push` workflow
     (e.g., `git push origin HEAD:refs/for/main` or similar Gerrit branch
     target).

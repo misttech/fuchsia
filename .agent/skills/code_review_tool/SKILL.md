@@ -41,11 +41,14 @@ key mappings and differences you need to know:
 - To filter by author/owner, use the `--author` flag.
 
 #### `pr comment`
-- **Threading**: When posting a comment with `--path` and `--line`, the tool
-  automatically detects existing threads on that line and replies to the latest
-  comment. You do not need to manage thread IDs manually.
+- **Threading and Replying to Comments**: When posting a comment with
+  `--path` and `--line`, the tool automatically detects existing threads on
+  that line and replies to the latest comment. You do **not** need to manage
+  thread IDs manually.
 - If there are multiple independent threads on the same line, the tool replies
   to the one with the most recent activity.
+- **Example**: To reply to a review comment on line 42 of `src/foo.cc`:
+  `fx gh pr comment 1569017 --path src/foo.cc --line 42 -m "Done. Fixed as suggested."`
 
 ### 4. Uploading Changes
 - You do **not** need to use `fx gh` to upload or update CLs.
