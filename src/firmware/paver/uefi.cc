@@ -7,7 +7,6 @@
 #include <lib/fidl/cpp/channel.h>
 #include <zircon/process.h>
 #include <zircon/processargs.h>
-#include <zircon/system/public/zircon/errors.h>
 
 #include <algorithm>
 #include <cinttypes>
@@ -148,8 +147,6 @@ zx::result<std::unique_ptr<PartitionClient>> EfiDevicePartitioner::FindPartition
       return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 }
-
-zx::result<> EfiDevicePartitioner::WipeFvm() const { return gpt_->WipeFvm(); }
 
 zx::result<> EfiDevicePartitioner::ResetPartitionTables() const {
   LOG("Wiping GPT, expect data loss.\n");

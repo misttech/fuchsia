@@ -30,14 +30,10 @@ class AstroPartitioner : public DevicePartitioner {
 
   fidl::UnownedClientEnd<fuchsia_io::Directory> SvcRoot() const override;
 
-  bool IsFvmWithinFtl() const override { return true; }
-
   bool SupportsPartition(const PartitionSpec& spec) const override;
 
   zx::result<std::unique_ptr<PartitionClient>> FindPartition(
       const PartitionSpec& spec) const override;
-
-  zx::result<> WipeFvm() const override;
 
   zx::result<> ResetPartitionTables() const override;
 

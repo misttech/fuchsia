@@ -15,6 +15,7 @@
 #include <lib/fidl/epitaph.h>
 #include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/fzl/vmo-mapper.h>
+#include <lib/zbi-format/zbi.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
@@ -26,7 +27,6 @@
 #include <zircon/process.h>
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
-#include <zircon/system/public/zircon/errors.h>
 #include <zircon/types.h>
 
 #include <cstdarg>
@@ -41,11 +41,10 @@
 #include <storage/buffer/owned_vmoid.h>
 
 #include "src/firmware/paver/device-partitioner.h"
-#include "src/firmware/paver/fvm.h"
 #include "src/firmware/paver/partition-client.h"
 #include "src/firmware/paver/pave-logging.h"
 #include "src/firmware/paver/sparse.h"
-#include "src/firmware/paver/stream-reader.h"
+#include "src/firmware/paver/sysconfig-fidl.h"
 #include "src/firmware/paver/validation.h"
 #include "sysconfig-fidl.h"
 
@@ -121,56 +120,6 @@ bool CheckIfSame(PartitionClient* partition, const zx::vmo& vmo, size_t payload_
     return false;
   }
   return memcmp(first_mapper.start(), second_mapper.start(), payload_size) == 0;
-}
-
-// Returns a client for the FVM partition.
-zx::result<std::unique_ptr<PartitionClient>> GetFvmPartition(const DevicePartitioner& partitioner) {
-  // FVM doesn't need content type support, use the default.
-  const PartitionSpec spec(Partition::kFuchsiaVolumeManager);
-  zx::result partition = partitioner.FindPartition(spec);
-  if (partition.is_ok()) {
-    LOG("FVM Partition already exists\n");
-    return partition;
-  }
-
-  if (partition.status_value() != ZX_ERR_NOT_FOUND) {
-    ERROR("Failure looking for FVM partition: %s\n", partition.status_string());
-    return partition.take_error();
-  }
-
-  ERROR("Could not find FVM Partition on device. The device may need to be re-initialized.\n");
-  return partition.take_error();
-}
-
-// TODO(https://fxbug.dev/339491886): Support FVM in storage-host
-zx::result<> FvmPave(const fbl::unique_fd& devfs_root, const DevicePartitioner& partitioner,
-                     std::unique_ptr<fvm::ReaderInterface> payload) {
-  LOG("Paving FVM partition.\n");
-  zx::result status = GetFvmPartition(partitioner);
-  if (status.is_error()) {
-    return status.take_error();
-  }
-  std::unique_ptr<PartitionClient>& partition = status.value();
-
-  if (partitioner.IsFvmWithinFtl()) {
-    LOG("Attempting to format FTL...\n");
-    zx::result<> status = partitioner.WipeFvm();
-    if (status.is_error()) {
-      ERROR("Failed to format FTL: %s\n", status.status_string());
-    } else {
-      LOG("Formatted partition successfully!\n");
-    }
-  }
-  LOG("Streaming partitions to FVM...\n");
-  {
-    auto status = FvmStreamPartitions(devfs_root, std::move(partition), std::move(payload));
-    if (status.is_error()) {
-      ERROR("Failed to stream partitions to FVM: %s\n", status.status_string());
-      return status.take_error();
-    }
-  }
-  LOG("Completed FVM paving successfully\n");
-  return zx::ok();
 }
 
 // Reads an image from disk into a vmo.
@@ -625,16 +574,6 @@ zx::result<fuchsia_mem::wire::Buffer> DataSinkImpl::ReadFirmware(Configuration c
     return zx::ok(std::move(status.value()));
   }
   return zx::error(ZX_ERR_NOT_SUPPORTED);
-}
-
-zx::result<> DataSinkImpl::WriteVolumes(
-    fidl::ClientEnd<fuchsia_paver::PayloadStream> payload_stream) {
-  auto status = StreamReader::Create(std::move(payload_stream));
-  if (status.is_error()) {
-    ERROR("Unable to create stream.\n");
-    return status.take_error();
-  }
-  return FvmPave(devices_.devfs_root(), *partitioner_, std::move(status.value()));
 }
 
 void DataSink::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,

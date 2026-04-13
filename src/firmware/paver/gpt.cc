@@ -555,10 +555,6 @@ GptDevicePartitioner::FindPartitionLegacy(FilterCallback filter) const {
   return zx::error(ZX_ERR_NOT_FOUND);
 }
 
-zx::result<> GptDevicePartitioner::WipeFvm() const {
-  return WipeBlockPartition(devices_, std::nullopt, Uuid(GUID_FVM_VALUE));
-}
-
 zx::result<> GptDevicePartitioner::ResetPartitionTables(
     std::vector<GptDevicePartitioner::PartitionInitSpec> partitions) const {
   // Assign offsets and instance GUIDs as needed.

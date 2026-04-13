@@ -42,14 +42,6 @@ class RamdiskVolumeConnector : public paver::VolumeConnector {
     ZX_PANIC("Not implemented");
   }
 
-  fidl::UnownedClientEnd<fuchsia_device::Controller> Controller() const override {
-    return ramdisk_.LegacyController();
-  }
-
-  fidl::ClientEnd<fuchsia_device::Controller> TakeController() override {
-    ZX_PANIC("Not implemented");
-  }
-
  private:
   const ramdevice_client::Ramdisk& ramdisk_;
 };

@@ -48,14 +48,10 @@ class MoonflowerPartitioner : public DevicePartitioner {
 
   fidl::UnownedClientEnd<fuchsia_io::Directory> SvcRoot() const override;
 
-  bool IsFvmWithinFtl() const override { return false; }
-
   bool SupportsPartition(const PartitionSpec& spec) const override;
 
   zx::result<std::unique_ptr<PartitionClient>> FindPartition(
       const PartitionSpec& spec) const override;
-
-  zx::result<> WipeFvm() const override;
 
   zx::result<> ResetPartitionTables() const override;
 
@@ -77,9 +73,6 @@ class MoonflowerPartitioner : public DevicePartitioner {
 
   // Like FindPartition() above, but also returns the GPT partition entry.
   zx::result<FindPartitionDetailsResult> FindPartitionDetails(const PartitionSpec& spec) const;
-
-  // TODO(https://fxbug.dev/339491886): Remove when storage-host is enabled.
-  zx::result<std::unique_ptr<GptDevice>> ConnectToGpt() const { return gpt_->ConnectToGpt(); }
 
  private:
   MoonflowerPartitioner(const PaverConfig& config, std::unique_ptr<GptDevicePartitioner> gpt)

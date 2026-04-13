@@ -9,7 +9,6 @@
 #include <lib/zx/result.h>
 #include <zircon/process.h>
 #include <zircon/processargs.h>
-#include <zircon/system/public/zircon/errors.h>
 
 #include <algorithm>
 #include <iterator>
@@ -140,8 +139,6 @@ zx::result<std::unique_ptr<PartitionClient>> AndroidDevicePartitioner::FindParti
   }
   return zx::ok(std::move(*status));
 }
-
-zx::result<> AndroidDevicePartitioner::WipeFvm() const { return zx::error(ZX_ERR_NOT_SUPPORTED); }
 
 zx::result<> AndroidDevicePartitioner::ResetPartitionTables() const {
   ERROR("Initialising partition tables is not supported for Android devices\n");

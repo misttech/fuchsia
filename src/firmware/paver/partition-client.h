@@ -99,19 +99,6 @@ class BlockPartitionClient : public PartitionClient {
 
   const VolumeConnector* connector() override { return partition_connector_.get(); }
 
-  // Returns the Controller connection for the partition.  Asserts if the partition is not backed by
-  // a Devfs instance.
-  // TODO(https://fxbug.dev/339491886): This only exists to support Fvm's need to rebind drivers.
-  // Remove once FVM is ported to storage-host.
-  fidl::UnownedClientEnd<fuchsia_device::Controller> Controller() const {
-    return partition_connector_->Controller();
-  }
-
-  fidl::UnownedClientEnd<fuchsia_storage_block::Block> Block() const {
-    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>(
-        partition_.client_end().borrow().channel());
-  }
-
   // No copy.
   BlockPartitionClient(const BlockPartitionClient&) = delete;
   BlockPartitionClient& operator=(const BlockPartitionClient&) = delete;

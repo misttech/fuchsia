@@ -46,7 +46,6 @@
 #include "src/firmware/paver/abr-client.h"
 #include "src/firmware/paver/astro.h"
 #include "src/firmware/paver/device-partitioner.h"
-#include "src/firmware/paver/fvm.h"
 #include "src/firmware/paver/gpt.h"
 #include "src/firmware/paver/luis.h"
 #include "src/firmware/paver/moonflower.h"
@@ -2079,10 +2078,6 @@ TEST_F(PaverServiceSkipBlockTest, WriteBootloaderNotAligned) {
   ASSERT_OK(result.value().result.status());
   ValidateWrittenPages(4 * kPagesPerBlock, static_cast<size_t>(4) * kPagesPerBlock - 1);
   ValidateUnwrittenPages(8 * kPagesPerBlock - 1, 1);
-}
-
-TEST_F(PaverServiceSkipBlockTest, DISABLED_WriteVolumes) {
-  // TODO(https://fxbug.dev/42109028): Figure out a way to test this.
 }
 
 void PaverServiceSkipBlockTest::TestSysconfigWriteBufferedClient(uint32_t offset_in_pages,

@@ -151,8 +151,6 @@ zx::result<std::unique_ptr<PartitionClient>> Vim3Partitioner::FindPartition(
   return zx::ok(std::move(*status));
 }
 
-zx::result<> Vim3Partitioner::WipeFvm() const { return gpt_->WipeFvm(); }
-
 zx::result<> Vim3Partitioner::ResetPartitionTables() const {
   ERROR("Initializing gpt partitions from paver is not supported on vim3\n");
   return zx::error(ZX_ERR_NOT_SUPPORTED);

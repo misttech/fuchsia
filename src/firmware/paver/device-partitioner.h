@@ -107,9 +107,6 @@ class DevicePartitioner {
   // Returns the service root for the partitioner.
   virtual fidl::UnownedClientEnd<fuchsia_io::Directory> SvcRoot() const = 0;
 
-  // Whether or not the Fuchsia Volume Manager exists within an FTL.
-  virtual bool IsFvmWithinFtl() const = 0;
-
   // Checks if the device supports the given partition spec.
   //
   // This is the only function that will definitively say whether a spec is
@@ -122,9 +119,6 @@ class DevicePartitioner {
   // Returns a PartitionClient matching |spec| if one exists.
   virtual zx::result<std::unique_ptr<PartitionClient>> FindPartition(
       const PartitionSpec& spec) const = 0;
-
-  // Wipes Fuchsia Volume Manager partition.
-  virtual zx::result<> WipeFvm() const = 0;
 
   // Reset partition tables to a board-specific initial state.
   // This is only supported on some boards; in general it is preferred to use fastboot to
@@ -191,14 +185,10 @@ class FixedDevicePartitioner : public DevicePartitioner {
     return svc_root_.borrow();
   }
 
-  bool IsFvmWithinFtl() const override { return false; }
-
   bool SupportsPartition(const PartitionSpec& spec) const override;
 
   zx::result<std::unique_ptr<PartitionClient>> FindPartition(
       const PartitionSpec& spec) const override;
-
-  zx::result<> WipeFvm() const override;
 
   zx::result<> ResetPartitionTables() const override;
 

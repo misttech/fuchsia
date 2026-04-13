@@ -78,14 +78,6 @@ DevfsVolumeConnector::PartitionManagement() const {
   ZX_ASSERT_MSG(false, "Called PartitionManagement on a DevfsVolumeConnector");
 }
 
-fidl::UnownedClientEnd<fuchsia_device::Controller> DevfsVolumeConnector::Controller() const {
-  return controller_.client_end().borrow();
-}
-
-fidl::ClientEnd<fuchsia_device::Controller> DevfsVolumeConnector::TakeController() {
-  return controller_.TakeClientEnd();
-}
-
 DirBasedVolumeConnector::DirBasedVolumeConnector(fbl::unique_fd dir,
                                                  std::string volume_connector_path)
     : dir_(std::move(dir)), volume_connector_path_(std::move(volume_connector_path)) {}
@@ -109,14 +101,6 @@ zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> DirBasedVolumeConnecto
 zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>>
 DirBasedVolumeConnector::PartitionManagement() const {
   ZX_ASSERT_MSG(false, "Called PartitionManagement on a VolumeServiceBasedVolumeConnector");
-}
-
-fidl::UnownedClientEnd<fuchsia_device::Controller> DirBasedVolumeConnector::Controller() const {
-  ZX_ASSERT_MSG(false, "Called Controller on a non-DevfsVolumeConnector");
-}
-
-fidl::ClientEnd<fuchsia_device::Controller> DirBasedVolumeConnector::TakeController() {
-  ZX_ASSERT_MSG(false, "Called TakeController on a non-DevfsVolumeConnector");
 }
 
 PartitionServiceBasedVolumeConnector::PartitionServiceBasedVolumeConnector(

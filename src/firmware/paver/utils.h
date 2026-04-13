@@ -39,14 +39,6 @@ zx::result<std::unique_ptr<VolumeConnector>> OpenSkipBlockPartition(
 
 bool HasSkipBlockDevice(const paver::BlockDevices& devices);
 
-// Attempts to open and overwrite the first block of the underlying
-// partition. Does not rebind partition drivers.
-//
-// At most one of |unique_guid| and |type_guid| may be nullptr.
-zx::result<> WipeBlockPartition(const paver::BlockDevices& devices,
-                                std::optional<uuid::Uuid> unique_guid,
-                                std::optional<uuid::Uuid> type_guid);
-
 zx::result<std::string> GetBoardName(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root);
 zx::result<> IsBoard(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
                      std::string_view board_name);

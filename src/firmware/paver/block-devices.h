@@ -24,10 +24,6 @@ class VolumeConnector {
   // This method will assert if called on a non-PartitionServiceBasedVolumeConnector.
   virtual zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>> PartitionManagement()
       const = 0;
-  // The following two methods will assert if called on a non-DevfsVolumeConnector.
-  // TODO(https://fxbug.dev/339491886): Remove once remaining use-cases are ported to storage-host.
-  virtual fidl::UnownedClientEnd<fuchsia_device::Controller> Controller() const = 0;
-  virtual fidl::ClientEnd<fuchsia_device::Controller> TakeController() = 0;
 
   virtual ~VolumeConnector() = default;
 };
@@ -40,8 +36,6 @@ class DevfsVolumeConnector : public VolumeConnector {
   zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const override;
   zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>> PartitionManagement()
       const override;
-  fidl::UnownedClientEnd<fuchsia_device::Controller> Controller() const override;
-  fidl::ClientEnd<fuchsia_device::Controller> TakeController() override;
 
  private:
   fidl::WireSyncClient<fuchsia_device::Controller> controller_;
@@ -56,8 +50,6 @@ class DirBasedVolumeConnector : public VolumeConnector {
   zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const override;
   zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>> PartitionManagement()
       const override;
-  fidl::UnownedClientEnd<fuchsia_device::Controller> Controller() const override;
-  fidl::ClientEnd<fuchsia_device::Controller> TakeController() override;
 
  protected:
   fbl::unique_fd dir_;

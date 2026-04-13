@@ -6,8 +6,6 @@
 #include <fcntl.h>
 #include <fidl/fuchsia.fshost/cpp/wire.h>
 #include <fidl/fuchsia.paver/cpp/wire.h>
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fdio.h>
@@ -29,8 +27,6 @@
 #include <fbl/string_printf.h>
 #include <fbl/unique_fd.h>
 
-#include "payload-streamer.h"
-
 // Print a message to stdout, along with the program name and function name.
 #define LOG(fmt, ...) printf("disk-pave:[%s] " fmt, __FUNCTION__, ##__VA_ARGS__)
 
@@ -49,9 +45,7 @@ void PrintUsage() {
   ERROR("  install-vbmetaa    : Install a VBMETA-A partition to the device\n");
   ERROR("  install-vbmetab    : Install a VBMETA-B partition to the device\n");
   ERROR("  install-vbmetar    : Install a VBMETA-R partition to the device\n");
-  ERROR("  install-fvm        : Install a sparse FVM to the device\n");
   ERROR("  install-data-file  : Install a file to DATA (--path required)\n");
-  ERROR("  wipe               : Remove the FVM partition\n");
   ERROR("  init-partition-tables : Initialize block device with valid GPT and FVM\n");
   ERROR("  wipe-partition-tables : Remove all partitions for partition table\n");
   ERROR("Options:\n");
@@ -71,7 +65,6 @@ enum class Command : uint8_t {
   kBootloader,
   // fuchsia.fshost.Recovery.WriteDataFile
   kDataFile,
-  kFvm,
 };
 
 struct Flags {
@@ -132,8 +125,6 @@ bool ParseFlags(int argc, char** argv, Flags* flags) {
     flags->asset = fuchsia_paver::wire::Asset::kVerifiedBootMetadata;
   } else if (!strcmp(argv[0], "install-data-file")) {
     flags->cmd = Command::kDataFile;
-  } else if (!strcmp(argv[0], "install-fvm")) {
-    flags->cmd = Command::kFvm;
   } else if (!strcmp(argv[0], "init-partition-tables")) {
     flags->cmd = Command::kInitPartitionTables;
   } else if (!strcmp(argv[0], "wipe-partition-tables")) {
@@ -245,28 +236,6 @@ zx_status_t RealMain(Flags flags) {
   auto fshost_client = fidl::WireSyncClient(std::move(*fshost_svc));
 
   switch (flags.cmd) {
-    case Command::kFvm: {
-      auto [data_sink_local, data_sink_remote] = fidl::Endpoints<fuchsia_paver::DataSink>::Create();
-      // TODO(https://fxbug.dev/42180237) Consider handling the error instead of ignoring it.
-      (void)paver_client->FindDataSink(std::move(data_sink_remote));
-
-      auto [client, server] = fidl::Endpoints<fuchsia_paver::PayloadStream>::Create();
-
-      // Launch thread which implements interface.
-      async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
-      disk_pave::PayloadStreamer streamer(std::move(server), std::move(flags.payload_fd));
-      loop.StartThread("payload-stream");
-
-      auto result =
-          fidl::WireSyncClient(std::move(data_sink_local))->WriteVolumes(std::move(client));
-      zx_status_t status = result.ok() ? result.value().status : result.status();
-      if (status != ZX_OK) {
-        ERROR("Failed to write volumes: %s\n", zx_status_get_string(status));
-        return status;
-      }
-
-      return ZX_OK;
-    }
     case Command::kInitPartitionTables: {
       if (flags.block_device != nullptr) {
         LOG("init-partition-tables has changed!  Flag --block-device is now ignored.  This will "

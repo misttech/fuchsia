@@ -241,17 +241,6 @@ zx::result<std::unique_ptr<PartitionClient>> FixedDevicePartitioner::FindPartiti
   return BlockPartitionClient::Create(std::move(partition.value()));
 }
 
-zx::result<> FixedDevicePartitioner::WipeFvm() const {
-  if (auto status = WipeBlockPartition(devices_, std::nullopt, Uuid(GUID_FVM_VALUE));
-      status.is_error()) {
-    ERROR("Failed to wipe FVM.\n");
-  } else {
-    LOG("Wiped FVM successfully.\n");
-  }
-  LOG("Immediate reboot strongly recommended\n");
-  return zx::ok();
-}
-
 zx::result<> FixedDevicePartitioner::ResetPartitionTables() const {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }

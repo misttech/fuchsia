@@ -185,16 +185,12 @@ class FakeDevicePartitioner : public paver::DevicePartitioner {
 
   fidl::UnownedClientEnd<fuchsia_io::Directory> SvcRoot() const override { ZX_ASSERT(false); }
 
-  bool IsFvmWithinFtl() const override { return false; }
-
   bool SupportsPartition(const paver::PartitionSpec& spec) const override { return true; }
 
   zx::result<std::unique_ptr<paver::PartitionClient>> FindPartition(
       const paver::PartitionSpec& spec) const override {
     return zx::ok(nullptr);
   }
-
-  zx::result<> WipeFvm() const override { return zx::ok(); }
 
   zx::result<> ResetPartitionTables() const override { return zx::ok(); }
 

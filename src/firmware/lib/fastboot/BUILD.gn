@@ -23,7 +23,6 @@ source_set("fastboot-base") {
 source_set("lib") {
   sources = [
     "fastboot.cc",
-    "payload-streamer.cc",
     "sparse_format.cc",
     "sparse_format.h",
   ]

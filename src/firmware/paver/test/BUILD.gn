@@ -105,29 +105,6 @@ fuchsia_unittest_component("device-partitioner-test") {
   deps = [ ":device_partitioner_test" ]
 }
 
-executable("fvm_test") {
-  testonly = true
-  if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
-  }
-  sources = [ "fvm-test.cc" ]
-  deps = [
-    ":test-utils",
-    "//sdk/lib/component/incoming/cpp",
-    "//sdk/lib/fdio",
-    "//src/firmware/paver",
-    "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
-  ]
-}
-
-fuchsia_unittest_component("fvm-test") {
-  deps = [ ":fvm_test" ]
-}
-
 executable("paversvc_test") {
   testonly = true
   if (is_fuchsia) {
@@ -186,7 +163,6 @@ executable("misc_test") {
     "data-sink-test.cc",
     "partition-client-test.cc",
     "paver-context-test.cc",
-    "stream-reader-test.cc",
     "validation-test.cc",
   ]
   deps = [
@@ -214,7 +190,6 @@ fuchsia_test_package("paver-tests") {
   test_components = [
     ":abr-test",
     ":device-partitioner-test",
-    ":fvm-test",
     ":paversvc-test",
     ":misc-test",
   ]
@@ -230,7 +205,6 @@ fuchsia_test_package("paver-tests") {
     "//src/devices/nand/drivers/nandpart",
     "//src/devices/nand/drivers/ram-nand",
     "//src/devices/nand/drivers/skip-block",
-    "//src/storage/fvm/driver",
   ]
   test_specs = {
     # Gives more timeout to reduce flake.(https://fxbug.dev/42182211)

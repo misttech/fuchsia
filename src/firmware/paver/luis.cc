@@ -157,8 +157,6 @@ zx::result<std::unique_ptr<PartitionClient>> LuisPartitioner::FindPartition(
   return zx::ok(std::move(*status));
 }
 
-zx::result<> LuisPartitioner::WipeFvm() const { return gpt_->WipeFvm(); }
-
 zx::result<> LuisPartitioner::ResetPartitionTables() const {
   ERROR("Initializing gpt partitions from paver is not supported on luis\n");
   return zx::error(ZX_ERR_NOT_SUPPORTED);

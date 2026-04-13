@@ -16,7 +16,6 @@
 #include <fbl/string_buffer.h>
 #include <gpt/gpt.h>
 
-#include "src/firmware/paver/fvm.h"
 #include "src/firmware/paver/pave-logging.h"
 #include "src/firmware/paver/utils.h"
 #include "src/lib/uuid/uuid.h"
@@ -56,65 +55,6 @@ zx::result<std::unique_ptr<PartitionClient>> SkipBlockDevicePartitioner::FindFvm
     return partition.take_error();
   }
   return BlockPartitionClient::Create(std::move(*partition));
-}
-
-zx::result<> SkipBlockDevicePartitioner::WipeFvm() const {
-  const uint8_t fvm_type[GPT_GUID_LEN] = GUID_FVM_VALUE;
-  zx::result partition = OpenBlockPartition(devices_, std::nullopt, Uuid(fvm_type), ZX_SEC(3));
-  if (partition.is_error()) {
-    ERROR("Warning: Could not open partition to wipe: %s\n", partition.status_string());
-    return zx::ok();
-  }
-
-  fidl::WireSyncClient<device::Controller> block_client(partition->TakeController());
-
-  auto result = block_client->GetTopologicalPath();
-  if (!result.ok()) {
-    ERROR("Warning: Could not get name for partition: %s\n", zx_status_get_string(result.status()));
-    return zx::error(result.status());
-  }
-  const auto& response = result.value();
-  if (response.is_error()) {
-    ERROR("Warning: Could not get name for partition: %s\n",
-          zx_status_get_string(response.error_value()));
-    return zx::error(response.error_value());
-  }
-
-  fbl::StringBuffer<PATH_MAX - 1> name_buffer;
-  name_buffer.Append(response.value()->path.data(),
-                     static_cast<size_t>(response.value()->path.size()));
-
-  {
-    auto status = zx::make_result(FvmUnbind(devices_.devfs_root(), name_buffer.data()));
-    if (status.is_error()) {
-      // The driver may refuse to bind to a corrupt volume.
-      ERROR("Warning: Failed to unbind FVM: %s\n", status.status_string());
-    }
-  }
-
-  // TODO(https://fxbug.dev/42115657): Clean this up.
-  const char* parent = dirname(name_buffer.data());
-  constexpr char kDevRoot[] = "/dev/";
-  constexpr size_t kDevRootLen = sizeof(kDevRoot) - 1;
-  if (strncmp(parent, kDevRoot, kDevRootLen) != 0) {
-    ERROR("Warning: Unrecognized partition name: %s\n", parent);
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
-  parent += kDevRootLen;
-
-  // TODO(https://fxbug.dev/339491886): Support FVM in storage-host
-  fdio_cpp::UnownedFdioCaller caller(devices_.devfs_root());
-  zx::result channel =
-      component::ConnectAt<fuchsia_hardware_block::Ftl>(caller.directory(), parent);
-  if (channel.is_error()) {
-    ERROR("Warning: Unable to open block parent device: %s\n", channel.status_string());
-    return channel.take_error();
-  }
-
-  fidl::WireSyncClient<fuchsia_hardware_block::Ftl> client(std::move(channel.value()));
-  auto result2 = client->Format();
-
-  return zx::make_result(result2.ok() ? result2.value().status : result2.status());
 }
 
 zx::result<> SkipBlockPartitionClient::ReadPartitionInfo() {

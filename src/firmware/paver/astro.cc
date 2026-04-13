@@ -260,8 +260,6 @@ zx::result<> AstroPartitioner::Flush() const {
                   : zx::ok();
 }
 
-zx::result<> AstroPartitioner::WipeFvm() const { return skip_block_->WipeFvm(); }
-
 zx::result<> AstroPartitioner::ResetPartitionTables() const {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }

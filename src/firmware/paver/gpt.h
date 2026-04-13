@@ -74,10 +74,6 @@ class GptDevicePartitioner {
   // Returns a connection to the first matching partition.
   zx::result<FindPartitionDetailsResult> FindPartitionDetails(FilterCallback filter) const;
 
-  // Wipes a specified partition from the GPT, and overwrites first 8KiB with
-  // nonsense.
-  zx::result<> WipeFvm() const;
-
   struct PartitionInitSpec {
    public:
     std::string name;

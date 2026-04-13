@@ -28,7 +28,6 @@ group("tests") {
     "moniker:tests",
     "namespace:tests",
     "notify-batch-watcher:tests",
-    "payload_streamer:tests",
     "routing:tests",
     "runner:tests",
     "socket-to-stdio:tests",

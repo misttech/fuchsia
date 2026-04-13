@@ -22,7 +22,6 @@ test("fastboot-test") {
     "fastboot-test.cc",
     "fastboot-test.h",
     "flash-blob-test.cc",
-    "payload-streamer-test.cc",
     "rust-test.cc",
   ]
   include_dirs = [

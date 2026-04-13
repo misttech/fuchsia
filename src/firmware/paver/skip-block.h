@@ -30,8 +30,6 @@ class SkipBlockDevicePartitioner {
 
   zx::result<std::unique_ptr<PartitionClient>> FindFvmPartition() const;
 
-  zx::result<> WipeFvm() const;
-
   const BlockDevices& devices() const { return devices_; }
 
  private:

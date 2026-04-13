@@ -817,15 +817,6 @@ TEST_F(FixedDevicePartitionerTests, UseBlockInterfaceTest) {
   ASSERT_OK(devices);
   auto status = paver::FixedDevicePartitioner::Initialize(*devices, {});
   ASSERT_OK(status);
-  ASSERT_FALSE(status->IsFvmWithinFtl());
-}
-
-TEST_F(FixedDevicePartitionerTests, WipeFvmTest) {
-  zx::result devices = paver::BlockDevices::CreateDevfs(devmgr_.devfs_root().duplicate());
-  ASSERT_OK(devices);
-  auto status = paver::FixedDevicePartitioner::Initialize(*devices, {});
-  ASSERT_OK(status);
-  ASSERT_OK(status->WipeFvm());
 }
 
 TEST_F(FixedDevicePartitionerTests, FindPartitionTest) {

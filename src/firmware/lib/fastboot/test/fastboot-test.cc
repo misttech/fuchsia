@@ -738,26 +738,6 @@ TEST_F(FastbootFlashTest, SetActiveInvalidSlot) {
   ASSERT_EQ(sent_packets[0].compare(0, 4, "FAIL"), 0);
 }
 
-TEST_F(FastbootFlashTest, FlashFVM) {
-  Fastboot fastboot(0x40000, std::move(svc_chan()));
-
-  std::vector<uint8_t> download_content(256, 1);
-  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
-
-  paver_test::FakePaver& fake_paver = paver();
-  fake_paver.set_expected_payload_size(download_content.size());
-
-  std::string command = "flash:fvm.sparse";
-  TestTransport transport;
-  transport.AddInPacket(command);
-  zx::result<> ret = fastboot.ProcessPacket(&transport);
-  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
-  std::vector<std::string> expected_packets = {"OKAY"};
-  ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets));
-  ASSERT_EQ(fake_paver.GetCommandTrace(),
-            std::vector<paver_test::Command>{paver_test::Command::kWriteVolumes});
-}
-
 TEST_F(FastbootFlashTest, GetVarVersion) {
   Fastboot fastboot(0x40000, std::move(svc_chan()));
   const char command[] = "getvar:version";

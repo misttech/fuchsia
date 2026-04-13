@@ -108,8 +108,6 @@ class DataSinkImpl {
   zx::result<fuchsia_mem::wire::Buffer> ReadFirmware(
       fuchsia_paver::wire::Configuration configuration, fidl::StringView type);
 
-  zx::result<> WriteVolumes(fidl::ClientEnd<fuchsia_paver::PayloadStream> payload_stream);
-
   DevicePartitioner* partitioner() { return partitioner_.get(); }
 
  private:
@@ -168,11 +166,6 @@ class DataSink : public fidl::WireServer<fuchsia_paver::DataSink> {
   void ReadFirmware(ReadFirmwareRequestView request,
                     ReadFirmwareCompleter::Sync& completer) override;
 
-  void WriteVolumes(WriteVolumesRequestView request,
-                    WriteVolumesCompleter::Sync& completer) override {
-    completer.Reply(sink_.WriteVolumes(std::move(request->payload)).status_value());
-  }
-
   void Flush(FlushCompleter::Sync& completer) override {
     completer.Reply(sink_.partitioner()->Flush().status_value());
   }
@@ -229,11 +222,6 @@ class DynamicDataSink : public fidl::WireServer<fuchsia_paver::DynamicDataSink> 
 
   void ReadFirmware(ReadFirmwareRequestView request,
                     ReadFirmwareCompleter::Sync& completer) override;
-
-  void WriteVolumes(WriteVolumesRequestView request,
-                    WriteVolumesCompleter::Sync& completer) override {
-    completer.Reply(sink_.WriteVolumes(std::move(request->payload)).status_value());
-  }
 
   void Flush(FlushCompleter::Sync& completer) override {
     completer.Reply(sink_.partitioner()->Flush().status_value());

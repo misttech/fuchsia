@@ -315,67 +315,6 @@ void FakePaver::ReadFirmware(ReadFirmwareRequestView request,
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
-void FakePaver::WriteVolumes(WriteVolumesRequestView request,
-                             WriteVolumesCompleter::Sync& completer) {
-  {
-    fbl::AutoLock al(&lock_);
-    AppendCommand(Command::kWriteVolumes);
-  }
-  // Register VMO.
-  zx::vmo vmo;
-  auto status = zx::vmo::create(1024, 0, &vmo);
-  if (status != ZX_OK) {
-    completer.Reply(status);
-    return;
-  }
-  fidl::WireSyncClient stream{std::move(request->payload)};
-  auto result = stream->RegisterVmo(std::move(vmo));
-  status = result.ok() ? result.value().status : result.status();
-  if (status != ZX_OK) {
-    completer.Reply(status);
-    return;
-  }
-  // Stream until EOF.
-  status = [&]() {
-    size_t data_transferred = 0;
-    for (;;) {
-      {
-        fbl::AutoLock al(&lock_);
-        if (wait_for_start_signal_) {
-          al.release();
-          sync_completion_wait(&start_signal_, ZX_TIME_INFINITE);
-          sync_completion_reset(&start_signal_);
-        } else {
-          signal_size_ = expected_payload_size_ + 1;
-        }
-      }
-      while (data_transferred < signal_size_) {
-        auto result = stream->ReadData();
-        if (!result.ok()) {
-          return result.status();
-        }
-        const auto& response = result.value();
-        switch (response.result.Which()) {
-          case fuchsia_paver::wire::ReadResult::Tag::kErr:
-            return response.result.err();
-          case fuchsia_paver::wire::ReadResult::Tag::kEof:
-            return data_transferred == expected_payload_size_ ? ZX_OK : ZX_ERR_INVALID_ARGS;
-          case fuchsia_paver::wire::ReadResult::Tag::kInfo:
-            data_transferred += response.result.info().size;
-            continue;
-          default:
-            return ZX_ERR_INTERNAL;
-        }
-      }
-      sync_completion_signal(&done_signal_);
-    }
-  }();
-
-  sync_completion_signal(&done_signal_);
-
-  completer.Reply(status);
-}
-
 void FakePaver::InitializePartitionTables(InitializePartitionTablesCompleter::Sync& completer) {
   fbl::AutoLock al(&lock_);
   AppendCommand(Command::kInitPartitionTables);

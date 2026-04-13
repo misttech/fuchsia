@@ -194,8 +194,6 @@ zx::result<FindPartitionDetailsResult> MoonflowerPartitioner::FindPartitionDetai
   });
 }
 
-zx::result<> MoonflowerPartitioner::WipeFvm() const { return zx::error(ZX_ERR_NOT_SUPPORTED); }
-
 zx::result<> MoonflowerPartitioner::ResetPartitionTables() const {
   ERROR("Initialising partition tables is not supported for a Moonflower device\n");
   return zx::error(ZX_ERR_NOT_SUPPORTED);

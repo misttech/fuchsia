@@ -88,24 +88,6 @@ type WriteFirmwareResult = strict union {
 // The maximum string length for the `firmware type` parameter.
 const MAX_FIRMWARE_TYPE_LENGTH uint32 = 256;
 
-/// Protocol for streaming the FVM payload.
-closed protocol PayloadStream {
-    /// Registers a VMO to stream into.
-    ///
-    /// This can be called once per PayloadStream.
-    /// Any subsequent calls will return ZX_ERR_ALREADY_BOUND.
-    strict RegisterVmo(resource struct {
-        vmo zx.Handle:VMO;
-    }) -> (struct {
-        status zx.Status;
-    });
-
-    /// Reads data into the pre-registered vmo.
-    strict ReadData() -> (struct {
-        result ReadResult;
-    });
-};
-
 @discoverable
 closed protocol Paver {
     /// Attempts to auto-discover the data sink where assets and volumes will get paved to.
@@ -221,20 +203,12 @@ closed protocol DataSink {
         firmware fuchsia.mem.Buffer;
     }) error zx.Status;
 
-    /// Writes FVM with data from streamed via `payload`. This potentially affects all
-    /// configurations.
-    strict WriteVolumes(resource struct {
-        payload client_end:PayloadStream;
-    }) -> (struct {
-        status zx.Status;
-    });
-
     /// Write a raw volume image to the device. The image will be passed as it is to the device
     /// partitioner backend to write. Therefore the format and write logic for the image is up to
-    /// the product to define. It differs from WriteVolume(), which is specifically for writing the
-    /// FVM sparse image, in that the paver will not perform any FVM related parsing or other
-    /// operation of the image. Thus it is not dependent on the volume driver version and less
-    /// susceptible to an outdated paver.
+    /// the product to define. It differs from the legacy WriteVolume(), which was specifically
+    /// for writing the FVM sparse image, in that the paver will not perform any FVM related
+    /// parsing or other operation of the image. Thus it is not dependent on the volume driver
+    /// version and less susceptible to an outdated paver.
     ///
     /// Returns ZX_ERR_NOT_SUPPORTED if the backend does not support opaque volume blobs.
     strict WriteOpaqueVolume(resource struct {

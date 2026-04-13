@@ -181,8 +181,6 @@ zx::result<std::unique_ptr<PartitionClient>> SherlockPartitioner::FindPartition(
   return zx::ok(std::move(*status));
 }
 
-zx::result<> SherlockPartitioner::WipeFvm() const { return gpt_->WipeFvm(); }
-
 zx::result<> SherlockPartitioner::ResetPartitionTables() const {
   ERROR("Initializing gpt partitions from paver is not supported on sherlock\n");
   return zx::error(ZX_ERR_NOT_SUPPORTED);

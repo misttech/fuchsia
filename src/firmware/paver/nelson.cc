@@ -228,8 +228,6 @@ zx::result<std::unique_ptr<PartitionClient>> NelsonPartitioner::FindPartition(
   return zx::ok(std::move(*status));
 }
 
-zx::result<> NelsonPartitioner::WipeFvm() const { return gpt_->WipeFvm(); }
-
 zx::result<> NelsonPartitioner::ResetPartitionTables() const {
   ERROR("Initializing gpt partitions from paver is not supported on nelson\n");
   return zx::error(ZX_ERR_NOT_SUPPORTED);

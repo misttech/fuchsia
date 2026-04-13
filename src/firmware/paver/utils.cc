@@ -103,55 +103,6 @@ bool HasSkipBlockDevice(const paver::BlockDevices& devices) {
   return OpenSkipBlockPartition(devices, GUID_ZIRCON_A_VALUE, ZX_SEC(1)).is_ok();
 }
 
-// Attempts to open and overwrite the first block of the underlying
-// partition. Does not rebind partition drivers.
-//
-// At most one of |unique_guid| and |type_guid| may be nullptr.
-zx::result<> WipeBlockPartition(const paver::BlockDevices& devices, std::optional<Uuid> unique_guid,
-                                std::optional<Uuid> type_guid) {
-  zx::result partition = OpenBlockPartition(devices, unique_guid, type_guid, g_wipe_timeout);
-  if (partition.is_error()) {
-    ERROR("Warning: Could not open partition to wipe: %s\n", partition.status_string());
-    return partition.take_error();
-  }
-
-  // Overwrite the first block to (hackily) ensure the destroyed partition
-  // doesn't "reappear" in place.
-  zx::result block_partition = BlockPartitionClient::Create(std::move(*partition));
-  if (block_partition.is_error()) {
-    return block_partition.take_error();
-  }
-  auto status2 = block_partition->GetBlockSize();
-  if (status2.is_error()) {
-    ERROR("Warning: Could not get block size of partition: %s\n", status2.status_string());
-    return status2.take_error();
-  }
-  const size_t block_size = status2.value();
-
-  // Rely on vmos being 0 initialized.
-  zx::vmo vmo;
-  {
-    auto status = zx::make_result(
-        zx::vmo::create(fbl::round_up(block_size, zx_system_get_page_size()), 0, &vmo));
-    if (status.is_error()) {
-      ERROR("Warning: Could not create vmo: %s\n", status.status_string());
-      return status.take_error();
-    }
-  }
-
-  if (auto status = block_partition->Write(vmo, block_size); status.is_error()) {
-    ERROR("Warning: Could not write to block device: %s\n", status.status_string());
-    return status.take_error();
-  }
-
-  if (auto status = block_partition->Flush(); status.is_error()) {
-    ERROR("Warning: Failed to synchronize block device: %s\n", status.status_string());
-    return status.take_error();
-  }
-
-  return zx::ok();
-}
-
 zx::result<std::string> GetBoardName(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {
   zx::result status =
       component::ConnectAt<fuchsia_sysinfo::SysInfo>(svc_root, "fuchsia.sysinfo.SysInfo");

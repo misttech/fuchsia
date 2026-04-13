@@ -7,8 +7,6 @@
 #include <fidl/fuchsia.fshost/cpp/wire.h>
 #include <fidl/fuchsia.hardware.power.statecontrol/cpp/natural_ostream.h>
 #include <fidl/fuchsia.paver/cpp/wire.h>
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
 #include <lib/async/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fastboot/fastboot.h>
@@ -28,7 +26,6 @@
 #include <fbl/unique_fd.h>
 #include <sdk/lib/syslog/cpp/macros.h>
 
-#include "src/firmware/lib/fastboot/payload-streamer.h"
 #include "src/firmware/lib/fastboot/rust/ffi_c/bindings.h"
 #include "src/firmware/lib/fastboot/sparse_format.h"
 #include "src/lib/fxl/strings/split_string.h"
@@ -492,36 +489,6 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
       return SendResponse(ResponseType::kFail, "Failed to flash opaque fvm", transport,
                           zx::error(response->error_value()));
     }
-    return SendResponse(ResponseType::kOkay, "", transport);
-  }
-
-  if (info.partition == "fvm.sparse") {
-    // Flashing the sparse format FVM image via the paver. Note that at the time this code is
-    // written, the format of FVM for fuchsia has not reached at a stable point yet. However, the
-    // implementation of the paver fidl interface `WriteVolumes()` depends on the format of the FVM.
-    // Therefore, it is important make sure that the device is running the latest version of paver
-    // before using this fastboot command. This typically means flashing the latest kernel and
-    // reboot first. Otherwise, if FVM format changes and the currently running paver is not
-    // up-to-date, the FVM may be flashed wrongly.
-    auto [client, server] = fidl::Endpoints<fuchsia_paver::PayloadStream>::Create();
-
-    // Launch thread which implements interface.
-    async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
-    internal::PayloadStreamer streamer(std::move(server), download_vmo_mapper_.start(),
-                                       download_vmo_mapper_.size());
-    loop.StartThread("fastboot-payload-stream");
-
-    auto response = data_sink->WriteVolumes(std::move(client));
-    if (response.status() != ZX_OK) {
-      return SendResponse(ResponseType::kFail, "Failed to invoke paver data sink write volumes",
-                          transport, zx::error(response.status()));
-    }
-    if (response->status != ZX_OK) {
-      return SendResponse(ResponseType::kFail, "Failed to write fvm", transport,
-                          zx::error(response->status));
-    }
-
-    download_vmo_mapper_.Reset();
     return SendResponse(ResponseType::kOkay, "", transport);
   }
 
