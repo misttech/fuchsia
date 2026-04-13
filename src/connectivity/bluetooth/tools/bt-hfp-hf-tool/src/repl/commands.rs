@@ -111,7 +111,6 @@ macro_rules! gen_commands {
 use Argument::*;
 
 // `Command` is the declarative specification of all commands that bt-cli accepts.
-// TODO(b/333066433) Add descriptions for these commands.
 gen_commands! {
     Command {
         Help = (
