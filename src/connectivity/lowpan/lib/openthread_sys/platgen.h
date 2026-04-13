@@ -30,6 +30,7 @@
 #include <openthread/dnssd_server.h>
 #include <openthread/error.h>
 #include <openthread/heap.h>
+#include <openthread/history_tracker.h>
 #include <openthread/icmp6.h>
 #include <openthread/instance.h>
 #include <openthread/ip6.h>
