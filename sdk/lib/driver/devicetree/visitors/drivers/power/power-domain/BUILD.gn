@@ -27,6 +27,7 @@ source_set("power-domain-visitor-impl") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_bindlib_cpp",
+    "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_bindlib_cpp",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
     "//src/devices/bind/fuchsia.power:fuchsia.power_cpp",
@@ -34,6 +35,7 @@ source_set("power-domain-visitor-impl") {
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
+    "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_cpp",
     "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:property-parser",
   ]
@@ -44,6 +46,7 @@ test("power-domain-visitor-test-bin") {
   deps = [
     ":power-domain-visitor-impl",
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_bindlib_cpp",
+    "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

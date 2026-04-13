@@ -252,6 +252,7 @@ fidl_library://fidl/fuchsia.hardware.power (unstable)
 fidl_library://fidl/fuchsia.hardware.power.sensor
 fidl_library://fidl/fuchsia.hardware.power.statecontrol
 fidl_library://fidl/fuchsia.hardware.power.suspend (unstable)
+fidl_library://fidl/fuchsia.hardware.powerdomain (unstable)
 fidl_library://fidl/fuchsia.hardware.qualcomm.fastrpc (unstable)
 fidl_library://fidl/fuchsia.hardware.qualcomm.router (unstable)
 fidl_library://fidl/fuchsia.hardware.radar

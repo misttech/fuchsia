@@ -277,6 +277,7 @@
 	power-controller {
 		#power-domain-cells = <0x01>;
 		compatible = "amlogic,power";
+		fuchsia,legacy-power;
 		phandle = <0x0e>;
 		regulator-names = "pwm_vreg_little\0pwm_vreg_big";
 		regulators = <0x2c 0x2d>;

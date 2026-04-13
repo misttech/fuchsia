@@ -91,6 +91,7 @@
 	pwrc: power-controller {
 		compatible = "amlogic,power";
 		#power-domain-cells = <1>;
+		fuchsia,legacy-power;
 		regulators = <&vddcpu0 &vddcpu1>;
 		regulator-names = "pwm_vreg_little", "pwm_vreg_big";
 	};

@@ -21,6 +21,17 @@ properties:
   power-domains:
     description: Refer to http://devicetree.org/schemas/power-domain/power-domain-consumer.yaml#
 
+  power-domain-names:
+    description: Optional names corresponding to the power-domains entires.
+
+  fuchsia,legacy-power:
+    type: boolean
+    description:
+      If true, the visitor will use the fuchsia.hardware.power protocol
+      instead of the fuchsia.hardware.powerdomain protocol. This is used for
+      backward compatibility on platforms like VIM3. The powerdomain protocol
+      is more similar to what a power-domain is in a devicetree.
+
 additionalProperties: true
 
 examples:

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <bind/fuchsia/hardware/power/cpp/bind.h>
+#include <bind/fuchsia/hardware/powerdomain/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
 
 namespace power_domain_visitor_dt {
@@ -35,6 +36,8 @@ PowerDomainVisitor::PowerDomainVisitor() {
   fdf_devicetree::Properties properties = {};
   properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
       kPowerDomains, kPowerDomainCells, /* required */ false));
+  properties.emplace_back(std::make_unique<fdf_devicetree::StringListProperty>(
+      kPowerDomainNames, /* required */ false));
   parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(properties));
 }
 
@@ -52,9 +55,16 @@ zx::result<> PowerDomainVisitor::Visit(fdf_devicetree::Node& node,
     return zx::ok();
   }
 
-  for (auto& domain_reference : *power_domains) {
+  auto power_domain_names = parser_output->Get<std::vector<std::string>>(kPowerDomainNames);
+
+  for (uint32_t index = 0; index < power_domains->size(); index++) {
+    auto& domain_reference = (*power_domains)[index];
+    std::optional<std::string_view> name;
+    if (power_domain_names && index < power_domain_names->size()) {
+      name = (*power_domain_names)[index];
+    }
     if (zx::result result = ParseReferenceChild(node, domain_reference.reference_node(),
-                                                domain_reference.property_cells());
+                                                domain_reference.property_cells(), name);
         result.is_error()) {
       return result;
     }
@@ -63,22 +73,43 @@ zx::result<> PowerDomainVisitor::Visit(fdf_devicetree::Node& node,
   return zx::ok();
 }
 
-zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t domain_id) {
+zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t domain_id,
+                                                  uint32_t node_id, bool is_full_power,
+                                                  std::optional<std::string_view> name) {
+  auto bind_rules = std::vector<fuchsia_driver_framework::BindRule2>();
+  auto properties = std::vector<fuchsia_driver_framework::NodeProperty2>();
+
+  if (is_full_power) {
+    bind_rules.push_back(
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_power::SERVICE,
+                                bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT));
+    bind_rules.push_back(fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN, domain_id));
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia_hardware_power::SERVICE,
+                                            bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT));
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id));
+  } else {
+    bind_rules.push_back(
+        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_powerdomain::SERVICE,
+                                bind_fuchsia_hardware_powerdomain::SERVICE_ZIRCONTRANSPORT));
+    bind_rules.push_back(fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN, domain_id));
+    bind_rules.push_back(
+        fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN_NODE_ID, node_id));
+    properties.push_back(
+        fdf::MakeProperty2(bind_fuchsia_hardware_powerdomain::SERVICE,
+                           bind_fuchsia_hardware_powerdomain::SERVICE_ZIRCONTRANSPORT));
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id));
+  }
+
+  if (name) {
+    properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN_NAME, *name));
+  }
+
   auto power_node = fuchsia_driver_framework::ParentSpec2{{
-      .bind_rules =
-          {
-              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_power::SERVICE,
-                                      bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN, domain_id),
-          },
-      .properties =
-          {
-              fdf::MakeProperty2(bind_fuchsia_hardware_power::SERVICE,
-                                 bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
-              fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id),
-          },
+      .bind_rules = bind_rules,
+      .properties = properties,
   }};
-  fdf::debug("Added power domain (id: {}) parent to node '{}'", domain_id, child.name());
+  fdf::debug("Added power domain (id: {}, node_id: {}) parent to node '{}'", domain_id, node_id,
+             child.name());
 
   child.AddNodeSpec(power_node);
   return zx::ok();
@@ -90,9 +121,12 @@ PowerDomainVisitor::PowerController& PowerDomainVisitor::GetController(
   return controller_iter->second;
 }
 
+uint32_t PowerDomainVisitor::GetNextUniqueId() { return next_unique_id_++; }
+
 zx::result<> PowerDomainVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
                                                      fdf_devicetree::ReferenceNode& parent,
-                                                     fdf_devicetree::PropertyCells specifiers) {
+                                                     fdf_devicetree::PropertyCells specifiers,
+                                                     std::optional<std::string_view> name) {
   auto& controller = GetController(*parent.phandle());
 
   if (specifiers.size_bytes() != kPowerDomainCellsSize * sizeof(uint32_t)) {
@@ -102,25 +136,52 @@ zx::result<> PowerDomainVisitor::ParseReferenceChild(fdf_devicetree::Node& child
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
+  bool is_full_power = parent.GetProperty<bool>(kLegacyPower);
+  controller.is_full_power = is_full_power;
+
   auto cells = PowerDomainCells(specifiers);
-  fuchsia_hardware_power::Domain domain;
-  domain.id() = cells.domain_id();
+  uint32_t domain_id = cells.domain_id();
+  uint32_t node_id = GetNextUniqueId();
 
-  if (!controller.domain_info.domains()) {
-    controller.domain_info.domains() = std::vector<fuchsia_hardware_power::Domain>();
+  if (is_full_power) {
+    fuchsia_hardware_power::Domain domain;
+    domain.id() = domain_id;
+
+    if (!controller.full_domain_info) {
+      controller.full_domain_info.emplace();
+      controller.full_domain_info->domains() = std::vector<fuchsia_hardware_power::Domain>();
+    }
+
+    auto it = std::find_if(controller.full_domain_info->domains()->begin(),
+                           controller.full_domain_info->domains()->end(),
+                           [&domain](const fuchsia_hardware_power::Domain& entry) {
+                             return entry.id() == domain.id();
+                           });
+    if (it == controller.full_domain_info->domains()->end()) {
+      controller.full_domain_info->domains()->push_back(domain);
+      fdf::debug("Power domain added (id: {}) added to controller '{}'", domain_id, parent.name());
+    }
+  } else {
+    fuchsia_hardware_powerdomain::PowerDomain domain;
+    domain.id() = domain_id;
+    domain.node_id() = node_id;
+    if (name) {
+      domain.name() = std::string(*name);
+    }
+
+    if (!controller.basic_domain_info) {
+      controller.basic_domain_info.emplace();
+      controller.basic_domain_info->domains() =
+          std::vector<fuchsia_hardware_powerdomain::PowerDomain>();
+    }
+
+    // Always push back for basic power domain to support multiple clients.
+    controller.basic_domain_info->domains()->push_back(domain);
+    fdf::debug("Basic power domain added (id: {}, node_id: {}) added to controller '{}'", domain_id,
+               node_id, parent.name());
   }
 
-  // Insert if the domain id is not already present.
-  auto it = std::find_if(
-      controller.domain_info.domains()->begin(), controller.domain_info.domains()->end(),
-      [&domain](const fuchsia_hardware_power::Domain& entry) { return entry.id() == domain.id(); });
-  if (it == controller.domain_info.domains()->end()) {
-    controller.domain_info.domains()->push_back(domain);
-    fdf::debug("Power domain added (id: {}) added to controller '{}'", cells.domain_id(),
-               parent.name());
-  }
-
-  return AddChildNodeSpec(child, cells.domain_id());
+  return AddChildNodeSpec(child, domain_id, node_id, is_full_power, name);
 }
 
 zx::result<> PowerDomainVisitor::FinalizeNode(fdf_devicetree::Node& node) {
@@ -130,20 +191,38 @@ zx::result<> PowerDomainVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 
   auto controller = power_controllers_.at(*node.phandle());
 
-  if (controller.domain_info.domains()) {
-    const fit::result persisted_domain_info = fidl::Persist(controller.domain_info);
-    if (!persisted_domain_info.is_ok()) {
-      fdf::error("Failed to persist Power domain metadata for node {}: {}", node.name(),
-                 persisted_domain_info.error_value().FormatDescription());
+  if (controller.is_full_power) {
+    if (controller.full_domain_info && controller.full_domain_info->domains()) {
+      const fit::result persisted_domain_info = fidl::Persist(*controller.full_domain_info);
+      if (!persisted_domain_info.is_ok()) {
+        fdf::error("Failed to persist Power domain metadata for node {}: {}", node.name(),
+                   persisted_domain_info.error_value().FormatDescription());
 
-      return zx::error(persisted_domain_info.error_value().status());
+        return zx::error(persisted_domain_info.error_value().status());
+      }
+      fuchsia_hardware_platform_bus::Metadata controller_metadata = {{
+          .id = fuchsia_hardware_power::DomainMetadata::kSerializableName,
+          .data = persisted_domain_info.value(),
+      }};
+      node.AddMetadata(std::move(controller_metadata));
+      fdf::debug("Power domain metadata added to node '{}'", node.name());
     }
-    fuchsia_hardware_platform_bus::Metadata controller_metadata = {{
-        .id = fuchsia_hardware_power::DomainMetadata::kSerializableName,
-        .data = persisted_domain_info.value(),
-    }};
-    node.AddMetadata(std::move(controller_metadata));
-    fdf::debug("Power domain metadata added to node '{}'", node.name());
+  } else {
+    if (controller.basic_domain_info && controller.basic_domain_info->domains()) {
+      const fit::result persisted_domain_info = fidl::Persist(*controller.basic_domain_info);
+      if (!persisted_domain_info.is_ok()) {
+        fdf::error("Failed to persist Basic Power domain metadata for node {}: {}", node.name(),
+                   persisted_domain_info.error_value().FormatDescription());
+
+        return zx::error(persisted_domain_info.error_value().status());
+      }
+      fuchsia_hardware_platform_bus::Metadata controller_metadata = {{
+          .id = fuchsia_hardware_powerdomain::DomainMetadata::kSerializableName,
+          .data = persisted_domain_info.value(),
+      }};
+      node.AddMetadata(std::move(controller_metadata));
+      fdf::debug("Basic Power domain metadata added to node '{}'", node.name());
+    }
   }
 
   return zx::ok();
