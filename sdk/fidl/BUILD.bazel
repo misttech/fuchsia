@@ -74,12 +74,21 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.settings.policy:fuchsia.settings.policy",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2",
+    "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition",
     "//sdk/fidl/fuchsia.ui.gfx:fuchsia.ui.gfx",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input",
     "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3",
+    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry",
     "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer",
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector",
+    "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy",
+    "//sdk/fidl/fuchsia.ui.scenic:fuchsia.ui.scenic",
+    "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input",
+    "//sdk/fidl/fuchsia.ui.test.scene:fuchsia.ui.test.scene",
     "//sdk/fidl/fuchsia.ui.types:fuchsia.ui.types",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views",
+    "//sdk/fidl/fuchsia.ultrasound:fuchsia.ultrasound",
     "//sdk/fidl/fuchsia.unknown:fuchsia.unknown",
     "//sdk/fidl/fuchsia.update:fuchsia.update",
     "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel",
@@ -134,6 +143,10 @@ _host_tool_fidl_libraries_targets_list = [
 
 _compat_test_fidl_libraries_targets_list = [
     # keep-sorted: begin
+    "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness",
+    "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment",
+    "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance",
+    "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context",
     # keep-sorted: end
 ]
 
