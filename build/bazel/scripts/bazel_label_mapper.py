@@ -336,6 +336,14 @@ class BazelLabelMapper(object):
         return path
 
     def get_sources_for_labels(self, labels: list[str]) -> Iterable[str]:
+        """Convert a list of labels to a list of source file paths.
+
+        Args:
+            labels: A list of labels to convert to source file paths.
+
+        Returns:
+            A list of source file paths, relative to the Ninja build directory.
+        """
         sources: set[str] = set()
 
         labels = [
