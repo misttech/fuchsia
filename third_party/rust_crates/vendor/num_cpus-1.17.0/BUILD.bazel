@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "num_cpus",
     package_url = "https://github.com/seanmonstar/num_cpus",
-    package_version = "1.16.0",
+    package_version = "1.17.0",
 )
 
 license(
@@ -72,7 +72,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.16.0",
+    version = "1.17.0",
     deps = select({
         "@rules_rust//rust/platform:aarch64-apple-darwin": [
             "//third_party/rust_crates/vendor/libc-0.2.184:libc",  # cfg(not(windows))

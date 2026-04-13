@@ -1741,14 +1741,14 @@ alias(
 )
 
 alias(
-    name = "num_cpus-1.16.0",
-    actual = "//third_party/rust_crates/vendor/num_cpus-1.16.0:num_cpus",
+    name = "num_cpus-1.17.0",
+    actual = "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",
     tags = ["manual"],
 )
 
 alias(
     name = "num_cpus",
-    actual = "//third_party/rust_crates/vendor/num_cpus-1.16.0:num_cpus",
+    actual = "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",
     tags = ["manual"],
 )
 

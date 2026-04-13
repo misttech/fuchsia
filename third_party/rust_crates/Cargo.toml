@@ -322,7 +322,7 @@ mio = { version = "0.8.11", features = ["net", "os-ext", "os-poll"] }
 notify = { version = "5.1.0", default-features = false, features = ["macos_fsevent"] }
 # TODO(https://fxbug.dev/106164) Remove this explicit num_cpus dependency when it can be
 # pulled in automatically by tokio
-num_cpus = "1.16.0"
+num_cpus = "1.17.0"
 # See b/42169853, not used for target-side code to avoid system-wide impact of yield in spinloops.
 parking_lot = "0.12.5"
 parking_lot_core = "0.9.12"
@@ -766,7 +766,7 @@ rustflags = ["--cfg=has_i128"]
 [gn.package.num-complex."0.4.6"]
 rustflags = ["--cfg=has_i128", "--cfg=has_const_fn"]
 
-[gn.package.num_cpus."1.16.0"]
+[gn.package.num_cpus."1.17.0"]
 # We need to explicitly depend on num_cpus for tokio, but we're not exposing it
 # to first party code.
 visibility = [
@@ -1171,7 +1171,7 @@ deps = [
   ":libc-v0_2_184",
   ":memchr-v2_8_0",
   ":mio-v0_8_11",
-  ":num_cpus-v1_16_0",
+  ":num_cpus-v1_17_0",
   ":signal-hook-registry-v1_4_8",
   ":socket2-v0_5_9",
 ]

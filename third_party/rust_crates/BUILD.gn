@@ -1251,13 +1251,13 @@ group("num-traits-0.2.19") {
 
 if (!(current_os == "fuchsia")) {
   group("num_cpus") {
-    public_deps = [ ":num_cpus-v1_16_0" ]
+    public_deps = [ ":num_cpus-v1_17_0" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("num_cpus-1.16.0") {
-    public_deps = [ ":num_cpus-v1_16_0" ]
+  group("num_cpus-1.17.0") {
+    public_deps = [ ":num_cpus-v1_17_0" ]
   }
 }
 
@@ -9857,10 +9857,10 @@ rustc_library("heck-v0_5_0") {
   applicable_licenses = [ ":heck-v0_5_0.license" ]
 }
 
-rustc_library("hermit-abi-v0_3_9") {
+rustc_library("hermit-abi-v0_5_2") {
   crate_name = "hermit_abi"
   source_root = "//third_party/rust_crates/empty/hermit-abi/src/lib.rs"
-  output_name = "hermit_abi-e35941ed7a2874b2"
+  output_name = "hermit_abi-44e2f6fe7d01e12d"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -9872,8 +9872,8 @@ rustc_library("hermit-abi-v0_3_9") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e35941ed7a2874b2",
-    "-Cextra-filename=-e35941ed7a2874b2",
+    "-Cmetadata=44e2f6fe7d01e12d",
+    "-Cextra-filename=-44e2f6fe7d01e12d",
   ]
 
   visibility = [ ":*" ]
@@ -12749,18 +12749,18 @@ rustc_library("num-complex-v0_4_6") {
   applicable_licenses = [ ":num-complex-v0_4_6.license" ]
 }
 
-license("num_cpus-v1_16_0.license") {
+license("num_cpus-v1_17_0.license") {
   public_package_name = "num_cpus"
   license_files = [
-    "//third_party/rust_crates/vendor/num_cpus-1.16.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/num_cpus-1.16.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/num_cpus-1.17.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/num_cpus-1.17.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("num_cpus-v1_16_0") {
+rustc_library("num_cpus-v1_17_0") {
   crate_name = "num_cpus"
-  source_root = "//third_party/rust_crates/vendor/num_cpus-1.16.0/src/lib.rs"
-  output_name = "num_cpus-a19523bee9466ca1"
+  source_root = "//third_party/rust_crates/vendor/num_cpus-1.17.0/src/lib.rs"
+  output_name = "num_cpus-a500bc5dc6d00426"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -12771,22 +12771,22 @@ rustc_library("num_cpus-v1_16_0") {
     deps += [ ":libc-v0_2_184" ]
   }
   if (false) {
-    deps += [ ":hermit-abi-v0_3_9" ]
+    deps += [ ":hermit-abi-v0_5_2" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a19523bee9466ca1",
-    "-Cextra-filename=-a19523bee9466ca1",
+    "-Cmetadata=a500bc5dc6d00426",
+    "-Cextra-filename=-a500bc5dc6d00426",
   ]
 
   visibility = []
   visibility += [ "//third_party/rust_crates/compat/icu:*" ]
   visibility += [ ":*" ]
 
-  applicable_licenses = [ ":num_cpus-v1_16_0.license" ]
+  applicable_licenses = [ ":num_cpus-v1_17_0.license" ]
 }
 
 license("num-derive-v0_4_2.license") {
@@ -20631,7 +20631,7 @@ rustc_library("tokio-v1_38_1") {
     deps += [ ":libc-v0_2_184" ]
     deps += [ ":memchr-v2_8_0" ]
     deps += [ ":mio-v0_8_11" ]
-    deps += [ ":num_cpus-v1_16_0" ]
+    deps += [ ":num_cpus-v1_17_0" ]
     deps += [ ":signal-hook-registry-v1_4_8" ]
     deps += [ ":socket2-v0_5_9" ]
   }
