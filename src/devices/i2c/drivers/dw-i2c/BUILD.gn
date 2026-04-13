@@ -1,0 +1,17 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bazel/drivers/bazel_driver_package.gni")
+
+bazel_driver_package("bazel_package") {
+  bazel_target = "//src/devices/i2c/drivers/dw-i2c:dw-i2c"
+  package_name = "dw-i2c"
+  inputs = [
+    "dw-i2c.cc",
+    "dw-i2c.h",
+    "dw-i2c-regs.h",
+    "meta/dw_i2c.bind",
+    "meta/dw-i2c.cml",
+  ]
+}
