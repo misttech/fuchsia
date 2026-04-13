@@ -26,14 +26,10 @@ pub enum EventFdType {
 /// In both cases, if the value is 0, the read blocks or returns EAGAIN.
 /// See https://man7.org/linux/man-pages/man2/eventfd.2.html
 
-struct EventFdInner {
-    value: u64,
-    wait_queue: WaitQueue,
-}
-
 pub struct EventFdFileObject {
-    inner: Mutex<EventFdInner>,
+    inner: Mutex<u64>,
     eventfd_type: EventFdType,
+    wait_queue: WaitQueue,
 }
 
 pub fn new_eventfd<L>(
@@ -51,11 +47,9 @@ where
         locked,
         current_task,
         Box::new(EventFdFileObject {
-            inner: Mutex::new(EventFdInner {
-                value: value.into(),
-                wait_queue: WaitQueue::default(),
-            }),
+            inner: Mutex::new(value.into()),
             eventfd_type,
+            wait_queue: WaitQueue::default(),
         }),
         open_flags,
         "[eventfd]",
@@ -82,15 +76,17 @@ impl FileOps for EventFdFileObject {
                 return error!(EINVAL);
             }
 
-            // The maximum value of the counter is u64::MAX - 1
-            let mut inner = self.inner.lock();
-            let headroom = u64::MAX - inner.value - 1;
-            if headroom < add_value {
-                return error!(EAGAIN);
-            }
-            inner.value += add_value;
-            if inner.value > 0 {
-                inner.wait_queue.notify_fd_events(FdEvents::POLLIN);
+            let should_notify = {
+                let mut inner = self.inner.lock();
+                let headroom = u64::MAX - *inner - 1;
+                if headroom < add_value {
+                    return error!(EAGAIN);
+                }
+                *inner += add_value;
+                *inner > 0
+            };
+            if should_notify {
+                self.wait_queue.notify_fd_events(FdEvents::POLLIN);
             }
             Ok(DATA_SIZE)
         })
@@ -110,24 +106,26 @@ impl FileOps for EventFdFileObject {
                 return error!(EINVAL);
             }
 
-            let mut inner = self.inner.lock();
-            if inner.value == 0 {
-                return error!(EAGAIN);
-            }
-
-            let return_value = match self.eventfd_type {
-                EventFdType::Counter => {
-                    let start_value = inner.value;
-                    inner.value = 0;
-                    start_value
+            let return_value = {
+                let mut inner = self.inner.lock();
+                if *inner == 0 {
+                    return error!(EAGAIN);
                 }
-                EventFdType::Semaphore => {
-                    inner.value -= 1;
-                    1
+
+                match self.eventfd_type {
+                    EventFdType::Counter => {
+                        let start_value = *inner;
+                        *inner = 0;
+                        start_value
+                    }
+                    EventFdType::Semaphore => {
+                        *inner -= 1;
+                        1
+                    }
                 }
             };
             data.write_all(&return_value.to_ne_bytes())?;
-            inner.wait_queue.notify_fd_events(FdEvents::POLLOUT);
+            self.wait_queue.notify_fd_events(FdEvents::POLLOUT);
 
             Ok(DATA_SIZE)
         })
@@ -142,7 +140,7 @@ impl FileOps for EventFdFileObject {
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        Some(self.inner.lock().wait_queue.wait_async_fd_events(waiter, events, handler))
+        Some(self.wait_queue.wait_async_fd_events(waiter, events, handler))
     }
 
     fn query_events(
@@ -154,10 +152,10 @@ impl FileOps for EventFdFileObject {
         let inner = self.inner.lock();
         // TODO check for error and HUP events
         let mut events = FdEvents::empty();
-        if inner.value > 0 {
+        if *inner > 0 {
             events |= FdEvents::POLLIN;
         }
-        if inner.value < u64::MAX - 1 {
+        if *inner < u64::MAX - 1 {
             events |= FdEvents::POLLOUT;
         }
         Ok(events)
