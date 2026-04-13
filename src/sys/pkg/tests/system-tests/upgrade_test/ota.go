@@ -115,6 +115,8 @@ func newOta(
 ) (*otaData, error) {
 	logger.Debugf(ctx, "Creating OTA %s", name)
 
+	latestFfx.ClearIsolateDir()
+
 	repo, err := build.GetPackageRepository(ctx, blobFetchMode, latestFfx.IsolateDir())
 	if err != nil {
 		return nil, fmt.Errorf("error getting repository: %w", err)

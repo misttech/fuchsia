@@ -51,6 +51,10 @@ func (f *FFXTool) IsolateDir() IsolateDir {
 	return f.isolateDir
 }
 
+func (f *FFXTool) ClearIsolateDir() {
+	os.RemoveAll(f.IsolateDir().path)
+}
+
 func (f *FFXTool) StopDaemon(ctx context.Context) error {
 	// TODO(https://fxbug.dev/415899721): We put a time
 	// limit because the command fails when run inside an nsjail.
