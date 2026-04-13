@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/toolchain/rbe.gni")
 import("../libc.gni")
 
 llvm_libc_group("string") {
@@ -93,6 +94,23 @@ foreach(funcs,
     }
   }
 
+  # These also need to stick to the basic machine ABI so that dynlink.c can
+  # use them early.  This requires hermetic_source_set() to contain any
+  # COMDAT code, so the exported symbols must be named here.
+  # TODO(https://fxbug.dev/501232406): Only unsanitized_funcs probably need
+  # to be special here after the legacy musl code is gone.
+  global_alias_prefixes = []
+  weak_alias_prefixes = []
+  export_alias_prefixes = []
+  global_alias_prefixes = [ "__libc_" ]
+  weak_alias_prefixes = [
+    "__asan_",
+    "__hwasan_",
+  ]
+  if (funcs + unsanitized_funcs - unsanitized_funcs == []) {
+    export_alias_prefixes += [ "__unsanitized_" ]
+  }
+
   llvm_libc_source_set(funcs[0]) {
     visibility = [ ":*" ]
 
@@ -101,53 +119,90 @@ foreach(funcs,
     # Avoid self-referential libcalls.
     configs = [ ":no-builtin-${funcs[0]}" ]
 
-    # TODO(https://fxbug.dev/471248163): This is working around an RBE wrapper
-    # bug.  This file (from $llvm_libc/src/string, i.e. $dir) is needed via
-    # (hairy, conditionalized) transitive `#include`s by some of these targets,
-    # but RBE fails to make the file available to the compiler.  The explicit
-    # extra input here should get it explicitly supplied as a remoting input
-    # even if the preprocessing scan fails to deduce it's needed.
-    sources = [ "memory_utils/generic/inline_strlen.h" ]
-
-    # These also need to stick to the basic machine ABI so that dynlink.c can
-    # use them early.  This requires hermetic_source_set() to contain any
-    # COMDAT code, so the exported symbols must be named here.
     basic_abi = true
     global_symbols = []
     foreach(func, funcs) {
-      global_symbols += [
-        func,
-        "__libc_$func",
-        "__asan_$func",
-        "__hwasan_$func",
-      ]
-      if (unsanitized_funcs + [ func ] - [ func ] != unsanitized_funcs) {
-        global_symbols += [ "__unsanitized_$func" ]
+      foreach(prefix,
+              [ "" ] + global_alias_prefixes + weak_alias_prefixes +
+                  export_alias_prefixes) {
+        global_symbols += [ prefix + func ]
       }
     }
 
+    # See the generated_file() target below.
+    non_test_deps = [ ":${funcs[0]}.inc" ]
     non_test_vars = {
-      # The user.basic environment doesn't export the symbols it defines.
-      # When building for export in libc.so, we want these compiled in the
-      # user.basic environment, but we also want to export names for them.  At
-      # the same time, dynlink.c needs to use hidden symbols to access these
-      # so that it won't use PLT entries before they're ready.  So compile
-      # them using an override for the "src/__support/common.h" internal
-      # header that redefines the implementation's LLVM_LIBC_FUNCTION macro to
-      # add extra aliases.
-      #
-      # Note this is plumbed directly as include_dirs in the source_set() so
-      # that it comes before all the include_dirs plumbs via configs.  If this
-      # instead used non_test_deps to point at a group with public_configs
-      # pointing at a config(), then those include_dirs would come after all
-      # the ones from configs used to compile libc.  This needs to preempt
-      # those, so it should come first as include_dirs et al directly in a
-      # target like source_set() do.
-      include_dirs = [ "mem-aliases-include" ]
-
-      if (funcs + unsanitized_funcs - unsanitized_funcs != funcs) {
-        defines = [ "LIBC_UNSANITIZED" ]
+      inputs = [ "$target_gen_dir/${funcs[0]}.inc" ]
+      cflags = [
+        "-include",
+        rebase_path(inputs[0], root_build_dir),
+      ]
+      if (cxx_rbe_enable) {
+        # TODO(https://fxbug.dev/501268588): This is working around an RBE
+        # wrapper bug.  Even though it's in the GN inputs and directly on the
+        # command line, it doesn't notice the -include file as a remote input.
+        cflags +=
+            [ "--remote-inputs=" + rebase_path(inputs[0], root_build_dir) ]
       }
+    }
+  }
+
+  generated_file("${funcs[0]}.inc") {
+    # The user.basic environment doesn't export the symbols it defines.
+    # When building for export in libc.so, we want these compiled in the
+    # user.basic environment, but we also want to export names for them.
+    #
+    # TODO(https://fxbug.dev/501232406): At the same time, dynlink.c needs to
+    # use hidden symbols to access these so that it won't use PLT entries
+    # before they're ready.
+    #
+    # So compile them with extra macros that make the LLVM_LIBC_FUNCTION macro
+    # inject the extra alias declarations.
+    #
+    # These macros are hairy enough that putting them all into a -D switch via
+    # $defines would be a lot, and a potential quoting nightmare.  Hence
+    # instead an -include switch is passed pointing to this generated file of
+    # `#define` directives.
+
+    outputs = [ "$target_gen_dir/$target_name" ]
+    output_conversion = "list lines"
+
+    contents = [ "// Generated by " +
+                 get_label_info(":$target_name", "label_with_toolchain") +
+                 " -- DO NOT EDIT!" ]
+
+    # $llvm_libc/src/__support/common.h puts LLVM_LIBC_FUNCTION_ATTR_$func
+    # before the actual declarations at the front of the LLVM_LIBC_FUNCTION()
+    # expansion.  But the macro shenanigans for this don't permit using any
+    # commas in the value!
+
+    foreach(func, funcs) {
+      extra_decls = ""
+      foreach(alias,
+              [
+                {
+                  prefixes = global_alias_prefixes
+                  suffix = ""
+                },
+                {
+                  prefixes = weak_alias_prefixes
+                  suffix = " [[gnu::weak]]"
+                },
+                {
+                  prefixes = export_alias_prefixes
+                  suffix = " LLVM_LIBC_FUNCTION_ATTR"
+                },
+              ]) {
+        foreach(prefix, alias.prefixes) {
+          extra_decls +=
+              "extern \"C\" decltype(LIBC_NAMESPACE::$func) " +
+              "$prefix$func [[gnu::alias(\"$func\")]]" + alias.suffix + ";"
+        }
+      }
+
+      contents += [
+        "#define LLVM_LIBC_FUNCTION_ATTR_$func LLVM_LIBC_EMPTY, $extra_decls",
+      ]
     }
   }
 }
