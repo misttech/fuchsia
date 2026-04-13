@@ -112,9 +112,11 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
         extra_args: to_extra_export_args(&cmd.path_remappings, cmd.compilation_dir.as_ref()),
     };
 
-    match (cmd.export_html, cmd.export_lcov) {
-        (None, None) => show_coverage(&params, verbose_mode).context("failed to show coverage")?,
-        (html, lcov) => {
+    match (cmd.export_html, cmd.export_lcov, cmd.export_json) {
+        (None, None, None) => {
+            show_coverage(&params, verbose_mode).context("failed to show coverage")?
+        }
+        (html, lcov, json) => {
             if let Some(ref html_export_dir) = html {
                 export_html(&params, html_export_dir, verbose_mode).context(format!(
                     "failed to export HTML coverage report to {:?}",
@@ -125,6 +127,11 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
             if let Some(ref lcov_export_path) = lcov {
                 export_lcov(&params, lcov_export_path, verbose_mode)
                     .context(format!("failed to export lcov to {:?}", lcov_export_path))?
+            }
+
+            if let Some(ref json_export_path) = json {
+                export_json(&params, json_export_path, verbose_mode)
+                    .context(format!("failed to export json to {:?}", json_export_path))?
             }
         }
     }
@@ -410,6 +417,37 @@ fn export_lcov(
     }
 }
 
+/// Calls `llvm-cov export -format text` to write a JSON file for collected test coverage.
+fn export_json(
+    params: &ExportParams<'_>,
+    json_export_path: &Path,
+    verbose_mode: VerboseMode,
+) -> Result<()> {
+    let output_json = File::create(json_export_path)?;
+    let show_cmd = run_with_verbose(
+        Command::new(&params.llvm_cov_bin)
+            .args(["export", "-format", "text"])
+            .arg("-instr-profile")
+            .arg(&params.merged_profile)
+            .args(&params.extra_args)
+            .args(&params.bin_files_args)
+            .args(&params.src_files)
+            .stdout(output_json)
+            .stderr(Stdio::inherit()),
+        verbose_mode,
+    )?;
+
+    match show_cmd.status.code() {
+        Some(0) => Ok(()),
+        Some(code) => Err(anyhow!(
+            "failed to show coverage: status code {}, stderr: {}",
+            code,
+            String::from_utf8_lossy(&show_cmd.stderr)
+        )),
+        None => Err(anyhow!("JSON export terminated by signal unexpectedly")),
+    }
+}
+
 /// Finds all raw coverage profiles in `test_out_dir`.
 fn glob_profraws(test_out_dir: &Path) -> Result<Vec<PathBuf>> {
     let pattern = test_out_dir.join("**").join("*.profraw");
@@ -479,6 +517,7 @@ mod tests {
                 symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
                 export_html: None,
                 export_lcov: None,
+                export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
@@ -500,6 +539,7 @@ mod tests {
                 symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
                 export_html: None,
                 export_lcov: None,
+                export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
@@ -520,6 +560,7 @@ mod tests {
                 symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
                 export_html: None,
                 export_lcov: None,
+                export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
@@ -537,6 +578,7 @@ mod tests {
                 symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
                 export_html: Some(PathBuf::from(&test_dir_path)),
                 export_lcov: None,
+                export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
@@ -554,6 +596,25 @@ mod tests {
                 symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
                 export_html: None,
                 export_lcov: Some(PathBuf::from(&test_dir_path).join("test.lcov")),
+                export_json: None,
+                path_remappings: Vec::new(),
+                compilation_dir: None,
+                src_files: Vec::new(),
+                verbose: false,
+            })
+            .await,
+            Ok(())
+        );
+
+        // Export JSON.
+        assert_matches!(
+            coverage(CoverageCommand {
+                test_output_dir: PathBuf::from(&test_dir_path),
+                clang_dir: PathBuf::from(&test_dir_path),
+                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                export_html: None,
+                export_lcov: None,
+                export_json: Some(PathBuf::from(&test_dir_path).join("test.json")),
                 path_remappings: Vec::new(),
                 compilation_dir: None,
                 src_files: Vec::new(),
@@ -571,6 +632,7 @@ mod tests {
                 symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
                 export_html: None,
                 export_lcov: None,
+                export_json: None,
                 path_remappings: vec![
                     "from_path,to_path".to_string(),
                     "from_path2,to_path2".to_string()
@@ -753,6 +815,46 @@ mod tests {
         assert_eq!(
             to_extra_export_args(&["p1,p2".to_string()], Some(&PathBuf::from("comp_dir"))),
             vec!["-path-equivalence", "p1,p2", "-compilation-dir", "comp_dir"]
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_export_json() {
+        let test_dir = TempDir::new().unwrap();
+        let test_dir_path = test_dir.path().to_path_buf();
+        let test_bin_dir = test_dir_path.join("bin");
+        create_dir(&test_bin_dir).unwrap();
+
+        let llvm_cov_bin = test_bin_dir.join("llvm-cov");
+        File::create(&llvm_cov_bin)
+            .unwrap()
+            .write_all(
+                b"#!/bin/sh\n\
+                for arg in \"$@\"; do\n\
+                  if [ \"$arg\" = \"text\" ]; then\n\
+                    echo '{\"data\":[{\"files\":[{\"filename\":\"a.cc\",\"segments\":[],\"branches\":[],\"summary\":{\"lines\":{\"count\":1,\"covered\":1,\"percent\":100.0}}}],\"totals\":{\"lines\":{\"count\":1,\"covered\":1,\"percent\":100.0}}}],\"type\":\"llvm.coverage.json.export\",\"version\":\"2.0.1\"}'\n\
+                    exit 0\n\
+                  fi\n\
+                done",
+            )
+            .unwrap();
+        set_permissions(&llvm_cov_bin, Permissions::from_mode(0o770)).unwrap();
+
+        let json_export_path = test_dir_path.join("test.json");
+        let params = ExportParams {
+            llvm_cov_bin,
+            merged_profile: PathBuf::from("merged.profdata"),
+            bin_files_args: vec![],
+            src_files: vec![],
+            extra_args: vec![],
+        };
+
+        export_json(&params, &json_export_path, VerboseMode::NotVerbose).unwrap();
+
+        let json_content = std::fs::read_to_string(json_export_path).unwrap();
+        assert_eq!(
+            json_content,
+            "{\"data\":[{\"files\":[{\"filename\":\"a.cc\",\"segments\":[],\"branches\":[],\"summary\":{\"lines\":{\"count\":1,\"covered\":1,\"percent\":100.0}}}],\"totals\":{\"lines\":{\"count\":1,\"covered\":1,\"percent\":100.0}}}],\"type\":\"llvm.coverage.json.export\",\"version\":\"2.0.1\"}\n"
         );
     }
 }

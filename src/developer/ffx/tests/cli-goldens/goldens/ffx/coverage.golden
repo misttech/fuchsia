@@ -62,6 +62,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "export-json"
+        }
+      },
+      "optionality": "optional",
+      "long": "--export-json",
+      "short": null,
+      "description": "path to export JSON file to",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "export-lcov"
         }
       },

@@ -6,12 +6,13 @@
 #### CATEGORY=Test
 ### Runs test and exports coverage data.
 
-## usage: fx coverage [--lcov-output-path <path>] [--html-output-dir <directory>] [-h|--help] [testName ...]
+## usage: fx coverage [--lcov-output-path <path>] [--html-output-dir <directory>] [--json-output-path <path>] [-h|--help] [testName ...]
 ##
 ## Runs test and exports coverage data.
 ##
 ## --html-output-dir: directory to output test coverage HTML to
 ## --lcov-output-path: path to write output lcov to
+## --json-output-path: path to write output JSON to
 ## --test-output-dir: directory to use as test output, skipping running fx test
 ## -v|--verbose: print all executed commands for debugging
 ## -h|--help: prints help message
@@ -26,6 +27,7 @@ set -euo pipefail
 function main() {
   local lcov_output_path=''
   local html_output_dir=''
+  local json_output_path=''
   local verbose=false
   local test_output_dir=''
 
@@ -42,6 +44,17 @@ function main() {
         # Get absolute path because `ffx coverage` is executed in a different
         # dir.
         html_output_dir="$(realpath ${1})"
+        ;;
+      --json-output-path)
+        shift
+        # Create directory if it doesn't exist so realpath succeeds.
+        local json_dir="$(dirname "${1}")"
+        if [[ ! -d "${json_dir}" ]]; then
+          mkdir -p "${json_dir}"
+        fi
+        # Get absolute path because `ffx coverage` is executed in a different
+        # dir.
+        json_output_path="$(realpath "${1}")"
         ;;
       --test-output-dir)
         shift
@@ -85,6 +98,9 @@ function main() {
   if [[ -n "${html_output_dir}" ]]; then
     ffx_cov_args+=" --export-html ${html_output_dir}"
   fi
+  if [[ -n "${json_output_path}" ]]; then
+    ffx_cov_args+=" --export-json ${json_output_path}"
+  fi
   if [[ ${verbose} == true ]]; then
     ffx_cov_args+=" --verbose"
   fi
@@ -109,6 +125,9 @@ function main() {
   fi
   if [[ -n "${html_output_dir}" ]]; then
     echo "Coverage HTML exported to ${html_output_dir}"
+  fi
+  if [[ -n "${json_output_path}" ]]; then
+    echo "Coverage JSON exported to ${json_output_path}"
   fi
 }
 

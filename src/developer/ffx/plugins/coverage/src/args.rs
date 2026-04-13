@@ -25,6 +25,10 @@ pub struct CoverageCommand {
     #[argh(option)]
     pub export_html: Option<PathBuf>,
 
+    /// path to export JSON file to
+    #[argh(option)]
+    pub export_json: Option<PathBuf>,
+
     /// path to export LCOV file to
     #[argh(option)]
     pub export_lcov: Option<PathBuf>,
