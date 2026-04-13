@@ -12,12 +12,6 @@
         binary: "bin/test-fxfs",
         use_next_vdso: "true",
     },
-    children: [
-        {
-            name: "test-fxfs",
-            url: "test-fxfs#meta/test-fxfs.cm",
-        },
-    ],
     capabilities: [
         {
             directory: "data",
