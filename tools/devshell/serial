@@ -20,14 +20,22 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
 fx-config-read
 
+function serial-emulator {
+  fx-info "Assuming emulator already started with \`ffx emu start --headless\`"
+  fx-command-run ffx emu console -s
+  return $?
+}
+
 if ! which socat >/dev/null 2>&1; then
-  fx-error "The command \`socat\` was not found!"
+  fx-warn "The command \`socat\` was not found!"
   if [[ "$(uname)" == "Linux" ]]; then
-    fx-error "  maybe \`apt install socat\`"
+    fx-warn "  If connecting to physical device, maybe \`apt install socat\`"
   else
-    fx-error "  maybe \`brew install socat\`"
+    fx-warn "  If connecting to physical device, maybe \`brew install socat\`"
   fi
-  exit 1
+  fx-info "Trying to connect to emulator instead"
+  serial-emulator
+  exit $?
 fi
 
 pontis_message=""
@@ -64,8 +72,10 @@ if [[ -z "$DEVICE" ]]; then
   options=($(find /dev -maxdepth 1 -name ttyUSB\* -or -name tty.SLAB_USBtoUART\* -or -name tty.usbserial\* | sort))
   options+=("${pontis_options[@]}")
   if [[ "${#options}" = 0 ]]; then
-    fx-error "No ttyUSB*, tty.SLAB_USBtoUSART* or tty.usbserial* found in /dev${pontis_message}\nPlease specify any known path exactly."
-    exit 1
+    fx-warn "No ttyUSB*, tty.SLAB_USBtoUSART* or tty.usbserial* found in /dev${pontis_message}\nIf connecting to physical device, please specify any known path exactly."
+    fx-info "Trying to connect to emulator instead"
+    serial-emulator
+    exit $?
   fi
   if [[ "${#options[@]}" -eq 1 ]]; then
     echo >&2 "Found one device at ${options[0]}"
@@ -82,7 +92,9 @@ fi
 
 if [[ ! -e "$DEVICE" ]]; then
   fx-error "$DEVICE not found"
-  exit 1
+  fx-info "Trying to connect to emulator instead"
+  serial-emulator
+  exit $?
 fi
 
 if [[ ! -r "$DEVICE" ]]; then

@@ -245,6 +245,11 @@ _sub-command_ of `ffx log`, _not_ a flag preceded by `--` or `-`.
 
 `ffx inspect show` will dump inspect data from components on the device.
 
+`fx serial` begins streaming logs from the serial interface in real time. Most
+serial logs also go to `ffx log` output, but when debugging issues involving a
+device crash or restart, starting `fx serial` before triggering the issue can
+yield more detailed logs than `ffx log`.
+
 ### Kernel boot tests
 
 `fx run-boot-test` runs kernel boot tests and provides more control over the
