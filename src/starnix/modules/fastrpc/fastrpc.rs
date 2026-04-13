@@ -523,7 +523,7 @@ impl FastRPCFile {
             }
         });
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(remote_bufs.len());
 
         // This is used to track the current merge region's endpoint. We don't need to track
         // a start as we have already sorted them using the start address.
