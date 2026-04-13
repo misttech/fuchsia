@@ -84,6 +84,22 @@ TEST_F(TrbFifoTest, Wrap) {
   EXPECT_EQ(fifo_.write_, fifo_.first_);
 }
 
+TEST_F(TrbFifoTest, AvailableSlots) {
+  const size_t size = kBufferSize / sizeof(dwc3_trb_t);
+  EXPECT_EQ(fifo_.AvailableSlots(), size - 2);
+
+  fifo_.AdvanceWrite();
+  EXPECT_EQ(fifo_.AvailableSlots(), size - 3);
+
+  for (size_t i = 0; i < size - 3; i++) {
+    fifo_.AdvanceWrite();
+  }
+  EXPECT_EQ(fifo_.AvailableSlots(), 0);
+
+  fifo_.AdvanceRead();
+  EXPECT_EQ(fifo_.AvailableSlots(), 1);
+}
+
 TEST_F(TrbFifoTest, ReInitTest) {
   fifo_.AdvanceWrite();
   ASSERT_NE(fifo_.write_, fifo_.first_);
