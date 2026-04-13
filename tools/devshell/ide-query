@@ -77,7 +77,7 @@ function main {
   fi
 
   # Execute the binary with any remaining arguments.
-  "$exe_path" "${filtered_args[@]}"
+  "$exe_path" --fuchsia-dir "$FUCHSIA_DIR" "${filtered_args[@]}"
 }
 
 main "$@"

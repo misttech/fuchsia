@@ -12,6 +12,7 @@ if (is_host) {
       "main.go",
       "main_test.go",
     ]
+    deps = [ "//third_party/golibs:github.com/spf13/pflag" ]
   }
 
   go_binary("ide_query") {

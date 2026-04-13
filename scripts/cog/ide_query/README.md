@@ -7,7 +7,7 @@
 Once fully implemented, the tool can be invoked via the `fx` command:
 
 ```bash
-fx ide-query [args]
+fx ide-query [--fuchsia-dir <path>] [--file <path>...] [args]
 ```
 
 To force a rebuild of the tool from source (useful during development), use the `--dev` flag:
@@ -20,4 +20,6 @@ fx ide-query --dev [args]
 
 The tool is implemented in Go and lives in `//scripts/cog/ide_query`. It uses a self-bootstrapping mechanism to ensure it remains fast and decoupled from the main Fuchsia build graph for developer workflows.
 
-For more information on the bootstrapping design, see [docs/BOOTSTRAP_DESIGN.md](./docs/BOOTSTRAP_DESIGN.md).
+For more information on the design, see:
+- [docs/BOOTSTRAP_DESIGN.md](./docs/BOOTSTRAP_DESIGN.md)
+- [docs/WORKSPACE_CONTEXT_DESIGN.md](./docs/WORKSPACE_CONTEXT_DESIGN.md)
