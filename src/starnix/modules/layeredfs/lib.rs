@@ -88,7 +88,7 @@ impl LayeredFsBuilder {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        let (fs, actions) = self.build_internal(locked, kernel, b"/".into());
+        let (fs, actions) = self.build_internal(locked, kernel, Default::default());
         let cb = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             for action in actions {
                 let mount_point = current_task

@@ -449,9 +449,7 @@ impl Mount {
     /// Returns the effective flags for the `Mount`, calculated as the union of the mount flags
     /// associated with the `FileSystem`, and with the `Mount` itself.
     fn flags(&self) -> MountFlags {
-        // TODO: https://fxbug.dev/322875215 - All `FileSystem` flags should be included here, once
-        // updating superblock mount flags via `MS_REMOUNT` is implemented.
-        self.mount_flags().into()
+        MountFlags::from(self.mount_flags()) | self.fs_flags().into()
     }
 
     /// Returns the mount flags stored unique to this `Mount`.
@@ -767,9 +765,7 @@ impl DynamicFileSource for ProcMountsFileSource {
                 mount.fs.name(),
                 // Report the union of the FileSystem and Mount flags, as well as any FileSystem-
                 // or LSM-specific options.
-                // TODO: https://fxbug.dev/322875215 - Remove the explicit fs_flags() once
-                // Mount::flags() is fixed to include the filesystem flags.
-                mount.flags() | (mount.fs_flags() & FileSystemFlags::RDONLY).into(),
+                mount.flags(),
                 security::sb_show_options(&task.kernel(), &mount.fs)?,
             )?;
             writeln!(sink, " 0 0")?;
