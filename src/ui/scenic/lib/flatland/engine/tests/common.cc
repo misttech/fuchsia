@@ -80,7 +80,12 @@ DisplayCompositorTestBase::FakeFlatlandSession::CreateUberStructWithCurrentTopol
   EXPECT_NE(local_topology_data.iterations, std::numeric_limits<uint64_t>::max());
   EXPECT_TRUE(local_topology_data.cyclical_edges.empty());
 
-  uber_struct->local_topology = local_topology_data.sorted_transforms;
+  // TODO(https://fxbug.dev/487048356): before we switched over to pmr, we used std::move on the
+  // result from ComputeAndCleanup().  Consider whether we can do that with pmr.  For example,
+  // maybe we can pass the UberStruct's allocator into `ComputeAndCleanup()`.  Not so important
+  // for test code, but we should still mirror the production code paths.
+  uber_struct->local_topology.assign(local_topology_data.sorted_transforms.begin(),
+                                     local_topology_data.sorted_transforms.end());
 
   return uber_struct;
 }

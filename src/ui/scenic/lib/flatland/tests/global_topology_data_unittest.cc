@@ -116,7 +116,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyLinkExpansion) {
 
   for (const auto& v : vectors) {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
 
@@ -164,7 +164,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyIncompleteLink) {
   GlobalTopologyData::ParentIndexVector expected_parent_indices = {0, 0, 0};
 
   auto uber_struct = std::make_unique<UberStruct>();
-  uber_struct->local_topology = vectors[0];
+  uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
   uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
 
   auto output =
@@ -181,7 +181,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyIncompleteLink) {
   //     \
   //       1:2
   uber_struct = std::make_unique<UberStruct>();
-  uber_struct->local_topology = vectors[1];
+  uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
   uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
 
   output =
@@ -230,7 +230,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyLinksMismatchedUberStruct) {
 
   for (const auto& v : vectors) {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
 
@@ -285,7 +285,7 @@ TEST(GlobalTopologyDataTest, GlobalTopologyDiamondInheritance) {
 
   for (const auto& v : vectors) {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
 
@@ -325,7 +325,7 @@ TEST(GlobalTopologyDataTest, HitTest_OneView) {
 
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref1_root_transform, clip_region);
@@ -403,7 +403,7 @@ TEST(GlobalTopologyDataTest, InfiniteHitRegion) {
   // Parent's uber struct.
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
 
     uber_struct->local_clip_regions[view_1_local_root] =
@@ -417,7 +417,7 @@ TEST(GlobalTopologyDataTest, InfiniteHitRegion) {
   // Child's uber struct
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref2));
 
     uber_struct->local_hit_regions_map[view_2_client_root] = {flatland::HitRegion::Infinite()};
@@ -492,7 +492,7 @@ TEST(GlobalTopologyDataTest, HitTest_SemanticVisibility) {
 
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref1_root_transform, clip_region);
@@ -563,7 +563,7 @@ TEST(GlobalTopologyDataTest, HitTest_TwoOverlappingViews) {
 
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_parent));
     TransformClipRegion clip_region =
         TransformClipRegion({.x = 0, .y = 0, .width = kParentWidth, .height = kHeight});
@@ -575,7 +575,7 @@ TEST(GlobalTopologyDataTest, HitTest_TwoOverlappingViews) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_child));
     uber_struct->local_hit_regions_map[view_ref_child_root_transform] = {
         flatland::HitRegion({1, 0, kChildWidth, kHeight})};
@@ -668,7 +668,7 @@ TEST(GlobalTopologyDataTest, HitTest_AnonymousView) {
 
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref1_root_transform, clip_region);
@@ -679,12 +679,12 @@ TEST(GlobalTopologyDataTest, HitTest_AnonymousView) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref3));
     uber_struct->local_hit_regions_map[view_ref3_root_transform] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
@@ -748,7 +748,7 @@ TEST(GlobalTopologyDataTest, HitTest_SandwichTest) {
 
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     TransformClipRegion clip_region =
         TransformClipRegion({.x = 0, .y = 0, .width = kParentWidth, .height = kHeight});
@@ -761,7 +761,7 @@ TEST(GlobalTopologyDataTest, HitTest_SandwichTest) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref2));
     uber_struct->local_hit_regions_map[view_ref2_root_transform] = {
         flatland::HitRegion({1, 0, 2, kHeight})};
@@ -844,7 +844,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
 
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_A));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref_A_root_transform, clip_region);
@@ -855,7 +855,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_B));
     uber_struct->local_hit_regions_map[{2, 0}] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
@@ -864,7 +864,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[2];
+    uber_struct->local_topology.assign(vectors[2].begin(), vectors[2].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_C));
     uber_struct->local_hit_regions_map[{3, 0}] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
@@ -873,7 +873,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[3];
+    uber_struct->local_topology.assign(vectors[3].begin(), vectors[3].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_D));
     uber_struct->local_hit_regions_map[{4, 0}] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
@@ -882,7 +882,7 @@ TEST(GlobalTopologyDataTest, HitTest_StartNodeTest) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[4];
+    uber_struct->local_topology.assign(vectors[4].begin(), vectors[4].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_E));
     uber_struct->local_hit_regions_map[{5, 0}] = {
         flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight})};
@@ -968,7 +968,7 @@ TEST(GlobalTopologyDataTest, HitTest_ClippedandRotatedChild) {
   // Create the parent uber struct.
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_parent));
     TransformClipRegion clip_region =
         TransformClipRegion({.x = 0, .y = 0, .width = kParentWidth, .height = kParentHeight});
@@ -982,7 +982,7 @@ TEST(GlobalTopologyDataTest, HitTest_ClippedandRotatedChild) {
   // Create the child uber struct.
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_child));
     // Create a maximal hit region so that the clip regions are what must be respected.
     uber_struct->local_hit_regions_map[view_ref_child_root_transform] = {
@@ -1118,7 +1118,7 @@ TEST(GlobalTopologyDataTest, HitTest_NonRelevantClipRegions) {
   // Create the parent uber struct.
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_parent));
 
     // Set up all clip regions.
@@ -1136,7 +1136,7 @@ TEST(GlobalTopologyDataTest, HitTest_NonRelevantClipRegions) {
   // Create the child uber struct.
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_child));
     // Create a maximal hit region so that the clip regions are what must be respected.
     uber_struct->local_hit_regions_map[view_ref_child_root_transform] = {
@@ -1241,7 +1241,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
       flatland::HitRegion({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_A));
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
     uber_struct->local_clip_regions.try_emplace(view_ref_A_root_transform, clip_region);
@@ -1255,7 +1255,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_B));
     uber_struct->local_hit_regions_map[{2, 0}] = {kScreenSizeHitRegion};
 
@@ -1270,7 +1270,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[2];
+    uber_struct->local_topology.assign(vectors[2].begin(), vectors[2].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_C));
     uber_struct->local_hit_regions_map[{3, 0}] = {kScreenSizeHitRegion};
 
@@ -1282,7 +1282,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[3];
+    uber_struct->local_topology.assign(vectors[3].begin(), vectors[3].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_D));
     uber_struct->local_hit_regions_map[{4, 0}] = {kScreenSizeHitRegion};
 
@@ -1295,7 +1295,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[4];
+    uber_struct->local_topology.assign(vectors[4].begin(), vectors[4].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_E));
     uber_struct->local_hit_regions_map[{5, 0}] = {kScreenSizeHitRegion};
 
@@ -1426,7 +1426,7 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
       {child_transform_handle, parent_transform_handle}};
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     uber_struct->debug_name = "test_instance_1";
     TransformClipRegion clip_region({.x = 0, .y = 0, .width = kWidth, .height = kHeight});
@@ -1435,7 +1435,7 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref2));
     uber_struct->debug_name = "test_instance_2";
     uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
@@ -1493,14 +1493,14 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_UnconnectedLocalTopology) {
 
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref1));
     uber_struct->debug_name = "test_instance_1";
     uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref2));
     uber_struct->debug_name = "test_instance_2";
     uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
@@ -1565,32 +1565,32 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_AnonymousView) {
 
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[0];
+    uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_1));
     uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_2));
     uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[2];
+    uber_struct->local_topology.assign(vectors[2].begin(), vectors[2].end());
     // Make View 3 anonymous.
     uber_struct->view_ref = nullptr;
     uber_structs[vectors[2][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[3];
+    uber_struct->local_topology.assign(vectors[3].begin(), vectors[3].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_4));
     uber_structs[vectors[3][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[4];
+    uber_struct->local_topology.assign(vectors[4].begin(), vectors[4].end());
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_5));
     uber_structs[vectors[4][0].handle.GetInstanceId()] = std::move(uber_struct);
   }
@@ -1645,11 +1645,11 @@ TEST(GlobalTopologyDataTest, LastChildEdgeCase_NoLink) {
   GlobalTopologyData::ParentIndexVector expected_parent_indices = {0, 0, 0};
 
   auto uber_struct = std::make_unique<UberStruct>();
-  uber_struct->local_topology = vectors[0];
+  uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
   uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
 
   uber_struct = std::make_unique<UberStruct>();
-  uber_struct->local_topology = vectors[1];
+  uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
   uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
 
   auto output =
@@ -1679,12 +1679,12 @@ TEST(GlobalTopologyDataTest, LinkEdgeCaseTest2_NoUberStruct) {
   MakeLink(links, 2);  // 0:2 - 2:0
 
   auto uber_struct = std::make_unique<UberStruct>();
-  uber_struct->local_topology = vectors[0];
+  uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
   uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
 
   /** Specifically do not create the uber_struct for the 2nd flatland instance
     uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[1];
+    uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
     uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
   **/
 
@@ -1722,11 +1722,11 @@ TEST(GlobalTopologyDataTest, LinkEdgeCaseTest3_WrongHandle) {
   MakeLink(links, /*wrong*/ 3);
 
   auto uber_struct = std::make_unique<UberStruct>();
-  uber_struct->local_topology = vectors[0];
+  uber_struct->local_topology.assign(vectors[0].begin(), vectors[0].end());
   uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
 
   uber_struct = std::make_unique<UberStruct>();
-  uber_struct->local_topology = vectors[1];
+  uber_struct->local_topology.assign(vectors[1].begin(), vectors[1].end());
   uber_structs[vectors[1][0].handle.GetInstanceId()] = std::move(uber_struct);
 
   // Since we gave the wrong link handle, the topology should just be:

@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_TRANSFORM_GRAPH_H_
 
 #include <map>
+#include <memory_resource>
 #include <span>
 #include <unordered_set>
 #include <vector>
@@ -39,6 +40,9 @@ class TransformGraph {
   // Because the topology vector is depth-first, a child's children (if it has any) will be listed
   // before that child's siblings.
   using TopologyVector = std::vector<TopologyEntry>;
+  // Temporary.  Eventually all will use `pmr`, and `TopologyVector`
+  // will be the only name; TopologyPmrVector will be deleted.
+  using TopologyPmrVector = std::pmr::vector<TopologyEntry>;
 
   // A collection of directed edges, the key in the map is the parent transform and the values are
   // the children.

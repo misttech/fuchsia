@@ -325,7 +325,7 @@ TEST(SceneDumperTest, TopologyTree) {
 
   for (const auto& v : vectors) {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
 
@@ -389,7 +389,7 @@ TEST(SceneDumperTest, TopologyTreeDeep) {
 
   for (const auto& v : vectors) {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
 
@@ -448,7 +448,7 @@ TEST(SceneDumperTest, TopologyTreeWithNames) {
 
   for (int i = 0; i < 5; i++) {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = vectors[i];
+    uber_struct->local_topology.assign(vectors[i].begin(), vectors[i].end());
     uber_struct->debug_name = names[i];
     auto view_ref_pair = scenic::cpp::ViewRefPair::New();
     uber_struct->view_ref = std::make_shared<const ViewRef>(std::move(view_ref_pair.view_ref));
@@ -513,13 +513,13 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   {
     auto& v = vectors[0];
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto& v = vectors[1];
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
     ImageMetadata image;
     image.width = 800;
     image.height = 600;
@@ -530,7 +530,7 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   {
     auto& v = vectors[2];
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
     ImageMetadata image;
     image.width = 300;
     image.height = 400;

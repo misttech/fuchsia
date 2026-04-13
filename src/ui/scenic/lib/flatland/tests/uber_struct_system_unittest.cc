@@ -294,7 +294,7 @@ TEST(UberStructSystemTest, BasicTopologyRetrieval) {
   std::unordered_map<scheduling::SessionId, scheduling::PresentId> instances_to_update;
   for (const auto& v : vectors) {
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
 
     const auto session_id = v[0].handle.GetInstanceId();
     queues[session_id]->Push(0, std::move(uber_struct));
@@ -307,7 +307,7 @@ TEST(UberStructSystemTest, BasicTopologyRetrieval) {
   for (const auto& v : vectors) {
     auto iter = snapshot.map.find(v[0].handle.GetInstanceId());
     EXPECT_NE(iter, snapshot.map.end());
-    EXPECT_EQ(iter->second->local_topology, v);
+    EXPECT_THAT(iter->second->local_topology, ::testing::ElementsAreArray(v));
   }
 }
 
@@ -440,7 +440,7 @@ TEST(UberStructSystemTest, GlobalTopologyMultithreadedUpdates) {
   for (size_t i = 0; i < 11; ++i) {
     const auto& v = vectors[i];
     auto uber_struct = std::make_unique<UberStruct>();
-    uber_struct->local_topology = v;
+    uber_struct->local_topology.assign(v.begin(), v.end());
 
     const auto session_id = v[0].handle.GetInstanceId();
     const auto present_id = next_present_id++;
@@ -466,14 +466,14 @@ TEST(UberStructSystemTest, GlobalTopologyMultithreadedUpdates) {
           while (run) {
             {
               auto uber_struct = std::make_unique<UberStruct>();
-              uber_struct->local_topology = v;
+              uber_struct->local_topology.assign(v.begin(), v.end());
 
               q->Push(next_present_id++, std::move(uber_struct));
             }
 
             {
               auto uber_struct = std::make_unique<UberStruct>();
-              uber_struct->local_topology = a;
+              uber_struct->local_topology.assign(a.begin(), a.end());
 
               q->Push(next_present_id++, std::move(uber_struct));
             }

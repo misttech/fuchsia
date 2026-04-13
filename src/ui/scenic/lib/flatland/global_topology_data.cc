@@ -433,7 +433,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
 
   // This is a stack of vector "iterators". We store the raw index, instead of an iterator, so that
   // we can do index comparisons.
-  std::vector<std::pair<const TransformGraph::TopologyVector&, /*local_index=*/size_t>>
+  std::vector<std::pair<const TransformGraph::TopologyPmrVector&, /*local_index=*/size_t>>
       vector_stack;
   // This is a stack of global parent indices and the number of children left to process for that
   // parent.
@@ -545,10 +545,9 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
 
       // Thanks to one-view-per-session semantics, we should never cycle through the
       // topological vectors, so we don't need to handle cycles. We DCHECK here just to be sure.
-      FX_DCHECK(std::find_if(vector_stack.cbegin(), vector_stack.cend(),
-                             [&](std::pair<const TransformGraph::TopologyVector&, uint64_t> entry) {
-                               return entry.first == new_vector;
-                             }) == vector_stack.cend());
+      FX_DCHECK(std::find_if(vector_stack.cbegin(), vector_stack.cend(), [&](const auto& entry) {
+                  return entry.first == new_vector;
+                }) == vector_stack.cend());
 
       // At this point, the link is resolved. This means the link did actually result in the parent
       // having an additional child, but that child needs to be processed, so the stack of remaining

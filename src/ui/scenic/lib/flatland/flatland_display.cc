@@ -159,7 +159,11 @@ void FlatlandDisplay::SetContent(ViewportCreationToken token,
 
   auto uber_struct = std::make_unique<UberStruct>();
   uber_struct->debug_name = "FlatlandDisplay";
-  uber_struct->local_topology = std::move(data.sorted_transforms);
+  // TODO(https://fxbug.dev/487048356): before we switched over to pmr, we used std::move on the
+  // result from ComputeAndCleanup().  Consider whether we can do that with pmr.  For example,
+  // maybe we can pass the UberStruct's allocator into `ComputeAndCleanup()`.
+  uber_struct->local_topology.assign(data.sorted_transforms.begin(), data.sorted_transforms.end());
+
   uber_struct->local_clip_regions[link_to_child_->parent_transform_handle] = TransformClipRegion({
       .x = 0,
       .y = 0,

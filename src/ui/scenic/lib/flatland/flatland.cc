@@ -458,17 +458,25 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
   {
     TRACE_DURATION("gfx", "Flatland::Present[populate_uberstruct]");
 
-    uber_struct->local_topology = std::move(data.sorted_transforms);
+    // TODO(https://fxbug.dev/487048356): before we switched over to pmr, we used std::move on the
+    // result from ComputeAndCleanup().  Consider whether we can do that with pmr.  For example,
+    // maybe we can pass the UberStruct's allocator into `ComputeAndCleanup()`.
+    uber_struct->local_topology.assign(data.sorted_transforms.begin(),
+                                       data.sorted_transforms.end());
 
     uber_struct->local_matrices.reserve(matrices_.size());
     for (const auto& [handle, matrix_data] : matrices_) {
       uber_struct->local_matrices[handle] = matrix_data.GetMatrix();
     }
 
-    uber_struct->local_image_sample_regions = image_sample_regions_;
-    uber_struct->local_opacity_values = opacity_values_;
-    uber_struct->local_clip_regions = clip_regions_;
-    uber_struct->local_hit_regions_map = hit_regions_;
+    uber_struct->local_image_sample_regions.insert(image_sample_regions_.begin(),
+                                                   image_sample_regions_.end());
+    uber_struct->local_opacity_values.insert(opacity_values_.begin(), opacity_values_.end());
+    uber_struct->local_clip_regions.insert(clip_regions_.begin(), clip_regions_.end());
+
+    for (const auto& [handle, regions] : hit_regions_) {
+      uber_struct->local_hit_regions_map[handle].assign(regions.begin(), regions.end());
+    }
 
     // As per the default hit region policy, if the client has not explicitly set a hit region on
     // the root, add a full screen one.
@@ -477,13 +485,13 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
       uber_struct->local_hit_regions_map[root_transform_] = {{flatland::HitRegion::Infinite()}};
     }
 
-    uber_struct->images = image_metadatas_;
+    uber_struct->images.insert(image_metadatas_.begin(), image_metadatas_.end());
 
     if (link_to_parent_.has_value()) {
       uber_struct->view_ref = link_to_parent_->view_ref;
     }
 
-    uber_struct->debug_name = debug_name_;
+    uber_struct->debug_name.assign(debug_name_);
     uber_struct->creation_time = zx::time_monotonic(async_now(dispatcher()));
   }
 
