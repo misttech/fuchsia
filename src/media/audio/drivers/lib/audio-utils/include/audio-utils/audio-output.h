@@ -18,7 +18,7 @@ class AudioSource;
 
 class AudioOutput : public AudioDeviceStream {
  public:
-  static std::unique_ptr<AudioOutput> Create(uint32_t dev_id);
+  static std::unique_ptr<AudioOutput> Create(uint64_t dev_id);
   static std::unique_ptr<AudioOutput> Create(const char* dev_path);
   zx_status_t Play(AudioSource& source);
   zx_status_t PlayPrepare(AudioSource& source);
@@ -28,7 +28,7 @@ class AudioOutput : public AudioDeviceStream {
   friend class std::default_delete<AudioOutput>;
   friend class AudioDeviceStream;
 
-  explicit AudioOutput(uint32_t dev_id) : AudioDeviceStream(StreamDirection::kOutput, dev_id) {}
+  explicit AudioOutput(uint64_t dev_id) : AudioDeviceStream(StreamDirection::kOutput, dev_id) {}
   explicit AudioOutput(const char* dev_path)
       : AudioDeviceStream(StreamDirection::kOutput, dev_path) {}
 

@@ -17,7 +17,7 @@
 namespace audio {
 namespace utils {
 
-std::unique_ptr<AudioOutput> AudioOutput::Create(uint32_t dev_id) {
+std::unique_ptr<AudioOutput> AudioOutput::Create(uint64_t dev_id) {
   fbl::AllocChecker ac;
   std::unique_ptr<AudioOutput> res(new (&ac) AudioOutput(dev_id));
   if (!ac.check())

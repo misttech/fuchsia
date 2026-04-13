@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <ctype.h>
+#include <inttypes.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fit/defer.h>
@@ -66,10 +67,10 @@ enum class Command {
 
 enum class Type : uint8_t { INPUT, OUTPUT, DUPLEX };
 
-static std::optional<uint32_t> GetUint32(const char* arg) {
+static std::optional<uint64_t> GetUint64(const char* arg) {
   char* end = nullptr;
-  auto result = strtol(arg, &end, 16);
-  if (*end != '\0' || result < 0 || (result == 0 && arg == end)) {
+  auto result = strtoull(arg, &end, 16);
+  if (*end != '\0' || (result == 0 && arg == end)) {
     return {};
   }
   return {result};
@@ -300,7 +301,7 @@ static void FixupStringRequest(audio_stream_cmd_get_string_resp_t* resp, zx_stat
 }
 
 int Play(std::unique_ptr<audio::utils::AudioDeviceStream> stream, const char* play_wav_filename,
-         uint32_t active, const audio::utils::Duration& duration_config) {
+         uint64_t active, const audio::utils::Duration& duration_config) {
   WAVSource wav_source;
   auto res = wav_source.Initialize(play_wav_filename, active, duration_config);
   if (res != ZX_OK)
@@ -310,12 +311,13 @@ int Play(std::unique_ptr<audio::utils::AudioDeviceStream> stream, const char* pl
 }
 
 int Record(std::unique_ptr<audio::utils::AudioDeviceStream> stream, const char* record_wav_filename,
-           uint32_t frame_rate, uint32_t channels, uint32_t active,
+           uint64_t frame_rate, uint64_t channels, uint64_t active,
            audio_sample_format_t sample_format, const audio::utils::Duration& duration_config) {
-  auto res = stream->SetFormat(frame_rate, static_cast<uint16_t>(channels), active, sample_format);
+  auto res = stream->SetFormat(static_cast<uint32_t>(frame_rate), static_cast<uint16_t>(channels),
+                               active, sample_format);
   if (res != ZX_OK) {
-    printf("Failed to set format (rate %u, chan %u, fmt 0x%08x, res %d)\n", frame_rate, channels,
-           sample_format, res);
+    printf("Failed to set format (rate %" PRIu64 ", chan %" PRIu64 ", fmt 0x%08x, res %d)\n",
+           frame_rate, channels, sample_format, res);
     return -1;
   }
 
@@ -329,14 +331,14 @@ int Record(std::unique_ptr<audio::utils::AudioDeviceStream> stream, const char* 
 
 int Duplex(std::unique_ptr<audio::utils::AudioDeviceStream> play_stream,
            std::unique_ptr<audio::utils::AudioDeviceStream> record_stream,
-           const char* play_wav_filename, const char* record_wav_filename, uint32_t frame_rate,
-           uint32_t channels, uint32_t active, audio_sample_format_t sample_format) {
+           const char* play_wav_filename, const char* record_wav_filename, uint64_t frame_rate,
+           uint64_t channels, uint64_t active, audio_sample_format_t sample_format) {
   // Initialize recording.
-  auto res =
-      record_stream->SetFormat(frame_rate, static_cast<uint16_t>(channels), active, sample_format);
+  auto res = record_stream->SetFormat(static_cast<uint32_t>(frame_rate),
+                                      static_cast<uint16_t>(channels), active, sample_format);
   if (res != ZX_OK) {
-    printf("Failed to set format (rate %u, chan %u, fmt 0x%08x, res %d)\n", frame_rate, channels,
-           sample_format, res);
+    printf("Failed to set format (rate %" PRIu64 ", chan %" PRIu64 ", fmt 0x%08x, res %d)\n",
+           frame_rate, channels, sample_format, res);
     return -1;
   }
 
@@ -493,11 +495,11 @@ zx_status_t dump_stream_info(const audio::utils::AudioDeviceStream& stream) {
 
 int main(int argc, const char** argv) {
   Type type = Type::OUTPUT;
-  std::optional<uint32_t> dev_id = 0;
-  std::optional<uint32_t> frame_rate = DEFAULT_FRAME_RATE;
-  std::optional<uint32_t> bits_per_sample = DEFAULT_BITS_PER_SAMPLE;
-  std::optional<uint32_t> channels;
-  std::optional<uint32_t> active = DEFAULT_ACTIVE_CHANNELS;
+  std::optional<uint64_t> dev_id = 0;
+  std::optional<uint64_t> frame_rate = DEFAULT_FRAME_RATE;
+  std::optional<uint64_t> bits_per_sample = DEFAULT_BITS_PER_SAMPLE;
+  std::optional<uint64_t> channels;
+  std::optional<uint64_t> active = DEFAULT_ACTIVE_CHANNELS;
   Command cmd = Command::INVALID;
   auto print_usage = fit::defer([prog_name = argv[0]]() { usage(prog_name, false); });
   int arg = 1;
@@ -514,7 +516,7 @@ int main(int argc, const char** argv) {
   struct {
     const char* name;
     const char* tag;
-    std::optional<uint32_t>* val;
+    std::optional<uint64_t>* val;
   } OPTIONS[] = {
       // clang-format off
     { .name = "-d", .tag = "device ID",   .val = &dev_id },
@@ -557,7 +559,7 @@ int main(int argc, const char** argv) {
         // Attempt to parse it.
         if (++arg >= argc)
           return -1;
-        std::optional<uint32_t> value = GetUint32(argv[arg]);
+        std::optional<uint64_t> value = GetUint64(argv[arg]);
         if (!value.has_value()) {
           printf("Failed to parse %s option, \"%s\"\n", o.tag, argv[arg]);
           return -1;
@@ -620,6 +622,19 @@ int main(int argc, const char** argv) {
     return -1;
   }
 
+  if (frame_rate.value() > std::numeric_limits<uint32_t>::max()) {
+    printf("Frame rate too large\n");
+    return -1;
+  }
+  if (channels.has_value() && channels.value() > std::numeric_limits<uint16_t>::max()) {
+    printf("Channels too large\n");
+    return -1;
+  }
+  if (active.value() > std::numeric_limits<uint32_t>::max()) {
+    printf("Active channel mask too large\n");
+    return -1;
+  }
+
   audio_sample_format_t sample_format;
   switch (bits_per_sample.value()) {
     case 8:
@@ -638,7 +653,7 @@ int main(int argc, const char** argv) {
       sample_format = AUDIO_SAMPLE_FORMAT_32BIT;
       break;
     default:
-      printf("Unsupported number of bits per sample (%u)\n", bits_per_sample.value());
+      printf("Unsupported number of bits per sample (%" PRIu64 ")\n", bits_per_sample.value());
       return -1;
   }
 
@@ -871,8 +886,10 @@ int main(int argc, const char** argv) {
       }
 
       SineSource sine_source;
-      res = sine_source.Init(tone_freq, amplitude, duration_config, frame_rate.value(),
-                             channels.value(), active.value(), sample_format);
+      res = sine_source.Init(tone_freq, amplitude, duration_config,
+                             static_cast<uint32_t>(frame_rate.value()),
+                             static_cast<uint32_t>(channels.value()),
+                             static_cast<uint32_t>(active.value()), sample_format);
       if (res != ZX_OK) {
         printf("Failed to initialize sine wav generator (res %d)\n", res);
         return res;
@@ -894,8 +911,10 @@ int main(int argc, const char** argv) {
       }
 
       NoiseSource noise_source;
-      res = noise_source.Init(tone_freq, 1.0, duration_config, frame_rate.value(), channels.value(),
-                              active.value(), sample_format);
+      res = noise_source.Init(tone_freq, 1.0, duration_config,
+                              static_cast<uint32_t>(frame_rate.value()),
+                              static_cast<uint32_t>(channels.value()),
+                              static_cast<uint32_t>(active.value()), sample_format);
       if (res != ZX_OK) {
         printf("Failed to initialize white noise generator (res %d)\n", res);
         return res;

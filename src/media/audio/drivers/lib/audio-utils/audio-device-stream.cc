@@ -33,9 +33,9 @@
 namespace audio {
 namespace utils {
 
-AudioDeviceStream::AudioDeviceStream(StreamDirection direction, uint32_t dev_id)
+AudioDeviceStream::AudioDeviceStream(StreamDirection direction, uint64_t dev_id)
     : direction_(direction) {
-  snprintf(name_, sizeof(name_), "/dev/class/audio-%s/%x",
+  snprintf(name_, sizeof(name_), "/dev/class/audio-%s/%" PRIx64,
            direction == StreamDirection::kInput ? "input" : "output", dev_id);
 }
 

@@ -79,7 +79,7 @@ class AudioDeviceStream {
 
   static bool IsChannelConnected(const zx::channel& ch);
 
-  AudioDeviceStream(StreamDirection direction, uint32_t dev_id);
+  AudioDeviceStream(StreamDirection direction, uint64_t dev_id);
   AudioDeviceStream(StreamDirection direction, const char* dev_path);
   virtual ~AudioDeviceStream();
 

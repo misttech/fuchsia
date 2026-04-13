@@ -18,7 +18,7 @@ class AudioSink;
 
 class AudioInput : public AudioDeviceStream {
  public:
-  static std::unique_ptr<AudioInput> Create(uint32_t dev_id);
+  static std::unique_ptr<AudioInput> Create(uint64_t dev_id);
   static std::unique_ptr<AudioInput> Create(const char* dev_path);
   zx_status_t Record(AudioSink& sink, Duration duration);
   zx_status_t RecordPrepare(AudioSink& sink);
@@ -28,7 +28,7 @@ class AudioInput : public AudioDeviceStream {
   friend class std::default_delete<AudioInput>;
   friend class AudioDeviceStream;
 
-  explicit AudioInput(uint32_t dev_id) : AudioDeviceStream(StreamDirection::kInput, dev_id) {}
+  explicit AudioInput(uint64_t dev_id) : AudioDeviceStream(StreamDirection::kInput, dev_id) {}
   explicit AudioInput(const char* dev_path)
       : AudioDeviceStream(StreamDirection::kInput, dev_path) {}
 };

@@ -24,7 +24,7 @@ static constexpr zx::duration kDesiredWakeupPeriod = zx::msec(50);
 static constexpr float MIN_DURATION = 0.100f;
 static constexpr float MAX_DURATION = 86400.0f;
 
-std::unique_ptr<AudioInput> AudioInput::Create(uint32_t dev_id) {
+std::unique_ptr<AudioInput> AudioInput::Create(uint64_t dev_id) {
   fbl::AllocChecker ac;
   std::unique_ptr<AudioInput> res(new (&ac) AudioInput(dev_id));
   if (!ac.check())
