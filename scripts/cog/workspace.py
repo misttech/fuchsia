@@ -104,58 +104,8 @@ class CogMetadata:
 class Workspace:
     """A class to encapsulate a Cog workspace and an associated Cartfs workspace."""
 
-    def __init__(
-        self,
-        workspace_dir: Path,
-        repo_name: str,
-        workspace_name: str,
-        workspace_id: str,
-        cartfs_directory: Path | None,
-        cartfs_instance: cartfs.Cartfs,
-    ):
-        """Initializes a Workspace instance.
-
-        Note: This constructor should not be called directly. Instead, use the
-        `create` class method to create an instance.
-        """
-        self.workspace_dir = workspace_dir
-        self.repo_name = repo_name
-        self.workspace_name = workspace_name
-        self.workspace_id = workspace_id
-        self.cartfs_directory = cartfs_directory
-        self.cartfs_instance = cartfs_instance
-        self.cartfs_mount_point = cartfs_instance.mount_point
-
-    @property
-    def cartfs_fuchsia_dir(self) -> Path:
-        if not self.cartfs_directory:
-            raise WorkspaceError("No cartfs directory found.")
-        return self.cartfs_directory / "fuchsia"
-
-    @staticmethod
-    def _find_cog_workspace_directory(start_dir: Path) -> Path | None:
-        """Finds the root cog workspace directory by traversing up from a start path.
-
-        This function looks for a directory which contains a .citc directory.
-
-        Args:
-            start_dir: The directory to start searching upwards from.
-            cog_mount_point: The base path for cog workspaces.
-
-        Returns:
-            The absolute path to the workspace directory if found, otherwise None.
-        """
-        for ancestor in [start_dir] + list(start_dir.parents):
-            if (ancestor / ".citc").is_dir():
-                return ancestor
-        return None
-
     @classmethod
-    def create(
-        cls,
-        use_local_mock_cartfs: bool = False,
-        repo_root: Path | None = None,
-    ) -> "Workspace":
+    def create(cls, use_local_mock_cartfs: bool = False) -> "Workspace":
         """Creates a Workspace instance after verifying its state.
 
         Raises:
@@ -167,77 +117,79 @@ class Workspace:
         Returns:
             A new Workspace instance.
         """
-        current_dir = Path(repo_root) if repo_root else Path.cwd()
-
-        workspace_dir = cls._find_cog_workspace_directory(current_dir)
-        if not workspace_dir:
-            raise NotInCogWorkspaceError(
-                f"Current directory is not within a Cog workspace: {current_dir}"
+        try:
+            repo_dir = Path(
+                subprocess.run(
+                    ["git", "citc", "cogd"],
+                    capture_output=True,
+                    check=True,
+                )
+                .stdout.decode("utf-8")
+                .strip()
             )
+        except subprocess.CalledProcessError as e:
+            raise NotInCogWorkspaceError(
+                "Verify whether the current directory is "
+                f"within a Cog workspace: {Path.cwd()}"
+            ) from e
 
         # Note: this will raise a CartfsError if cartfs is not installed or
         # running.
         cartfs_instance = cartfs.Cartfs.create(use_local_mock_cartfs)
 
-        repo_name = cls._get_repo_name_from_path(workspace_dir, current_dir)
-        if not repo_name:
-            raise CannotFindRepoNameError(
-                "Could not find repo name from the path."
-            )
+        return cls(repo_dir, cartfs_instance)
 
-        workspace_name = workspace_dir.name
-        workspace_id_file = workspace_dir / ".citc" / "workspace_id"
-        if not workspace_id_file.exists():
-            raise RepoSetupError(
-                f"Could not find workspace ID file: {workspace_id_file}"
-            )
-        workspace_id = workspace_id_file.read_text().strip()
+    def __init__(
+        self,
+        repo_dir: Path,
+        cartfs_instance: cartfs.Cartfs,
+    ):
+        """Initializes a Workspace instance.
 
-        cartfs_directory = cls.get_linked_cartfs_workspace_directory(
-            workspace_dir, repo_name, workspace_id
-        )
-        if not cartfs_directory:
-            logger.log_info(
-                f"No associated cartfs directory found for workspace"
-                f" {workspace_name}/{workspace_id} ({repo_name})"
-            )
-
-        return cls(
-            workspace_dir,
-            repo_name,
-            workspace_name,
-            workspace_id,
-            cartfs_directory,
-            cartfs_instance,
-        )
-
-    @staticmethod
-    def _get_repo_name_from_path(workspace_dir: Path, path: Path) -> str | None:
-        """Finds the repo name from a given path.
-
-        The repo name is the first path element that is common between the
-        workspace directory and the given path, after the workspace directory.
-
-        Args:
-            path: The path to find the repo name from.
-
-        Returns:
-            The repo name if found, None otherwise.
+        Note: This constructor should not be called directly. Instead, use the
+        `create` class method to create an instance.
         """
-        if not path.is_relative_to(workspace_dir):
-            return None
+        self.repo_dir = repo_dir
+        self.cartfs_instance = cartfs_instance
+        self.cartfs_mount_point = cartfs_instance.mount_point
 
-        relative_path = path.relative_to(workspace_dir)
+    @property
+    def workspace_root(self) -> Path:
+        return self.repo_dir.parent
 
-        if relative_path == Path("."):
-            return None
+    @cached_property
+    def workspace_id(self) -> str:
+        return (
+            (self.workspace_root / ".citc" / "workspace_id").read_text().strip()
+        )
 
-        return relative_path.parts[0]
+    @property
+    def workspace_name(self) -> str:
+        return self.workspace_root.name
 
-    @staticmethod
-    def get_linked_cartfs_workspace_directory(
-        workspace_dir: Path, repo_name: str, workspace_id: str
-    ) -> Path | None:
+    @property
+    def repo_name(self) -> str:
+        return self.repo_dir.name
+
+    @cached_property
+    def cartfs_dir(self) -> Path:
+        cartfs_dir = self._get_linked_cartfs_dir()
+        if not cartfs_dir:
+            raise RepoSetupError("No cartfs directory found.")
+        return cartfs_dir
+
+    def has_cartfs_dir(self) -> bool:
+        try:
+            _ = self.cartfs_dir
+            return True
+        except RepoSetupError:
+            return False
+
+    @property
+    def cartfs_fuchsia_dir(self) -> Path:
+        return self.cartfs_dir / "fuchsia"
+
+    def _get_linked_cartfs_dir(self) -> Path | None:
         """Gets the linked cartfs directory for a specific repo in a cog workspace.
 
         A workspace is considered linked if a symlink named `cartfs-dir` exists
@@ -245,16 +197,11 @@ class Workspace:
         directory. This target cartfs directory must contain a `.cog.json` file
         with a matching `repo_name`, `workspace_name`, and `workspace_id`.
 
-        Args:
-            workspace_dir: The absolute path to the cog workspace.
-            repo_name: The name of the repository within the workspace.
-
         Returns:
             The absolute path to the linked cartfs directory if found and valid,
             otherwise None.
         """
-        repo_dir = workspace_dir / repo_name
-        symlink_path = repo_dir / CARTFS_SYMLINK_NAME
+        symlink_path = self.repo_dir / CARTFS_SYMLINK_NAME
         if not symlink_path.is_symlink():
             return None
 
@@ -262,7 +209,7 @@ class Workspace:
         if not target_path.is_absolute():
             # Handles relative symlinks. The target is relative to the directory
             # containing the symlink.
-            target_path = repo_dir / target_path
+            target_path = self.repo_dir / target_path
 
         if not target_path.is_dir():
             return None
@@ -272,14 +219,10 @@ class Workspace:
             return None
 
         if (
-            metadata.repo_name != repo_name
-            or metadata.workspace_name != workspace_dir.name
+            metadata.repo_name != self.repo_name
+            or metadata.workspace_name != self.workspace_name
+            or metadata.workspace_id != self.workspace_id
         ):
-            return None
-
-        # If the workspace_id exists in the metadata, it must match.
-        # If it doesn't exist, we assume it's an old directory and consider it NOT linked.
-        if metadata.workspace_id != workspace_id:
             return None
 
         return target_path
@@ -295,10 +238,8 @@ class Workspace:
         if not previous_cartfs_instance_rel_path:
             return None
 
-        suggested_directory_name = (
-            self.cartfs_instance.suggest_cartfs_directory_name(
-                self.workspace_name, self.workspace_id
-            )
+        suggested_directory_name = self.cartfs_instance.suggest_cartfs_dir_name(
+            self.workspace_name, self.workspace_id
         )
         try:
             snapshot_function(
@@ -315,11 +256,7 @@ class Workspace:
     @cached_property
     def config(self) -> dict[str, Any]:
         repo_config_path = (
-            self.workspace_dir
-            / self.repo_name
-            / "scripts"
-            / "cog"
-            / "repo_config.json"
+            self.repo_dir / "scripts" / "cog" / "repo_config.json"
         )
         if not repo_config_path.exists():
             raise FileNotFoundError(
@@ -336,18 +273,14 @@ class Workspace:
         Returns:
             The absolute path to the newly created cartfs directory.
         """
-        suggested_directory_name = (
-            self.cartfs_instance.suggest_cartfs_directory_name(
-                self.workspace_name, self.workspace_id
-            )
+        suggested_directory_name = self.cartfs_instance.suggest_cartfs_dir_name(
+            self.workspace_name, self.workspace_id
         )
-        cartfs_directory = (
-            self.cartfs_instance.mount_point / suggested_directory_name
-        )
+        cartfs_dir = self.cartfs_instance.mount_point / suggested_directory_name
         # It is ok to use exist_ok here because the suggested directory name
         # is generated by cartfs, and there should not be a directory with
         # the same name in the cartfs mount point.
-        cartfs_directory.mkdir(exist_ok=True)
+        cartfs_dir.mkdir(exist_ok=True)
 
         # Write the metadata file in cartfs
         metadata = CogMetadata(
@@ -355,11 +288,11 @@ class Workspace:
             repo_name=self.repo_name,
             workspace_id=self.workspace_id,
         )
-        metadata.write(cartfs_directory)
+        metadata.write(cartfs_dir)
 
-        return cartfs_directory
+        return cartfs_dir
 
-    def link_to_cartfs(self, cartfs_directory: Path) -> None:
+    def link_to_cartfs(self, cartfs_dir: Path) -> None:
         """Links the cog workspace to a cartfs directory.
 
         This creates a symlink named `cartfs-dir` inside the repository
@@ -371,25 +304,26 @@ class Workspace:
         directory.
 
         Args:
-            cartfs_directory: The absolute path to the target cartfs directory.
+            cartfs_dir: The absolute path to the target cartfs directory.
         """
 
-        symlink_path = self.workspace_dir / self.repo_name / CARTFS_SYMLINK_NAME
+        symlink_path = self.repo_dir / CARTFS_SYMLINK_NAME
 
         # Create an absolute symlink from the repo directory to the cartfs
         # workspace directory. If a symlink already exists, remove it first.
         if symlink_path.is_symlink():
             symlink_path.unlink()
-        symlink_path.symlink_to(cartfs_directory)
+        symlink_path.symlink_to(cartfs_dir)
 
         metadata = CogMetadata(
             workspace_name=self.workspace_name,
             repo_name=self.repo_name,
             workspace_id=self.workspace_id,
         )
-        metadata.write(cartfs_directory)
+        metadata.write(cartfs_dir)
 
-        self.cartfs_directory = cartfs_directory
+        # Invalidate the cached property.
+        vars(self).pop("cartfs_dir", None)
 
     def _find_previous_instance(self) -> Path | None:
         """Finds the most recent cartfs directory for the same repo.
@@ -443,9 +377,6 @@ class Workspace:
 
     def checkout_cartfs_to_cog_revisions(self) -> None:
         """Checkouts the CartFS fuchsia and integration repos to match the revisions in Cog."""
-        if not self.cartfs_directory:
-            raise RepoSetupError("No cartfs directory found.")
-
         if not self._is_jiri_bootstrapped():
             self._bootstrap_jiri()
 
@@ -508,10 +439,10 @@ class Workspace:
         self._create_symlinks()
 
         # Record the updated commit hashes in CartFS.
-        (self.cartfs_directory / ".fuchsia_commit_hash").write_text(
+        (self.cartfs_dir / ".fuchsia_commit_hash").write_text(
             cog_fuchsia_commit
         )
-        (self.cartfs_directory / ".integration_commit_hash").write_text(
+        (self.cartfs_dir / ".integration_commit_hash").write_text(
             cog_integration_commit
         )
 
@@ -520,7 +451,7 @@ class Workspace:
         repo_states = (
             self._run(
                 ["git", "citc", "api.get-repo-states", repository],
-                cwd=self.workspace_dir / self.repo_name,
+                cwd=self.repo_dir,
                 capture_output=True,
             )
             .strip()
@@ -540,10 +471,7 @@ class Workspace:
         self, repository: Literal["fuchsia", "integration"]
     ) -> str | None:
         """Determines the fuchsia or integration repo commit hash from CartFS."""
-        if not self.cartfs_directory:
-            return None
-
-        hash_file = self.cartfs_directory / f".{repository}_commit_hash"
+        hash_file = self.cartfs_dir / f".{repository}_commit_hash"
         if not hash_file.is_file():
             return None
 
@@ -636,9 +564,6 @@ class Workspace:
     def _fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
         logger.emit_status(f"Fetching prebuilts for {self.repo_name}...")
-        if not self.cartfs_directory:
-            raise RepoSetupError("No cartfs directory found.")
-
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
         if (cartfs_fuchsia_dir / ".git").exists():
             self._run(["git", "restore", "."], cwd=cartfs_fuchsia_dir)
@@ -659,10 +584,7 @@ class Workspace:
     def _reinit_integration_repo(self, revision: str | None = None) -> None:
         """Destroys and re-clones the `integration` checkout in CartFS, with a depth of 100 cls."""
         logger.emit_status(f"Reinitializing the integration repository...")
-        if not self.cartfs_directory:
-            raise RepoSetupError("No cartfs directory found.")
-
-        integration_dir = self.cartfs_directory / "integration"
+        integration_dir = self.cartfs_dir / "integration"
         if integration_dir.is_dir():
             shutil.rmtree(integration_dir)
 
@@ -678,7 +600,7 @@ class Workspace:
             git_clone_cmd.append(f"--revision={revision}")
 
         logger.emit_status("Cloning integration repo...")
-        self._run(git_clone_cmd, self.cartfs_directory)
+        self._run(git_clone_cmd, self.cartfs_dir)
 
     def _checkout_integration_roll(self, fuchsia_commit: str) -> str:
         """Checks out the CartFS integration repo to the commit rolling `fuchsia_commit`.
@@ -687,10 +609,7 @@ class Workspace:
 
         Returns the commit that was checked out.
         """
-        if not self.cartfs_directory:
-            raise RepoSetupError("No cartfs directory found.")
-
-        integration_dir = self.cartfs_directory / "integration"
+        integration_dir = self.cartfs_dir / "integration"
         if not integration_dir.is_dir():
             raise RepoSetupError("No integration directory found.")
 
@@ -733,10 +652,7 @@ class Workspace:
 
     def _sync_fuchsia_repo(self, commit: str) -> None:
         """Syncs the fuchsia repository to the specified commit hash."""
-        if not self.cartfs_directory:
-            raise RepoSetupError("No cartfs directory found.")
-
-        integration_dir = self.cartfs_directory / "integration"
+        integration_dir = self.cartfs_dir / "integration"
         if not integration_dir.is_dir():
             raise RepoSetupError("No integration directory found.")
 
@@ -784,7 +700,7 @@ class Workspace:
                     f"--revision={commit}",
                     f"--shallow-since={four_days_ago}",
                 ],
-                cwd=self.cartfs_directory,
+                cwd=self.cartfs_dir,
             )
             self._run(
                 [
@@ -811,9 +727,6 @@ class Workspace:
 
     def _create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
-        if not self.cartfs_directory:
-            raise RepoSetupError("No cartfs directory found.")
-
         logger.emit_status("Creating symlinks...")
         # Link the paths in the repo to cartfs
         (self.cartfs_fuchsia_dir / ".fx" / "config").mkdir(
@@ -822,10 +735,9 @@ class Workspace:
 
         def _get_path(path: str) -> Path:
             root, relative_path = path.split("//", 1)
-            assert self.cartfs_directory is not None
             return {
-                "@cartfs": self.cartfs_directory,
-                "@cog": self.workspace_dir / self.repo_name,
+                "@cartfs": self.cartfs_dir,
+                "@cog": self.repo_dir,
             }[root] / relative_path
 
         for src, dest in self.config["symlinks"].items():
@@ -850,7 +762,7 @@ class Workspace:
         # will make the future `fx format-code` command faster.
         subprocess.Popen(
             ["git", "status"],
-            cwd=self.workspace_dir / self.repo_name,
+            cwd=self.repo_dir,
             start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -904,11 +816,8 @@ class Workspace:
 
     def _patch_file(self, filepath: str, content: str) -> None:
         """Patches the file in cartFS."""
-        if not self.cartfs_directory:
-            raise RepoSetupError("No cartfs directory found.")
-
         logger.log_debug(f"Patching the {filepath} file.")
-        full_filepath = self.cartfs_directory / filepath
+        full_filepath = self.cartfs_dir / filepath
         if full_filepath.exists():
             logger.log_debug(f"File {full_filepath} already exists.")
             return

@@ -143,8 +143,8 @@ else:
             )
 
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir.parent
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.config = {
                 "repo": {
                     "ignored": [],
@@ -262,8 +262,8 @@ else:
             )
 
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir.parent
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.config = {
                 "repo": {
                     "ignored": ["superproject"],
@@ -372,8 +372,8 @@ else:
             pass
 
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir.parent
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.config = {
                 "repo": {
                     "ignored": [],
@@ -439,8 +439,8 @@ else:
         """Test handling of malformed JSON in cog_transfer_file_hashes.json."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir.parent
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
 
             with patch.object(
                 workspace.Workspace, "create", return_value=mock_ws
@@ -459,8 +459,8 @@ else:
         """Test _cartfs_path in typical Fuchsia case."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir.parent
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.config = {
                 "repo": {
                     "ignored": [],
@@ -487,8 +487,8 @@ else:
         """Test _cartfs_path strips leading slash to prevent path escape."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir.parent
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.config = {
                 "repo": {
                     "ignored": [],
@@ -621,8 +621,8 @@ else:
         """Test _cartfs_path in Superproject case."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir.parent
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.config = {
                 "repo": {
                     "ignored": [],
@@ -676,8 +676,8 @@ class TestSyncBatch(TestWorkspaceSyncService):
         """Test copying a new file."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir.parent
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
 
             with patch.object(
                 workspace.Workspace, "create", return_value=mock_ws
@@ -1168,8 +1168,8 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
         """Test successful sync from Cog to CartFS."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {
                 "repo": {
@@ -1235,8 +1235,8 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
         """Test sync when no files are modified."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
 
@@ -1283,8 +1283,8 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
         """Test that failed syncs are still retained in hashes file."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
 
@@ -1347,8 +1347,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
         """Test successful sync from CartFS to Cog."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
 
@@ -1400,8 +1400,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
         """Test sync when no files differ."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
 
@@ -1456,8 +1456,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
         """Test protection of Cog edits."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
 
@@ -1515,8 +1515,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
         """Test CartFS wins when both modified."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
 
@@ -1571,8 +1571,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
         """Test that new files in CartFS not in hashes file are ignored."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
 
@@ -1628,8 +1628,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
         """Test that sync_cartfs_to_cog ignores files only modified in Cog."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
-            mock_ws.workspace_dir = fs.repo_dir
-            mock_ws.cartfs_directory = fs.cartfs_dir
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
             mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
 

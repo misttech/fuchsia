@@ -54,13 +54,13 @@ class WorkspaceSyncService:
             )
 
         self.workspace = workspace.Workspace.create()
-        self.cog_root = self.workspace.workspace_dir
-        self.cartfs_root = self.workspace.cartfs_directory
-        if not self.cartfs_root:
+        if not self.workspace.has_cartfs_dir():
             raise workspace.WorkspaceError(
                 "No associated CartFS workspace found. "
                 "Please run `//scripts/cog/setup_cog_workspace.py` first."
             )
+        self.cog_root = self.workspace.workspace_root
+        self.cartfs_root = self.workspace.cartfs_dir
         logger.log_info(f"Cog root: {self.cog_root}")
         logger.log_info(f"CartFS root: {self.cartfs_root}")
 
@@ -98,7 +98,6 @@ class WorkspaceSyncService:
 
     @property
     def _cog_transfer_file_hashes(self) -> dict[str, str | None]:
-        assert self.cartfs_root is not None
         file = self.cartfs_root / "cog_transfer_file_hashes.json"
         if not file.exists():
             return {}
@@ -177,7 +176,6 @@ class WorkspaceSyncService:
         return self.cog_root / path
 
     def _cartfs_path(self, path: str) -> Path:
-        assert self.cartfs_root is not None
         # Map Cog fuchsia dir to CartFS fuchsia dir.
         assert self._config["repo"]["fuchsia"]
         fuchsia_prefix = f'{self._config["repo"]["fuchsia"]}/'
@@ -271,7 +269,6 @@ class WorkspaceSyncService:
 
     def sync_cog_to_cartfs(self) -> SyncResult:
         """Syncs changes from Cog to CartFS."""
-        assert self.cartfs_root is not None
         self.workspace.checkout_cartfs_to_cog_revisions()
         cog_affected_files = self.affected_files(WorkspaceType.COG)
         cartfs_affected_files = self.affected_files(WorkspaceType.CARTFS)

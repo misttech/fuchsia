@@ -5,6 +5,7 @@
 """Tests for workspace."""
 
 import os
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
@@ -12,7 +13,6 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import cartfs
 import mock_fs
 import workspace
-from parameterized import parameterized
 
 
 class TestCogMetadata(unittest.TestCase):
@@ -105,11 +105,11 @@ class TestCogMetadata(unittest.TestCase):
 class TestCartfs(unittest.TestCase):
     """Tests for Cartfs."""
 
-    def test_suggest_cartfs_directory_name_sanitizes_id(self) -> None:
+    def test_suggest_cartfs_dir_name_sanitizes_id(self) -> None:
         """Test that the workspace ID is sanitized."""
         with mock_fs.FileSystemTestHelper() as fs:
             c = cartfs.Cartfs(fs.cartfs_dir, use_local_mock_cartfs=False)
-            suggested_name = c.suggest_cartfs_directory_name(
+            suggested_name = c.suggest_cartfs_dir_name(
                 workspace_name="test-ws", workspace_id="id/with/slashes"
             )
             self.assertEqual(str(suggested_name), "test-ws-id_with_slashes")
@@ -135,11 +135,7 @@ class TestWorkspace(unittest.TestCase):
                 f.write('{"fuchsia": {"repo": "fuchsia"}}')
 
             ws = workspace.Workspace(
-                workspace_dir=workspace_dir,
-                repo_name=repo_name,
-                workspace_name="test-workspace",
-                workspace_id="ws-id",
-                cartfs_directory=None,
+                repo_dir=workspace_dir / repo_name,
                 cartfs_instance=MagicMock(),
             )
             self.assertEqual(ws.config, {"fuchsia": {"repo": "fuchsia"}})
@@ -149,11 +145,7 @@ class TestWorkspace(unittest.TestCase):
         with mock_fs.FileSystemTestHelper() as fs:
             workspace_dir = fs.cog_dir / "testuser" / "test-workspace"
             ws = workspace.Workspace(
-                workspace_dir=workspace_dir,
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id="ws-id",
-                cartfs_directory=None,
+                repo_dir=workspace_dir / "fuchsia",
                 cartfs_instance=MagicMock(),
             )
             with self.assertRaises(FileNotFoundError):
@@ -171,44 +163,28 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(
                     os,
                     "getcwd",
-                    return_value=fs.full_path(
-                        "testuser/test-workspace/fuchsia", mock_fs.FSType.COG
+                    return_value=str(
+                        fs.full_path(
+                            "testuser/test-workspace/fuchsia",
+                            mock_fs.FSType.COG,
+                        )
                     ),
                 ),
                 patch.object(
                     cartfs.Cartfs, "create", return_value=MagicMock()
                 ) as mock_cartfs_create,
+                patch("subprocess.run") as mock_subprocess_run,
             ):
+                mock_process = MagicMock()
+                expected_path = (
+                    fs.cog_dir / "testuser" / "test-workspace" / "fuchsia"
+                )
+                mock_process.stdout = f"{expected_path}\n".encode()
+                mock_subprocess_run.return_value = mock_process
+
                 ws = workspace.Workspace.create()
                 self.assertEqual(
-                    ws.workspace_dir,
-                    fs.cog_dir / "testuser" / "test-workspace",
-                )
-                self.assertEqual(ws.repo_name, "fuchsia")
-                self.assertEqual(ws.workspace_name, "test-workspace")
-                self.assertEqual(ws.workspace_id, fs.workspace_id)
-                mock_cartfs_create.assert_called_once()
-
-    def test_create_with_repo_root(self) -> None:
-        """Test that a Workspace instance can be created successfully with a repo_root."""
-        with mock_fs.FileSystemTestHelper(
-            user="testuser",
-            workspace_name="test-workspace",
-            repo_name="fuchsia",
-        ) as fs:
-            # Mock the environment variables and current working directory.
-            with (
-                patch.object(
-                    cartfs.Cartfs, "create", return_value=MagicMock()
-                ) as mock_cartfs_create,
-            ):
-                ws = workspace.Workspace.create(
-                    repo_root=fs.full_path(
-                        "testuser/test-workspace/fuchsia", mock_fs.FSType.COG
-                    )
-                )
-                self.assertEqual(
-                    ws.workspace_dir,
+                    ws.workspace_root,
                     fs.cog_dir / "testuser" / "test-workspace",
                 )
                 self.assertEqual(ws.repo_name, "fuchsia")
@@ -228,31 +204,15 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(
                     os,
                     "getcwd",
-                    return_value=fs.full_path(
-                        "some/other/dir", mock_fs.FSType.COG
+                    return_value=str(
+                        fs.full_path("some/other/dir", mock_fs.FSType.COG)
                     ),
+                ),
+                patch(
+                    "subprocess.run",
+                    side_effect=subprocess.CalledProcessError(1, ["git"]),
                 ),
                 self.assertRaises(workspace.NotInCogWorkspaceError),
-            ):
-                workspace.Workspace.create()
-
-    def test_create_cannot_find_repo_name(self) -> None:
-        """Test that CannotFindRepoNameError is raised when the repo name cannot be found."""
-        with mock_fs.FileSystemTestHelper(
-            user="testuser",
-            workspace_name="test-workspace",
-            repo_name="fuchsia",
-        ) as fs:
-            with (
-                patch.object(
-                    os,
-                    "getcwd",
-                    return_value=fs.full_path(
-                        "testuser/test-workspace", mock_fs.FSType.COG
-                    ),
-                ),
-                patch.object(cartfs.Cartfs, "create", return_value=MagicMock()),
-                self.assertRaises(workspace.CannotFindRepoNameError),
             ):
                 workspace.Workspace.create()
 
@@ -267,263 +227,27 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(
                     os,
                     "getcwd",
-                    return_value=fs.full_path(
-                        "testuser/test-workspace/fuchsia", mock_fs.FSType.COG
+                    return_value=str(
+                        fs.full_path(
+                            "testuser/test-workspace/fuchsia",
+                            mock_fs.FSType.COG,
+                        )
                     ),
                 ),
                 patch.object(
                     cartfs.Cartfs, "create", side_effect=cartfs.CartfsError
                 ),
+                patch("subprocess.run") as mock_subprocess_run,
                 self.assertRaises(cartfs.CartfsError),
             ):
+                mock_process = MagicMock()
+                expected_path = (
+                    fs.cog_dir / "testuser" / "test-workspace" / "fuchsia"
+                )
+                mock_process.stdout = f"{expected_path}\n".encode()
+                mock_subprocess_run.return_value = mock_process
+
                 workspace.Workspace.create()
-
-    @parameterized.expand(
-        [
-            (
-                "testuser/test-workspace/fuchsia/src",
-                "testuser/test-workspace",
-            ),
-            (
-                "testuser/test-workspace/fuchsia",
-                "testuser/test-workspace",
-            ),
-            (
-                "testuser/test-workspace",
-                "testuser/test-workspace",
-            ),
-        ]
-    )
-    def test_find_cog_workspace_directory_success(
-        self, start_dir_suffix: str, expected_dir_suffix: str
-    ) -> None:
-        """Test that the workspace directory is found correctly."""
-        with mock_fs.FileSystemTestHelper(
-            user="testuser",
-            workspace_name="test-workspace",
-            repo_name="fuchsia",
-        ) as fs:
-            start_dir = fs.full_path(start_dir_suffix, mock_fs.FSType.COG)
-            expected_dir = fs.full_path(expected_dir_suffix, mock_fs.FSType.COG)
-            fs.mkdir(start_dir_suffix, mock_fs.FSType.COG)
-            actual_dir = workspace.Workspace._find_cog_workspace_directory(
-                start_dir
-            )
-            self.assertEqual(actual_dir, expected_dir)
-
-    def test_find_cog_workspace_directory_not_found(self) -> None:
-        """Test that None is returned when not in a Cog workspace."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            start_dir = fs.full_path("some/other/dir", mock_fs.FSType.COG)
-            fs.mkdir("some/other/dir", mock_fs.FSType.COG)
-            actual_dir = workspace.Workspace._find_cog_workspace_directory(
-                start_dir
-            )
-            self.assertIsNone(actual_dir)
-
-    def test_find_cog_workspace_directory_at_root(self) -> None:
-        """Test that None is returned when starting at the root directory."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            actual_dir = workspace.Workspace._find_cog_workspace_directory(
-                fs.cog_dir
-            )
-            self.assertIsNone(actual_dir)
-
-    def test_find_cog_workspace_escapes_user(self) -> None:
-        """Test that the workspace directory is found correctly."""
-        with mock_fs.FileSystemTestHelper(
-            user="test.user",
-            workspace_name="test-workspace",
-            repo_name="fuchsia",
-        ) as fs:
-            start_dir = fs.full_path(
-                "test.user/test-workspace", mock_fs.FSType.COG
-            )
-            expected_dir = fs.full_path(
-                "test.user/test-workspace", mock_fs.FSType.COG
-            )
-            actual_dir = workspace.Workspace._find_cog_workspace_directory(
-                start_dir
-            )
-            self.assertEqual(actual_dir, expected_dir)
-
-    @parameterized.expand(
-        [
-            (
-                Path("/google/cog/cloud/testuser/test-workspace"),
-                Path("/google/cog/cloud/testuser/test-workspace/fuchsia"),
-                "fuchsia",
-            ),
-            (
-                Path("/google/cog/cloud/testuser/test-workspace"),
-                Path(
-                    "/google/cog/cloud/testuser/test-workspace/fuchsia/out/default"
-                ),
-                "fuchsia",
-            ),
-        ]
-    )
-    def test_get_repo_name_from_path_success(
-        self, workspace_dir: Path, path: Path, expected_repo_name: str
-    ) -> None:
-        """Test that the repo name is found correctly."""
-        actual_repo_name = workspace.Workspace._get_repo_name_from_path(
-            workspace_dir, path
-        )
-        self.assertEqual(actual_repo_name, expected_repo_name)
-
-    def test_get_repo_name_from_path_not_in_workspace(self) -> None:
-        """Test that None is returned when the path is not in the workspace."""
-        actual_repo_name = workspace.Workspace._get_repo_name_from_path(
-            Path("/google/cog/cloud/testuser/test-workspace"),
-            Path("/some/other/dir"),
-        )
-        self.assertIsNone(actual_repo_name)
-
-    def test_get_repo_name_from_path_same_as_workspace(self) -> None:
-        """Test that None is returned when the path is the same as the workspace."""
-        actual_repo_name = workspace.Workspace._get_repo_name_from_path(
-            Path("/google/cog/cloud/testuser/test-workspace"),
-            Path("/google/cog/cloud/testuser/test-workspace"),
-        )
-        self.assertIsNone(actual_repo_name)
-
-    def test_get_linked_cartfs_workspace_directory_success(self) -> None:
-        """Test that the cartfs workspace directory is found correctly."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            # Setup cog workspace
-            workspace_name = "test-workspace"
-            repo_name = "fuchsia"
-            fs.mkdir(Path(workspace_name) / repo_name, mock_fs.FSType.COG)
-
-            # A symlink points from cog to cartfs
-            fs.symlink_from_cog_to_cartfs(
-                Path(workspace_name) / repo_name / workspace.CARTFS_SYMLINK_NAME
-            )
-
-            # A .cog.json file is created
-            workspace.CogMetadata(
-                repo_name=repo_name,
-                workspace_name=workspace_name,
-                workspace_id=fs.workspace_id,
-            ).write(fs.cartfs_dir)
-
-            actual_dir = (
-                workspace.Workspace.get_linked_cartfs_workspace_directory(
-                    fs.full_path(workspace_name, mock_fs.FSType.COG),
-                    repo_name,
-                    fs.workspace_id,
-                )
-            )
-            self.assertEqual(actual_dir, fs.cartfs_dir)
-
-    def test_get_linked_cartfs_workspace_directory_no_symlink_fails(
-        self,
-    ) -> None:
-        """Test that None is returned when the symlink from cog to cartfs does not exist."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            workspace_name = "test-workspace"
-            repo_name = "fuchsia"
-            fs.mkdir(Path(workspace_name) / repo_name, mock_fs.FSType.COG)
-
-            workspace.CogMetadata(
-                repo_name=repo_name,
-                workspace_name=workspace_name,
-                workspace_id=fs.workspace_id,
-            ).write(fs.cartfs_dir)
-
-            actual_dir = (
-                workspace.Workspace.get_linked_cartfs_workspace_directory(
-                    fs.full_path(workspace_name, mock_fs.FSType.COG),
-                    repo_name,
-                    fs.workspace_id,
-                )
-            )
-            self.assertIsNone(actual_dir)
-
-    def test_get_linked_cartfs_workspace_directory_symlink_dir_does_not_exist_fails(
-        self,
-    ) -> None:
-        """Test that None is returned when the symlink directory does not exist."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            workspace_name = "test-workspace"
-            repo_name = "fuchsia"
-            fs.mkdir(Path(workspace_name) / repo_name, mock_fs.FSType.COG)
-
-            # A symlink points from cog to cartfs
-            fs.symlink_from_cog_to_cartfs(
-                Path(workspace_name) / repo_name / workspace.CARTFS_SYMLINK_NAME
-            )
-            fs.cartfs_dir.rmdir()
-
-            actual_dir = (
-                workspace.Workspace.get_linked_cartfs_workspace_directory(
-                    fs.full_path(workspace_name, mock_fs.FSType.COG),
-                    repo_name,
-                    fs.workspace_id,
-                )
-            )
-            self.assertIsNone(actual_dir)
-
-    def test_get_linked_cartfs_workspace_directory_mismatch_id_fails(
-        self,
-    ) -> None:
-        """Test that None is returned when the workspace ID does not match."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            workspace_name = "test-workspace"
-            repo_name = "fuchsia"
-            fs.mkdir(
-                os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
-            )
-            fs.symlink_from_cog_to_cartfs(
-                os.path.join(
-                    workspace_name, repo_name, workspace.CARTFS_SYMLINK_NAME
-                ),
-            )
-            workspace.CogMetadata(
-                repo_name=repo_name,
-                workspace_name=workspace_name,
-                workspace_id="a-different-id",
-            ).write(fs.cartfs_dir)
-
-            actual_dir = (
-                workspace.Workspace.get_linked_cartfs_workspace_directory(
-                    fs.full_path(workspace_name, mock_fs.FSType.COG),
-                    repo_name,
-                    fs.workspace_id,
-                )
-            )
-            self.assertIsNone(actual_dir)
-
-    def test_get_linked_cartfs_workspace_directory_old_directory_fails(
-        self,
-    ) -> None:
-        """Test that None is returned when the metadata does NOT have a workspace ID."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            workspace_name = "test-workspace"
-            repo_name = "fuchsia"
-            fs.mkdir(
-                os.path.join(workspace_name, repo_name), mock_fs.FSType.COG
-            )
-            fs.symlink_from_cog_to_cartfs(
-                os.path.join(
-                    workspace_name, repo_name, workspace.CARTFS_SYMLINK_NAME
-                ),
-            )
-            workspace.CogMetadata(
-                repo_name=repo_name,
-                workspace_name=workspace_name,
-                workspace_id=None,
-            ).write(fs.cartfs_dir)
-
-            actual_dir = (
-                workspace.Workspace.get_linked_cartfs_workspace_directory(
-                    fs.full_path(workspace_name, mock_fs.FSType.COG),
-                    repo_name,
-                    fs.workspace_id,
-                )
-            )
-            self.assertIsNone(actual_dir)
 
     def test_snapshot_from_previous_instance_success(
         self,
@@ -533,7 +257,7 @@ class TestWorkspace(unittest.TestCase):
             cartfs_instance = MagicMock()
             cartfs_instance.mount_point = fs.cartfs_dir
             suggested_directory_name = "new_cartfs_dir"
-            cartfs_instance.suggest_cartfs_directory_name.return_value = (
+            cartfs_instance.suggest_cartfs_dir_name.return_value = (
                 suggested_directory_name
             )
 
@@ -545,13 +269,7 @@ class TestWorkspace(unittest.TestCase):
                 (cartfs_mount_point / suggested_directory_name).mkdir()
 
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.repo_dir,
                 cartfs_instance=cartfs_instance,
             )
             with patch.object(
@@ -580,13 +298,8 @@ class TestWorkspace(unittest.TestCase):
         with mock_fs.FileSystemTestHelper() as fs:
             cartfs_instance = MagicMock()
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
                 cartfs_instance=cartfs_instance,
             )
             with patch.object(ws, "_find_previous_instance", return_value=None):
@@ -598,13 +311,7 @@ class TestWorkspace(unittest.TestCase):
         with mock_fs.FileSystemTestHelper() as fs:
             cartfs_instance = MagicMock()
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.repo_dir,
                 cartfs_instance=cartfs_instance,
             )
             with patch.object(
@@ -631,17 +338,11 @@ class TestWorkspace(unittest.TestCase):
             cartfs_instance = MagicMock()
             cartfs_instance.mount_point = fs.cartfs_dir
             suggested_directory_name = "new_cartfs_dir"
-            cartfs_instance.suggest_cartfs_directory_name.return_value = (
+            cartfs_instance.suggest_cartfs_dir_name.return_value = (
                 suggested_directory_name
             )
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.repo_dir,
                 cartfs_instance=cartfs_instance,
             )
 
@@ -657,34 +358,20 @@ class TestWorkspace(unittest.TestCase):
         """Test that the workspace can be linked to a cartfs directory."""
         with mock_fs.FileSystemTestHelper() as fs:
             cartfs_instance = MagicMock()
-            workspace_name = "test-workspace"
-            workspace_dir = fs.full_path(workspace_name, mock_fs.FSType.COG)
-            repo_name = "fuchsia"
-            repo_dir = fs.mkdir(
-                Path(workspace_name) / repo_name,
-                mock_fs.FSType.COG,
-            )
-
             ws = workspace.Workspace(
-                workspace_dir=workspace_dir,
-                repo_name=repo_name,
-                workspace_name=workspace_name,
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.repo_dir,
                 cartfs_instance=cartfs_instance,
             )
 
-            cartfs_directory = fs.mkdir(
-                "cartfs_directory", mock_fs.FSType.CARTFS
-            )
-            ws.link_to_cartfs(cartfs_directory)
+            cartfs_dir = fs.mkdir("cartfs_dir", mock_fs.FSType.CARTFS)
+            ws.link_to_cartfs(cartfs_dir)
 
-            symlink_path = repo_dir / workspace.CARTFS_SYMLINK_NAME
+            symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
             self.assertTrue(symlink_path.is_symlink())
 
             # Ensure that we write the name of the repository in cartfs
             metadata = workspace.CogMetadata.from_file(
-                cartfs_directory / workspace.COG_METADATA_FILE_NAME
+                cartfs_dir / workspace.COG_METADATA_FILE_NAME
             )
             self.assertIsNotNone(metadata)
 
@@ -715,11 +402,7 @@ class TestWorkspace(unittest.TestCase):
             ).write(candidate_dir)
 
             ws = workspace.Workspace(
-                workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.cog_dir / "testuser" / "test-workspace" / "fuchsia",
                 cartfs_instance=cartfs_instance,
             )
 
@@ -733,11 +416,7 @@ class TestWorkspace(unittest.TestCase):
             cartfs_instance.mount_point = fs.cartfs_dir
 
             ws = workspace.Workspace(
-                workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.cog_dir / "testuser" / "test-workspace" / "fuchsia",
                 cartfs_instance=cartfs_instance,
             )
 
@@ -758,11 +437,7 @@ class TestWorkspace(unittest.TestCase):
             ).write(candidate_dir)
 
             ws = workspace.Workspace(
-                workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.cog_dir / "testuser" / "test-workspace" / "fuchsia",
                 cartfs_instance=cartfs_instance,
             )
 
@@ -776,11 +451,7 @@ class TestWorkspace(unittest.TestCase):
             cartfs_instance.mount_point = fs.cartfs_dir
 
             ws = workspace.Workspace(
-                workspace_dir=fs.cog_dir / "testuser" / "test-workspace",
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=None,
+                repo_dir=fs.cog_dir / "testuser" / "test-workspace" / "fuchsia",
                 cartfs_instance=cartfs_instance,
             )
 
@@ -793,15 +464,11 @@ class TestWorkspace(unittest.TestCase):
         """Test that initialization skips sync and symlinks when up-to-date."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=fs.cartfs_dir,
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
                 "integration_url": "https://fuchsia.googlesource.com/integration",
                 "repo": {
@@ -827,15 +494,11 @@ class TestWorkspace(unittest.TestCase):
         """Test that initialization skips sync and symlinks when up-to-date (including integration)."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=fs.cartfs_dir,
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
                 "integration_url": "https://fuchsia.googlesource.com/integration",
                 "repo": {
@@ -871,15 +534,11 @@ class TestWorkspace(unittest.TestCase):
         """Test that initialization performs sync when not up-to-date (no integration repo)."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=fs.cartfs_dir,
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
                 "integration_url": "https://fuchsia.googlesource.com/integration",
                 "repo": {
@@ -919,15 +578,11 @@ class TestWorkspace(unittest.TestCase):
         """Test that initialization performs sync when not up-to-date (with integration repo)."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=fs.cartfs_dir,
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
                 "integration_url": "https://fuchsia.googlesource.com/integration",
                 "repo": {
@@ -973,17 +628,13 @@ class TestWorkspace(unittest.TestCase):
         """Test that _create_symlinks correctly resolves @cog// and @cartfs// paths."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=fs.cartfs_dir,
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
 
-            assert ws.cartfs_directory is not None
+            assert ws.cartfs_dir is not None
 
             mock_config_patcher = patch.object(
                 workspace.Workspace, "config", new_callable=PropertyMock
@@ -1035,15 +686,11 @@ class TestWorkspace(unittest.TestCase):
         """Test that _write_jiri_manifest uses jiriImports from config."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=fs.cartfs_dir,
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
 
             mock_config_patcher = patch.object(
                 workspace.Workspace, "config", new_callable=PropertyMock
@@ -1077,15 +724,11 @@ class TestWorkspace(unittest.TestCase):
         """Test that specifying integration.repo and integration.remote changes behavior."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                workspace_dir=fs.full_path(
-                    "test-workspace", mock_fs.FSType.COG
-                ),
-                repo_name="fuchsia",
-                workspace_name="test-workspace",
-                workspace_id=fs.workspace_id,
-                cartfs_directory=fs.cartfs_dir,
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
                 cartfs_instance=MagicMock(),
             )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
 
             mock_config_patcher = patch.object(
                 workspace.Workspace, "config", new_callable=PropertyMock

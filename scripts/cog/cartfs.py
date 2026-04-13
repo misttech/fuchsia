@@ -122,7 +122,7 @@ class Cartfs:
 
         return cls(mount_point, use_local_mock_cartfs)
 
-    def suggest_cartfs_directory_name(
+    def suggest_cartfs_dir_name(
         self, workspace_name: str, workspace_id: str | None = None
     ) -> Path:
         """Suggests a directory name within the cartfs mount point.

@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import setup_cog_workspace
+import workspace
 
 
 class TestSetupCogWorkspace(unittest.TestCase):
@@ -19,9 +20,8 @@ class TestSetupCogWorkspace(unittest.TestCase):
             setup_cog_workspace,
             "_parse_args",
             return_value=MagicMock(
-                repo_root=None,
                 verbose=0,
-                disable_snapshot=False,
+                snapshot=False,
                 use_local_mock_cartfs=False,
                 enable_status_updates=False,
                 color=True,
@@ -33,27 +33,29 @@ class TestSetupCogWorkspace(unittest.TestCase):
             self.assertEqual(result, 1)
             self.assertEqual(mock_log_error.call_count, 2)
 
-    def test_main_invalid_repo_root(self) -> None:
-        """Test that main returns 1 when repo_root is invalid."""
+    def test_main_not_in_cog_workspace(self) -> None:
+        """Test that main returns 1 when not in a cog workspace."""
         with patch.object(
             setup_cog_workspace,
             "_parse_args",
             return_value=MagicMock(
-                repo_root="/invalid/path",
                 verbose=0,
-                disable_snapshot=False,
+                snapshot=False,
                 use_local_mock_cartfs=False,
                 enable_status_updates=False,
                 color=True,
             ),
         ), patch("util.check_gcert_status", return_value=True), patch(
-            "pathlib.Path.is_dir", return_value=False
+            "workspace.Workspace.create",
+            side_effect=workspace.NotInCogWorkspaceError(
+                "mock cogd error: CWD is not in cog workspace"
+            ),
         ), patch(
             "setup_cog_workspace.logger.log_error"
         ) as mock_log_error:
             result = setup_cog_workspace.main()
             self.assertEqual(result, 1)
-            mock_log_error.assert_called_once()
+            self.assertEqual(mock_log_error.call_count, 2)
 
 
 if __name__ == "__main__":
