@@ -29,6 +29,7 @@ group("tests") {
     "fxtest:tests",
     "lib:tests",
     "memory:tests",
+    "shac/tests($host_toolchain)",
     "versioning:tests($host_toolchain)",
   ]
 }

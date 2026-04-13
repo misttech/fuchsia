@@ -4,7 +4,7 @@
 
 load("./common.star", "FORMATTER_MSG", "cipd_platform_name", "get_fuchsia_dir", "os_exec")
 
-def _pyfmt(ctx):
+def _python_format(ctx):
     """Formats Python code using autoflake, isort and black on a Python code base.
 
     Args:
@@ -29,69 +29,47 @@ def _pyfmt(ctx):
         platform,
     )
 
-    autoflake_cmd = [
-        python_bin,
-        "%s/third_party/pylibs/autoflake/main.py" % fuchsia_dir,
-        "--remove-unused-variables",
-        "--remove-all-unused-imports",
-        "--remove-duplicate-keys",
-        "--ignore-init-module-imports",
-        "--stdout",
-    ]
-    isort_cmd = [
-        python_bin,
-        "%s/third_party/pylibs/isort/main.py" % fuchsia_dir,
-        # The skip flag is necessary to override the default autoflake behavior,
-        # which includes the "build/" directory in its skip section.
-        "--skip",
-        ".venvs",
-        "--stdout",
-        "--filename",
-    ]
-    black_cmd = [
-        "%s/prebuilt/third_party/black/%s/black" % (
-            fuchsia_dir,
-            platform,
-        ),
-        "--config",
-        "%s/pyproject.toml" % fuchsia_dir,
-        "-",
-    ]
+    autoflake_path = "%s/third_party/pylibs/autoflake/main.py" % fuchsia_dir
+    isort_path = "%s/third_party/pylibs/isort/main.py" % fuchsia_dir
+    black_path = "%s/prebuilt/third_party/black/%s/black" % (
+        fuchsia_dir,
+        platform,
+    )
+    pyproject_toml = "%s/pyproject.toml" % fuchsia_dir
 
-    # Run autoflake on each file
-    autoflake_procs = [(f, os_exec(ctx, autoflake_cmd + [f], raise_on_failure = False)) for f in py_files]
+    procs = []
+    for f in py_files:
+        procs.append(
+            (
+                f,
+                os_exec(
+                    ctx,
+                    [
+                        python_bin,
+                        "scripts/shac/python_format.py",
+                        "--python",
+                        python_bin,
+                        "--autoflake",
+                        autoflake_path,
+                        "--isort",
+                        isort_path,
+                        "--black",
+                        black_path,
+                        "--pyproject-toml",
+                        pyproject_toml,
+                        f,
+                    ],
+                    raise_on_failure = False,
+                ),
+            ),
+        )
 
-    # Wait for autoflake to finish and start isort on its output.
-    isort_procs = []
     errors = []
-    for f, proc in autoflake_procs:
-        res = proc.wait()
-        if res.retcode != 0:
-            errors.append("autoflake failed on %s:\n%s" % (f, res.stderr))
-            continue
-        formatted = res.stdout
-        isort_procs.append(
-            (f, os_exec(ctx, isort_cmd + [f, "-"], stdin = formatted, raise_on_failure = False)),
-        )
-
-    # Wait for isort to finish and start black on its output.
-    black_procs = []
-    for f, proc in isort_procs:
-        res = proc.wait()
-        if res.retcode != 0:
-            errors.append("isort failed on %s:\n%s" % (f, res.stderr))
-            continue
-        formatted = res.stdout
-        black_procs.append(
-            (f, os_exec(ctx, black_cmd, stdin = formatted, raise_on_failure = False)),
-        )
-
-    # Wait for black to finish and compare with the original file.
-    for filepath, proc in black_procs:
+    for filepath, proc in procs:
         original = str(ctx.io.read_file(filepath))
         res = proc.wait()
         if res.retcode != 0:
-            errors.append("black failed on %s:\n%s" % (filepath, res.stderr))
+            errors.append("python_format failed on %s:\n%s" % (filepath, res.stderr))
             continue
         formatted = res.stdout
         if formatted != original:
@@ -141,5 +119,5 @@ def _py_shebangs(ctx):
             )
 
 def register_python_checks():
-    shac.register_check(shac.check(_pyfmt, formatter = True))
+    shac.register_check(shac.check(_python_format, formatter = True))
     shac.register_check(_py_shebangs)
