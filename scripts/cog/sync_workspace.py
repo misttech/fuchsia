@@ -365,11 +365,12 @@ def _parse_args() -> argparse.Namespace:
             "Only compatible with the `--from cartfs --to cog` sync direction."
         ),
     )
+    base_verbosity = os.environ.get("COG_SYNC_VERBOSITY", "")
     parser.add_argument(
         "-v",
         "--verbose",
         action="count",
-        default=0,
+        default=int(base_verbosity) if base_verbosity.isdigit() else 0,
         help="Increase verbosity level (-v for INFO, -vv for DEBUG).",
     )
     parser.add_argument(

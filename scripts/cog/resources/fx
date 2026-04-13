@@ -3,76 +3,25 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-readonly GIT_CITC_PATH="$(which git-citc)"
-readonly GIT_PATH="$(which git)"
 readonly COG_FUCHSIA_DIR="$(readlink -f "$(dirname "${BASH_SOURCE[0]}")/../..")"
+readonly SYNC_WORKSPACE="${COG_FUCHSIA_DIR}/scripts/cog/sync_workspace.py"
 readonly CARTFS_FUCHSIA_DIR="${COG_FUCHSIA_DIR}/cartfs-dir/fuchsia"
 
 set -e
 
-if [[ ! -e "${CARTFS_FUCHSIA_DIR}" ]]; then
-  echo "Error: unable to find the cartfs symlink. Run the setup script to fix this."
-  exit 1
-fi
+"${SYNC_WORKSPACE}" --from cog --to cartfs
 
-# Compute the base commit hash
-base_commit_hash=$("${GIT_CITC_PATH}" api.get-repo-states fuchsia | grep base_commit_hash | awk '{print $2}' | tr -d '"')
-base_commit_hash_in_cartfs=$(cd "${CARTFS_FUCHSIA_DIR}" && "${GIT_PATH}" rev-parse HEAD)
-
-# if the base commit hash is different from the one in CartFS, then we need to
-# update the CartFS.
-if [[ "${base_commit_hash}" != "${base_commit_hash_in_cartfs}" ]]; then
-  echo "Updating CartFS to base commit hash ${base_commit_hash}..."
-  "${COG_FUCHSIA_DIR}/scripts/cog/setup_cog_workspace.py"
-fi
-
-if ! diff_output=$("${GIT_CITC_PATH}" cli.diff --patch=false "${base_commit_hash}" @ 2>/dev/null); then
-  diff_output=$("${GIT_CITC_PATH}" cli.diff "${base_commit_hash}" @)
-fi
-
-# Copy over any added or modified files to the CartFS.
-added_or_modified_files=($(echo "${diff_output}" | grep -E '^\[[AM]\*?\]' | awk '{print $2}'))
-for file in "${added_or_modified_files[@]}"; do
-  if [[ ! -f "${COG_FUCHSIA_DIR}/${file}" ]]; then
-    continue
-  fi
-  sha256_cog=$(sha256sum "${COG_FUCHSIA_DIR}/${file}" | awk '{print $1}')
-  sha256_cartfs=""
-  if [[ -f "${CARTFS_FUCHSIA_DIR}/${file}" ]]; then
-    sha256_cartfs=$(sha256sum "${CARTFS_FUCHSIA_DIR}/${file}" | awk '{print $1}')
-  fi
-  if [[ "${sha256_cog}" != "${sha256_cartfs}" ]]; then
-    mkdir -p "$(dirname "${CARTFS_FUCHSIA_DIR}/${file}")"
-    cp "${COG_FUCHSIA_DIR}/${file}" "${CARTFS_FUCHSIA_DIR}/${file}"
-  fi
-done
-
-# Delete files in CartFS
-deleted_files=($(echo "${diff_output}" | grep '^\[D\]' | awk '{print $2}'))
-for file in "${deleted_files[@]}"; do
-  if [[ -f "${CARTFS_FUCHSIA_DIR}/${file}" ]]; then
-    rm "${CARTFS_FUCHSIA_DIR}/${file}"
-  fi
-done
+cleanup() {
+  local status=$?
+  trap - EXIT SIGINT SIGTERM
+  (cd "${COG_FUCHSIA_DIR}" && "${SYNC_WORKSPACE}" --from cartfs --to cog) || true
+  exit $status
+}
+trap cleanup EXIT SIGINT SIGTERM
 
 # We need to run this here to make sure that the PATH is updated with the
 # prebuilts in the CartFS. If we do not do this then we will pick up the wrong
 # hermetic-env.
 source "${CARTFS_FUCHSIA_DIR}/scripts/fx-env.sh" && fx-update-path
-(
-  cd "${CARTFS_FUCHSIA_DIR}"
-  exec "${CARTFS_FUCHSIA_DIR}/scripts/fx" "$@"
-)
-
-# Copy modified files back to the COG workspace. This is mostly needed for
-# fx format-code
-for file in "${added_or_modified_files[@]}"; do
-  if [[ ! -f "${COG_FUCHSIA_DIR}/${file}" ]]; then
-    continue
-  fi
-  sha256_cog=$(sha256sum "${COG_FUCHSIA_DIR}/${file}" | awk '{print $1}')
-  sha256_cartfs=$(sha256sum "${CARTFS_FUCHSIA_DIR}/${file}" | awk '{print $1}')
-  if [[ "${sha256_cog}" != "${sha256_cartfs}" ]]; then
-    cp "${CARTFS_FUCHSIA_DIR}/${file}" "${COG_FUCHSIA_DIR}/${file}"
-  fi
-done
+cd "${CARTFS_FUCHSIA_DIR}"
+"${CARTFS_FUCHSIA_DIR}/scripts/fx" "$@"
