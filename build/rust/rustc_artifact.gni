@@ -113,10 +113,8 @@ template("rustc_artifact") {
   # In particular, it is used as a key in the incremental cache to prevent
   # builds of the same crate name from clobbering each others' cache entries.
   # It is also used in symbol mangling.
-  #
-  # This is a space-separated list.
   _codegen_metadata =
-      rebase_path(target_out_dir, root_build_dir) + " " + target_name
+      rebase_path(target_out_dir, root_build_dir) + "/" + target_name
   _rustflags = [ "-Cmetadata=${_codegen_metadata}" ]
 
   _flag_deps = [ "//build/rust:api_level_cfg_flags" ]
