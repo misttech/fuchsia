@@ -16,6 +16,10 @@ use serde::Serialize;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, ready};
+use zx;
+
+static SERIALIZED_DATA_VMO_NAME: zx::Name = zx::Name::new_lossy("archivist-serialized-data");
+static PACKET_BUFFER_VMO_NAME: zx::Name = zx::Name::new_lossy("archivist-packet-buffer");
 
 pub type FormattedStream =
     Pin<Box<dyn Stream<Item = Vec<Result<FormattedContent, AccessorError>>> + Send>>;
@@ -120,6 +124,7 @@ impl SerializedVmo {
             Format::Fxt => unreachable!("We'll never get FXT"),
         }
         let vmo = zx::Vmo::create(buffer.len() as u64).unwrap();
+        let _ = vmo.set_name(&SERIALIZED_DATA_VMO_NAME);
         vmo.write(&buffer, 0).unwrap();
         Ok(Self { vmo, size: buffer.len() as u64, format })
     }
@@ -226,9 +231,13 @@ impl<T: PacketFormat> Stream for PacketSerializer<T> {
         loop {
             // Copy to the VMO if the room in the buffer drops below a threshold.
             if buffer.capacity() - buffer.len() < 512 {
-                vmo.get_or_insert_with(|| zx::Vmo::create(max_packet_size).unwrap())
-                    .write(&buffer, vmo_len as u64)
-                    .unwrap();
+                vmo.get_or_insert_with(|| {
+                    let v = zx::Vmo::create(max_packet_size).unwrap();
+                    let _ = v.set_name(&PACKET_BUFFER_VMO_NAME);
+                    v
+                })
+                .write(&buffer, vmo_len as u64)
+                .unwrap();
                 vmo_len += buffer.len();
                 buffer.clear();
             }
@@ -285,7 +294,11 @@ impl<T: PacketFormat> Stream for PacketSerializer<T> {
                 vmo.set_stream_size((vmo_len + buffer.len()) as u64).unwrap();
                 vmo
             }
-            None => zx::Vmo::create(buffer.len() as u64).unwrap(),
+            None => {
+                let v = zx::Vmo::create(buffer.len() as u64).unwrap();
+                let _ = v.set_name(&PACKET_BUFFER_VMO_NAME);
+                v
+            }
         };
         vmo.write(&buffer, vmo_len as u64).unwrap();
         vmo_len += buffer.len();
