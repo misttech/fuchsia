@@ -803,8 +803,11 @@ class TestWorkspace(unittest.TestCase):
                 cartfs_instance=MagicMock(),
             )
             ws.__dict__["config"] = {
-                "fuchsia": {"repo": "fuchsia"},
-                "integration": {"repo": None},
+                "integration_url": "https://fuchsia.googlesource.com/integration",
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": None,
+                },
             }
 
             with (
@@ -834,8 +837,11 @@ class TestWorkspace(unittest.TestCase):
                 cartfs_instance=MagicMock(),
             )
             ws.__dict__["config"] = {
-                "fuchsia": {"repo": "fuchsia"},
-                "integration": {"repo": "integration"},
+                "integration_url": "https://fuchsia.googlesource.com/integration",
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": "integration",
+                },
             }
 
             def mock_get_cog_commit(repo: str) -> str:
@@ -875,10 +881,10 @@ class TestWorkspace(unittest.TestCase):
                 cartfs_instance=MagicMock(),
             )
             ws.__dict__["config"] = {
-                "fuchsia": {"repo": "fuchsia"},
-                "integration": {
-                    "repo": None,
-                    "remote": "https://fuchsia.googlesource.com/integration",
+                "integration_url": "https://fuchsia.googlesource.com/integration",
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": None,
                 },
                 "jiriImports": [],
                 "symlinks": {},
@@ -923,9 +929,10 @@ class TestWorkspace(unittest.TestCase):
                 cartfs_instance=MagicMock(),
             )
             ws.__dict__["config"] = {
-                "fuchsia": {"repo": "fuchsia"},
-                "integration": {
-                    "repo": "integration",
+                "integration_url": "https://fuchsia.googlesource.com/integration",
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": "integration",
                 },
                 "jiriImports": [],
                 "symlinks": {},
@@ -977,16 +984,20 @@ class TestWorkspace(unittest.TestCase):
             )
 
             assert ws.cartfs_directory is not None
-            ws.cartfs_fuchsia_dir = ws.cartfs_directory / "fuchsia"
 
             mock_config_patcher = patch.object(
                 workspace.Workspace, "config", new_callable=PropertyMock
             )
             mock_config = mock_config_patcher.start()
             mock_config.return_value = {
+                "integration_url": "https://fuchsia.googlesource.com/integration",
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": None,
+                },
                 "symlinks": {
                     "@cartfs//src_path": "@cog//dest_path",
-                }
+                },
             }
             self.addCleanup(mock_config_patcher.stop)
 
@@ -1008,9 +1019,14 @@ class TestWorkspace(unittest.TestCase):
 
             # Test invalid root raises KeyError
             mock_config.return_value = {
+                "integration_url": "https://fuchsia.googlesource.com/integration",
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": None,
+                },
                 "symlinks": {
                     "@invalid//src_path": "@cog//dest_path",
-                }
+                },
             }
             with self.assertRaises(KeyError):
                 ws._create_symlinks()
@@ -1034,10 +1050,15 @@ class TestWorkspace(unittest.TestCase):
             )
             mock_config = mock_config_patcher.start()
             mock_config.return_value = {
+                "integration_url": "https://fuchsia.googlesource.com/integration",
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": None,
+                },
                 "jiriImports": [
                     "manifest/path1",
                     "manifest/path2",
-                ]
+                ],
             }
             self.addCleanup(mock_config_patcher.stop)
 
@@ -1071,12 +1092,10 @@ class TestWorkspace(unittest.TestCase):
             )
             mock_config = mock_config_patcher.start()
             mock_config.return_value = {
-                "fuchsia": {
-                    "repo": "custom-fuchsia",
-                },
-                "integration": {
-                    "repo": "custom-integration",
-                    "remote": "https://custom.git/integration",
+                "integration_url": "https://custom.git/integration",
+                "repo": {
+                    "fuchsia": "custom-fuchsia",
+                    "integration": "custom-integration",
                 },
             }
             self.addCleanup(mock_config_patcher.stop)

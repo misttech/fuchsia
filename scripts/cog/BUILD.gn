@@ -10,6 +10,7 @@ group("tests") {
     ":logger_test($host_toolchain)",
     ":mock_fs_test($host_toolchain)",
     ":setup_cog_workspace_test($host_toolchain)",
+    ":sync_workspace_test($host_toolchain)",
     ":util_test($host_toolchain)",
     ":workspace_test($host_toolchain)",
     "ide_query:tests",
@@ -23,6 +24,7 @@ if (is_host) {
     "mock_fs.py",
     "setup_cog_workspace.py",
     "snapshotter.py",
+    "sync_workspace.py",
     "util.py",
     "workspace.py",
   ]
@@ -32,6 +34,7 @@ if (is_host) {
     "setup_cog_workspace",
     "workspace",
     "logger",
+    "sync_workspace",
     "util",
   ]
 

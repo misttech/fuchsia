@@ -1,25 +1,26 @@
 {
-  "jiriImports": [
-    "manifests/prebuilts",
-    "manifests/third_party/all",
-    "../integration/cobalt",
-    "../integration/prebuilts"
-  ],
-  "symlinks": {
-    "@cartfs//integration": "@cartfs//fuchsia/integration",
-    "@cartfs//fuchsia/scripts/cog/resources/args.gn": "@cartfs//fuchsia/local/args.gn",
-    "@cog//scripts/cog/resources/fx": "@cog//.jiri_root/bin/fx",
-    "@cog//scripts/cog/resources/ffx": "@cog//.jiri_root/bin/ffx",
-    "@cartfs//fuchsia/.fx-build-dir": "@cog//.fx-build-dir",
-    "@cartfs//fuchsia/integration": "@cog//integration",
-    "@cartfs//fuchsia/prebuilt": "@cog//prebuilt",
-    "@cartfs//fuchsia/out": "@cog//out"
-  },
-  "fuchsia": {
-    "repo": "fuchsia"
-  },
-  "integration": {
-    "repo": null,
-    "remote": "https://fuchsia.googlesource.com/integration"
-  }
+    "jiriImports": [
+        "manifests/prebuilts",
+        "manifests/third_party/all",
+        "../integration/cobalt",
+        "../integration/prebuilts"
+    ],
+    "symlinks": {
+        "@cartfs//integration": "@cartfs//fuchsia/integration",
+        "@cartfs//fuchsia/scripts/cog/resources/args.gn": "@cartfs//fuchsia/local/args.gn",
+        "@cog//scripts/cog/resources/fx": "@cog//.jiri_root/bin/fx",
+        "@cog//scripts/cog/resources/ffx": "@cog//.jiri_root/bin/ffx",
+        "@cartfs//fuchsia/.fx-build-dir": "@cog//.fx-build-dir",
+        "@cartfs//fuchsia/integration": "@cog//integration",
+        "@cartfs//fuchsia/prebuilt": "@cog//prebuilt",
+        "@cartfs//fuchsia/out": "@cog//out"
+    },
+    "integration_url": "https://fuchsia.googlesource.com/integration",
+    "repo": {
+        "fuchsia": "fuchsia",
+        "integration": null,
+        "ignored": [],
+        "stripSrcPrefix": "",
+        "destSubdir": ""
+    }
 }

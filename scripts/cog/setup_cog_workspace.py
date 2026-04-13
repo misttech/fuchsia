@@ -133,12 +133,12 @@ def main() -> int:
     if not args.color:
         os.environ["NO_COLOR"] = "1"
 
-    if args.verbose == 1:
-        log_level = logging.INFO
-    elif args.verbose >= 2:
-        log_level = logging.DEBUG
-    else:
+    if args.verbose == 0:
         log_level = logging.WARNING
+    elif args.verbose == 1:
+        log_level = logging.INFO
+    else:
+        log_level = logging.DEBUG
 
     logger.init_logger(
         level=log_level,

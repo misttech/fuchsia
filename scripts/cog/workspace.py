@@ -126,6 +126,12 @@ class Workspace:
         self.cartfs_instance = cartfs_instance
         self.cartfs_mount_point = cartfs_instance.mount_point
 
+    @property
+    def cartfs_fuchsia_dir(self) -> Path:
+        if not self.cartfs_directory:
+            raise WorkspaceError("No cartfs directory found.")
+        return self.cartfs_directory / "fuchsia"
+
     @staticmethod
     def _find_cog_workspace_directory(start_dir: Path) -> Path | None:
         """Finds the root cog workspace directory by traversing up from a start path.
@@ -190,6 +196,11 @@ class Workspace:
         cartfs_directory = cls.get_linked_cartfs_workspace_directory(
             workspace_dir, repo_name, workspace_id
         )
+        if not cartfs_directory:
+            logger.log_info(
+                f"No associated cartfs directory found for workspace"
+                f" {workspace_name}/{workspace_id} ({repo_name})"
+            )
 
         return cls(
             workspace_dir,
@@ -245,7 +256,6 @@ class Workspace:
         repo_dir = workspace_dir / repo_name
         symlink_path = repo_dir / CARTFS_SYMLINK_NAME
         if not symlink_path.is_symlink():
-            logger.log_info(f"symlink_path is not a link: {symlink_path}")
             return None
 
         target_path = symlink_path.readlink()
@@ -436,16 +446,15 @@ class Workspace:
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
-        self.cartfs_fuchsia_dir = self.cartfs_directory / "fuchsia"
         if not self._is_jiri_bootstrapped():
             self._bootstrap_jiri()
 
-        cog_integration_repo = self.config["integration"]["repo"]
+        cog_integration_repo = self.config["repo"]["integration"]
 
-        cog_fuchsia_commit = self.get_cog_commit(self.config["fuchsia"]["repo"])
+        cog_fuchsia_commit = self.get_cog_commit(self.config["repo"]["fuchsia"])
         cartfs_fuchsia_commit = self.get_cartfs_commit("fuchsia")
-        logger.log_info(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
-        logger.log_info(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
+        logger.log_debug(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
+        logger.log_debug(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
 
         # If this is a standalone fuchsia cog checkout and the CartFS fuchsia
         # checkout is up to date, skip CartFS initialization.
@@ -486,11 +495,14 @@ class Workspace:
                 cog_fuchsia_commit
             )
 
-        logger.log_info(f"Cog integration commit: {cog_integration_commit}")
-        logger.log_info(
+        logger.log_debug(f"Cog integration commit: {cog_integration_commit}")
+        logger.log_debug(
             f"CartFS integration commit: {cartfs_integration_commit}"
         )
 
+        logger.emit_status(
+            "Updating CartFS fuchsia and integration checkouts..."
+        )
         self._sync_fuchsia_repo(cog_fuchsia_commit)
         self._fetch_prebuilts()
         self._create_symlinks()
@@ -561,27 +573,12 @@ class Workspace:
         if not link_name.parent.is_dir():
             link_name.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.log_info(f"Creating symlink from {link_name} to {target}")
+        logger.log_debug(f"Creating symlink from {link_name} to {target}")
         link_name.symlink_to(target)
-
-    def _run_bootstrap_jiri_script(self) -> None:
-        """Runs the bootstrap jiri script."""
-        url = "https://fuchsia.googlesource.com/jiri/+/HEAD/scripts/bootstrap_jiri?format=TEXT"
-        try:
-            with urllib.request.urlopen(url) as response:
-                encoded_script = response.read()
-                decoded_script = base64.b64decode(encoded_script)
-                subprocess.run(
-                    ["bash", "-s", self.cartfs_mount_point],
-                    input=decoded_script,
-                    check=True,
-                )
-        except (urllib.error.URLError, subprocess.CalledProcessError) as e:
-            logger.log_error(f"Failed to bootstrap jiri: {e}")
-            sys.exit(1)
 
     def _write_jiri_manifest(self) -> None:
         """Writes the jiri manifest."""
+        logger.emit_status("Writing jiri manifest...")
         localimports = self.config["jiriImports"]
         self._patch_file(
             filepath="fuchsia/.jiri_manifest",
@@ -596,7 +593,7 @@ class Workspace:
 
     def _write_jiri_config(self) -> None:
         """Initialize the jiri config."""
-        logger.log_info("Initialize the jiri config.")
+        logger.emit_status("Initializing jiri config...")
         (self.cartfs_fuchsia_dir / ".jiri_root" / "bin").mkdir(
             exist_ok=True, parents=True
         )
@@ -621,16 +618,27 @@ class Workspace:
 
     def _bootstrap_jiri(self) -> None:
         """Bootstraps jiri if it is not already bootstrapped."""
-        logger.log_info("Bootstrapping jiri.")
-        self._run_bootstrap_jiri_script()
+        logger.emit_status("Bootstrapping jiri...")
+        url = "https://fuchsia.googlesource.com/jiri/+/HEAD/scripts/bootstrap_jiri?format=TEXT"
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                encoded_script = response.read()
+                decoded_script = base64.b64decode(encoded_script)
+                subprocess.run(
+                    ["bash", "-s", self.cartfs_mount_point],
+                    input=decoded_script,
+                    check=True,
+                )
+        except (urllib.error.URLError, subprocess.CalledProcessError) as e:
+            logger.log_error(f"Failed to bootstrap jiri: {e}")
+            sys.exit(1)
 
     def _fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
-        logger.emit_status("Fetching prebuilts...")
+        logger.emit_status(f"Fetching prebuilts for {self.repo_name}...")
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
-        logger.log_info(f"Fetching prebuilts for {self.repo_name}.")
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
         if (cartfs_fuchsia_dir / ".git").exists():
             self._run(["git", "restore", "."], cwd=cartfs_fuchsia_dir)
@@ -650,8 +658,7 @@ class Workspace:
 
     def _reinit_integration_repo(self, revision: str | None = None) -> None:
         """Destroys and re-clones the `integration` checkout in CartFS, with a depth of 100 cls."""
-        logger.log_info("Reinitializing the integration repository.")
-        logger.emit_status("Creating integration repo...")
+        logger.emit_status(f"Reinitializing the integration repository...")
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
@@ -659,7 +666,7 @@ class Workspace:
         if integration_dir.is_dir():
             shutil.rmtree(integration_dir)
 
-        remote = self.config["integration"]["remote"]
+        remote = self.config["integration_url"]
         git_clone_cmd = [
             "git",
             "clone",
@@ -690,7 +697,7 @@ class Workspace:
         # We use the first 7 characters of the fuchsia repo to look up in
         # integration repo's commit message
         commit_hash_prefix = fuchsia_commit[:7]
-        logger.log_info(f"commit_hash_prefix: {commit_hash_prefix}")
+        logger.log_debug(f"Fuchsia commit_hash_prefix: '{commit_hash_prefix}'")
 
         integration_base_commit_hash = (
             self._run(
@@ -701,8 +708,8 @@ class Workspace:
             .strip()
             .split("\n")[-1]
         )
-        logger.log_info(
-            f"integration_base_commit_hash: {integration_base_commit_hash}"
+        logger.log_debug(
+            f"Associated integration_base_commit_hash: '{integration_base_commit_hash}'"
         )
 
         if not integration_base_commit_hash:
@@ -734,7 +741,7 @@ class Workspace:
             raise RepoSetupError("No integration directory found.")
 
         # clone fuchsia repository and reset it to the commit hash
-        logger.log_info(
+        logger.emit_status(
             "Syncing the CartFS fuchsia checkout from "
             f"{self.get_cartfs_commit('fuchsia')} to {commit}"
         )
@@ -857,7 +864,7 @@ class Workspace:
         exit_on_error: bool = True,
     ) -> str:
         """Runs a command."""
-        logger.log_info(f"Running command: '{' '.join(cmd)}' in {cwd}")
+        logger.log_debug(f"Running command: '{' '.join(cmd)}' in {cwd}")
 
         # Set FUCHSIA_DIR environment variable to the cartfs fuchsia directory.
         # This is needed for the hooks to work correctly.
@@ -865,27 +872,24 @@ class Workspace:
         env["FUCHSIA_DIR"] = str(self.cartfs_fuchsia_dir)
 
         try:
-            if capture_output:
-                return subprocess.run(
-                    cmd,
-                    cwd=cwd,
-                    check=True,
-                    capture_output=True,
-                    env=env,
-                ).stdout.decode("utf-8")
-            else:
-                # If we are not debugging, we want to capture the output so we can print it on error.
-                # If we are debugging, stdout/stderr are None, so output goes to stdout/stderr.
-                run_capture_output = logger.get_log_level() > logging.DEBUG
+            # If we are not debugging, we want to capture the output so we can print it on error.
+            # If we are debugging, stdout/stderr are None, so output goes to stdout/stderr.
+            run_capture_output = (
+                capture_output or logger.get_log_level() > logging.DEBUG
+            )
 
-                subprocess.run(
-                    cmd,
-                    cwd=cwd,
-                    check=True,
-                    capture_output=run_capture_output,
-                    env=env,
-                )
-                return ""
+            process = subprocess.run(
+                cmd,
+                cwd=cwd,
+                check=True,
+                capture_output=run_capture_output,
+                env=env,
+            )
+            return (
+                process.stdout.decode("utf-8", errors="ignore")
+                if capture_output
+                else ""
+            )
         except subprocess.CalledProcessError as e:
             if logger.get_log_level() <= logging.DEBUG:
                 logger.log_exception(e)
@@ -903,10 +907,10 @@ class Workspace:
         if not self.cartfs_directory:
             raise RepoSetupError("No cartfs directory found.")
 
-        logger.log_info(f"Patching the {filepath} file.")
+        logger.log_debug(f"Patching the {filepath} file.")
         full_filepath = self.cartfs_directory / filepath
         if full_filepath.exists():
-            logger.log_info(f"File {full_filepath} already exists.")
+            logger.log_debug(f"File {full_filepath} already exists.")
             return
 
         full_filepath.parent.mkdir(parents=True, exist_ok=True)
