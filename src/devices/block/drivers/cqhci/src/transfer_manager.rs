@@ -8,7 +8,8 @@ use crate::dma_buffer::{
 use log::warn;
 use sdmmc_spec::{
     CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CommandQueueTDLDirectCmdEntry, CommandQueueTDLEntry,
-    CommandQueueTransferDescriptor, Direction, MMC_BLOCK_SIZE, MmcCommand, TransferBytes,
+    CommandQueueTransferDescriptor, CryptoParams, Direction, MMC_BLOCK_SIZE, MmcCommand,
+    TransferBytes,
 };
 use std::num::NonZeroU16;
 use std::ops::Range;
@@ -406,6 +407,14 @@ impl TransferManager {
         let mut num_descriptors = 0;
         let mut contig_regions = contig_regions.peekable();
         let first_region = contig_regions.next().unwrap();
+        let crypto_params = if transfer_options.inline_crypto.is_enabled {
+            Some(CryptoParams {
+                slot: transfer_options.inline_crypto.slot,
+                dun: transfer_options.inline_crypto.dun,
+            })
+        } else {
+            None
+        };
         let tdl_entry = if contig_regions.peek().is_none() {
             transfer.buffers = TransferBuffers::Single(first_region.start);
             CommandQueueTDLEntry::single_buffer(
@@ -414,6 +423,7 @@ impl TransferManager {
                 block_count,
                 first_region.start as u64,
                 transfer_options.queue_barrier,
+                crypto_params,
             )
             .unwrap() // Unwrap OK, we already checked `block_count` is valid in the caller
         } else {
@@ -466,6 +476,7 @@ impl TransferManager {
                 block_count,
                 phys_address as u64,
                 transfer_options.queue_barrier,
+                crypto_params,
             )
         };
         self.commit(transfer.tdl_slot(), tdl_entry)
@@ -617,12 +628,15 @@ pub struct TransferOptions {
     //// may have a performance impact.  Evaluate manually implementing PRE_BARRIER in software
     /// instead.
     pub queue_barrier: bool,
-    // TODO(https://fxbug.dev/490482694): Add support for inline encrypted transfers.
+    pub inline_crypto: block_server::InlineCryptoOptions,
 }
 
 impl From<block_server::WriteOptions> for TransferOptions {
     fn from(options: block_server::WriteOptions) -> Self {
-        Self { queue_barrier: options.flags.contains(block_server::WriteFlags::PRE_BARRIER) }
+        Self {
+            queue_barrier: options.flags.contains(block_server::WriteFlags::PRE_BARRIER),
+            inline_crypto: options.inline_crypto,
+        }
     }
 }
 
@@ -789,6 +803,7 @@ mod tests {
                 NonZeroU16::try_from(1).unwrap(),
                 4096,
                 false,
+                None,
             )
             .unwrap(),
         );
@@ -848,6 +863,7 @@ mod tests {
                 NonZeroU16::try_from(16).unwrap(),
                 EXTRA_DESCRIPTORS_BASE as u64,
                 false,
+                None,
             ),
         );
         let TransferBuffers::ScatterGatherList(addr, len) = transfer.buffers else {
@@ -879,6 +895,7 @@ mod tests {
                     NonZeroU16::try_from(16).unwrap(),
                     EXTRA_DESCRIPTORS_BASE as u64 + zx::system_get_page_size() as u64,
                     false,
+                    None,
                 ),
             );
             unsafe { transfer2.unpin() };
@@ -922,6 +939,7 @@ mod tests {
                 NonZeroU16::try_from(block_count as u16).unwrap(),
                 EXTRA_DESCRIPTORS_BASE as u64,
                 false,
+                None,
             ),
         );
         let mut expected_descriptors = vec![];
@@ -968,6 +986,7 @@ mod tests {
                 NonZeroU16::try_from(40).unwrap(),
                 EXTRA_DESCRIPTORS_BASE as u64,
                 false,
+                None,
             ),
         );
         validate_extra_transfer_descriptors(
@@ -1237,5 +1256,50 @@ mod tests {
             length: 4090,
         });
         assert_eq!(iter.collect::<Vec<_>>(), vec![10..4100]);
+    }
+
+    #[fuchsia::test]
+    fn crypto_single_buffer_transfer() {
+        let (manager, fake_bti) = setup();
+        fake_bti.set_paddrs(&[4096]);
+        let vmo = Arc::new(zx::Vmo::create(4096).unwrap());
+        let transfer = manager
+            .prepare_transfer(
+                manager.acquire_transfer_slot().unwrap(),
+                vmo.clone(),
+                0,
+                0,
+                1,
+                Direction::Read,
+                TransferOptions {
+                    queue_barrier: false,
+                    inline_crypto: block_server::InlineCryptoOptions {
+                        is_enabled: true,
+                        slot: 5,
+                        dun: 0x1234,
+                    },
+                },
+            )
+            .expect("prepare_transfer failed");
+        assert!(transfer.pmt.is_some());
+
+        // Validate that the TDL entry was written with crypto fields.
+        let buf: Box<[CommandQueueTDLEntry]> = manager
+            .tdl_buffer
+            .vmo()
+            .read_to_vec::<CommandQueueTDLEntry>(0, CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS as u64)
+            .unwrap()
+            .into_boxed_slice();
+        let entry = buf[0];
+        assert!(entry.task().ce());
+        let cci = entry.task().cci();
+        let dun = entry.task().dun();
+        assert_eq!(cci, 5);
+        assert_eq!(dun, 0x1234);
+
+        unsafe {
+            transfer.unpin();
+            Arc::try_unwrap(manager).unwrap().unpin_buffers();
+        }
     }
 }

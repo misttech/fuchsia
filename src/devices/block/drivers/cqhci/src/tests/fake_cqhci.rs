@@ -20,15 +20,15 @@ use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
 use futures::{FutureExt as _, SinkExt as _, Stream, StreamExt as _};
 use sdmmc_spec::{
-    CQHCI_CQ_CFG_OFFSET, CQHCI_CQ_CTL_OFFSET, CQHCI_CQ_IS_OFFSET, CQHCI_CQ_TCN_OFFSET,
-    CQHCI_CQ_TDBR_OFFSET, CQHCI_CQ_TDLBA_OFFSET, CQHCI_CQ_TDLBAU_OFFSET, CQHCI_CQ_TERRI_OFFSET,
-    CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CommandQueueTDLDirectCmdEntry, CommandQueueTDLEntry,
-    CommandQueueTransferDescriptor, CqhciCqCfgRegister, CqhciCqCtlRegister,
-    CqhciCqInterruptStatusRegister, CqhciCqTaskErrorRegister, EXT_CSD_BARRIER_SUPPORT,
-    EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK,
-    EXT_CSD_CACHE_FLUSH_POLICY, EXT_CSD_CACHE_FLUSH_POLICY_FIFO, EXT_CSD_PARTITION_ACCESS_MASK,
-    EXT_CSD_PARTITION_CONFIG, MMC_BLOCK_SIZE, MmcCommand, SDHCI_IS_OFFSET,
-    SdhciInterruptStatusRegister, TransferAct, TransferBytes,
+    CQHCI_CQ_CAP_OFFSET, CQHCI_CQ_CFG_OFFSET, CQHCI_CQ_CTL_OFFSET, CQHCI_CQ_IS_OFFSET,
+    CQHCI_CQ_TCN_OFFSET, CQHCI_CQ_TDBR_OFFSET, CQHCI_CQ_TDLBA_OFFSET, CQHCI_CQ_TDLBAU_OFFSET,
+    CQHCI_CQ_TERRI_OFFSET, CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CommandQueueTDLDirectCmdEntry,
+    CommandQueueTDLEntry, CommandQueueTransferDescriptor, CqhciCqCapsRegister, CqhciCqCfgRegister,
+    CqhciCqCtlRegister, CqhciCqInterruptStatusRegister, CqhciCqTaskErrorRegister,
+    EXT_CSD_BARRIER_SUPPORT, EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL,
+    EXT_CSD_CACHE_EN_MASK, EXT_CSD_CACHE_FLUSH_POLICY, EXT_CSD_CACHE_FLUSH_POLICY_FIFO,
+    EXT_CSD_PARTITION_ACCESS_MASK, EXT_CSD_PARTITION_CONFIG, MMC_BLOCK_SIZE, MmcCommand,
+    SDHCI_IS_OFFSET, SdhciInterruptStatusRegister, TransferAct, TransferBytes,
 };
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -79,6 +79,7 @@ impl FakeCqhci {
                 Service {
                     dispatcher: FidlExecutor::from(harness.dispatcher().clone()),
                     rpmb_request_sender,
+                    state: host.task_handler.state.clone(),
                 },
             )
             .build_driver_offer()];
@@ -98,6 +99,10 @@ impl FakeCqhci {
 
     pub fn fail_next(&self, count: u32) {
         self.host.task_handler.fail_next(count);
+    }
+
+    pub fn fail_next_crypto_gce(&self, count: u32) {
+        self.host.task_handler.fail_next_crypto_gce(count);
     }
 
     /// Returns a mask of the in-progress tasks.
@@ -151,7 +156,15 @@ impl rpmb::DriverRpmbServerHandler for MockRpmbServer {
     }
 }
 
-struct MockInlineEncryptionServer;
+struct MockInlineEncryptionServer {
+    state: Arc<Mutex<FakeHardwareState>>,
+}
+
+impl MockInlineEncryptionServer {
+    fn new(state: Arc<Mutex<FakeHardwareState>>) -> Self {
+        Self { state }
+    }
+}
 
 impl finlineencryption::DriverDeviceServerHandler for MockInlineEncryptionServer {
     async fn program_key(
@@ -162,7 +175,14 @@ impl finlineencryption::DriverDeviceServerHandler for MockInlineEncryptionServer
             DriverChannel,
         >,
     ) {
-        responder.respond(5u8).await.ok();
+        let slot = {
+            let mut state = self.state.lock();
+            let slot =
+                (0..=255).find(|i| !state.valid_crypto_slots.contains(i)).expect("no free slots");
+            state.valid_crypto_slots.insert(slot);
+            slot
+        };
+        responder.respond(slot).await.ok();
     }
 
     async fn derive_raw_secret(
@@ -323,6 +343,7 @@ impl CommandQueueHost for TestCommandQueueHost {
 struct Service {
     dispatcher: FidlExecutor<fdf::WeakDispatcher>,
     rpmb_request_sender: mpsc::UnboundedSender<futures::channel::oneshot::Sender<()>>,
+    state: Arc<Mutex<FakeHardwareState>>,
 }
 
 impl cqhci::ServiceHandler for Service {
@@ -339,7 +360,7 @@ impl cqhci::ServiceHandler for Service {
     }
 
     fn inline_crypto(&self, server_end: fidl_next::ServerEnd<finlineencryption::DriverDevice>) {
-        server_end.spawn_on(MockInlineEncryptionServer, &self.dispatcher);
+        server_end.spawn_on(MockInlineEncryptionServer::new(self.state.clone()), &self.dispatcher);
     }
 }
 
@@ -355,10 +376,12 @@ struct FakeHardwareState {
     cq_data: Vec<u32>,
     sd_data: Vec<u32>,
     requests_to_fail: u32,
+    requests_to_fail_crypto_gce: u32,
     rpmb_active: bool,
     wake_event: event_listener::Event,
     tasks_in_progress: u32,
     active_partition: u32,
+    valid_crypto_slots: std::collections::HashSet<u8>,
 }
 
 impl FakeHardwareState {
@@ -540,6 +563,40 @@ impl mmio::Mmio for FakeMmio {
     }
 }
 
+fn scramble_data(data: &mut [u8], slot: u8, dun: u32) {
+    let key = ((slot as u64) << 32) | (dun as u64);
+    let key_bytes = key.to_ne_bytes();
+    for (i, byte) in data.iter_mut().enumerate() {
+        *byte ^= key_bytes[i % 8];
+    }
+}
+
+fn transfer_data(
+    is_read: bool,
+    target_vmo: &zx::Vmo,
+    current_offset: u64,
+    pinned: &FakeBtiPinnedVmos,
+    addr: usize,
+    len: usize,
+    ce: bool,
+    slot: u8,
+    dun: u32,
+) {
+    if is_read {
+        let mut temp_buf = target_vmo.read_to_vec(current_offset, len as u64).unwrap();
+        if ce {
+            scramble_data(&mut temp_buf, slot, dun);
+        }
+        pinned.write_bytes(addr, &temp_buf).unwrap();
+    } else {
+        let mut temp_buf = pinned.read_bytes(addr, len).unwrap();
+        if ce {
+            scramble_data(&mut temp_buf, slot, dun);
+        }
+        target_vmo.write(&temp_buf, current_offset).unwrap();
+    }
+}
+
 struct FakeTaskHandler {
     irq: zx::VirtualInterrupt,
     state: Arc<Mutex<FakeHardwareState>>,
@@ -547,6 +604,7 @@ struct FakeTaskHandler {
     partition_vmos: std::collections::HashMap<u32, zx::Vmo>,
     on_task_started: Option<Box<dyn Fn(u8) -> BoxFuture<'static, ()> + Send + Sync>>,
     completed_tasks: AtomicU32,
+    tasks: Mutex<Vec<fasync::Task<()>>>,
 }
 
 impl FakeTaskHandler {
@@ -569,18 +627,27 @@ impl FakeTaskHandler {
             state: Arc::new(Mutex::new(FakeHardwareState {
                 enabled: false,
                 halt: false,
-                cq_data: vec![0; 0x400],
+                cq_data: {
+                    let mut v = vec![0; 0x400];
+                    let mut caps = CqhciCqCapsRegister(0);
+                    caps.set_crypto_support(true);
+                    v[CQHCI_CQ_CAP_OFFSET / 4] = caps.0;
+                    v
+                },
                 sd_data: vec![0; 0x400],
                 requests_to_fail: 0,
+                requests_to_fail_crypto_gce: 0,
                 rpmb_active: false,
                 wake_event: event_listener::Event::new(),
                 tasks_in_progress: 0,
                 active_partition: EmmcPartitionId::UserDataPartition as u32,
+                valid_crypto_slots: std::collections::HashSet::new(),
             })),
             bti,
             partition_vmos,
             on_task_started,
             completed_tasks: AtomicU32::new(0),
+            tasks: Mutex::new(Vec::new()),
         })
     }
 
@@ -597,6 +664,10 @@ impl FakeTaskHandler {
 
     fn fail_next(&self, count: u32) {
         self.state.lock().requests_to_fail = count;
+    }
+
+    fn fail_next_crypto_gce(&self, count: u32) {
+        self.state.lock().requests_to_fail_crypto_gce = count;
     }
 
     async fn poll(self: &Arc<Self>) {
@@ -641,10 +712,10 @@ impl FakeTaskHandler {
                 if (to_spawn & (1 << task_id)) != 0 {
                     let this = self.clone();
                     let pinned = pinned.clone();
-                    fasync::Task::spawn(async move {
+                    let task = fasync::Task::spawn(async move {
                         this.process_task(task_id as u8, tdl_phys, pinned).await;
-                    })
-                    .detach();
+                    });
+                    self.tasks.lock().push(task);
                 }
             }
         }
@@ -662,6 +733,9 @@ impl FakeTaskHandler {
 
         let entry_offset =
             tdl_phys + (task_id as usize * std::mem::size_of::<CommandQueueTDLEntry>());
+
+        let mut has_error = false;
+        let mut error_is_icce = false;
 
         if task_id == CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT {
             let entry: CommandQueueTDLDirectCmdEntry = pinned.read(entry_offset).unwrap();
@@ -698,82 +772,98 @@ impl FakeTaskHandler {
 
             let block_offset = entry.task.block_offset();
             let is_read = entry.task.data_direction();
+            let ce = entry.task.ce();
+            let slot = entry.task.cci();
+            let dun = entry.task.dun();
 
-            let (target_vmo, rpmb_active, _active_partition) = {
-                let state = self.state.lock();
-                (
-                    self.partition_vmos
-                        .get(&state.active_partition)
-                        .and_then(|v| v.duplicate_handle(zx::Rights::SAME_RIGHTS).ok()),
-                    state.rpmb_active,
-                    state.active_partition,
-                )
-            };
-            assert!(!rpmb_active, "task submitted while RPMB request is active!");
+            if ce && !self.state.lock().valid_crypto_slots.contains(&slot) {
+                has_error = true;
+                error_is_icce = true;
+            }
 
-            if let Some(target_vmo) = target_vmo {
-                let mut current_offset = block_offset as u64 * MMC_BLOCK_SIZE;
-                let desc = entry.transfer;
+            if !has_error {
+                let (target_vmo, rpmb_active, _active_partition) = {
+                    let state = self.state.lock();
+                    (
+                        self.partition_vmos
+                            .get(&state.active_partition)
+                            .and_then(|v| v.duplicate_handle(zx::Rights::SAME_RIGHTS).ok()),
+                        state.rpmb_active,
+                        state.active_partition,
+                    )
+                };
+                assert!(!rpmb_active, "task submitted while RPMB request is active!");
 
-                loop {
-                    if !desc.valid() {
-                        break;
-                    }
-                    let address = desc.address() as usize;
+                if let Some(target_vmo) = target_vmo {
+                    let mut current_offset = block_offset as u64 * MMC_BLOCK_SIZE;
+                    let desc = entry.transfer;
 
-                    if desc.act() == Ok(TransferAct::Link) {
-                        let mut link_phys = address;
-                        loop {
-                            let link_desc: CommandQueueTransferDescriptor =
-                                pinned.read(link_phys).unwrap();
-
-                            if !link_desc.valid() {
-                                break;
-                            }
-
-                            if link_desc.act() == Ok(TransferAct::Tran) {
-                                let mut len = link_desc.length() as usize;
-                                if len == 0 {
-                                    len = TransferBytes::MAX_BYTES;
-                                }
-                                let link_addr = link_desc.address() as usize;
-
-                                if is_read {
-                                    let temp_buf =
-                                        target_vmo.read_to_vec(current_offset, len as u64).unwrap();
-                                    pinned.write_bytes(link_addr, &temp_buf).unwrap();
-                                } else {
-                                    let temp_buf = pinned.read_bytes(link_addr, len).unwrap();
-                                    target_vmo.write(&temp_buf, current_offset).unwrap();
-                                }
-                                current_offset += len as u64;
-                            }
-                            if link_desc.end() {
-                                break;
-                            }
-                            link_phys += 16;
-                        }
-                        break;
-                    } else if desc.act() == Ok(TransferAct::Tran) {
-                        let mut len = desc.length() as usize;
-                        if len == 0 {
-                            len = TransferBytes::MAX_BYTES;
-                        }
-
-                        if is_read {
-                            let temp_buf =
-                                target_vmo.read_to_vec(current_offset, len as u64).unwrap();
-                            pinned.write_bytes(address, &temp_buf).unwrap();
-                        } else {
-                            let temp_buf = pinned.read_bytes(address, len).unwrap();
-                            target_vmo.write(&temp_buf, current_offset).unwrap();
-                        }
-                        current_offset += len as u64;
-                        if desc.end() {
+                    loop {
+                        if !desc.valid() {
                             break;
                         }
-                    } else {
-                        panic!("Unexpected descriptor {desc:?}");
+                        let address = desc.address() as usize;
+
+                        if desc.act() == Ok(TransferAct::Link) {
+                            let mut link_phys = address;
+                            loop {
+                                let link_desc: CommandQueueTransferDescriptor =
+                                    pinned.read(link_phys).unwrap();
+
+                                if !link_desc.valid() {
+                                    break;
+                                }
+
+                                if link_desc.act() == Ok(TransferAct::Tran) {
+                                    let mut len = link_desc.length() as usize;
+                                    if len == 0 {
+                                        len = TransferBytes::MAX_BYTES;
+                                    }
+                                    let link_addr = link_desc.address() as usize;
+
+                                    transfer_data(
+                                        is_read,
+                                        &target_vmo,
+                                        current_offset,
+                                        &pinned,
+                                        link_addr,
+                                        len,
+                                        ce,
+                                        slot,
+                                        dun,
+                                    );
+                                    current_offset += len as u64;
+                                }
+                                if link_desc.end() {
+                                    break;
+                                }
+                                link_phys += 16;
+                            }
+                            break;
+                        } else if desc.act() == Ok(TransferAct::Tran) {
+                            let mut len = desc.length() as usize;
+                            if len == 0 {
+                                len = TransferBytes::MAX_BYTES;
+                            }
+
+                            transfer_data(
+                                is_read,
+                                &target_vmo,
+                                current_offset,
+                                &pinned,
+                                address,
+                                len,
+                                ce,
+                                slot,
+                                dun,
+                            );
+                            current_offset += len as u64;
+                            if desc.end() {
+                                break;
+                            }
+                        } else {
+                            panic!("Unexpected descriptor {desc:?}");
+                        }
                     }
                 }
             }
@@ -787,6 +877,19 @@ impl FakeTaskHandler {
             if state.requests_to_fail > 0 {
                 state.requests_to_fail -= 1;
                 cqhci_irq_status.set_response_error_detected(true);
+                let mut terri = CqhciCqTaskErrorRegister(0);
+                terri.set_response_mode_error_task_id(task_id);
+                terri.set_response_mode_error_fields_valid(true);
+                state.store32(MmioRegionType::Cqhci, CQHCI_CQ_TERRI_OFFSET as usize, terri.0);
+            } else if error_is_icce {
+                cqhci_irq_status.set_invalid_crypto_config_error(true);
+                let mut terri = CqhciCqTaskErrorRegister(0);
+                terri.set_response_mode_error_task_id(task_id);
+                terri.set_response_mode_error_fields_valid(true);
+                state.store32(MmioRegionType::Cqhci, CQHCI_CQ_TERRI_OFFSET as usize, terri.0);
+            } else if state.requests_to_fail_crypto_gce > 0 {
+                state.requests_to_fail_crypto_gce -= 1;
+                cqhci_irq_status.set_general_crypto_error(true);
                 let mut terri = CqhciCqTaskErrorRegister(0);
                 terri.set_response_mode_error_task_id(task_id);
                 terri.set_response_mode_error_fields_valid(true);

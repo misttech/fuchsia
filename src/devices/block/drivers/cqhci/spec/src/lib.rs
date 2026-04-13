@@ -207,7 +207,7 @@ bitfield! {
     #[derive(
         Clone, Copy, Eq, PartialEq, zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable,
     )]
-    /// A task descriptor in the CQHCI Task Descriptor List (JESD84-B51A, B.2.1)
+    /// A 128-bit task descriptor in the CQHCI Task Descriptor List (JESD84-B51A, B.2.1)
     pub struct CommandQueueTaskDescriptor(u128);
     impl Debug;
     pub bool, valid, set_valid: 0;
@@ -223,7 +223,16 @@ bitfield! {
     pub bool, reliable_write, set_reliable_write: 15;
     pub u16, block_count, set_block_count: 31, 16;
     pub u32, block_offset, set_block_offset: 63, 32;
-    // 64..=127 reserved
+    pub u32, dun, set_dun: 95, 64;
+    pub u8, cci, set_cci: 103, 96;
+    pub bool, ce, set_ce: 111;
+    // 112..=127 reserved
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CryptoParams {
+    pub slot: u8,
+    pub dun: u32,
 }
 
 impl CommandQueueTaskDescriptor {
@@ -232,6 +241,7 @@ impl CommandQueueTaskDescriptor {
         block_offset: u32,
         block_count: NonZeroU16,
         queue_barrier: bool,
+        crypto_params: Option<CryptoParams>,
     ) -> Self {
         let mut this = Self(0);
         this.set_valid(true);
@@ -240,8 +250,13 @@ impl CommandQueueTaskDescriptor {
         this.set_act(TASK_DESCRIPTOR_ACT);
         this.set_data_direction(direction == Direction::Read);
         this.set_block_count(block_count.get());
-        this.set_block_offset(block_offset);
+        this.set_block_offset(block_offset as u32);
         this.set_qbr(queue_barrier);
+        if let Some(CryptoParams { slot, dun }) = crypto_params {
+            this.set_ce(true);
+            this.set_cci(slot);
+            this.set_dun(dun);
+        }
         this
     }
 }
@@ -418,6 +433,10 @@ pub struct CommandQueueTDLEntry {
 }
 
 impl CommandQueueTDLEntry {
+    pub fn task(&self) -> &CommandQueueTaskDescriptor {
+        &self.task
+    }
+
     /// Creates a new [`CommandQueueTDLEntry`] which points to a single memory region at
     /// `phys_address`.
     ///
@@ -429,9 +448,8 @@ impl CommandQueueTDLEntry {
         block_count: NonZeroU16,
         phys_address: u64,
         queue_barrier: bool,
+        crypto_params: Option<CryptoParams>,
     ) -> Result<Self, ()> {
-        // Unwrap OK because the caller should never pass a block_count which would exceed 64KiB of
-        // data.
         let length = TransferBytes::try_from(block_count.get() as usize * MMC_BLOCK_SIZE as usize)
             .map_err(|_| ())?;
         Ok(Self {
@@ -440,6 +458,7 @@ impl CommandQueueTDLEntry {
                 block_offset,
                 block_count,
                 queue_barrier,
+                crypto_params,
             ),
             transfer: CommandQueueTransferDescriptor::transfer(phys_address, length, true),
         })
@@ -455,6 +474,7 @@ impl CommandQueueTDLEntry {
         block_count: NonZeroU16,
         descriptors_phys_address: u64,
         queue_barrier: bool,
+        crypto_params: Option<CryptoParams>,
     ) -> Self {
         debug_assert!(
             descriptors_phys_address
@@ -466,6 +486,7 @@ impl CommandQueueTDLEntry {
                 block_offset,
                 block_count,
                 queue_barrier,
+                crypto_params,
             ),
             transfer: CommandQueueTransferDescriptor::link(descriptors_phys_address),
         }

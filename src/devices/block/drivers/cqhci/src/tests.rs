@@ -7,7 +7,10 @@ mod fake_cqhci;
 pub use fake_cqhci::TestCommandQueueHost;
 
 use crate::CqhciDriver;
-use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
+use block_client::{
+    BlockClient, BufferSlice, InlineCryptoOptions, MutableBufferSlice, ReadOptions,
+    RemoteBlockClient, WriteOptions,
+};
 use fdf_component::testing::harness::DriverUnderTest;
 use fdf_power::SuspendableDriver;
 use fidl_fuchsia_hardware_block_volume::{self as fvolume};
@@ -245,6 +248,176 @@ async fn test_error_recovery() {
     fixture.fail_next(1);
     on_error_listener.await;
     fasync::Timer::new(std::time::Duration::from_millis(100)).await;
+
+    state.lock().abort = true;
+    reader.await;
+    flusher.await;
+
+    assert!(state.lock().num_errors <= 2);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_crypto_icce_recovery() {
+    let (fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    struct TestState {
+        on_error_event: event_listener::Event,
+        on_success_event: event_listener::Event,
+        num_errors: usize,
+        num_successes: usize,
+        abort: bool,
+    }
+    let state = Arc::new(Mutex::new(TestState {
+        on_error_event: event_listener::Event::new(),
+        on_success_event: event_listener::Event::new(),
+        num_errors: 0,
+        num_successes: 0,
+        abort: false,
+    }));
+
+    // Start two tasks to continuously submit requests.
+    let reader = {
+        let block_client = connect_block_client(&started_driver, "user").await;
+        let state = state.clone();
+        fixture.scope.spawn(async move {
+            loop {
+                let mut buf = vec![0u8; 512];
+                let result = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
+                let mut state = state.lock();
+                if result.is_ok() {
+                    state.num_successes += 1;
+                    state.on_success_event.notify(usize::MAX);
+                } else {
+                    state.num_errors += 1;
+                    state.on_error_event.notify(usize::MAX);
+                }
+                if state.abort {
+                    break;
+                }
+            }
+        })
+    };
+    let flusher = {
+        let block_client = connect_block_client(&started_driver, "user").await;
+        let state = state.clone();
+        fixture.scope.spawn(async move {
+            loop {
+                let result = block_client.flush().await;
+                let mut state = state.lock();
+                if result.is_ok() {
+                    state.num_successes += 1;
+                    state.on_success_event.notify(usize::MAX);
+                } else {
+                    state.num_errors += 1;
+                    state.on_error_event.notify(usize::MAX);
+                }
+                if state.abort {
+                    break;
+                }
+            }
+        })
+    };
+
+    // Issue a task with invalid crypto slot. This should fail and trigger recovery.
+    let bad_opts = ReadOptions { inline_crypto: InlineCryptoOptions::enabled(99, 100) };
+
+    let bad_client = connect_block_client(&started_driver, "user").await;
+    let mut buf = vec![0u8; 512];
+    let result = bad_client
+        .read_at_with_opts_traced(
+            MutableBufferSlice::from(&mut buf[..]),
+            0,
+            bad_opts,
+            block_client::NO_TRACE_ID,
+        )
+        .await;
+    assert!(result.is_err());
+
+    // Verify that background tasks are still succeeding (recovery worked).
+    let on_success_listener = state.lock().on_success_event.listen();
+    on_success_listener.await;
+
+    state.lock().abort = true;
+    reader.await;
+    flusher.await;
+
+    assert!(state.lock().num_errors <= 2);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_crypto_gce_recovery() {
+    let (fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    struct TestState {
+        on_error_event: event_listener::Event,
+        on_success_event: event_listener::Event,
+        num_errors: usize,
+        num_successes: usize,
+        abort: bool,
+    }
+    let state = Arc::new(Mutex::new(TestState {
+        on_error_event: event_listener::Event::new(),
+        on_success_event: event_listener::Event::new(),
+        num_errors: 0,
+        num_successes: 0,
+        abort: false,
+    }));
+    let on_error_listener = state.lock().on_error_event.listen();
+
+    // Start two tasks to continuously submit requests.
+    let reader = {
+        let block_client = connect_block_client(&started_driver, "user").await;
+        let state = state.clone();
+        fixture.scope.spawn(async move {
+            loop {
+                let mut buf = vec![0u8; 512];
+                let result = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
+                let mut state = state.lock();
+                if result.is_ok() {
+                    state.num_successes += 1;
+                    state.on_success_event.notify(usize::MAX);
+                } else {
+                    state.num_errors += 1;
+                    state.on_error_event.notify(usize::MAX);
+                }
+                if state.abort {
+                    break;
+                }
+            }
+        })
+    };
+    let flusher = {
+        let block_client = connect_block_client(&started_driver, "user").await;
+        let state = state.clone();
+        fixture.scope.spawn(async move {
+            loop {
+                let result = block_client.flush().await;
+                let mut state = state.lock();
+                if result.is_ok() {
+                    state.num_successes += 1;
+                    state.on_success_event.notify(usize::MAX);
+                } else {
+                    state.num_errors += 1;
+                    state.on_error_event.notify(usize::MAX);
+                }
+                if state.abort {
+                    break;
+                }
+            }
+        })
+    };
+
+    // Fail a task with GCE. This should eventually trigger recovery.
+    let on_success_listener = state.lock().on_success_event.listen();
+    fixture.fail_next_crypto_gce(1);
+    on_error_listener.await;
+    on_success_listener.await;
 
     state.lock().abort = true;
     reader.await;
@@ -617,7 +790,7 @@ async fn test_inline_crypto() {
         .await
         .expect("FIDL error")
         .expect("program_key failed");
-    assert_eq!(response, 5);
+    assert_eq!(response, 0);
 
     let response = proxy
         .derive_raw_secret(b"my-wrapped-key")
@@ -625,6 +798,87 @@ async fn test_inline_crypto() {
         .expect("FIDL error")
         .expect("derive_raw_secret failed");
     assert_eq!(response, vec![1, 2, 3, 4]);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_crypto_data_integrity() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let block_client = connect_block_client(&started_driver, "user").await;
+    let crypto_proxy = connect_inline_encryption_proxy(&started_driver, "user");
+
+    // Program two keys to get valid slots.
+    let slot1 = crypto_proxy.program_key(b"key1", 4096).await.unwrap().unwrap();
+    let slot2 = crypto_proxy.program_key(b"key2", 4096).await.unwrap().unwrap();
+    assert_eq!(slot1, 0);
+    assert_eq!(slot2, 1);
+
+    let write_buf = vec![0xAAu8; 512];
+    let mut read_buf = vec![0u8; 512];
+
+    // Write with crypto enabled, slot1 (5), dun 100.
+    let write_opts = WriteOptions {
+        inline_crypto: InlineCryptoOptions::enabled(slot1, 100),
+        ..Default::default()
+    };
+
+    block_client
+        .write_at_with_opts_traced(
+            BufferSlice::from(&write_buf[..]),
+            0,
+            write_opts,
+            block_client::NO_TRACE_ID,
+        )
+        .await
+        .expect("write failed");
+
+    // Read with same parameters, should match.
+    let read_opts = ReadOptions { inline_crypto: InlineCryptoOptions::enabled(slot1, 100) };
+
+    block_client
+        .read_at_with_opts_traced(
+            MutableBufferSlice::from(&mut read_buf[..]),
+            0,
+            read_opts,
+            block_client::NO_TRACE_ID,
+        )
+        .await
+        .expect("read failed");
+
+    assert_eq!(read_buf, write_buf);
+
+    // Read with different slot, should NOT match (returns garbage).
+    let bad_read_opts = ReadOptions { inline_crypto: InlineCryptoOptions::enabled(slot2, 100) };
+
+    block_client
+        .read_at_with_opts_traced(
+            MutableBufferSlice::from(&mut read_buf[..]),
+            0,
+            bad_read_opts,
+            block_client::NO_TRACE_ID,
+        )
+        .await
+        .expect("read failed");
+
+    assert_ne!(read_buf, write_buf);
+
+    // Read with different dun, should NOT match.
+    let bad_read_opts2 = ReadOptions { inline_crypto: InlineCryptoOptions::enabled(slot1, 101) };
+
+    block_client
+        .read_at_with_opts_traced(
+            MutableBufferSlice::from(&mut read_buf[..]),
+            0,
+            bad_read_opts2,
+            block_client::NO_TRACE_ID,
+        )
+        .await
+        .expect("read failed");
+
+    assert_ne!(read_buf, write_buf);
 
     started_driver.stop_driver().await;
 }

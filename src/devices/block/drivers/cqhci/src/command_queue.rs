@@ -1360,6 +1360,9 @@ impl CommandQueue {
         options: TransferOptions,
         trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
+        if options.inline_crypto.is_enabled && !self.capabilities.crypto_support() {
+            return Err(zx::Status::NOT_SUPPORTED);
+        }
         fuchsia_trace::duration!("sdmmc", "cqhci::submit_transfer",
             "op" => direction.as_str(),
             "blocks" => block_count as u64
@@ -1409,7 +1412,6 @@ impl CommandQueue {
         trace_flow_id: Option<NonZero<u64>>,
     ) {
         debug!("Read {block_count}@{block_offset}");
-        assert!(!options.inline_crypto.is_enabled, "TODO(https://fxbug.dev/490482694)");
         if let Err(status) = self.submit_transfer(
             partition,
             request_id,
@@ -1418,7 +1420,7 @@ impl CommandQueue {
             block_count,
             vmo,
             vmo_offset,
-            TransferOptions::default(),
+            TransferOptions { queue_barrier: false, inline_crypto: options.inline_crypto },
             trace_flow_id,
         ) {
             complete_request(
@@ -1441,7 +1443,6 @@ impl CommandQueue {
         trace_flow_id: Option<NonZero<u64>>,
     ) {
         debug!("Write {block_count}@{block_offset}");
-        assert!(!options.inline_crypto.is_enabled, "TODO(https://fxbug.dev/490482694)");
         if let Err(status) = self.submit_transfer(
             partition,
             request_id,
@@ -1696,7 +1697,12 @@ impl CommandQueue {
                         "cqhci::on_interrupt::error",
                         fuchsia_trace::Scope::Thread
                     );
-                    // TODO(https://fxbug.dev/42176727): Handle crypto errors
+                    if cq_irq_status.general_crypto_error() {
+                        warn!("General Crypto Error detected!");
+                    }
+                    if cq_irq_status.invalid_crypto_config_error() {
+                        warn!("Invalid Crypto Configuration Error detected!");
+                    }
                     let terri =
                         CqhciCqTaskErrorRegister(inner.cqhci_mmio.load32(CQHCI_CQ_TERRI_OFFSET));
                     let mut mask = 0;
