@@ -19,7 +19,10 @@
     ],
     use: [
         {
-            protocol: [ "fuchsia.process.Launcher" ],
+            protocol: [
+                "fuchsia.net.http.Loader",
+                "fuchsia.process.Launcher",
+            ],
         },
         {
             directory: "root-ssl-certificates",

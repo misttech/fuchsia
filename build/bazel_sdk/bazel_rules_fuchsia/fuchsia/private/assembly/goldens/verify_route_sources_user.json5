@@ -30,6 +30,10 @@
                 },
                 {
                     use_type: "protocol",
+                    use_path: "/svc/fuchsia.net.http.Loader",
+                },
+                {
+                    use_type: "protocol",
                     use_path: "/svc/fuchsia.net.name.Lookup",
                 },
                 {

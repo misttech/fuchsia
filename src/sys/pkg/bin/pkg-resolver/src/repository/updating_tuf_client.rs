@@ -4,11 +4,12 @@
 
 use crate::metrics_util::tuf_error_as_update_tuf_client_event_code;
 use crate::repository::filesystem_repository::RWRepository;
-use crate::{TCP_KEEPALIVE_TIMEOUT, clock, error, inspect_util};
+use crate::{clock, error, inspect_util};
 use anyhow::anyhow;
 use cobalt_sw_delivery_registry as metrics;
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
+use fidl_fuchsia_net_http as fnet_http;
 use fidl_fuchsia_pkg_ext::MirrorConfig;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
 use fuchsia_cobalt_builders::MetricEventExt as _;
@@ -25,6 +26,11 @@ use tuf::error::Error as TufError;
 use tuf::metadata::{Metadata, TargetDescription, TargetPath};
 use tuf::pouf::Pouf1;
 use tuf::repository::{RepositoryProvider, RepositoryStorageProvider};
+
+// A normal event is 40 bytes: "event: timestamp.json\ndata: 0000000000\n\n".
+// The auto client spends most of its time not doing anything, so bias towards lower memory usage
+// instead of speed (i.e. fewer allocations and socket reads), by reserving space for two events.
+const AUTO_CLIENT_STREAM_BUF_SIZE: usize = 80;
 
 type TufClient = tuf::client::Client<
     Pouf1,
@@ -322,10 +328,7 @@ impl AutoClient {
             match self.connect().await {
                 Ok(sse_client) => {
                     info!("AutoClient for {:?} connected", self.auto_url);
-
-                    // Log any future connection errors.
                     log_connection_attempt = true;
-
                     match self.handle_sse(sse_client).await {
                         HandleSseEndState::Abort => {
                             return;
@@ -333,15 +336,13 @@ impl AutoClient {
                         HandleSseEndState::Reconnect => (),
                     }
                 }
-                Err(http_sse::ClientConnectError::MakeRequest(e)) if e.is_connect() => {
+                Err(ConnectError::CreateClient(http_sse::FromHttpLoaderError::FetchError {
+                    error: Some(fnet_http::Error::Connect),
+                    ..
+                })) => {
                     if log_connection_attempt {
                         log_connection_attempt = false;
-
-                        log::error!(
-                            "AutoClient for {:?} error connecting: {:#}",
-                            self.auto_url,
-                            anyhow!(e)
-                        );
+                        log::error!("AutoClient for {:?} error connecting", self.auto_url);
                     }
                 }
                 Err(e) => {
@@ -357,15 +358,12 @@ impl AutoClient {
         }
     }
 
-    async fn connect(&self) -> Result<http_sse::Client, http_sse::ClientConnectError> {
-        // The /auto protocol has no heartbeat, so, without TCP keepalive, a client cannot
-        // differentiate a repository that is not updating from a repository that has dropped
-        // the connection.
-        match http_sse::Client::connect(
-            fuchsia_hyper::new_https_client_from_tcp_options(
-                fuchsia_hyper::TcpOptions::keepalive_timeout(TCP_KEEPALIVE_TIMEOUT),
-            ),
-            &self.auto_url,
+    async fn connect(&self) -> Result<http_sse::Client, ConnectError> {
+        match http_sse::Client::from_http_loader(
+            &fuchsia_component::client::connect_to_protocol::<fnet_http::LoaderMarker>()
+                .map_err(ConnectError::ConnectToProxy)?,
+            self.auto_url.clone(),
+            AUTO_CLIENT_STREAM_BUF_SIZE,
         )
         .await
         {
@@ -375,7 +373,7 @@ impl AutoClient {
             }
             Err(e) => {
                 self.inspect.connect_failure_count.increment();
-                Err(e)
+                Err(ConnectError::CreateClient(e))
             }
         }
     }
@@ -434,4 +432,13 @@ impl Drop for AutoClient {
 enum HandleSseEndState {
     Reconnect,
     Abort,
+}
+
+#[derive(thiserror::Error, Debug)]
+enum ConnectError {
+    #[error("error connecting to fuchsia.net.http/Loader")]
+    ConnectToProxy(#[source] anyhow::Error),
+
+    #[error("error creating client")]
+    CreateClient(#[source] http_sse::FromHttpLoaderError),
 }

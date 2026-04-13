@@ -9,7 +9,9 @@ mod linealyzer;
 mod server;
 mod source;
 
-pub use client::{Client, ClientConnectError, ClientPollError};
+#[cfg(target_os = "fuchsia")]
+pub use client::FromHttpLoaderError;
+pub use client::{Client, ClientPollError, FromHyperClientError};
 pub use event::Event;
 pub use server::{EventSender, SseResponseCreator};
 pub use source::EventSource;

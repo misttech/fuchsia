@@ -11,16 +11,37 @@
             name: "test_driver",
             url: "#meta/test_driver.cm",
         },
+        {
+            name: "http-client",
+            url: "#meta/http-client.cm",
+        },
     ],
     offer: [
         {
+            config: [ "fuchsia.http-client.StopOnIdleTimeoutMillis" ],
+            from: "void",
+            to: "#http-client",
+            availability: "optional",
+        },
+        {
             protocol: [ "fuchsia.posix.socket.Provider" ],
             from: "#netstack",
-            to: "#test_driver",
+            to: [
+                "#http-client",
+                "#test_driver",
+            ],
         },
         {
             protocol: [ "fuchsia.net.name.Lookup" ],
             from: "#dns_resolver",
+            to: [
+                "#http-client",
+                "#test_driver",
+            ],
+        },
+        {
+            protocol: [ "fuchsia.net.http.Loader" ],
+            from: "#http-client",
             to: "#test_driver",
         },
         {
@@ -47,7 +68,10 @@
             directory: "pkg",
             from: "framework",
             as: "root-ssl-certificates",
-            to: "#test_driver",
+            to: [
+                "#http-client",
+                "#test_driver",
+            ],
             rights: [ "r*" ],
             subdir: "fake-ssl-certs",
         },

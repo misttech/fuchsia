@@ -33,6 +33,7 @@
         {
             protocol: [
                 "fuchsia.metrics.MetricEventLoggerFactory",
+                "fuchsia.net.http.Loader",
                 "fuchsia.pkg.http.Client",
                 "fuchsia.pkg.PackageCache",
             ],

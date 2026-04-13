@@ -12,6 +12,12 @@
     program: {
         binary: "bin/http_sse_lib_test",
     },
+    children: [
+        {
+            name: "http-client",
+            url: "#meta/http-client.cm",
+        },
+    ],
     use: [
         {
             protocol: [ "fuchsia.net.name.Lookup" ],
@@ -22,9 +28,51 @@
             from: "#netstack",
         },
         {
-            directory: "root-ssl-certificates",
+            protocol: [ "fuchsia.net.http.Loader" ],
+            from: "#http-client",
+        },
+
+        // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
+        // the unit tests don't actually make https connections and so don't need any certs, so we
+        // can just give them an empty file instead of making them a system test and giving them the
+        // system certs.
+        {
+            directory: "pkg",
+            from: "framework",
             rights: [ "r*" ],
             path: "/config/ssl",
+            subdir: "fake-ssl-certs",
+        },
+    ],
+    offer: [
+        {
+            config: [ "fuchsia.http-client.StopOnIdleTimeoutMillis" ],
+            from: "void",
+            to: "#http-client",
+            availability: "optional",
+        },
+        {
+            protocol: [ "fuchsia.net.name.Lookup" ],
+            from: "#dns_resolver",
+            to: "#http-client",
+        },
+        {
+            protocol: [ "fuchsia.posix.socket.Provider" ],
+            from: "#netstack",
+            to: "#http-client",
+        },
+
+        // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
+        // the unit tests don't actually make https connections and so don't need any certs, so we
+        // can just give them an empty file instead of making them a system test and giving them the
+        // system certs.
+        {
+            directory: "pkg",
+            from: "framework",
+            as: "root-ssl-certificates",
+            to: "#http-client",
+            rights: [ "r*" ],
+            subdir: "fake-ssl-certs",
         },
     ],
 }

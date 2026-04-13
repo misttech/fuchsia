@@ -12,16 +12,32 @@ rustc_library("http_sse") {
 
   deps = [
     "//src/lib/fuchsia-hyper",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:hyper",
     "//third_party/rust_crates:thiserror",
   ]
+  if (is_fuchsia) {
+    deps += [
+      "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+      "//src/lib/fidl/rust/fidl",
+      "//src/lib/fuchsia-async",
+    ]
+  }
 
   test_deps = [
-    "//src/lib/fuchsia-async",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:proptest",
+    "//third_party/rust_crates:test-case",
   ]
+  if (is_fuchsia) {
+    test_deps += [
+      "//sdk/rust/zx",
+      "//src/lib/fuchsia-component",
+      "//third_party/rust_crates:assert_matches",
+    ]
+  }
 
   sources = [
     "src/client.rs",
@@ -40,10 +56,9 @@ fuchsia_unittest_package("rust-http-sse-tests") {
     ":http_sse_test",
     "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
+    "//src/connectivity/policy/http-client:component",
+    "//src/sys/pkg/testing:fake-ssl-certs",
   ]
-
-  # This test depends on root ssl certificate which is a system capability.
-  test_type = "system"
 }
 
 group("tests") {

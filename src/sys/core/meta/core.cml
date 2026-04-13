@@ -206,7 +206,10 @@
             target_availability: "unknown",
         },
         {
-            protocol: "fuchsia.pkg.http.Client",
+            protocol: [
+                "fuchsia.net.http.Loader",
+                "fuchsia.pkg.http.Client",
+            ],
             from: "#network",
             to: "#pkg-resolver",
         },

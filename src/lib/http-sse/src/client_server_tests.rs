@@ -9,10 +9,10 @@ use assert_matches::assert_matches;
 use fuchsia_async::net::TcpListener;
 use fuchsia_async::{self as fasync};
 use fuchsia_hyper::new_https_client;
-use futures::future::{join, TryFutureExt};
+use futures::future::{TryFutureExt, join};
 use futures::stream::{StreamExt, TryStreamExt};
-use hyper::server::accept::from_stream;
 use hyper::server::Server;
+use hyper::server::accept::from_stream;
 use hyper::service::{make_service_fn, service_fn};
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -51,7 +51,7 @@ fn spawn_server(buffer_size: usize) -> (String, EventSender) {
 #[fasync::run_singlethreaded(test)]
 async fn single_client_single_event() {
     let (url, event_sender) = spawn_server(1);
-    let mut client = Client::connect(new_https_client(), &url).await.unwrap();
+    let mut client = Client::from_hyper_client(&new_https_client(), &url).await.unwrap();
     let event = Event::from_type_and_data("event_type", "event_data").unwrap();
 
     let (_, recv) = join(event_sender.send(&event), client.next()).await;
@@ -62,8 +62,8 @@ async fn single_client_single_event() {
 #[fasync::run_singlethreaded(test)]
 async fn multiple_clients_multiple_events() {
     let (url, event_sender) = spawn_server(2);
-    let client0 = Client::connect(new_https_client(), &url).await.unwrap();
-    let client1 = Client::connect(new_https_client(), &url).await.unwrap();
+    let client0 = Client::from_hyper_client(&new_https_client(), &url).await.unwrap();
+    let client1 = Client::from_hyper_client(&new_https_client(), &url).await.unwrap();
     let events = vec![
         Event::from_type_and_data("event_type0", "event_data0").unwrap(),
         Event::from_type_and_data("event_type1", "event_data1").unwrap(),

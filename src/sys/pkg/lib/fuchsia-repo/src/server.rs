@@ -1306,7 +1306,8 @@ mod tests {
             let timestamp_file = timestamp_file.clone();
             async move {
                 let url = format!("{server_url}/devhost/auto");
-                let mut sse_client = SseClient::connect(client.clone(), url).await.unwrap().fuse();
+                let mut sse_client =
+                    SseClient::from_hyper_client(client, url).await.unwrap().fuse();
 
                 futures::select! {
                     value = sse_client.next() => {
@@ -1392,7 +1393,7 @@ mod tests {
         // wait for an SSE event in the background.
         let (tx_sse_connected, rx_sse_connected) = futures::channel::oneshot::channel();
         let sse_task = fasync::Task::local(async move {
-            let mut sse = SseClient::connect(client.clone(), url).await.unwrap();
+            let mut sse = SseClient::from_hyper_client(&client, url).await.unwrap();
 
             // We should receive one event for the current timestamp.
             sse.next().await.unwrap().unwrap();
