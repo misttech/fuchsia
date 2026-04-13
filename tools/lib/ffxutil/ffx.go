@@ -713,22 +713,19 @@ func (f *FFXInstance) CommandWithTarget(args ...string) (*exec.Cmd, error) {
 
 // RunWithTimeout runs ffx with the associated config and provided args.
 func (f *FFXInstance) RunWithTimeout(ctx context.Context, timeout time.Duration, args ...string) error {
-	logger.Infof(ctx, "running ffx command (non-strict) with timeout=%v (non-strict): args=%v", timeout, args)
+	logger.Infof(ctx, "running ffx command with timeout=%v: args=%v", timeout, args)
 	return f.invoker(args).setTimeout(timeout).run(ctx)
 }
 
 // Run runs ffx with the associated config and provided args.
 func (f *FFXInstance) Run(ctx context.Context, args ...string) error {
-	if f.isStrict() {
-		return fmt.Errorf("running non-strict command on strict builder. use RunWithTarget() instead")
-	}
-	logger.Infof(ctx, "running ffx command (non-strict): args=%v", args)
+	logger.Infof(ctx, "running ffx command: args=%v", args)
 	return f.invoker(args).run(ctx)
 }
 
 // RunCommand runs the given cmd with the FFXInstance's subprocess runner.
 func (f *FFXInstance) RunCommand(ctx context.Context, cmd *exec.Cmd) error {
-	logger.Infof(ctx, "running ffx command: cmd=%v", cmd)
+	logger.Infof(ctx, "running command: cmd=%v", cmd)
 	return f.runner.RunCommand(ctx, cmd)
 }
 
