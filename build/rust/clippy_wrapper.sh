@@ -85,6 +85,7 @@ do
   # Same transformation done in 'build/rbe/local-only.sh'
   --local-only=* ) filtered_driver_options+=( "$optarg" ) ;;
   --remote* ) ;;  # pseudoflag for RBE parameters, drop it
+  --error-format=* ) ;;  # This script will replace it with --error-format=json.
   *) filtered_driver_options+=( "$opt" )
   esac
 done

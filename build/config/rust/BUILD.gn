@@ -74,6 +74,10 @@ config("no_features") {
   rustflags = [ "-Zallow-features=" ]
 }
 
+config("error_format_human") {
+  rustflags = [ "--error-format=human" ]
+}
+
 config("incremental") {
   if (rust_incremental != "") {
     if (rust_rbe_enable) {
