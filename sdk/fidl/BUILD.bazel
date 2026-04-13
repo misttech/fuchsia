@@ -143,6 +143,7 @@ _host_tool_fidl_libraries_targets_list = [
 
 _compat_test_fidl_libraries_targets_list = [
     # keep-sorted: begin
+    "//examples/fidl/fuchsia.examples:fuchsia.examples",
     "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness",
     "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment",
     "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance",
