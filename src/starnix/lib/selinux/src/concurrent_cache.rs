@@ -193,61 +193,52 @@ impl ClockState {
     ///
     /// `write_mask` is the mask of ways that are currently being written to and cannot be evicted.
     /// `ways` is the number of ways in the bucket.
+    ///
+    /// Returns `None` in case of contention: the caller should reload the write mask as it is
+    /// likely to have changed.
     #[inline(always)]
-    pub fn find_eviction(&self, write_mask: u16, ways: usize) -> usize {
+    pub fn find_eviction(&self, write_mask: u16, ways: usize) -> Option<usize> {
         assert!(ways <= 16, "ways must be less than or equal to 16");
 
         if write_mask as u32 & ((1u32 << ways) - 1) == (1u32 << ways) - 1 {
             // All ways are masked - we shouldn't have been called.
-            return 0;
+            return None;
         }
-        let mut old_state = self.state.load(Ordering::Relaxed) as usize;
+        let old_state = self.state.load(Ordering::Relaxed);
 
-        let mut outer_count = 0;
+        let mut hotness = (old_state & 0xFFFF) as u16;
+        let mut hand = (old_state >> 16) as usize;
+        let evict_way;
+
         loop {
-            outer_count += 1;
-            assert!(outer_count < 100, "find_eviction outer loop exceeded limit!");
-            let mut hotness = old_state & 0xFFFF;
-            let mut hand = old_state >> 16;
-            let evict_way;
-
-            let mut inner_count = 0;
-            loop {
-                inner_count += 1;
-                assert!(inner_count < 100, "find_eviction inner loop exceeded limit!");
-                if (write_mask & (1 << hand)) != 0 {
-                    // Skip slots that are being written to.
-                    hand = (hand + 1) % ways;
-                    continue;
-                }
-
-                if (hotness & (1 << hand)) == 0 {
+            let hand_mask = 1 << hand;
+            if (write_mask & hand_mask) == 0 {
+                if (hotness & hand_mask) == 0 {
                     // Current slot is cold, evict it.
                     evict_way = hand;
                     // Advance the hand for the next eviction.
                     hand = (hand + 1) % ways;
                     break;
-                } else {
-                    // Current slot is hot, mark it as cold and advance the hand.
-                    hotness &= !(1 << hand);
-                    hand = (hand + 1) % ways;
                 }
+                // Current slot is hot, mark it as cold and advance the hand.
+                hotness &= !hand_mask;
             }
+            hand = (hand + 1) % ways;
+        }
 
-            // We do not mark the newly inserted entry as "hot" and instead wait for a second
-            // access to confirm that the entry is frequently accessed.
-            let new_state = (hand << 16) | hotness;
+        // We do not mark the newly inserted entry as "hot" and instead wait for a second
+        // access to confirm that the entry is frequently accessed.
+        let new_state = ((hand as u32) << 16) | (hotness as u32);
 
-            // Try committing the state, restart if the state was modified in the meantime.
-            match self.state.compare_exchange_weak(
-                old_state as u32,
-                new_state as u32,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return evict_way as usize,
-                Err(actual_state) => old_state = actual_state as usize,
-            }
+        // Try committing the state.
+        match self.state.compare_exchange_weak(
+            old_state,
+            new_state,
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => Some(evict_way as usize),
+            Err(_) => None,
         }
     }
 }
@@ -514,8 +505,9 @@ impl<
 
         let result = callback()?;
 
-        let way_to_write;
-        'select_victim: loop {
+        let mut way_to_write = None;
+        const MAX_WRITE_SPINS: usize = 10;
+        'select_victim: for _ in 0..MAX_WRITE_SPINS {
             let mut state = bucket.seqlock_state.load(Ordering::Acquire);
             let write_mask = (state & 0xFFFF) as u16;
 
@@ -525,7 +517,11 @@ impl<
                 return Ok(result);
             }
 
-            let victim = bucket.clock.find_eviction(write_mask, WAYS4 * 4);
+            let Some(victim) = bucket.clock.find_eviction(write_mask, WAYS4 * 4) else {
+                // The clock state has been modified under us. In half of the case, it's because a
+                // slot was selected by someone else. Loop to reload the write mask.
+                continue 'select_victim;
+            };
             'write_flag: loop {
                 // Set the write_mask bit for the targeted way.
                 let new_state = state | (1 << victim);
@@ -536,7 +532,7 @@ impl<
                     Ordering::Relaxed,
                 ) {
                     Ok(_) => {
-                        way_to_write = victim;
+                        way_to_write = Some(victim);
                         break 'select_victim;
                     }
                     Err(changed_state) => {
@@ -552,6 +548,12 @@ impl<
                 }
             }
         }
+
+        let Some(way_to_write) = way_to_write else {
+            // We failed to find a victim after MAX_WRITE_SPINS iterations. Return the result
+            // without writing.
+            return Ok(result);
+        };
 
         // Perform the write now we have the exclusive lock for this way.
         let tag_word_idx = way_to_write / 4;
