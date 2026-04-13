@@ -38,6 +38,11 @@
     ],
     capabilities: [
         {
+            config: "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+            type: "uint32",
+            value: 300,
+        },
+        {
             config: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
             type: "uint32",
             value: 300,
@@ -58,6 +63,7 @@
             config: [
                 "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
                 "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
             ],
             from: "self",
             to: "#pkg-resolver",
@@ -123,13 +129,6 @@
             rights: [ "r*" ],
         },
         {
-            // Needed for handing pkg-resolver the appropriate SSL certificates for network traffic
-            directory: "root-ssl-certificates",
-            from: "parent",
-            to: "#pkg-resolver",
-            rights: [ "r*" ],
-        },
-        {
             directory: [
                 // Needed so system-updater knows what board to install for.
                 "build-info",
@@ -146,9 +145,8 @@
         {
             protocol: [
                 "fuchsia.metrics.MetricEventLoggerFactory",
-                "fuchsia.net.name.Lookup",
+                "fuchsia.net.http.Loader",
                 "fuchsia.pkg.http.Client",
-                "fuchsia.posix.socket.Provider",
             ],
             from: "parent",
             to: "#pkg-resolver",

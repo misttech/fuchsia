@@ -34,14 +34,6 @@
                 },
                 {
                     use_type: "protocol",
-                    use_path: "/svc/fuchsia.net.name.Lookup",
-                },
-                {
-                    use_type: "protocol",
-                    use_path: "/svc/fuchsia.posix.socket.Provider",
-                },
-                {
-                    use_type: "protocol",
                     use_path: "/svc/fuchsia.boot.Arguments",
                 },
                 {
@@ -82,16 +74,16 @@
                     use_type: "config",
                     use_source_name: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
                 },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+                },
 
                 // TODO(fxbug.dev/42072443) add verification for these routes (by uncommmenting
                 // the entries in routes_to_verify) once pkg_cache_resolver is removed.
                 {
                     use_type: "directory",
                     use_path: "/config/data",
-                },
-                {
-                    use_type: "directory",
-                    use_path: "/config/ssl",
                 },
             ],
 

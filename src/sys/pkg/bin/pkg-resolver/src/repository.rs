@@ -4,10 +4,14 @@
 
 use crate::cache::MerkleForError;
 use crate::metrics_util::tuf_error_as_create_tuf_client_event_code;
-use crate::{TCP_KEEPALIVE_TIMEOUT, clock, error, inspect_util};
+use crate::{clock, error, inspect_util};
 use anyhow::{Context as _, anyhow, format_err};
+use cobalt_sw_delivery_registry as metrics;
 use fidl_contrib::protocol_connector::ProtocolSender;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::MetricEvent;
+use fidl_fuchsia_net_http as fnet_http;
+use fidl_fuchsia_pkg_ext as pkg;
 use fuchsia_async::TimeoutExt as _;
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_inspect::{self as inspect, Property};
@@ -16,22 +20,20 @@ use futures::lock::Mutex as AsyncMutex;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::Duration;
 use tuf::client::Config;
 use tuf::crypto::PublicKey;
 use tuf::error::Error as TufError;
 use tuf::metadata::{MetadataVersion, TargetPath};
 use tuf::pouf::Pouf1;
-use tuf::repository::{
-    EphemeralRepository, HttpRepositoryBuilder, RepositoryProvider, RepositoryStorageProvider,
-};
-use {cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio, fidl_fuchsia_pkg_ext as pkg};
-
-mod updating_tuf_client;
-use updating_tuf_client::UpdateResult;
+use tuf::repository::{EphemeralRepository, RepositoryProvider, RepositoryStorageProvider};
 
 mod filesystem_repository;
 use filesystem_repository::{FuchsiaFileSystemRepository, RWRepository};
+
+mod http_repository;
+
+mod updating_tuf_client;
+use updating_tuf_client::UpdateResult;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CustomTargetMetadata {
@@ -74,7 +76,7 @@ impl Repository {
         config: &pkg::RepositoryConfig,
         mut cobalt_sender: ProtocolSender<MetricEvent>,
         node: inspect::Node,
-        tuf_metadata_timeout: Duration,
+        tuf_timeouts: crate::TufTimeouts,
     ) -> Result<Self, anyhow::Error> {
         let mirror_config = config
             .mirrors()
@@ -82,15 +84,13 @@ impl Repository {
             .ok_or_else(|| anyhow!("cannot create repository, no mirrors {config:?}"))?;
         let local = get_local_repo(data_proxy, persisted_repos_dir, config).await?;
         let local = RWRepository::new(local);
-        let remote: Box<dyn RepositoryProvider<Pouf1> + Send> = Box::new(
-            HttpRepositoryBuilder::new_with_uri(
+        let remote: Box<dyn RepositoryProvider<Pouf1> + Send> =
+            Box::new(self::http_repository::FuchsiaNetHttpRepository::<Pouf1>::new(
                 mirror_config.mirror_url().to_owned(),
-                fuchsia_hyper::new_https_client_from_tcp_options(
-                    fuchsia_hyper::TcpOptions::keepalive_timeout(TCP_KEEPALIVE_TIMEOUT),
-                ),
-            )
-            .build(),
-        );
+                fuchsia_component::client::connect_to_protocol::<fnet_http::LoaderMarker>()
+                    .context("connecting to fuchsia.net.http/Loader")?,
+                tuf_timeouts.network_header,
+            ));
         let root_keys = get_root_keys(config)?;
 
         let updating_client =
@@ -104,7 +104,7 @@ impl Repository {
                     remote,
                 )
                 .map_err(error::TufOrTimeout::Tuf)
-                .on_timeout(tuf_metadata_timeout, || Err(error::TufOrTimeout::Timeout))
+                .on_timeout(tuf_timeouts.metadata, || Err(error::TufOrTimeout::Timeout))
                 .await
                 .map_err(|e| {
                     cobalt_sender.send(
@@ -115,7 +115,7 @@ impl Repository {
                     anyhow!(e).context("creating rust-tuf client")
                 })?,
                 mirror_config,
-                tuf_metadata_timeout,
+                tuf_timeouts.metadata,
                 node.create_child("updating_tuf_client"),
                 cobalt_sender.clone(),
             );
@@ -376,7 +376,10 @@ mod tests {
                 config,
                 cobalt_sender,
                 inspect::Inspector::default().root().create_child("inner-node"),
-                std::time::Duration::from_secs(30),
+                crate::TufTimeouts {
+                    metadata: std::time::Duration::from_secs(30),
+                    network_header: zx::BootDuration::from_seconds(30),
+                },
             )
             .await
         }
@@ -732,7 +735,10 @@ mod inspect_tests {
             &repo_config,
             dummy_sender(),
             inspector.root().create_child("repo-node"),
-            std::time::Duration::from_secs(30),
+            crate::TufTimeouts {
+                metadata: std::time::Duration::from_secs(30),
+                network_header: zx::BootDuration::from_seconds(30),
+            },
         )
         .await
         .expect("created Repository");
@@ -786,7 +792,10 @@ mod inspect_tests {
             &repo_config,
             dummy_sender(),
             inspector.root().create_child("repo-node"),
-            std::time::Duration::from_secs(30),
+            crate::TufTimeouts {
+                metadata: std::time::Duration::from_secs(30),
+                network_header: zx::BootDuration::from_seconds(30),
+            },
         )
         .await
         .expect("created Repository");
@@ -846,7 +855,10 @@ mod inspect_tests {
             &repo_config,
             dummy_sender(),
             inspector.root().create_child("repo-node"),
-            std::time::Duration::from_secs(30),
+            crate::TufTimeouts {
+                metadata: std::time::Duration::from_secs(30),
+                network_header: zx::BootDuration::from_seconds(30),
+            },
         )
         .await
         .expect("created opened repo");

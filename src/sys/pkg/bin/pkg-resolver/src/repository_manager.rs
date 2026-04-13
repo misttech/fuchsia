@@ -6,12 +6,17 @@ use crate::cache::{BlobFetcher, CacheError, MerkleForError, ToResolveError, ToRe
 use crate::inspect_util::{self, InspectableRepositoryConfig};
 use crate::repository::Repository;
 use anyhow::{Context as _, anyhow};
+use cobalt_sw_delivery_registry as metrics;
 use delivery_blob::DeliveryBlobType;
 use fidl_contrib::protocol_connector::ProtocolSender;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::MetricEvent;
+use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext::{self as pkg, BlobId, RepositoryConfig, RepositoryConfigs, cache};
+use fuchsia_inspect as inspect;
 use fuchsia_pkg::PackageDirectory;
 use fuchsia_sync::{Mutex, RwLock};
+use fuchsia_trace as ftrace;
 use fuchsia_url::RepositoryUrl;
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use futures::future::LocalBoxFuture;
@@ -24,14 +29,9 @@ use std::collections::{BTreeSet, HashMap, btree_set};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use std::{fs, io};
 use thiserror::Error;
 use zx::Status;
-use {
-    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg,
-    fuchsia_inspect as inspect, fuchsia_trace as ftrace,
-};
 
 /// [RepositoryManager] controls access to all the repository configs used by the package resolver.
 pub struct RepositoryManager {
@@ -42,7 +42,7 @@ pub struct RepositoryManager {
     repositories: Arc<RwLock<HashMap<RepositoryUrl, Arc<AsyncMutex<Repository>>>>>,
     cobalt_sender: ProtocolSender<MetricEvent>,
     inspect: RepositoryManagerInspectState,
-    tuf_metadata_timeout: Duration,
+    tuf_timeouts: crate::TufTimeouts,
     data_proxy: Option<fio::DirectoryProxy>,
     delivery_blob_type: DeliveryBlobType,
 }
@@ -273,7 +273,7 @@ impl RepositoryManager {
             url.repository(),
             self.cobalt_sender.clone(),
             Arc::clone(&self.inspect.repos_node),
-            self.tuf_metadata_timeout,
+            self.tuf_timeouts,
         );
 
         let delivery_blob_type = self.delivery_blob_type;
@@ -326,7 +326,7 @@ impl RepositoryManager {
             url.repository(),
             self.cobalt_sender.clone(),
             Arc::clone(&self.inspect.repos_node),
-            self.tuf_metadata_timeout,
+            self.tuf_timeouts,
         );
 
         let cobalt_sender = self.cobalt_sender.clone();
@@ -348,7 +348,7 @@ async fn open_cached_or_new_repository(
     url: &RepositoryUrl,
     cobalt_sender: ProtocolSender<MetricEvent>,
     inspect_node: Arc<inspect::Node>,
-    tuf_metadata_timeout: Duration,
+    tuf_timeouts: crate::TufTimeouts,
 ) -> Result<Arc<AsyncMutex<Repository>>, OpenRepoError> {
     if let Some(conn) = repositories.read().get(url) {
         return Ok(conn.clone());
@@ -366,7 +366,7 @@ async fn open_cached_or_new_repository(
             &config,
             cobalt_sender,
             inspect_node.create_child(url.host()),
-            tuf_metadata_timeout,
+            tuf_timeouts,
         )
         .await
         .map_err(|e| OpenRepoError { repo_url: config.repo_url().clone(), source: e })?,
@@ -394,7 +394,7 @@ pub struct RepositoryManagerBuilder<S = UnsetCobaltSender, N = UnsetInspectNode>
     dynamic_configs: HashMap<RepositoryUrl, Arc<RepositoryConfig>>,
     cobalt_sender: S,
     inspect_node: N,
-    tuf_metadata_timeout: Duration,
+    tuf_timeouts: crate::TufTimeouts,
     data_proxy: Option<fio::DirectoryProxy>,
     delivery_blob_type: DeliveryBlobType,
 }
@@ -439,7 +439,7 @@ impl RepositoryManagerBuilder<UnsetCobaltSender, UnsetInspectNode> {
     pub async fn new<P>(
         data_proxy: Option<fio::DirectoryProxy>,
         dynamic_configs_path: Option<P>,
-        tuf_metadata_timeout: std::time::Duration,
+        tuf_timeouts: crate::TufTimeouts,
     ) -> Result<Self, (Self, LoadError)>
     where
         P: Into<String>,
@@ -466,7 +466,7 @@ impl RepositoryManagerBuilder<UnsetCobaltSender, UnsetInspectNode> {
                 .collect(),
             cobalt_sender: UnsetCobaltSender,
             inspect_node: UnsetInspectNode,
-            tuf_metadata_timeout,
+            tuf_timeouts,
             data_proxy,
             delivery_blob_type: DeliveryBlobType::Type1,
         };
@@ -487,7 +487,15 @@ impl RepositoryManagerBuilder<UnsetCobaltSender, UnsetInspectNode> {
             fio::PERM_READABLE | fio::PERM_WRITABLE,
         )
         .unwrap();
-        Self::new(Some(proxy), dynamic_configs_path, std::time::Duration::from_secs(30)).await
+        Self::new(
+            Some(proxy),
+            dynamic_configs_path,
+            crate::TufTimeouts {
+                metadata: std::time::Duration::from_secs(30),
+                network_header: zx::BootDuration::from_seconds(30),
+            },
+        )
+        .await
     }
 
     /// Adds these static [RepoConfigs](RepoConfig) to the [RepositoryManager].
@@ -517,7 +525,7 @@ impl<S> RepositoryManagerBuilder<S, UnsetInspectNode> {
             dynamic_configs: self.dynamic_configs,
             cobalt_sender: self.cobalt_sender,
             inspect_node,
-            tuf_metadata_timeout: self.tuf_metadata_timeout,
+            tuf_timeouts: self.tuf_timeouts,
             data_proxy: self.data_proxy,
             delivery_blob_type: self.delivery_blob_type,
         }
@@ -543,7 +551,7 @@ impl<N> RepositoryManagerBuilder<UnsetCobaltSender, N> {
             dynamic_configs: self.dynamic_configs,
             cobalt_sender,
             inspect_node: self.inspect_node,
-            tuf_metadata_timeout: self.tuf_metadata_timeout,
+            tuf_timeouts: self.tuf_timeouts,
             data_proxy: self.data_proxy,
             delivery_blob_type: self.delivery_blob_type,
         }
@@ -588,7 +596,11 @@ impl RepositoryManagerBuilder<ProtocolSender<MetricEvent>, inspect::Node> {
     /// Build the [RepositoryManager].
     pub fn build(self) -> RepositoryManager {
         self.inspect_node
-            .record_uint("tuf_metadata_timeout_seconds", self.tuf_metadata_timeout.as_secs());
+            .record_uint("tuf_metadata_timeout_seconds", self.tuf_timeouts.metadata.as_secs());
+        self.inspect_node.record_int(
+            "tuf_network_header_timeout_seconds",
+            self.tuf_timeouts.network_header.into_seconds(),
+        );
         self.inspect_node
             .record_string("dynamic_configs_path", format!("{:?}", self.dynamic_configs_path));
         self.inspect_node
@@ -615,7 +627,7 @@ impl RepositoryManagerBuilder<ProtocolSender<MetricEvent>, inspect::Node> {
             repositories: Arc::new(RwLock::new(HashMap::new())),
             cobalt_sender: self.cobalt_sender,
             inspect,
-            tuf_metadata_timeout: self.tuf_metadata_timeout,
+            tuf_timeouts: self.tuf_timeouts,
             data_proxy: self.data_proxy,
             delivery_blob_type: self.delivery_blob_type,
         }
@@ -1643,6 +1655,7 @@ mod tests {
                     repos: {},
                     persisted_repos_dir: format!("{:?}", env.persisted_repos_dir),
                     tuf_metadata_timeout_seconds: 30u64,
+                    tuf_network_header_timeout_seconds: 30i64,
                 }
             }
         );
@@ -1674,6 +1687,7 @@ mod tests {
                     repos: {},
                     persisted_repos_dir: format!("{:?}", env.persisted_repos_dir),
                     tuf_metadata_timeout_seconds: 30u64,
+                    tuf_network_header_timeout_seconds: 30i64,
                 }
             }
         );

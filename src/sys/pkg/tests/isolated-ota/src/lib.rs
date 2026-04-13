@@ -7,8 +7,10 @@ use assert_matches::assert_matches;
 use async_trait::async_trait;
 use blobfs_ramdisk::BlobfsRamdisk;
 use fidl::endpoints::{RequestStream, ServerEnd};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_paver::{Asset, Configuration};
 use fidl_fuchsia_pkg_ext::{MirrorConfigBuilder, RepositoryConfigBuilder, RepositoryConfigs};
+use fuchsia_async as fasync;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
 };
@@ -28,7 +30,6 @@ use pretty_assertions::assert_eq;
 use std::collections::BTreeSet;
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::file::vmo::read_only;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 const OUT_DIR_FLAGS: fio::Flags =
     fio::PERM_READABLE.union(fio::PERM_WRITABLE).union(fio::PERM_EXECUTABLE);
@@ -75,8 +76,6 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
                     .capability(Capability::protocol_by_name(
                         "fuchsia.metrics.MetricEventLoggerFactory",
                     ))
-                    .capability(Capability::protocol_by_name("fuchsia.net.name.Lookup"))
-                    .capability(Capability::protocol_by_name("fuchsia.posix.socket.Provider"))
                     .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"))
                     .from(Ref::parent())
                     .to(&pkg_component),
@@ -178,6 +177,7 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
             .add_route(
                 Route::new()
                     .capability(Capability::protocol_by_name("fuchsia.pkg.http.Client"))
+                    .capability(Capability::protocol_by_name("fuchsia.net.http.Loader"))
                     .from(&http_client_child)
                     .to(&pkg_component),
             )
@@ -227,19 +227,6 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
                     .capability(
                         Capability::directory("config-data")
                             .path("/config/data")
-                            .rights(fio::R_STAR_DIR),
-                    )
-                    .from(&directories_component)
-                    .to(&pkg_component),
-            )
-            .await
-            .unwrap();
-        realm_builder
-            .add_route(
-                Route::new()
-                    .capability(
-                        Capability::directory("root-ssl-certificates")
-                            .path(GLOBAL_SSL_CERTS_PATH)
                             .rights(fio::R_STAR_DIR),
                     )
                     .from(&directories_component)

@@ -56,6 +56,9 @@ pub fn tuf_error_as_update_tuf_client_event_code(
         Tuf(UnknownKeyType(_)) => EventCodes::UnknownKeyType,
         Tuf(Http { .. }) => EventCodes::Http,
         Tuf(Hyper { .. }) => EventCodes::Hyper,
+        Tuf(Opaque(s)) if s.starts_with("timeout waiting for HTTP Response on ") => {
+            EventCodes::DeadlineExceeded
+        }
         Timeout => EventCodes::DeadlineExceeded,
         _ => EventCodes::UnexpectedTufErrorVariant,
     }
@@ -101,6 +104,9 @@ pub fn tuf_error_as_create_tuf_client_event_code(
         Tuf(UnknownKeyType(_)) => EventCodes::UnknownKeyType,
         Tuf(Http { .. }) => EventCodes::Http,
         Tuf(Hyper { .. }) => EventCodes::Hyper,
+        Tuf(Opaque(s)) if s.starts_with("timeout waiting for HTTP Response on ") => {
+            EventCodes::DeadlineExceeded
+        }
         Timeout => EventCodes::DeadlineExceeded,
         _ => EventCodes::UnexpectedTufErrorVariant,
     }

@@ -39,7 +39,6 @@ rustc_library("lib") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
-    "//src/lib/fuchsia-hyper",
     "//src/lib/fuchsia-sync",
     "//src/lib/fuchsia-url",
     "//src/lib/http-sse:http_sse",
@@ -106,6 +105,7 @@ rustc_library("lib") {
     "src/ota_downloader.rs",
     "src/repository.rs",
     "src/repository/filesystem_repository.rs",
+    "src/repository/http_repository.rs",
     "src/repository/updating_tuf_client.rs",
     "src/repository_manager.rs",
     "src/repository_service.rs",
@@ -211,6 +211,7 @@ structured_config_values = {
   # that there is a designed timeout involved.
   # TODO(https://fxbug.dev/42140681) replace with granular timeouts in rust-tuf.
   tuf_metadata_timeout_seconds = 240
+  tuf_network_header_timeout_seconds = 30
   blob_network_header_timeout_seconds = 30
   blob_network_body_timeout_seconds = 30
   blob_download_resumption_attempts_limit = 50

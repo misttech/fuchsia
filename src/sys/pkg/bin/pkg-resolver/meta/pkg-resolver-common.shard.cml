@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/lib/fuchsia-hyper/hyper.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
@@ -60,11 +59,6 @@
             path: "/config/data",
         },
         {
-            directory: "root-ssl-certificates",
-            rights: [ "r*" ],
-            path: "/config/ssl",
-        },
-        {
             config: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
             key: "blob_network_header_timeout_seconds",
             type: "uint32",
@@ -73,6 +67,12 @@
         {
             config: "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
             key: "blob_network_body_timeout_seconds",
+            type: "uint32",
+            availability: "optional",
+        },
+        {
+            config: "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+            key: "tuf_network_header_timeout_seconds",
             type: "uint32",
             availability: "optional",
         },
@@ -111,6 +111,10 @@
 
         // The timeout, in seconds, to use when performing TUF metadata network operations.
         tuf_metadata_timeout_seconds: { type: "uint32" },
+
+        // The timeout, in seconds, to use when waiting for an HTTP response header when requesting
+        // TUF metadata.
+        tuf_network_header_timeout_seconds: { type: "uint32" },
 
         // The timeout, in seconds, to use when GET'ing a blob HTTP header.
         blob_network_header_timeout_seconds: { type: "uint32" },

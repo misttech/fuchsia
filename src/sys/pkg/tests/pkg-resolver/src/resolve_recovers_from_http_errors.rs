@@ -280,7 +280,10 @@ async fn blob_timeout_causes_new_tcp_connection() {
             panic!("unexpected error: {:?}", e);
         }
     };
-    assert_eq!(server.connection_attempts(), 3);
+    // The 7 connection attempts are from 5 metadata connections:
+    //   1.root.json, 2.root.json, timestamp.json, 2.snapshot.json, 2.targets.json
+    // and the two blob attempts.
+    assert_eq!(server.connection_attempts(), 7);
 
     env.stop().await;
 }

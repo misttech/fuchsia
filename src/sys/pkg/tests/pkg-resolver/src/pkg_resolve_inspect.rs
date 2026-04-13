@@ -42,6 +42,7 @@ async fn initial_inspect_state() {
                     mirrors: {}
                 },
                 tuf_metadata_timeout_seconds: 240u64,
+                tuf_network_header_timeout_seconds: 30u64,
             },
             resolver_service: {
                 cache_fallbacks_due_to_not_found: 0u64,

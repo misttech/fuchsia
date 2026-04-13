@@ -41,11 +41,6 @@
             path: "/config/data",
         },
         {
-            directory: "root-ssl-certificates-override",
-            rights: [ "r*" ],
-            path: "/config/ssl",
-        },
-        {
             directory: "build-info-override",
             rights: [ "r*" ],
             path: "/config/build-info",
@@ -109,13 +104,6 @@
             dependency: "weak",
         },
         {
-            directory: "root-ssl-certificates-override",
-            from: "self",
-            as: "root-ssl-certificates",
-            to: "#pkg-recovery",
-            dependency: "weak",
-        },
-        {
             directory: "build-info-override",
             from: "self",
             as: "build-info",
@@ -129,9 +117,7 @@
                 "fuchsia.boot.Arguments",
                 "fuchsia.cobalt.LoggerFactory",
                 "fuchsia.metrics.MetricEventLoggerFactory",
-                "fuchsia.net.name.Lookup",
                 "fuchsia.paver.Paver",
-                "fuchsia.posix.socket.Provider",
                 "fuchsia.tracing.provider.Registry",
             ],
             from: "parent",

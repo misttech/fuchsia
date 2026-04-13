@@ -115,6 +115,7 @@
             config: [
                 "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
                 "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
             ],
             from: "void",
             to: "#pkg-resolver",
@@ -246,7 +247,6 @@
             to: [
                 "#cobalt",
                 "#mdns",
-                "#pkg-resolver",
                 "#timekeeper",
             ],
         },
@@ -362,13 +362,6 @@
             to: "#pkg-resolver",
         },
         {
-            // This capability is only offered to pkg-resolver in test scenarios
-            protocol: "fuchsia.pkg.LocalMirror",
-            from: "void",
-            to: "#pkg-resolver",
-            availability: "optional",
-        },
-        {
             storage: "data",
             from: "self",
             to: "#pkg-resolver",
@@ -467,7 +460,6 @@
             to: [
                 "#cobalt",
                 "#network",
-                "#pkg-resolver",
                 "#timekeeper",
             ],
         },

@@ -1,18 +1,48 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use cobalt_sw_delivery_registry as metrics;
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_pkg_testing::serve::responder;
 use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
 use lib::{EMPTY_REPO_PATH, TestEnvBuilder, make_pkg_with_extra_blobs};
 use std::sync::Arc;
-use {cobalt_sw_delivery_registry as metrics, fidl_fuchsia_pkg as fpkg};
 
 #[fuchsia::test]
-async fn create_tuf_client_timeout() {
+async fn create_tuf_client_metadata_timeout() {
     let repo =
         Arc::new(RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH).build().await.unwrap());
 
     let env = TestEnvBuilder::new().tuf_metadata_timeout_seconds(0).build().await;
+    let server = repo
+        .server()
+        .response_overrider(responder::ForPath::new("/1.root.json", responder::Hang))
+        .start()
+        .expect("Starting server succeeds");
+    let repo_config = server.make_repo_config("fuchsia-pkg://test".parse().unwrap());
+    env.proxies.repo_manager.add(&repo_config.into()).await.unwrap().unwrap();
+
+    // The package does not need to exist in the repository, because the resolve will fail before
+    // it obtains metadata.
+    let result = env.resolve_package("fuchsia-pkg://test/missing-package").await;
+
+    assert_eq!(result.unwrap_err(), fpkg::ResolveError::UnavailableRepoMetadata);
+
+    env.assert_count_events(
+        metrics::CREATE_TUF_CLIENT_MIGRATED_METRIC_ID,
+        vec![metrics::CreateTufClientMigratedMetricDimensionResult::DeadlineExceeded],
+    )
+    .await;
+
+    env.stop().await;
+}
+
+#[fuchsia::test]
+async fn create_tuf_client_network_header_timeout() {
+    let repo =
+        Arc::new(RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH).build().await.unwrap());
+
+    let env = TestEnvBuilder::new().tuf_network_header_timeout_seconds(0).build().await;
     let server = repo
         .server()
         .response_overrider(responder::ForPath::new("/1.root.json", responder::Hang))

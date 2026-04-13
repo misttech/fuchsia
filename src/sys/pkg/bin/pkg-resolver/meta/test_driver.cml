@@ -24,10 +24,5 @@
                 "fuchsia.process.Launcher",
             ],
         },
-        {
-            directory: "root-ssl-certificates",
-            rights: [ "r*" ],
-            path: "/config/ssl",
-        },
     ],
 }

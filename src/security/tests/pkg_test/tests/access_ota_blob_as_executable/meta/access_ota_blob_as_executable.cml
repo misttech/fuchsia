@@ -206,6 +206,7 @@
             config: [
                 "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
                 "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
             ],
             from: "void",
             to: "#pkg-resolver",
@@ -321,7 +322,6 @@
             from: "#pkg-cache",
             to: [
                 "#http-client",
-                "#pkg-resolver",
                 "#pkg_server",
             ],
         },
@@ -338,7 +338,6 @@
             from: "#dns_resolver",
             to: [
                 "#http-client",
-                "#pkg-resolver",
                 "#pkg_server",
             ],
         },
@@ -347,7 +346,6 @@
             from: "#netstack",
             to: [
                 "#http-client",
-                "#pkg-resolver",
                 "#pkg_server",
             ],
         },
@@ -360,7 +358,10 @@
             ],
         },
         {
-            protocol: "fuchsia.pkg.http.Client",
+            protocol: [
+                "fuchsia.net.http.Loader",
+                "fuchsia.pkg.http.Client",
+            ],
             from: "#http-client",
             to: "#pkg-resolver",
         },

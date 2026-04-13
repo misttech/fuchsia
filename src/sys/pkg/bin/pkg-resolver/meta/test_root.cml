@@ -68,10 +68,7 @@
             directory: "pkg",
             from: "framework",
             as: "root-ssl-certificates",
-            to: [
-                "#http-client",
-                "#test_driver",
-            ],
+            to: [ "#http-client" ],
             rights: [ "r*" ],
             subdir: "fake-ssl-certs",
         },

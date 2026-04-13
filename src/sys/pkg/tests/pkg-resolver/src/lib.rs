@@ -12,7 +12,10 @@ use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::{ArchiveReader, ComponentSelector};
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker as _};
 use fidl::persist;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::{self as fmetrics, MetricEvent, MetricEventPayload};
+use fidl_fuchsia_net_http as fnet_http;
 use fidl_fuchsia_pkg::{
     self as fpkg, CupProxy, GetInfoError, PackageResolverMarker, PackageResolverProxy,
     RepositoryManagerProxy, WriteError,
@@ -20,8 +23,15 @@ use fidl_fuchsia_pkg::{
 use fidl_fuchsia_pkg_ext::{
     self as pkg, RepositoryConfig, RepositoryConfigBuilder, RepositoryConfigs,
 };
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
+use fidl_fuchsia_pkg_http as fpkg_http;
+use fidl_fuchsia_pkg_internal as fpkg_internal;
 use fidl_fuchsia_pkg_internal::{PersistentEagerPackage, PersistentEagerPackages};
+use fidl_fuchsia_pkg_rewrite as fpkg_rewrite;
 use fidl_fuchsia_pkg_rewrite_ext::{Rule, RuleConfig};
+use fidl_fuchsia_sys2 as fsys2;
+use fidl_fuchsia_update as fupdate;
+use fuchsia_async as fasync;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route, ScopedInstance,
 };
@@ -42,12 +52,6 @@ use std::time::Duration;
 use tempfile::TempDir;
 use vfs::directory::helper::DirectlyMutable as _;
 use zx::HandleBased as _;
-use {
-    fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
-    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_pkg_http as fpkg_http,
-    fidl_fuchsia_pkg_internal as fpkg_internal, fidl_fuchsia_pkg_rewrite as fpkg_rewrite,
-    fidl_fuchsia_sys2 as fsys2, fidl_fuchsia_update as fupdate, fuchsia_async as fasync,
-};
 
 // If the body of an https response is not large enough, hyper will download the body
 // along with the header in the initial fuchsia_hyper::HttpsClient.request(). This means
@@ -307,6 +311,7 @@ pub struct TestEnvBuilder<BlobfsAndSystemImageFut, MountsFn> {
         Box<dyn FnOnce(blobfs_ramdisk::Implementation) -> BlobfsAndSystemImageFut>,
     mounts: MountsFn,
     tuf_metadata_timeout_seconds: Option<u32>,
+    tuf_network_header_timeout_seconds: Option<u32>,
     blob_network_header_timeout_seconds: Option<u32>,
     blob_network_body_timeout_seconds: Option<u32>,
     blob_download_resumption_attempts_limit: Option<u32>,
@@ -343,6 +348,7 @@ impl TestEnvBuilder<future::BoxFuture<'static, (BlobfsRamdisk, Option<Hash>)>, f
                     .build()
             },
             tuf_metadata_timeout_seconds: None,
+            tuf_network_header_timeout_seconds: None,
             blob_network_header_timeout_seconds: None,
             blob_network_body_timeout_seconds: None,
             blob_download_resumption_attempts_limit: None,
@@ -371,6 +377,7 @@ where
             blobfs_and_system_image: Box::new(move |_| future::ready((blobfs, system_image))),
             mounts: self.mounts,
             tuf_metadata_timeout_seconds: self.tuf_metadata_timeout_seconds,
+            tuf_network_header_timeout_seconds: self.tuf_network_header_timeout_seconds,
             blob_network_header_timeout_seconds: self.blob_network_header_timeout_seconds,
             blob_network_body_timeout_seconds: self.blob_network_body_timeout_seconds,
             blob_download_resumption_attempts_limit: self.blob_download_resumption_attempts_limit,
@@ -401,6 +408,7 @@ where
             }),
             mounts: self.mounts,
             tuf_metadata_timeout_seconds: self.tuf_metadata_timeout_seconds,
+            tuf_network_header_timeout_seconds: self.tuf_network_header_timeout_seconds,
             blob_network_header_timeout_seconds: self.blob_network_header_timeout_seconds,
             blob_network_body_timeout_seconds: self.blob_network_body_timeout_seconds,
             blob_download_resumption_attempts_limit: self.blob_download_resumption_attempts_limit,
@@ -417,6 +425,7 @@ where
             blobfs_and_system_image: self.blobfs_and_system_image,
             mounts: || mounts,
             tuf_metadata_timeout_seconds: self.tuf_metadata_timeout_seconds,
+            tuf_network_header_timeout_seconds: self.tuf_network_header_timeout_seconds,
             blob_network_header_timeout_seconds: self.blob_network_header_timeout_seconds,
             blob_network_body_timeout_seconds: self.blob_network_body_timeout_seconds,
             blob_download_resumption_attempts_limit: self.blob_download_resumption_attempts_limit,
@@ -428,6 +437,12 @@ where
     pub fn tuf_metadata_timeout_seconds(mut self, seconds: u32) -> Self {
         assert_eq!(self.tuf_metadata_timeout_seconds, None);
         self.tuf_metadata_timeout_seconds = Some(seconds);
+        self
+    }
+
+    pub fn tuf_network_header_timeout_seconds(mut self, seconds: u32) -> Self {
+        assert_eq!(self.tuf_network_header_timeout_seconds, None);
+        self.tuf_network_header_timeout_seconds = Some(seconds);
         self
     }
 
@@ -609,6 +624,10 @@ where
 
         for (key, value) in [
             (
+                "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+                self.tuf_network_header_timeout_seconds,
+            ),
+            (
                 "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
                 self.blob_network_header_timeout_seconds,
             ),
@@ -728,7 +747,6 @@ where
                     .capability(Capability::protocol::<fidl_fuchsia_posix_socket::ProviderMarker>())
                     .capability(Capability::protocol::<fidl_fuchsia_net_name::LookupMarker>())
                     .from(Ref::parent())
-                    .to(&pkg_resolver)
                     .to(&http_client),
             )
             .await
@@ -752,6 +770,7 @@ where
             .add_route(
                 Route::new()
                     .capability(Capability::protocol::<fpkg_http::ClientMarker>())
+                    .capability(Capability::protocol::<fnet_http::LoaderMarker>())
                     .from(&http_client)
                     .to(&pkg_resolver),
             )
@@ -866,11 +885,6 @@ where
                     .capability(
                         Capability::directory("config-data")
                             .path("/config/data")
-                            .rights(fio::R_STAR_DIR),
-                    )
-                    .capability(
-                        Capability::directory("root-ssl-certificates")
-                            .path("/config/ssl")
                             .rights(fio::R_STAR_DIR),
                     )
                     // TODO(https://fxbug.dev/42155475): Change to storage once convenient.

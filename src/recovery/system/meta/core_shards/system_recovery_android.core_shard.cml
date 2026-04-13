@@ -46,9 +46,7 @@
         {
             protocol: [
                 "fuchsia.net.http.Loader",
-                "fuchsia.net.name.Lookup",
                 "fuchsia.pkg.http.Client",
-                "fuchsia.posix.socket.Provider",
             ],
             from: "#network",
             to: "#system_recovery",
@@ -73,10 +71,7 @@
             to: "#system_recovery",
         },
         {
-            directory: [
-                "build-info",
-                "root-ssl-certificates",
-            ],
+            directory: [ "build-info" ],
             from: "parent",
             to: "#system_recovery",
         },

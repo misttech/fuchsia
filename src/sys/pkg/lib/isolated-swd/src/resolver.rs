@@ -7,7 +7,12 @@ pub(crate) mod for_tests {
     use crate::cache::for_tests::CacheForTest;
     use anyhow::{Error, anyhow};
     use blobfs_ramdisk::BlobfsRamdisk;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_metrics as fmetrics;
+    use fidl_fuchsia_pkg as fpkg;
+    use fidl_fuchsia_pkg_ext as pkg;
     use fidl_fuchsia_pkg_ext::RepositoryConfigs;
+    use fuchsia_async as fasync;
     use fuchsia_component_test::{
         Capability, ChildOptions, ChildRef, DirectoryContents, RealmBuilder, RealmInstance, Ref,
         Route,
@@ -16,10 +21,6 @@ pub(crate) mod for_tests {
     use fuchsia_url::RepositoryUrl;
     use futures::{FutureExt as _, StreamExt as _};
     use std::sync::Arc;
-    use {
-        fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_pkg as fpkg,
-        fidl_fuchsia_pkg_ext as pkg, fuchsia_async as fasync,
-    };
 
     const SSL_TEST_CERTS_PATH: &str = "/pkg/data/ssl/cert.pem";
     const SSL_CERT_FILE_NAME: &str = "cert.pem";
@@ -124,7 +125,7 @@ pub(crate) mod for_tests {
             realm_builder
                 .read_only_directory(
                     "root-ssl-certificates",
-                    vec![&pkg_resolver, &http_client],
+                    vec![&http_client],
                     DirectoryContents::new().add_file(SSL_CERT_FILE_NAME, cert_bytes),
                 )
                 .await
@@ -133,9 +134,18 @@ pub(crate) mod for_tests {
             realm_builder
                 .add_route(
                     Route::new()
-                        .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
                         .capability(Capability::protocol_by_name("fuchsia.net.name.Lookup"))
                         .capability(Capability::protocol_by_name("fuchsia.posix.socket.Provider"))
+                        .from(Ref::parent())
+                        .to(&http_client),
+                )
+                .await
+                .unwrap();
+
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
                         .from(Ref::parent())
                         .to(&pkg_resolver)
                         .to(&http_client),
@@ -157,6 +167,7 @@ pub(crate) mod for_tests {
                 .add_route(
                     Route::new()
                         .capability(Capability::protocol_by_name("fuchsia.pkg.http.Client"))
+                        .capability(Capability::protocol_by_name("fuchsia.net.http.Loader"))
                         .from(&http_client)
                         .to(&pkg_resolver),
                 )
@@ -191,6 +202,9 @@ pub(crate) mod for_tests {
             realm_builder
                 .add_route(
                     Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+                        ))
                         .capability(Capability::configuration(
                             "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
                         ))

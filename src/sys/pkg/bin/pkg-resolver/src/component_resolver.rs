@@ -4,15 +4,15 @@
 
 use anyhow::{Context as _, anyhow};
 use fidl::endpoints::{ClientEnd, Proxy, create_proxy};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_url::fuchsia_pkg::ComponentUrl;
 use futures::prelude::*;
 use log::warn;
 use version_history::AbiRevision;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg,
-};
 
 pub(crate) async fn serve(mut stream: fresolution::ResolverRequestStream) -> anyhow::Result<()> {
     let package_resolver = connect_to_protocol::<fpkg::PackageResolverMarker>()
@@ -222,6 +222,9 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use fidl::endpoints::ServerEnd;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_component::server as fserver;
     use fuchsia_component_test::{
         Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
@@ -233,7 +236,6 @@ mod tests {
     use vfs::execution_scope::ExecutionScope;
     use vfs::file::vmo::read_only;
     use vfs::pseudo_directory;
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     type Trigger = mpsc::Sender<Result<(), Error>>;
 
@@ -321,8 +323,6 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn fidl_wiring_and_serving() {
-        let ssl_certs =
-            fuchsia_fs::directory::open_in_namespace("/pkg/data/ssl", fio::PERM_READABLE).unwrap();
         const OUT_DIR_FLAGS: fio::Flags =
             fio::PERM_READABLE.union(fio::PERM_WRITABLE).union(fio::PERM_EXECUTABLE);
 
@@ -334,9 +334,6 @@ mod tests {
                 "build-info" => vfs::pseudo_directory! {
                     "build" => read_only(b"test")
                 },
-                "ssl" => vfs::remote::remote_dir(
-                    ssl_certs
-                ),
             },
         };
         let directories_out_dir = sync::Mutex::new(Some(directories_out_dir));
@@ -380,19 +377,6 @@ mod tests {
                     .capability(
                         Capability::directory("config-data")
                             .path("/config/data")
-                            .rights(fio::R_STAR_DIR),
-                    )
-                    .from(&directories_component)
-                    .to(&pkg_resolver),
-            )
-            .await
-            .unwrap();
-        builder
-            .add_route(
-                Route::new()
-                    .capability(
-                        Capability::directory("root-ssl-certificates")
-                            .path("/config/ssl")
                             .rights(fio::R_STAR_DIR),
                     )
                     .from(&directories_component)
@@ -479,6 +463,9 @@ mod tests {
         builder
             .add_route(
                 Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
+                    ))
                     .capability(Capability::configuration(
                         "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
                     ))

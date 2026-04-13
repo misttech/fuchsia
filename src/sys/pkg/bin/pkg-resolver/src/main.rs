@@ -8,23 +8,26 @@
 
 use anyhow::{Context as _, Error, anyhow};
 use async_lock::RwLock as AsyncRwLock;
+use cobalt_sw_delivery_registry as metrics;
 use delivery_blob::DeliveryBlobType;
 use fdio::Namespace;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_contrib::ProtocolConnector;
 use fidl_contrib::protocol_connector::ProtocolSender;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_metrics as fmetrics;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_http as fpkg_http;
+use fuchsia_async as fasync;
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_inspect as inspect;
+use fuchsia_trace as ftrace;
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use log::{error, info, warn};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use {
-    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio,
-    fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_http as fpkg_http,
-    fuchsia_async as fasync, fuchsia_inspect as inspect, fuchsia_trace as ftrace,
-};
 
 mod cache;
 mod cache_package_index;
@@ -75,12 +78,6 @@ const DYNAMIC_REPO_PATH: &str = "repositories.json";
 const STATIC_RULES_PATH: &str = "rewrites.json";
 // Relative to /data.
 const DYNAMIC_RULES_PATH: &str = "rewrites.json";
-
-// The TCP keepalive timeout here in effect acts as a sort of between bytes timeout for connections
-// that are no longer established. Explicit timeouts are used around request futures to guard
-// against cases where both sides agree the connection is established, but the client expects more
-// data and the server doesn't intend to send any.
-const TCP_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[fuchsia::main(logging_tags = ["pkg-resolver"])]
 pub fn main() -> Result<(), Error> {
@@ -164,7 +161,14 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
             inspector.root().create_child("repository_manager"),
             &config,
             cobalt_sender.clone(),
-            std::time::Duration::from_secs(structured_config.tuf_metadata_timeout_seconds.into()),
+            TufTimeouts {
+                metadata: std::time::Duration::from_secs(
+                    structured_config.tuf_metadata_timeout_seconds.into(),
+                ),
+                network_header: zx::BootDuration::from_seconds(
+                    structured_config.tuf_network_header_timeout_seconds.into(),
+                ),
+            },
             data_proxy.clone(),
             delivery_blob_type,
         )
@@ -386,7 +390,7 @@ async fn load_repo_manager(
     node: inspect::Node,
     config: &Config,
     mut cobalt_sender: ProtocolSender<fmetrics::MetricEvent>,
-    tuf_metadata_timeout: Duration,
+    tuf_timeouts: TufTimeouts,
     data_proxy: Option<fio::DirectoryProxy>,
     delivery_blob_type: DeliveryBlobType,
 ) -> RepositoryManager {
@@ -394,19 +398,15 @@ async fn load_repo_manager(
     // to update the system.
     let dynamic_repo_path =
         if config.enable_dynamic_configuration() { Some(DYNAMIC_REPO_PATH) } else { None };
-    let builder = match RepositoryManagerBuilder::new(
-        data_proxy,
-        dynamic_repo_path,
-        tuf_metadata_timeout,
-    )
-    .await
-    .unwrap_or_else(|(builder, err)| {
-        error!("error loading dynamic repo config: {:#}", anyhow!(err));
-        builder
-    })
-    .delivery_blob_type(delivery_blob_type)
-    .inspect_node(node)
-    .load_static_configs_dir(STATIC_REPO_DIR)
+    let builder = match RepositoryManagerBuilder::new(data_proxy, dynamic_repo_path, tuf_timeouts)
+        .await
+        .unwrap_or_else(|(builder, err)| {
+            error!("error loading dynamic repo config: {:#}", anyhow!(err));
+            builder
+        })
+        .delivery_blob_type(delivery_blob_type)
+        .inspect_node(node)
+        .load_static_configs_dir(STATIC_REPO_DIR)
     {
         Ok(builder) => {
             cobalt_sender.send(
@@ -496,4 +496,10 @@ async fn load_rewrite_manager(
         });
 
     builder.build()
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TufTimeouts {
+    metadata: Duration,
+    network_header: zx::BootDuration,
 }
