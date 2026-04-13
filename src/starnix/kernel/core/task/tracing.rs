@@ -7,6 +7,7 @@ use starnix_logging::{log_debug, log_error, log_info};
 use starnix_sync::RwLock;
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::{Arc, Weak};
 use zx::Koid;
 
@@ -103,20 +104,17 @@ impl TracePerformanceEventManager {
             self.local_map.extend(shared_map);
         }
 
-        if self.local_map.contains_key(&pid) {
-            return self.local_map.get(&pid).expect("pid should always have a KoidPair.");
+        match self.local_map.entry(pid) {
+            Entry::Occupied(o) => o.into_mut(),
+            Entry::Vacant(v) => {
+                // If there is a miss, check the shared mapping table. This would only happen in
+                // extreme cases where the tracing events are being mapped while new events are
+                // being created by new threads.
+                let shared_map = self.map.read();
+                let koid_pair = shared_map.get(&pid).expect("all pids should have mappings");
+                v.insert(koid_pair.clone())
+            }
         }
-
-        // If there is a miss, check the shared mapping table. This would only happen in
-        // extreme cases where the tracing events are being mapped while new events are being
-        // created by new threads.
-        let shared_map = self.map.read();
-        if let Some(koid_pair) = shared_map.get(&pid) {
-            self.local_map.insert(pid, koid_pair.clone());
-            return self.local_map.get(&pid).expect("pid should always have a KoidPair.");
-        }
-
-        unreachable!("all pids including {pid} should have mappings")
     }
 
     /// Maps a "pid" to the koid. This is also referred to as the "Process Id" in Perfetto terms.
