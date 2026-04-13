@@ -353,8 +353,9 @@ impl FileOps for DmDeviceFile {
                         if to_read % args.base_args.hash_block_size as usize != 0 {
                             return error!(EINVAL);
                         }
-                        let read = args.block_device.read_at(
+                        let read = args.block_device.ops().read(
                             locked,
+                            &args.block_device,
                             current_task,
                             offset - start,
                             &mut buffer,
@@ -395,9 +396,13 @@ impl FileOps for DmDeviceFile {
                 return error!(ENOTSUP);
             }
             match &active_table.targets[0].target_type {
-                TargetType::Verity(args) => {
-                    args.block_device.get_memory(locked, current_task, length, prot)
-                }
+                TargetType::Verity(args) => args.block_device.ops().get_memory(
+                    locked,
+                    &args.block_device,
+                    current_task,
+                    length,
+                    prot,
+                ),
             }
         } else {
             error!(EINVAL)
@@ -727,8 +732,14 @@ fn parse_parameter_string(
             let mut buffer = VecOutputBuffer::new(leaf_nodes_size as usize);
             let offset = base_args.hash_start_block * base_args.hash_block_size
                 + size_of_merkle_tree_preceding_leaf_nodes(leaf_nodes_size, hash_size, &base_args);
-            let bytes_read =
-                hash_device.read_at(locked, current_task, offset as usize, &mut buffer)?;
+            let locked = locked.cast_locked::<FileOpsCore>();
+            let bytes_read = hash_device.ops().read(
+                locked,
+                &hash_device,
+                current_task,
+                offset as usize,
+                &mut buffer,
+            )?;
             debug_assert!(bytes_read == leaf_nodes_size as usize);
 
             Ok(TargetType::Verity(VerityTargetParams {
