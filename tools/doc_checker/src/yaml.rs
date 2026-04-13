@@ -236,7 +236,14 @@ impl DocYamlCheck for YamlChecker {
                 Some("_drivers_epitaphs.yaml") => check_drivers_epitaphs(filename, yaml_value),
                 Some("_eng_council.yaml") => check_eng_council(filename, yaml_value),
                 Some("_glossary.yaml") => check_glossary(filename, yaml_value),
-                Some("_metadata.yaml") => check_metadata(filename, yaml_value),
+                Some("_metadata.yaml") => check_metadata(
+                    &self.root_dir,
+                    &self.docs_folder,
+                    &self.project,
+                    filename,
+                    yaml_value,
+                    self.allow_fuchsia_src_links,
+                ),
                 Some("_problems.yaml") => check_problems(filename, yaml_value),
                 Some("_redirects.yaml") => check_redirects(
                     &self.root_dir,
@@ -727,11 +734,120 @@ fn check_glossary(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckErr
     errors
 }
 
-fn check_metadata(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
+fn check_metadata(
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    yaml_value: &Value,
+    allow_fuchsia_src_links: bool,
+) -> Option<Vec<DocCheckError>> {
     let result = serde_yaml::from_value::<Metadata>(yaml_value.clone());
-    //TODO(https://fxbug.dev/42064928): Add checks for metadata.
     match result {
-        Ok(_redirects) => None,
+        Ok(metadata) => {
+            let mut errors = vec![];
+            let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+            for guide in metadata.guides {
+                if !metadata.types.contains(&guide.entry_type) {
+                    errors.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!(
+                            "invalid type '{}' in guide '{}'. Must be one of {:?}",
+                            guide.entry_type, guide.title, metadata.types
+                        ),
+                    ));
+                }
+                if !metadata.products.contains(&guide.product) {
+                    errors.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!(
+                            "invalid product '{}' in guide '{}'. Must be one of {:?}",
+                            guide.product, guide.title, metadata.products
+                        ),
+                    ));
+                }
+                if !metadata.boards.contains(&guide.board) {
+                    errors.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!(
+                            "invalid board '{}' in guide '{}'. Must be one of {:?}",
+                            guide.board, guide.title, metadata.boards
+                        ),
+                    ));
+                }
+                if !metadata.methods.contains(&guide.method) {
+                    errors.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!(
+                            "invalid method '{}' in guide '{}'. Must be one of {:?}",
+                            guide.method, guide.title, metadata.methods
+                        ),
+                    ));
+                }
+                if !metadata.hosts.contains(&guide.host) {
+                    errors.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!(
+                            "invalid host '{}' in guide '{}'. Must be one of {:?}",
+                            guide.host, guide.title, metadata.hosts
+                        ),
+                    ));
+                }
+
+                // Link validation
+                match do_check_link(&doc_line, &guide.url, project, allow_fuchsia_src_links) {
+                    Ok(Some(err)) => {
+                        errors.push(err);
+                    }
+                    Ok(None) => {
+                        let root_dir_str = root_dir.display().to_string();
+                        match is_intree_link(project, &root_dir_str, docs_folder, &guide.url) {
+                            Ok(Some(in_tree_path)) => {
+                                if let Some(err) = do_in_tree_check(
+                                    &doc_line,
+                                    root_dir,
+                                    docs_folder,
+                                    &guide.url,
+                                    &in_tree_path,
+                                ) {
+                                    errors.push(err);
+                                }
+                            }
+                            Ok(None) if is_external_path(&guide.url) => {
+                                // TODO(https://fxbug.dev/500468244): Collect these HTTP URLs and route them to the link_checker module.
+                            }
+                            Ok(None) => {
+                                errors.push(DocCheckError::new_error(
+                                    doc_line.line_num,
+                                    doc_line.file_name.clone(),
+                                    &format!("invalid path {}", guide.url),
+                                ));
+                            }
+                            Err(e) => {
+                                errors.push(DocCheckError::new_error(
+                                    doc_line.line_num,
+                                    doc_line.file_name.clone(),
+                                    &format!("Error checking path {}: {}", guide.url, e),
+                                ));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        errors.push(DocCheckError::new_error(
+                            doc_line.line_num,
+                            doc_line.file_name.clone(),
+                            &e.to_string(),
+                        ));
+                    }
+                }
+            }
+            if errors.is_empty() { None } else { Some(errors) }
+        }
         Err(e) => Some(vec![DocCheckError::new_error(
             1,
             filename.to_path_buf(),
@@ -1575,6 +1691,210 @@ redirects:
             "path /bad/path must start with '/src/', '/zircon/', or '/examples/'"
         );
         assert_eq!(errors[3].message, "areas list cannot be empty if provided");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_metadata() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let docs_folder = PathBuf::from("docs");
+        let project = "fuchsia";
+        let allow_fuchsia_src_links = false;
+        let filename = PathBuf::from("_metadata.yaml");
+
+        let valid_yaml: Value = serde_yaml::from_str(
+            r#"
+descriptions:
+  type: "Type desc"
+columns:
+  - "Type"
+types:
+  - "Custom"
+products:
+  - "Core"
+boards:
+  - "VIM"
+methods:
+  - "USB Cable"
+hosts:
+  - "Linux"
+guides:
+  - type: "Custom"
+    product: "Core"
+    board: "VIM"
+    method: "USB Cable"
+    host: "Linux"
+    url: "/docs/are-ok.md"
+    title: "Guide Title"
+          "#,
+        )?;
+
+        let result = check_metadata(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &valid_yaml,
+            allow_fuchsia_src_links,
+        );
+        assert!(result.is_none());
+
+        let invalid_yaml: Value = serde_yaml::from_str(
+            r#"
+descriptions:
+  type: "Type desc"
+columns:
+  - "Type"
+types:
+  - "Custom"
+products:
+  - "Core"
+boards:
+  - "VIM"
+methods:
+  - "USB Cable"
+hosts:
+  - "Linux"
+guides:
+  - type: "InvalidType"
+    product: "InvalidProduct"
+    board: "VIM"
+    method: "USB Cable"
+    host: "Linux"
+    url: "/docs/are-ok.md"
+    title: "Guide Title"
+          "#,
+        )?;
+
+        let result = check_metadata(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &invalid_yaml,
+            allow_fuchsia_src_links,
+        );
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 2);
+
+        let invalid_fields_yaml: Value = serde_yaml::from_str(
+            r#"
+descriptions:
+  type: "Type desc"
+columns:
+  - "Type"
+types:
+  - "Custom"
+products:
+  - "Core"
+boards:
+  - "VIM"
+methods:
+  - "USB Cable"
+hosts:
+  - "Linux"
+guides:
+  - type: "Custom"
+    product: "Core"
+    board: "InvalidBoard"
+    method: "InvalidMethod"
+    host: "InvalidHost"
+    url: "/docs/are-ok.md"
+    title: "Guide Title"
+          "#,
+        )?;
+
+        let result = check_metadata(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &invalid_fields_yaml,
+            allow_fuchsia_src_links,
+        );
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 3);
+
+        let invalid_path_yaml: Value = serde_yaml::from_str(
+            r#"
+descriptions:
+  type: "Type desc"
+columns:
+  - "Type"
+types:
+  - "Custom"
+products:
+  - "Core"
+boards:
+  - "VIM"
+methods:
+  - "USB Cable"
+hosts:
+  - "Linux"
+guides:
+  - type: "Custom"
+    product: "Core"
+    board: "VIM"
+    method: "USB Cable"
+    host: "Linux"
+    url: "custom-scheme://foo"
+    title: "Guide Title"
+          "#,
+        )?;
+
+        let result = check_metadata(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &invalid_path_yaml,
+            allow_fuchsia_src_links,
+        );
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 1);
+        eprintln!("ACTUAL ERROR MESSAGE: {}", errors[0].message);
+        assert!(errors[0].message.contains("invalid path"));
+
+        let external_link_yaml: Value = serde_yaml::from_str(
+            r#"
+descriptions:
+  type: "Type desc"
+columns:
+  - "Type"
+types:
+  - "Custom"
+products:
+  - "Core"
+boards:
+  - "VIM"
+methods:
+  - "USB Cable"
+hosts:
+  - "Linux"
+guides:
+  - type: "Custom"
+    product: "Core"
+    board: "VIM"
+    method: "USB Cable"
+    host: "Linux"
+    url: "https://external.com/guide"
+    title: "Guide Title"
+          "#,
+        )?;
+
+        let result = check_metadata(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &external_link_yaml,
+            allow_fuchsia_src_links,
+        );
+        assert!(result.is_none());
 
         Ok(())
     }
