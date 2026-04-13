@@ -19,6 +19,12 @@ import build_utils
 # Set this to True to debug operations locally in this script.
 _DEBUG = False
 
+# Most of the types and logic in this file are re-implementation of
+# @rules_rust//tools/rust_analyzer and thus must be updated in lockstep with any
+# new rolls of @rules_rust releases into the Fuchsia source checkout.
+
+# LINT.IfChange(rules_rust_version)
+
 # Arguments to pass to Bazel to suppress CLI outputs.
 _SILENT_BAZEL_ARGS = [
     "--ui_event_filters=-info,-warning",
@@ -65,6 +71,74 @@ class CrateSpec(T.TypedDict, total=False):
     build: T.Optional[CrateSpecBuild]
 
 
+def consolidate_crate_specs(crate_specs: list[CrateSpec]) -> list[CrateSpec]:
+    """Consolidate a CrateSpec list.
+
+    This de-duplicates items with the same crate_id, which happens
+    when a rust_test() depends on a rust_library(). See
+    consolidate_crate_spec() in @rules_rust//tools/rust_analyzer:aquery.rs
+    Args:
+        crate_specs: A CrateSpec list.
+    Returns:
+        A new CrateSpec list.
+    """
+
+    def extend_str_list(dest: T.Any, key: str, src: T.Any) -> None:
+        """Extend dest[key] with the items from src[key] that are not already in the list."""
+        current_items = set(dest[key])
+        dest[key].extend(
+            [item for item in src[key] if item not in current_items]
+        )
+
+    id_to_spec: dict[str, CrateSpec] = {}
+    for crate in crate_specs:
+        crate_id = crate["crate_id"]
+        current = id_to_spec.setdefault(crate_id, crate)
+        if current == crate:
+            continue
+
+        extend_str_list(current, "deps", crate)
+        current["env"].update(crate["env"])
+        current["aliases"].update(crate["aliases"])
+
+        current_source = current.get("source")
+        crate_source = crate.get("source")
+        if current_source is None:
+            current["source"] = crate_source
+        elif crate_source:
+            extend_str_list(current_source, "include_dirs", crate_source)
+            extend_str_list(current_source, "exclude_dirs", crate_source)
+
+        extend_str_list(current, "cfg", crate)
+
+        # display_name should match the library's crate name because Rust Analyzer
+        # seems to use display_name for matching crate entries in rust-project.json
+        # against symbols in source files. For more details, see
+        # https://github.com/bazelbuild/rules_rust/issues/1032
+
+        if crate["crate_type"] == "rlib":
+            current["display_name"] = crate["display_name"]
+            current["crate_type"] = "rlib"
+            current["is_test"] = crate["is_test"]
+
+        # We want to use the test target's build label to provide
+        # unit tests codelens actions for library crates in IDEs.
+        if crate["is_test"]:
+            crate_build = crate.get("build")
+            if crate_build:
+                current["build"] = crate_build
+
+        # For proc-macro crates that exist within the workspace, there will be a
+        # generated crate-spec in both the fastbuild and opt-exec configuration.
+        # Prefer proc macro paths with an opt-exec component in the path.
+        crate_dylib_path = crate.get("proc_macro_dylib_path")
+        if crate_dylib_path:
+            if "-opt-exec-" in crate_dylib_path:
+                current["proc_macro_dylib_path"] = crate_dylib_path
+
+    return list(id_to_spec.values())
+
+
 # See rust-project.json format at
 # https://rust-analyzer.github.io/book/non_cargo_based_projects.html
 
@@ -94,6 +168,7 @@ class Build(T.TypedDict, total=False):
 class Crate(T.TypedDict, total=False):
     """Represents a crate in the rust-project.json format."""
 
+    crate_id: int
     display_name: T.Optional[str]
     root_module: str
     edition: str
@@ -179,7 +254,7 @@ def convert_crate_specs_to_rust_project_crates(
             dep_spec = crate_id_to_spec[dep_id]
             deps.append({"crate": dep_index, "name": dep_spec["display_name"]})
 
-        result_crate = {
+        result_crate: Crate = {
             "crate_id": crate_id_to_index[crate_spec["crate_id"]],
             "display_name": crate_spec["display_name"],
             "root_module": crate_spec["root_module"],
@@ -370,7 +445,7 @@ def generate_rust_project_json_crates(
     bazel_paths: build_utils.BazelPaths,
     bazel_args: list[str],
     targets: list[str],
-) -> list[dict[str, T.Any]]:
+) -> list[Crate]:
     """
     Generates the content for a rust-project.json file for the given targets.
 
@@ -401,6 +476,8 @@ def generate_rust_project_json_crates(
         load_crate_spec_from_json(file_path, bazel_paths)
         for file_path in output_files
     ]
+    crate_specs = consolidate_crate_specs(crate_specs)
+
     return convert_crate_specs_to_rust_project_crates(crate_specs)
 
 
@@ -550,6 +627,9 @@ def find_crates_for_file(file_path: Path, crates: list[Crate]) -> list[Crate]:
     return found
 
 
+# LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel:rules_rust_version)
+
+
 def get_crates_and_dependencies(
     interest: list[Crate], crates: list[Crate]
 ) -> list[Crate]:
@@ -609,7 +689,7 @@ def get_crates_and_dependencies(
         remapped_crate = c.copy()
         remapped_crate["crate_id"] = old_id_to_new_index[c["crate_id"]]
 
-        remapped_deps = []
+        remapped_deps: list[Dependency] = []
         for dep in c.get("deps", []):
             old_id = dep["crate"]
             assert old_id in old_id_to_new_index

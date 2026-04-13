@@ -3,6 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import itertools
 import json
 import os
 import sys
@@ -14,11 +15,12 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 
 import bazel_rust_analyzer_utils
+from bazel_rust_analyzer_utils import CrateSpec, CrateSpecBuild, CrateSpecSource
 
 
 class TestBazelRustAnalyzerUtils(unittest.TestCase):
     @mock.patch("build_utils.BazelPaths")
-    def test_substitute_tokens(self, MockBazelPaths) -> None:
+    def test_substitute_tokens(self, MockBazelPaths: mock.Mock) -> None:
         mock_paths = MockBazelPaths()
         mock_paths.fuchsia_dir = Path("/fuchsia_dir")
         mock_paths.workspace = Path("/workspace")
@@ -47,7 +49,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
     @mock.patch("build_utils.BazelPaths")
     @mock.patch("pathlib.Path.read_text")
     def test_load_crate_spec_from_json_empty(
-        self, mock_read_text, MockBazelPaths
+        self, mock_read_text: mock.Mock, MockBazelPaths: mock.Mock
     ) -> None:
         mock_paths = MockBazelPaths()
         mock_read_text.return_value = "{}"
@@ -59,7 +61,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
     @mock.patch("build_utils.BazelPaths")
     @mock.patch("pathlib.Path.read_text")
     def test_load_crate_spec_from_json(
-        self, mock_read_text, MockBazelPaths
+        self, mock_read_text: mock.Mock, MockBazelPaths: mock.Mock
     ) -> None:
         mock_paths = MockBazelPaths()
         mock_paths.fuchsia_dir = Path("/fuchsia_dir")
@@ -78,6 +80,677 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         )
         self.assertEqual(result, expected_spec)
         mock_read_text.assert_called_once()
+
+    def test_consolidate_crate_lib_then_test_specs(self) -> None:
+        crate_specs: list[CrateSpec] = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=["ID-lib_dep.rs"],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=CrateSpecBuild(
+                    label="//:mylib",
+                    build_file="BUILD.bazel",
+                ),
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-extra_test_dep.rs",
+                display_name="extra_test_dep",
+                edition="2018",
+                root_module="extra_test_dep.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-lib_deps.rs",
+                display_name="lib_dep",
+                edition="2018",
+                root_module="lib_dep.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib_test",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=["ID-extra_test_dep.rs"],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="bin",
+                is_test=True,
+                build=None,
+            ),
+        ]
+
+        expected_crate_specs = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=["ID-lib_dep.rs", "ID-extra_test_dep.rs"],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=CrateSpecBuild(
+                    label="//:mylib",
+                    build_file="BUILD.bazel",
+                ),
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-extra_test_dep.rs",
+                display_name="extra_test_dep",
+                edition="2018",
+                root_module="extra_test_dep.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-lib_deps.rs",
+                display_name="lib_dep",
+                edition="2018",
+                root_module="lib_dep.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+        ]
+
+        self.maxDiff = None
+        self.assertListEqual(
+            bazel_rust_analyzer_utils.consolidate_crate_specs(crate_specs),
+            expected_crate_specs,
+        )
+
+    def test_consolidate_crate_test_then_lib_specs(self) -> None:
+        crate_specs: list[CrateSpec] = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib_test",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=["ID-extra_test_dep.rs"],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="bin",
+                is_test=True,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=["ID-lib_dep.rs"],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=CrateSpecBuild(
+                    label="//:mylib",
+                    build_file="BUILD.bazel",
+                ),
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-extra_test_dep.rs",
+                display_name="extra_test_dep",
+                edition="2018",
+                root_module="extra_test_dep.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-lib_deps.rs",
+                display_name="lib_dep",
+                edition="2018",
+                root_module="lib_dep.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+        ]
+
+        expected_crate_specs = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=["ID-extra_test_dep.rs", "ID-lib_dep.rs"],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-extra_test_dep.rs",
+                display_name="extra_test_dep",
+                edition="2018",
+                root_module="extra_test_dep.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-lib_deps.rs",
+                display_name="lib_dep",
+                edition="2018",
+                root_module="lib_dep.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+        ]
+
+        self.maxDiff = None
+        self.assertListEqual(
+            bazel_rust_analyzer_utils.consolidate_crate_specs(crate_specs),
+            expected_crate_specs,
+        )
+
+    def test_consolidate_crate_lib_test_main_specs(self) -> None:
+        crate_specs: list[CrateSpec] = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib_test",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="bin",
+                is_test=True,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib_main",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="bin",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib2.rs",
+                display_name="mylib2",
+                edition="2018",
+                root_module="mylib2.rs",
+                is_workspace_member=True,
+                deps=["ID-mylib.rs"],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+        ]
+
+        expected_crate_specs = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib2.rs",
+                display_name="mylib2",
+                edition="2018",
+                root_module="mylib2.rs",
+                is_workspace_member=True,
+                deps=["ID-mylib.rs"],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=False,
+                build=None,
+            ),
+        ]
+
+        self.maxDiff = None
+        for input_crate_specs in itertools.permutations(crate_specs):
+            sorted_crate_specs = sorted(
+                bazel_rust_analyzer_utils.consolidate_crate_specs(
+                    input_crate_specs
+                ),
+                key=lambda s: s["display_name"],
+            )
+            self.assertListEqual(sorted_crate_specs, expected_crate_specs)
+
+    def test_consolidate_crate_proc_macro_prefer_exec(self) -> None:
+        crate_specs: list[CrateSpec] = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-myproc_macro.rs",
+                display_name="myproc_macro",
+                edition="2018",
+                root_module="myproc_macro.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path="bazel-out/k8-opt-exec-F005BA/bin/myproc_macro/libmyproc_macro-12345.so",
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="proc-macro",
+                is_test=False,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-myproc_macro.rs",
+                display_name="myproc_macro",
+                edition="2018",
+                root_module="myproc_macro.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path="bazel-out/k8-fastbuild/bin/myproc_macro/libmyproc_macro-12345.so",
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="proc-macro",
+                is_test=False,
+                build=None,
+            ),
+        ]
+
+        for perm in itertools.permutations(crate_specs):
+            input_crate_specs = (
+                bazel_rust_analyzer_utils.consolidate_crate_specs(perm)
+            )
+
+            self.assertListEqual(
+                input_crate_specs,
+                [
+                    CrateSpec(
+                        aliases={},
+                        crate_id="ID-myproc_macro.rs",
+                        display_name="myproc_macro",
+                        edition="2018",
+                        root_module="myproc_macro.rs",
+                        is_workspace_member=True,
+                        deps=[],
+                        proc_macro_dylib_path="bazel-out/k8-opt-exec-F005BA/bin/myproc_macro/libmyproc_macro-12345.so",
+                        source=None,
+                        cfg=["test", "debug_assertions"],
+                        env={},
+                        target="x86_64-uknown-linux-gnu",
+                        crate_type="proc-macro",
+                        is_test=False,
+                        build=None,
+                    ),
+                ],
+            )
+
+    def test_consolidate_create_spec_with_aliases(self) -> None:
+        crate_specs: list[CrateSpec] = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=True,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={"ID-mylib_dep.rs": "aliased_name"},
+                crate_id="ID-mylib.rs",
+                display_name="mylib_test",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="bin",
+                is_test=True,
+                build=None,
+            ),
+        ]
+
+        for perm in itertools.permutations(crate_specs):
+            input_crate_specs = (
+                bazel_rust_analyzer_utils.consolidate_crate_specs(perm)
+            )
+
+            self.assertListEqual(
+                input_crate_specs,
+                [
+                    CrateSpec(
+                        aliases={"ID-mylib_dep.rs": "aliased_name"},
+                        crate_id="ID-mylib.rs",
+                        display_name="mylib",
+                        edition="2018",
+                        root_module="mylib.rs",
+                        is_workspace_member=True,
+                        deps=[],
+                        proc_macro_dylib_path=None,
+                        source=None,
+                        cfg=["test", "debug_assertions"],
+                        env={},
+                        target="x86_64-uknown-linux-gnu",
+                        crate_type="rlib",
+                        is_test=True,
+                        build=None,
+                    ),
+                ],
+            )
+
+    def test_consolidate_crate_spec_with_sources(self) -> None:
+        crate_specs: list[CrateSpec] = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=None,
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=True,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib_test",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=CrateSpecSource(
+                    exclude_dirs=["exclude"],
+                    include_dirs=["include"],
+                ),
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="bin",
+                is_test=True,
+                build=None,
+            ),
+        ]
+
+        for perm in itertools.permutations(crate_specs):
+            input_crate_specs = (
+                bazel_rust_analyzer_utils.consolidate_crate_specs(perm)
+            )
+
+            self.assertListEqual(
+                input_crate_specs,
+                [
+                    CrateSpec(
+                        aliases={},
+                        crate_id="ID-mylib.rs",
+                        display_name="mylib",
+                        edition="2018",
+                        root_module="mylib.rs",
+                        is_workspace_member=True,
+                        deps=[],
+                        proc_macro_dylib_path=None,
+                        source=CrateSpecSource(
+                            exclude_dirs=["exclude"],
+                            include_dirs=["include"],
+                        ),
+                        cfg=["test", "debug_assertions"],
+                        env={},
+                        target="x86_64-uknown-linux-gnu",
+                        crate_type="rlib",
+                        is_test=True,
+                        build=None,
+                    ),
+                ],
+            )
+
+    def test_consolidate_crate_spec_with_duplicate_sources(self) -> None:
+        crate_specs: list[CrateSpec] = [
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=CrateSpecSource(
+                    exclude_dirs=["exclude"],
+                    include_dirs=["include"],
+                ),
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="rlib",
+                is_test=True,
+                build=None,
+            ),
+            CrateSpec(
+                aliases={},
+                crate_id="ID-mylib.rs",
+                display_name="mylib_test",
+                edition="2018",
+                root_module="mylib.rs",
+                is_workspace_member=True,
+                deps=[],
+                proc_macro_dylib_path=None,
+                source=CrateSpecSource(
+                    exclude_dirs=["exclude"],
+                    include_dirs=["include"],
+                ),
+                cfg=["test", "debug_assertions"],
+                env={},
+                target="x86_64-uknown-linux-gnu",
+                crate_type="bin",
+                is_test=True,
+                build=None,
+            ),
+        ]
+
+        for perm in itertools.permutations(crate_specs):
+            input_crate_specs = (
+                bazel_rust_analyzer_utils.consolidate_crate_specs(perm)
+            )
+
+            self.assertListEqual(
+                input_crate_specs,
+                [
+                    CrateSpec(
+                        aliases={},
+                        crate_id="ID-mylib.rs",
+                        display_name="mylib",
+                        edition="2018",
+                        root_module="mylib.rs",
+                        is_workspace_member=True,
+                        deps=[],
+                        proc_macro_dylib_path=None,
+                        source=CrateSpecSource(
+                            exclude_dirs=["exclude"],
+                            include_dirs=["include"],
+                        ),
+                        cfg=["test", "debug_assertions"],
+                        env={},
+                        target="x86_64-uknown-linux-gnu",
+                        crate_type="rlib",
+                        is_test=True,
+                        build=None,
+                    ),
+                ],
+            )
 
     def test_convert_crate_specs_to_rust_project_crates(self) -> None:
         crate_specs = [
@@ -180,7 +853,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
     @mock.patch("subprocess.check_output")
     @mock.patch("build_utils.BazelPaths")
     def test_aquery_rust_analyzer_outputs(
-        self, MockBazelPaths, mock_check_output
+        self, MockBazelPaths: mock.Mock, mock_check_output: mock.Mock
     ) -> None:
         mock_paths = MockBazelPaths()
         mock_paths.launcher = Path("/path/to/bazel")
@@ -231,13 +904,13 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
     @mock.patch("subprocess.check_output")
     @mock.patch("build_utils.BazelPaths")
     def test_aquery_rust_analyzer_outputs_empty(
-        self, MockBazelPaths, mock_check_output
+        self, MockBazelPaths: mock.Mock, mock_check_output: mock.Mock
     ) -> None:
         mock_paths = MockBazelPaths()
         mock_paths.launcher = Path("/path/to/bazel")
         mock_paths.workspace = Path("/workspace")
 
-        aquery_output = {
+        aquery_output: dict[str, list[str]] = {
             "artifacts": [],
             "pathFragments": [],
             "actions": [],
@@ -257,11 +930,11 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
     @mock.patch("build_utils.BazelPaths")
     def test_generate_rust_project_json_crates(
         self,
-        MockBazelPaths,
-        mock_build_aspect,
-        mock_aquery,
-        mock_load_spec,
-        mock_convert_specs,
+        MockBazelPaths: mock.Mock,
+        mock_build_aspect: mock.Mock,
+        mock_aquery: mock.Mock,
+        mock_load_spec: mock.Mock,
+        mock_convert_specs: mock.Mock,
     ) -> None:
         mock_paths = MockBazelPaths()
         bazel_args = ["--config=unused_config"]
@@ -297,7 +970,10 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
     @mock.patch("bazel_rust_analyzer_utils.build_rust_analyzer_aspect")
     @mock.patch("build_utils.BazelPaths")
     def test_generate_rust_project_json_crates_no_outputs(
-        self, MockBazelPaths, mock_build_aspect, mock_aquery
+        self,
+        MockBazelPaths: mock.Mock,
+        mock_build_aspect: mock.Mock,
+        mock_aquery: mock.Mock,
     ) -> None:
         mock_paths = MockBazelPaths()
         bazel_args = ["--config=unused_config"]
@@ -428,7 +1104,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         self.assertEqual(result, expected_json)
 
     def test_merge_rust_project_jsons_empty_base(self) -> None:
-        base_json = {"crates": []}
+        base_json: dict[str, list[str]] = {"crates": []}
         merge_json = {
             "crates": [{"crate_id": 10, "root_module": "a.rs", "target": "t"}]
         }
@@ -536,7 +1212,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
                 result = {crate["crate_id"] for crate in result}
                 self.assertEqual(result, expected_crate_ids)
 
-    def test_get_crates_and_dependencies(self):
+    def test_get_crates_and_dependencies(self) -> None:
         crates = [
             {"crate_id": 0, "root_module": "crate0", "deps": []},
             {
@@ -655,7 +1331,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
             [expected_crate4, expected_crate1, expected_crate0],
         )
 
-    def test_get_crates_and_dependencies_value_error(self):
+    def test_get_crates_and_dependencies_value_error(self) -> None:
         crates = [
             {"crate_id": 0, "root_module": "crate0", "deps": []},
             {
@@ -672,7 +1348,7 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
                 [{"crate_id": 2, "root_module": "crate2"}], crates
             )
 
-    def test_get_crates_and_dependencies_missing_dependency_error(self):
+    def test_get_crates_and_dependencies_missing_dependency_error(self) -> None:
         crates = [
             {
                 "crate_id": 1,

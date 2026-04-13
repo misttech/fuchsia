@@ -32,6 +32,11 @@ bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go"
 bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "rules_python", version = "1.4.0")
 
+# The code in bazel_rust_analyzer_utils.py mirrors logic found in @rules_rust//tools/rust_analyzer
+# and thus should be updated in lockstep with any new rolls of @rules_rust into Fuchsia.
+#
+# LINT.IfChange(rules_rust_version)
+#
 # @rules_rust needs to be patched to work-around bazelbuild/issues/28286
 bazel_dep(name = "rules_rust", version = "0.69.0")
 single_version_override(
@@ -39,6 +44,7 @@ single_version_override(
     patch_strip = 4,
     patches = ["//build/bazel:vendor_patches/rules_rust-0.69.0/0001-rules_rust-workaround-bazelbuild-issues-28286.patch"],
 )
+# LINT.ThenChange(//build/bazel/scripts/bazel_rust_analyzer_utils.py)
 
 bazel_dep(name = "protobuf", version = "", repo_name = "com_google_protobuf")
 local_path_override(
