@@ -32,6 +32,11 @@ impl FfxMain for PairableTool {
                 self.allow_pairing(&cmd.input_capability, &cmd.output_capability).await?;
                 writer.line("Allowing pairing")?;
             }
+            // ffx bluetooth pairable stop
+            PairableSubCommand::Stop(ref _cmd) => {
+                self.disable_pairing().await?;
+                writer.line("Disabling pairing")?;
+            }
         }
         Ok(())
     }
@@ -52,6 +57,20 @@ impl PairableTool {
         Ok(self
             .host_controller
             .start_pairing_delegate(&request)
+            .await
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
+            .map_err(|err| {
+                fho::Error::Unexpected(anyhow::anyhow!(
+                    "fuchsia.bluetooth.affordances.HostController error: {err:?}"
+                ))
+            })?)
+    }
+
+    // Disable pairing for this device to reject incoming pairing requests.
+    async fn disable_pairing(&self) -> Result<()> {
+        Ok(self
+            .host_controller
+            .stop_pairing_delegate()
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {

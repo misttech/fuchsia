@@ -239,6 +239,10 @@ async fn handle_host_request(
                             }
                         }
                     }
+                    HostControllerRequest::StopPairingDelegate { responder } => {
+                        let _ = worker.stop_pairing_delegate().await;
+                        responder.send(Ok(()))?;
+                    }
                     HostControllerRequest::_UnknownMethod { ordinal, .. } => {
                         error!(
                             "HostControllerRequest: unknown method received with ordinal {ordinal}"

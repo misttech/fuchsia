@@ -23,6 +23,7 @@ pub struct PairableCommand {
 #[argh(subcommand)]
 pub enum PairableSubCommand {
     Once(OnceCommand),
+    Stop(StopCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -85,3 +86,12 @@ pub fn parse_output_capability(s: &str) -> Result<OutputCapability, String> {
         _ => Err("output capability should be 'none' or 'display'".to_string()),
     }
 }
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "stop",
+    description = "Disable pairing for this device to reject incoming pairing requests.",
+    example = "ffx bluetooth pairable stop"
+)]
+pub struct StopCommand {}

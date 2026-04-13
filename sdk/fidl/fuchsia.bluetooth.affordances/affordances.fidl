@@ -109,4 +109,13 @@ open protocol HostController {
         // initiating or accepting a pairing. See [`fuchsia.bluetooth.sys/OutputCapability`].
         2: output_capability sys.OutputCapability;
     }) -> () error Error;
+
+    /// Stop a pairing delegate previously started by [`StartPairingDelegate`]. This will abort all
+    /// ongoing pairing procedures without accepting and unsets the delegate.
+    ///
+    /// This method can only stop a delegate started by [`StartPairingDelegate`], and will not stop
+    /// a delegate started through other means.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible StopPairingDelegate() -> () error Error;
 };
