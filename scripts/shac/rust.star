@@ -14,11 +14,7 @@ load(
 
 def _clippy(ctx):
     """Parses Clippy linter results produced by the build."""
-    files = [
-        f
-        for f in ctx.scm.affected_files()
-        if f.endswith(".rs")
-    ]
+    files = list(ctx.scm.affected_files(glob = "*.rs"))
     if not files:
         return
     exe = compiled_tool_path(ctx, "clippy-reporter")
@@ -59,15 +55,13 @@ def _rustfmt(ctx):
     Args:
       ctx: A ctx instance.
     """
-    rust_files = [
-        f
-        for f in ctx.scm.affected_files()
-        if f.endswith(".rs") and
-           not f.startswith("third_party/") and
-           # fidlgen_banjo Rust templates have an ".rs" extension but are not
-           # valid Rust.
-           not f.startswith("src/devices/tools/fidlgen_banjo/src/backends/templates/rust")
-    ]
+    rust_files = ctx.scm.affected_files(glob = [
+        "*.rs",
+        "!/third_party/**",
+        # fidlgen_banjo Rust templates have an ".rs" extension but are not
+        # valid Rust.
+        "!/src/devices/tools/fidlgen_banjo/src/backends/templates/rust",
+    ])
     if not rust_files:
         return
 
@@ -82,7 +76,7 @@ def _rustfmt(ctx):
         "--skip-children",
     ]
 
-    res = os_exec(ctx, base_cmd + ["--check", "--files-with-diff"] + rust_files, ok_retcodes = [0, 1]).wait()
+    res = os_exec(ctx, base_cmd + ["--check", "--files-with-diff"] + list(rust_files), ok_retcodes = [0, 1]).wait()
     unformatted = res.stdout.splitlines()
     if res.retcode and not unformatted:
         fail("rustfmt failed:\n%s" % res.stderr)

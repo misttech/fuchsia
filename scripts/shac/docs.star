@@ -14,7 +14,7 @@ def _doc_checker(ctx):
 
     # If a Markdown change is present (including a deletion of a markdown file),
     # check the entire project.
-    if not any([f.endswith(".md") for f in affected_files]):
+    if not ctx.scm.affected_files(glob = "*.md"):
         return
 
     exe = compiled_tool_path(ctx, "doc-checker")
@@ -51,8 +51,7 @@ def _doc_checker(ctx):
 def _mdlint(ctx):
     """Runs mdlint."""
     rfc_dir = "docs/contribute/governance/rfcs/"
-    affected_files = set(ctx.scm.affected_files())
-    if not any([f.startswith(rfc_dir) for f in affected_files]):
+    if not ctx.scm.affected_files(glob = "/docs/contribute/governance/rfcs/**"):
         return
     mdlint = compiled_tool_path(ctx, "mdlint")
     res = os_exec(
@@ -84,12 +83,11 @@ def _mdlint(ctx):
 
 def _codelinks(ctx):
     """Checks for certain malformatted links in source code."""
-    for f, meta in ctx.scm.affected_files().items():
-        # TODO(olivernewman): Files under //docs should generally reference
-        # other documentation files by path (e.g. "//docs/foo/bar.md") rather
-        # than URL, with some exceptions for reference docs.
-        if f.startswith("docs/"):
-            continue
+
+    # TODO(olivernewman): Files under //docs should generally reference other
+    # documentation files by path (e.g. "//docs/foo/bar.md") rather than URL,
+    # with some exceptions for reference docs.
+    for f, meta in ctx.scm.affected_files(glob = ["!/docs/**"]).items():
         for num, line in meta.new_lines():
             for match in ctx.re.allmatches(
                 r"(https?://)?fuchsia.googlesource.com/fuchsia/\+/(refs/heads/)?\w+/docs/(?P<path>\S+)\.md",
@@ -111,12 +109,7 @@ def _codelinks(ctx):
 
 def _rfcmeta(ctx):
     """Validates RFC metadata."""
-    files = [
-        f
-        for f in ctx.scm.affected_files()
-        # Ignore files that aren't inside the RFC directory.
-        if f.startswith("docs/contribute/governance/rfcs/")
-    ]
+    files = ctx.scm.affected_files(glob = "/docs/contribute/governance/rfcs/**")
     if not files:
         return
     exe = compiled_tool_path(ctx, "rfcmeta")
@@ -124,7 +117,7 @@ def _rfcmeta(ctx):
         exe,
         "-checkout-dir",
         get_fuchsia_dir(ctx),
-    ] + files).wait()
+    ] + list(files)).wait()
 
     for finding in json.decode(res.stdout):
         ctx.emit.finding(

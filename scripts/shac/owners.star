@@ -12,11 +12,7 @@ def owners(ctx):
     Args:
       ctx: A ctx instance.
     """
-    owners_files = [
-        f
-        for f in ctx.scm.affected_files()
-        if f.endswith("OWNERS")
-    ]
+    owners_files = ctx.scm.affected_files(glob = "OWNERS")
 
     procs = []
     for f in owners_files:

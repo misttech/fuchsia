@@ -53,7 +53,7 @@ def _count_paths(ctx):
     The key is ("_" or "-", extension, parent directory) -> count.
     """
     res = {}
-    for f in ctx.scm.all_files():
+    for f in ctx.scm.all_files(glob = ["*_*", "*-*"]):
         category = _underscore_or_dash(f)
         if not category:
             continue
@@ -133,7 +133,7 @@ def underscore_vs_dash(ctx):
         ctx: shac context.
     """
     added = []
-    for path, file in ctx.scm.affected_files().items():
+    for path, file in ctx.scm.affected_files(glob = ["*_*", "*-*"]).items():
         if file.action != "A":
             continue
         category = _underscore_or_dash(path)

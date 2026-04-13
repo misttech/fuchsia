@@ -68,11 +68,7 @@ def _gn_format(ctx):
     Args:
         ctx: A ctx instance.
     """
-    gn_files = [
-        f
-        for f in ctx.scm.affected_files()
-        if f.endswith((".gn", ".gni"))
-    ]
+    gn_files = ctx.scm.affected_files(glob = ["*.gn", "*.gni"])
     if not gn_files:
         return
 
@@ -80,7 +76,7 @@ def _gn_format(ctx):
 
     result = os_exec(
         ctx,
-        [gn, "format", "--dry-run"] + gn_files,
+        [gn, "format", "--dry-run"] + list(gn_files),
         ok_retcodes = [0, 1, 2],
     ).wait()
 

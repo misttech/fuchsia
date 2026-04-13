@@ -10,11 +10,7 @@ def _python_format(ctx):
     Args:
       ctx: A ctx instance.
     """
-    py_files = [
-        f
-        for f in ctx.scm.affected_files()
-        if f.endswith(".py") and "third_party" not in f.split("/")
-    ]
+    py_files = ctx.scm.affected_files(glob = ["*.py", "!third_party"])
     if not py_files:
         return
 
@@ -97,9 +93,7 @@ def _py_shebangs(ctx):
         "vendor/",
         "third_party/",
     )
-    for path in ctx.scm.affected_files():
-        if not path.endswith(".py"):
-            continue
+    for path in ctx.scm.affected_files(glob = "*.py"):
         if path.startswith(ignore_paths):
             continue
         lines = str(ctx.io.read_file(path, 4096)).splitlines()

@@ -4,15 +4,6 @@
 
 load("./common.star", "FORMATTER_MSG", "compiled_tool_path", "os_exec")
 
-def _filter_fidl_files(files):
-    return [
-        f
-        for f in files
-        if f.endswith(".fidl") and
-           # These files intentionally test parsing failures.
-           not f.endswith(".noformat.test.fidl")
-    ]
-
 def _fidl_format(ctx):
     """Runs fidl-format.
 
@@ -21,8 +12,19 @@ def _fidl_format(ctx):
     """
     exe = compiled_tool_path(ctx, "fidl-format")
 
+    fidl_files = [
+        f
+        for f in ctx.scm.affected_files(glob = [
+            "*.fidl",
+            "!*.noformat.test.fidl",
+        ])
+        # Make sure the file itself ends with ".fidl" to exclude files in
+        # directories that end with ".fidl".
+        if f.endswith(".fidl")
+    ]
+
     procs = []
-    for f in _filter_fidl_files(ctx.scm.affected_files()):
+    for f in fidl_files:
         procs.append((f, os_exec(ctx, [exe, f])))
     for f, proc in procs:
         formatted = proc.wait().stdout
@@ -45,8 +47,7 @@ def _gidl_format(ctx):
 
     procs = [
         (f, os_exec(ctx, [exe, f]))
-        for f in ctx.scm.affected_files()
-        if f.endswith(".gidl")
+        for f in ctx.scm.affected_files(glob = "*.gidl")
     ]
     for f, proc in procs:
         formatted = proc.wait().stdout

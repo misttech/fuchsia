@@ -10,7 +10,7 @@ def _gofmt(ctx):
     Args:
       ctx: A ctx instance.
     """
-    go_files = [f for f in ctx.scm.affected_files() if f.endswith(".go") and not f.startswith("third_party/")]
+    go_files = ctx.scm.affected_files(glob = ["*.go", "!/third_party/**"])
     if not go_files:
         return
 
@@ -22,7 +22,7 @@ def _gofmt(ctx):
         "-s",  # simplify
     ]
 
-    unformatted = os_exec(ctx, base_cmd + ["-l"] + go_files).wait().stdout.splitlines()
+    unformatted = os_exec(ctx, base_cmd + ["-l"] + list(go_files)).wait().stdout.splitlines()
     for f in unformatted:
         new_contents = os_exec(ctx, base_cmd + [f]).wait().stdout
         ctx.emit.finding(

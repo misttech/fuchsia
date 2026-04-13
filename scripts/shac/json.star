@@ -4,12 +4,6 @@
 
 load("./common.star", "FORMATTER_MSG", "compiled_tool_path", "os_exec")
 
-_JSON5_EXTS = (
-    ".json5",
-    ".persist",
-    ".triage",
-)
-
 def _json5_format(ctx):
     """Runs `formatjson5` on .json5 files.
 
@@ -17,11 +11,11 @@ def _json5_format(ctx):
       ctx: A ctx instance.
     """
     exe = compiled_tool_path(ctx, "formatjson5")
-    json5_files = [
-        f
-        for f in ctx.scm.affected_files()
-        if f.endswith((_JSON5_EXTS))
-    ]
+    json5_files = ctx.scm.affected_files(glob = [
+        "*.json5",
+        "*.persist",
+        "*.triage",
+    ])
 
     procs = []
     for f in json5_files:

@@ -10,7 +10,7 @@ def _dart_format(ctx):
     Args:
       ctx: A ctx instance.
     """
-    dart_files = [f for f in ctx.scm.affected_files() if f.endswith(".dart")]
+    dart_files = ctx.scm.affected_files(glob = "*.dart")
     if not dart_files:
         return
 

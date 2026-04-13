@@ -5,15 +5,17 @@
 load("./common.star", "FORMATTER_MSG", "cipd_platform_name", "get_fuchsia_dir", "os_exec")
 
 def _get_starlark_files(ctx):
-    return [
-        f
-        for f in ctx.scm.affected_files()
-        if (
-               f.endswith((".star", ".bzl", ".bazel", ".bzlmod", ".BUILD", ".WORKSPACE")) or
-               f.split("/")[-1] in ("/BUILD", "/WORKSPACE")
-           ) and
-           not f.startswith("third_party/")
-    ]
+    return list(ctx.scm.affected_files(glob = [
+        "BUILD",
+        "WORKSPACE",
+        "*.BUILD",
+        "*.WORKSPACE",
+        "*.star",
+        "*.bzl",
+        "*.bazel",
+        "*.bzlmod",
+        "!/third_party/**",
+    ]))
 
 def _buildifier(ctx):
     """Checks Starlark/Bazel file formatting using buildifier."""
@@ -114,13 +116,8 @@ def _buildifier_lint(ctx):
 
 def _fuchsia_shac_style_guide(ctx):
     """Enforces shac conventions that are specific to the fuchsia project."""
-    starlark_files = [
-        f
-        for f in ctx.scm.affected_files()
-        if f.endswith(".star")
-    ]
     procs = []
-    for f in starlark_files:
+    for f in ctx.scm.affected_files(glob = "*.star"):
         procs.append(
             (f, os_exec(ctx, [
                 "%s/prebuilt/third_party/python3/%s/bin/python3" % (

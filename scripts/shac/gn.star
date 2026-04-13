@@ -4,9 +4,7 @@
 
 def gn_no_print(ctx):
     """Warns if .gn or .gni files contain print() statements."""
-    for path, meta in ctx.scm.affected_files().items():
-        if not path.endswith((".gn", ".gni")):
-            continue
+    for path, meta in ctx.scm.affected_files(glob = ["*.gn", "*.gni"]).items():
         for num, line in meta.new_lines():
             if line.strip().startswith("#"):
                 continue
