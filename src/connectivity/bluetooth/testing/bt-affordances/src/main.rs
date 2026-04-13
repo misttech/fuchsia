@@ -5,8 +5,8 @@
 use anyhow::{Context, Error};
 use fidl_fuchsia_bluetooth_affordances::{
     HostControllerRequest, HostControllerRequestStream, HostControllerSetDiscoverabilityRequest,
-    PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
-    PeerControllerSetDiscoveryRequest, PeerSelector,
+    HostControllerStartPairingDelegateRequest, PeerControllerPairRequest, PeerControllerRequest,
+    PeerControllerRequestStream, PeerControllerSetDiscoveryRequest, PeerSelector,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -206,6 +206,33 @@ async fn handle_host_request(
                             }
                             Err(err) => {
                                 error!("SetLocalName encountered error: {err}");
+                                responder.send(Err(
+                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
+                                ))?;
+                            }
+                        }
+                    }
+                    HostControllerRequest::StartPairingDelegate { payload, responder } => {
+                        let HostControllerStartPairingDelegateRequest {
+                            input_capability: Some(input_capability),
+                            output_capability: Some(output_capability),
+                            ..
+                        } = payload
+                        else {
+                            error!("StartPairingDelegate encountered error: input_capability or output_capability not set");
+                            responder
+                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                            return Ok(());
+                        };
+                        match worker
+                            .start_pairing_delegate(input_capability, output_capability)
+                            .await
+                        {
+                            Ok(_) => {
+                                responder.send(Ok(()))?;
+                            }
+                            Err(err) => {
+                                error!("StartPairingDelegate encountered error: {err}");
                                 responder.send(Err(
                                     fidl_fuchsia_bluetooth_affordances::Error::Internal,
                                 ))?;

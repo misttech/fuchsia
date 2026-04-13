@@ -16,6 +16,7 @@
             protocol: [
                 "fuchsia.bluetooth.sys.Access",
                 "fuchsia.bluetooth.sys.HostWatcher",
+                "fuchsia.bluetooth.sys.Pairing",
             ],
         },
     ],

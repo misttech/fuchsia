@@ -88,4 +88,25 @@ open protocol HostController {
     flexible SetLocalName(struct {
         name bt.DeviceName;
     }) -> () error Error;
+
+    /// Start a pairing delegate to respond to pairing procedures. Only one pairing delegate can be
+    /// set at a time host-wide. Calling this while a delegate started by this method is already
+    /// active will drop and overwrite the existing delegate. If this is called while a delegate
+    /// started through other means is active, the new delegate will be closed immediately. Closing
+    /// a pairing delegate after it is set aborts all ongoing pairing procedures without accepting
+    /// and unsets the delegate.
+    ///
+    /// If no pairing delegate is set, all pairings will be rejected even if the peer connection was
+    /// initiated by the host.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible StartPairingDelegate(table {
+        // Required. Set based on the ability of the host to enter responses to pairing requests.
+        // See [`fuchsia.bluetooth.sys/InputCapability`].
+        1: input_capability sys.InputCapability;
+
+        // Required. Set based on the ability of the host to display information to the user
+        // initiating or accepting a pairing. See [`fuchsia.bluetooth.sys/OutputCapability`].
+        2: output_capability sys.OutputCapability;
+    }) -> () error Error;
 };

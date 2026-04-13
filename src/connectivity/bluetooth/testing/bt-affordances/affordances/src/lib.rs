@@ -23,7 +23,9 @@ use fidl_fuchsia_bluetooth_le::{
 };
 use fidl_fuchsia_bluetooth_sys::{
     AccessMarker, AccessProxy, AccessSetConnectionPolicyRequest, HostInfo, HostWatcherMarker,
-    HostWatcherProxy, PairingOptions, Peer, ProcedureTokenProxy,
+    HostWatcherProxy, InputCapability, OutputCapability, PairingDelegateMarker,
+    PairingDelegateRequest, PairingDelegateRequestStream, PairingMarker, PairingOptions,
+    PairingProxy, Peer, ProcedureTokenProxy,
 };
 use fuchsia_async::{LocalExecutor, Task, TimeoutExt, Timer};
 use fuchsia_bluetooth::types::{Channel, Uuid as BtUuid};
@@ -44,6 +46,12 @@ enum Request {
     Connect(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     Disconnect(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     Pair(PeerId, PairingOptions, oneshot::Sender<Result<(), anyhow::Error>>),
+    StartPairingDelegate(
+        InputCapability,
+        OutputCapability,
+        oneshot::Sender<Result<(), anyhow::Error>>,
+    ),
+    StopPairingDelegate(oneshot::Sender<bool>),
     Forget(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
     DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
@@ -192,6 +200,14 @@ impl WorkThread {
                 }
                 Request::Pair(peer_id, options, result_sender) => {
                     result_sender.send(proxies.pair(&peer_id, &options).await).unwrap();
+                }
+                Request::StartPairingDelegate(input_cap, output_cap, result_sender) => {
+                    result_sender
+                        .send(proxies.start_pairing_delegate(&input_cap, &output_cap).await)
+                        .unwrap();
+                }
+                Request::StopPairingDelegate(result_sender) => {
+                    result_sender.send(proxies.stop_pairing_delegate().await).unwrap();
                 }
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match proxies.connect_l2cap(&peer_id, psm).await {
@@ -438,6 +454,30 @@ impl WorkThread {
         receiver.await?
     }
 
+    // Start a pairing delegate server.
+    //
+    // Calling this while a pairing delegate is already active drops and overwrites the existing
+    // delegate.
+    pub async fn start_pairing_delegate(
+        &self,
+        input_cap: InputCapability,
+        output_cap: OutputCapability,
+    ) -> Result<(), anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender
+            .clone()
+            .unbounded_send(Request::StartPairingDelegate(input_cap, output_cap, sender))?;
+        receiver.await?
+    }
+
+    // Stop a pairing delegate server if one exists and was started by start_pairing_delegate.
+    // Returns false if no pairing delegate started by start_pairing_delegate is active.
+    pub async fn stop_pairing_delegate(&self) -> bool {
+        let (sender, receiver) = oneshot::channel::<bool>();
+        self.sender.clone().unbounded_send(Request::StopPairingDelegate(sender)).unwrap();
+        receiver.await.unwrap()
+    }
+
     // Forget peer and delete all bonding information, if peer is found.
     pub async fn forget_peer(&self, peer_id: PeerId) -> Result<(), anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
@@ -637,6 +677,7 @@ struct Proxies {
     central_proxy: CentralProxy,
     gatt_server_proxy: Server_Proxy,
     peripheral_proxy: PrivilegedPeripheralProxy,
+    pairing_proxy: PairingProxy,
     host_watcher_stream: HangingGetStream<HostWatcherProxy, Vec<HostInfo>>,
     peer_watcher_stream: HangingGetStream<AccessProxy, (Vec<Peer>, Vec<PeerId>)>,
     discovery_session: Mutex<Option<ProcedureTokenProxy>>,
@@ -647,6 +688,7 @@ struct Proxies {
     gatt_client: Option<fidl_fuchsia_bluetooth_gatt2::ClientProxy>,
     remote_service_proxy: Mutex<Option<RemoteServiceProxy>>,
     characteristic_notifier_task: Mutex<Option<Task<()>>>,
+    pairing_delegate_state: Mutex<Option<(Task<()>, oneshot::Sender<()>)>>,
 }
 
 impl Proxies {
@@ -658,20 +700,13 @@ impl Proxies {
         let central_proxy = connect_to_protocol::<CentralMarker>()?;
         let gatt_server_proxy = connect_to_protocol::<Server_Marker>()?;
         let peripheral_proxy = connect_to_protocol::<PrivilegedPeripheralMarker>()?;
+        let pairing_proxy = connect_to_protocol::<PairingMarker>()?;
         let host_watcher_stream = HangingGetStream::new_with_fn_ptr(
             connect_to_protocol::<HostWatcherMarker>()?,
             HostWatcherProxy::watch,
         );
         let peer_watcher_stream =
             HangingGetStream::new_with_fn_ptr(access_proxy.clone(), AccessProxy::watch_peers);
-        let discovery_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
-        let discoverability_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
-        let suppress_connections_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
-        let le_scan_task: Mutex<Option<Task<()>>> = Mutex::new(None);
-        let central_connection: Mutex<Option<ConnectionProxy>> = Mutex::new(None);
-        let gatt_client: Option<fidl_fuchsia_bluetooth_gatt2::ClientProxy> = None;
-        let remote_service_proxy: Mutex<Option<RemoteServiceProxy>> = Mutex::new(None);
-        let characteristic_notifier_task: Mutex<Option<Task<()>>> = Mutex::new(None);
 
         Ok(Proxies {
             access_proxy,
@@ -679,16 +714,18 @@ impl Proxies {
             central_proxy,
             gatt_server_proxy,
             peripheral_proxy,
+            pairing_proxy,
             host_watcher_stream,
             peer_watcher_stream,
-            discovery_session,
-            discoverability_session,
-            suppress_connections_session,
-            le_scan_task,
-            central_connection,
-            gatt_client,
-            remote_service_proxy,
-            characteristic_notifier_task,
+            discovery_session: Mutex::new(None),
+            discoverability_session: Mutex::new(None),
+            suppress_connections_session: Mutex::new(None),
+            le_scan_task: Mutex::new(None),
+            central_connection: Mutex::new(None),
+            gatt_client: None,
+            remote_service_proxy: Mutex::new(None),
+            characteristic_notifier_task: Mutex::new(None),
+            pairing_delegate_state: Mutex::new(None),
         })
     }
 
@@ -730,6 +767,41 @@ impl Proxies {
                     anyhow!("fuchsia.bluetooth.sys.Access/Pair error: {sapphire_err:?}")
                 })
             })
+    }
+
+    async fn start_pairing_delegate(
+        &self,
+        input_cap: &InputCapability,
+        output_cap: &OutputCapability,
+    ) -> Result<(), anyhow::Error> {
+        let (pairing_delegate_client, pairing_delegate_request_stream) =
+            fidl::endpoints::create_request_stream::<PairingDelegateMarker>();
+
+        // Shut down any existing pairing delegate task.
+        let _ = self.stop_pairing_delegate().await;
+
+        if let Err(err) = self.pairing_proxy.set_pairing_delegate(
+            *input_cap,
+            *output_cap,
+            pairing_delegate_client,
+        ) {
+            return Err(anyhow!("fuchsia.bluetooth.sys.Pairing/SetPairingDelegate error: {err}"));
+        }
+
+        let (shutdown_sender, shutdown_receiver) = oneshot::channel::<()>();
+        let task =
+            Task::spawn(pairing_delegate_task(pairing_delegate_request_stream, shutdown_receiver));
+        *self.pairing_delegate_state.lock() = Some((task, shutdown_sender));
+        Ok(())
+    }
+
+    async fn stop_pairing_delegate(&self) -> bool {
+        if let Some((task, shutdown_sender)) = self.pairing_delegate_state.lock().take() {
+            let _ = shutdown_sender.send(());
+            task.await;
+            return true;
+        }
+        false
     }
 
     async fn forget(&self, peer_id: &PeerId) -> Result<(), anyhow::Error> {
@@ -1267,6 +1339,58 @@ impl Proxies {
         }));
 
         Ok(())
+    }
+}
+
+async fn pairing_delegate_task(
+    mut stream: PairingDelegateRequestStream,
+    shutdown_receiver: oneshot::Receiver<()>,
+) {
+    let mut shutdown_receiver = shutdown_receiver.fuse();
+    loop {
+        futures::select! {
+            request = stream.next() => {
+                match request {
+                    Some(Ok(request)) => {
+                        println!("Received pairing delegate request: {request:?}");
+                        match request {
+                            PairingDelegateRequest::OnPairingComplete {
+                                id,
+                                success,
+                                control_handle: _,
+                            } => {
+                                // Log whether the pairing was successful.
+                                println!("Pairing complete for peer {id:?}: success={success}");
+                                break;
+                            }
+                            PairingDelegateRequest::OnPairingRequest {
+                                peer,
+                                method: _,
+                                displayed_passkey: _,
+                                responder,
+                            } => {
+                                // Auto-accept the pairing request.
+                                println!("Accepting pairing request from peer {peer:?}");
+                                let _ = responder.send(true, 0);
+                            }
+                            PairingDelegateRequest::OnRemoteKeypress {
+                                id,
+                                keypress,
+                                control_handle: _,
+                            } => {
+                                // Log the keypress.
+                                println!("Peer {id:?} sent keypress: {keypress:?}");
+                            }
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            _ = shutdown_receiver => {
+                println!("Pairing delegate task stopped via shutdown signal");
+                break;
+            }
+        }
     }
 }
 
