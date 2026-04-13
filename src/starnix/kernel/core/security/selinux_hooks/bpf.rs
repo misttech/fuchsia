@@ -66,20 +66,23 @@ pub(in crate::security) fn check_bpf_map_access(
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
 
-    let mut permissions = Vec::new();
     if flags.contains(PermissionFlags::READ) {
-        permissions.push(BpfPermission::MapRead);
-    }
-    if flags.contains(PermissionFlags::WRITE) {
-        permissions.push(BpfPermission::MapWrite);
-    }
-    for permission in permissions {
         check_permission(
             &security_server.as_permission_check(),
             current_task,
             subject_sid,
             bpf_map.security_state.state.sid,
-            permission,
+            BpfPermission::MapRead,
+            audit_context,
+        )?;
+    }
+    if flags.contains(PermissionFlags::WRITE) {
+        check_permission(
+            &security_server.as_permission_check(),
+            current_task,
+            subject_sid,
+            bpf_map.security_state.state.sid,
+            BpfPermission::MapWrite,
             audit_context,
         )?;
     }
