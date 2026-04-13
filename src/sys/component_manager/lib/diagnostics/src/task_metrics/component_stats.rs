@@ -101,12 +101,13 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentStats<T> {
     }
 
     pub fn gather_dead_tasks(&self) -> Vec<(zx::BootInstant, Arc<TaskInfo<T>>)> {
-        let mut dead_tasks = vec![];
+        let mut dead_tasks = Vec::with_capacity(self.tasks.len());
         for task in &self.tasks {
             if let Some(t) = task.most_recent_measurement() {
                 dead_tasks.push((t, task.clone()));
             }
         }
+        dead_tasks.shrink_to_fit();
 
         dead_tasks
     }

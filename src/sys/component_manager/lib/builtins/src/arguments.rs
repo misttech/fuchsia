@@ -5,6 +5,8 @@
 use anyhow::{Context, Error, anyhow};
 use cm_types::Name;
 use fidl::endpoints::{ControlHandle as _, Responder as _};
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_io as fio;
 use fuchsia_fs::file;
 use fuchsia_fs::file::ReadError;
 use fuchsia_fs::node::OpenError;
@@ -16,7 +18,6 @@ use std::collections::hash_map::Iter;
 use std::env;
 use std::sync::{Arc, LazyLock};
 use zx_status::Status;
-use {fidl_fuchsia_boot as fboot, fidl_fuchsia_io as fio};
 
 #[allow(dead_code)]
 static BOOT_ARGS_CAPABILITY_NAME: LazyLock<Name> =

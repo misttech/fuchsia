@@ -7,10 +7,11 @@ use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use errors::ModelError;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect::{IntExponentialHistogramProperty, IntLinearHistogramProperty};
+use fuchsia_sync as fsync;
 use inspect::HistogramProperty;
 use moniker::Moniker;
-use {fuchsia_inspect as inspect, fuchsia_sync as fsync};
 
 use hooks::{Event, EventPayload, EventType, HasEventType, Hook, HooksRegistration};
 
@@ -135,10 +136,15 @@ struct ComponentHistograms<H: HistogramProperty<Type = i64>> {
 impl<H: HistogramProperty<Type = i64>> ComponentHistograms<H> {
     fn record(&self, moniker: &Moniker, value: i64) {
         let mut properties = self.properties.lock();
-        let histogram = properties
-            .entry(moniker.clone())
-            .or_insert_with(|| (self.init)(&self.node, moniker.to_string()));
-        histogram.insert(value);
+
+        if let Some(histogram) = properties.get_mut(moniker) {
+            histogram.insert(value);
+        } else {
+            let histogram = (self.init)(&self.node, moniker.to_string());
+            histogram.insert(value);
+
+            properties.insert(moniker.clone(), histogram);
+        }
     }
 }
 
