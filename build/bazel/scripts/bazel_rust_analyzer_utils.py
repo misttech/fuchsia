@@ -202,16 +202,29 @@ def convert_crate_specs_to_rust_project_crates(
         A list of dictionaries, formatted according to the Crate T.TypedDict,
         suitable for inclusion in the rust-project.json 'crates' array.
     """
+
+    # Sort the crate specs by display name to ensure reproducible results.
+    # Since several versions of the same crate can be included in a single
+    # build, use build.label as a secondary key if present since it will
+    # typically include a version number.
+    sorted_crate_specs = sorted(
+        crate_specs,
+        key=lambda c: (
+            c["display_name"],
+            c["build"]["label"] if c.get("build") else "",
+        ),
+    )
+
     crate_id_to_index: dict[str, int] = {
-        spec["crate_id"]: i for i, spec in enumerate(crate_specs)
+        spec["crate_id"]: i for i, spec in enumerate(sorted_crate_specs)
     }
     crate_id_to_spec: dict[str, CrateSpec] = {
-        spec["crate_id"]: spec for spec in crate_specs
+        spec["crate_id"]: spec for spec in sorted_crate_specs
     }
 
     result_crates: list[Crate] = []
 
-    for crate_spec in crate_specs:
+    for crate_spec in sorted_crate_specs:
         target_kind = "lib"
         crate_type = crate_spec.get("crate_type", "rlib")
         is_test = crate_spec.get("is_test", False)
