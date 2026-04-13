@@ -34,7 +34,7 @@ void DiscoverServicesCb(void* context, const struct DiscoveredService* service) 
   auto response = static_cast<pandora::DiscoverServicesResponse*>(context);
   pandora::GattService* new_service = response->add_services();
   new_service->set_handle(service->handle);
-  new_service->set_uuid(service->uuid, sizeof(service->uuid) - 1);
+  new_service->set_uuid(reinterpret_cast<const char*>(service->uuid), sizeof(service->uuid) - 1);
   for (uint64_t characteristic_handle : service->characteristic_handles) {
     if (characteristic_handle == 0) {
       break;
