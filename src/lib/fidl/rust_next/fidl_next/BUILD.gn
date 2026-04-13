@@ -25,6 +25,7 @@ rustc_library("fidl_next") {
     "//examples/fidl/new/key_value_store/use_generic_values/rust_next/*",
     "//examples/fidl/rust_next/*",
     "//sdk/fidl/*",
+    "//sdk/lib/async/*",
     "//sdk/lib/driver/*",
     "//src/devices/block/drivers/cqhci/*",
     "//src/devices/interconnect/drivers/*",

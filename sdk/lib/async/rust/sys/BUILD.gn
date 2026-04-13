@@ -20,8 +20,8 @@ rustc_library("sys") {
 
   visibility = [
     ":*",
+    "//sdk/lib/async/rust/*",
     "//sdk/lib/driver/runtime/rust/fdf_sys/*",
-    "//sdk/lib/driver/runtime/rust/libasync/*",
   ]
 }
 

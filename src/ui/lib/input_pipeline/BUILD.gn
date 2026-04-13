@@ -184,10 +184,10 @@ icu_rustc_library("dso") {
   with_unit_tests = false  # :input_pipeline provides unit tests
 
   deps += [
+    "//sdk/lib/async/rust",
+    "//sdk/lib/async/rust/fidl",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/runtime/rust",
-    "//sdk/lib/driver/runtime/rust/libasync",
-    "//sdk/lib/driver/runtime/rust/libasync/fidl",
   ]
   if (!defined(features)) {
     features = []

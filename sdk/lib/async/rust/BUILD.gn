@@ -5,7 +5,8 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-rustc_library("libasync") {
+rustc_library("rust") {
+  crate_name = "libasync"
   version = "0.1.0"
   edition = "2024"
   with_unit_tests = true
@@ -14,7 +15,7 @@ rustc_library("libasync") {
 
   deps = [
     "//sdk/lib/async",
-    "//sdk/lib/driver/runtime/rust/libasync/sys",
+    "//sdk/lib/async/rust/sys",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
@@ -33,6 +34,7 @@ rustc_library("libasync") {
   ]
 
   visibility = [
+    "//sdk/lib/async/*",
     "//sdk/lib/driver/*",
     "//src/devices/bin/driver-host/*",
     "//src/ui/lib/input_pipeline/*",
@@ -40,7 +42,7 @@ rustc_library("libasync") {
 }
 
 fuchsia_unittest_package("libasync_tests") {
-  deps = [ ":libasync_test" ]
+  deps = [ ":rust_test" ]
 }
 
 group("tests") {

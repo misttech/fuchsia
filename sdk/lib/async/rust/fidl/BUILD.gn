@@ -15,8 +15,8 @@ rustc_library("fidl") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 
   deps = [
-    "//sdk/lib/driver/runtime/rust/libasync",
-    "//sdk/lib/driver/runtime/rust/libasync/sys",
+    "//sdk/lib/async/rust",
+    "//sdk/lib/async/rust/sys",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust_next/fidl_next",
     "//third_party/rust_crates:futures",
@@ -34,9 +34,9 @@ rustc_library("fidl") {
 
   visibility = [
     "//examples/*",
+    "//sdk/lib/async/rust/*",
     "//sdk/lib/driver/component/rust/*",
     "//sdk/lib/driver/runtime/rust/fidl/*",
-    "//sdk/lib/driver/runtime/rust/libasync/*",
     "//src/ui/lib/input_pipeline/*",
   ]
 }

@@ -10,6 +10,7 @@ group("tests") {
     "async-loop:tests",
     "async-loop-testing:tests",
     "async-testing:tests",
+    "async/rust:tests",
     "async_patterns:tests",
     "c:tests",
     "component:tests",
