@@ -773,10 +773,12 @@ def write_icu_build_config(fuchsia_dir: Path, build_dir: Path) -> None:
     """
 
     revisions: dict[str, str] = {}
+    # https://fxbug.dev/502137968: Do not use os.listdir() in
+    # third_party/icu/ to avoid catching stale directories which
+    # break the build.
     icu_dirs = [
-        dirname
-        for dirname in (fuchsia_dir / "third_party/icu").iterdir()
-        if dirname.is_dir()
+        fuchsia_dir / "third_party/icu/default",
+        fuchsia_dir / "third_party/icu/latest",
     ]
     for icu_dir in icu_dirs:
         revisions[icu_dir.name] = subprocess.check_output(
