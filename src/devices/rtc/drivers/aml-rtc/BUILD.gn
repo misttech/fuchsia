@@ -14,31 +14,43 @@ driver_bind_rules("aml_rtc_bind") {
   ]
 }
 
-fuchsia_cc_driver("aml-rtc-driver") {
-  legacy = true
+fuchsia_rust_driver("aml-rtc-driver") {
   output_name = "aml-rtc"
-  configs += [
-    "//build/config:all_source",
-    "//build/config/fuchsia:enable_zircon_asserts",
-  ]
-  sources = [ "aml-rtc.cc" ]
+  edition = "2024"
+  source_root = "src/lib.rs"
+  sources = [ "src/lib.rs" ]
   deps = [
-    ":aml_rtc_bind",
-    "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_cpp",
-    "//sdk/lib/driver/mmio/cpp",
-    "//sdk/lib/driver/platform-device/cpp",
-    "//src/devices/lib/driver",
-    "//src/devices/rtc/lib/rtc:rtc_llcpp",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_rust",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
+    "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_rust",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/mmio/rust:mmio",
+    "//sdk/rust/zx",
+    "//src/devices/rtc/lib/rtc:fuchsia_rtc",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:bitfield",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
   ]
 }
 
 fuchsia_driver_component("aml-rtc") {
   info = "meta/aml-rtc-info.json"
   component_name = "aml-rtc"
-  deps = [ ":aml-rtc-driver" ]
+  deps = [
+    ":aml-rtc-driver",
+    ":aml_rtc_bind",
+  ]
   manifest = "meta/aml-rtc.cml"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "aml-rtc"
+  driver_components = [ ":aml-rtc" ]
 }
 
 group("tests") {

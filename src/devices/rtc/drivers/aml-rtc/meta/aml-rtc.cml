@@ -3,19 +3,24 @@
 // found in the LICENSE file.
 {
     include: [
-        "//sdk/lib/driver/compat/compat.shard.cml",
         "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {
         runner: "driver",
+        binary: "driver/aml-rtc.so",
         bind: "meta/bind/aml_rtc_bind.bindbc",
-        colocate: "true",
-        compat: "driver/aml-rtc.so",
-        default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
+    capabilities: [
+        { service: "fuchsia.hardware.rtc.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.platform.device.Service" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.rtc.Service",
+            from: "self",
+        },
     ],
 }

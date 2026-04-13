@@ -9,5 +9,6 @@ fidl("fuchsia.hardware.rtc") {
   stable = true
   sdk_area = "Drivers"
   sources = [ "rtc.fidl" ]
+  enable_rust_next = true
   public_deps = [ "//zircon/vdso/zx" ]
 }

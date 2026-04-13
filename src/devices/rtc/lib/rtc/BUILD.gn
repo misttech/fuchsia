@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/rust/rustc_library.gni")
 import("//build/zircon/zx_library.gni")
 
 group("tests") {
@@ -24,5 +25,15 @@ zx_library("rtc_llcpp") {
     "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_cpp",
     "//src/devices/lib/driver",
     "//src/lib/ddk",
+  ]
+}
+
+rustc_library("fuchsia_rtc") {
+  name = "fuchsia_rtc"
+  edition = "2024"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_rust",
+    "//third_party/rust_crates:log",
   ]
 }

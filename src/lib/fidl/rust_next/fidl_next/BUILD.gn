@@ -30,6 +30,7 @@ rustc_library("fidl_next") {
     "//src/devices/adc/drivers/aml-saradc:*",
     "//src/devices/block/drivers/cqhci/*",
     "//src/devices/interconnect/drivers/*",
+    "//src/devices/rtc/drivers/aml-rtc:*",
     "//src/lib/fdomain/*",
     "//src/lib/fidl/rust_next/*",
     "//src/lib/fuchsia-component/*",
