@@ -35,11 +35,7 @@ class ExecutableCommand(ABC):
         stdout_callback: typing.Callable[[StdoutEvent], None] | None = None,
         stderr_callback: typing.Callable[[StderrEvent], None] | None = None,
     ) -> CommandOutput:
-        """Run this command to completion synchronously.
-
-        Note that this method creates its own asyncio loop and will fail if
-        it is called in the context of an existing asyncio loop. For async,
-        use start() to get an AsyncCommand directly.
+        """Run this command to completion as an async task.
 
         Returns:
             CommandOutput: The result of running the command to completion.
