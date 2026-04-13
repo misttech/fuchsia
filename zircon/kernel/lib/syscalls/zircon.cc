@@ -143,9 +143,11 @@ zx_status_t sys_debuglog_create(zx_handle_t rsrc, uint32_t options, zx_handle_t*
   // Inversely: if a resource handle is given, or if `options` is nonzero,
   // require that `rsrc` be a valid debuglog resource handle.
   if (rsrc != ZX_HANDLE_INVALID) {
-    if (zx_status_t status = validate_resource_kind_base(rsrc, ZX_RSRC_KIND_SYSTEM,
-                                                         ZX_RSRC_SYSTEM_DEBUGLOG_BASE) != ZX_OK)
+    zx_status_t status =
+        validate_resource_kind_base(rsrc, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_DEBUGLOG_BASE);
+    if (status != ZX_OK)
       return status;
+
   } else {
     if (options != 0)
       return ZX_ERR_BAD_HANDLE;

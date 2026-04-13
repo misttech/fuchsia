@@ -88,6 +88,19 @@ TEST(DebugLogTest, InvalidHandleAllowedOnlyForWrite) {
             ZX_ERR_BAD_HANDLE);
 }
 
+TEST(DebugLogTest, InvalidResourceHandleReturnsWrongType) {
+  zx_handle_t log_handle = ZX_HANDLE_INVALID;
+  zx_handle_t event_handle = ZX_HANDLE_INVALID;
+
+  ASSERT_OK(zx_event_create(0, &event_handle));
+  ASSERT_NE(event_handle, ZX_HANDLE_INVALID);
+
+  // Passing a valid handle that is not a resource should fail with ZX_ERR_WRONG_TYPE.
+  EXPECT_EQ(zx_debuglog_create(event_handle, ZX_LOG_FLAG_READABLE, &log_handle), ZX_ERR_WRONG_TYPE);
+
+  ASSERT_OK(zx_handle_close(event_handle));
+}
+
 TEST(DebugLogTest, MaxMessageSize) {
   zx_handle_t log_handle = ZX_HANDLE_INVALID;
   zx::unowned_resource system_resource = standalone::GetSystemResource();
