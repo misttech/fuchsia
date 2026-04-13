@@ -3175,8 +3175,6 @@ impl MemoryManager {
                             // Note that the Vvar is a special mapping that behaves like a shared mapping but
                             // is private to each process.
                             backing.memory().clone()
-                        } else if mapping.flags().contains(MappingFlags::WIPEONFORK) {
-                            create_anonymous_mapping_memory(length as u64)?
                         } else {
                             let basic_info = backing.memory().basic_info();
                             let options = mapping.flags().options();
