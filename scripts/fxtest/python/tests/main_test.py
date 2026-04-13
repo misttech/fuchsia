@@ -878,6 +878,76 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ret, 0)
         self.assertFalse(emu_started)
 
+    async def test_device_specified_via_env_does_not_start_emulator(
+        self,
+    ) -> None:
+        """Test that an emulator is NOT started when a device is specified via FUCHSIA_NODENAME."""
+        emu_started = False
+
+        async def handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> typing.Any:
+            if "target" in args and "list" in args:
+                return mock.MagicMock(return_code=0, stdout="", stderr="")
+            if "target" in args and "echo" in args:
+                return mock.MagicMock(return_code=0, stdout="hello", stderr="")
+            if "emu" in args and "start" in args:
+                nonlocal emu_started
+                emu_started = True
+                return mock.MagicMock(
+                    return_code=0, stdout="Started emu", stderr=""
+                )
+            return mock.MagicMock(return_code=0, stdout="", stderr="")
+
+        self._mock_wait_for_repository_registration(True)
+        self._mock_run_command(0, async_handler=handler)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        # Set environment variable
+        with mock.patch.dict(os.environ, {"FUCHSIA_NODENAME": "test-device"}):
+            ret = await main.async_main_wrapper(
+                args.parse_args(["--simple", "--no-build"])
+            )
+            self.assertEqual(ret, 0)
+            self.assertFalse(emu_started)
+
+    async def test_device_specified_via_default_does_not_start_emulator(
+        self,
+    ) -> None:
+        """Test that an emulator is NOT started when a default device is configured."""
+        emu_started = False
+
+        async def handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> typing.Any:
+            if "target" in args and "list" in args:
+                return mock.MagicMock(return_code=0, stdout="", stderr="")
+            if "target" in args and "default" in args and "get" in args:
+                return mock.MagicMock(
+                    return_code=0, stdout="test-device", stderr=""
+                )
+            if "target" in args and "echo" in args:
+                return mock.MagicMock(return_code=0, stdout="hello", stderr="")
+            if "emu" in args and "start" in args:
+                nonlocal emu_started
+                emu_started = True
+                return mock.MagicMock(
+                    return_code=0, stdout="Started emu", stderr=""
+                )
+            return mock.MagicMock(return_code=0, stdout="", stderr="")
+
+        self._mock_wait_for_repository_registration(True)
+        self._mock_run_command(0, async_handler=handler)
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build"])
+        )
+        self.assertEqual(ret, 0)
+        self.assertFalse(emu_started)
+
     async def test_list_command_starts_and_terminates_package_server(
         self,
     ) -> None:

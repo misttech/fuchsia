@@ -1995,6 +1995,30 @@ class AsyncMain:
         exec_env = self._exec_env
         assert exec_env is not None
 
+        # Check if a specific target is requested via FUCHSIA_NODENAME (set by fx -t).
+        target = os.environ.get("FUCHSIA_NODENAME")
+
+        # If not, check if a default target is configured.
+        if not target:
+            default_output = await execution.run_command(
+                *exec_env.fx_cmd_line("ffx", "target", "default", "get"),
+                recorder=recorder,
+                quiet_mode=True,
+            )
+            if default_output and default_output.return_code == 0:
+                target = default_output.stdout.strip()
+
+        # If a target is identified, verify its reachability.
+        if target:
+            echo_output = await execution.run_command(
+                *exec_env.fx_cmd_line("ffx", "-t", target, "target", "echo"),
+                recorder=recorder,
+                quiet_mode=True,
+            )
+            if echo_output and echo_output.return_code == 0:
+                return True
+
+        # Fall back to checking all discovered devices.
         output = await execution.run_command(
             *exec_env.fx_cmd_line(
                 "ffx", "target", "list", "--format", "addresses"
