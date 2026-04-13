@@ -11,6 +11,12 @@ use cm_rust::FidlIntoNative;
 use cm_types::FLAGS_MAX_POSSIBLE_RIGHTS;
 use errors::OpenExposedDirError;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::future::BoxFuture;
 use futures::prelude::*;
 use log::{debug, error, warn};
@@ -20,11 +26,6 @@ use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
 
 pub fn serve(
     server_end: zx::Channel,
@@ -129,7 +130,7 @@ async fn open_controller(
     child: fdecl::ChildRef,
     controller: ServerEnd<fcomponent::ControllerMarker>,
 ) -> Result<(), fcomponent::Error> {
-    match get_child(component, child.clone()).await? {
+    match get_child(component, &child).await? {
         Some(child) => {
             child.execution_scope.spawn(framework::controller::run_controller(
                 child.as_weak(),
@@ -149,7 +150,7 @@ async fn open_exposed_dir(
     child: fdecl::ChildRef,
     exposed_dir: ServerEnd<fio::DirectoryMarker>,
 ) -> Result<(), fcomponent::Error> {
-    match get_child(component, child.clone()).await? {
+    match get_child(component, &child).await? {
         Some(child) => {
             // Resolve child in order to instantiate exposed_dir.
             child.resolve().await.map_err(|e| {
@@ -201,7 +202,7 @@ async fn destroy_child(
 
 async fn get_child(
     parent: &WeakComponentInstance,
-    child: fdecl::ChildRef,
+    child: &fdecl::ChildRef,
 ) -> Result<Option<Arc<ComponentInstance>>, fcomponent::Error> {
     let parent = parent.upgrade().map_err(|_| fcomponent::Error::InstanceDied)?;
     let state = parent.lock_resolved_state().await.map_err(|error| {
@@ -295,7 +296,7 @@ async fn get_child_output_dictionary_deprecated(
     component: &WeakComponentInstance,
     child: fdecl::ChildRef,
 ) -> Result<fsandbox::DictionaryRef, fcomponent::Error> {
-    match get_child(component, child.clone()).await? {
+    match get_child(component, &child).await? {
         Some(child) => Ok(child
             .lock_resolved_state()
             .await
@@ -315,7 +316,7 @@ async fn get_child_output_dictionary(
     component: &WeakComponentInstance,
     child: fdecl::ChildRef,
 ) -> Result<zx::EventPair, fcomponent::Error> {
-    let Some(child) = get_child(component, child.clone()).await? else {
+    let Some(child) = get_child(component, &child).await? else {
         debug!(child:?; "get_child_output_dictionary() failed: instance not found");
         return Err(fcomponent::Error::InstanceNotFound);
     };
@@ -345,17 +346,18 @@ mod tests {
     use cm_rust::{ComponentDecl, ExposeSource};
     use cm_rust_testing::*;
     use fidl::endpoints;
+    use fidl_fidl_examples_routing_echo as echo;
+    use fidl_fuchsia_component as fcomponent;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_mem as fmem;
+    use fuchsia_async as fasync;
     use fuchsia_component::client;
     use futures::lock::Mutex;
     use hooks::EventType;
     use moniker::Moniker;
     use routing_test_helpers::component_decl_with_exposed_binder;
     use std::collections::HashSet;
-    use {
-        fidl_fidl_examples_routing_echo as echo, fidl_fuchsia_component as fcomponent,
-        fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
-        fuchsia_async as fasync,
-    };
 
     struct RealmCapabilityTest {
         builtin_environment: Option<Arc<Mutex<BuiltinEnvironment>>>,
