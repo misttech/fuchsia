@@ -184,14 +184,21 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
     /// Initializes a new component stats with the given task.
     fn track_ready(&self, moniker: ExtendedMoniker, task: T) {
         let histogram = create_cpu_histogram(&self.histograms_node, &moniker);
+
         if let Ok(task_info) = TaskInfo::try_from(task, Some(histogram), self.time_source.clone()) {
             let koid = task_info.koid();
             let arc_task_info = Arc::new(task_info);
-            let mut stats = ComponentStats::new();
-            stats.add_task(arc_task_info.clone());
-            let stats = Arc::new(Mutex::new(stats));
-            self.tree.lock().insert(moniker, stats);
-            self.tasks.lock().insert(koid, Arc::downgrade(&arc_task_info));
+
+            let mut tree_guard = self.tree.lock();
+            let mut tasks_guard = self.tasks.lock();
+
+            let stats = tree_guard
+                .entry(moniker)
+                .or_insert_with(|| Arc::new(Mutex::new(ComponentStats::new())));
+
+            stats.lock().add_task(arc_task_info.clone());
+
+            tasks_guard.insert(koid, Arc::downgrade(&arc_task_info));
         }
     }
 
@@ -315,10 +322,10 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
 
     fn prune_dead_tasks(self: &Arc<Self>, max_dead_tasks: usize) {
         let mut all_dead_tasks = BTreeMap::new();
-        for (moniker, component) in self.tree.lock().iter() {
+        for (_moniker, component) in self.tree.lock().iter() {
             let dead_tasks = component.lock().gather_dead_tasks();
             for (timestamp, task) in dead_tasks {
-                all_dead_tasks.insert(timestamp, (task, moniker.clone()));
+                all_dead_tasks.insert(timestamp, task);
             }
         }
 
@@ -326,40 +333,27 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
             return;
         }
 
-        let total = all_dead_tasks.len();
-        let to_remove = all_dead_tasks.iter().take(total - (max_dead_tasks / 2));
+        let remove_count = all_dead_tasks.len() - (max_dead_tasks / 2);
+        let to_remove = all_dead_tasks.iter().take(remove_count);
 
-        let mut koids_to_remove = vec![];
-        for (_, (task, _)) in to_remove {
+        let mut koids_to_remove = Vec::with_capacity(remove_count);
+
+        for (_, task) in to_remove {
             if let Ok(measurements) = task.take_measurements_queue() {
                 koids_to_remove.push(task.koid());
                 *self.aggregated_dead_task_data.lock() += measurements;
             }
         }
 
-        let mut stats_to_remove = vec![];
-        for (moniker, stats) in self.tree.lock().iter() {
+        self.tree.lock().retain(|_, stats| {
             let mut stat_guard = stats.lock();
             stat_guard.remove_by_koids(&koids_to_remove);
-            if !stat_guard.is_alive() {
-                stats_to_remove.push(moniker.clone());
-            }
-        }
-
-        let mut stats = self.tree.lock();
-        for moniker in stats_to_remove {
-            // Ensure that they are still not alive (if a component restarted it might be alive
-            // again).
-            if let Some(stat) = stats.get(&moniker) {
-                if !stat.lock().is_alive() {
-                    stats.remove(&moniker);
-                }
-            }
-        }
+            stat_guard.is_alive()
+        });
 
         let mut tasks = self.tasks.lock();
-        for koid in koids_to_remove {
-            tasks.remove(&koid);
+        for koid in &koids_to_remove {
+            tasks.remove(koid);
         }
     }
 
@@ -392,21 +386,26 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
 
         let stats = {
             let mut tree_lock = this.tree.lock();
-            tree_lock
-                .entry(moniker.clone())
-                .or_insert_with(|| Arc::new(Mutex::new(ComponentStats::new())))
-                .clone()
+            if let Some(stats) = tree_lock.get(&moniker) {
+                stats.clone()
+            } else {
+                let stats = Arc::new(Mutex::new(ComponentStats::new()));
+                tree_lock.insert(moniker.clone(), stats.clone());
+                stats
+            }
         };
 
+        let task = maybe_return!(source.take_component_task());
+
         let histogram = create_cpu_histogram(&this.histograms_node, &moniker);
-        let task_info = maybe_return!(source.take_component_task().and_then(|task| {
-            TaskInfo::try_from(task, Some(histogram), this.time_source.clone()).ok()
-        }));
+        let task_info =
+            maybe_return!(TaskInfo::try_from(task, Some(histogram), this.time_source.clone()).ok());
 
         let parent_koid = source
             .take_parent_task()
             .and_then(|task| TaskInfo::try_from(task, None, this.time_source.clone()).ok())
             .map(|task| task.koid());
+
         let koid = task_info.koid();
 
         // At this point we haven't set the parent yet.
