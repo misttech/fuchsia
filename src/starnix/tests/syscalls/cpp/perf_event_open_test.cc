@@ -14,6 +14,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <chrono>
+
 #include <gtest/gtest.h>
 #include <linux/perf_event.h>
 
@@ -569,7 +571,7 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
     attr_task_clock.config = PERF_COUNT_SW_TASK_CLOCK;
 
     perf_event_attr attr_cpu_clock = example_sampling_attr(PERF_SAMPLE_IDENTIFIER | PERF_SAMPLE_ID);
-    attr_task_clock.type = PERF_TYPE_SOFTWARE;
+    attr_cpu_clock.type = PERF_TYPE_SOFTWARE;
     attr_cpu_clock.config = PERF_COUNT_SW_CPU_CLOCK;
 
     int32_t fd_task_1 = sys_perf_event_open(&attr_task_clock, example_pid, example_cpu,
@@ -592,7 +594,18 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
       EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_ENABLE), -1);
       const int sample_duration_ms = 7000;  // 7s to collect samples
       printf("This is an event - start sampling for %u ms \n", sample_duration_ms);
-      usleep(sample_duration_ms * 1000);
+
+      auto start = std::chrono::steady_clock::now();
+      auto duration = std::chrono::milliseconds(sample_duration_ms);
+
+      int x = 0;
+      while (std::chrono::steady_clock::now() - start < duration) {
+        // Busy loop to burn CPU and generate events
+        x++;
+        // Prevent the compiler from optimizing away this loop by pretending 'x'
+        // is used by assembly and that memory might be modified.
+        asm volatile("" : : "g"(x) : "memory");
+      }
       EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_DISABLE), -1);
       EXPECT_NE(syscall(__NR_close, fd), EXIT_FAILURE);
 
