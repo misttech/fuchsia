@@ -30,6 +30,22 @@ struct Options {
     /// timeout for the test in seconds
     #[argh(option, default = "10")]
     timeout_secs: u64,
+
+    /// enables a quick and dirty mechanism for the host to synchronize with the test to perform
+    /// memory profiling:
+    ///   - The test will log "WAITING FOR MEMORY PROFILING" and sleeps indefinitely.
+    ///   - The host takes a memory profile of the appropriate test component.
+    ///   - The host kills the test.
+    #[argh(switch)]
+    wait_for_memory_profiling: bool,
+}
+
+async fn maybe_wait_for_memory_profiling(args: &Options) {
+    // See flag docstring for usage.
+    if args.wait_for_memory_profiling {
+        println!("WAITING FOR MEMORY PROFILING");
+        std::future::pending::<()>().await;
+    }
 }
 
 /// Runs the given function `func` for `args.repeat` times or until `args.timeout_secs` is reached.
@@ -69,6 +85,8 @@ async fn test_sag_takewakelease() {
 
     // Check how much PB Inspect VMO we used.
     print_power_broker_inspect_stats(iterations).await;
+
+    maybe_wait_for_memory_profiling(&args).await;
     ()
 }
 
@@ -86,6 +104,8 @@ async fn test_topologytestdaemon_toggle() -> Result<()> {
     let duration = start.elapsed();
     println!("Total execution time: {:?}", duration);
     println!("Average time for each call is {:?}", duration / iterations);
+
+    maybe_wait_for_memory_profiling(&args).await;
     Ok(())
 }
 
@@ -139,8 +159,9 @@ async fn test_large_topology_lease_benchmark() -> Result<()> {
     println!("Topology created.");
 
     let start = Instant::now();
+    let randomize = false;
     let iterations = iterate_until_timeout(&args, |_| {
-        daemon_work::execute_acquire_and_drop_rand_lease(&topology_control, num_elements);
+        daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
     })
     .await;
     assert!(iterations > 0, "Test failed to complete at least 1 iteration");
@@ -153,5 +174,7 @@ async fn test_large_topology_lease_benchmark() -> Result<()> {
     );
 
     print_power_broker_inspect_stats(iterations).await;
+
+    maybe_wait_for_memory_profiling(&args).await;
     Ok(())
 }

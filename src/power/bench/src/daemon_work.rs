@@ -90,9 +90,10 @@ pub(crate) fn execute(
 fn acquire_and_drop_rand_lease_work_func(
     topology_control: &fpt::TopologyControlSynchronousProxy,
     num_elements: usize,
+    lease_random_element: bool,
 ) -> Result<()> {
     let mut rng = rand::rng();
-    let i = rng.random_range(0..num_elements);
+    let i = if lease_random_element { rng.random_range(0..num_elements) } else { num_elements - 1 };
 
     let _ = topology_control
         .acquire_lease(
@@ -147,9 +148,11 @@ pub(crate) fn prepare_large_topology(
     Arc::new(topology_control)
 }
 
-pub(crate) fn execute_acquire_and_drop_rand_lease(
+pub(crate) fn execute_acquire_and_drop_lease(
     topology_control: &fpt::TopologyControlSynchronousProxy,
     num_elements: usize,
+    randomize: bool,
 ) {
-    let _ = black_box(acquire_and_drop_rand_lease_work_func(topology_control, num_elements));
+    let _ =
+        black_box(acquire_and_drop_rand_lease_work_func(topology_control, num_elements, randomize));
 }

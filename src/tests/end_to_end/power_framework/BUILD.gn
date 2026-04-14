@@ -16,6 +16,7 @@ python_perf_test("power_framework_benchmarks") {
     # Base class provides common Fuchsia testing setup and teardown logic.
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
 
+    "//src/performance/lib/memory",
     "//src/performance/lib/perf_publish",
     "//src/performance/lib/reporting",
     "//src/performance/lib/trace_processing",
@@ -24,7 +25,25 @@ python_perf_test("power_framework_benchmarks") {
   package_deps = [ "//src/power/bench:package" ]
 }
 
+python_perf_test("power_framework_memory_benchmarks") {
+  main_source = "tests/benchmark_memory.py"
+  data_package_name = "test_data"
+  expected_metric_names_filepaths = [ "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.power.memory.txt" ]
+  libraries = [
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    "//src/performance/lib/memory",
+    "//src/performance/lib/perf_publish",
+    "//src/performance/lib/reporting",
+  ]
+
+  package_deps = [ "//src/power/bench:package" ]
+}
+
 group("tests") {
   testonly = true
-  deps = [ ":power_framework_benchmarks($host_toolchain)" ]
+  deps = [
+    ":power_framework_benchmarks($host_toolchain)",
+    ":power_framework_memory_benchmarks($host_toolchain)",
+  ]
 }

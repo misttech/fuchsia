@@ -53,8 +53,9 @@ fn get_large_topology_lease_benches(name: &'static str) -> criterion::Benchmark 
     let num_elements = 20;
     let topology_control = daemon_work::prepare_large_topology(num_elements);
     criterion::Benchmark::new(name, move |b| {
+        let randomize = true;
         b.iter(|| {
-            daemon_work::execute_acquire_and_drop_rand_lease(&topology_control, num_elements);
+            daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
         });
     })
 }
