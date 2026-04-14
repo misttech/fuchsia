@@ -13,6 +13,7 @@ use anyhow::{Context, Error};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_memorypressure::WatcherProxy;
+use fuchsia_sync::Mutex;
 use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem, PreCommitHook};
 use fxfs::fsck::errors::FsckIssue;
 use fxfs::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
@@ -332,6 +333,36 @@ impl TestFixture {
 impl Drop for TestFixture {
     fn drop(&mut self) {
         assert!(self.state.is_none(), "Did you forget to call TestFixture::close?");
+    }
+}
+
+pub struct TestCallback(
+    std::sync::LazyLock<Mutex<Option<std::sync::Weak<dyn Fn() + Send + Sync>>>>,
+);
+
+pub struct TestCallbackGuard(#[allow(dead_code)] std::sync::Arc<dyn Fn() + Send + Sync>);
+
+impl TestCallback {
+    pub const fn new() -> Self {
+        Self(std::sync::LazyLock::new(|| Mutex::new(None)))
+    }
+
+    /// Returns a guard that invalidates this callback and releases the resources when dropped.
+    pub fn set<F>(&self, callback: F) -> TestCallbackGuard
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let arc: std::sync::Arc<dyn Fn() + Send + Sync> = std::sync::Arc::new(callback);
+        *self.0.lock() = Some(std::sync::Arc::downgrade(&arc));
+        TestCallbackGuard(arc)
+    }
+
+    pub fn call(&self) {
+        if let Some(weak) = &*self.0.lock() {
+            if let Some(cb) = weak.upgrade() {
+                cb();
+            }
+        }
     }
 }
 
