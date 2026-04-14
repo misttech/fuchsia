@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/testing/unit_test_fixture.h"
+#include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/lib/fxl/strings/substitute.h"
 #include "src/lib/timekeeper/async_test_clock.h"
 
@@ -31,10 +32,11 @@ class MainServiceTest : public UnitTestFixture {
   MainServiceTest()
       : clock_(dispatcher()),
         cobalt_(dispatcher(), services(), &clock_),
+        redactor_(std::make_unique<forensics::IdentityRedactor>(
+            InspectRoot().CreateBool("redaction_enabled", true))),
         main_service_(dispatcher(), services(), &clock_, &InspectRoot(), &cobalt_,
-                      /*startup_annotations=*/{}, {}, /*dlog=*/std::nullopt,
+                      /*startup_annotations=*/{}, {}, std::move(redactor_),
                       MainService::Options{
-                          BuildTypeConfig{},
                           "",
                           "",
                           "",
@@ -43,8 +45,7 @@ class MainServiceTest : public UnitTestFixture {
                               .reboot_log = RebootLog(FinalShutdownInfo(FinalShutdownReason::kCold,
                                                                         /*uptime=*/zx::sec(100),
                                                                         /*runtime=*/zx::sec(90)),
-                                                      "reboot log",
-                                                      /*dlog=*/std::nullopt),
+                                                      "reboot log"),
                               .oom_crash_reporting_delay = zx::sec(1),
                           },
                           CrashReports::Options{
@@ -70,6 +71,7 @@ class MainServiceTest : public UnitTestFixture {
  private:
   timekeeper::AsyncTestClock clock_;
   cobalt::Logger cobalt_;
+  std::unique_ptr<RedactorBase> redactor_;
   MainService main_service_;
 };
 

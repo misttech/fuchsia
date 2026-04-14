@@ -59,8 +59,7 @@ TEST_F(LastRebootTest, FirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
   const FinalShutdownInfo final_shutdown_info(
       FinalShutdownReason::kOom, GracefulShutdownAction::kReboot, zx::sec(1), zx::msec(500));
-  RebootLog reboot_log(final_shutdown_info, "reboot log",
-                       /*dlog=*/std::nullopt);
+  RebootLog reboot_log(final_shutdown_info, "reboot log");
 
   SetUpCrashReporterServer(
       std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
@@ -91,8 +90,7 @@ TEST_F(LastRebootTest, IsNotFirstInstance) {
   const zx::duration oom_crash_reporting_delay = zx::sec(90);
   const FinalShutdownInfo final_shutdown_info(
       FinalShutdownReason::kOom, GracefulShutdownAction::kReboot, zx::sec(1), zx::msec(500));
-  RebootLog reboot_log(final_shutdown_info, "reboot log",
-                       /*dlog=*/std::nullopt);
+  RebootLog reboot_log(final_shutdown_info, "reboot log");
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
 

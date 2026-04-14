@@ -21,6 +21,7 @@
 #include "src/developer/forensics/feedback/main_service.h"
 #include "src/developer/forensics/feedback/namespace_init.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
+#include "src/developer/forensics/feedback/redactor_factory.h"
 #include "src/developer/forensics/utils/cobalt/logger.h"
 #include "src/developer/forensics/utils/component/component.h"
 #include "src/developer/forensics/utils/storage_size.h"
@@ -90,10 +91,14 @@ int main() {
 
   ExposeConfig(*component.InspectRoot(), *feedback_config);
 
+  std::unique_ptr<RedactorBase> redactor =
+      RedactorFromConfig(component.InspectRoot(), feedback_config->build_type_config);
+
   RebootLog reboot_log = RebootLog::ParseRebootLog(
       "/boot/log/last-panic.txt", kPreviousGracefulShutdownInfoFile,
-      kLegacyPreviousGracefulRebootReasonFile, kPreviousSystemTimePath, TestAndSetNotAFdr(),
-      feedback_config->supports_user_initiated_poweroffs);
+      kLegacyPreviousGracefulRebootReasonFile, kPreviousSystemTimePath, kPreviousBootKernelLogPath,
+      TestAndSetNotAFdr(), feedback_config->supports_user_initiated_poweroffs,
+      component.IsFirstInstance(), redactor.get());
 
   std::optional<std::string> local_device_id_path = kDeviceIdPath;
   if (feedback_config->remote_device_id_provider) {
@@ -110,17 +115,13 @@ int main() {
                             feedback_config->spontaneous_reboot_reason, kBuildCompilationModePath);
   zx::channel lifecycle_channel(zx_take_startup_handle(PA_LIFECYCLE));
 
-  // Create copy of dlog to prevent use-after-move.
-  const std::optional<std::string> dlog = reboot_log.Dlog();
-
   std::unique_ptr<MainService> main_service = std::make_unique<MainService>(
       component.Dispatcher(), component.Services(), component.Clock(), component.InspectRoot(),
       cobalt.get(), startup_annotations,
       fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle>(std::move(lifecycle_channel)),
-      dlog,
+      std::move(redactor),
       MainService::Options{
-          feedback_config->build_type_config, local_device_id_path,
-          kCurrentGracefulShutdownInfoFile, kCurrentSystemTimePath,
+          local_device_id_path, kCurrentGracefulShutdownInfoFile, kCurrentSystemTimePath,
           LastReboot::Options{
               .is_first_instance = component.IsFirstInstance(),
               .reboot_log = std::move(reboot_log),

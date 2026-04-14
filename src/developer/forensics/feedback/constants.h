@@ -91,6 +91,7 @@ constexpr zx::duration kSnapshotSharedRequestWindow = zx::sec(5);
 constexpr char kDeviceIdPath[] = "/data/device_id.txt";
 constexpr char kCurrentLogsDir[] = "/cache/current_system_logs";
 constexpr char kPreviousLogsFilePath[] = "/tmp/log.system.previous_boot.txt";
+constexpr char kPreviousBootKernelLogPath[] = "/tmp/log.kernel.previous_boot.txt";
 constexpr char kPreviousBootIdPath[] = "/tmp/boot_id.txt";
 constexpr char kCurrentBootIdPath[] = "/data/boot_id.txt";
 constexpr char kPreviousSystemTimePath[] = "/tmp/system_time.json";

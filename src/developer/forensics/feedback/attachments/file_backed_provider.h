@@ -18,7 +18,7 @@ namespace forensics::feedback {
 // Returns a file's content as an attachment or an error indicating why the content is missing.
 class FileBackedProvider : public AttachmentProvider {
  public:
-  explicit FileBackedProvider(std::string path);
+  explicit FileBackedProvider(std::string path, bool warn_if_unavailable = true);
 
   // Returns an immediately ready promise containing the file's content.
   ::fpromise::promise<AttachmentValue> Get(uint64_t ticket) override;
@@ -28,6 +28,7 @@ class FileBackedProvider : public AttachmentProvider {
 
  private:
   std::string path_;
+  bool warn_if_unavailable_;
 };
 
 }  // namespace forensics::feedback

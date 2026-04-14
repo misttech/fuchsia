@@ -4,8 +4,6 @@
 
 #include "src/developer/forensics/feedback/attachment_providers.h"
 
-#include <utility>
-
 #include "src/developer/forensics/feedback/constants.h"
 #include "src/developer/forensics/feedback_data/constants.h"
 
@@ -16,15 +14,15 @@ AttachmentProviders::AttachmentProviders(async_dispatcher_t* dispatcher,
                                          std::optional<zx::duration> delete_previous_boot_log_at,
                                          timekeeper::Clock* clock, RedactorBase* redactor,
                                          feedback_data::InspectDataBudget* inspect_data_budget,
-                                         std::set<std::string> allowlist,
-                                         std::optional<std::string> dlog, cobalt::Logger* cobalt)
+                                         std::set<std::string> allowlist, cobalt::Logger* cobalt)
     : log_buffer_(feedback_data::kCurrentLogBufferSize, redactor),
       kernel_log_(dispatcher, services, AttachmentProviderBackoff(), redactor),
       system_log_(dispatcher, services, clock, redactor, feedback_data::kActiveLoggingPeriod,
                   cobalt, &log_buffer_),
       inspect_(dispatcher, services, AttachmentProviderBackoff(), inspect_data_budget, redactor),
       previous_boot_log_(dispatcher, clock, delete_previous_boot_log_at, kPreviousLogsFilePath),
-      previous_boot_kernel_log_(std::move(dlog), redactor),
+      previous_boot_kernel_log_(forensics::feedback::kPreviousBootKernelLogPath,
+                                /*warn_if_unavailable=*/false),
       kernel_boot_options_(kKernelBootOptionsPath),
       attachment_manager_(
           dispatcher, allowlist,

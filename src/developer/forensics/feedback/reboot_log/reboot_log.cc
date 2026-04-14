@@ -14,6 +14,7 @@
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/feedback/system_time_tracker.h"
 #include "src/developer/forensics/feedback_data/constants.h"
+#include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/join_strings.h"
 #include "src/lib/fxl/strings/split_string.h"
@@ -326,6 +327,19 @@ std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
   return fxl::JoinStrings(lines, "\n");
 }
 
+void PersistDlog(const std::optional<std::string>& dlog, RedactorBase* redactor,
+                 const std::string& path) {
+  if (!dlog.has_value()) {
+    return;
+  }
+
+  std::string redacted_dlog = *dlog;
+  redactor->Redact(redacted_dlog);
+  if (!files::WriteFile(path, redacted_dlog)) {
+    FX_LOGS(ERROR) << "Failed to write dlog to: " << path;
+  }
+}
+
 }  // namespace
 
 // static
@@ -333,8 +347,10 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
                                     const std::string& graceful_shutdown_info_path,
                                     const std::string& legacy_graceful_reboot_log_path,
                                     const std::string& previous_system_time_path,
+                                    const std::string& previous_boot_kernel_log_path,
                                     const bool not_a_fdr,
-                                    const bool supports_user_initiated_poweroffs) {
+                                    const bool supports_user_initiated_poweroffs,
+                                    const bool first_component_instance, RedactorBase* redactor) {
   std::optional<std::string> zircon_reboot_log;
   std::optional<zx::duration> last_boot_uptime;
   std::optional<zx::duration> last_boot_runtime;
@@ -367,16 +383,17 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   const auto reboot_log =
       MakeRebootLog(zircon_reboot_log, graceful_info, final_shutdown_info.ToRebootReasonString(),
                     fallback_uptime, fallback_runtime);
-  const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);
 
-  return RebootLog(final_shutdown_info, reboot_log, dlog);
+  if (first_component_instance) {
+    const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);
+    PersistDlog(dlog, redactor, previous_boot_kernel_log_path);
+  }
+
+  return RebootLog(final_shutdown_info, reboot_log);
 }
 
-RebootLog::RebootLog(FinalShutdownInfo final_shutdown_info, std::string reboot_log_str,
-                     std::optional<std::string> dlog)
-    : final_shutdown_info_(std::move(final_shutdown_info)),
-      reboot_log_str_(reboot_log_str),
-      dlog_(std::move(dlog)) {}
+RebootLog::RebootLog(FinalShutdownInfo final_shutdown_info, std::string reboot_log_str)
+    : final_shutdown_info_(std::move(final_shutdown_info)), reboot_log_str_(reboot_log_str) {}
 
 }  // namespace feedback
 }  // namespace forensics

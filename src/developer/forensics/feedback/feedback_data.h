@@ -41,7 +41,7 @@ class FeedbackData {
   FeedbackData(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirectory> services,
                timekeeper::Clock* clock, inspect::Node* inspect_root, cobalt::Logger* cobalt,
                RedactorBase* redactor, feedback::AnnotationManager* annotation_manager,
-               std::optional<std::string> dlog, Options options);
+               Options options);
 
   feedback_data::DataProvider* DataProvider();
 

@@ -269,24 +269,6 @@ cc_test_executable("intl_provider_unittest_exe") {
   ]
 }
 
-cc_test_executable("previous_boot_kernel_log_unittest_exe") {
-  testonly = true
-
-  sources = [ "previous_boot_kernel_log_unittest.cc" ]
-
-  deps = [
-    "//src/developer/forensics/feedback/attachments",
-    "//src/developer/forensics/feedback/attachments:previous_boot_kernel_log",
-    "//src/developer/forensics/testing:gmatchers",
-    "//src/developer/forensics/testing:gpretty_printers",
-    "//src/developer/forensics/testing:gtest_with_syslog_main",
-    "//src/developer/forensics/testing:unit_test_fixture",
-    "//src/developer/forensics/utils:errors",
-    "//third_party/googletest:gmock",
-    "//third_party/googletest:gtest",
-  ]
-}
-
 cc_test_executable("previous_boot_log_unittest_exe") {
   testonly = true
 
@@ -367,6 +349,7 @@ cc_test_executable("main_service_unittest_exe") {
     "//src/developer/forensics/testing:unit_test_fixture",
     "//src/developer/forensics/testing/stubs:cobalt",
     "//src/developer/forensics/testing/stubs:crash_reporter",
+    "//src/developer/forensics/utils/redact",
     "//src/lib/timekeeper:testing",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
@@ -657,10 +640,6 @@ fuchsia_unittest_component("intl_provider_unittest") {
   deps = [ ":intl_provider_unittest_exe" ]
 }
 
-fuchsia_unittest_component("previous_boot_kernel_log_unittest") {
-  deps = [ ":previous_boot_kernel_log_unittest_exe" ]
-}
-
 fuchsia_unittest_component("previous_boot_log_unittest") {
   deps = [
     ":previous_boot_log_unittest_exe",
@@ -768,7 +747,6 @@ fuchsia_test_package("feedback-tests") {
     ":kernel_log_integration_test",
     ":inspect_unittest",
     ":intl_provider_unittest",
-    ":previous_boot_kernel_log_unittest",
     ":previous_boot_log_unittest",
     ":main_service_unittest",
     ":namespace_init_unittest",

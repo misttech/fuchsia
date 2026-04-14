@@ -37,7 +37,6 @@ namespace forensics::feedback {
 class MainService {
  public:
   struct Options {
-    BuildTypeConfig build_type_config;
     std::optional<std::string> local_device_id_path;
     std::string graceful_shutdown_info_write_path;
     std::string current_system_time_write_path;
@@ -50,7 +49,7 @@ class MainService {
               timekeeper::Clock* clock, inspect::Node* inspect_root, cobalt::Logger* cobalt,
               const Annotations& startup_annotations,
               fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle> lifecycle_channel,
-              std::optional<std::string> dlog, Options options);
+              std::unique_ptr<RedactorBase> redactor, Options options);
 
   template <typename Protocol>
   ::fidl::InterfaceRequestHandler<Protocol> GetHandler();
