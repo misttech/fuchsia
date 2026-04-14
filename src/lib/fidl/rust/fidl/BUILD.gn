@@ -60,14 +60,14 @@ rustc_test("fidl_rust_lib_tests_bin") {
   sources = fidl_rust_sources
 }
 
-fuchsia_unittest_package("fidl_rust_lib_tests") {
+fuchsia_unittest_package("fidl_rust_lib_tests_pkg") {
   deps = [ ":fidl_rust_lib_tests_bin" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
-    ":fidl_rust_lib_tests",
     ":fidl_rust_lib_tests_bin($host_toolchain)",
+    ":fidl_rust_lib_tests_pkg",
   ]
 }
