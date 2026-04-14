@@ -25,6 +25,7 @@ rustc_test("bin") {
     "//sdk/fidl/fuchsia.power.suspend:fuchsia.power.suspend_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/rust/zx",
+    "//src/developer/forensics/public/fakes:fuchsia.feedback.testing_rust",
     "//src/lib/diagnostics/hierarchy/rust:diagnostics-hierarchy",
     "//src/lib/diagnostics/reader/rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",

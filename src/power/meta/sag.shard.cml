@@ -40,6 +40,12 @@
             to: "#system-activity-governor",
         },
         {
+            config: [ "fuchsia.power.SuspendResumeStuckWarningTimeout" ],
+            from: "parent",
+            to: "#system-activity-governor",
+            availability: "optional",
+        },
+        {
             dictionary: "diagnostics",
             from: "self",
             to: [ "#system-activity-governor" ],
@@ -56,6 +62,12 @@
         },
         {
             protocol: "fuchsia.tracing.provider.Registry",
+            from: "parent",
+            to: [ "#system-activity-governor" ],
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.feedback.CrashReporter",
             from: "parent",
             to: [ "#system-activity-governor" ],
             availability: "optional",

@@ -102,6 +102,11 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
                 ),
             )?;
 
+            builder.set_config_capability(
+                "fuchsia.power.SuspendResumeStuckWarningTimeout",
+                Config::new(ConfigValueType::Uint32, 60u32.into()),
+            )?;
+
             if context.build_type == &BuildType::Eng {
                 builder.platform_bundle("topology_test_daemon")?;
             }

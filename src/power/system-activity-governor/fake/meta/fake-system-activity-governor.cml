@@ -58,6 +58,7 @@
         },
         {
             config: [
+                "fuchsia.power.SuspendResumeStuckWarningTimeout",
                 "fuchsia.power.UseSuspender",
                 "fuchsia.power.WaitForSuspendingToken",
             ],

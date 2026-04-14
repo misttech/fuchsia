@@ -14,6 +14,7 @@ use crate::power_observability::WakeSourceObservability;
 use crate::system_activity_governor::SystemActivityGovernor;
 use anyhow::{Context, Result};
 use async_lock::OnceCell;
+use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_hardware_platform_bus as ffhpb;
 use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
 use fidl_fuchsia_hardware_power_suspend as fhsuspend;
@@ -222,6 +223,7 @@ async fn main() -> Result<()> {
     }
 
     let topology = connect_to_protocol::<fbroker::TopologyMarker>()?;
+    let crash_reporter = connect_to_protocol::<ffeedback::CrashReporterMarker>()?;
     let sag_event_logger = SagEventLogger::new(inspector.root());
 
     let topology2 = topology.clone();
@@ -232,10 +234,12 @@ async fn main() -> Result<()> {
     let is_shutting_down = register_terminal_state_watcher(is_shutting_down_node).await;
     let is_shutting_down_sag = is_shutting_down.clone();
 
+    let stuck_warning_timeout = config.suspend_resume_stuck_warning_timeout;
     let sag_factory_fn = move |cpu_manager, execution_state_dependencies| {
         let topology = topology2.clone();
         let sag_event_logger = sag_event_logger2.clone();
         let is_shutting_down = is_shutting_down_sag.clone();
+        let crash_reporter = crash_reporter.clone();
         async move {
             log::info!("Creating activity governor server...");
             SystemActivityGovernor::new(
@@ -245,6 +249,8 @@ async fn main() -> Result<()> {
                 cpu_manager,
                 execution_state_dependencies,
                 is_shutting_down,
+                crash_reporter,
+                MonotonicDuration::from_seconds(stuck_warning_timeout.into()),
             )
             .await
         }

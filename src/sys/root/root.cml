@@ -76,6 +76,7 @@
                 "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
                 "fuchsia.power.StoragePowerManagementEnabled",
                 "fuchsia.power.SuspendEnabled",
+                "fuchsia.power.SuspendResumeStuckWarningTimeout",
                 "fuchsia.power.UseSuspender",
                 "fuchsia.power.WaitForSuspendingToken",
                 "fuchsia.starnix.fastrpc.ExpectReady",

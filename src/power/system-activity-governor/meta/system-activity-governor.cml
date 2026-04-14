@@ -31,6 +31,10 @@
             ],
         },
         {
+            protocol: [ "fuchsia.feedback.CrashReporter" ],
+            availability: "optional",
+        },
+        {
             // Used to resolve kernel-reported wake vector KOIDs into wake source
             // info. Non-essential, and if not provided, clients will turn the
             // reporting functionality off.
@@ -63,10 +67,26 @@
             availability: "optional",
             default: false,
         },
+        {
+            config: "fuchsia.power.SuspendResumeStuckWarningTimeout",
+
+            // The timeout in seconds before filing a crash report for stalled
+            // suspend/resume operations.
+            from: "parent",
+            key: "suspend_resume_stuck_warning_timeout",
+            type: "uint32",
+            availability: "optional",
+            default: 60,
+        },
     ],
     expose: [
         {
             config: [ "fuchsia.power.WaitForSuspendingToken" ],
+            from: "void",
+            availability: "optional",
+        },
+        {
+            config: [ "fuchsia.power.SuspendResumeStuckWarningTimeout" ],
             from: "void",
             availability: "optional",
         },

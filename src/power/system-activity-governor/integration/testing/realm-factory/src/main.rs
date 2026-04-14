@@ -78,6 +78,7 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
     let use_fake_sag = options.use_fake_sag.unwrap_or(false);
     let wait_for_suspending_token = options.wait_for_suspending_token.unwrap_or(false);
     let use_suspender = options.use_suspender.unwrap_or(true);
+    let stuck_warning_timeout_seconds = options.stuck_warning_timeout_seconds.unwrap_or(60);
 
     let builder = RealmBuilder::new().await?;
 
@@ -103,6 +104,10 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
         .add_child("fake-shutdown-shim", "#meta/fake-shutdown-shim.cm", ChildOptions::new())
         .await?;
 
+    let fake_crash_reporter = builder
+        .add_child("fake-crash-reporter", "#meta/fake_crash_reporter.cm", ChildOptions::new())
+        .await?;
+
     // Expose capabilities from power-broker.
     builder
         .add_route(
@@ -119,6 +124,17 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
             Route::new()
                 .capability(Capability::protocol_by_name("test.suspendcontrol.Device"))
                 .from(&fake_suspend_ref)
+                .to(Ref::parent()),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name(
+                    "fuchsia.feedback.testing.FakeCrashReporterQuerier",
+                ))
+                .from(&fake_crash_reporter)
                 .to(Ref::parent()),
         )
         .await?;
@@ -143,6 +159,15 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
                     "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 ))
                 .from(&fake_shutdown_shim)
+                .to(&component_ref),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name("fuchsia.feedback.CrashReporter"))
+                .from(&fake_crash_reporter)
                 .to(&component_ref),
         )
         .await?;
@@ -181,6 +206,24 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
         .add_route(
             Route::new()
                 .capability(Capability::configuration("fuchsia.power.UseSuspender"))
+                .from(Ref::self_())
+                .to(&component_ref),
+        )
+        .await?;
+
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.power.SuspendResumeStuckWarningTimeout".parse()?,
+            value: stuck_warning_timeout_seconds.into(),
+        }))
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration(
+                    "fuchsia.power.SuspendResumeStuckWarningTimeout",
+                ))
                 .from(Ref::self_())
                 .to(&component_ref),
         )

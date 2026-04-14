@@ -21,6 +21,10 @@ type RealmOptions = resource table {
 
     /// Specifies whether SAG will use a suspender or not. Defaults to true.
     3: use_suspender bool;
+
+    /// Specifies the timeout in seconds for the suspend/resume watchdog.
+    /// Defaults to 60 seconds if not specified.
+    4: stuck_warning_timeout_seconds uint32;
 };
 
 @discoverable

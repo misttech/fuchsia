@@ -79,6 +79,8 @@ async fn create_power_realm<'a>(
     const SHUTDOWN_SHIM_NAME: &str = "fake-shutdown-shim";
 
     const CONFIG_NO_SUSPENDING_TOKEN_CONFIG: &str = "fuchsia.power.WaitForSuspendingToken";
+    const CONFIG_SUSPEND_RESUME_STUCK_WARNING_TIMEOUT_CONFIG: &str =
+        "fuchsia.power.SuspendResumeStuckWarningTimeout";
 
     fn suspender_dep() -> fnetemul::Capability {
         fnetemul::Capability::ChildDep(fnetemul::ChildDep {
@@ -140,6 +142,13 @@ async fn create_power_realm<'a>(
                 name: Some(CONFIG_USE_SUSPENDER_NAME.to_string()),
                 capability: Some(fnetemul::ExposedCapability::Configuration(
                     CONFIG_USE_SUSPENDER_CONFIG.to_string(),
+                )),
+                ..Default::default()
+            }),
+            fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                name: Some(CONFIG_USE_SUSPENDER_NAME.to_string()),
+                capability: Some(fnetemul::ExposedCapability::Configuration(
+                    CONFIG_SUSPEND_RESUME_STUCK_WARNING_TIMEOUT_CONFIG.to_string(),
                 )),
                 ..Default::default()
             }),

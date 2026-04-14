@@ -21,6 +21,7 @@ rustc_binary("bin") {
   ]
   deps = [
     ":sag_config",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_rust",
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.hardware.power.suspend:fuchsia.hardware.power.suspend_rust",

@@ -10,6 +10,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher};
 use fidl::endpoints::{Proxy, ServerEnd, create_endpoints};
+use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_power_broker as fbroker;
 use fidl_fuchsia_power_observability as fobs;
 use fidl_fuchsia_power_suspend as fsuspend;
@@ -38,8 +39,6 @@ const RESUME_SUSPENDING_LEASE_DROP_DELAY: std::time::Duration =
     std::time::Duration::from_millis(100);
 const SUSPEND_BLOCKER_WARNING_TIMEOUT: fasync::MonotonicDuration =
     fasync::MonotonicDuration::from_seconds(10);
-const SUSPEND_RESUME_STUCK_WARNING_TIMEOUT: fasync::MonotonicDuration =
-    fasync::MonotonicDuration::from_seconds(60);
 
 type NotifyFn = Box<dyn Fn(&fsuspend::SuspendStats, fsuspend::StatsWatchResponder) -> bool>;
 type StatsHangingGet = HangingGet<fsuspend::SuspendStats, fsuspend::StatsWatchResponder, NotifyFn>;
@@ -566,6 +565,8 @@ pub struct SystemActivityGovernor {
     suspend_blocker_id_generator: Rc<SuspendBlockerIdGenerator>,
     _suspend_blockers_node: LazyNode,
     before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
+    crash_reporter: ffeedback::CrashReporterProxy,
+    stuck_warning_timeout: fasync::MonotonicDuration,
 }
 
 impl SystemActivityGovernor {
@@ -576,6 +577,8 @@ impl SystemActivityGovernor {
         cpu_manager: Rc<CpuManager>,
         execution_state_dependencies: Vec<fbroker::LevelDependency>,
         is_shutting_down: Rc<Cell<bool>>,
+        crash_reporter: ffeedback::CrashReporterProxy,
+        stuck_warning_timeout: fasync::MonotonicDuration,
     ) -> Result<Rc<Self>> {
         let mut element_power_level_names: Vec<fbroker::ElementPowerLevelNames> = Vec::new();
 
@@ -746,6 +749,8 @@ impl SystemActivityGovernor {
             suspend_blocker_id_generator: Rc::new(SuspendBlockerIdGenerator::default()),
             _suspend_blockers_node: suspend_blockers_node,
             before_suspend_notifier,
+            crash_reporter,
+            stuck_warning_timeout,
         }))
     }
 
@@ -1247,14 +1252,36 @@ impl SystemActivityGovernor {
         let method_name = if is_suspending { "BeforeSuspend" } else { "AfterResume " };
         log::info!("Running {method_name} for {} SuspendBlockers", suspend_blockers.len());
 
-        // Queue a task to warn if the entire suspend or resume operation gets stuck.
+        let timeout = self.stuck_warning_timeout;
+        let crash_reporter_clone = self.crash_reporter.clone();
+        // Queue a task to warn if the entire suspend or resume operation gets stuck and file crash
+        // report.
         let _outer_warn_task = fasync::Task::local(async move {
+            fasync::Timer::new(timeout).await;
+            let phase = if is_suspending { "Suspend" } else { "Resume" };
+            let report = ffeedback::CrashReport {
+                program_name: Some("device".to_string()),
+                crash_signature: Some(format!(
+                    "fuchsia-system-activity-governor-{}-stuck",
+                    phase.to_lowercase()
+                )),
+                is_fatal: Some(false),
+                ..Default::default()
+            };
+
+            log::info!("Sending crash report request for stuck {phase} phase");
+            match crash_reporter_clone.file_report(report).await {
+                Ok(Ok(result)) => log::info!("Crash report filed: {:?}", result),
+                Ok(Err(e)) => log::warn!("Failed to file crash report: {:?}", e),
+                Err(e) => log::warn!("Failed to call FileReport: {:?}", e),
+            }
+
             for count in 1.. {
-                fasync::Timer::new(SUSPEND_RESUME_STUCK_WARNING_TIMEOUT).await;
                 let phase = if is_suspending { "Suspend" } else { "Resume" };
                 log::warn!(
-                    "{phase} has been stuck for {count} minutes; device is likely unresponsive"
+                    "{phase} has been stuck (warning #{count}); device is likely unresponsive"
                 );
+                fasync::Timer::new(timeout).await;
             }
         });
 
@@ -1287,7 +1314,7 @@ impl SystemActivityGovernor {
                     } else {
                         if let Err(e) = suspend_blocker.after_resume().await {
                             log::warn!(
-                                "Failed to call AfterResume on SuspendBlocker '{name}' ({i}):  {e:?}"
+                                "Failed to call AfterResume on SuspendBlocker '{name}' ({i}): {e:?}"
                             );
                             dead_blocker_ids.borrow_mut().push(id);
                         }

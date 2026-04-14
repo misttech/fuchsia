@@ -68,9 +68,29 @@ async fn create_test_env() -> TestEnv {
         .unwrap();
 
     builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.power.SuspendResumeStuckWarningTimeout".parse().unwrap(),
+            value: 60u32.into(),
+        }))
+        .await
+        .unwrap();
+
+    builder
         .add_route(
             Route::new()
                 .capability(Capability::configuration("fuchsia.power.UseSuspender"))
+                .from(Ref::self_())
+                .to(&component_ref),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration(
+                    "fuchsia.power.SuspendResumeStuckWarningTimeout",
+                ))
                 .from(Ref::self_())
                 .to(&component_ref),
         )

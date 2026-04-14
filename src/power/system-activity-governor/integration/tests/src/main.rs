@@ -18,7 +18,7 @@ use fidl_fuchsia_power_system as fsystem;
 use fidl_test_suspendcontrol as tsc;
 use fidl_test_systemactivitygovernor as ftest;
 use fidl_test_systemactivitygovernor::RealmOptions;
-use fuchsia_async as fasync;
+use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::{FutureExt, StreamExt};
@@ -279,6 +279,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -376,6 +377,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -461,6 +463,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -531,6 +534,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -611,6 +615,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -681,6 +686,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -761,6 +767,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -987,6 +994,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1100,6 +1108,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1170,6 +1179,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1225,6 +1235,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1539,6 +1550,7 @@ async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_h
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -1619,6 +1631,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_sus
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -1808,6 +1821,7 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -1872,6 +1886,7 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -2291,6 +2306,7 @@ async fn test_acquire_wake_lease_blocks_during_suspend() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -2349,6 +2365,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -2384,6 +2401,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -2426,6 +2444,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -2504,6 +2523,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -2537,6 +2557,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -2579,6 +2600,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -3147,6 +3169,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -3243,6 +3266,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -3671,6 +3695,7 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                suspend_resume_stuck_warning_timeout: 60u64,
             },
         }
     );
@@ -3787,6 +3812,76 @@ async fn test_acquire_and_drop_wake_lease_during_before_suspend() -> Result<()> 
             },
         }
     );
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_files_crash_report_on_suspend_blocker_stall() -> Result<()> {
+    let (realm, _) = create_realm_ext(ftest::RealmOptions {
+        use_suspender: Some(true),
+        stuck_warning_timeout_seconds: Some(1),
+        ..Default::default()
+    })
+    .await?;
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    let (client_end, mut stream) =
+        fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+    let (tx, _rx) = futures::channel::mpsc::unbounded();
+
+    fasync::Task::local(async move {
+        while let Some(request) = stream.next().await {
+            match request {
+                Ok(fsystem::SuspendBlockerRequest::BeforeSuspend { responder }) => {
+                    log::info!("Fake suspend blocker received BeforeSuspend. Stalling...");
+                    tx.unbounded_send(responder).unwrap();
+                }
+                Ok(fsystem::SuspendBlockerRequest::AfterResume { responder }) => {
+                    responder.send().unwrap();
+                }
+                _ => {
+                    log::warn!("Received unknown request");
+                }
+            }
+        }
+    })
+    .detach();
+
+    // The FIDL response contains a single 'token' field, which the Rust bindings
+    // flatten into the LeaseToken itself.
+    let token = activity_governor
+        .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
+            suspend_blocker: Some(client_end),
+            name: Some("test-blocker".to_string()),
+            ..Default::default()
+        })
+        .await?
+        .map_err(|e| anyhow::anyhow!("Register failed: {:?}", e))?;
+
+    let suspend_controller = create_suspend_topology(&realm).await?;
+    let suspend_lease_control = lease(&suspend_controller, 1).await?;
+
+    let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+    let () = boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+
+    // Clear the dirty bit by calling watch_file once.
+    let _ = querier.watch_file().await?;
+
+    drop(token);
+    drop(suspend_lease_control);
+
+    let num_filed = querier
+        .watch_file()
+        .on_timeout(fasync::MonotonicDuration::from_seconds(5).after_now(), || {
+            panic!("Timeout waiting for next watcher message.");
+        })
+        .await?;
+
+    assert_eq!(num_filed, 1);
 
     Ok(())
 }
