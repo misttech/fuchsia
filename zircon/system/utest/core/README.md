@@ -18,11 +18,11 @@ any userspace device manager, device drivers, io plumbing, etc.
 ```sh
 fx set bringup.x64 --with-test //bundles/boot_tests  # or any product or board.
 fx build
-fx core-tests [--gtest_filter=FILTER] [--gtest_repeat=REPEAT]
+fx core-tests [--gtest_filter=FILTER] [--gtest_repeat=REPEAT] [--kernel=KERNEL_IMAGE_TYPE]
 ```
 
 The helper fx command runs QEMU (or FEMU) providing the
-specially-built core-tests.zbi as a `-z` argument.
+specially-built core-tests.$image.zbi as a `-z` argument.
 
 Only a subset of tests can be specified by `gtest_filter`, e.g.
 `--gtest_filter="FutexTest.*"`

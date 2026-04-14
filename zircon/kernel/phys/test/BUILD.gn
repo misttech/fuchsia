@@ -411,10 +411,9 @@ turducken_zbi_test("zbi-chain-load-hello-world-test") {
   }
 }
 
-core_tests_label =
-    "//zircon/system/utest/core:core-tests.zbi($default_toolchain)"
-core_tests_zbi =
-    get_label_info(core_tests_label, "target_out_dir") + "/core-tests.zbi"
+core_tests_label = "//zircon/system/utest/core:core-tests.${default_kernel_test_image}.zbi($default_toolchain)"
+core_tests_zbi = get_label_info(core_tests_label, "target_out_dir") + "/" +
+                 get_label_info(core_tests_label, "name")
 
 turducken_zbi_test("zbi-chain-load-core-tests") {
   kernel = ":chain-load-test"

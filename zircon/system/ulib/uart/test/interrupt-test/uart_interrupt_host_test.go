@@ -23,7 +23,7 @@ const (
 	serialInputReady string = "uart-interrupt-test: Uart Ready"
 	// LINT.ThenChange(./uart-interrupt-test.cc)
 
-	zbiName string = "uart-interrupt-test-zbi"
+	zbiName string = "uart-interrupt-test-zbi.eng"
 )
 
 func getCwd(t *testing.T) string {

@@ -16,7 +16,7 @@
 #
 # ```
 # $ grind -n 64 -d ./logs/ "cd $HOME/fuchsia; while true; do \
-# fx qemu --arch x64 -z out/core.x64-balanced/obj/zircon/system/utest/core/core-tests.zbi \
+# fx qemu --arch x64 -z out/core.x64-balanced/obj/zircon/system/utest/core/core-tests.eng.zbi \
 # -- -no-reboot; done"
 # ```
 #

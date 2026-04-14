@@ -70,11 +70,11 @@ if (is_fuchsia) {
 }
 
 if (is_host) {
+  cuckoo_system = "standalone-coverage-zbi.${default_kernel_test_image}.cuckoo"
   coverage_verification_test("standalone-coverage-verification-test") {
     instrumented_target = ":standalone-main-bin($target_toolchain)"
-    assembled_system =
-        ":standalone-coverage-zbi.cuckoo.assembled_system($default_toolchain)"
-    test_uri = "fuchsia-pkg://fuchsia.com/standalone-coverage-zbi.cuckoo.test#meta/standalone-coverage-zbi.cuckoo.test.cm"
+    assembled_system = ":${cuckoo_system}.assembled_system($default_toolchain)"
+    test_uri = "fuchsia-pkg://fuchsia.com/${cuckoo_system}.test#meta/${cuckoo_system}.test.cm"
     expectations = [
       {
         source = "//src/lib/llvm-profdata/coverage-example.cc"

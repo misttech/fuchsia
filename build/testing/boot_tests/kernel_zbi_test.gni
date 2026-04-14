@@ -20,12 +20,19 @@ declare_args() {
   # Default value for `disabled` parameter for generated `cuckoo_test()`.
   # TODO(https://fxbug.dev/320511796): Cleanup when no longer necessary.
   disable_cuckoo_tests = false
+
+  # Each kernel_zbi_test() will stamp out a zbi_test() per entry in the provided list of kernel
+  # images; this list unconditionally extends that selection. This enables devs and builders to
+  # introduce more kinds of tests in the GN graph without affecting gen times by default.
+  extra_kernel_test_images = []
 }
 
 # TODO(https://fxbug.dev/371568912): Pick an appropriate unconditionally "debug"
 # switchset when available.
 default_test_kernel_switchset =
     "//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy"
+
+default_kernel_test_image = "eng"
 
 template("_cuckoo_product_bundle") {
   assert(current_toolchain == default_toolchain)
@@ -120,16 +127,18 @@ template("_cuckoo_product_bundle") {
   }
 }
 
-# Composes a bootable kernel zbi test. That is, a zircon kernel that will launch
-# a custom user space process instead of component manager.
+# Defines ZBI tests using actual kernel images, along with a custom userspace.
 #
 # Subtargets
 #
-#   * `${target_name}.cuckoo.assembled_system`
+#   * `${target_name}.${image}.cuckoo.assembled_system`
 #     Specifies a "cuckoo assembled system": an `assembled_system()` that
 #     contains a test package with a stub test component, and which boots the
 #     associated ZBI to a full Fuchsia system. This subtarget is only emitted
 #     if `generate_cuckoo = true`.
+#
+#   * `${target_name}.${image}`
+#     The zbi_test() target associated with a kernel image listed in `images`.
 #
 # Parameters
 #
@@ -139,6 +148,14 @@ template("_cuckoo_product_bundle") {
 #     - Type: boolean
 #     - Default: `kernel_zbi_test_generates_cuckoo`
 #
+#  * kernel_images
+#    - Optional: The list of kernel image names - as enumerated under //zircon/kernel/image as
+#      directory names - to define the kernel ZBI test for: a zbi_test() instance will be stamped
+#      out for each listed image. All images listed in the `extra_kernel_test_images` arg will
+#      be appended.
+#    - Type: list(string)
+#    - Default `[default_kernel_test_image] + extra_kernel_test_images`
+#
 # See zbi_test() for additional parameters.
 template("kernel_zbi_test") {
   generate_cuckoo = generate_cuckoo_tests
@@ -146,36 +163,66 @@ template("kernel_zbi_test") {
     generate_cuckoo = invoker.generate_cuckoo
   }
 
-  main_target = target_name
-  cuckoo_deps = []
+  forward_variables_from(invoker, [ "kernel_images" ])
+  if (!defined(kernel_images)) {
+    kernel_images = [ default_kernel_test_image ]
+  }
+  kernel_images += extra_kernel_test_images
 
-  if (generate_cuckoo) {
-    cuckoo_target_name = "${target_name}.cuckoo"
-    if (default_toolchain == current_toolchain) {
-      _cuckoo_product_bundle(cuckoo_target_name) {
-        forward_variables_from(invoker,
-                               [
-                                 "disabled",
-                                 "environments",
-                                 "timeout",
-                               ])
-        kernel_zbi = ":$main_target.zbi"
+  main_target = target_name
+  main_deps = []
+  foreach(image, kernel_images) {
+    zbi_test_target = "${target_name}.$image"
+
+    if (generate_cuckoo) {
+      cuckoo_target_name = "${target_name}.$image.cuckoo"
+      if (default_toolchain == current_toolchain) {
+        _cuckoo_product_bundle(cuckoo_target_name) {
+          forward_variables_from(invoker,
+                                 [
+                                   "disabled",
+                                   "environments",
+                                   "timeout",
+                                   "visibility",
+                                 ])
+          if (defined(visibility)) {
+            visibility += [ ":* " ]
+          }
+
+          kernel_zbi = ":${zbi_test_target}.zbi"
+        }
+      } else {
+        group(cuckoo_target_name) {
+          testonly = true
+          deps = [ ":$cuckoo_target_name($default_toolchain)" ]
+        }
       }
-    } else {
-      group(cuckoo_target_name) {
-        testonly = true
-        deps = [ ":$cuckoo_target_name($default_toolchain)" ]
-      }
+      main_deps += [ ":$cuckoo_target_name($default_toolchain)" ]
     }
-    cuckoo_deps = [ ":$cuckoo_target_name($default_toolchain)" ]
+
+    zbi_test(zbi_test_target) {
+      assert(current_cpu != "")
+      deps = []
+      data_deps = []
+      forward_variables_from(invoker,
+                             "*",
+                             [
+                               "generate_cuckoo",
+                               "visibility",
+                             ])
+      forward_variables_from(invoker, [ "visibility" ])
+      if (defined(visibility)) {
+        visibility += [ ":* " ]
+      }
+      deps += [ "//zircon/kernel/image/$image" ]
+    }
+
+    main_deps += [ ":$zbi_test_target" ]
   }
 
-  zbi_test(main_target) {
-    assert(current_cpu != "")
-    deps = []
-    data_deps = []
-    forward_variables_from(invoker, "*", [ "generate_cuckoo" ])
-    data_deps += cuckoo_deps
-    deps += [ "//zircon/kernel" ]
+  group(main_target) {
+    forward_variables_from(invoker, [ "visibility" ])
+    testonly = true
+    deps = main_deps
   }
 }

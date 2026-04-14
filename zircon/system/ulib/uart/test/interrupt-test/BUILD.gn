@@ -26,7 +26,8 @@ if (toolchain_variant.base == default_toolchain) {
     ]
   }
 
-  zbi = "$target_out_dir/uart-interrupt-test-zbi.zbi"
+  zbi =
+      "$target_out_dir/uart-interrupt-test-zbi.${default_kernel_test_image}.zbi"
   kernel_zbi_test("uart-interrupt-test-zbi") {
     deps = [ ":uart-interrupt-test($default_toolchain)" ]
 
@@ -42,7 +43,8 @@ if (toolchain_variant.base == default_toolchain) {
   }
 
   # Assert that the zbi path was indeed correct.
-  zbi_outputs = get_target_outputs(":uart-interrupt-test-zbi.zbi")
+  zbi_outputs = get_target_outputs(
+          ":uart-interrupt-test-zbi.${default_kernel_test_image}.zbi")
   assert(zbi_outputs + [ zbi ] - [ zbi ] != zbi_outputs)
 }
 

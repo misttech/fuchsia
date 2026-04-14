@@ -28,7 +28,7 @@ zx::result<PhysVmo> GetTestPhysVmo(size_t size) {
   //
   // If a chunk of RAM was reserved, the kernel will publish its size and
   // physical location in the boot options.  If we have access to the mmio
-  // resource, it is because we are running in the core-tests.zbi.  The boot
+  // resource, it is because we are running in the standalone boot test.  The boot
   // options command line arguments should be available to us as a VMO.
   //
   // This is an all-or-nothing thing.  If we have the mmio resource, then we

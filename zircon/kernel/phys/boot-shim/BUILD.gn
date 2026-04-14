@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/testing/boot_tests/kernel_zbi_test.gni")
 import("//build/testing/boot_tests/zbi_test.gni")
 import("//build/testing/environments.gni")
 import("//build/zbi/kernel_cmdline.gni")
@@ -54,7 +55,7 @@ if (have_devicetree) {
   }
 
   devicetree_zbi_test("core-tests") {
-    deps = [ "//zircon/system/utest/core:core-tests.zbi($default_toolchain)" ]
+    deps = [ "//zircon/system/utest/core:core-tests.${default_kernel_test_image}.zbi($default_toolchain)" ]
 
     # We've observed the ASAN variant of core-tests take as long as 701 seconds
     # when booted via firmware on certain types of hardware.  Leave a little buffer
@@ -195,7 +196,7 @@ zbi_test("zbi-boot-shim-phys-unittests") {
 zbi_test("zbi-boot-shim-core-tests") {
   deps = [
     ":zbi-boot-shim",
-    "//zircon/system/utest/core:core-tests.zbi($default_toolchain)",
+    "//zircon/system/utest/core:core-tests.${default_kernel_test_image}.zbi($default_toolchain)",
   ]
 }
 

@@ -37,15 +37,14 @@ zbi_test_executable("early-boot-debugdata-test") {
   ]
 }
 
-kernel_zbi_test("early-boot-debugdata-kernel-zbi") {
+kernel_zbi_test("early-boot-debugdata-kernel") {
   # While only a single item is present in this list, it is recommeneded to set this to
   # remind readers that order matters, kernel items are booted in the order they are seen in the container
   # and the kernel items in the container is determined by the relative position in the dependency list.
   # NOSORT
   deps = [ ":early-boot-debugdata-test" ]
 }
-
 turducken_cuckoo_test("early-boot-debugdata-zbi-test") {
   boot_zbi = ":debugdata-provider-turducken-zbi.zbi($phys_toolchain)"
-  next_zbi = ":early-boot-debugdata-kernel-zbi.zbi"
+  next_zbi = ":early-boot-debugdata-kernel.${default_kernel_test_image}.zbi"
 }
