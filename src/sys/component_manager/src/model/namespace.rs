@@ -7,7 +7,7 @@ use ::routing::component_instance::ComponentInstanceInterface;
 use cm_rust::{Availability, ComponentDecl};
 use cm_types::{NamespacePath, Path};
 use errors::CreateNamespaceError;
-use fidl::prelude::*;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_io as fio;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 use vfs::execution_scope::ExecutionScope;
+use zx::HandleBased;
 
 pub static PKG_PATH: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/pkg"));
 
@@ -105,10 +106,10 @@ fn add_pkg_directory(
     namespace: &mut NamespaceBuilder,
     pkg_dir: fio::DirectoryProxy,
 ) -> Result<(), BuildNamespaceError> {
-    let client_end = pkg_dir.into_client_end().unwrap();
-    let directory: sandbox::Directory = client_end.into();
+    let pkg_handle = pkg_dir.into_channel().unwrap().into_zx_channel().into_handle();
+    let sandbox_handle = sandbox::Handle::new(pkg_handle);
     let path = cm_types::NamespacePath::new(PKG_PATH.to_str().unwrap()).unwrap();
-    namespace.add_entry(Capability::Directory(directory), &path)?;
+    namespace.add_entry(sandbox_handle.into(), &path)?;
     Ok(())
 }
 
@@ -144,9 +145,6 @@ fn program_input_dict_to_namespace(
                         dont_flatten_past.clone(),
                     )?;
                 }
-            }
-            Ok(cap @ Capability::Directory(_)) => {
-                namespace.add_entry(cap, &new_prefix)?;
             }
             Ok(cap @ Capability::DirConnector(_)) => {
                 namespace.add_entry(cap, &new_prefix)?;

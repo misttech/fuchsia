@@ -6,11 +6,12 @@ use crate::fidl::registry;
 use crate::{Connector, ConversionError, Message, Receiver, WeakInstanceToken};
 use fidl::endpoints::ClientEnd;
 use fidl::handle::Channel;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::execution_scope::ExecutionScope;
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
 impl Connector {
     pub(crate) fn send_channel(&self, channel: Channel) -> Result<(), ()> {
@@ -50,76 +51,5 @@ impl From<Connector> for fsandbox::Connector {
 impl crate::fidl::IntoFsandboxCapability for Connector {
     fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
         fsandbox::Capability::Connector(self.into())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use assert_matches::assert_matches;
-    use fidl::endpoints::ClientEnd;
-    use fidl_fuchsia_io as fio;
-    use futures::StreamExt;
-    use vfs::ToObjectRequest;
-    use vfs::directory::entry::OpenRequest;
-    use vfs::execution_scope::ExecutionScope;
-
-    // TODO(340891837): This test only runs on host because of the reliance on Open
-    #[fuchsia::test]
-    async fn unwrap_server_end_or_serve_node_node_reference_and_describe() {
-        let receiver = {
-            let (receiver, sender) = Connector::new();
-            let open: crate::DirEntry = sender.into();
-            let (client, server) = fidl::endpoints::create_proxy::<fio::NodeMarker>();
-            const FLAGS: fio::Flags =
-                fio::Flags::PROTOCOL_NODE.union(fio::Flags::FLAG_SEND_REPRESENTATION);
-            FLAGS.to_object_request(server.into_channel()).handle(|request| {
-                open.open_entry(OpenRequest::new(
-                    ExecutionScope::new(),
-                    FLAGS,
-                    vfs::Path::dot(),
-                    request,
-                ))
-            });
-
-            // The NODE_REFERENCE connection should be terminated on the sender side.
-            let result = client.take_event_stream().next().await.unwrap();
-            assert_matches!(
-                result,
-                Ok(fio::NodeEvent::OnRepresentation { payload: fio::Representation::Node(_) })
-            );
-
-            receiver
-        };
-
-        // After closing the sender, the receiver should be done.
-        assert_matches!(receiver.receive().await, None);
-    }
-
-    // TODO(340891837): This test only runs on host because of the reliance on Open
-    #[fuchsia::test]
-    async fn unwrap_server_end_or_serve_node_empty() {
-        let (receiver, sender) = Connector::new();
-        let open: crate::DirEntry = sender.into();
-
-        let (client_end, server_end) = Channel::create();
-        // The VFS should not send any event, but directly hand us the channel.
-        const FLAGS: fio::Flags = fio::Flags::PROTOCOL_SERVICE;
-        FLAGS.to_object_request(server_end).handle(|request| {
-            open.open_entry(OpenRequest::new(
-                ExecutionScope::new(),
-                FLAGS,
-                vfs::Path::dot(),
-                request,
-            ))
-        });
-        // Check that we got the channel.
-        assert_matches!(receiver.receive().await, Some(_));
-
-        // Check that there's no event, as we should be connected to the other end of the capability
-        // directly (i.e. this shouldn't actually be a fuchsia.io/Node connection).
-        let client_end: ClientEnd<fio::NodeMarker> = client_end.into();
-        let node: fio::NodeProxy = client_end.into_proxy();
-        assert_matches!(node.take_event_stream().next().await, None);
     }
 }

@@ -99,11 +99,6 @@ impl CapabilityBound for Router<crate::Data> {
         "DataRouter"
     }
 }
-impl CapabilityBound for Router<crate::DirEntry> {
-    fn debug_typename() -> &'static str {
-        "DirEntryRouter"
-    }
-}
 impl CapabilityBound for Router<crate::Dict> {
     fn debug_typename() -> &'static str {
         "DictionaryRouter"

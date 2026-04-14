@@ -12,8 +12,8 @@ use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use sandbox::{
-    Capability, CapabilityBound, Connector, Data, Dict, DirConnector, DirEntry, Request, Routable,
-    Router, RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
+    RouterResponse, WeakInstanceToken,
 };
 use std::fmt::Debug;
 
@@ -444,15 +444,6 @@ impl DictExt for Dict {
                             return Ok(Some(GenericRouterResponse::Unavailable));
                         }
                         RouterResponse::<Data>::Debug(d) => {
-                            return Ok(Some(GenericRouterResponse::Debug(d)));
-                        }
-                    },
-                    Capability::DirEntryRouter(r) => match r.route(request, debug, target).await? {
-                        RouterResponse::<DirEntry>::Capability(c) => c.into(),
-                        RouterResponse::<DirEntry>::Unavailable => {
-                            return Ok(Some(GenericRouterResponse::Unavailable));
-                        }
-                        RouterResponse::<DirEntry>::Debug(d) => {
                             return Ok(Some(GenericRouterResponse::Debug(d)));
                         }
                     },

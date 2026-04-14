@@ -3,6 +3,8 @@
 
 use cm_types::{NamespacePath, Path, RelativePath};
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use namespace::{Entry as NamespaceEntry, EntryError, Namespace, NamespaceError, Tree};
 use router_error::Explain;
@@ -10,7 +12,6 @@ use sandbox::{Capability, Dict, RemotableCapability, RouterResponse, WeakInstanc
 use thiserror::Error;
 use vfs::directory::entry::serve_directory;
 use vfs::execution_scope::ExecutionScope;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// A builder object for assembling a program's incoming namespace.
 pub struct NamespaceBuilder {
@@ -100,12 +101,11 @@ impl NamespaceBuilder {
         path: &NamespacePath,
     ) -> Result<(), BuildNamespaceError> {
         match &cap {
-            Capability::Directory(_)
-            | Capability::Dictionary(_)
-            | Capability::DirEntry(_)
+            Capability::Dictionary(_)
             | Capability::DirConnector(_)
             | Capability::DirConnectorRouter(_)
-            | Capability::DictionaryRouter(_) => {}
+            | Capability::DictionaryRouter(_)
+            | Capability::Handle(_) => {}
             _ => return Err(NamespaceError::EntryError(EntryError::UnsupportedType).into()),
         }
         self.entries.add(path, cap)?;
@@ -116,7 +116,9 @@ impl NamespaceBuilder {
         let mut entries = vec![];
         for (path, cap) in self.entries.flatten() {
             let client_end: ClientEnd<fio::DirectoryMarker> = match cap {
-                Capability::Directory(d) => d.into(),
+                Capability::Handle(handle) => ClientEnd::new(fidl::handle::Channel::from(
+                    fidl::handle::NullableHandle::from(handle),
+                )),
                 Capability::DirConnector(c) => {
                     let (client, server) =
                         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
@@ -279,14 +281,15 @@ mod tests {
     use fuchsia_fs::directory::DirEntry;
     use futures::channel::mpsc;
     use futures::{StreamExt, TryStreamExt};
-    use sandbox::{Connector, Directory, Receiver};
+    use sandbox::{Connector, DirConnector, Receiver};
     use std::sync::Arc;
     use test_case::test_case;
     use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
     use vfs::remote::RemoteLike;
     use vfs::{ObjectRequestRef, path, pseudo_directory};
 
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
 
     fn multishot() -> (Connector, Receiver) {
         let (receiver, sender) = Connector::new();
@@ -298,9 +301,9 @@ mod tests {
         Capability::Connector(sender)
     }
 
-    fn directory_cap() -> Capability {
-        let (client, _server) = endpoints::create_endpoints();
-        Capability::Directory(Directory::new(client))
+    fn dir_connector_cap() -> Capability {
+        let fs = pseudo_directory! {};
+        DirConnector::from_directory_entry(fs, fio::PERM_READABLE).into()
     }
 
     fn ns_path(str: &str) -> NamespacePath {
@@ -340,7 +343,7 @@ mod tests {
         let mut not_shadow =
             NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         not_shadow.add_object(connector_cap(), &path("/svc/foo")).unwrap();
-        assert_matches!(not_shadow.add_entry(directory_cap(), &ns_path("/svc2")), Ok(_));
+        assert_matches!(not_shadow.add_entry(dir_connector_cap(), &ns_path("/svc2")), Ok(_));
     }
 
     #[fuchsia::test]
@@ -362,10 +365,10 @@ mod tests {
         let scope = ExecutionScope::new();
         let mut namespace =
             NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
-        namespace.add_entry(directory_cap(), &ns_path("/svc/a")).expect("");
+        namespace.add_entry(dir_connector_cap(), &ns_path("/svc/a")).expect("");
         // Adding again will fail.
         assert_matches!(
-            namespace.add_entry(directory_cap(), &ns_path("/svc/a")),
+            namespace.add_entry(dir_connector_cap(), &ns_path("/svc/a")),
             Err(BuildNamespaceError::NamespaceError(NamespaceError::Duplicate(path)))
             if path.to_string() == "/svc/a"
         );
@@ -378,7 +381,7 @@ mod tests {
             NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_object(connector_cap(), &path("/svc/a")).expect("");
         assert_matches!(
-            namespace.add_entry(directory_cap(), &ns_path("/svc/a")),
+            namespace.add_entry(dir_connector_cap(), &ns_path("/svc/a")),
             Err(BuildNamespaceError::NamespaceError(NamespaceError::Shadow(path)))
             if path.to_string() == "/svc/a"
         );
@@ -393,7 +396,7 @@ mod tests {
             NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_object(connector_cap(), &path("/foo/bar")).expect("");
         assert_matches!(
-            namespace.add_entry(directory_cap(), &ns_path("/foo")),
+            namespace.add_entry(dir_connector_cap(), &ns_path("/foo")),
             Err(BuildNamespaceError::NamespaceError(NamespaceError::Duplicate(path)))
             if path.to_string() == "/foo"
         );
@@ -407,7 +410,7 @@ mod tests {
         let scope = ExecutionScope::new();
         let mut namespace =
             NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
-        namespace.add_entry(directory_cap(), &ns_path("/foo")).expect("");
+        namespace.add_entry(dir_connector_cap(), &ns_path("/foo")).expect("");
         assert_matches!(
             namespace.add_object(connector_cap(), &path("/foo/bar")),
             Err(BuildNamespaceError::NamespaceError(NamespaceError::Duplicate(path)))
@@ -607,7 +610,7 @@ mod tests {
         let fs = pseudo_directory! {
             "foo" => mock,
         };
-        let dir = Directory::from(vfs::directory::serve(fs, rights).into_client_end().unwrap());
+        let dir = DirConnector::from_directory_entry(fs, rights);
 
         let scope = ExecutionScope::new();
         let mut namespace =
@@ -665,9 +668,7 @@ mod tests {
         let fs = pseudo_directory! {
             "foo" => mock,
         };
-        let dir = Directory::from(
-            vfs::directory::serve(fs, fio::PERM_READABLE).into_client_end().unwrap(),
-        );
+        let dir = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
 
         let scope = ExecutionScope::new();
         let mut namespace =

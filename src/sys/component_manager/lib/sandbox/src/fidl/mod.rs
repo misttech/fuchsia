@@ -11,16 +11,12 @@ pub(crate) mod dict;
 mod dictionary_router;
 mod dir_connector;
 mod dir_connector_router;
-mod dir_entry;
-mod dir_entry_router;
-mod directory;
 mod handle;
 mod instance_token;
 pub(crate) mod receiver;
 pub(crate) mod registry;
 pub(crate) mod router;
 pub(crate) mod store;
-mod unit;
 
 use crate::{ConversionError, WeakInstanceToken};
 use fidl_fuchsia_component_sandbox as fsandbox;

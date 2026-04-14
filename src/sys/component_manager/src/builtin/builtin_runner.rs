@@ -12,7 +12,14 @@ use elf_runner::crash_info::CrashRecords;
 use elf_runner::process_launcher::NamespaceConnector;
 use fidl::endpoints;
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy, RequestStream, ServerEnd};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as fcrunner;
 use fidl_fuchsia_data::Dictionary;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_memory_attribution as fattribution;
+use fidl_fuchsia_process as fprocess;
+use fidl_fuchsia_process_lifecycle as fprocess_lifecycle;
+use fuchsia_async as fasync;
 use fuchsia_runtime::UtcClock;
 use futures::future::{BoxFuture, Shared};
 use futures::{Future, FutureExt, TryStreamExt};
@@ -28,12 +35,6 @@ use vfs::directory::entry::{OpenRequest, serve_directory};
 use vfs::execution_scope::ExecutionScope;
 use vfs::service::endpoint;
 use zx::{HandleBased, Task};
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
-    fidl_fuchsia_process as fprocess, fidl_fuchsia_process_lifecycle as fprocess_lifecycle,
-    fuchsia_async as fasync,
-};
 
 use crate::builtin::runner::BuiltinRunnerFactory;
 use crate::model::component::WeakComponentInstance;
@@ -656,7 +657,6 @@ mod tests {
     use fuchsia_runtime::{HandleInfo, HandleType};
     use futures::channel::{self, oneshot};
     use moniker::Moniker;
-    use sandbox::Directory;
     use serve_processargs::NamespaceBuilder;
     use std::pin::pin;
     use std::sync::LazyLock;
@@ -1069,9 +1069,9 @@ mod tests {
         .unwrap();
 
         // Open the current package which contains a `signal-then-hang` component.
-        let (pkg, server_end) = fidl::endpoints::create_endpoints();
-        open_channel_in_namespace("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE, server_end)
-            .unwrap();
+        let (pkg, server_end) = fidl::endpoints::create_proxy();
+        let flags = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
+        open_channel_in_namespace("/pkg", flags, server_end).unwrap();
 
         // Run the `signal-then-hang` component and add a numbered handle.
         // This way we can monitor when that program is running.
@@ -1079,9 +1079,10 @@ mod tests {
         let (not_found, _) = channel::mpsc::unbounded();
         let mut namespace =
             NamespaceBuilder::new(scope, not_found, WeakInstanceToken::new_invalid());
+        let pkg_handle = pkg.into_channel().unwrap().into_zx_channel().into_handle();
         namespace
             .add_entry(
-                Capability::Directory(Directory::new(pkg)),
+                sandbox::Handle::new(pkg_handle).into(),
                 &NamespacePath::new("/pkg").unwrap(),
             )
             .unwrap();

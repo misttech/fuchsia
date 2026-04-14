@@ -82,20 +82,16 @@ impl Explain for RemoteError {
 
 #[derive(FromEnum, Debug)]
 pub enum Capability {
-    Unit(crate::Unit),
     Connector(crate::Connector),
     DirConnector(crate::DirConnector),
     Dictionary(crate::Dict),
     Data(crate::Data),
-    Directory(crate::Directory),
     Handle(crate::Handle),
     ConnectorRouter(crate::Router<crate::Connector>),
     DictionaryRouter(crate::Router<crate::Dict>),
-    DirEntryRouter(crate::Router<crate::DirEntry>),
     DirConnectorRouter(crate::Router<crate::DirConnector>),
     DataRouter(crate::Router<crate::Data>),
     Instance(crate::WeakInstanceToken),
-    DirEntry(crate::DirEntry),
 }
 
 impl Capability {
@@ -112,19 +108,12 @@ impl Capability {
             Self::DirConnector(s) => Ok(Self::DirConnector(s.clone())),
             Self::ConnectorRouter(s) => Ok(Self::ConnectorRouter(s.clone())),
             Self::DictionaryRouter(s) => Ok(Self::DictionaryRouter(s.clone())),
-            Self::DirEntryRouter(s) => Ok(Self::DirEntryRouter(s.clone())),
             Self::DirConnectorRouter(s) => Ok(Self::DirConnectorRouter(s.clone())),
             Self::DataRouter(s) => Ok(Self::DataRouter(s.clone())),
             Self::Dictionary(s) => Ok(Self::Dictionary(s.clone())),
             Self::Data(s) => Ok(Self::Data(s.clone())),
-            Self::Unit(s) => Ok(Self::Unit(s.clone())),
-            Self::Directory(_) => {
-                // Not supported.
-                Err(())
-            }
             Self::Handle(s) => Ok(Self::Handle(s.try_clone()?)),
             Self::Instance(s) => Ok(Self::Instance(s.clone())),
-            Self::DirEntry(s) => Ok(Self::DirEntry(s.clone())),
         }
     }
 
@@ -134,16 +123,12 @@ impl Capability {
             Self::DirConnector(_) => crate::DirConnector::debug_typename(),
             Self::ConnectorRouter(_) => crate::Router::<crate::Connector>::debug_typename(),
             Self::DictionaryRouter(_) => crate::Router::<crate::Dict>::debug_typename(),
-            Self::DirEntryRouter(_) => crate::Router::<crate::DirEntry>::debug_typename(),
             Self::DirConnectorRouter(_) => crate::Router::<crate::DirConnector>::debug_typename(),
             Self::DataRouter(_) => crate::Router::<crate::Data>::debug_typename(),
             Self::Dictionary(_) => crate::Dict::debug_typename(),
             Self::Data(_) => crate::Data::debug_typename(),
-            Self::Unit(_) => crate::Unit::debug_typename(),
-            Self::Directory(_) => crate::Directory::debug_typename(),
             Self::Handle(_) => crate::Handle::debug_typename(),
             Self::Instance(_) => "Instance",
-            Self::DirEntry(_) => crate::DirEntry::debug_typename(),
         }
     }
 }
@@ -181,28 +166,6 @@ impl TryFrom<Capability> for crate::Dict {
     }
 }
 
-impl TryFrom<Capability> for crate::Directory {
-    type Error = ();
-
-    fn try_from(c: Capability) -> Result<Self, Self::Error> {
-        match c {
-            Capability::Directory(c) => Ok(c),
-            _ => Err(()),
-        }
-    }
-}
-
-impl TryFrom<Capability> for crate::DirEntry {
-    type Error = ();
-
-    fn try_from(c: Capability) -> Result<Self, Self::Error> {
-        match c {
-            Capability::DirEntry(c) => Ok(c),
-            _ => Err(()),
-        }
-    }
-}
-
 impl TryFrom<Capability> for crate::Data {
     type Error = ();
 
@@ -225,17 +188,6 @@ impl TryFrom<Capability> for crate::Handle {
     }
 }
 
-impl TryFrom<Capability> for crate::Unit {
-    type Error = ();
-
-    fn try_from(c: Capability) -> Result<Self, Self::Error> {
-        match c {
-            Capability::Unit(r) => Ok(r),
-            _ => Err(()),
-        }
-    }
-}
-
 impl TryFrom<Capability> for Router<crate::Dict> {
     type Error = ();
 
@@ -253,17 +205,6 @@ impl TryFrom<Capability> for Router<crate::DirConnector> {
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
         match c {
             Capability::DirConnectorRouter(c) => Ok(c),
-            _ => Err(()),
-        }
-    }
-}
-
-impl TryFrom<Capability> for Router<crate::DirEntry> {
-    type Error = ();
-
-    fn try_from(c: Capability) -> Result<Self, Self::Error> {
-        match c {
-            Capability::DirEntryRouter(c) => Ok(c),
             _ => Err(()),
         }
     }

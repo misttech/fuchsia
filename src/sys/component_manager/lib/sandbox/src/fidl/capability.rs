@@ -15,16 +15,12 @@ impl crate::fidl::IntoFsandboxCapability for Capability {
         match self {
             Capability::Connector(s) => s.into_fsandbox_capability(token),
             Capability::DirConnector(s) => s.into_fsandbox_capability(token),
-            Capability::DirEntry(s) => s.into_fsandbox_capability(token),
             Capability::DictionaryRouter(s) => s.into_fsandbox_capability(token),
             Capability::ConnectorRouter(s) => s.into_fsandbox_capability(token),
-            Capability::DirEntryRouter(s) => s.into_fsandbox_capability(token),
             Capability::DirConnectorRouter(s) => s.into_fsandbox_capability(token),
             Capability::DataRouter(s) => s.into_fsandbox_capability(token),
             Capability::Dictionary(s) => s.into_fsandbox_capability(token),
             Capability::Data(s) => s.into_fsandbox_capability(token),
-            Capability::Unit(s) => s.into_fsandbox_capability(token),
-            Capability::Directory(s) => s.into_fsandbox_capability(token),
             Capability::Handle(s) => s.into_fsandbox_capability(token),
             Capability::Instance(s) => s.into_fsandbox_capability(token),
         }
@@ -40,7 +36,7 @@ impl TryFrom<fsandbox::Capability> for Capability {
     /// was converted to a FIDL capability. This method takes it out of the registry.
     fn try_from(capability: fsandbox::Capability) -> Result<Self, Self::Error> {
         match capability {
-            fsandbox::Capability::Unit(_) => Ok(crate::Unit::default().into()),
+            fsandbox::Capability::Unit(_) => Err(RemoteError::UnknownVariant),
             fsandbox::Capability::Handle(handle) => Ok(crate::Handle::new(handle).into()),
             fsandbox::Capability::Data(data_capability) => {
                 Ok(crate::Data::try_from(data_capability)?.into())
@@ -62,9 +58,6 @@ impl TryFrom<fsandbox::Capability> for Capability {
                 };
                 Ok(any)
             }
-            fsandbox::Capability::Directory(client_end) => {
-                Ok(crate::Directory::new(client_end).into())
-            }
             fsandbox::Capability::ConnectorRouter(client_end) => {
                 let any = try_from_handle_in_registry(client_end.as_handle_ref())?;
                 match &any {
@@ -81,14 +74,7 @@ impl TryFrom<fsandbox::Capability> for Capability {
                 };
                 Ok(any)
             }
-            fsandbox::Capability::DirEntryRouter(client_end) => {
-                let any = try_from_handle_in_registry(client_end.as_handle_ref())?;
-                match &any {
-                    Capability::DirEntryRouter(_) => (),
-                    _ => return Err(RemoteError::BadCapability),
-                };
-                Ok(any)
-            }
+            fsandbox::Capability::DirEntryRouter(_) => Err(RemoteError::UnknownVariant),
             fsandbox::Capability::DataRouter(client_end) => {
                 let any = try_from_handle_in_registry(client_end.as_handle_ref())?;
                 match &any {
@@ -97,14 +83,7 @@ impl TryFrom<fsandbox::Capability> for Capability {
                 };
                 Ok(any)
             }
-            fsandbox::Capability::DirEntry(dir_entry) => {
-                let any = try_from_handle_in_registry(dir_entry.token.as_handle_ref())?;
-                match &any {
-                    Capability::DirEntry(_) => (),
-                    _ => return Err(RemoteError::BadCapability),
-                };
-                Ok(any)
-            }
+            fsandbox::Capability::DirEntry(_) => Err(RemoteError::UnknownVariant),
             fsandbox::CapabilityUnknown!() => Err(RemoteError::UnknownVariant),
         }
     }
@@ -119,16 +98,12 @@ impl RemotableCapability for Capability {
         match self {
             Self::Connector(s) => s.try_into_directory_entry(scope, token),
             Self::DirConnector(s) => s.try_into_directory_entry(scope, token),
-            Self::DirEntry(s) => s.try_into_directory_entry(scope, token),
             Self::ConnectorRouter(s) => s.try_into_directory_entry(scope, token),
             Self::DictionaryRouter(s) => s.try_into_directory_entry(scope, token),
-            Self::DirEntryRouter(s) => s.try_into_directory_entry(scope, token),
             Self::DirConnectorRouter(s) => s.try_into_directory_entry(scope, token),
             Self::DataRouter(s) => s.try_into_directory_entry(scope, token),
             Self::Dictionary(s) => s.try_into_directory_entry(scope, token),
             Self::Data(s) => s.try_into_directory_entry(scope, token),
-            Self::Unit(s) => s.try_into_directory_entry(scope, token),
-            Self::Directory(s) => s.try_into_directory_entry(scope, token),
             Self::Handle(s) => s.try_into_directory_entry(scope, token),
             Self::Instance(s) => s.try_into_directory_entry(scope, token),
         }

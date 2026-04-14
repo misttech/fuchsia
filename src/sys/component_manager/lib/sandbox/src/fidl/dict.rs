@@ -192,10 +192,12 @@ mod tests {
         BorrowedKey, HYBRID_SWITCH_INSERTION_LEN, HYBRID_SWITCH_REMOVAL_LEN, HybridMap, Key,
     };
     use crate::fidl::IntoFsandboxCapability;
-    use crate::{Data, Dict, DirEntry, Handle, Unit, serve_capability_store};
+    use crate::{Data, Dict, DirConnector, Handle, serve_capability_store};
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream};
     use fidl::handle::{Channel, HandleBased, Status};
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_fs::directory;
     use futures::StreamExt;
     use std::sync::LazyLock;
@@ -209,7 +211,6 @@ mod tests {
     use vfs::path::Path;
     use vfs::remote::RemoteLike;
     use vfs::{ObjectRequestRef, pseudo_directory};
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     static CAP_KEY: LazyLock<Key> = LazyLock::new(|| "Cap".parse().unwrap());
 
@@ -238,7 +239,7 @@ mod tests {
         );
 
         let value = 10;
-        store.import(value, Unit::default().into()).await.unwrap().unwrap();
+        store.import(value, Data::Int64(1).into()).await.unwrap().unwrap();
         store
             .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key: "k".into(), value })
             .await
@@ -291,7 +292,7 @@ mod tests {
         );
 
         let value = 10;
-        store.import(value, Unit::default().into()).await.unwrap().unwrap();
+        store.import(value, Data::Int64(1).into()).await.unwrap().unwrap();
         store
             .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key: "k".into(), value })
             .await
@@ -373,9 +374,9 @@ mod tests {
         let dict_id = 1;
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
-        let unit = Unit::default().into();
+        let data = Data::Int64(1).into();
         let value = 2;
-        store.import(value, unit).await.unwrap().unwrap();
+        store.import(value, data).await.unwrap().unwrap();
         store
             .dictionary_insert(
                 dict_id,
@@ -390,8 +391,8 @@ mod tests {
 
         // The entry that was inserted should now be in `entries`.
         let cap = dict.remove(&*CAP_KEY).expect("not in entries after insert");
-        let Capability::Unit(unit) = cap else { panic!("Bad capability type: {:#?}", cap) };
-        assert_eq!(unit, Unit::default());
+        let Capability::Data(data) = cap else { panic!("Bad capability type: {:#?}", cap) };
+        assert_eq!(data, Data::Int64(1));
     }
 
     #[fuchsia::test]
@@ -402,9 +403,9 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let unit = Unit::default().into();
+        let data = Data::Int64(1).into();
         let value = 2;
-        store.import(value, unit).await.unwrap().unwrap();
+        store.import(value, data).await.unwrap().unwrap();
 
         assert_matches!(
             store
@@ -438,9 +439,9 @@ mod tests {
             Ok(())
         );
 
-        let unit = Unit::default().into();
+        let data = Data::Int64(1).into();
         let value = 3;
-        store.import(value, unit).await.unwrap().unwrap();
+        store.import(value, data).await.unwrap().unwrap();
         assert_matches!(
             store
                 .dictionary_insert(1, &fsandbox::DictionaryItem { key: "k".into(), value })
@@ -462,8 +463,8 @@ mod tests {
 
         let dict = new_dict(test_type);
 
-        // Insert a Unit into the Dict.
-        dict.insert(CAP_KEY.clone(), Capability::Unit(Unit::default())).unwrap();
+        // Insert a Data into the Dict.
+        dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).unwrap();
         assert_eq!(adjusted_len(&dict, test_type), 1);
 
         let dict_ref = Capability::Dictionary(dict.clone())
@@ -483,7 +484,7 @@ mod tests {
             .unwrap();
         let cap = store.export(dest_id).await.unwrap().unwrap();
         // The value should be the same one that was previously inserted.
-        assert_eq!(cap, Unit::default().into());
+        assert_eq!(cap, Data::Int64(1).into());
 
         // Removing the entry with Remove should remove it from `entries`.
         assert_eq!(adjusted_len(&dict, test_type), 0);
@@ -504,8 +505,8 @@ mod tests {
 
         store.dictionary_create(1).await.unwrap().unwrap();
 
-        let unit = Unit::default().into();
-        store.import(2, unit).await.unwrap().unwrap();
+        let data = Data::Int64(1).into();
+        store.import(2, data).await.unwrap().unwrap();
 
         assert_matches!(
             store.dictionary_remove(2, "k".into(), None).await.unwrap(),
@@ -545,7 +546,7 @@ mod tests {
 
         let dict = new_dict(test_type);
 
-        dict.insert(CAP_KEY.clone(), Capability::Unit(Unit::default())).unwrap();
+        dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).unwrap();
         assert_eq!(adjusted_len(&dict, test_type), 1);
         let (ch, _) = fidl::Channel::create();
         let handle = Handle::from(ch.into_handle());
@@ -559,7 +560,7 @@ mod tests {
         let dest_id = 2;
         store.dictionary_get(dict_id, CAP_KEY.as_str(), dest_id).await.unwrap().unwrap();
         let cap = store.export(dest_id).await.unwrap().unwrap();
-        assert_eq!(cap, Unit::default().into());
+        assert_eq!(cap, Data::Int64(1).into());
     }
 
     #[fuchsia::test]
@@ -577,7 +578,7 @@ mod tests {
 
         store.dictionary_create(1).await.unwrap().unwrap();
 
-        store.import(2, Unit::default().into()).await.unwrap().unwrap();
+        store.import(2, Data::Int64(1).into()).await.unwrap().unwrap();
 
         assert_matches!(
             store.dictionary_get(2, "k".into(), 3).await.unwrap(),
@@ -589,7 +590,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        store.import(2, Unit::default().into()).await.unwrap().unwrap();
+        store.import(2, Data::Int64(1).into()).await.unwrap().unwrap();
         assert_matches!(
             store.dictionary_get(1, "k".into(), 2).await.unwrap(),
             Err(fsandbox::CapabilityStoreError::IdAlreadyExists)
@@ -632,9 +633,9 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        // Create a Dict with a Unit inside, and copy the Dict.
+        // Create a Dict with a Data inside, and copy the Dict.
         let dict = new_dict(test_type);
-        dict.insert("unit1".parse().unwrap(), Capability::Unit(Unit::default())).unwrap();
+        dict.insert("data1".parse().unwrap(), Capability::Data(Data::Int64(1))).unwrap();
         store
             .import(
                 1,
@@ -645,29 +646,29 @@ mod tests {
             .unwrap();
         store.dictionary_copy(1, 2).await.unwrap().unwrap();
 
-        // Insert a Unit into the copy.
-        store.import(3, Unit::default().into()).await.unwrap().unwrap();
+        // Insert a Data into the copy.
+        store.import(3, Data::Int64(1).into()).await.unwrap().unwrap();
         store
             .dictionary_insert(2, &fsandbox::DictionaryItem { key: "k".into(), value: 3 })
             .await
             .unwrap()
             .unwrap();
 
-        // The copy should have two Units.
+        // The copy should have two Data values.
         let copy = store.export(2).await.unwrap().unwrap();
         let copy = Capability::try_from(copy).unwrap();
         let Capability::Dictionary(copy) = copy else { panic!() };
         {
             assert_eq!(adjusted_len(&copy, test_type), 2);
             let copy = copy.lock();
-            assert!(copy.entries.iter().all(|(_, value)| matches!(value, Capability::Unit(_))));
+            assert!(copy.entries.iter().all(|(_, value)| matches!(value, Capability::Data(_))));
         }
 
-        // The original Dict should have only one Unit.
+        // The original Dict should have only one Data.
         {
             assert_eq!(adjusted_len(&dict, test_type), 1);
             let dict = dict.lock();
-            assert!(dict.entries.iter().all(|(_, value)| matches!(value, Capability::Unit(_))));
+            assert!(dict.entries.iter().all(|(_, value)| matches!(value, Capability::Data(_))));
         }
     }
 
@@ -685,7 +686,7 @@ mod tests {
         );
 
         store.dictionary_create(1).await.unwrap().unwrap();
-        store.import(2, Unit::default().into()).await.unwrap().unwrap();
+        store.import(2, Data::Int64(1).into()).await.unwrap().unwrap();
         assert_matches!(
             store.dictionary_copy(1, 2).await.unwrap(),
             Err(fsandbox::CapabilityStoreError::IdAlreadyExists)
@@ -733,8 +734,8 @@ mod tests {
             .unwrap();
         store.duplicate(1, 2).await.unwrap().unwrap();
 
-        // Add a Unit into the duplicate.
-        store.import(3, Unit::default().into()).await.unwrap().unwrap();
+        // Add a Data into the duplicate.
+        store.import(3, Data::Int64(1).into()).await.unwrap().unwrap();
         store
             .dictionary_insert(2, &fsandbox::DictionaryItem { key: "k".into(), value: 3 })
             .await
@@ -995,10 +996,10 @@ mod tests {
 
         let id_gen = sandbox::CapabilityIdGenerator::new();
 
-        // Create a Dict with [NUM_ENTRIES] entries that have Unit values.
+        // Create a Dict with [NUM_ENTRIES] entries that have Data values.
         let dict = Dict::new();
         for i in 0..NUM_ENTRIES {
-            dict.insert(format!("{}", i).parse().unwrap(), Capability::Unit(Unit::default()))
+            dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
                 .unwrap();
         }
 
@@ -1053,10 +1054,10 @@ mod tests {
         const EXPECTED_CHUNK_LENGTHS: &[u32] =
             &[fsandbox::MAX_DICTIONARY_ITERATOR_CHUNK, fsandbox::MAX_DICTIONARY_ITERATOR_CHUNK, 1];
 
-        // Create a Dict with [NUM_ENTRIES] entries that have Unit values.
+        // Create a Dict with [NUM_ENTRIES] entries that have Data values.
         let dict = Dict::new();
         for i in 0..NUM_ENTRIES {
-            dict.insert(format!("{}", i).parse().unwrap(), Capability::Unit(Unit::default()))
+            dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
                 .unwrap();
         }
 
@@ -1106,7 +1107,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        store.import(2, Unit::default().into()).await.unwrap().unwrap();
+        store.import(2, Data::Int64(1).into()).await.unwrap().unwrap();
 
         let (_, server_end) = create_proxy();
         assert_matches!(
@@ -1177,9 +1178,9 @@ mod tests {
             );
         }
 
-        store.import(4, Unit::default().into()).await.unwrap().unwrap();
+        store.import(4, Data::Int64(1).into()).await.unwrap().unwrap();
         for i in 0..3 {
-            store.import(2, Unit::default().into()).await.unwrap().unwrap();
+            store.import(2, Data::Int64(1).into()).await.unwrap().unwrap();
             store
                 .dictionary_insert(1, &fsandbox::DictionaryItem { key: format!("k{i}"), value: 2 })
                 .await
@@ -1208,7 +1209,7 @@ mod tests {
     #[fuchsia::test]
     async fn try_into_open_error_not_supported() {
         let dict = Dict::new();
-        dict.insert(CAP_KEY.clone(), Capability::Unit(Unit::default()))
+        dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1)))
             .expect("dict entry already exists");
         let scope = ExecutionScope::new();
         assert_matches!(
@@ -1246,8 +1247,11 @@ mod tests {
     async fn try_into_open_success() {
         let dict = Dict::new();
         let mock_dir = Arc::new(MockDir(Counter::new(0)));
-        dict.insert(CAP_KEY.clone(), Capability::DirEntry(DirEntry::new(mock_dir.clone())))
-            .expect("dict entry already exists");
+        dict.insert(
+            CAP_KEY.clone(),
+            DirConnector::from_directory_entry(mock_dir.clone(), fio::PERM_READABLE).into(),
+        )
+        .expect("dict entry already exists");
         let scope = ExecutionScope::new();
         let remote =
             dict.try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid()).unwrap();
@@ -1267,7 +1271,10 @@ mod tests {
         let inner_dict = Dict::new();
         let mock_dir = Arc::new(MockDir(Counter::new(0)));
         inner_dict
-            .insert(CAP_KEY.clone(), Capability::DirEntry(DirEntry::new(mock_dir.clone())))
+            .insert(
+                CAP_KEY.clone(),
+                DirConnector::from_directory_entry(mock_dir.clone(), fio::PERM_READABLE).into(),
+            )
             .expect("dict entry already exists");
         let dict = Dict::new();
         dict.insert(CAP_KEY.clone(), Capability::Dictionary(inner_dict)).unwrap();
@@ -1316,9 +1323,9 @@ mod tests {
         // Just one less one the switchover point. Count down instead of up to test sorting.
         {
             for i in (1..=HYBRID_SWITCH_INSERTION_LEN - 1).rev() {
-                let unit = Unit::default().into();
+                let data = Data::Int64(1).into();
                 let value = (i + 10) as u64;
-                store.import(value, unit).await.unwrap().unwrap();
+                store.import(value, data).await.unwrap().unwrap();
                 store
                     .dictionary_insert(
                         dict_id,
@@ -1331,7 +1338,7 @@ mod tests {
 
             let entries = &dict.lock().entries;
             let HybridMap::Vec(v) = entries else { panic!() };
-            v.iter().for_each(|(_, v)| assert_matches!(v, Capability::Unit(_)));
+            v.iter().for_each(|(_, v)| assert_matches!(v, Capability::Data(_)));
             let actual_keys: Vec<Key> = v.iter().map(|(k, _)| k.clone()).collect();
             let expected: Vec<Key> =
                 (1..=HYBRID_SWITCH_INSERTION_LEN - 1).map(|i| key_for(i)).collect();
@@ -1341,9 +1348,9 @@ mod tests {
         // Add one more, and the switch happens.
         {
             let i = HYBRID_SWITCH_INSERTION_LEN;
-            let unit = Unit::default().into();
+            let data = Data::Int64(1).into();
             let value = (i + 10) as u64;
-            store.import(value, unit).await.unwrap().unwrap();
+            store.import(value, data).await.unwrap().unwrap();
             store
                 .dictionary_insert(
                     dict_id,
@@ -1355,7 +1362,7 @@ mod tests {
 
             let entries = &dict.lock().entries;
             let HybridMap::Map(m) = entries else { panic!() };
-            m.iter().for_each(|(_, m)| assert_matches!(m, Capability::Unit(_)));
+            m.iter().for_each(|(_, m)| assert_matches!(m, Capability::Data(_)));
             let actual_keys: Vec<Key> = m.iter().map(|(k, _)| k.clone()).collect();
             let expected: Vec<Key> =
                 (1..=HYBRID_SWITCH_INSERTION_LEN).map(|i| key_for(i)).collect();
@@ -1373,7 +1380,7 @@ mod tests {
 
             let entries = &dict.lock().entries;
             let HybridMap::Map(m) = entries else { panic!() };
-            m.iter().for_each(|(_, v)| assert_matches!(v, Capability::Unit(_)));
+            m.iter().for_each(|(_, v)| assert_matches!(v, Capability::Data(_)));
             let actual_keys: Vec<Key> = m.iter().map(|(k, _)| k.clone()).collect();
             let expected: Vec<Key> =
                 (1..=HYBRID_SWITCH_REMOVAL_LEN + 1).map(|i| key_for(i)).collect();
@@ -1387,7 +1394,7 @@ mod tests {
 
             let entries = &dict.lock().entries;
             let HybridMap::Vec(v) = entries else { panic!() };
-            v.iter().for_each(|(_, v)| assert_matches!(v, Capability::Unit(_)));
+            v.iter().for_each(|(_, v)| assert_matches!(v, Capability::Data(_)));
             let actual_keys: Vec<Key> = v.iter().map(|(k, _)| k.clone()).collect();
             let expected: Vec<Key> = (1..=HYBRID_SWITCH_REMOVAL_LEN).map(|i| key_for(i)).collect();
             assert_eq!(actual_keys, expected);
@@ -1433,7 +1440,7 @@ mod tests {
         dict.register_update_notifier(Box::new(move |update: EntryUpdate<'_>| {
             let u = match update {
                 EntryUpdate::Add(k, v) => {
-                    assert_matches!(v, Capability::Unit(_));
+                    assert_matches!(v, Capability::Data(_));
                     Update::Add(k.into())
                 }
                 EntryUpdate::Remove(k) => Update::Remove(k.into()),
@@ -1453,9 +1460,9 @@ mod tests {
 
         // 1. Three inserts, one of which overlaps
         let i = 1;
-        let unit = Unit::default().into();
+        let data = Data::Int64(1).into();
         let value = (i + 10) as u64;
-        store.import(value, unit).await.unwrap().unwrap();
+        store.import(value, data).await.unwrap().unwrap();
         store
             .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key: key_for(i).into(), value })
             .await
@@ -1464,9 +1471,9 @@ mod tests {
 
         for expected_result in [Ok(()), Err(fsandbox::CapabilityStoreError::ItemAlreadyExists)] {
             let i = 2;
-            let unit = Unit::default().into();
+            let data = Data::Int64(1).into();
             let value = (i + 10) as u64;
-            store.import(value, unit).await.unwrap().unwrap();
+            store.import(value, data).await.unwrap().unwrap();
             let result = store
                 .dictionary_insert(
                     dict_id,
@@ -1487,9 +1494,9 @@ mod tests {
 
         // 3. One more insert, then drain
         let i = 3;
-        let unit = Unit::default().into();
+        let data = Data::Int64(1).into();
         let value = (i + 10) as u64;
-        store.import(value, unit).await.unwrap().unwrap();
+        store.import(value, data).await.unwrap().unwrap();
         store
             .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key: key_for(i).into(), value })
             .await
@@ -1500,9 +1507,9 @@ mod tests {
         // 4. Unsubscribe to updates
         *subscribed.lock() = false;
         let i = 4;
-        let unit = Unit::default().into();
+        let data = Data::Int64(1).into();
         let value = (i + 10) as u64;
-        store.import(value, unit).await.unwrap().unwrap();
+        store.import(value, data).await.unwrap().unwrap();
         store
             .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key: key_for(i).into(), value })
             .await
@@ -1587,8 +1594,8 @@ mod tests {
         // Add an item to the dictionary, and assert that the projected directory contains the
         // added item.
         let fs = pseudo_directory! {};
-        let dir_entry = DirEntry::new(fs);
-        dict.insert("a".parse().unwrap(), Capability::DirEntry(dir_entry.clone()))
+        let dir_connector = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
+        dict.insert("a".parse().unwrap(), dir_connector.clone().into())
             .expect("dict entry already exists");
 
         assert_eq!(
@@ -1605,8 +1612,7 @@ mod tests {
 
         // Add an item to the dictionary, and assert that the projected directory contains the
         // added item.
-        dict.insert("b".parse().unwrap(), Capability::DirEntry(dir_entry))
-            .expect("dict entry already exists");
+        dict.insert("b".parse().unwrap(), dir_connector.into()).expect("dict entry already exists");
         let mut readdir_results = fuchsia_fs::directory::readdir(&dir_proxy).await.unwrap();
         readdir_results.sort_by(|entry_1, entry_2| entry_1.name.cmp(&entry_2.name));
         assert_eq!(
@@ -1629,12 +1635,12 @@ mod tests {
     async fn live_update_remove_nodes() {
         let dict = Dict::new();
         let fs = pseudo_directory! {};
-        let dir_entry = DirEntry::new(fs);
-        dict.insert("a".parse().unwrap(), Capability::DirEntry(dir_entry.clone()))
+        let dir_connector = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
+        dict.insert("a".parse().unwrap(), dir_connector.clone().into())
             .expect("dict entry already exists");
-        dict.insert("b".parse().unwrap(), Capability::DirEntry(dir_entry.clone()))
+        dict.insert("b".parse().unwrap(), dir_connector.clone().into())
             .expect("dict entry already exists");
-        dict.insert("c".parse().unwrap(), Capability::DirEntry(dir_entry.clone()))
+        dict.insert("c".parse().unwrap(), dir_connector.clone().into())
             .expect("dict entry already exists");
 
         let scope = ExecutionScope::new();
@@ -1723,10 +1729,10 @@ mod tests {
         let dict = Dict::new();
         let inner_dict = Dict::new();
         let fs = pseudo_directory! {};
-        let dir_entry = DirEntry::new(fs);
-        inner_dict.insert("x".parse().unwrap(), Capability::DirEntry(dir_entry.clone())).unwrap();
-        dict.insert("a".parse().unwrap(), Capability::DirEntry(dir_entry.clone())).unwrap();
-        dict.insert("b".parse().unwrap(), Capability::DirEntry(dir_entry.clone())).unwrap();
+        let dir_connector = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
+        inner_dict.insert("x".parse().unwrap(), dir_connector.clone().into()).unwrap();
+        dict.insert("a".parse().unwrap(), dir_connector.clone().into()).unwrap();
+        dict.insert("b".parse().unwrap(), dir_connector.clone().into()).unwrap();
         dict.insert("c".parse().unwrap(), Capability::Dictionary(inner_dict.clone())).unwrap();
 
         let scope = ExecutionScope::new();
@@ -1763,7 +1769,7 @@ mod tests {
         assert_matches!(inner_dict.keys().next(), None);
 
         // Adding to the empty Dict has no impact on the directory.
-        dict.insert("z".parse().unwrap(), Capability::DirEntry(dir_entry.clone())).unwrap();
+        dict.insert("z".parse().unwrap(), dir_connector.clone().into()).unwrap();
         let mut readdir_results = fuchsia_fs::directory::readdir(&dir_proxy).await.unwrap();
         readdir_results.sort_by(|entry_1, entry_2| entry_1.name.cmp(&entry_2.name));
         assert_eq!(
@@ -1791,11 +1797,8 @@ mod tests {
                 for i in 1..=HYBRID_SWITCH_INSERTION_LEN {
                     // These items will come last in the order as long as all other keys begin with
                     // a capital letter
-                    dict.insert(
-                        format!("_{i}").parse().unwrap(),
-                        Capability::Unit(Unit::default()),
-                    )
-                    .unwrap();
+                    dict.insert(format!("_{i}").parse().unwrap(), Capability::Data(Data::Int64(1)))
+                        .unwrap();
                 }
             }
         }

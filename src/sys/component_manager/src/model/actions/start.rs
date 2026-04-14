@@ -17,7 +17,7 @@ use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
 use async_trait::async_trait;
 use cm_rust::ComponentDecl;
-use cm_types::Name;
+use cm_types::{Name, RelativePath};
 use cm_util::{AbortError, AbortFutureExt, AbortHandle, AbortableScope};
 use config_encoder::ConfigFields;
 use errors::{ActionError, CreateNamespaceError, StartActionError, StructuredConfigError};
@@ -26,6 +26,7 @@ use fidl::endpoints::create_proxy;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runner as fcrunner;
 use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_mem as fmem;
 use fidl_fuchsia_process as fprocess;
 use fuchsia_runtime::{HandleInfo, HandleType};
@@ -37,7 +38,8 @@ use num_traits::cast::FromPrimitive;
 use router_error::RouterError;
 use routing::bedrock::request_metadata::runner_metadata;
 use sandbox::{
-    Capability, Connector, Dict, Message, Request, Router, RouterResponse, WeakInstanceToken,
+    Capability, Connector, Dict, DirConnector, Message, Request, Router, RouterResponse,
+    WeakInstanceToken,
 };
 use serve_processargs::NamespaceBuilder;
 use std::sync::Arc;
@@ -251,8 +253,12 @@ async fn do_start(
     .await
     .map_err(|err| StartActionError::CreateNamespaceError(err))?;
     for NamespaceEntry { directory, path } in additional_namespace_entries {
-        let directory: sandbox::Directory = directory.into();
-        namespace_builder.add_entry(Capability::Directory(directory), &path).map_err(|err| {
+        let dir_connector = DirConnector::from_proxy(
+            directory.into_proxy(),
+            RelativePath::dot(),
+            fio::PERM_READABLE | fio::Flags::PERM_INHERIT_WRITE | fio::Flags::PERM_INHERIT_EXECUTE,
+        );
+        namespace_builder.add_entry(dir_connector.into(), &path).map_err(|err| {
             StartActionError::CreateNamespaceError(CreateNamespaceError::BuildNamespaceError {
                 moniker: component.moniker.clone(),
                 err,

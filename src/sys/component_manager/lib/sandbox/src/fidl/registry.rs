@@ -116,7 +116,7 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Unit;
+    use crate::Data;
     use assert_matches::assert_matches;
     use futures::channel::oneshot;
 
@@ -125,20 +125,20 @@ mod tests {
     fn insert_get_remove() {
         let mut registry = Registry::default();
 
-        // Insert a Unit capability into the registry.
+        // Insert a Data capability into the registry.
         let koid = Koid::from_raw(123);
-        let unit = Unit::default();
-        assert!(registry.insert(koid, Entry { capability: unit.into(), task: None }).is_none());
+        let data = Data::Int64(0);
+        assert!(registry.insert(koid, Entry { capability: data.into(), task: None }).is_none());
 
-        // Get a capability with the same koid. It should be a Unit.
+        // Get a capability with the same koid. It should be a Data.
         let entry = registry.get(koid).unwrap();
         let got_unit = entry.capability.try_clone().unwrap();
-        assert_matches!(got_unit, Capability::Unit(_));
+        assert_matches!(got_unit, Capability::Data(_));
 
-        // Remove a capability with the same koid. It should be a Unit.
+        // Remove a capability with the same koid. It should be a Data.
         let entry = registry.remove(koid).unwrap();
         let got_unit = entry.capability;
-        assert_matches!(got_unit, Capability::Unit(_));
+        assert_matches!(got_unit, Capability::Data(_));
 
         assert!(registry.remove(koid).is_none());
     }
@@ -154,9 +154,9 @@ mod tests {
         });
 
         let koid = Koid::from_raw(123);
-        let unit = Unit::default();
+        let data = Data::Int64(0);
 
-        insert(unit.into(), koid, task);
+        insert(data.into(), koid, task);
 
         // Drop the sender so `task` completes and `remove_when_done_task` removes the entry.
         drop(sender);
