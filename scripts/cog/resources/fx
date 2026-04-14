@@ -3,18 +3,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-readonly COG_FUCHSIA_DIR="$(readlink -f "$(dirname "${BASH_SOURCE[0]}")/../..")"
+readonly SCRIPT_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+readonly COG_FUCHSIA_DIR="$(realpath "${SCRIPT_DIR}/../../..")"
 readonly SYNC_WORKSPACE="${COG_FUCHSIA_DIR}/scripts/cog/sync_workspace.py"
-readonly CARTFS_FUCHSIA_DIR="${COG_FUCHSIA_DIR}/cartfs-dir/fuchsia"
 
 set -e
 
-"${SYNC_WORKSPACE}" --from cog --to cartfs
+readonly SYNC_RESULT_FILE="$(mktemp)"
+"${SYNC_WORKSPACE}" --from-cog-to-cartfs --report "${SYNC_RESULT_FILE}"
+source "${SYNC_RESULT_FILE}"
 
 cleanup() {
   local status=$?
   trap - EXIT SIGINT SIGTERM
-  (cd "${COG_FUCHSIA_DIR}" && "${SYNC_WORKSPACE}" --from cartfs --to cog) || true
+  (cd "${COG_FUCHSIA_DIR}" && "${SYNC_WORKSPACE}" --from-cartfs-to-cog) || true
+  rm -f "${SYNC_RESULT_FILE}" || true
   exit $status
 }
 trap cleanup EXIT SIGINT SIGTERM
@@ -23,5 +26,5 @@ trap cleanup EXIT SIGINT SIGTERM
 # prebuilts in the CartFS. If we do not do this then we will pick up the wrong
 # hermetic-env.
 source "${CARTFS_FUCHSIA_DIR}/scripts/fx-env.sh" && fx-update-path
-cd "${CARTFS_FUCHSIA_DIR}"
+cd "${CARTFS_CWD}"
 "${CARTFS_FUCHSIA_DIR}/scripts/fx" "$@"

@@ -6,6 +6,7 @@
 
 import hashlib
 import os
+import shlex
 import stat
 import tempfile
 import unittest
@@ -456,7 +457,7 @@ else:
                     mock_log.assert_called_once()
 
     def test_cartfs_path_typical(self) -> None:
-        """Test _cartfs_path in typical Fuchsia case."""
+        """Test cartfs_path in typical Fuchsia case."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
             mock_ws.workspace_root = fs.repo_dir.parent
@@ -479,12 +480,12 @@ else:
                 service = sync_workspace.WorkspaceSyncService()
 
                 self.assertEqual(
-                    service._cartfs_path("fuchsia/foo/bar.rs"),
+                    service.cartfs_path("fuchsia/foo/bar.rs"),
                     fs.cartfs_dir / "fuchsia" / "foo" / "bar.rs",
                 )
 
     def test_cartfs_path_lstrip_slash(self) -> None:
-        """Test _cartfs_path strips leading slash to prevent path escape."""
+        """Test cartfs_path strips leading slash to prevent path escape."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
             mock_ws.workspace_root = fs.repo_dir.parent
@@ -508,7 +509,7 @@ else:
                 service = sync_workspace.WorkspaceSyncService()
 
                 self.assertEqual(
-                    service._cartfs_path("tools/my_script.py"),
+                    service.cartfs_path("tools/my_script.py"),
                     fs.cartfs_dir / "my_script.py",
                 )
 
@@ -618,7 +619,7 @@ else:
                 self.assertEqual(service._md5hash(symlink_file), expected_hash)
 
     def test_cartfs_path_superproject(self) -> None:
-        """Test _cartfs_path in Superproject case."""
+        """Test cartfs_path in Superproject case."""
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
             mock_ws.workspace_root = fs.repo_dir.parent
@@ -643,13 +644,13 @@ else:
 
                 # Test fuchsia file
                 self.assertEqual(
-                    service._cartfs_path("superproject/fuchsia/foo/bar.rs"),
+                    service.cartfs_path("superproject/fuchsia/foo/bar.rs"),
                     fs.cartfs_dir / "fuchsia" / "foo" / "bar.rs",
                 )
 
                 # Test integration file
                 self.assertEqual(
-                    service._cartfs_path(
+                    service.cartfs_path(
                         "superproject/integration/foo/bar.json"
                     ),
                     fs.cartfs_dir / "integration" / "foo" / "bar.json",
@@ -657,7 +658,7 @@ else:
 
                 # Test vendor file (fallback case)
                 self.assertEqual(
-                    service._cartfs_path(
+                    service.cartfs_path(
                         "superproject/vendor/company/foo/bar.rs"
                     ),
                     fs.cartfs_dir
@@ -1686,6 +1687,214 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
 
                 self.assertNotIn("fuchsia/new_cog_file.txt", result.deleted)
                 self.assertNotIn("fuchsia/new_cog_file.txt", result.failed)
+
+
+class TestEnsureCartfsCwd(TestWorkspaceSyncService):
+    """Tests for ensure_cartfs_cwd method."""
+
+    def test_ensure_cartfs_cwd_typical(self) -> None:
+        with mock_fs.FileSystemTestHelper() as fs:
+            mock_ws = MagicMock()
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
+            mock_ws.config = {"repo": {"fuchsia": "fuchsia"}}
+
+            cog_root = fs.repo_dir.parent
+            cog_fuchsia_dir = cog_root / "fuchsia"
+            cog_fuchsia_dir.mkdir(parents=True, exist_ok=True)
+
+            with (
+                patch.object(
+                    workspace.Workspace, "create", return_value=mock_ws
+                ),
+                patch.dict(os.environ, {"PWD": str(cog_fuchsia_dir)}),
+            ):
+                service = sync_workspace.WorkspaceSyncService()
+                cwd = service.ensure_cartfs_cwd()
+                self.assertEqual(cwd, fs.cartfs_dir / "fuchsia")
+
+    def test_ensure_cartfs_cwd_outside(self) -> None:
+        with mock_fs.FileSystemTestHelper() as fs:
+            mock_ws = MagicMock()
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
+            mock_ws.config = {"repo": {"fuchsia": "fuchsia"}}
+
+            cog_root = fs.repo_dir.parent
+            cog_fuchsia_dir = cog_root / "fuchsia"
+            cog_fuchsia_dir.mkdir(parents=True, exist_ok=True)
+
+            outside_dir = cog_root / "bar"
+            outside_dir.mkdir(parents=True, exist_ok=True)
+
+            with (
+                patch.object(
+                    workspace.Workspace, "create", return_value=mock_ws
+                ),
+                patch.dict(os.environ, {"PWD": str(outside_dir)}),
+                patch("sync_workspace.logger.log_warn") as mock_log,
+            ):
+                service = sync_workspace.WorkspaceSyncService()
+                cwd = service.ensure_cartfs_cwd()
+                self.assertEqual(cwd, fs.cartfs_dir / "fuchsia")
+                mock_log.assert_called_once()
+
+    def test_ensure_cartfs_cwd_mkdir(self) -> None:
+        with mock_fs.FileSystemTestHelper() as fs:
+            mock_ws = MagicMock()
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
+            mock_ws.config = {"repo": {"fuchsia": "fuchsia"}}
+
+            cog_root = fs.repo_dir.parent
+            cog_fuchsia_dir = cog_root / "fuchsia"
+            cog_fuchsia_dir.mkdir(parents=True, exist_ok=True)
+
+            sub_dir = cog_fuchsia_dir / "new_dir"
+            sub_dir.mkdir(parents=True, exist_ok=True)
+
+            cartfs_target = fs.cartfs_dir / "fuchsia" / "new_dir"
+
+            with (
+                patch.object(
+                    workspace.Workspace, "create", return_value=mock_ws
+                ),
+                patch.dict(os.environ, {"PWD": str(sub_dir)}),
+            ):
+                service = sync_workspace.WorkspaceSyncService()
+                self.assertFalse(cartfs_target.exists())
+                cwd = service.ensure_cartfs_cwd()
+                self.assertEqual(cwd, cartfs_target)
+                self.assertTrue(cartfs_target.exists())
+
+    def test_ensure_cartfs_cwd_symlink_cog(self) -> None:
+        with mock_fs.FileSystemTestHelper() as fs:
+            mock_ws = MagicMock()
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
+            mock_ws.config = {"repo": {"fuchsia": "superproject/fuchsia"}}
+
+            cog_root = fs.repo_dir.parent
+            cog_fuchsia_dir = cog_root / "superproject/fuchsia"
+            cog_fuchsia_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create superproject/vendor/company
+            vendor_company = cog_root / "superproject/vendor/company"
+            vendor_company.mkdir(parents=True, exist_ok=True)
+
+            # Create symlink superproject/fuchsia/vendor -> ../vendor
+            symlink_vendor = cog_fuchsia_dir / "vendor"
+            symlink_vendor.symlink_to("../vendor")
+
+            cog_cwd = symlink_vendor / "company"
+
+            with (
+                patch.object(
+                    workspace.Workspace, "create", return_value=mock_ws
+                ),
+                patch.dict(os.environ, {"PWD": str(cog_cwd)}),
+            ):
+                service = sync_workspace.WorkspaceSyncService()
+                cwd = service.ensure_cartfs_cwd()
+                self.assertEqual(
+                    cwd, fs.cartfs_dir / "fuchsia" / "vendor" / "company"
+                )
+
+    def test_ensure_cartfs_cwd_symlink_cartfs(self) -> None:
+        with mock_fs.FileSystemTestHelper() as fs:
+            mock_ws = MagicMock()
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
+            mock_ws.config = {"repo": {"fuchsia": "superproject/fuchsia"}}
+
+            cog_root = fs.repo_dir.parent
+            cog_fuchsia_dir = cog_root / "superproject/fuchsia"
+            cog_fuchsia_dir.mkdir(parents=True, exist_ok=True)
+
+            vendor_company = cog_root / "superproject/vendor/company"
+            vendor_company.mkdir(parents=True, exist_ok=True)
+
+            symlink_vendor = cog_fuchsia_dir / "vendor"
+            symlink_vendor.symlink_to("../vendor")
+
+            cog_cwd = symlink_vendor / "company"
+
+            # Setup CartFS symlink
+            cartfs_fuchsia = fs.cartfs_dir / "fuchsia"
+            cartfs_fuchsia.mkdir(parents=True, exist_ok=True)
+
+            cartfs_vendor_target = fs.cartfs_dir / "vendor"
+            cartfs_vendor_target.mkdir(parents=True, exist_ok=True)
+
+            cartfs_vendor_symlink = cartfs_fuchsia / "vendor"
+            cartfs_vendor_symlink.symlink_to("../vendor")
+
+            cartfs_target = fs.cartfs_dir / "fuchsia" / "vendor" / "company"
+
+            with (
+                patch.object(
+                    workspace.Workspace, "create", return_value=mock_ws
+                ),
+                patch.dict(os.environ, {"PWD": str(cog_cwd)}),
+            ):
+                service = sync_workspace.WorkspaceSyncService()
+                self.assertFalse((cartfs_vendor_target / "company").exists())
+                cwd = service.ensure_cartfs_cwd()
+                self.assertEqual(cwd, cartfs_target)
+                # Verify that it created the directory in the target location
+                self.assertTrue((cartfs_vendor_target / "company").exists())
+
+    def test_main_report(self) -> None:
+        """Test that main writes a report file when --report is used."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            mock_ws = MagicMock()
+            mock_ws.workspace_root = fs.repo_dir.parent
+            mock_ws.cartfs_dir = fs.cartfs_dir
+            mock_ws.config = {"repo": {"fuchsia": "fuchsia"}}
+
+            mock_service = MagicMock()
+            mock_service.ensure_cartfs_cwd.return_value = (
+                fs.cartfs_dir / "fuchsia"
+            )
+            mock_service.cartfs_path.return_value = fs.cartfs_dir / "fuchsia"
+            mock_service.cartfs_root = fs.cartfs_dir
+            mock_service.sync_cog_to_cartfs.return_value = (
+                sync_workspace.SyncResult()
+            )
+
+            report_file = fs.repo_dir / "report.json"
+
+            with (
+                patch.object(
+                    workspace.Workspace, "create", return_value=mock_ws
+                ),
+                patch(
+                    "sync_workspace.WorkspaceSyncService",
+                    return_value=mock_service,
+                ),
+                patch(
+                    "sys.argv",
+                    [
+                        "sync_workspace.py",
+                        "--from-cog-to-cartfs",
+                        "--report",
+                        str(report_file),
+                    ],
+                ),
+            ):
+                result_code = sync_workspace.main()
+                self.assertEqual(result_code, 0)
+                self.assertTrue(report_file.exists())
+
+                report_content = report_file.read_text()
+                self.assertIn(
+                    f"CARTFS_CWD={shlex.quote(str(fs.cartfs_dir / 'fuchsia'))}\n",
+                    report_content,
+                )
+                self.assertIn(
+                    f"CARTFS_FUCHSIA_DIR={shlex.quote(str(fs.cartfs_dir / 'fuchsia'))}\n",
+                    report_content,
+                )
 
 
 if __name__ == "__main__":

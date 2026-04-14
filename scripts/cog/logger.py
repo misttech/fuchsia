@@ -64,7 +64,7 @@ def init_logger(
     logger.handlers.clear()
 
     logger.setLevel(level)
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(sys.stderr)
 
     formatter: logging.Formatter
     if colors:

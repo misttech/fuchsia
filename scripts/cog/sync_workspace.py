@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import sys
 import textwrap
@@ -175,7 +176,7 @@ class WorkspaceSyncService:
     def _cog_path(self, path: str) -> Path:
         return self.cog_root / path
 
-    def _cartfs_path(self, path: str) -> Path:
+    def cartfs_path(self, path: str) -> Path:
         # Map Cog fuchsia dir to CartFS fuchsia dir.
         assert self._config["repo"]["fuchsia"]
         fuchsia_prefix = f'{self._config["repo"]["fuchsia"]}/'
@@ -203,6 +204,34 @@ class WorkspaceSyncService:
             / self._config["repo"]["destSubdir"]
             / path[len(strip_prefix) :].lstrip("/")
         )
+
+    def ensure_cartfs_cwd(self) -> Path:
+        assert self._config["repo"]["fuchsia"]
+
+        # Don't resolve the CWD since it might be a symlinked directory
+        # (e.g. `//vendor/company` => `//../vendor/company`) for superprojects.
+        cog_cwd = Path(os.environ.get("PWD") or Path.cwd())
+
+        # Only map CWDs in the Cog fuchsia dir to the CartFS fuchsia dir.
+        cog_fuchsia_dir = self.cog_root / self._config["repo"]["fuchsia"]
+        if not cog_cwd.is_relative_to(cog_fuchsia_dir):
+            logger.log_warn(
+                f'Please cd into "{os.path.relpath(cog_fuchsia_dir, cog_cwd)}" before running fx.'
+            )
+            return self.cartfs_root / "fuchsia"
+
+        # Don't resolve the CWD since it might be a symlinked directory
+        # (e.g. `//integration` => `//../integration`) for superprojects.
+        cartfs_cwd = (
+            self.cartfs_root / "fuchsia" / cog_cwd.relative_to(cog_fuchsia_dir)
+        )
+
+        # New empty directories aren't reported by `git-citc cli.diff`, so account for the rare edge
+        # case where the user's CWD is in a new empty subdir of the Cog fuchsia checkout.
+        if not cartfs_cwd.is_symlink() and not cartfs_cwd.exists():
+            cartfs_cwd.mkdir(parents=True, exist_ok=True)
+
+        return cartfs_cwd
 
     def sync_batch(
         self,
@@ -274,7 +303,7 @@ class WorkspaceSyncService:
         cartfs_affected_files = self.affected_files(WorkspaceType.CARTFS)
         all_affected_files = cog_affected_files | cartfs_affected_files
         sync_result = self.sync_batch(
-            self._cog_path, self._cartfs_path, all_affected_files, self._md5hash
+            self._cog_path, self.cartfs_path, all_affected_files, self._md5hash
         )
 
         # Keep track of the checkout files in CartFS that differ from the Cog base.
@@ -288,7 +317,7 @@ class WorkspaceSyncService:
         (self.cartfs_root / "cog_transfer_file_hashes.json").write_text(
             json.dumps(
                 {
-                    path: self._md5hash(self._cartfs_path(path))
+                    path: self._md5hash(self.cartfs_path(path))
                     for path in cog_affected_files | sync_result.failed
                 }
             )
@@ -323,11 +352,16 @@ class WorkspaceSyncService:
             _hash_func = self._md5hash
 
         return self.sync_batch(
-            self._cartfs_path,
+            self.cartfs_path,
             self._cog_path,
             self.affected_files(WorkspaceType.CARTFS),
             _hash_func,
         )
+
+
+class SyncDirection(enum.Enum):
+    FROM_COG_TO_CARTFS = 1
+    FROM_CARTFS_TO_COG = 2
 
 
 def _parse_args() -> argparse.Namespace:
@@ -335,19 +369,20 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Syncs changes between Cog and CartFS checkouts."
     )
-    parser.add_argument(
-        "--from",
-        dest="src",
-        choices=["cog", "cartfs"],
-        required=True,
-        help="The workspace to sync from.",
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--from-cog-to-cartfs",
+        action="store_const",
+        const=SyncDirection.FROM_COG_TO_CARTFS,
+        dest="sync_direction",
+        help="Sync source file changes from Cog to CartFS.",
     )
-    parser.add_argument(
-        "--to",
-        dest="dest",
-        choices=["cog", "cartfs"],
-        required=True,
-        help="The workspace to sync to.",
+    group.add_argument(
+        "--from-cartfs-to-cog",
+        action="store_const",
+        const=SyncDirection.FROM_CARTFS_TO_COG,
+        dest="sync_direction",
+        help="Sync source file changes from CartFS to Cog.",
     )
     parser.add_argument(
         "--unsafe-overwrite-cog-changes-since-last-sync",
@@ -359,8 +394,13 @@ def _parse_args() -> argparse.Namespace:
             "Cider during a build or test, etc.\n"
             "Setting this flag will force the sync to compare CartFS file changes against the "
             "current Cog file contents instead.\n"
-            "Only compatible with the `--from cartfs --to cog` sync direction."
+            "Only compatible with syncing `--from-cartfs-to-cog`."
         ),
+    )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        help="Path to write a bash sourceable report of the sync operation results.",
     )
     base_verbosity = os.environ.get("COG_SYNC_VERBOSITY", "")
     parser.add_argument(
@@ -382,8 +422,14 @@ def _parse_args() -> argparse.Namespace:
         help="Enable or disable color output.",
     )
     args = parser.parse_args()
-    if args.src == args.dest:
-        parser.error("`--from` and `--to` must be different.")
+    if (
+        args.unsafe_overwrite_cog_changes_since_last_sync
+        and args.sync_direction != SyncDirection.FROM_CARTFS_TO_COG
+    ):
+        parser.error(
+            "`--unsafe-overwrite-cog-changes-since-last-sync` is only compatible with "
+            "`--from-cartfs-to-cog`."
+        )
     return args
 
 
@@ -417,7 +463,7 @@ def main() -> int:
         return 1
 
     try:
-        if args.src == "cog":
+        if args.sync_direction == SyncDirection.FROM_COG_TO_CARTFS:
             logger.log_info("Syncing changes from Cog to CartFS...")
             sync_result = sync_service.sync_cog_to_cartfs()
             if sync_result.failed:
@@ -427,7 +473,6 @@ def main() -> int:
                     "Some source file changes made in Cider won't be made effective for this "
                     "`fx`/`ffx` command invocation!"
                 )
-                return 0
         else:
             logger.log_info("Syncing changes from CartFS to Cog...")
             sync_result = sync_service.sync_cartfs_to_cog(
@@ -440,22 +485,28 @@ def main() -> int:
                     "Some source file changes made by `fx`/`ffx` tooling won't be reflected back "
                     "to Cider!"
                 )
-                return 0
-
-        logger.log_info(
-            "Sync complete.\n"
-            f"Added files ({len(sync_result.added)}): {sorted(sync_result.added)}\n"
-            f"Modified files ({len(sync_result.modified)}): {sorted(sync_result.modified)}\n"
-            f"Deleted files ({len(sync_result.deleted)}): {sorted(sync_result.deleted)}\n"
-            f"No-op files ({len(sync_result.noop)}): {sorted(sync_result.noop)}\n"
-            f"Failed files ({len(sync_result.failed)}): {sorted(sync_result.failed)}"
-        )
     except Exception as e:
         logger.log_error(
             f"An unexpected error occurred when syncing changes from {args.src} to {args.dest}."
         )
         logger.log_exception(e)
         return 1
+
+    logger.log_info(
+        "Sync complete.\n"
+        f"Added files ({len(sync_result.added)}): {sorted(sync_result.added)}\n"
+        f"Modified files ({len(sync_result.modified)}): {sorted(sync_result.modified)}\n"
+        f"Deleted files ({len(sync_result.deleted)}): {sorted(sync_result.deleted)}\n"
+        f"No-op files ({len(sync_result.noop)}): {sorted(sync_result.noop)}\n"
+        f"Failed files ({len(sync_result.failed)}): {sorted(sync_result.failed)}"
+    )
+
+    if args.report:
+        args.report.write_text(
+            f"CARTFS_CWD={shlex.quote(str(sync_service.ensure_cartfs_cwd()))}\n"
+            f"CARTFS_FUCHSIA_DIR={shlex.quote(str(sync_service.cartfs_root / 'fuchsia'))}\n"
+        )
+
     return 0
 
 
