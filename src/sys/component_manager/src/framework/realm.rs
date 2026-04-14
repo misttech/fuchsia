@@ -1440,7 +1440,7 @@ mod tests {
             child_output_dictionary_ref.try_into().unwrap();
         assert_eq!(
             vec!["fidl.examples.Echo".to_string()],
-            child_output_dictionary.keys().map(|k| k.to_string()).collect::<Vec<_>>(),
+            child_output_dictionary.snapshot_keys_as_strings(),
         );
     }
 
@@ -1484,7 +1484,7 @@ mod tests {
 
         assert_eq!(
             vec!["fidl.examples.Echo".to_string()],
-            child_output_dictionary.keys().map(|k| k.to_string()).collect::<Vec<_>>(),
+            child_output_dictionary.snapshot_keys_as_strings(),
         );
     }
 }

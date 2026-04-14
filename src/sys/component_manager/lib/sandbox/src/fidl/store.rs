@@ -224,7 +224,7 @@ pub async fn serve_capability_store(
             } => {
                 let result = (|| {
                     let this = get_dictionary(&store, id)?;
-                    let keys = this.keys();
+                    let keys = this.snapshot_keys_as_strings().into_iter();
                     let stream = server_end.into_stream();
                     let mut this = this.lock();
                     this.tasks().spawn(serve_dictionary_keys_iterator(keys, stream));
@@ -290,7 +290,7 @@ pub async fn serve_capability_store(
 }
 
 async fn serve_dictionary_keys_iterator(
-    mut keys: impl Iterator<Item = Key>,
+    mut keys: impl Iterator<Item = String>,
     mut stream: fsandbox::DictionaryKeysIteratorRequestStream,
 ) {
     while let Ok(Some(request)) = stream.try_next().await {

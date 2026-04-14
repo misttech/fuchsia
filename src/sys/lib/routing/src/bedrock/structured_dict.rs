@@ -136,7 +136,8 @@ impl StructuredDict for ComponentInput {
 impl ComponentInput {
     pub fn new(environment: ComponentEnvironment) -> Self {
         let dict = Dict::new();
-        if let Some(_) = environment.0.keys().next() {
+
+        if !environment.0.is_empty() {
             dict.insert(ENVIRONMENT.clone(), Dict::from(environment).into()).unwrap();
         }
         Self(dict)

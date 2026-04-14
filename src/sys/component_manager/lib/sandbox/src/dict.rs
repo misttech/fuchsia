@@ -216,9 +216,18 @@ impl Dict {
             .into_iter()
     }
 
-    /// Returns an iterator over the keys, in sorted order.
-    pub fn keys(&self) -> impl Iterator<Item = Key> + use<> {
-        self.lock().entries.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>().into_iter()
+    /// Returns the keys.
+    pub fn snapshot_keys_as_strings(&self) -> Vec<String> {
+        let guard = self.lock();
+        match &guard.entries {
+            HybridMap::Vec(vec) => vec.iter().map(|(k, _)| k.to_string()).collect(),
+            HybridMap::Map(map) => map.keys().map(|k| k.to_string()).collect(),
+        }
+    }
+
+    /// Returns if entries is empty.
+    pub fn is_empty(&self) -> bool {
+        self.lock().entries.is_empty()
     }
 
     /// Removes all entries from the Dict and returns them as an iterator.
@@ -338,15 +347,15 @@ impl HybridMap {
                     }
                 }
             },
-            Self::Map(map) => match map.entry(key.clone()) {
+            Self::Map(map) => match map.entry(key) {
                 Entry::Occupied(mut occupied) => {
-                    update_notifiers.update(EntryUpdate::Remove(&key));
-                    update_notifiers.update(EntryUpdate::Add(&key, &capability));
+                    update_notifiers.update(EntryUpdate::Remove(occupied.key()));
+                    update_notifiers.update(EntryUpdate::Add(occupied.key(), &capability));
                     occupied.insert(capability);
                     Err(fsandbox::CapabilityStoreError::ItemAlreadyExists)
                 }
                 Entry::Vacant(vacant) => {
-                    update_notifiers.update(EntryUpdate::Add(&key, &capability));
+                    update_notifiers.update(EntryUpdate::Add(vacant.key(), &capability));
                     vacant.insert(capability);
                     Ok(())
                 }

@@ -979,7 +979,7 @@ mod tests {
         );
 
         // Dictionary should now be empty.
-        assert_eq!(dict.keys().count(), 0);
+        assert!(dict.is_empty());
     }
 
     /// Tests batching for read APIs.
@@ -1096,7 +1096,7 @@ mod tests {
         assert_eq!(num_got_items, NUM_ENTRIES);
 
         // Dictionary should now be empty.
-        assert_eq!(dict.keys().count(), 0);
+        assert!(dict.is_empty());
     }
 
     #[fuchsia::test]
@@ -1765,8 +1765,8 @@ mod tests {
         );
 
         // The Dict should be empty because `try_into_directory_entry_oneshot consumed it.
-        assert_matches!(dict.keys().next(), None);
-        assert_matches!(inner_dict.keys().next(), None);
+        assert!(dict.is_empty());
+        assert!(inner_dict.is_empty());
 
         // Adding to the empty Dict has no impact on the directory.
         dict.insert("z".parse().unwrap(), dir_connector.clone().into()).unwrap();

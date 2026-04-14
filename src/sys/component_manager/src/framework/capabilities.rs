@@ -728,7 +728,8 @@ async fn handle_key_iterator_stream(
         num + 7 & !7
     }
 
-    let mut dictionary_iterator = dictionary.keys().map(|key| key.to_string()).peekable();
+    let mut dictionary_iterator = dictionary.snapshot_keys_as_strings().into_iter().peekable();
+
     while let Some(Ok(request)) = stream.next().await {
         match request {
             fruntime::DictionaryKeyIteratorRequest::GetNext { responder, .. } => {

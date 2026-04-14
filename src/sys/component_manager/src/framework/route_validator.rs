@@ -315,11 +315,9 @@ fn validate_dictionary(
                         router.route(None, false, component_instance_token.clone()).await
                     {
                         let entries = routed_dictionary
-                            .keys()
-                            .map(|k| fsys::DictionaryEntry {
-                                name: Some(k.as_str().to_string()),
-                                ..Default::default()
-                            })
+                            .snapshot_keys_as_strings()
+                            .into_iter()
+                            .map(|k| fsys::DictionaryEntry { name: Some(k), ..Default::default() })
                             .collect::<Vec<_>>();
                         report.dictionary_entries = Some(entries);
 
