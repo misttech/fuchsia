@@ -7,7 +7,6 @@ use fuchsia_async::TimeoutExt;
 use fuchsia_async::net::TcpStream;
 
 use futures::{AsyncReadExt, AsyncWriteExt, TryFutureExt};
-use log::log;
 use std::net;
 
 const FETCH_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(10);
@@ -172,35 +171,7 @@ impl Fetch for Fetcher {
         path: &str,
         addr: &FA,
     ) -> Result<u16, FetchError> {
-        let r = fetch(interface_name, host, path, addr).await;
-        match r {
-            Ok(code) => Ok(code),
-            Err(e) => {
-                // Check to see if the error is due to the host/network being
-                // unreachable. In that case, this error is likely unconcerning
-                // and signifies a network may not have connectivity across
-                // one of the IP protocols, which can be common for home
-                // network configurations.
-                let level = if let Some(io_error) = std::error::Error::source(&e)
-                    .and_then(|err| err.downcast_ref::<std::io::Error>())
-                    && (io_error.raw_os_error() == Some(libc::ENETUNREACH)
-                        || io_error.raw_os_error() == Some(libc::EHOSTUNREACH))
-                {
-                    log::Level::Info
-                } else {
-                    log::Level::Warn
-                };
-
-                let addr = addr.as_socket_addr();
-                log!(
-                    level,
-                    "err fetching {host}{path} from {addr} \
-                     through {interface_name}: {e:#}"
-                );
-
-                Err(e)
-            }
-        }
+        fetch(interface_name, host, path, addr).await
     }
 }
 

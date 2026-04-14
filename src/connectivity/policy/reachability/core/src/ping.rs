@@ -5,7 +5,6 @@
 use async_trait::async_trait;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
 use futures::{FutureExt as _, SinkExt as _, TryFutureExt as _, TryStreamExt as _};
-use log::{info, warn};
 use net_types::ip::{Ipv4, Ipv6};
 use std::net::SocketAddr;
 
@@ -133,39 +132,9 @@ pub struct Pinger;
 #[async_trait]
 impl Ping for Pinger {
     async fn ping(&self, interface_name: &str, addr: SocketAddr) -> Result<(), PingError> {
-        let r = match addr {
+        match addr {
             SocketAddr::V4(addr_v4) => ping::<Ipv4>(interface_name, addr_v4).await,
             SocketAddr::V6(addr_v6) => ping::<Ipv6>(interface_name, addr_v6).await,
-        };
-        match r {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                // Check to see if the error is due to the host/network being
-                // unreachable. In that case, this error is likely unconcerning
-                // and signifies a network may not have connectivity across
-                // one of the IP protocols, which can be common for home
-                // network configurations.
-                let mut source_opt: Option<&(dyn std::error::Error + 'static)> = Some(&e);
-                let mut is_unreachable = false;
-                while let Some(source) = source_opt {
-                    if let Some(io_error) = source.downcast_ref::<std::io::Error>() {
-                        if io_error.raw_os_error() == Some(libc::ENETUNREACH)
-                            || io_error.raw_os_error() == Some(libc::EHOSTUNREACH)
-                        {
-                            is_unreachable = true;
-                            break;
-                        }
-                    }
-                    source_opt = source.source();
-                }
-
-                if is_unreachable {
-                    info!("error while pinging {}: {:#}", addr, e);
-                } else {
-                    warn!("error while pinging {}: {:#}", addr, e);
-                }
-                Err(e)
-            }
         }
     }
 }
