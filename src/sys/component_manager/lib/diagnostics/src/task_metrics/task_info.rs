@@ -160,8 +160,11 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
     }
 
     /// Adds a weak pointer to a task for which this task is the parent.
+    /// Removes pointers if a child task has finished and died to avoid leaks.
     pub fn add_child(&self, task: Weak<TaskInfo<T>>) {
-        self.children.lock().push(task);
+        let mut children = self.children.lock();
+        children.retain(|child| child.strong_count() > 0);
+        children.push(task);
     }
 
     pub fn most_recent_measurement(&self) -> Option<zx::BootInstant> {
