@@ -9,9 +9,9 @@ use crate::mm::memory_accessor::{MemoryAccessor, TaskMemoryAccessor};
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, MapInfoCache, Mapping,
-    MappingBacking, MappingFlags, MappingName, MappingNameRef, MlockPinFlavor, PrivateFutexKey,
-    ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment,
-    read_to_array,
+    MappingBacking, MappingFlags, MappingMode, MappingName, MappingNameRef, MlockPinFlavor,
+    PrivateFutexKey, ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload,
+    VmsplicePayloadSegment, read_to_array,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -27,10 +27,11 @@ use flyweights::FlyByteStr;
 use linux_uapi::BUS_ADRERR;
 use memory_pinning::PinnedMapping;
 use range_map::RangeMap;
+use smallvec::SmallVec;
 use starnix_ext::map_ext::EntryExt;
 use starnix_lifecycle::DropNotifier;
 use starnix_logging::{
-    CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration, track_stub,
+    CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, trace_duration, track_stub,
 };
 use starnix_sync::{
     LockBefore, Locked, MmDumpable, OrderedMutex, RwLock, RwLockWriteGuard, ThreadGroupLimits,
@@ -62,7 +63,7 @@ use starnix_uapi::{
 };
 use std::collections::HashMap;
 use std::mem::MaybeUninit;
-use std::ops::{Deref, DerefMut, Range, RangeBounds};
+use std::ops::{ControlFlow, Deref, DerefMut, Range, RangeBounds};
 use std::sync::{Arc, LazyLock, Weak};
 use syncio::zxio::zxio_default_maybe_faultable_copy;
 use zerocopy::IntoBytes;
@@ -83,6 +84,12 @@ pub(crate) const UNIFIED_ASPACES_ENABLED: bool = cfg!(not(test));
 pub fn init_usercopy() {
     // This call lazily initializes the `Usercopy` instance.
     let _ = usercopy();
+}
+
+thread_local! {
+    /// The last mapping generation seen by this thread.
+    /// Used to prevent infinite loops in page fault handling.
+    static LAST_SEEN_MAPPING_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 pub const GUARD_PAGE_COUNT_FOR_GROWSDOWN_MAPPINGS: usize = 256;
@@ -230,6 +237,32 @@ struct MembarrierRegistrations {
     sync_core: bool,
 }
 
+#[derive(Default)]
+struct Mappings {
+    /// The mappings record which object backs each address.
+    map: RangeMap<UserAddress, Mapping>,
+
+    /// Generation counter for mappings. Incremented on any modification to `mappings`.
+    ///
+    /// This is used to detect stale mappings in `handle_page_fault`.
+    generation: u64,
+}
+
+impl Deref for Mappings {
+    type Target = RangeMap<UserAddress, Mapping>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl DerefMut for Mappings {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.generation = self.generation.wrapping_add(1);
+        &mut self.map
+    }
+}
+
 pub struct MemoryManagerState {
     /// The VMAR in which userspace mappings occur.
     ///
@@ -246,9 +279,7 @@ pub struct MemoryManagerState {
     user_vmar_info: zx::VmarInfo,
 
     /// The memory mappings currently used by this address space.
-    ///
-    /// The mappings record which object backs each address.
-    mappings: RangeMap<UserAddress, Mapping>,
+    mappings: Mappings,
 
     /// Memory object backing private, anonymous memory allocations in this address space.
     private_anonymous: PrivateAnonymousMemoryManager,
@@ -358,7 +389,7 @@ fn map_in_vmar(
     length: usize,
     flags: MappingFlags,
     populate: bool,
-) -> Result<UserAddress, Errno> {
+) -> Result<(), Errno> {
     let vmar_offset = addr.addr().checked_sub(vmar_info.base).ok_or_else(|| errno!(ENOMEM))?;
     let vmar_extra_flags = match addr {
         SelectedAddress::Fixed(_) => zx::VmarFlags::SPECIFIC,
@@ -392,7 +423,13 @@ fn map_in_vmar(
     let map_result = memory.map_in_vmar(vmar, vmar_offset.ptr(), memory_offset, length, vmar_flags);
     let mapped_addr = map_result.map_err(MemoryManager::get_errno_for_map_err)?;
 
-    Ok(UserAddress::from_ptr(mapped_addr))
+    let expected_addr = addr.addr().ptr();
+    debug_assert_eq!(
+        mapped_addr, expected_addr,
+        "Zircon mapped to a different address than requested!"
+    );
+
+    Ok(())
 }
 
 impl MemoryManagerState {
@@ -581,7 +618,7 @@ impl MemoryManagerState {
         length: usize,
         flags: MappingFlags,
         populate: bool,
-    ) -> Result<UserAddress, Errno> {
+    ) -> Result<(), Errno> {
         map_in_vmar(
             &self.user_vmar,
             &self.user_vmar_info,
@@ -603,7 +640,7 @@ impl MemoryManagerState {
         Ok(())
     }
 
-    fn map_memory(
+    fn add_memory_mapping(
         &mut self,
         mm: &Arc<MemoryManager>,
         addr: DesiredAddress,
@@ -614,19 +651,23 @@ impl MemoryManagerState {
         max_access: Access,
         populate: bool,
         name: MappingName,
+        mapping_mode: MappingMode,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<UserAddress, Errno> {
         self.validate_addr(addr, length)?;
 
         let selected_address = self.select_address(addr, length, flags)?;
-        let mapped_addr = self.map_in_user_vmar(
-            selected_address,
-            &memory,
-            memory_offset,
-            length,
-            flags,
-            populate,
-        )?;
+        let mapped_addr = selected_address.addr();
+        if mapping_mode == MappingMode::Eager {
+            self.map_in_user_vmar(
+                selected_address,
+                &memory,
+                memory_offset,
+                length,
+                flags,
+                populate,
+            )?;
+        }
 
         let end = (mapped_addr + length)?.round_up(*PAGE_SIZE)?;
 
@@ -640,6 +681,7 @@ impl MemoryManagerState {
             flags,
             max_access,
             name,
+            mapping_mode,
         );
         released_mappings.extend(self.mappings.insert(mapped_addr..end, mapping));
 
@@ -661,9 +703,10 @@ impl MemoryManagerState {
 
         let flags = MappingFlags::from_access_flags_and_options(prot_flags, options);
         let selected_addr = self.select_address(addr, length, flags)?;
+        let mapped_addr = selected_addr.addr();
         let backing_memory_offset = selected_addr.addr().ptr();
 
-        let mapped_addr = self.map_in_user_vmar(
+        self.map_in_user_vmar(
             selected_addr,
             &self.private_anonymous.backing,
             backing_memory_offset as u64,
@@ -678,7 +721,7 @@ impl MemoryManagerState {
             self.update_after_unmap(mm, addr, end - addr, released_mappings)?;
         }
 
-        let mapping = Mapping::new_private_anonymous(flags, name);
+        let mapping = Mapping::new_private_anonymous(flags, name, MappingMode::Eager);
         released_mappings.extend(self.mappings.insert(mapped_addr..end, mapping));
 
         Ok(mapped_addr)
@@ -708,7 +751,7 @@ impl MemoryManagerState {
         }
         let memory = create_anonymous_mapping_memory(length as u64)?;
         let flags = MappingFlags::from_access_flags_and_options(prot_flags, options);
-        self.map_memory(
+        self.add_memory_mapping(
             mm,
             addr,
             memory,
@@ -718,8 +761,90 @@ impl MemoryManagerState {
             Access::rwx(),
             options.contains(MappingOptions::POPULATE),
             name,
+            MappingMode::Eager,
             released_mappings,
         )
+    }
+
+    /// Ensures that any mapping at `addr` is actually mapped at in the user vmar.
+    ///
+    /// If `length` is `None`, it will ensure the mapping only on the page `addr` falls into.
+    /// Returns `true` if any lazy mappings are mapped.
+    pub fn ensure_range_mapped_in_user_vmar(
+        &mut self,
+        addr: UserAddress,
+        length: Option<usize>,
+    ) -> Result<bool, Errno> {
+        self.ensure_ranges_mapped_in_user_vmar(std::iter::once((addr, length)))
+    }
+
+    /// Ensures that any mappings in the specified ranges are actually mapped in the user vmar.
+    ///
+    /// If `length` is `None`, it will ensure the mapping only on the page `addr` falls into.
+    /// Returns `true` if any lazy mappings are mapped.
+    pub fn ensure_ranges_mapped_in_user_vmar<I>(&mut self, ranges: I) -> Result<bool, Errno>
+    where
+        I: IntoIterator<Item = (UserAddress, Option<usize>)>,
+    {
+        // This is most likely to contain one range, so use `SmallVec` to avoid
+        // heap allocation and better performance in the common case.
+        let mut ranges_to_update = SmallVec::<[std::ops::Range<UserAddress>; 1]>::new();
+        for (addr, length) in ranges {
+            match length {
+                None => {
+                    if let Some((range, mapping)) = self.mappings.get(addr) {
+                        if mapping.mapping_mode() == MappingMode::Lazy {
+                            ranges_to_update.push(range.clone());
+                        }
+                    }
+                }
+                Some(len) => {
+                    assert!(len > 0);
+                    let end = addr.checked_add(len).expect("address overflowed after validation");
+                    for (range, mapping) in self.mappings.range(addr..end) {
+                        if mapping.mapping_mode() == MappingMode::Lazy {
+                            ranges_to_update.push(range.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        if ranges_to_update.is_empty() {
+            return Ok(false);
+        }
+
+        for range in ranges_to_update {
+            let mut mappings = self.mappings.remove(range.clone());
+            assert_eq!(mappings.len(), 1, "Expected to remove exactly one mapping");
+            let mut mapping = mappings.pop().unwrap();
+
+            let addr = SelectedAddress::FixedOverwrite(range.start);
+            let flags = mapping.flags();
+            let (backing, backing_memory_offset) = match self.get_mapping_backing(&mapping) {
+                MappingBacking::Memory(backing) => {
+                    (backing.memory(), backing.address_to_offset(addr.addr()))
+                }
+                MappingBacking::PrivateAnonymous => {
+                    (&self.private_anonymous.backing, addr.addr().ptr() as u64)
+                }
+            };
+
+            let mapping_length = range.end - range.start;
+            self.map_in_user_vmar(
+                addr,
+                backing,
+                backing_memory_offset,
+                mapping_length,
+                flags,
+                false,
+            )?;
+
+            mapping.set_mapping_mode(MappingMode::Eager);
+            let _ = self.mappings.insert(range.start..range.end, mapping);
+        }
+
+        Ok(true)
     }
 
     fn remap(
@@ -846,7 +971,7 @@ impl MemoryManagerState {
         match self.get_mapping_backing(&original_mapping) {
             MappingBacking::Memory(backing) => {
                 // Re-map the original range, which may include pages before the requested range.
-                Ok(Some(self.map_memory(
+                Ok(Some(self.add_memory_mapping(
                     mm,
                     DesiredAddress::FixedOverwrite(original_range.start),
                     backing.memory().clone(),
@@ -856,6 +981,7 @@ impl MemoryManagerState {
                     original_mapping.max_access(),
                     false,
                     original_mapping.name().to_owned(),
+                    original_mapping.mapping_mode(),
                     released_mappings,
                 )?))
             }
@@ -960,34 +1086,40 @@ impl MemoryManagerState {
                 // Userfault registration is not preserved by remap
                 let new_flags =
                     src_mapping.flags().difference(MappingFlags::UFFD | MappingFlags::UFFD_MISSING);
-                self.map_in_user_vmar(
-                    SelectedAddress::FixedOverwrite(dst_addr),
-                    &self.private_anonymous.backing,
-                    dst_addr.ptr() as u64,
-                    dst_length,
-                    new_flags,
-                    false,
-                )?;
-
-                if dst_length > src_length {
-                    // The mapping has grown, map new pages in to cover the growth.
-                    let growth_length = dst_length - src_length;
-
-                    self.map_private_anonymous(
-                        mm,
-                        DesiredAddress::FixedOverwrite(growth_start_addr),
-                        growth_length,
-                        new_flags.access_flags(),
-                        new_flags.options(),
+                if src_mapping.mapping_mode() == MappingMode::Eager {
+                    self.map_in_user_vmar(
+                        SelectedAddress::FixedOverwrite(dst_addr),
+                        &self.private_anonymous.backing,
+                        dst_addr.ptr() as u64,
+                        dst_length,
+                        new_flags,
                         false,
-                        src_mapping.name().to_owned(),
-                        released_mappings,
                     )?;
+
+                    if dst_length > src_length {
+                        // The mapping has grown, map new pages in to cover the growth.
+                        let growth_length = dst_length - src_length;
+
+                        self.map_private_anonymous(
+                            mm,
+                            DesiredAddress::FixedOverwrite(growth_start_addr),
+                            growth_length,
+                            new_flags.access_flags(),
+                            new_flags.options(),
+                            false,
+                            src_mapping.name().to_owned(),
+                            released_mappings,
+                        )?;
+                    }
                 }
 
                 released_mappings.extend(self.mappings.insert(
                     dst_addr..dst_end,
-                    Mapping::new_private_anonymous(new_flags, src_mapping.name().to_owned()),
+                    Mapping::new_private_anonymous(
+                        new_flags,
+                        src_mapping.name().to_owned(),
+                        src_mapping.mapping_mode(),
+                    ),
                 ));
 
                 if dst_addr != src_addr && src_length != 0 && !keep_source {
@@ -1003,7 +1135,7 @@ impl MemoryManagerState {
                 let (dst_memory_offset, memory) =
                     (backing.address_to_offset(src_addr), backing.memory().clone());
 
-                let new_address = self.map_memory(
+                let new_address = self.add_memory_mapping(
                     mm,
                     dst_addr_for_map,
                     memory,
@@ -1013,6 +1145,7 @@ impl MemoryManagerState {
                     src_mapping.max_access(),
                     false,
                     src_mapping.name().to_owned(),
+                    src_mapping.mapping_mode(),
                     released_mappings,
                 )?;
 
@@ -1213,6 +1346,9 @@ impl MemoryManagerState {
         for (range, mapping) in self.mappings.range(prot_range.clone()) {
             security::file_mprotect(current_task, range, mapping, prot_flags)?;
         }
+
+        // We need to map any lazy mappings before we can protect them.
+        self.ensure_range_mapped_in_user_vmar(addr, Some(length))?;
 
         // Make one call to mprotect to update all the zircon protections.
         // SAFETY: This is safe because the vmar belongs to a different process.
@@ -1545,6 +1681,8 @@ impl MemoryManagerState {
             _ => unreachable!("unknown error from op_range on user vmar for mlock: {e}"),
         };
 
+        self.ensure_range_mapped_in_user_vmar(start_addr, Some(end_addr - start_addr))?;
+
         if !on_fault && !current_task.kernel().features.mlock_always_onfault {
             self.user_vmar
                 .op_range(zx::VmarOp::PREFETCH, start_addr.ptr(), end_addr - start_addr)
@@ -1628,6 +1766,7 @@ impl MemoryManagerState {
 
     pub fn num_locked_bytes(&self, range: impl RangeBounds<UserAddress>) -> u64 {
         self.mappings
+            .map
             .range(range)
             .filter(|(_, mapping)| mapping.flags().contains(MappingFlags::LOCKED))
             .map(|(range, _)| (range.end - range.start) as u64)
@@ -2059,6 +2198,10 @@ impl MemoryManagerState {
             if !mapping.can_read() {
                 return error!(EFAULT);
             }
+            if mapping.mapping_mode() == MappingMode::Lazy {
+                addr = (addr + len)?;
+                continue;
+            }
             // SAFETY: This is operating on a readable restricted mode mapping and will not fault.
             zx::Status::ok(unsafe {
                 zx::sys::zx_cache_flush(
@@ -2130,7 +2273,10 @@ impl MemoryManagerState {
         bytes: &[u8],
         released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
-        let (range, mapping) = self.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
+        let (range, mapping) = {
+            let (r, m) = self.mappings.get(addr).ok_or_else(|| errno!(EFAULT))?;
+            (r.clone(), m.clone())
+        };
         if range.end < addr.saturating_add(bytes.len()) {
             track_stub!(
                 TODO("https://fxbug.dev/445790710"),
@@ -2145,10 +2291,10 @@ impl MemoryManagerState {
                 // Linux returns EIO here instead of EFAULT.
                 return error!(EIO);
             }
-            return self.write_mapping_memory(addr, mapping, &bytes);
+            return self.write_mapping_memory(addr, &mapping, &bytes);
         }
 
-        let backing = match self.get_mapping_backing(mapping) {
+        let backing = match self.get_mapping_backing(&mapping) {
             MappingBacking::PrivateAnonymous => {
                 // Starnix has a writable handle to private anonymous memory.
                 return self.private_anonymous.write_memory(addr, &bytes);
@@ -2201,9 +2347,15 @@ impl MemoryManagerState {
             child_vmo
         };
 
+        // Ensure that the mapping that `addr` falls into is mapped in the user VMAR.
+        // This ensures that the mapping's mode becomes `Eager` (if it was `Lazy`),
+        // otherwise, we might clone a `Lazy` mapping but map it unconditionally below,
+        // leading to state drift where a mapping is mapped in Zircon but marked as lazy in Starnix.
+        self.ensure_range_mapped_in_user_vmar(addr, None)?;
+
         // 4. Map the new VMO into user VMAR
         let memory = Arc::new(MemoryObject::from(child_vmo));
-        let mapped_addr = self.map_in_user_vmar(
+        self.map_in_user_vmar(
             SelectedAddress::FixedOverwrite(range.start),
             &memory,
             mapping_offset,
@@ -2211,7 +2363,6 @@ impl MemoryManagerState {
             mapping.flags(),
             false,
         )?;
-        assert_eq!(mapped_addr, range.start);
 
         // 5. Update mappings
         let new_backing = MappingBackingMemory::new(range.start, memory, mapping_offset);
@@ -2219,7 +2370,6 @@ impl MemoryManagerState {
         let mut new_mapping = mapping.clone();
         new_mapping.set_backing_internal(MappingBacking::Memory(Box::new(new_backing)));
 
-        let range = range.clone();
         released_mappings.extend(self.mappings.insert(range, new_mapping));
 
         Ok(())
@@ -2453,8 +2603,12 @@ impl MemoryManagerState {
             None => return error!(EINVAL),
         };
 
-        let mappings_in_range =
-            self.mappings.range(addr..end).map(|(r, m)| (r.clone(), m.clone())).collect::<Vec<_>>();
+        let mappings_in_range = self
+            .mappings
+            .map
+            .range(addr..end)
+            .map(|(r, m)| (r.clone(), m.clone()))
+            .collect::<Vec<_>>();
 
         if mappings_in_range.is_empty() {
             return error!(EINVAL);
@@ -2597,6 +2751,48 @@ impl MemoryManager {
         std::ptr::eq(self, other)
     }
 
+    fn unified_transfer_loop<F>(
+        &self,
+        addr: UserAddress,
+        len: usize,
+        mut transfer_fn: F,
+    ) -> Result<usize, Errno>
+    where
+        F: FnMut(UserAddress, usize) -> Result<ControlFlow<usize, usize>, Errno>,
+    {
+        let mut copied = 0;
+        while copied < len {
+            match transfer_fn((addr + copied)?, copied)? {
+                ControlFlow::Continue(num_copied) => {
+                    if num_copied == 0 {
+                        let fault_addr = (addr + copied)?;
+                        // If we successfully mapped a lazy mapping, retry the copy.
+                        // Otherwise, this might be a permission fault or invalid address, so we
+                        // stop and return the partial result.
+                        //
+                        // NOTE: We lazily materialize mappings one page at a time here.
+                        // An alternative approach would be to materialize the entire range
+                        // or the first mapping up front. That might avoid bouncing between
+                        // threads on faults, but adds overhead (locks and range lookups)
+                        // if the memory is already mapped. We use the reactive approach
+                        // for now, but this could be tuned in the future.
+                        if self.state.write().ensure_range_mapped_in_user_vmar(fault_addr, None)? {
+                            continue;
+                        } else {
+                            break;
+                        }
+                    }
+                    copied += num_copied;
+                }
+                ControlFlow::Break(num_copied) => {
+                    copied += num_copied;
+                    break;
+                }
+            }
+        }
+        Ok(copied)
+    }
+
     pub fn unified_read_memory<'a>(
         &self,
         current_task: &CurrentTask,
@@ -2606,8 +2802,23 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            let (read_bytes, unread_bytes) = usercopy.copyin(addr.ptr(), bytes);
-            if unread_bytes.is_empty() { Ok(read_bytes) } else { error!(EFAULT) }
+            let buf_ptr = bytes.as_mut_ptr();
+            let buf_len = bytes.len();
+
+            let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
+                // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
+                let current_bytes = unsafe {
+                    std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset)
+                };
+                let (read_bytes, _unread_bytes) = usercopy.copyin(cur_addr.ptr(), current_bytes);
+                Ok(ControlFlow::Continue(read_bytes.len()))
+            })?;
+            if copied < bytes.len() {
+                error!(EFAULT)
+            } else {
+                // SAFETY: All bytes up to `buf_len` have been initialized.
+                Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, buf_len) })
+            }
         } else {
             self.syscall_read_memory(addr, bytes)
         }
@@ -2630,11 +2841,29 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            let (read_bytes, unread_bytes) = usercopy.copyin_until_null_byte(addr.ptr(), bytes);
-            if read_bytes.is_empty() && !unread_bytes.is_empty() {
+            let buf_ptr = bytes.as_mut_ptr();
+            let buf_len = bytes.len();
+
+            let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
+                // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
+                let current_bytes = unsafe {
+                    std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset)
+                };
+                let (read_bytes, _unread_bytes) =
+                    usercopy.copyin_until_null_byte(cur_addr.ptr(), current_bytes);
+
+                let num_copied = read_bytes.len();
+                if read_bytes.last().map(|b| *b == 0).unwrap_or(false) {
+                    Ok(ControlFlow::Break(num_copied))
+                } else {
+                    Ok(ControlFlow::Continue(num_copied))
+                }
+            })?;
+            if copied == 0 && !bytes.is_empty() {
                 error!(EFAULT)
             } else {
-                Ok(read_bytes)
+                // SAFETY: Bytes up to `copied` have been initialized.
+                Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, copied) })
             }
         } else {
             self.syscall_read_memory_partial_until_null_byte(addr, bytes)
@@ -2658,11 +2887,22 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            let (read_bytes, unread_bytes) = usercopy.copyin(addr.ptr(), bytes);
-            if read_bytes.is_empty() && !unread_bytes.is_empty() {
+            let buf_ptr = bytes.as_mut_ptr();
+            let buf_len = bytes.len();
+
+            let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
+                // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
+                let current_bytes = unsafe {
+                    std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset)
+                };
+                let (read_bytes, _unread_bytes) = usercopy.copyin(cur_addr.ptr(), current_bytes);
+                Ok(ControlFlow::Continue(read_bytes.len()))
+            })?;
+            if copied == 0 && !bytes.is_empty() {
                 error!(EFAULT)
             } else {
-                Ok(read_bytes)
+                // SAFETY: Bytes up to `copied` have been initialized.
+                Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, copied) })
             }
         } else {
             self.syscall_read_memory_partial(addr, bytes)
@@ -2686,15 +2926,11 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            let num_copied = usercopy.copyout(bytes, addr.ptr());
-            if num_copied != bytes.len() {
-                error!(
-                    EFAULT,
-                    format!("expected {:?} bytes, copied {:?} bytes", bytes.len(), num_copied)
-                )
-            } else {
-                Ok(num_copied)
-            }
+            let len = bytes.len();
+            let copied = self.unified_transfer_loop(addr, len, |cur_addr, offset| {
+                Ok(ControlFlow::Continue(usercopy.copyout(&bytes[offset..], cur_addr.ptr())))
+            })?;
+            if copied < bytes.len() { error!(EFAULT) } else { Ok(copied) }
         } else {
             self.syscall_write_memory(addr, bytes)
         }
@@ -2726,8 +2962,11 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            let num_copied = usercopy.copyout(bytes, addr.ptr());
-            if num_copied == 0 && !bytes.is_empty() { error!(EFAULT) } else { Ok(num_copied) }
+            let len = bytes.len();
+            let copied = self.unified_transfer_loop(addr, len, |cur_addr, offset| {
+                Ok(ControlFlow::Continue(usercopy.copyout(&bytes[offset..], cur_addr.ptr())))
+            })?;
+            if copied == 0 && !bytes.is_empty() { error!(EFAULT) } else { Ok(copied) }
         } else {
             self.syscall_write_memory_partial(addr, bytes)
         }
@@ -2769,7 +3008,10 @@ impl MemoryManager {
         }
 
         if let Some(usercopy) = usercopy() {
-            if usercopy.zero(addr.ptr(), length) == length { Ok(length) } else { error!(EFAULT) }
+            let copied = self.unified_transfer_loop(addr, length, |cur_addr, offset| {
+                Ok(ControlFlow::Continue(usercopy.zero(cur_addr.ptr(), length - offset)))
+            })?;
+            if copied == 0 && length > 0 { error!(EFAULT) } else { Ok(copied) }
         } else {
             self.syscall_zero(addr, length)
         }
@@ -2833,6 +3075,16 @@ pub struct MemoryManager {
 
     /// A mechanism to be notified when this `MemoryManager` is destroyed.
     pub drop_notifier: DropNotifier,
+}
+
+fn check_access_permissions_in_page_fault(
+    decoded: &PageFaultExceptionReport,
+    mapping: &Mapping,
+) -> bool {
+    let exec_denied = decoded.is_execute && !mapping.can_exec();
+    let write_denied = decoded.is_write && !mapping.can_write();
+    let read_denied = (!decoded.is_execute && !decoded.is_write) && !mapping.can_read();
+    !exec_denied && !write_denied && !read_denied
 }
 
 impl MemoryManager {
@@ -3186,7 +3438,7 @@ impl MemoryManager {
                         };
 
                         let mut released_mappings = ReleasedMappings::default();
-                        target_state.map_memory(
+                        target_state.add_memory_mapping(
                             &target,
                             DesiredAddress::Fixed(range.start),
                             target_memory,
@@ -3196,6 +3448,7 @@ impl MemoryManager {
                             mapping.max_access(),
                             false,
                             mapping.name().to_owned(),
+                            MappingMode::Lazy,
                             &mut released_mappings,
                         )?;
                         assert!(
@@ -3213,22 +3466,12 @@ impl MemoryManager {
                                 .map_err(|_| errno!(ENOMEM))?;
                         }
 
-                        let target_memory_offset = range.start.ptr() as u64;
-                        target_state.map_in_user_vmar(
-                            SelectedAddress::FixedOverwrite(range.start),
-                            &target_state.private_anonymous.backing,
-                            target_memory_offset,
-                            length,
+                        let mapping = Mapping::new_private_anonymous(
                             target_mapping_flags,
-                            false,
-                        )?;
-                        let removed_mappings = target_state.mappings.insert(
-                            range.clone(),
-                            Mapping::new_private_anonymous(
-                                target_mapping_flags,
-                                mapping.name().to_owned(),
-                            ),
+                            mapping.name().to_owned(),
+                            MappingMode::Lazy,
                         );
+                        let removed_mappings = target_state.mappings.insert(range.clone(), mapping);
                         assert!(
                             removed_mappings.is_empty(),
                             "target mm must be empty when cloning, got {removed_mappings:#?}"
@@ -3361,7 +3604,7 @@ impl MemoryManager {
         // Hold the lock throughout the operation to uphold memory manager's invariants.
         // See mm/README.md.
         let mut state = self.state.write();
-        let result = state.map_memory(
+        let result = state.add_memory_mapping(
             self,
             addr,
             memory,
@@ -3371,6 +3614,7 @@ impl MemoryManager {
             max_access,
             options.contains(MappingOptions::POPULATE),
             name,
+            MappingMode::Eager,
             &mut released_mappings,
         );
 
@@ -3697,6 +3941,7 @@ impl MemoryManager {
         error_code: zx::Status,
     ) -> ExceptionResult {
         let addr = UserAddress::from(decoded.faulting_address);
+
         // On uffd-registered range, handle according to the uffd rules
         if error_code == zx::Status::ACCESS_DENIED {
             let state = self.state.write();
@@ -3718,14 +3963,10 @@ impl MemoryManager {
                         ));
                     };
                 }
-                let exec_denied = decoded.is_execute && !mapping.can_exec();
-                let write_denied = decoded.is_write && !mapping.can_write();
-                let read_denied = (!decoded.is_execute && !decoded.is_write) && !mapping.can_read();
                 // There is a data race resulting from uffd unregistration and page fault happening
                 // at the same time. To detect it, we check if the access was meant to be rejected
                 // according to Starnix own information about the mapping.
-                let false_reject = !exec_denied && !write_denied && !read_denied;
-                if false_reject {
+                if check_access_permissions_in_page_fault(&decoded, mapping) {
                     track_stub!(
                         TODO("https://fxbug.dev/435171399"),
                         "Inconsistent permission fault"
@@ -3737,6 +3978,28 @@ impl MemoryManager {
         }
 
         if decoded.not_present {
+            {
+                let mut state = self.state.write();
+                match state.ensure_range_mapped_in_user_vmar(addr, None) {
+                    Ok(true) => return ExceptionResult::Handled,
+                    Ok(false) => {
+                        // If the mapping generation has changed since the last time this thread
+                        // saw it, we return `Handled` to retry the faulting instruction.
+                        // This handles cases where the fault was spurious due to a concurrent
+                        // mapping operation. We update the counter here to ensure we converge and
+                        // don't loop infinitely.
+                        let current_gen = state.mappings.generation;
+                        let old_gen = LAST_SEEN_MAPPING_GENERATION.with(|c| c.replace(current_gen));
+                        if current_gen != old_gen {
+                            return ExceptionResult::Handled;
+                        }
+                    }
+                    Err(e) => {
+                        log_error!("Failed to map lazy memory: {e}")
+                    }
+                }
+            }
+
             // A page fault may be resolved by extending a growsdown mapping to cover the faulting
             // address. Mark the exception handled if so. Otherwise let the regular handling proceed.
 
@@ -3755,6 +4018,7 @@ impl MemoryManager {
                 _ => {}
             }
         }
+
         // For this exception type, the synth_code field in the exception report's context is the
         // error generated by the page fault handler. For us this is used to distinguish between a
         // segmentation violation and a bus error. Unfortunately this detail is not documented in
@@ -3998,6 +4262,7 @@ impl MemoryManager {
 
     pub fn atomic_load_u32_acquire(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
         if let Some(usercopy) = usercopy() {
+            self.state.write().ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
             usercopy.atomic_load_u32_acquire(futex_addr.ptr()).map_err(|_| errno!(EFAULT))
         } else {
             unreachable!("can only control memory ordering of atomics with usercopy");
@@ -4006,6 +4271,7 @@ impl MemoryManager {
 
     pub fn atomic_load_u32_relaxed(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
         if let Some(usercopy) = usercopy() {
+            self.state.write().ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
             usercopy.atomic_load_u32_relaxed(futex_addr.ptr()).map_err(|_| errno!(EFAULT))
         } else {
             // SAFETY: `self.state.read().read_memory` only returns `Ok` if all
@@ -4027,6 +4293,7 @@ impl MemoryManager {
         value: u32,
     ) -> Result<(), Errno> {
         if let Some(usercopy) = usercopy() {
+            self.state.write().ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
             usercopy.atomic_store_u32_relaxed(futex_addr.ptr(), value).map_err(|_| errno!(EFAULT))
         } else {
             self.state.read().write_memory(futex_addr.into(), value.as_bytes())?;
@@ -4040,6 +4307,10 @@ impl MemoryManager {
         current: u32,
         new: u32,
     ) -> CompareExchangeResult<u32> {
+        if let Err(e) = self.state.write().ensure_range_mapped_in_user_vmar(futex_addr.into(), None)
+        {
+            return CompareExchangeResult::Error(e);
+        }
         let Some(usercopy) = usercopy() else {
             unreachable!("Atomic compare/exchange requires usercopy.");
         };
@@ -4056,6 +4327,10 @@ impl MemoryManager {
         current: u32,
         new: u32,
     ) -> CompareExchangeResult<u32> {
+        if let Err(e) = self.state.write().ensure_range_mapped_in_user_vmar(futex_addr.into(), None)
+        {
+            return CompareExchangeResult::Error(e);
+        }
         let Some(usercopy) = usercopy() else {
             unreachable!("Atomic compare/exchange requires usercopy.");
         };
@@ -4286,6 +4561,13 @@ impl DynamicFileSource for ProcSmapsFile {
         let Some(mm) = self.mm.upgrade() else {
             return Ok(());
         };
+
+        // Ensure all mappings are mapped into the user vmar.
+        let max_addr = mm.maximum_valid_user_address;
+        mm.state
+            .write()
+            .ensure_range_mapped_in_user_vmar(UserAddress::from(0), Some(max_addr.ptr()))?;
+
         let state = mm.state.read();
         let committed_bytes_vec = state.with_zx_mappings(current_task, |zx_mappings| {
             let mut zx_memory_info = RangeMap::<UserAddress, usize>::default();
@@ -4476,7 +4758,11 @@ mod tests {
             // Look up the given addr in the mappings table.
             let get_range = |addr: UserAddress| {
                 let state = mm.state.read();
-                state.mappings.get(addr).map(|(range, mapping)| (range.clone(), mapping.clone()))
+                state
+                    .mappings
+                    .map
+                    .get(addr)
+                    .map(|(range, mapping)| (range.clone(), mapping.clone()))
             };
 
             // Initialize the program break.

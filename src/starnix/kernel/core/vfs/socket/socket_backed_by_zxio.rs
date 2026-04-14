@@ -27,6 +27,7 @@ use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_NET_RAW};
 use starnix_uapi::errors::{ENOTSUP, Errno, ErrnoCode};
+use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     AF_PACKET, BPF_MAXINSNS, MSG_DONTWAIT, MSG_WAITALL, SO_ATTACH_FILTER, SO_BINDTODEVICE,
@@ -246,6 +247,17 @@ impl ZxioBackedSocket {
         let sent_bytes = if UNIFIED_ASPACES_ENABLED {
             match data.peek_all_segments_as_iovecs() {
                 Ok(mut iovecs) => {
+                    // Note: We have to prefault here because this is a C FFI call and we cannot
+                    // catch faults directly like we do for Starnix-internal usercopies.
+                    // In the future, we could look into implementing reactive faulting in
+                    // `zxio_maybe_faultable_copy_impl` to match the behavior of internal
+                    // usercopies.
+                    let ranges =
+                        iovecs.as_ref().iter().filter(|iovec| iovec.iov_len > 0).map(|iovec| {
+                            (UserAddress::from_ptr(iovec.iov_base as usize), Some(iovec.iov_len))
+                        });
+                    current_task.mm()?.state.write().ensure_ranges_mapped_in_user_vmar(ranges)?;
+
                     Some(map_errors(self.zxio.sendmsg(&mut addr, &mut iovecs, &cmsgs, flags))?)
                 }
                 Err(e) if e.code == ENOTSUP => None,
@@ -294,6 +306,17 @@ impl ZxioBackedSocket {
         let info = if UNIFIED_ASPACES_ENABLED {
             match data.peek_all_segments_as_iovecs() {
                 Ok(mut iovecs) => {
+                    // Note: We have to prefault here because this is a C FFI call and we cannot
+                    // catch faults directly like we do for Starnix-internal usercopies.
+                    // In the future, we could look into implementing reactive faulting in
+                    // `zxio_maybe_faultable_copy_impl` to match the behavior of internal
+                    // usercopies.
+                    let ranges =
+                        iovecs.as_ref().iter().filter(|iovec| iovec.iov_len > 0).map(|iovec| {
+                            (UserAddress::from_ptr(iovec.iov_base as usize), Some(iovec.iov_len))
+                        });
+                    current_task.mm()?.state.write().ensure_ranges_mapped_in_user_vmar(ranges)?;
+
                     let info = map_errors(self.zxio.recvmsg(&mut iovecs, flags))?;
                     // SAFETY: we successfully read `info.bytes_read` bytes
                     // directly to the user's buffer segments.

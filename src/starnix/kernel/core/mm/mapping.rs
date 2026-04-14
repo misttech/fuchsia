@@ -22,6 +22,12 @@ use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MappingMode {
+    Eager,
+    Lazy,
+}
+
 /// Describes a single memory mapping entry.
 ///
 /// The size of this type *heavily* influences Starnix's heap usage in common scenarios, please
@@ -61,21 +67,40 @@ pub struct Mapping {
 static_assertions::assert_eq_size!(Mapping, [u8; 24]);
 
 impl Mapping {
-    pub fn new(backing: MappingBacking, flags: MappingFlags, max_access: Access) -> Mapping {
-        Self::with_name(backing, flags, max_access, MappingName::None)
+    pub fn new(
+        backing: MappingBacking,
+        flags: MappingFlags,
+        max_access: Access,
+        mode: MappingMode,
+    ) -> Mapping {
+        Self::with_name(backing, flags, max_access, MappingName::None, mode)
     }
 
     pub fn with_name(
         backing: MappingBacking,
-        flags: MappingFlags,
+        mut flags: MappingFlags,
         max_access: Access,
         name: MappingName,
+        mode: MappingMode,
     ) -> Mapping {
+        flags.set(MappingFlags::MAPPED_IN_VMAR, mode == MappingMode::Eager);
         MappingUnsplit { backing, flags, max_access, name }.decompose()
     }
 
     pub fn flags(&self) -> MappingFlags {
         self.flags
+    }
+
+    pub fn mapping_mode(&self) -> MappingMode {
+        if self.flags.contains(MappingFlags::MAPPED_IN_VMAR) {
+            MappingMode::Eager
+        } else {
+            MappingMode::Lazy
+        }
+    }
+
+    pub fn set_mapping_mode(&mut self, mode: MappingMode) {
+        self.flags.set(MappingFlags::MAPPED_IN_VMAR, mode == MappingMode::Eager);
     }
 
     pub fn set_flags(&mut self, new_flags: MappingFlags) {
@@ -113,7 +138,12 @@ impl Mapping {
         self.flags = self.flags.difference(MappingFlags::LOCKED);
     }
 
-    pub fn new_private_anonymous(flags: MappingFlags, name: MappingName) -> Mapping {
+    pub fn new_private_anonymous(
+        mut flags: MappingFlags,
+        name: MappingName,
+        mode: MappingMode,
+    ) -> Mapping {
+        flags.set(MappingFlags::MAPPED_IN_VMAR, mode == MappingMode::Eager);
         MappingUnsplit {
             backing: MappingBacking::PrivateAnonymous,
             flags,
@@ -347,21 +377,22 @@ bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[rustfmt::skip]  // Preserve column alignment.
     pub struct MappingFlags: u16 {
-        const READ         = 1 <<  0;  // PROT_READ
-        const WRITE        = 1 <<  1;  // PROT_WRITE
-        const EXEC         = 1 <<  2;  // PROT_EXEC
-        const SHARED       = 1 <<  3;
-        const ANONYMOUS    = 1 <<  4;
-        const LOWER_32BIT  = 1 <<  5;
-        const GROWSDOWN    = 1 <<  6;
-        const ELF_BINARY   = 1 <<  7;
-        const DONTFORK     = 1 <<  8;
-        const WIPEONFORK   = 1 <<  9;
-        const DONT_SPLIT   = 1 << 10;
-        const DONT_EXPAND  = 1 << 11;
-        const LOCKED       = 1 << 12;
-        const UFFD         = 1 << 13;
-        const UFFD_MISSING = 1 << 14;
+        const READ           = 1 <<  0;  // PROT_READ
+        const WRITE          = 1 <<  1;  // PROT_WRITE
+        const EXEC           = 1 <<  2;  // PROT_EXEC
+        const SHARED         = 1 <<  3;
+        const ANONYMOUS      = 1 <<  4;
+        const LOWER_32BIT    = 1 <<  5;
+        const GROWSDOWN      = 1 <<  6;
+        const ELF_BINARY     = 1 <<  7;
+        const DONTFORK       = 1 <<  8;
+        const WIPEONFORK     = 1 <<  9;
+        const DONT_SPLIT     = 1 << 10;
+        const DONT_EXPAND    = 1 << 11;
+        const LOCKED         = 1 << 12;
+        const UFFD           = 1 << 13;
+        const UFFD_MISSING   = 1 << 14;
+        const MAPPED_IN_VMAR = 1 << 15;
     }
 }
 
