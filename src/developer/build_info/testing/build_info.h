@@ -5,8 +5,8 @@
 #ifndef SRC_DEVELOPER_BUILD_INFO_TESTING_BUILD_INFO_H_
 #define SRC_DEVELOPER_BUILD_INFO_TESTING_BUILD_INFO_H_
 
-#include <fuchsia/buildinfo/test/cpp/fidl.h>
-#include <fuchsia/io/cpp/fidl.h>
+#include <fidl/fuchsia.buildinfo.test/cpp/fidl.h>
+#include <fidl/fuchsia.buildinfo/cpp/fidl.h>
 
 // Stores the build information values set by the test controller.
 struct fake_info {
@@ -19,21 +19,21 @@ struct fake_info {
 };
 
 // Sets fake system build information. Used for testing.
-class BuildInfoTestControllerImpl : public fuchsia::buildinfo::test::BuildInfoTestController {
+class BuildInfoTestControllerImpl
+    : public fidl::Server<fuchsia_buildinfo_test::BuildInfoTestController> {
  public:
   explicit BuildInfoTestControllerImpl(std::shared_ptr<struct fake_info> info_ref)
       : info_ref_(std::move(info_ref)) {}
 
   // Set the value to be returned by GetBuildInfo() in the Provider.
-  void SetBuildInfo(fuchsia::buildinfo::BuildInfo build_info,
-                    SetBuildInfoCallback callback) override;
+  void SetBuildInfo(SetBuildInfoRequest& request, SetBuildInfoCompleter::Sync& completer) override;
 
  private:
   std::shared_ptr<struct fake_info> info_ref_;
 };
 
 // Returns fake system build information. Used for testing.
-class FakeProviderImpl : public fuchsia::buildinfo::Provider {
+class FakeProviderImpl : public fidl::Server<fuchsia_buildinfo::Provider> {
  public:
   static constexpr auto kProductNameDefault = "core";
   static constexpr auto kBoardNameDefault = "chromebook-x64";
@@ -46,7 +46,7 @@ class FakeProviderImpl : public fuchsia::buildinfo::Provider {
       : info_ref_(std::move(info_ref)) {}
 
   // Returns a fake product, board, version, and timestamp information used at build time.
-  void GetBuildInfo(GetBuildInfoCallback callback) override;
+  void GetBuildInfo(GetBuildInfoCompleter::Sync& completer) override;
 
  private:
   std::shared_ptr<struct fake_info> info_ref_;

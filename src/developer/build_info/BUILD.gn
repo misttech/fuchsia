@@ -15,10 +15,10 @@ executable("bin") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_hlcpp",
+    "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/sys/cpp",
+    "//sdk/lib/component/outgoing/cpp",
     "//src/lib/fsl",
   ]
 }
@@ -64,9 +64,7 @@ cc_test_executable("test-bin") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_hlcpp",
-    "//sdk/lib/sys/cpp",
-    "//sdk/lib/sys/cpp/testing:unit",
+    "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_cpp",
     "//sdk/lib/syslog/cpp",
     "//sdk/lib/vfs/cpp",
     "//src/lib/fxl/test:gtest_main",

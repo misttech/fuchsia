@@ -126,7 +126,6 @@ hlcpp_visibility = [
   "//src/developer/adb/bin/adb-file-sync:*",
   "//src/developer/adb/bin/adb-reboot:*",
   "//src/developer/adb/bin/adb:*",
-  "//src/developer/build_info/*",
   "//src/developer/debug/debug_agent/*",
   "//src/developer/forensics/crash_reports/*",
   "//src/developer/forensics/exceptions/*",

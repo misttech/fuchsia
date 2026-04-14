@@ -4,12 +4,12 @@
 
 #include "build_info.h"
 
+#include <fidl/fuchsia.buildinfo/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fdio/fdio.h>
 #include <lib/fdio/namespace.h>
-#include <lib/fidl/cpp/binding.h>
-#include <lib/sys/cpp/testing/component_context_provider.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/vfs/cpp/pseudo_dir.h>
 #include <lib/vfs/cpp/pseudo_file.h>
@@ -28,36 +28,17 @@ const char kProductVersionFileName[] = "product_version";
 const char kLastCommitDateFileName[] = "latest-commit-date";
 }  // namespace
 
-class BuildInfoServiceInstance {
- public:
-  explicit BuildInfoServiceInstance(std::unique_ptr<sys::ComponentContext> context) {
-    context_ = std::move(context);
-    binding_ = std::make_unique<fidl::Binding<fuchsia::buildinfo::Provider>>(&impl_);
-    fidl::InterfaceRequestHandler<fuchsia::buildinfo::Provider> handler =
-        [&](fidl::InterfaceRequest<fuchsia::buildinfo::Provider> request) {
-          binding_->Bind(std::move(request));
-        };
-    context_->outgoing()->AddPublicService(std::move(handler));
-  }
-
- private:
-  ProviderImpl impl_;
-  std::unique_ptr<fidl::Binding<fuchsia::buildinfo::Provider>> binding_;
-  std::unique_ptr<sys::ComponentContext> context_;
-};
-
 class BuildInfoServiceTestFixture : public gtest::TestLoopFixture {
  public:
   BuildInfoServiceTestFixture() : loop_(&kAsyncLoopConfigNoAttachToCurrentThread) {}
 
   void SetUp() override {
     TestLoopFixture::SetUp();
-    build_info_service_instance_.reset(new BuildInfoServiceInstance(provider_.TakeContext()));
 
     loop_.StartThread();
 
     // Get the process's namespace.
-    fdio_ns_t *ns;
+    fdio_ns_t* ns;
     zx_status_t status = fdio_ns_get_installed(&ns);
     ZX_ASSERT_MSG(status == ZX_OK, "Cannot get namespace: %s\n", zx_status_get_string(status));
 
@@ -74,19 +55,16 @@ class BuildInfoServiceTestFixture : public gtest::TestLoopFixture {
                                 std::move(build_info_server), loop_.dispatcher());
   }
 
-  // Creates a PsuedoDir named |build_info_filename| in the PsuedoDir "/config/build-info" in
-  // the component's namespace. The file contains |build_info_filename| followed optionally by
-  // a trailing newline.
+  // Trailing newlines are added because typical file creation (e.g. echo "foo" > file)
+  // includes them, and the build info service is expected to trim them.
   void CreateBuildInfoFile(std::string build_info_filename, bool with_trailing_newline = true) {
     std::string file_contents(build_info_filename);
 
-    // Some build info files contain a trailing newline which the build info service strips.
-    // Optionally add a trailing newline to test the trailing whitespace stripping.
     if (with_trailing_newline) {
       file_contents.append("\n");
     }
 
-    vfs::PseudoFile::ReadHandler versionFileReadFn = [file_contents](std::vector<uint8_t> *output,
+    vfs::PseudoFile::ReadHandler versionFileReadFn = [file_contents](std::vector<uint8_t>* output,
                                                                      size_t max_file_size) {
       output->resize(file_contents.length());
       std::copy(file_contents.begin(), file_contents.end(), output->begin());
@@ -94,30 +72,27 @@ class BuildInfoServiceTestFixture : public gtest::TestLoopFixture {
     };
     vfs::PseudoFile::WriteHandler versionFileWriteFn;
 
-    // Create a PseudoFile.
     std::unique_ptr<vfs::PseudoFile> pseudo_file = std::make_unique<vfs::PseudoFile>(
         file_contents.length(), std::move(versionFileReadFn), std::move(versionFileWriteFn));
 
-    // Add the file to the build-info PseudoDir.
     build_info_directory_.AddEntry(std::move(build_info_filename), std::move(pseudo_file));
   }
 
   void TearDown() override {
     TestLoopFixture::TearDown();
-    build_info_service_instance_.reset();
     DestroyBuildInfoFile();
   }
 
  protected:
-  fuchsia::buildinfo::ProviderPtr GetProxy() {
-    fuchsia::buildinfo::ProviderPtr provider;
-    provider_.ConnectToPublicService(provider.NewRequest());
-    return provider;
+  fidl::Client<fuchsia_buildinfo::Provider> GetProxy() {
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_buildinfo::Provider>::Create();
+    bindings_.AddBinding(dispatcher(), std::move(server_end), &impl_, fidl::kIgnoreBindingClosure);
+    return fidl::Client<fuchsia_buildinfo::Provider>(std::move(client_end), dispatcher());
   }
 
  private:
   void DestroyBuildInfoFile() {
-    fdio_ns_t *ns;
+    fdio_ns_t* ns;
     zx_status_t status = fdio_ns_get_installed(&ns);
     ZX_ASSERT_MSG(status == ZX_OK, "Cannot retrieve the namespace: %s\n",
                   zx_status_get_string(status));
@@ -131,8 +106,8 @@ class BuildInfoServiceTestFixture : public gtest::TestLoopFixture {
     loop_.JoinThreads();
   }
 
-  std::unique_ptr<BuildInfoServiceInstance> build_info_service_instance_;
-  sys::testing::ComponentContextProvider provider_;
+  ProviderImpl impl_;
+  fidl::ServerBindingGroup<fuchsia_buildinfo::Provider> bindings_;
   vfs::PseudoDir build_info_directory_;
   async::Loop loop_;
 };
@@ -145,23 +120,29 @@ TEST_F(BuildInfoServiceTestFixture, BuildInfo) {
   CreateBuildInfoFile(kProductVersionFileName);
   CreateBuildInfoFile(kLastCommitDateFileName);
 
-  fuchsia::buildinfo::ProviderPtr proxy = GetProxy();
-  proxy->GetBuildInfo([&](const fuchsia::buildinfo::BuildInfo &response) {
-    EXPECT_TRUE(response.has_product_config());
-    EXPECT_EQ(response.product_config(), kProductFileName);
-    EXPECT_TRUE(response.has_board_config());
-    EXPECT_EQ(response.board_config(), kBoardFileName);
-    EXPECT_TRUE(response.has_version());
-    EXPECT_EQ(response.version(), kVersionFileName);
-    EXPECT_TRUE(response.has_platform_version());
-    EXPECT_EQ(response.platform_version(), kPlatformVersionFileName);
-    EXPECT_TRUE(response.has_product_version());
-    EXPECT_EQ(response.product_version(), kProductVersionFileName);
-    EXPECT_TRUE(response.has_latest_commit_date());
-    EXPECT_EQ(response.latest_commit_date(), kLastCommitDateFileName);
+  auto proxy = GetProxy();
+  bool called = false;
+  proxy->GetBuildInfo().Then([&](fidl::Result<fuchsia_buildinfo::Provider::GetBuildInfo>& result) {
+    ASSERT_TRUE(result.is_ok());
+    auto build_info = result.value().build_info();
+
+    EXPECT_TRUE(build_info.product_config().has_value());
+    EXPECT_EQ(build_info.product_config().value(), kProductFileName);
+    EXPECT_TRUE(build_info.board_config().has_value());
+    EXPECT_EQ(build_info.board_config().value(), kBoardFileName);
+    EXPECT_TRUE(build_info.version().has_value());
+    EXPECT_EQ(build_info.version().value(), kVersionFileName);
+    EXPECT_TRUE(build_info.platform_version().has_value());
+    EXPECT_EQ(build_info.platform_version().value(), kPlatformVersionFileName);
+    EXPECT_TRUE(build_info.product_version().has_value());
+    EXPECT_EQ(build_info.product_version().value(), kProductVersionFileName);
+    EXPECT_TRUE(build_info.latest_commit_date().has_value());
+    EXPECT_EQ(build_info.latest_commit_date().value(), kLastCommitDateFileName);
+    called = true;
   });
 
   RunLoopUntilIdle();
+  EXPECT_TRUE(called);
 }
 
 TEST_F(BuildInfoServiceTestFixture, EmptyBuildInfo) {
@@ -170,29 +151,41 @@ TEST_F(BuildInfoServiceTestFixture, EmptyBuildInfo) {
   CreateBuildInfoFile("");
   CreateBuildInfoFile("");
 
-  fuchsia::buildinfo::ProviderPtr proxy = GetProxy();
-  proxy->GetBuildInfo([&](const fuchsia::buildinfo::BuildInfo &response) {
-    EXPECT_FALSE(response.has_product_config());
-    EXPECT_FALSE(response.has_board_config());
-    EXPECT_FALSE(response.has_version());
-    EXPECT_FALSE(response.has_platform_version());
-    EXPECT_FALSE(response.has_product_version());
-    EXPECT_FALSE(response.has_latest_commit_date());
+  auto proxy = GetProxy();
+  bool called = false;
+  proxy->GetBuildInfo().Then([&](fidl::Result<fuchsia_buildinfo::Provider::GetBuildInfo>& result) {
+    ASSERT_TRUE(result.is_ok());
+    auto build_info = result.value().build_info();
+
+    EXPECT_FALSE(build_info.product_config().has_value());
+    EXPECT_FALSE(build_info.board_config().has_value());
+    EXPECT_FALSE(build_info.version().has_value());
+    EXPECT_FALSE(build_info.platform_version().has_value());
+    EXPECT_FALSE(build_info.product_version().has_value());
+    EXPECT_FALSE(build_info.latest_commit_date().has_value());
+    called = true;
   });
 
   RunLoopUntilIdle();
+  EXPECT_TRUE(called);
 }
 
 TEST_F(BuildInfoServiceTestFixture, NonPresentBuildInfo) {
-  fuchsia::buildinfo::ProviderPtr proxy = GetProxy();
-  proxy->GetBuildInfo([&](const fuchsia::buildinfo::BuildInfo &response) {
-    EXPECT_FALSE(response.has_product_config());
-    EXPECT_FALSE(response.has_board_config());
-    EXPECT_FALSE(response.has_version());
-    EXPECT_FALSE(response.has_platform_version());
-    EXPECT_FALSE(response.has_product_version());
-    EXPECT_FALSE(response.has_latest_commit_date());
+  auto proxy = GetProxy();
+  bool called = false;
+  proxy->GetBuildInfo().Then([&](fidl::Result<fuchsia_buildinfo::Provider::GetBuildInfo>& result) {
+    ASSERT_TRUE(result.is_ok());
+    auto build_info = result.value().build_info();
+
+    EXPECT_FALSE(build_info.product_config().has_value());
+    EXPECT_FALSE(build_info.board_config().has_value());
+    EXPECT_FALSE(build_info.version().has_value());
+    EXPECT_FALSE(build_info.platform_version().has_value());
+    EXPECT_FALSE(build_info.product_version().has_value());
+    EXPECT_FALSE(build_info.latest_commit_date().has_value());
+    called = true;
   });
 
   RunLoopUntilIdle();
+  EXPECT_TRUE(called);
 }

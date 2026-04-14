@@ -4,10 +4,8 @@
 
 #include "build_info.h"
 
-#include <fuchsia/buildinfo/cpp/fidl.h>
-#include <fuchsia/buildinfo/test/cpp/fidl.h>
-#include <fuchsia/component/cpp/fidl.h>
-#include <lib/fidl/cpp/binding.h>
+#include <fidl/fuchsia.buildinfo.test/cpp/fidl.h>
+#include <fidl/fuchsia.buildinfo/cpp/fidl.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
 #include <lib/sys/component/cpp/testing/realm_builder_types.h>
 
@@ -19,9 +17,9 @@ namespace {
 using component_testing::RealmBuilder;
 using component_testing::RealmRoot;
 
-using fuchsia::buildinfo::BuildInfo;
-using fuchsia::buildinfo::Provider;
-using fuchsia::buildinfo::test::BuildInfoTestController;
+using fuchsia_buildinfo::BuildInfo;
+using fuchsia_buildinfo::Provider;
+using fuchsia_buildinfo_test::BuildInfoTestController;
 
 using component_testing::ChildRef;
 using component_testing::ParentRef;
@@ -56,7 +54,8 @@ class FakeBuildInfoTestFixture : public gtest::RealLoopFixture {
     realm_builder_->AddChild(fake_provider_name, fake_provider_url);
 
     realm_builder_->AddRoute(
-        Route{.capabilities = {Protocol{Provider::Name_}, Protocol{BuildInfoTestController::Name_}},
+        Route{.capabilities = {Protocol{fidl::DiscoverableProtocolName<Provider>},
+                               Protocol{fidl::DiscoverableProtocolName<BuildInfoTestController>}},
               .source = ChildRef{fake_provider_name},
               .targets = {ParentRef()}});
   }
@@ -69,42 +68,53 @@ class FakeBuildInfoTestFixture : public gtest::RealLoopFixture {
 };
 
 TEST_F(FakeBuildInfoTestFixture, SetBuildInfo) {
-  auto provider = realm()->component().ConnectSync<Provider>();
-  auto test_controller = realm()->component().ConnectSync<BuildInfoTestController>();
+  auto client_end = realm()->component().Connect<Provider>();
+  ASSERT_TRUE(client_end.is_ok());
+  auto provider = fidl::SyncClient<Provider>(std::move(*client_end));
 
-  BuildInfo result;
-  provider->GetBuildInfo(&result);
+  auto test_controller_client_end = realm()->component().Connect<BuildInfoTestController>();
+  ASSERT_TRUE(test_controller_client_end.is_ok());
+  auto test_controller =
+      fidl::SyncClient<BuildInfoTestController>(std::move(*test_controller_client_end));
 
-  EXPECT_TRUE(result.has_product_config());
-  EXPECT_EQ(result.product_config(), FakeProviderImpl::kProductNameDefault);
-  EXPECT_TRUE(result.has_board_config());
-  EXPECT_EQ(result.board_config(), FakeProviderImpl::kBoardNameDefault);
-  EXPECT_TRUE(result.has_version());
-  EXPECT_EQ(result.version(), FakeProviderImpl::kVersionDefault);
-  EXPECT_TRUE(result.has_latest_commit_date());
-  EXPECT_EQ(result.latest_commit_date(), FakeProviderImpl::kLastCommitDateDefault);
+  auto result = provider->GetBuildInfo();
+  ASSERT_TRUE(result.is_ok());
+  auto build_info = result.value().build_info();
 
-  auto build_info = BuildInfo();
-  build_info.set_board_config(FakeBuildInfoTestFixture::kBoardName);
-  build_info.set_product_config(FakeBuildInfoTestFixture::kProductName);
-  build_info.set_version(FakeBuildInfoTestFixture::kVersion);
-  build_info.set_platform_version(FakeBuildInfoTestFixture::kPlatformVersion);
-  build_info.set_product_version(FakeBuildInfoTestFixture::kProductVersion);
-  build_info.set_latest_commit_date(FakeBuildInfoTestFixture::kLastCommitDate);
+  EXPECT_TRUE(build_info.product_config().has_value());
+  EXPECT_EQ(build_info.product_config().value(), FakeProviderImpl::kProductNameDefault);
+  EXPECT_TRUE(build_info.board_config().has_value());
+  EXPECT_EQ(build_info.board_config().value(), FakeProviderImpl::kBoardNameDefault);
+  EXPECT_TRUE(build_info.version().has_value());
+  EXPECT_EQ(build_info.version().value(), FakeProviderImpl::kVersionDefault);
+  EXPECT_TRUE(build_info.latest_commit_date().has_value());
+  EXPECT_EQ(build_info.latest_commit_date().value(), FakeProviderImpl::kLastCommitDateDefault);
 
-  test_controller->SetBuildInfo(std::move(build_info));
-  provider->GetBuildInfo(&result);
+  BuildInfo new_build_info;
+  new_build_info.board_config(FakeBuildInfoTestFixture::kBoardName);
+  new_build_info.product_config(FakeBuildInfoTestFixture::kProductName);
+  new_build_info.version(FakeBuildInfoTestFixture::kVersion);
+  new_build_info.platform_version(FakeBuildInfoTestFixture::kPlatformVersion);
+  new_build_info.product_version(FakeBuildInfoTestFixture::kProductVersion);
+  new_build_info.latest_commit_date(FakeBuildInfoTestFixture::kLastCommitDate);
 
-  EXPECT_TRUE(result.has_product_config());
-  EXPECT_EQ(result.product_config(), FakeBuildInfoTestFixture::kProductName);
-  EXPECT_TRUE(result.has_board_config());
-  EXPECT_EQ(result.board_config(), FakeBuildInfoTestFixture::kBoardName);
-  EXPECT_TRUE(result.has_version());
-  EXPECT_EQ(result.version(), FakeBuildInfoTestFixture::kVersion);
-  EXPECT_TRUE(result.has_platform_version());
-  EXPECT_EQ(result.platform_version(), FakeBuildInfoTestFixture::kPlatformVersion);
-  EXPECT_TRUE(result.has_product_version());
-  EXPECT_EQ(result.product_version(), FakeBuildInfoTestFixture::kProductVersion);
-  EXPECT_TRUE(result.has_latest_commit_date());
-  EXPECT_EQ(result.latest_commit_date(), FakeBuildInfoTestFixture::kLastCommitDate);
+  auto set_result = test_controller->SetBuildInfo({{.build_info = std::move(new_build_info)}});
+  ASSERT_TRUE(set_result.is_ok());
+
+  result = provider->GetBuildInfo();
+  ASSERT_TRUE(result.is_ok());
+  build_info = result.value().build_info();
+
+  EXPECT_TRUE(build_info.product_config().has_value());
+  EXPECT_EQ(build_info.product_config().value(), FakeBuildInfoTestFixture::kProductName);
+  EXPECT_TRUE(build_info.board_config().has_value());
+  EXPECT_EQ(build_info.board_config().value(), FakeBuildInfoTestFixture::kBoardName);
+  EXPECT_TRUE(build_info.version().has_value());
+  EXPECT_EQ(build_info.version().value(), FakeBuildInfoTestFixture::kVersion);
+  EXPECT_TRUE(build_info.platform_version().has_value());
+  EXPECT_EQ(build_info.platform_version().value(), FakeBuildInfoTestFixture::kPlatformVersion);
+  EXPECT_TRUE(build_info.product_version().has_value());
+  EXPECT_EQ(build_info.product_version().value(), FakeBuildInfoTestFixture::kProductVersion);
+  EXPECT_TRUE(build_info.latest_commit_date().has_value());
+  EXPECT_EQ(build_info.latest_commit_date().value(), FakeBuildInfoTestFixture::kLastCommitDate);
 }

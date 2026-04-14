@@ -4,18 +4,29 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/fidl/cpp/binding_set.h>
-#include <lib/sys/cpp/component_context.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 
 #include "build_info.h"
 
 int main(int argc, const char** argv) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  async_dispatcher_t* dispatcher = loop.dispatcher();
+
+  component::OutgoingDirectory outgoing = component::OutgoingDirectory(dispatcher);
+  zx::result result = outgoing.ServeFromStartupInfo();
+  if (result.is_error()) {
+    return -1;
+  }
 
   ProviderImpl impl;
-  fidl::BindingSet<fuchsia::buildinfo::Provider> bindings;
-  auto context = sys::ComponentContext::CreateAndServeOutgoingDirectory();
-  context->outgoing()->AddPublicService(bindings.GetHandler(&impl));
+
+  result = outgoing.AddUnmanagedProtocol<fuchsia_buildinfo::Provider>(
+      [&impl, dispatcher](fidl::ServerEnd<fuchsia_buildinfo::Provider> server_end) {
+        fidl::BindServer(dispatcher, std::move(server_end), &impl);
+      });
+  if (result.is_error()) {
+    return -1;
+  }
 
   return loop.Run();
 }

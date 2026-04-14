@@ -4,7 +4,6 @@
 
 #include "build_info.h"
 
-#include <fuchsia/io/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fdio/io.h>
@@ -24,7 +23,7 @@ const char kProductVersionFilePath[] = "/config/build-info/product_version";
 const char kLatestCommitDateFilePath[] = "/config/build-info/latest-commit-date";
 
 // Returns the contents of |file_path| with any trailing whitespace removed.
-std::string ContentsOfFileAtPath(const std::string &file_path) {
+std::string ContentsOfFileAtPath(const std::string& file_path) {
   std::string file_contents;
   if (!files::ReadFileToString(file_path, &file_contents)) {
     FX_LOGS(ERROR) << "Error reading " << file_path;
@@ -39,15 +38,15 @@ std::string ContentsOfFileAtPath(const std::string &file_path) {
 
 }  // namespace
 
-void ProviderImpl::GetBuildInfo(GetBuildInfoCallback callback) {
-  fuchsia::buildinfo::BuildInfo build_info;
+void ProviderImpl::GetBuildInfo(GetBuildInfoCompleter::Sync& completer) {
+  fuchsia_buildinfo::BuildInfo build_info;
 
   if (!product_config_) {
     product_config_ = std::make_unique<std::string>(ContentsOfFileAtPath(kProductFilePath));
   }
 
   if (!product_config_->empty()) {
-    build_info.set_product_config(*product_config_);
+    build_info.product_config(*product_config_);
   }
 
   if (!board_config_) {
@@ -55,7 +54,7 @@ void ProviderImpl::GetBuildInfo(GetBuildInfoCallback callback) {
   }
 
   if (!board_config_->empty()) {
-    build_info.set_board_config(*board_config_);
+    build_info.board_config(*board_config_);
   }
 
   if (!version_) {
@@ -63,7 +62,7 @@ void ProviderImpl::GetBuildInfo(GetBuildInfoCallback callback) {
   }
 
   if (!version_->empty()) {
-    build_info.set_version(*version_);
+    build_info.version(*version_);
   }
 
   if (!platform_version_) {
@@ -72,7 +71,7 @@ void ProviderImpl::GetBuildInfo(GetBuildInfoCallback callback) {
   }
 
   if (!platform_version_->empty()) {
-    build_info.set_platform_version(*platform_version_);
+    build_info.platform_version(*platform_version_);
   }
 
   if (!product_version_) {
@@ -80,7 +79,7 @@ void ProviderImpl::GetBuildInfo(GetBuildInfoCallback callback) {
   }
 
   if (!product_version_->empty()) {
-    build_info.set_product_version(*product_version_);
+    build_info.product_version(*product_version_);
   }
 
   if (!latest_commit_date_) {
@@ -89,8 +88,8 @@ void ProviderImpl::GetBuildInfo(GetBuildInfoCallback callback) {
   }
 
   if (!latest_commit_date_->empty()) {
-    build_info.set_latest_commit_date(*latest_commit_date_);
+    build_info.latest_commit_date(*latest_commit_date_);
   }
 
-  callback(std::move(build_info));
+  completer.Reply({{.build_info = std::move(build_info)}});
 }
