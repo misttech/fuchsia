@@ -39,6 +39,7 @@ impl PackageTools for SizedPackageTools {
 }
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct CreateTool<T: PackageTools> {
     #[command]
     cmd: RepoCreateCommand,
