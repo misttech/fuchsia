@@ -38,9 +38,16 @@ llvm_libc_source_set("generic") {
 }
 
 llvm_libc_source_set("abort") {
-  functions = [ "abort" ]
-  os_functions = functions
+  # This doesn't just list abort in functions and os_functions because the
+  # local abort.cc is OS-independent and we want to use it even on non-Fuchsia.
+  # The upstream implementation is problematic for us and the simple trap
+  # version is all we ever want.
+  functions = []
+  local_sources = [ "abort.cc" ]
   local_deps = [ "//zircon/system/ulib/zircon-internal" ]
+
+  # Since functions isn't set, the upstream test has to be listed explicitly.
+  test_sources = [ "abort_test.cpp" ]
 }
 
 if (is_fuchsia) {
