@@ -31,6 +31,8 @@ type FileEntry struct {
 	Status FileStatus `json:"status"`
 	// IsDirectory is true if the path points to a directory.
 	IsDirectory bool `json:"is_directory"`
+	// BuildTargets is a list of GN labels that need to be built for this file.
+	BuildTargets []string `json:"build_targets,omitempty"`
 }
 
 type WorkspaceContext struct {
@@ -169,11 +171,17 @@ func NewWorkspaceContext(args []string) (*WorkspaceContext, error) {
 		}
 	}
 
-	return &WorkspaceContext{
+	ctx := &WorkspaceContext{
 		FuchsiaDir: fuchsiaDir,
 		BuildDir:   buildDir,
 		Files:      entries,
-	}, nil
+	}
+
+	if err := ctx.PopulateTargets(); err != nil {
+		return nil, fmt.Errorf("failed to populate build targets: %w", err)
+	}
+
+	return ctx, nil
 }
 
 func readFileList(name string) ([]string, error) {
