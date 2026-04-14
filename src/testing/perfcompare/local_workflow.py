@@ -256,8 +256,12 @@ def _get_cas_info_from_build(
 
     properties = build_info["output"]["properties"]
     try:
-        digest = properties["perf_dataset_digest"]
         instance = properties["cas_instance"]
+        digest = properties.get("perf_dataset_digest") or properties.get(
+            "perfcompare_dataset_digest"
+        )
+        if not digest:
+            raise KeyError("perf_dataset_digest or perfcompare_dataset_digest")
     except KeyError as e:
         raise KeyError(
             f"Missing required entry {e} in build output properties: {properties}"

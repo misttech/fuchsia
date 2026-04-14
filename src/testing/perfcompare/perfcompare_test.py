@@ -937,6 +937,38 @@ class LocalWorkflowTest(TempDirTestCase):
         self.assertIn("Downloading from cas to", output)
 
     @unittest.mock.patch("subprocess.run")
+    def test_download_metrics_perfcompare_digest(self, mock_run):
+        mock_run.side_effect = self._make_bb_cas_fake(
+            {
+                ("auth-info",): "auth ok",
+                ("get", "-p"): json.dumps(
+                    {
+                        "output": {
+                            "properties": {
+                                "cas_instance": "chromium_swarm",
+                                "perfcompare_dataset_digest": "123abc/82",
+                            }
+                        }
+                    }
+                ),
+                ("download",): self._make_cas_download_fake('{"metric": 1.0}'),
+            }
+        )
+
+        out_dir = self.MakeTempDir()
+        stdout = io.StringIO()
+        perfcompare.Main(["download_metrics", "1000", out_dir], stdout)
+
+        expected_file = os.path.join(out_dir, "metrics.json")
+        self.assertTrue(os.path.exists(expected_file))
+        with open(expected_file) as f:
+            self.assertEqual(f.read(), '{"metric": 1.0}')
+
+        output = stdout.getvalue()
+        self.assertIn("Fetching build info for 1000 using bb", output)
+        self.assertIn("Downloading from cas to", output)
+
+    @unittest.mock.patch("subprocess.run")
     def test_download_metrics_missing_properties(self, mock_run):
         mock_run.side_effect = self._make_bb_cas_fake(
             {
