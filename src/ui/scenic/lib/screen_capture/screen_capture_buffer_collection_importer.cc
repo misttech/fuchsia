@@ -165,29 +165,40 @@ fpromise::promise<> ScreenCaptureBufferCollectionImporter::ImportBufferCollectio
 
   auto local_buffer_collection =
       CreateBufferCollectionSyncPtrAndSetEmptyConstraints(sysmem_allocator, std::move(token));
-  if (!local_buffer_collection.has_value()) {
+  if (!local_buffer_collection) {
     return fpromise::make_error_promise();
   }
 
-  if (!renderer_->ImportBufferCollection(collection_id, sysmem_allocator,
-                                         std::move(child_tokens[0]),
-                                         BufferCollectionUsage::kRenderTarget, std::nullopt)) {
-    FX_LOGS(WARNING) << "Could not register render target token with VkRenderer";
-    return fpromise::make_error_promise();
-  }
+  fpromise::promise<> render_target_token =
+      renderer_
+          ->ImportBufferCollection(collection_id, sysmem_allocator, std::move(child_tokens[0]),
+                                   BufferCollectionUsage::kRenderTarget, std::nullopt)
+          .or_else([] {
+            FX_LOGS(WARNING) << "Could not register render target token with VkRenderer";
+            return fpromise::error();
+          });
 
-  if (!renderer_->ImportBufferCollection(collection_id, sysmem_allocator,
-                                         std::move(child_tokens[1]),
-                                         BufferCollectionUsage::kReadback, std::nullopt)) {
-    renderer_->ReleaseBufferCollection(collection_id, BufferCollectionUsage::kRenderTarget);
-    FX_LOGS(WARNING) << "Could not register readback token with VkRenderer";
-    return fpromise::make_error_promise();
-  }
+  fpromise::promise<> readback_token =
+      renderer_
+          ->ImportBufferCollection(collection_id, sysmem_allocator, std::move(child_tokens[1]),
+                                   BufferCollectionUsage::kReadback, std::nullopt)
+          .or_else([] {
+            FX_LOGS(WARNING) << "Could not register readback token with VkRenderer";
+            return fpromise::error();
+          });
 
-  buffer_collection_sync_ptrs_[collection_id] = std::move(local_buffer_collection.value());
-  buffer_collections_.insert(collection_id);
-
-  return fpromise::make_ok_promise();
+  return fpromise::join_promises(std::move(render_target_token), std::move(readback_token))
+      .and_then([this, collection_id, local_buffer_collection = std::move(local_buffer_collection)](
+                    std::tuple<fpromise::result<>, fpromise::result<>>& results) mutable
+                    -> fpromise::result<> {
+        if (auto& [result, protected_result] = results;
+            result.is_error() || protected_result.is_error()) {
+          return fpromise::error();
+        }
+        buffer_collection_sync_ptrs_[collection_id] = std::move(*local_buffer_collection);
+        buffer_collections_.insert(collection_id);
+        return fpromise::ok();
+      });
 }
 
 void ScreenCaptureBufferCollectionImporter::ReleaseBufferCollection(
@@ -215,27 +226,27 @@ void ScreenCaptureBufferCollectionImporter::ReleaseBufferCollection(
   renderer_->ReleaseBufferCollection(collection_id, usage);
 }
 
-bool ScreenCaptureBufferCollectionImporter::ImportBufferImage(
+fpromise::promise<> ScreenCaptureBufferCollectionImporter::ImportBufferImage(
     const allocation::ImageMetadata& metadata, BufferCollectionUsage usage) {
   TRACE_DURATION("gfx", "ScreenCaptureBufferCollectionImporter::ImportBufferImage");
 
   // The metadata can't have an invalid |collection_id|.
   if (metadata.collection_id == allocation::kInvalidId) {
     FX_LOGS(WARNING) << "Image has invalid collection id.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   // The metadata can't have an invalid identifier.
   if (metadata.identifier == allocation::kInvalidImageId) {
     FX_LOGS(WARNING) << "Image has invalid identifier.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   // Check for valid dimensions.
   if (metadata.width == 0 || metadata.height == 0) {
     FX_LOGS(WARNING) << "Image has invalid dimensions: "
                      << "(" << metadata.width << ", " << metadata.height << ").";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   // Make sure that the collection that will back this image's memory
@@ -243,7 +254,7 @@ bool ScreenCaptureBufferCollectionImporter::ImportBufferImage(
   auto collection_itr = buffer_collections_.find(metadata.collection_id);
   if (collection_itr == buffer_collections_.end()) {
     FX_LOGS(WARNING) << "Collection with id " << metadata.collection_id << " does not exist.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   const std::optional<uint32_t> buffer_count =
@@ -251,43 +262,52 @@ bool ScreenCaptureBufferCollectionImporter::ImportBufferImage(
 
   if (buffer_count == std::nullopt) {
     FX_LOGS(WARNING) << __func__ << " failed, buffer_count invalid";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (metadata.vmo_index >= buffer_count.value()) {
     FX_LOGS(WARNING) << __func__ << " failed, vmo_index " << metadata.vmo_index << " is invalid";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   FX_DCHECK(BufferCollectionUsage::kRenderTarget == usage);
-  // Render target allocation failed, so we need to set the client buffer as a readback buffer.
-  // Reset the imported buffer collections, reallocate a render target buffer and re-import.
-  if (!renderer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget)) {
-    if (!ResetRenderTargetsForReadback(metadata, buffer_count.value())) {
-      FX_LOGS(WARNING) << "Cannot reallocate readback render targets!";
-      return false;
-    }
-    if (!renderer_->ImportBufferImage(metadata, BufferCollectionUsage::kReadback)) {
-      FX_LOGS(WARNING) << "Could not import fallback render target to VkRenderer";
-      return false;
-    }
-    if (!renderer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget)) {
-      FX_LOGS(WARNING) << "Could not import fallback render target to VkRenderer";
-      return false;
-    }
-  } else {
-    // Render target allocation succeeded. We can use the client buffer as render target and there
-    // is no need for readback buffers.
-    if (reset_render_targets_.find(metadata.collection_id) == reset_render_targets_.end()) {
-      renderer_->ReleaseBufferCollection(metadata.collection_id, BufferCollectionUsage::kReadback);
-    } else {
-      // Render target allocation succeeded on a buffer, where ResetRenderTargetsForReadback() was
-      // called, so we need to set the client buffer as a readback buffer.
-      renderer_->ImportBufferImage(metadata, BufferCollectionUsage::kReadback);
-    }
-  }
-
-  return true;
+  return renderer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget)
+      .and_then([this, metadata]() -> fpromise::promise<> {
+        // Render target allocation succeeded. We can use the client buffer as render target and
+        // there is no need for readback buffers.
+        if (!reset_render_targets_.contains(metadata.collection_id)) {
+          renderer_->ReleaseBufferCollection(metadata.collection_id,
+                                             BufferCollectionUsage::kReadback);
+          return fpromise::make_ok_promise();
+        }
+        // Render target allocation succeeded on a buffer, where ResetRenderTargetsForReadback()
+        // was called, so we need to set the client buffer as a readback buffer.
+        return renderer_->ImportBufferImage(metadata, BufferCollectionUsage::kReadback);
+      })
+      .or_else([this, metadata, buffer_count = buffer_count.value()]() -> fpromise::promise<> {
+        // Render target allocation failed, so we need to set the client buffer as a readback
+        // buffer. Reset the imported buffer collections, reallocate a render target buffer and
+        // re-import.
+        return ResetRenderTargetsForReadback(metadata, buffer_count)
+            .or_else([] {
+              FX_LOGS(WARNING) << "Could not reallocate readback render targets";
+              return fpromise::error();
+            })
+            .and_then([this, metadata]() -> fpromise::promise<> {
+              return renderer_->ImportBufferImage(metadata, BufferCollectionUsage::kReadback);
+            })
+            .or_else([] {
+              FX_LOGS(WARNING) << "Could not import fallback readback to VkRenderer";
+              return fpromise::error();
+            })
+            .and_then([this, metadata]() -> fpromise::promise<> {
+              return renderer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget);
+            })
+            .or_else([] {
+              FX_LOGS(WARNING) << "Could not import fallback render target to VkRenderer";
+              return fpromise::error();
+            });
+      });
 }
 
 void ScreenCaptureBufferCollectionImporter::ReleaseBufferImage(allocation::GlobalImageId image_id) {
@@ -300,71 +320,70 @@ std::optional<BufferCount> ScreenCaptureBufferCollectionImporter::GetBufferColle
   // If the collection info has not been retrieved before, wait for the buffers to be allocated
   // and populate the map/delete the reference to the |collection_id| from
   // |collection_id_sync_ptrs_|.
-  if (buffer_collection_buffer_counts_.find(collection_id) ==
-      buffer_collection_buffer_counts_.end()) {
-    fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-
-    if (buffer_collection_sync_ptrs_.find(collection_id) == buffer_collection_sync_ptrs_.end()) {
-      FX_LOGS(WARNING) << "Collection with id " << collection_id << " does not exist.";
-      return std::nullopt;
-    }
-
-    buffer_collection = std::move(buffer_collection_sync_ptrs_[collection_id]);
-
-    fuchsia::sysmem2::BufferCollection_CheckAllBuffersAllocated_Result check_allocated_result;
-    zx_status_t status = buffer_collection->CheckAllBuffersAllocated(&check_allocated_result);
-    if (status != ZX_OK) {
-      FX_LOGS(WARNING) << __func__ << " failed, no buffers allocated - status: " << status;
-      return std::nullopt;
-    }
-    if (check_allocated_result.is_framework_err()) {
-      FX_LOGS(WARNING) << __func__ << " failed, no buffers allocated - framework_err: "
-                       << fidl::ToUnderlying(check_allocated_result.framework_err());
-      return std::nullopt;
-    }
-    if (check_allocated_result.is_err()) {
-      ZX_DEBUG_ASSERT(check_allocated_result.is_err());
-      FX_LOGS(WARNING) << __func__ << " failed, no buffers allocated - err: "
-                       << static_cast<uint32_t>(check_allocated_result.err());
-      return std::nullopt;
-    }
-
-    fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-    status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-    if (status != ZX_OK) {
-      FX_LOGS(WARNING) << __func__
-                       << " failed, waiting on no buffers allocated - status: " << status;
-      return std::nullopt;
-    }
-    if (wait_result.is_framework_err()) {
-      FX_LOGS(WARNING) << __func__ << " failed, waiting on no buffers allocated - framework_err: "
-                       << fidl::ToUnderlying(wait_result.framework_err());
-      return std::nullopt;
-    }
-    if (wait_result.is_err()) {
-      FX_LOGS(WARNING) << __func__ << " failed, waiting on no buffers allocated - err: "
-                       << static_cast<uint32_t>(wait_result.framework_err());
-      return std::nullopt;
-    }
-    auto buffer_collection_info =
-        std::move(*wait_result.response().mutable_buffer_collection_info());
-
-    buffer_collection_sync_ptrs_.erase(collection_id);
-    buffer_collection->Release();
-
-    buffer_collection_buffer_counts_[collection_id] = buffer_collection_info.buffers().size();
+  if (auto it = buffer_collection_buffer_counts_.find(collection_id);
+      it != buffer_collection_buffer_counts_.end()) {
+    return it->second;
   }
 
-  return buffer_collection_buffer_counts_[collection_id];
+  auto it = buffer_collection_sync_ptrs_.find(collection_id);
+  if (it == buffer_collection_sync_ptrs_.end()) {
+    FX_LOGS(WARNING) << "Collection with id " << collection_id << " does not exist.";
+    return std::nullopt;
+  }
+  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection = std::move(it->second);
+
+  fuchsia::sysmem2::BufferCollection_CheckAllBuffersAllocated_Result check_allocated_result;
+  zx_status_t status = buffer_collection->CheckAllBuffersAllocated(&check_allocated_result);
+  if (status != ZX_OK) {
+    FX_LOGS(WARNING) << __func__ << " failed, no buffers allocated - status: " << status;
+    return std::nullopt;
+  }
+
+  if (check_allocated_result.is_framework_err()) {
+    FX_LOGS(WARNING) << __func__ << " failed, no buffers allocated - framework_err: "
+                     << fidl::ToUnderlying(check_allocated_result.framework_err());
+    return std::nullopt;
+  }
+  if (check_allocated_result.is_err()) {
+    ZX_DEBUG_ASSERT(check_allocated_result.is_err());
+    FX_LOGS(WARNING) << __func__ << " failed, no buffers allocated - err: "
+                     << static_cast<uint32_t>(check_allocated_result.err());
+    return std::nullopt;
+  }
+
+  fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
+  status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
+  if (status != ZX_OK) {
+    FX_LOGS(WARNING) << __func__ << " failed, waiting on no buffers allocated - status: " << status;
+    return std::nullopt;
+  }
+  if (wait_result.is_framework_err()) {
+    FX_LOGS(WARNING) << __func__ << " failed, waiting on no buffers allocated - framework_err: "
+                     << fidl::ToUnderlying(wait_result.framework_err());
+    return std::nullopt;
+  }
+  if (wait_result.is_err()) {
+    FX_LOGS(WARNING) << __func__ << " failed, waiting on no buffers allocated - err: "
+                     << static_cast<uint32_t>(wait_result.framework_err());
+    return std::nullopt;
+  }
+  auto buffer_collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
+
+  buffer_collection_sync_ptrs_.erase(it);
+  buffer_collection->Release();
+
+  const size_t buffer_count = buffer_collection_info.buffers().size();
+  buffer_collection_buffer_counts_[collection_id] = buffer_count;
+  return buffer_count;
 }
 
-bool ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
+fpromise::promise<> ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
     const allocation::ImageMetadata& metadata, uint32_t buffer_count) {
   // Resetting render target for readback only should happen once at the first ImportBufferImage
   // from that BufferCollection. Don't do it again if this method had already been called for this
   // |metadata.collection_id|.
-  if (reset_render_targets_.find(metadata.collection_id) != reset_render_targets_.end()) {
-    return true;
+  if (reset_render_targets_.contains(metadata.collection_id)) {
+    return fpromise::make_ok_promise();
   }
 
   FX_LOGS(INFO) << "Could not import render target to VkRenderer; attempting to create fallback";
@@ -385,7 +404,7 @@ bool ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
   if (!result.ok()) {
     FX_LOGS(WARNING) << "Cannot allocate fallback render target sync token: "
                      << result.status_string();
-    return false;
+    return fpromise::make_error_promise();
   }
 
   fuchsia::sysmem2::BufferCollectionTokenHandle fallback_render_target_token;
@@ -396,7 +415,7 @@ bool ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
   if (status != ZX_OK) {
     FX_LOGS(ERROR) << "Cannot duplicate fallback render target sync token: "
                    << zx_status_get_string(status);
-    return false;
+    return fpromise::make_error_promise();
   }
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
@@ -408,59 +427,65 @@ bool ScreenCaptureBufferCollectionImporter::ResetRenderTargetsForReadback(
               buffer_collection.NewRequest().TakeChannel()))
           .Build());
   if (!result.ok()) {
-    return false;
+    return fpromise::make_error_promise();
   }
 
-  if (!renderer_->ImportBufferCollection(metadata.collection_id, sysmem_allocator_,
-                                         fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>{
-                                             fallback_render_target_token.TakeChannel()},
-                                         BufferCollectionUsage::kRenderTarget,
-                                         {{metadata.width, metadata.height}})) {
-    FX_LOGS(WARNING) << "Could not register fallback render target with VkRenderer";
-    return false;
-  }
+  return renderer_
+      ->ImportBufferCollection(metadata.collection_id, sysmem_allocator_,
+                               fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>{
+                                   fallback_render_target_token.TakeChannel()},
+                               BufferCollectionUsage::kRenderTarget,
+                               {{metadata.width, metadata.height}})
+      .or_else([] {
+        FX_LOGS(WARNING) << "Could not register fallback render target with VkRenderer";
+        return fpromise::error();
+      })
+      .and_then([this, collection_id = metadata.collection_id, buffer_count,
+                 deregister_collection = std::move(deregister_collection),
+                 buffer_collection = std::move(buffer_collection)]() mutable -> fpromise::result<> {
+        fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+        auto& constraints = *set_constraints_request.mutable_constraints();
+        constraints.set_min_buffer_count(buffer_count);
+        constraints.mutable_usage()->set_none(fuchsia::sysmem2::NONE_USAGE);
+        zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+        if (status != ZX_OK) {
+          FX_LOGS(WARNING) << "Cannot set constraints on fallback render target collection: "
+                           << zx_status_get_string(status);
+          return fpromise::error();
+        }
 
-  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-  auto& constraints = *set_constraints_request.mutable_constraints();
-  constraints.set_min_buffer_count(buffer_count);
-  constraints.mutable_usage()->set_none(fuchsia::sysmem2::NONE_USAGE);
-  status = buffer_collection->SetConstraints(std::move(set_constraints_request));
-  if (status != ZX_OK) {
-    FX_LOGS(WARNING) << "Cannot set constraints on fallback render target collection: "
-                     << zx_status_get_string(status);
-    return false;
-  }
+        fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
+        status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
+        if (status != ZX_OK) {
+          FX_LOGS(WARNING)
+              << "Could not wait on allocation for fallback render target collection - status: "
+              << zx_status_get_string(status);
+          return fpromise::error();
+        }
+        if (wait_result.is_framework_err()) {
+          FX_LOGS(WARNING)
+              << "Could not wait on allocation for fallback render target collection - framework_err: "
+              << fidl::ToUnderlying(wait_result.framework_err());
+          return fpromise::error();
+        }
+        if (wait_result.is_err()) {
+          FX_LOGS(WARNING)
+              << "Could not wait on allocation for fallback render target collection - err: "
+              << static_cast<uint32_t>(wait_result.err());
+          return fpromise::error();
+        }
 
-  fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-  status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-  if (status != ZX_OK) {
-    FX_LOGS(WARNING)
-        << "Could not wait on allocation for fallback render target collection - status: "
-        << zx_status_get_string(status);
-    return false;
-  }
-  if (wait_result.is_framework_err()) {
-    FX_LOGS(WARNING)
-        << "Could not wait on allocation for fallback render target collection - framework_err: "
-        << fidl::ToUnderlying(wait_result.framework_err());
-    return false;
-  }
-  if (wait_result.is_err()) {
-    FX_LOGS(WARNING) << "Could not wait on allocation for fallback render target collection - err: "
-                     << static_cast<uint32_t>(wait_result.err());
-    return false;
-  }
+        status = buffer_collection->Release();
+        if (status != ZX_OK) {
+          FX_LOGS(WARNING) << "Could not close fallback render target collection: "
+                           << zx_status_get_string(status);
+          return fpromise::error();
+        }
 
-  status = buffer_collection->Release();
-  if (status != ZX_OK) {
-    FX_LOGS(WARNING) << "Could not close fallback render target collection: "
-                     << zx_status_get_string(status);
-    return false;
-  }
-
-  reset_render_targets_.insert(metadata.collection_id);
-  deregister_collection.cancel();
-  return true;
+        reset_render_targets_.insert(collection_id);
+        deregister_collection.cancel();
+        return fpromise::ok();
+      });
 }
 
 }  // namespace screen_capture

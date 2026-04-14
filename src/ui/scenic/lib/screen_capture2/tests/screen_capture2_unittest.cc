@@ -26,6 +26,7 @@
 #include "src/ui/scenic/lib/screen_capture/screen_capture_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/screen_capture2/tests/common.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 
 using allocation::Allocator;
 using allocation::BufferCollectionImporter;
@@ -33,6 +34,7 @@ using flatland::ImageRect;
 using fuchsia::ui::composition::internal::FrameInfo;
 using fuchsia::ui::composition::internal::ScreenCaptureConfig;
 using fuchsia::ui::composition::internal::ScreenCaptureError;
+using integration_tests::ReturnPromise;
 using screen_capture::ScreenCaptureBufferCollectionImporter;
 using testing::_;
 
@@ -87,7 +89,7 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
           });
 
       EXPECT_CALL(*mock_renderer_.get(), ImportBufferImage(_, _))
-          .WillRepeatedly(testing::Return(true));
+          .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
       EXPECT_CALL(*mock_renderer_.get(), Render(_, _, _, _))
           .WillRepeatedly([](const allocation::ImageMetadata& render_target,
@@ -270,9 +272,9 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
   args.set_image_size({image_width, image_height});
 
   EXPECT_CALL(*mock_renderer_.get(), ImportBufferImage(_, _))
-      .WillOnce(testing::Return(true))
-      .WillOnce(testing::Return(true))
-      .WillOnce(testing::Return(false));
+      .WillOnce(ReturnPromise(fpromise::ok()))
+      .WillOnce(ReturnPromise(fpromise::ok()))
+      .WillOnce(ReturnPromise(fpromise::error()));
 
   EXPECT_CALL(*mock_renderer_.get(), ReleaseBufferImage(_)).Times(buffer_count - 1);
 

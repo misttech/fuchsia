@@ -105,8 +105,9 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // |BufferCollectionImporter|
   // Called from main thread or Flatland threads.
-  bool ImportBufferImage(const allocation::ImageMetadata& metadata,
-                         BufferCollectionUsage usage_type) override FXL_LOCKS_EXCLUDED(lock_);
+  fpromise::promise<> ImportBufferImage(const allocation::ImageMetadata& metadata,
+                                        BufferCollectionUsage usage_type) override
+      FXL_LOCKS_EXCLUDED(lock_);
 
   // |BufferCollectionImporter|
   // Called from main thread or Flatland threads.

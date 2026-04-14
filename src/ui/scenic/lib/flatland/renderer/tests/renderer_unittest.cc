@@ -49,6 +49,7 @@ using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
 using fuchsia::ui::composition::Orientation;
 using fuchsia_ui_composition::ImageFlip;
+using integration_tests::RunPromise;
 
 // TODO(https://fxbug.dev/42129956): Move common functions to testing::WithParamInterface instead of
 // function calls.
@@ -206,7 +207,7 @@ void ImportCollectionTest(Renderer* renderer,
 // will be in the renderer's map twice. So if all tokens are set, both server-side
 // importer collections should be allocated (since they are just pointers that refer
 // to the same collection).
-void SameTokenTwiceTest(Renderer* renderer,
+void SameTokenTwiceTest(async::TestLoop& loop, Renderer* renderer,
                         fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                         bool use_vulkan) {
   auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
@@ -248,23 +249,25 @@ void SameTokenTwiceTest(Renderer* renderer,
                                           additional_format_modifiers);
 
   // Now check that both server ids are allocated.
-  bool res_1 = renderer->ImportBufferImage({.collection_id = bcid,
-                                            .identifier = allocation::GenerateUniqueImageId(),
-                                            .vmo_index = 0,
-                                            .width = 1,
-                                            .height = 1},
-                                           BufferCollectionUsage::kRenderTarget);
-  bool res_2 = renderer->ImportBufferImage({.collection_id = bcid2,
-                                            .identifier = allocation::GenerateUniqueImageId(),
-                                            .vmo_index = 0,
-                                            .width = 1,
-                                            .height = 1},
-                                           BufferCollectionUsage::kRenderTarget);
+  bool res_1 = RunPromise(
+      loop, renderer->ImportBufferImage({.collection_id = bcid,
+                                         .identifier = allocation::GenerateUniqueImageId(),
+                                         .vmo_index = 0,
+                                         .width = 1,
+                                         .height = 1},
+                                        BufferCollectionUsage::kRenderTarget));
+  bool res_2 = RunPromise(
+      loop, renderer->ImportBufferImage({.collection_id = bcid2,
+                                         .identifier = allocation::GenerateUniqueImageId(),
+                                         .vmo_index = 0,
+                                         .width = 1,
+                                         .height = 1},
+                                        BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(res_1);
   EXPECT_TRUE(res_2);
 }
 
-void BadImageInputTest(Renderer* renderer,
+void BadImageInputTest(async::TestLoop& loop, Renderer* renderer,
                        fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                        bool use_vulkan) {
   const uint32_t kNumImages = 1;
@@ -289,34 +292,36 @@ void BadImageInputTest(Renderer* renderer,
 
   // Using an invalid buffer collection id.
   auto image_id = allocation::GenerateUniqueImageId();
-  EXPECT_FALSE(renderer->ImportBufferImage({.collection_id = allocation::kInvalidId,
-                                            .identifier = image_id,
-                                            .vmo_index = kNumImages,
-                                            .width = 1,
-                                            .height = 1},
-                                           BufferCollectionUsage::kRenderTarget));
+  EXPECT_FALSE(
+      RunPromise(loop, renderer->ImportBufferImage({.collection_id = allocation::kInvalidId,
+                                                    .identifier = image_id,
+                                                    .vmo_index = kNumImages,
+                                                    .width = 1,
+                                                    .height = 1},
+                                                   BufferCollectionUsage::kRenderTarget)));
 
   // Using an invalid image identifier.
-  EXPECT_FALSE(renderer->ImportBufferImage({.collection_id = bcid,
-                                            .identifier = allocation::kInvalidImageId,
-                                            .vmo_index = kNumImages,
-                                            .width = 1,
-                                            .height = 1},
-                                           BufferCollectionUsage::kRenderTarget));
+  EXPECT_FALSE(
+      RunPromise(loop, renderer->ImportBufferImage({.collection_id = bcid,
+                                                    .identifier = allocation::kInvalidImageId,
+                                                    .vmo_index = kNumImages,
+                                                    .width = 1,
+                                                    .height = 1},
+                                                   BufferCollectionUsage::kRenderTarget)));
 
   // VMO index is out of bounds.
-  EXPECT_FALSE(renderer->ImportBufferImage({.collection_id = bcid,
-                                            .identifier = image_id,
-                                            .vmo_index = kNumImages,
-                                            .width = 1,
-                                            .height = 1},
-                                           BufferCollectionUsage::kRenderTarget));
+  EXPECT_FALSE(RunPromise(loop, renderer->ImportBufferImage({.collection_id = bcid,
+                                                             .identifier = image_id,
+                                                             .vmo_index = kNumImages,
+                                                             .width = 1,
+                                                             .height = 1},
+                                                            BufferCollectionUsage::kRenderTarget)));
 }
 
 // Test the ImportBufferImage() function. First call ImportBufferImage() without setting the client
 // constraints, which should return false, and then set the client constraints which
 // should cause it to return true.
-void ImportImageTest(Renderer* renderer,
+void ImportImageTest(async::TestLoop& loop, Renderer* renderer,
                      fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                      bool use_vulkan) {
   auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
@@ -329,9 +334,11 @@ void ImportImageTest(Renderer* renderer,
 
   // The buffer collection should not be valid here.
   auto image_id = allocation::GenerateUniqueImageId();
-  EXPECT_FALSE(renderer->ImportBufferImage(
-      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-      BufferCollectionUsage::kRenderTarget));
+  EXPECT_FALSE(RunPromise(
+      loop,
+      renderer->ImportBufferImage(
+          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+          BufferCollectionUsage::kRenderTarget)));
 
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
   if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -344,16 +351,18 @@ void ImportImageTest(Renderer* renderer,
                                           additional_format_modifiers);
 
   // The buffer collection *should* be valid here.
-  auto res = renderer->ImportBufferImage(
-      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-      BufferCollectionUsage::kRenderTarget);
+  auto res = RunPromise(
+      loop,
+      renderer->ImportBufferImage(
+          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+          BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(res);
 }
 
 // Simple release test that calls ReleaseBufferCollection() directly without
 // any zx::events just to make sure that the method's functionality itself is
 // working as intended.
-void DeregistrationTest(Renderer* renderer,
+void DeregistrationTest(async::TestLoop& loop, Renderer* renderer,
                         fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                         bool use_vulkan) {
   auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
@@ -366,9 +375,11 @@ void DeregistrationTest(Renderer* renderer,
 
   // The buffer collection should not be valid here.
   auto image_id = allocation::GenerateUniqueImageId();
-  EXPECT_FALSE(renderer->ImportBufferImage(
-      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-      BufferCollectionUsage::kRenderTarget));
+  EXPECT_FALSE(RunPromise(
+      loop,
+      renderer->ImportBufferImage(
+          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+          BufferCollectionUsage::kRenderTarget)));
 
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
   if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -381,26 +392,30 @@ void DeregistrationTest(Renderer* renderer,
                                           additional_format_modifiers);
 
   // The buffer collection *should* be valid here.
-  auto import_result = renderer->ImportBufferImage(
-      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-      BufferCollectionUsage::kRenderTarget);
+  auto import_result = RunPromise(
+      loop,
+      renderer->ImportBufferImage(
+          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+          BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_result);
 
   // Now release the collection.
   renderer->ReleaseBufferCollection(bcid, BufferCollectionUsage::kRenderTarget);
 
   // After deregistration, calling ImportBufferImage() should return false.
-  import_result = renderer->ImportBufferImage(
-      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-      BufferCollectionUsage::kRenderTarget);
+  import_result = RunPromise(
+      loop,
+      renderer->ImportBufferImage(
+          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+          BufferCollectionUsage::kRenderTarget));
   EXPECT_FALSE(import_result);
 }
 
 // Test that calls ReleaseBufferCollection() before ReleaseBufferImage() and makes sure that
 // imported Image can still be rendered.
 void RenderImageAfterBufferCollectionReleasedTest(
-    Renderer* renderer, fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    bool use_vulkan) {
+    async::TestLoop& loop, Renderer* renderer,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator, bool use_vulkan) {
   auto texture_tokens = SysmemTokens::Create(sysmem_allocator);
   auto target_tokens = SysmemTokens::Create(sysmem_allocator);
 
@@ -440,8 +455,8 @@ void RenderImageAfterBufferCollectionReleasedTest(
                                  .vmo_index = 0,
                                  .width = kWidth,
                                  .height = kHeight};
-  auto import_result =
-      renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  auto import_result = RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_result);
 
   // Import image.
@@ -450,7 +465,8 @@ void RenderImageAfterBufferCollectionReleasedTest(
                          .vmo_index = 0,
                          .width = kWidth,
                          .height = kHeight};
-  import_result = renderer->ImportBufferImage(image, BufferCollectionUsage::kClientImage);
+  import_result =
+      RunPromise(loop, renderer->ImportBufferImage(image, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_result);
 
   // Now release the collection.
@@ -467,7 +483,7 @@ void RenderImageAfterBufferCollectionReleasedTest(
   }
 }
 
-void RenderAfterImageReleasedTest(Renderer* renderer,
+void RenderAfterImageReleasedTest(async::TestLoop& loop, Renderer* renderer,
                                   fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                                   bool use_vulkan) {
   auto texture_tokens = SysmemTokens::Create(sysmem_allocator);
@@ -509,8 +525,8 @@ void RenderAfterImageReleasedTest(Renderer* renderer,
                                  .vmo_index = 0,
                                  .width = kWidth,
                                  .height = kHeight};
-  auto import_result =
-      renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  auto import_result = RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_result);
 
   // Import image.
@@ -519,7 +535,8 @@ void RenderAfterImageReleasedTest(Renderer* renderer,
                          .vmo_index = 0,
                          .width = kWidth,
                          .height = kHeight};
-  import_result = renderer->ImportBufferImage(image, BufferCollectionUsage::kClientImage);
+  import_result =
+      RunPromise(loop, renderer->ImportBufferImage(image, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_result);
 
   // Now release the collection.
@@ -527,12 +544,6 @@ void RenderAfterImageReleasedTest(Renderer* renderer,
 
   // Send an empty render.
   renderer->Render(render_target, {}, {}, {});
-}
-
-// Runs the given promise on a new executor and waits for it to complete.
-bool RunPromise(async::TestLoop& loop, fpromise::promise<> promise) {
-  return integration_tests::RunPromise(
-      loop.dispatcher(), [&loop] { loop.RunUntilIdle(); }, std::move(promise));
 }
 
 // Test to make sure we can call the functions import kRenderTarget and kClientImage collections
@@ -576,9 +587,13 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
     }
 
     // The buffer collection *should* be valid here.
-    auto import_result = renderer->ImportBufferImage(
-        {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-        BufferCollectionUsage::kRenderTarget);
+    auto import_result =
+        RunPromise(loop, renderer->ImportBufferImage({.collection_id = bcid,
+                                                      .identifier = image_id,
+                                                      .vmo_index = 0,
+                                                      .width = 1,
+                                                      .height = 1},
+                                                     BufferCollectionUsage::kRenderTarget));
     EXPECT_TRUE(import_result);
     loop.RunUntilIdle();
   };
@@ -598,14 +613,16 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
   // state hasn't been corrupted. We use the values gathered in the bcid_vec
   // to test with.
   EXPECT_EQ(bcid_set.size(), kNumThreads);
+  async::TestLoop loop;
   for (const auto& bcid : bcid_set) {
     // The buffer collection *should* be valid here.
-    auto result = renderer->ImportBufferImage({.collection_id = bcid,
-                                               .identifier = allocation::GenerateUniqueImageId(),
-                                               .vmo_index = 0,
-                                               .width = 1,
-                                               .height = 1},
-                                              BufferCollectionUsage::kRenderTarget);
+    auto result = RunPromise(
+        loop, renderer->ImportBufferImage({.collection_id = bcid,
+                                           .identifier = allocation::GenerateUniqueImageId(),
+                                           .vmo_index = 0,
+                                           .width = 1,
+                                           .height = 1},
+                                          BufferCollectionUsage::kRenderTarget));
     EXPECT_TRUE(result);
   }
 }
@@ -631,8 +648,8 @@ void AsyncEventSignalTest(async::TestLoop* loop, Renderer* renderer,
                                  .vmo_index = 0,
                                  .width = kWidth,
                                  .height = kHeight};
-  auto target_import =
-      renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  auto target_import = RunPromise(
+      *loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(target_import);
 
   // Create the release fence that will be passed along to the Render()
@@ -677,42 +694,43 @@ TEST_F(NullRendererTest, SameTokenTwiceTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  SameTokenTwiceTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
+  SameTokenTwiceTest(loop, &renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, BadImageInputTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  BadImageInputTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
+  BadImageInputTest(loop, &renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, ImportImageTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  ImportImageTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
+  ImportImageTest(loop, &renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, DeregistrationTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  DeregistrationTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
+  DeregistrationTest(loop, &renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, RenderImageAfterBufferCollectionReleasedTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  RenderImageAfterBufferCollectionReleasedTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
+  RenderImageAfterBufferCollectionReleasedTest(loop, &renderer, sysmem_allocator,
+                                               /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, RenderAfterImageReleasedTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  RenderAfterImageReleasedTest(&renderer, sysmem_allocator, /*use_vulkan*/ false);
+  RenderAfterImageReleasedTest(loop, &renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 TEST_F(NullRendererTest, DISABLED_MultithreadingTest) {
@@ -738,28 +756,28 @@ VK_TEST_F(VulkanRendererTest, SameTokenTwiceTest) {
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  SameTokenTwiceTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
+  SameTokenTwiceTest(loop, renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, BadImageInputTest) {
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  BadImageInputTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
+  BadImageInputTest(loop, renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, ImportImageTest) {
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  ImportImageTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
+  ImportImageTest(loop, renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, DeregistrationTest) {
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  DeregistrationTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
+  DeregistrationTest(loop, renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 // TODO(https://fxbug.dev/42144999) This test is flaking on FEMU.
@@ -767,7 +785,7 @@ VK_TEST_F(VulkanRendererTest, DISABLED_RenderImageAfterBufferCollectionReleasedT
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  RenderImageAfterBufferCollectionReleasedTest(renderer.get(), sysmem_allocator,
+  RenderImageAfterBufferCollectionReleasedTest(loop, renderer.get(), sysmem_allocator,
                                                /*use_vulkan*/ true);
 }
 
@@ -777,7 +795,7 @@ VK_TEST_F(VulkanRendererTest, RenderAfterImageReleasedTest) {
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  RenderAfterImageReleasedTest(renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
+  RenderAfterImageReleasedTest(loop, renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 VK_TEST_F(VulkanRendererTest, DISABLED_MultithreadingTest) {
@@ -860,11 +878,12 @@ VK_TEST_F(VulkanRendererTest, RenderTest) {
                                       .width = static_cast<uint32_t>(kTextureWidth),
                                       .height = static_cast<uint32_t>(kTextureHeight)};
 
-  auto import_res =
-      renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  auto import_res = RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
 
-  import_res = renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  import_res = RunPromise(
+      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_res);
 
   // Create a renderable where the upper-left hand corner should be at position (6,3) with a
@@ -987,8 +1006,8 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
                                  .width = kWidth,
                                  .height = kHeight};
 
-  auto import_res =
-      renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  auto import_res = RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
 
   // Setup renderable texture collection.
@@ -1004,7 +1023,8 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
                                       .vmo_index = 0,
                                       .width = static_cast<uint32_t>(kWidth),
                                       .height = static_cast<uint32_t>(kHeight)};
-  import_res = renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  import_res = RunPromise(
+      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_res);
 
   ImageRect renderable(
@@ -1166,14 +1186,15 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
                                       .width = static_cast<uint32_t>(kTextureWidth),
                                       .height = static_cast<uint32_t>(kTextureHeight)};
 
-  auto import_res =
-      renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  auto import_res = RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
-  import_res =
-      renderer->ImportBufferImage(render_target_flipped, BufferCollectionUsage::kRenderTarget);
+  import_res = RunPromise(loop, renderer->ImportBufferImage(render_target_flipped,
+                                                            BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
 
-  import_res = renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  import_res = RunPromise(
+      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_res);
 
   // Create a renderable where the upper-left hand corner should be at position (5,3)
@@ -1437,13 +1458,15 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
                                       .height = static_cast<uint32_t>(kTextureHeight),
                                       .flip = ImageFlip::kLeftRight};
 
-  auto import_res = renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  auto import_res = RunPromise(
+      loop, renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
-  import_res =
-      renderer.ImportBufferImage(render_target_flipped, BufferCollectionUsage::kRenderTarget);
+  import_res = RunPromise(loop, renderer.ImportBufferImage(render_target_flipped,
+                                                           BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
 
-  import_res = renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  import_res = RunPromise(
+      loop, renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_res);
 
   // Create a renderable where the upper-left hand corner should be at position (5,3)
@@ -1618,13 +1641,15 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
                                       .height = static_cast<uint32_t>(h),
                                       .flip = ImageFlip::kUpDown};
 
-  auto import_res = renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  auto import_res = RunPromise(
+      loop, renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
-  import_res =
-      renderer.ImportBufferImage(render_target_flipped, BufferCollectionUsage::kRenderTarget);
+  import_res = RunPromise(loop, renderer.ImportBufferImage(render_target_flipped,
+                                                           BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
 
-  import_res = renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  import_res = RunPromise(
+      loop, renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_res);
 
   // Create a renderable where the upper-left hand corner should be at position (0, 0)
@@ -1735,7 +1760,8 @@ VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
                                          .multiply_color = {1.f, 0.4f, 0.f, 1.f},
                                          .blend_mode = BlendMode::kPremultipliedAlpha()};
 
-  renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -1808,7 +1834,8 @@ VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
                                          .multiply_color = {1, 0, 0, 1},
                                          .blend_mode = BlendMode::kPremultipliedAlpha()};
 
-  renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -1897,7 +1924,8 @@ VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
                                            .multiply_color = {0, 0, 1, 1},
                                            .blend_mode = BlendMode::kPremultipliedAlpha()};
 
-  renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -2001,8 +2029,10 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
                    memcpy(vmo_host, writeValues, sizeof(writeValues));
                  });
 
-  renderer->ImportBufferImage(renderable_image_data_2, BufferCollectionUsage::kClientImage);
-  renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, renderer->ImportBufferImage(renderable_image_data_2,
+                                                           BufferCollectionUsage::kClientImage)));
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
 
   // Create the two renderables.
   ImageRect renderable(glm::vec2(0, 0), glm::vec2(kRenderableWidth, kRenderableHeight));
@@ -2100,9 +2130,12 @@ VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
                                        .blend_mode = BlendMode::kPremultipliedAlpha()};
 
   // Import all the images.
-  renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
-  renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
-  renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage);
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage)));
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -2249,9 +2282,12 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
                                        .blend_mode = blend_mode};
 
   // Import all the images.
-  renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
-  renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
-  renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage);
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage)));
+  ASSERT_TRUE(RunPromise(
+      loop, renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -2384,8 +2420,8 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
                                   .vmo_index = 0,
                                   .width = kTargetWidth,
                                   .height = kTargetHeight};
-  auto import_res =
-      renderer->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
+  auto import_res = RunPromise(
+      loop, renderer->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_res);
 
   // Create a pair of tokens for the render target allocation.
@@ -2427,8 +2463,8 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
                                           .vmo_index = 0,
                                           .width = kTargetWidth,
                                           .height = kTargetHeight};
-  import_res =
-      renderer->ImportBufferImage(render_target_metadata, BufferCollectionUsage::kRenderTarget);
+  import_res = RunPromise(loop, renderer->ImportBufferImage(render_target_metadata,
+                                                            BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
 
   // Create a renderable where the upper-left hand corner should be at position (0,0) with a
@@ -2560,8 +2596,8 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
                                   .vmo_index = 0,
                                   .width = kTargetWidth,
                                   .height = kTargetHeight};
-  auto import_res =
-      renderer->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
+  auto import_res = RunPromise(
+      loop, renderer->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage));
   EXPECT_TRUE(import_res);
 
   // Create a pair of tokens for the render target allocation.
@@ -2603,8 +2639,8 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
                                           .vmo_index = 0,
                                           .width = kTargetWidth,
                                           .height = kTargetHeight};
-  import_res =
-      renderer->ImportBufferImage(render_target_metadata, BufferCollectionUsage::kRenderTarget);
+  import_res = RunPromise(loop, renderer->ImportBufferImage(render_target_metadata,
+                                                            BufferCollectionUsage::kRenderTarget));
   EXPECT_TRUE(import_res);
 
   // Create a renderable where the upper-left hand corner should be at position (0,0) with a
@@ -2670,9 +2706,11 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
                                  .vmo_index = 0,
                                  .width = kTargetWidth,
                                  .height = kTargetHeight};
-  bool success = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  bool success = RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
   ASSERT_TRUE(success);
-  success = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kReadback);
+  success = RunPromise(
+      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kReadback));
   ASSERT_TRUE(success);
 
   // Create the image metadata for the solid color renderable.

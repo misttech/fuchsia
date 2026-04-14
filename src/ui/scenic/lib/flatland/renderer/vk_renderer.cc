@@ -586,25 +586,25 @@ bool VkRenderer::ImportClientImage(const allocation::ImageMetadata& metadata,
   return true;
 }
 
-bool VkRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
-                                   const BufferCollectionUsage usage) {
+fpromise::promise<> VkRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
+                                                  const BufferCollectionUsage usage) {
   TRACE_DURATION("gfx", "flatland::VkRenderer::ImportBufferImage");
 
   if (!IsValidImage(metadata)) {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   vk::BufferCollectionFUCHSIA vk_collection;
   if (const auto collection = GetAllocatedVulkanBufferCollection(metadata.collection_id, usage)) {
     vk_collection = *collection;
   } else {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (ImageIsAlreadyRegisteredForUsage(metadata.identifier, usage)) {
     FX_LOGS(WARNING) << "An image with identifier " << metadata.identifier.value()
                      << " has already been registered for usage: " << static_cast<uint32_t>(usage);
-    return false;
+    return fpromise::make_error_promise();
   }
 
   bool import_result = false;
@@ -624,7 +624,7 @@ bool VkRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
     default:
       FX_NOTREACHED();
   }
-  return import_result;
+  return import_result ? fpromise::make_ok_promise() : fpromise::make_error_promise();
 }
 
 void VkRenderer::ReleaseBufferImage(allocation::GlobalImageId image_id) {

@@ -22,8 +22,8 @@ class MockBufferCollectionImporter : public BufferCollectionImporter {
   MOCK_METHOD(void, ReleaseBufferCollection,
               (GlobalBufferCollectionId, allocation::BufferCollectionUsage), (override));
 
-  MOCK_METHOD(bool, ImportBufferImage, (const ImageMetadata&, allocation::BufferCollectionUsage),
-              (override));
+  MOCK_METHOD(fpromise::promise<>, ImportBufferImage,
+              (const ImageMetadata&, allocation::BufferCollectionUsage), (override));
 
   MOCK_METHOD(void, ReleaseBufferImage, (GlobalImageId), (override));
 };

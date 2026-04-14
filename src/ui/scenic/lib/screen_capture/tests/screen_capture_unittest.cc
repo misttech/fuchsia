@@ -19,6 +19,7 @@
 #include "src/ui/scenic/lib/allocation/mock_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/flatland/renderer/mock_renderer.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 
 using allocation::BufferCollectionImporter;
 using flatland::ImageRect;
@@ -26,6 +27,7 @@ using fuchsia_ui_composition::FrameInfo;
 using fuchsia_ui_composition::GetNextFrameArgs;
 using fuchsia_ui_composition::ScreenCaptureConfig;
 using fuchsia_ui_composition::ScreenCaptureError;
+using integration_tests::ReturnPromise;
 using testing::_;
 
 namespace screen_capture::test {
@@ -99,7 +101,7 @@ TEST_F(ScreenCaptureTest, ConfigureSingleImporterSuccess) {
   args.buffer_count(1);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool configure = false;
   sc.Configure(std::move(args), [&configure](auto result) {
@@ -108,6 +110,14 @@ TEST_F(ScreenCaptureTest, ConfigureSingleImporterSuccess) {
   });
   RunLoopUntilIdle();
   EXPECT_TRUE(configure);
+
+  // Check that immediately consecutive call to configure fails.
+  sc.Configure(std::move(args), [&configure](auto result) {
+    EXPECT_TRUE(result.is_error());
+    configure = false;
+  });
+  RunLoopUntilIdle();
+  EXPECT_FALSE(configure);
 
   // Ensure that the buffer image is released.
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(1);
@@ -127,7 +137,7 @@ TEST_F(ScreenCaptureTest, ConfigureSingleImporterFailure) {
   args.buffer_count(1);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(false));
+      .WillRepeatedly(ReturnPromise(fpromise::error()));
 
   ScreenCaptureError error;
   sc.Configure(std::move(args), [&error](auto result) {
@@ -158,9 +168,9 @@ TEST_F(ScreenCaptureTest, ConfigureMultipleImportersSuccess) {
   args.buffer_count(1);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
   EXPECT_CALL(*mock_buffer_collection_importer2, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool configure = false;
   sc.Configure(std::move(args), [&configure](auto result) {
@@ -195,15 +205,17 @@ TEST_F(ScreenCaptureTest, ConfigureMultipleImportersImportFailure) {
   args.buffer_count(3);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillOnce(testing::Return(true))
-      .WillOnce(testing::Return(true));
+      .WillOnce(ReturnPromise(fpromise::ok()))
+      .WillOnce(ReturnPromise(fpromise::ok()))
+      .WillOnce(ReturnPromise(fpromise::ok()));
   EXPECT_CALL(*mock_buffer_collection_importer2, ImportBufferImage(_, _))
-      .WillOnce(testing::Return(true))
-      .WillOnce(testing::Return(false));
+      .WillOnce(ReturnPromise(fpromise::ok()))
+      .WillOnce(ReturnPromise(fpromise::ok()))
+      .WillOnce(ReturnPromise(fpromise::error()));
 
   // We expect that all buffer images up to the failure will be released.
-  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(2);
-  EXPECT_CALL(*mock_buffer_collection_importer2, ReleaseBufferImage(_)).Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(3);
+  EXPECT_CALL(*mock_buffer_collection_importer2, ReleaseBufferImage(_)).Times(2);
 
   ScreenCaptureError error;
   sc.Configure(std::move(args), [&error](auto result) {
@@ -241,7 +253,7 @@ TEST_F(ScreenCaptureTest, ConfigureNoBuffers) {
   args.buffer_count(0);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   sc.Configure(std::move(args), [](auto result) {
     EXPECT_TRUE(result.is_error());
@@ -265,7 +277,7 @@ TEST_F(ScreenCaptureTest, ConfigureTwice) {
   args1.buffer_count(2);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool alloc_result = false;
   sc.Configure(std::move(args1), [&alloc_result](auto result) {
@@ -296,7 +308,7 @@ TEST_F(ScreenCaptureTest, ConfigureTwice) {
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(2);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   alloc_result = false;
   sc.Configure(std::move(args2), [&alloc_result](auto result) {
@@ -349,7 +361,7 @@ TEST_F(ScreenCaptureTest, GetNextFrameSuccess) {
   args.buffer_count(1);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool configure = false;
   sc.Configure(std::move(args), [&configure](auto result) {
@@ -383,7 +395,7 @@ TEST_F(ScreenCaptureTest, GetNextFrameBufferFullError) {
   args.buffer_count(1);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool configure = false;
   sc.Configure(std::move(args), [&configure](auto result) {
@@ -423,7 +435,7 @@ TEST_F(ScreenCaptureTest, GetNextFrameMultipleBuffers) {
   args.buffer_count(2);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool configure = false;
   sc.Configure(std::move(args), [&configure](auto result) {
@@ -466,7 +478,7 @@ TEST_F(ScreenCaptureTest, GetNextFrameMissingArgs) {
   args.buffer_count(1);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool configure = false;
   sc.Configure(std::move(args), [&configure](auto result) {
@@ -506,7 +518,7 @@ TEST_F(ScreenCaptureTest, ReleaseAvailableFrame) {
   args.buffer_count(1);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool alloc_result = false;
   sc.Configure(std::move(args), [&alloc_result](auto result) {
@@ -544,7 +556,7 @@ TEST_F(ScreenCaptureTest, ReleaseOutOfRangeFrame) {
   args.buffer_count(1);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool alloc_result = false;
   sc.Configure(std::move(args), [&alloc_result](auto result) {
@@ -585,7 +597,7 @@ TEST_F(ScreenCaptureTest, ReleaseFrameFromFullBuffer) {
   args.buffer_count(kNumBuffers);
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillRepeatedly(testing::Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   bool configure = false;
   sc.Configure(std::move(args), [&configure](auto result) {

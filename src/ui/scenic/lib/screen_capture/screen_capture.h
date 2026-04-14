@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_SCREEN_CAPTURE_SCREEN_CAPTURE_H_
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/fidl/cpp/binding.h>
 
 #include <unordered_map>
@@ -50,7 +51,13 @@ class ScreenCapture : public fidl::Server<fuchsia_ui_composition::ScreenCapture>
       fit::function<void(fit::result<fuchsia_ui_composition::ScreenCaptureError>)> callback);
 
  private:
-  void ClearImages();
+  enum class ConfigureState : uint8_t {
+    kUnconfigured,
+    kConfiguring,
+    kConfigured,
+  };
+
+  void ClearImages(ConfigureState state = ConfigureState::kUnconfigured);
 
   // Clients cannot use zero as an Image ID.
   static constexpr int64_t kInvalidId = 0;
@@ -67,6 +74,10 @@ class ScreenCapture : public fidl::Server<fuchsia_ui_composition::ScreenCapture>
 
   std::shared_ptr<flatland::Renderer> renderer_;
   GetRenderables get_renderables_;
+
+  ConfigureState configure_state_ = ConfigureState::kUnconfigured;
+
+  async::Executor executor_;
 };
 
 }  // namespace screen_capture

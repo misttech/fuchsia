@@ -75,6 +75,7 @@ source_set("promise") {
   deps = [ "//sdk/lib/async:async-cpp" ]
   public_deps = [
     "//sdk/lib/async",
+    "//sdk/lib/async-testing",
     "//src/lib/fidl/contrib/fpromise",
   ]
 }

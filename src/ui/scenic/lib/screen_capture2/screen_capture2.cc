@@ -10,6 +10,7 @@
 #include <lib/trace/event.h>
 
 #include <optional>
+#include <ranges>
 #include <utility>
 
 #include "src/lib/fsl/handles/object_info.h"
@@ -28,7 +29,8 @@ ScreenCapture::ScreenCapture(std::shared_ptr<screen_capture::ScreenCaptureBuffer
     : screen_capture_buffer_collection_importer_(screen_capture_buffer_collection_importer),
       renderer_(renderer),
       get_renderables_(std::move(get_renderables)),
-      weak_factory_(this) {}
+      weak_factory_(this),
+      executor_(async_get_default_dispatcher()) {}
 
 ScreenCapture::~ScreenCapture() { ClearImages(); }
 
@@ -87,27 +89,40 @@ void ScreenCapture::Configure(ScreenCaptureConfig args, ConfigureCallback callba
   metadata.width = args.image_size().width;
   metadata.height = args.image_size().height;
 
+  std::vector<fpromise::promise<>> promises;
+  promises.reserve(buffer_count);
   // For each buffer in the collection, add the image to the importer.
   for (uint32_t i = 0; i < buffer_count; i++) {
     metadata.identifier = allocation::GenerateUniqueImageId();
     metadata.vmo_index = i;
-    auto result = screen_capture_buffer_collection_importer_->ImportBufferImage(
-        metadata, allocation::BufferCollectionUsage::kRenderTarget);
-    if (!result) {
-      ClearImages();
-
-      FX_LOGS(WARNING) << "ScreenCapture::Configure: Failed to import BufferImage at index " << i;
-      callback(fpromise::error(ScreenCaptureError::INVALID_ARGS));
-      return;
-    }
-    image_ids_[i] = metadata;
-    available_buffers_.push_front(i);
+    auto promise =
+        screen_capture_buffer_collection_importer_
+            ->ImportBufferImage(metadata, allocation::BufferCollectionUsage::kRenderTarget)
+            .and_then([this, i, metadata] {
+              image_ids_[i] = metadata;
+              available_buffers_.push_front(i);
+            });
+    promises.push_back(std::move(promise));
   }
-
-  client_received_last_frame_ = false;
-  render_frame_in_progress_ = false;
-  current_callback_ = std::nullopt;
-  callback(fpromise::ok());
+  auto join_promise =
+      fpromise::join_promise_vector(std::move(promises))
+          .and_then([](std::vector<fpromise::result<>>& results) -> fpromise::result<> {
+            bool ok = std::ranges::all_of(results, [](auto& result) { return result.is_ok(); });
+            return ok ? fpromise::result(fpromise::ok()) : fpromise::result(fpromise::error());
+          })
+          .then([this, callback = std::move(callback)](fpromise::result<>& result) {
+            if (result.is_error()) {
+              ClearImages();
+              FX_LOGS(WARNING) << "ScreenCapture::Configure: Failed to import BufferImage.";
+              callback(fpromise::error(ScreenCaptureError::INVALID_ARGS));
+              return;
+            }
+            client_received_last_frame_ = false;
+            render_frame_in_progress_ = false;
+            current_callback_ = std::nullopt;
+            callback(fpromise::ok());
+          });
+  executor_.schedule_task(std::move(join_promise));
 }
 
 void ScreenCapture::GetNextFrame(ScreenCapture::GetNextFrameCallback callback) {

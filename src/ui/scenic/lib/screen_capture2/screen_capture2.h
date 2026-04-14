@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_SCREEN_CAPTURE2_SCREEN_CAPTURE2_H_
 
 #include <fuchsia/ui/composition/internal/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/fidl/cpp/binding.h>
 #include <lib/zx/eventpair.h>
 
@@ -91,6 +92,8 @@ class ScreenCapture : public fuchsia::ui::composition::internal::ScreenCapture {
 
   // Should be last.
   fxl::WeakPtrFactory<ScreenCapture> weak_factory_;
+
+  async::Executor executor_;
 };
 
 }  // namespace screen_capture2

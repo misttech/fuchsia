@@ -47,7 +47,8 @@ ScreenCapture::ScreenCapture(const vector<std::shared_ptr<allocation::BufferColl
                              GetRenderables get_renderables)
     : buffer_collection_importers_(buffer_collection_importers),
       renderer_(std::move(renderer)),
-      get_renderables_(std::move(get_renderables)) {}
+      get_renderables_(std::move(get_renderables)),
+      executor_(async_get_default_dispatcher()) {}
 
 ScreenCapture::~ScreenCapture() { ClearImages(); }
 
@@ -75,7 +76,9 @@ void ScreenCapture::Configure(
     return;
   }
 
-  const zx_koid_t global_collection_id = fsl::GetRelatedKoid(args.import_token()->value().get());
+  fuchsia_ui_composition::BufferCollectionImportToken import_token =
+      std::move(*args.import_token());
+  const zx_koid_t global_collection_id = fsl::GetRelatedKoid(import_token.value().get());
 
   // Event pair ID must be valid.
   if (global_collection_id == ZX_KOID_INVALID) {
@@ -85,7 +88,7 @@ void ScreenCapture::Configure(
   }
 
   // Release any existing buffers and reset image_ids_ and available_buffers_
-  ClearImages();
+  ClearImages(ConfigureState::kConfiguring);
 
   // Create the associated metadata. Note that clients are responsible for ensuring reasonable
   // parameters.
@@ -97,34 +100,59 @@ void ScreenCapture::Configure(
   stream_rotation_ = args.rotation().has_value() ? args.rotation().value()
                                                  : fuchsia_ui_composition::Rotation::kCw0Degrees;
 
+  std::vector<fpromise::promise<>> promises;
+  promises.reserve(*args.buffer_count());
   // For each buffer in the collection, add the image to our importers.
   for (uint32_t i = 0; i < args.buffer_count(); i++) {
     metadata.identifier = allocation::GenerateUniqueImageId();
     metadata.vmo_index = i;
-    for (uint32_t j = 0; j < buffer_collection_importers_.size(); j++) {
-      auto& importer = buffer_collection_importers_[j];
-      auto result =
+    std::vector<fpromise::promise<>> inner_promises;
+    inner_promises.reserve(buffer_collection_importers_.size());
+    for (auto& importer : buffer_collection_importers_) {
+      auto promise =
           importer->ImportBufferImage(metadata, allocation::BufferCollectionUsage::kRenderTarget);
-      if (!result) {
-        // If this importer fails, we need to release the image from all of the importers
-        // that successfully imported it and release all of the past buffer images as well.
-        // Luckily we can do this right here instead of waiting for a fence since we know
-        // these images are not being used by anything yet.
-        for (uint32_t k = 0; k < j; k++) {
-          buffer_collection_importers_[k]->ReleaseBufferImage(metadata.identifier);
-        }
-        ClearImages();
-
-        FX_LOGS(WARNING) << "ScreenCapture::Configure: Failed to import BufferImage.";
-        callback(fit::error(ScreenCaptureError::kBadOperation));
-        return;
-      }
+      inner_promises.push_back(std::move(promise));
     }
-    image_ids_[i] = metadata;
-    available_buffers_.push_back(i);
+    auto join_promise =
+        fpromise::join_promise_vector(std::move(inner_promises))
+            .and_then([this, i,
+                       metadata](std::vector<fpromise::result<>>& results) -> fpromise::result<> {
+              for (auto& result : results) {
+                if (!result.is_ok()) {
+                  // If this importer fails, we need to release the image from all of the importers
+                  // that successfully imported it and release all of the past buffer images as
+                  // well. Luckily we can do this right here instead of waiting for a fence since we
+                  // know these images are not being used by anything yet.
+                  for (uint32_t i = 0; i < results.size(); i++) {
+                    if (results[i].is_ok()) {
+                      buffer_collection_importers_[i]->ReleaseBufferImage(metadata.identifier);
+                    }
+                  }
+                  return fpromise::error();
+                }
+              }
+              image_ids_[i] = metadata;
+              available_buffers_.push_back(i);
+              return fpromise::ok();
+            });
+    promises.push_back(std::move(join_promise));
   }
-  // Everything was successful!
-  callback(fit::ok());
+  auto join_promise =
+      fpromise::join_promise_vector(std::move(promises))
+          .and_then([this, callback = std::move(callback),
+                     keepalive_import_token =
+                         std::move(import_token)](std::vector<fpromise::result<>>& results) {
+            bool ok = std::ranges::all_of(results, [](auto& result) { return result.is_ok(); });
+            if (!ok) {
+              ClearImages();
+              FX_LOGS(WARNING) << "ScreenCapture::Configure: Failed to import BufferImage.";
+              callback(fit::error(ScreenCaptureError::kBadOperation));
+              return;
+            }
+            configure_state_ = ConfigureState::kConfigured;
+            callback(fit::ok());
+          });
+  executor_.schedule_task(std::move(join_promise));
 }
 
 void ScreenCapture::GetNextFrame(GetNextFrameRequest& request,
@@ -139,14 +167,14 @@ void ScreenCapture::GetNextFrame(
     fit::function<void(
         fit::result<fuchsia_ui_composition::ScreenCaptureError, fuchsia_ui_composition::FrameInfo>)>
         callback) {
+  // Check that we have been configured.
+  if (configure_state_ != ConfigureState::kConfigured) {
+    FX_LOGS(ERROR) << "ScreenCapture::GetNextFrame: Not configured.";
+    callback(fit::error(ScreenCaptureError::kBadOperation));
+    return;
+  }
   // Check that we have an available buffer that we can render.
   if (available_buffers_.empty()) {
-    if (image_ids_.empty()) {
-      FX_LOGS(ERROR)
-          << "ScreenCapture::GetNextFrame: No buffers configured. Was Configure called previously?";
-      callback(fit::error(ScreenCaptureError::kBadOperation));
-      return;
-    }
     FX_LOGS(WARNING) << "ScreenCapture::GetNextFrame: No buffers available.";
     callback(fit::error(ScreenCaptureError::kBufferFull));
     return;
@@ -235,7 +263,7 @@ void ScreenCapture::ReleaseFrame(
   callback(fit::ok());
 }
 
-void ScreenCapture::ClearImages() {
+void ScreenCapture::ClearImages(ConfigureState state) {
   for (auto& image_id : image_ids_) {
     auto identifier = image_id.second.identifier;
     for (auto& buffer_collection_importer : buffer_collection_importers_) {
@@ -244,6 +272,7 @@ void ScreenCapture::ClearImages() {
   }
   image_ids_.clear();
   available_buffers_.clear();
+  configure_state_ = state;
 }
 
 std::vector<ImageRect> ScreenCapture::RotateRenderables(const std::vector<ImageRect>& rects,

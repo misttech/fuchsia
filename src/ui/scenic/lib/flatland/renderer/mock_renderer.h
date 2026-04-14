@@ -25,7 +25,7 @@ class MockRenderer : public Renderer {
   MOCK_METHOD(void, ReleaseBufferCollection,
               (allocation::GlobalBufferCollectionId, allocation::BufferCollectionUsage));
 
-  MOCK_METHOD(bool, ImportBufferImage,
+  MOCK_METHOD(fpromise::promise<>, ImportBufferImage,
               (const allocation::ImageMetadata&, allocation::BufferCollectionUsage));
 
   MOCK_METHOD(void, ReleaseBufferImage, (allocation::GlobalImageId image_id));

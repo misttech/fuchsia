@@ -33,6 +33,7 @@ cc_test_executable("unittests") {
     "//src/ui/scenic/lib/screen_capture",
     "//src/ui/scenic/lib/screen_capture2",
     "//src/ui/scenic/lib/utils",
+    "//src/ui/scenic/tests:promise",
     "//third_party/googletest:gmock",
   ]
 }

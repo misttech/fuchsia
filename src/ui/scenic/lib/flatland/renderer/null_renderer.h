@@ -38,8 +38,8 @@ class NullRenderer final : public Renderer {
                                BufferCollectionUsage usage) override;
 
   // |BufferCollectionImporter|
-  bool ImportBufferImage(const allocation::ImageMetadata& metadata,
-                         BufferCollectionUsage usage) override;
+  fpromise::promise<> ImportBufferImage(const allocation::ImageMetadata& metadata,
+                                        BufferCollectionUsage usage) override;
 
   // |BufferCollectionImporter|
   void ReleaseBufferImage(allocation::GlobalImageId image_id) override;

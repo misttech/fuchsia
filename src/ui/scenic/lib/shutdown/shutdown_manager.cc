@@ -72,6 +72,7 @@ void ShutdownManager::Shutdown(zx::duration timeout) {
   }
 
   std::vector<fpromise::promise<>> promises;
+  promises.reserve(clients_.size());
   for (auto& callback : clients_) {
     promises.push_back(callback());
   }

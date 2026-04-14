@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -186,7 +187,8 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       register_view_ref_focused_(std::move(register_view_ref_focused)),
       register_touch_source_(std::move(register_touch_source)),
       register_mouse_source_(std::move(register_mouse_source)),
-      config_(config) {
+      config_(config),
+      executor_(async_get_default_dispatcher()) {
   FX_DCHECK(flatland_presenter_);
 
   FX_LOGS(INFO) << "Flatland NEW session_id=" << session_id_;
@@ -1362,31 +1364,9 @@ void Flatland::CreateImage(ContentId image_id,
   metadata.height = properties.size()->height();
   metadata.blend_mode = BlendMode::kReplace();
 
-  for (uint32_t i = 0; i < buffer_collection_importers_.size(); i++) {
-    auto& importer = buffer_collection_importers_[i];
-
-    // TODO(https://fxbug.dev/42140615): Give more detailed errors.
-    auto result =
-        importer->ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
-    if (!result) {
-      // If this importer fails, we need to release the image from
-      // all of the importers that it passed on. Luckily we can do
-      // this right here instead of waiting for a fence since we know
-      // this image isn't being used by anything yet.
-      for (uint32_t j = 0; j < i; j++) {
-        buffer_collection_importers_[j]->ReleaseBufferImage(metadata.identifier);
-      }
-
-      error_reporter_->ERROR() << "Importer could not import image.";
-      CloseConnection(FlatlandError::kBadOperation);
-      return;
-    }
-  }
-
-  // Now that we've successfully been able to import the image into the importers,
-  // we can now create a handle for it in the transform graph, and add the metadata
-  // to our map.
-  auto handle = transform_graph_.CreateTransform();
+  // As this is a one-way call, we can create the handle for the image in the transform graph
+  // immediately. If we fail to import the image, we will release the handle.
+  TransformHandle handle = transform_graph_.CreateTransform();
   content_handles_[image_id] = handle;
   image_metadatas_[handle] = metadata;
 
@@ -1404,6 +1384,35 @@ void Flatland::CreateImage(ContentId image_id,
                        << "  image_id=" << image_id << "  handle=" << handle
                        << "  size=" << properties.size()->width() << "x"
                        << properties.size()->height();
+
+  std::vector<fpromise::promise<>> promises;
+  promises.reserve(buffer_collection_importers_.size());
+  for (auto& importer : buffer_collection_importers_) {
+    auto promise =
+        importer->ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
+    promises.push_back(std::move(promise));
+  }
+  auto join_promise =
+      fpromise::join_promise_vector(std::move(promises))
+          .and_then([this, id = metadata.identifier](
+                        std::vector<fpromise::result<>>& results) -> fpromise::result<> {
+            bool ok = std::ranges::all_of(results, [](auto& result) { return result.is_ok(); });
+            if (ok) {
+              return fpromise::ok();
+            }
+            // If this importer fails, we need to release the image from all of the importers that
+            // it passed on. Luckily we can do this right here instead of waiting for a fence since
+            // we know this image isn't being used by anything yet.
+            for (uint32_t i = 0; i < results.size(); i++) {
+              if (results[i].is_ok()) {
+                buffer_collection_importers_[i]->ReleaseBufferImage(id);
+              }
+            }
+            error_reporter_->ERROR() << "Importer could not import image.";
+            CloseConnection(FlatlandError::kBadOperation);
+            return fpromise::error();
+          });
+  executor_.schedule_task(std::move(join_promise));
 }
 
 void Flatland::SetImageSampleRegion(SetImageSampleRegionRequest& request,

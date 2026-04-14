@@ -35,6 +35,7 @@ using allocation::ImageMetadata;
 using flatland::MockDisplayCoordinator;
 using flatland::TransformHandle;
 using fuchsia_ui_composition::ImageFlip;
+using integration_tests::ReturnPromise;
 
 namespace fuchsia_hardware_display::wire {
 
@@ -431,7 +432,7 @@ TEST_F(DisplayCompositorTest,
   }
 
   // ImportBufferImage() to confirm that the allocation was handled correctly.
-  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce([](...) { return true; });
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
   ASSERT_TRUE(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
                     .identifier = display::ImageId(1),
@@ -552,7 +553,7 @@ TEST_F(DisplayCompositorTest,
   }
 
   // ImportBufferImage() to confirm that the allocation was handled correctly.
-  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce([](...) { return true; });
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
   ASSERT_TRUE(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
                     .identifier = display::ImageId(1),
@@ -625,7 +626,7 @@ TEST_F(DisplayCompositorTest, SysmemNegotiationTest_InRendererOnlyMode_DisplaySh
   }
 
   // ImportBufferImage() to confirm that the allocation was handled correctly.
-  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce([](...) { return true; });
+  EXPECT_CALL(*renderer_, ImportBufferImage(_, _)).WillOnce(ReturnPromise(fpromise::ok()));
   ASSERT_TRUE(display_compositor_->ImportBufferImage(
       ImageMetadata{.collection_id = kGlobalBufferCollectionId,
                     .identifier = display::ImageId(1),
@@ -741,7 +742,8 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
                                    MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
         completer.Reply(fit::ok());
       }));
-  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _)).WillOnce(Return(true));
+  EXPECT_CALL(*renderer_, ImportBufferImage(image_metadata, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
   display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
 
   // Release buffer collection. Make sure that does not release Image.
@@ -832,11 +834,10 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
         completer.Reply(fit::ok());
       }));
 
-  EXPECT_CALL(*renderer_, ImportBufferImage(metadata, _)).WillOnce(Return(true));
+  EXPECT_CALL(*renderer_, ImportBufferImage(metadata, _)).WillOnce(ReturnPromise(fpromise::ok()));
 
-  auto result =
-      display_compositor_->ImportBufferImage(metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(
+      display_compositor_->ImportBufferImage(metadata, BufferCollectionUsage::kClientImage)));
 
   // Make sure we can release the image properly.
   EXPECT_CALL(*mock_display_coordinator_,
@@ -860,10 +861,10 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
       }));
 
   // This should still return false for the engine even if the renderer returns true.
-  EXPECT_CALL(*renderer_, ImportBufferImage(metadata, _)).WillOnce(Return(true));
+  EXPECT_CALL(*renderer_, ImportBufferImage(metadata, _)).WillOnce(ReturnPromise(fpromise::ok()));
 
-  result = display_compositor_->ImportBufferImage(metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_FALSE(result);
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(metadata, BufferCollectionUsage::kClientImage)));
 
   // Collection ID can't be invalid. This shouldn't reach the display coordinator.
   EXPECT_CALL(*mock_display_coordinator_,
@@ -874,9 +875,8 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
       .Times(0);
   auto copy_metadata = metadata;
   copy_metadata.collection_id = allocation::kInvalidId;
-  result =
-      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_FALSE(result);
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage)));
 
   // Image Id can't be 0. This shouldn't reach the display coordinator.
   EXPECT_CALL(*mock_display_coordinator_,
@@ -887,9 +887,8 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
       .Times(0);
   copy_metadata = metadata;
   copy_metadata.identifier = display::kInvalidImageId;
-  result =
-      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_FALSE(result);
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage)));
 
   // Width can't be 0. This shouldn't reach the display coordinator.
   EXPECT_CALL(*mock_display_coordinator_,
@@ -900,9 +899,8 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
       .Times(0);
   copy_metadata = metadata;
   copy_metadata.width = 0;
-  result =
-      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_FALSE(result);
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage)));
 
   // Height can't be 0. This shouldn't reach the display coordinator.
   EXPECT_CALL(*mock_display_coordinator_,
@@ -913,9 +911,8 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
       .Times(0);
   copy_metadata = metadata;
   copy_metadata.height = 0;
-  result =
-      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage);
-  EXPECT_FALSE(result);
+  EXPECT_FALSE(RunPromise(
+      display_compositor_->ImportBufferImage(copy_metadata, BufferCollectionUsage::kClientImage)));
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
@@ -1094,7 +1091,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
                                    MockDisplayCoordinator::ImportImageCompleter::Sync& completer) {
         completer.Reply(fit::ok());
       }));
-  EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _)).WillOnce(Return(true));
+  EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
 
   display_compositor_->ImportBufferImage(parent_image_metadata,
                                          BufferCollectionUsage::kClientImage);
@@ -1114,7 +1112,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
         completer.Reply(fit::ok());
       }));
 
-  EXPECT_CALL(*renderer_, ImportBufferImage(child_image_metadata, _)).WillOnce(Return(true));
+  EXPECT_CALL(*renderer_, ImportBufferImage(child_image_metadata, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
   display_compositor_->ImportBufferImage(child_image_metadata, BufferCollectionUsage::kClientImage);
 
   EXPECT_CALL(*renderer_, SetColorConversionValues(_, _, _)).WillOnce(Return());
@@ -1317,7 +1316,8 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
         completer.Reply(fit::ok());
       }));
 
-  EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _)).WillOnce(Return(true));
+  EXPECT_CALL(*renderer_, ImportBufferImage(parent_image_metadata, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
 
   display_compositor_->ImportBufferImage(parent_image_metadata,
                                          BufferCollectionUsage::kClientImage);

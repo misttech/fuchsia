@@ -47,7 +47,8 @@ class VkRenderer final : public Renderer {
 
   // |BufferCollectionImporter|
   // Called from main thread or Flatland threads.
-  bool ImportBufferImage(const ImageMetadata& metadata, BufferCollectionUsage usage) override;
+  fpromise::promise<> ImportBufferImage(const ImageMetadata& metadata,
+                                        BufferCollectionUsage usage) override;
 
   // |BufferCollectionImporter|
   // Called from main thread or Flatland threads.

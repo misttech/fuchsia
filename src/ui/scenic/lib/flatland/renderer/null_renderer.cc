@@ -71,18 +71,18 @@ void NullRenderer::ReleaseBufferCollection(allocation::GlobalBufferCollectionId 
   map.erase(collection_id);
 }
 
-bool NullRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
-                                     BufferCollectionUsage usage) {
+fpromise::promise<> NullRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
+                                                    BufferCollectionUsage usage) {
   // The metadata can't have an invalid collection id.
   if (metadata.collection_id == allocation::kInvalidId) {
     FX_LOGS(WARNING) << "Image has invalid collection id.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   // The metadata can't have an invalid identifier.
   if (metadata.identifier == allocation::kInvalidImageId) {
     FX_LOGS(WARNING) << "Image has invalid identifier.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   std::scoped_lock lock(lock_);
@@ -91,14 +91,14 @@ bool NullRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
   const auto& collection_itr = map.find(metadata.collection_id);
   if (collection_itr == map.end()) {
     FX_LOGS(ERROR) << "Collection with id " << metadata.collection_id << " does not exist.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   auto& collection = collection_itr->second;
   if (!collection.BuffersAreAllocated()) {
     FX_LOGS(ERROR) << "Buffers for collection " << metadata.collection_id
                    << " have not been allocated.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   const auto& sysmem_info = collection.GetSysmemInfo();
@@ -108,7 +108,7 @@ bool NullRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
   if (metadata.vmo_index >= vmo_count) {
     FX_LOGS(ERROR) << "ImportBufferImage failed, vmo_index " << metadata.vmo_index
                    << " must be less than vmo_count " << vmo_count;
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (metadata.width < image_constraints.min_size().width ||
@@ -116,7 +116,7 @@ bool NullRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
     FX_LOGS(ERROR) << "ImportBufferImage failed, width " << metadata.width
                    << " is not within valid range [" << image_constraints.min_size().width << ","
                    << image_constraints.max_size().width << "]";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (metadata.height < image_constraints.min_size().height ||
@@ -124,13 +124,13 @@ bool NullRenderer::ImportBufferImage(const allocation::ImageMetadata& metadata,
     FX_LOGS(ERROR) << "ImportBufferImage failed, height " << metadata.height
                    << " is not within valid range [" << image_constraints.min_size().height << ","
                    << image_constraints.max_size().height << "]";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (usage == BufferCollectionUsage::kClientImage) {
     image_map_[metadata.identifier] = fidl::Clone(image_constraints);
   }
-  return true;
+  return fpromise::make_ok_promise();
 }
 
 void NullRenderer::ReleaseBufferImage(allocation::GlobalImageId image_id) {

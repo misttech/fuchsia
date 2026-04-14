@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/binding.h>
@@ -561,6 +562,8 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   };
 
   std::unique_ptr<BindingData> binding_data_;
+
+  async::Executor executor_;
 };
 
 }  // namespace flatland

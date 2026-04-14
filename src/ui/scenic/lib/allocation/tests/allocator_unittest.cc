@@ -17,6 +17,7 @@
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/ui/scenic/lib/allocation/mock_buffer_collection_importer.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 
 using ::testing::_;
 
@@ -25,13 +26,10 @@ using fuchsia_ui_composition::BufferCollectionExportToken;
 using fuchsia_ui_composition::RegisterBufferCollectionArgs;
 using fuchsia_ui_composition::RegisterBufferCollectionUsage;
 using fuchsia_ui_composition::RegisterBufferCollectionUsages;
+using integration_tests::ReturnPromise;
 
 namespace allocation {
 namespace test {
-
-auto ReturnPromise(fpromise::result<> result) {
-  return [result](auto&&...) { return fpromise::make_result_promise(result); };
-}
 
 #define REGISTER_BUFFER_COLLECTION(allocator, export_token, token, usage, expect_success)     \
   if (expect_success) {                                                                       \

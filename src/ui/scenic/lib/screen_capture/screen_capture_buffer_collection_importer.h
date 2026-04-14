@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_SCREEN_CAPTURE_SCREEN_CAPTURE_BUFFER_COLLECTION_IMPORTER_H_
 
 #include <fuchsia/sysmem/cpp/fidl.h>
+#include <lib/async/cpp/executor.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -39,8 +40,8 @@ class ScreenCaptureBufferCollectionImporter : public allocation::BufferCollectio
                                allocation::BufferCollectionUsage usage) override;
 
   // |BufferCollectionImporter|
-  bool ImportBufferImage(const allocation::ImageMetadata& metadata,
-                         allocation::BufferCollectionUsage usage) override;
+  fpromise::promise<> ImportBufferImage(const allocation::ImageMetadata& metadata,
+                                        allocation::BufferCollectionUsage usage) override;
 
   // |BufferCollectionImporter|
   void ReleaseBufferImage(allocation::GlobalImageId image_id) override;
@@ -55,8 +56,8 @@ class ScreenCaptureBufferCollectionImporter : public allocation::BufferCollectio
   // client's constraints and renderer's render target constraints. As a fallback, we allocate
   // render target buffers by *only* using the renderer's render target constraints, which should
   // succeed. We then copy these render targets to the client's screen capture buffers.
-  bool ResetRenderTargetsForReadback(const allocation::ImageMetadata& metadata,
-                                     uint32_t buffer_count);
+  fpromise::promise<> ResetRenderTargetsForReadback(const allocation::ImageMetadata& metadata,
+                                                    uint32_t buffer_count);
 
   // Allocator used to allocate readback images.
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;

@@ -413,18 +413,18 @@ fuchsia::sysmem2::BufferCollectionSyncPtr DisplayCompositor::TakeDisplayBufferCo
   return token;
 }
 
-bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metadata,
-                                          const BufferCollectionUsage usage) {
+fpromise::promise<> DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metadata,
+                                                         const BufferCollectionUsage usage) {
   // Called from main thread or Flatland threads.
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ImportBufferImage");
 
   if (!IsValidBufferImage(metadata)) {
-    return false;
+    return fpromise::make_error_promise();
   }
 
   if (!renderer_->ImportBufferImage(metadata, usage)) {
     FX_LOGS(ERROR) << "Renderer could not import image.";
-    return false;
+    return fpromise::make_error_promise();
   }
 
   std::scoped_lock lock(lock_);
@@ -442,7 +442,7 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
   if (!config_.enable_direct_to_display &&
       (!display_support_already_set || !buffer_collection_supports_display_[collection_id])) {
     buffer_collection_supports_display_[collection_id] = false;
-    return true;
+    return fpromise::make_ok_promise();
   }
 
   if (!display_support_already_set) {
@@ -459,7 +459,7 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
 
   if (!buffer_collection_supports_display_[collection_id]) {
     // When display isn't supported we fallback to using the renderer.
-    return true;
+    return fpromise::make_ok_promise();
   }
 
   // TODO(https://fxbug.dev/42150686): Pixel format (and hence tiling type) should be ignored when
@@ -476,9 +476,10 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
                                        metadata.vmo_index, metadata.identifier);
   if (result.is_ok()) {
     image_tiling_type_map_[metadata.identifier] = image_tiling_type;
-    return true;
+    return fpromise::make_ok_promise();
   }
-  return false;
+
+  return fpromise::make_error_promise();
 }
 
 void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image_id) {
@@ -1304,20 +1305,40 @@ DisplayCompositor::AllocateDisplayRenderTargets(
                   collection_info.settings().image_format_constraints().pixel_format_modifier());
         }
 
-        std::vector<allocation::ImageMetadata> render_targets;
+        // The collection info is no longer needed, so move it to out_collection_info if provided.
+        if (out_collection_info) {
+          *out_collection_info = std::move(collection_info);
+        }
+
+        std::vector<fpromise::promise<allocation::ImageMetadata>> promises;
+        promises.reserve(num_render_targets);
         for (uint32_t i = 0; i < num_render_targets; i++) {
           const allocation::ImageMetadata target = {
               .collection_id = collection_id,
               .identifier = allocation::GenerateUniqueImageId(),
               .vmo_index = i,
               .width = size.width,
-              .height = size.height};
-          render_targets.push_back(target);
-          const bool res = ImportBufferImage(target, BufferCollectionUsage::kRenderTarget);
-          FX_DCHECK(res);
+              .height = size.height,
+          };
+          auto promise = ImportBufferImage(target, BufferCollectionUsage::kRenderTarget)
+                             .and_then([target]() -> fpromise::result<allocation::ImageMetadata> {
+                               return fpromise::ok(target);
+                             });
+          promises.push_back(std::move(promise));
         }
-        if (out_collection_info) {
-          *out_collection_info = std::move(collection_info);
+        return fpromise::join_promise_vector(std::move(promises));
+      })
+      .and_then([](const std::vector<fpromise::result<allocation::ImageMetadata>>& results)
+                    -> fpromise::result<std::vector<allocation::ImageMetadata>> {
+        std::vector<allocation::ImageMetadata> render_targets;
+        render_targets.reserve(results.size());
+        for (auto& result : results) {
+          if (result.is_ok()) {
+            render_targets.push_back(result.value());
+          } else {
+            FX_LOGS(ERROR) << "Failed to import buffer image";
+            return fpromise::error();
+          }
         }
         return fpromise::ok(std::move(render_targets));
       });

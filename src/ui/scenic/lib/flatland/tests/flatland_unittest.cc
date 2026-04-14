@@ -43,6 +43,7 @@
 #include "src/ui/scenic/lib/scheduling/id.h"
 #include "src/ui/scenic/lib/utils/dispatcher_holder.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 #include "zircon/errors.h"
 
 #include <glm/gtx/matrix_transform_2d.hpp>
@@ -87,6 +88,7 @@ using fuchsia_ui_composition::ParentViewportWatcher;
 using fuchsia_ui_composition::ViewportProperties;
 using fuchsia_ui_views::ViewCreationToken;
 using fuchsia_ui_views::ViewportCreationToken;
+using integration_tests::ReturnPromise;
 using ChildViewWatcher_GetStatusResult =
     fidl::Result<fuchsia_ui_composition::ChildViewWatcher::GetStatus>;
 using ChildViewWatcher_GetViewRefResult =
@@ -183,7 +185,7 @@ struct GlobalIdPair {
   if (expect_success) {                                                                          \
     EXPECT_CALL(*mock_buffer_collection_importer_,                                               \
                 ImportBufferCollection(fsl::GetKoid(bc_export_token.value().get()), _, _, _, _)) \
-        .WillOnce([](auto&&...) { return fpromise::make_ok_promise(); });                        \
+        .WillOnce(ReturnPromise(fpromise::ok()));                                                \
   }                                                                                              \
   bool processed_callback = false;                                                               \
   fuchsia_ui_composition::RegisterBufferCollectionArgs args;                                     \
@@ -635,7 +637,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
         .WillOnce(testing::Invoke([&global_image_id](const ImageMetadata& metadata,
                                                      allocation::BufferCollectionUsage usage_type) {
           global_image_id = metadata.identifier;
-          return true;
+          return fpromise::make_ok_promise();
         }));
 
     flatland->CreateImage(image_id, std::move(buffer_collection_import_export_tokens.import_token),
@@ -4961,9 +4963,11 @@ TEST_F(FlatlandTest, CreateImageErrorCases) {
     const ContentId kId(100);
     ImageProperties properties;
     properties.size(SizeU{kDefaultWidth, kDefaultHeight});
-    EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).WillOnce(Return(false));
+    EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+        .WillOnce(ReturnPromise(fpromise::error()));
     flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
                           std::move(properties));
+    RunLoopUntilIdle();
     PRESENT(flatland, false);
   }
 
@@ -4979,7 +4983,7 @@ TEST_F(FlatlandTest, CreateImageErrorCases) {
       // the BufferCollectionImporter. We have to make sure it returns true here so that
       // the test doesn't erroneously fail.
       EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-          .WillOnce(Return(true));
+          .WillOnce(ReturnPromise(fpromise::ok()));
 
       flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
                             std::move(properties));
@@ -5034,7 +5038,7 @@ TEST_F(FlatlandTest, CreateImageWithDuplicatedImportTokens) {
   const uint64_t kNumImages = 3;
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
       .Times(kNumImages)
-      .WillRepeatedly(Return(true));
+      .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   for (uint64_t i = 0; i < kNumImages; ++i) {
     ImageProperties properties;
@@ -5055,14 +5059,16 @@ TEST_F(FlatlandTest, CreateImageInMultipleFlatlands) {
 
   // We can import the same image in both flatland instances.
   {
-    EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).WillOnce(Return(true));
+    EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+        .WillOnce(ReturnPromise(fpromise::ok()));
     ImageProperties properties;
     properties.size(SizeU{150, 175});
     flatland1->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), 0, std::move(properties));
     PRESENT(flatland1, true);
   }
   {
-    EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).WillOnce(Return(true));
+    EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+        .WillOnce(ReturnPromise(fpromise::ok()));
     ImageProperties properties;
     properties.size(SizeU{150, 175});
     flatland2->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), 0, std::move(properties));
@@ -5300,7 +5306,8 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionHappensAfterCreateImage) {
   // Send our only import token to CreateImage(). Buffer collection should be released only after
   // Image creation.
   {
-    EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).WillOnce(Return(true));
+    EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+        .WillOnce(ReturnPromise(fpromise::ok()));
     EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(_, _)).Times(1);
     flatland->CreateImage(kImageId, std::move(ref_pair.import_token), 0, std::move(properties));
     RunLoopUntilIdle();
@@ -5557,7 +5564,7 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
   RunLoopUntilIdle();
 
   EXPECT_CALL(*local_mock_buffer_collection_importer, ImportBufferCollection(_, _, _, _, _))
-      .WillOnce([](auto&&...) { return fpromise::make_ok_promise(); });
+      .WillOnce(ReturnPromise(fpromise::ok()));
 
   auto ref_pair = BufferCollectionImportExportTokens::New();
   REGISTER_BUFFER_COLLECTION(allocator, ref_pair.export_token, CreateToken(), true);
@@ -5567,9 +5574,10 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
 
   // We have the first importer return true, signifying a successful import, and the second one
   // returning false. This should trigger the first importer to call ReleaseBufferImage().
-  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).WillOnce(Return(true));
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
   EXPECT_CALL(*local_mock_buffer_collection_importer, ImportBufferImage(_, _))
-      .WillOnce(Return(false));
+      .WillOnce(ReturnPromise(fpromise::error()));
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).WillOnce(Return());
   flatland->CreateImage(ContentId(1), std::move(ref_pair.import_token), /*vmo_idx*/ 0,
                         std::move(properties));
@@ -5588,16 +5596,19 @@ TEST_F(FlatlandTest, BufferImporterImportImageReturnsFalseTest) {
   ImageProperties properties1;
   properties1.size(SizeU{150, 175});
 
-  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).WillOnce(Return(true));
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::ok()));
 
   // We've imported a proper image and we have the importer returning true, so
   // PRESENT should return true.
   flatland->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), /*vmo_idx*/ 0,
                         std::move(properties1));
+  RunLoopUntilIdle();
   PRESENT(flatland, true);
 
   // We're using the same buffer collection so we don't need to validate, only import.
-  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).WillOnce(Return(false));
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce(ReturnPromise(fpromise::error()));
 
   // Import again, but this time have the importer return false. Flatland should catch
   // this and PRESENT should return false.
@@ -5605,6 +5616,7 @@ TEST_F(FlatlandTest, BufferImporterImportImageReturnsFalseTest) {
   properties2.size(SizeU{150, 175});
   flatland->CreateImage(ContentId(2), ref_pair.DuplicateImportToken(), /*vmo_idx*/ 0,
                         std::move(properties2));
+  RunLoopUntilIdle();
   PRESENT(flatland, false);
 }
 

@@ -192,8 +192,16 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
                                         .height = kHeight};
 
   // Importing an image should fail at this point because we've only set the renderer constraints.
-  EXPECT_FALSE(
-      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage));
+  {
+    bool import_image_success = true;
+    executor_->schedule_task(
+        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage)
+            .then([&import_image_success](const fpromise::result<>& res) {
+              import_image_success = res.is_ok();
+            }));
+    RunLoopUntilIdle();
+    EXPECT_FALSE(import_image_success);
+  }
 
   // Set the display constraints on the display coordinator.
   fuchsia_hardware_display_types::wire::ImageBufferUsage image_buffer_usage = {
@@ -212,8 +220,16 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   });
 
   // Importing should fail again, because we've only set 2 of the 3 constraints.
-  EXPECT_FALSE(
-      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage));
+  {
+    bool import_image_success = true;
+    executor_->schedule_task(
+        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage)
+            .then([&import_image_success](const fpromise::result<>& res) {
+              import_image_success = res.is_ok();
+            }));
+    RunLoopUntilIdle();
+    EXPECT_FALSE(import_image_success);
+  }
 
   // Create a client-side handle to the buffer collection and set the client constraints.
   auto client_collection = flatland::CreateBufferCollectionSyncPtrAndSetConstraints(
@@ -240,8 +256,16 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
 
   // Now that the renderer, client, and the display have set their constraints, we import one last
   // time and this time it should return true.
-  EXPECT_TRUE(
-      renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage));
+  {
+    bool import_image_success = false;
+    executor_->schedule_task(
+        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage)
+            .then([&import_image_success](const fpromise::result<>& res) {
+              import_image_success = res.is_ok();
+            }));
+    RunLoopUntilIdle();
+    EXPECT_TRUE(import_image_success);
+  }
 
   // We should now be able to also import an image to the display coordinator, using the
   // display-specific buffer collection id. If it returns OK, then we know that the renderer

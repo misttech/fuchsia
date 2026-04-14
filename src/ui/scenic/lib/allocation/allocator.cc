@@ -320,7 +320,7 @@ void Allocator::ImportBufferCollection(ParsedArgs parsed_args, Importers importe
             // If any importers failed then clean up the ones that didn't before returning.
             for (uint32_t i = 0; i < results.size(); i++) {
               if (results[i].is_ok()) {
-                auto& [importer, usage] = importers.at(i);
+                auto& [importer, usage] = importers[i];
                 importer.ReleaseBufferCollection(koid, usage);
               }
             }

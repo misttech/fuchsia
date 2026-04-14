@@ -50,10 +50,8 @@ class BufferCollectionImporter {
 
   // Has the service create an image for itself from the provided buffer collection. Returns
   // true upon a successful import and false otherwise.
-  //
-  // TODO(https://fxbug.dev/42140615): Give more detailed errors.
-  virtual bool ImportBufferImage(const ImageMetadata& metadata,
-                                 BufferCollectionUsage usage_type) = 0;
+  virtual fpromise::promise<> ImportBufferImage(const ImageMetadata& metadata,
+                                                BufferCollectionUsage usage_type) = 0;
 
   // Releases the provided image from the service.
   virtual void ReleaseBufferImage(GlobalImageId image_id) = 0;
