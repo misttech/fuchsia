@@ -5,6 +5,7 @@
 use crate::CqhciDriver;
 use crate::command_queue::{CommandQueueHost, CommandQueueResources};
 use async_trait::async_trait;
+use cqhci_config::Config;
 use fake_bti::{FakeBti, FakeBtiPinnedVmos};
 use fdf_component::ServiceOffer;
 use fdf_component::testing::harness::TestHarness;
@@ -15,6 +16,7 @@ use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_hardware_sdmmc::{SdmmcHostCap, SdmmcHostInfo};
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_component_config::Config as _;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
@@ -51,7 +53,9 @@ impl FakeCqhci {
         let (rpmb_request_sender, rpmb_request_receiver) = mpsc::unbounded();
         let scope = fasync::Scope::new_with_name("test");
         let mut service_fs = ServiceFs::new();
-        let mut harness = TestHarness::<CqhciDriver>::new();
+        let config =
+            Config { suspend_enabled: true }.to_vmo().expect("failed to create config vmo");
+        let mut harness = TestHarness::<CqhciDriver>::new().set_config(config);
 
         let bti = FakeBti::create().unwrap();
         let paddrs: Vec<_> =

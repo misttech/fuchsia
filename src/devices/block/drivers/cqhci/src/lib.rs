@@ -9,6 +9,7 @@ use crate::command_queue::{CommandQueue, CommandQueueHost, TaskStatusReceiver};
 use crate::partition::EmmcPartition;
 use block_server::callback_interface::SessionManager;
 use block_server::{BlockServer, RequestId};
+use cqhci_config::Config;
 use fdf_component::{Driver, DriverContext, Node, ServiceInstance, driver_register};
 use fdf_power::{Suspendable, SuspendableDriver};
 use fidl::endpoints::ServerEnd;
@@ -149,6 +150,7 @@ struct CqhciDriver {
     partitions: Arc<Mutex<BTreeMap<String, Arc<PartitionServer>>>>,
     command_queue: Mutex<Option<Arc<CommandQueue>>>,
     resume_tx: Mutex<Option<oneshot::Sender<()>>>,
+    suspend_enabled: bool,
 }
 
 driver_register!(Suspendable<CqhciDriver>);
@@ -231,7 +233,12 @@ impl Driver for CqhciDriver {
     const NAME: &str = "cqhci";
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
-        info!("cqhci driver starting");
+        let config = context.take_config::<Config>().map_err(|error| {
+            error!(error:?; "Failed to take config");
+            error
+        })?;
+        info!(config:?; "cqhci driver starting");
+        let suspend_enabled = config.suspend_enabled;
         let (cqhci, rpmb, inline_crypto) = {
             let service: ServiceInstance<cqhci::Service> =
                 context.incoming.service().connect_next().inspect_err(|status| {
@@ -266,15 +273,17 @@ impl Driver for CqhciDriver {
             error!(status:?; "Failed to get host info");
         })?;
 
-        if let Some(PowerElementArgs { token: Some(token), .. }) =
-            &context.start_args.power_element_args
-        {
-            let token = token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-            if let Err(status) = configure_power_management(&context, token).await {
-                error!(status:?; "Failed to configure power management");
-                return Err(status);
+        if suspend_enabled {
+            if let Some(PowerElementArgs { token: Some(token), .. }) =
+                &context.start_args.power_element_args
+            {
+                let token = token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+                if let Err(error) = configure_power_management(&context, token).await {
+                    error!(error:?; "Failed to configure power management");
+                    return Err(error);
+                }
+                info!("Configured power management successfully (cqhci)");
             }
-            info!("Configured power management successfully (cqhci)");
         }
 
         let command_queue =
@@ -325,6 +334,7 @@ impl Driver for CqhciDriver {
             partitions,
             command_queue: Mutex::new(Some(command_queue)),
             resume_tx: Mutex::default(),
+            suspend_enabled,
         };
         if let Some(scope) = driver.scope.lock().as_ref() {
             scope.spawn(async move {
@@ -431,11 +441,7 @@ impl SuspendableDriver for CqhciDriver {
     }
 
     fn suspend_enabled(&self) -> bool {
-        // For now, we say that we always support suspend/resume.  When we suspend/resume, all we're
-        // doing is disabling command queuing, we don't actually put the hardware in a low power
-        // state (the parent is responsible for that).  We can provide configuration knobs later if
-        // we need to.
-        true
+        self.suspend_enabled
     }
 }
 

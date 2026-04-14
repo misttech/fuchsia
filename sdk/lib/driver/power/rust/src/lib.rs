@@ -5,9 +5,12 @@
 use core::future::Future;
 use fdf_component::{Driver, DriverContext};
 use fidl_fuchsia_hardware_power as fhw_power;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_power_broker as fpower_broker;
 use fidl_fuchsia_power_system as fpower;
 use fuchsia_async as fasync;
+use fuchsia_component::client::{Connect, SVC_DIR};
+use fuchsia_component::directory::Directory;
 use futures::TryStreamExt;
 use log::{error, warn};
 use std::sync::{Arc, Weak};
@@ -105,17 +108,14 @@ impl<T: SuspendableDriver + Send + Sync> Driver for Suspendable<T> {
             .as_mut()
             .and_then(|args| args.runner_server.take());
 
-        let mut sag = None;
-        if runner.is_none() {
-            sag = Some(
-                context.incoming.connect_protocol::<fpower::ActivityGovernorProxy>().map_err(
-                    |err| {
-                        error!("Error connecting to sag: {err}");
-                        Status::INTERNAL
-                    },
-                )?,
-            );
-        }
+        let (svc, svc_server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        context
+            .incoming
+            .open(SVC_DIR, fio::Flags::PROTOCOL_DIRECTORY, svc_server.into_channel())
+            .map_err(|error| {
+            error!(error:?; "Error opening svc directory");
+            Status::INTERNAL
+        })?;
 
         let driver = Arc::new(T::start(context).await?);
 
@@ -126,7 +126,13 @@ impl<T: SuspendableDriver + Send + Sync> Driver for Suspendable<T> {
                 scope.spawn(
                     async move { run_element_runner(weak_driver, runner.into_stream()).await },
                 );
-            } else if let Some(sag) = sag.take() {
+            } else {
+                let sag =
+                    fpower::ActivityGovernorProxy::connect_at_dir_root(&svc).map_err(|error| {
+                        error!(error:?; "Error connecting to sag");
+                        Status::INTERNAL
+                    })?;
+
                 let (client, server) = fidl::endpoints::create_endpoints();
 
                 let _ = sag
@@ -138,12 +144,12 @@ impl<T: SuspendableDriver + Send + Sync> Driver for Suspendable<T> {
                         },
                     )
                     .await
-                    .map_err(|err| {
-                        error!("Error connecting to sag: {err}");
+                    .map_err(|error| {
+                        error!(error:?; "Error connecting to sag");
                         Status::INTERNAL
                     })?
-                    .map_err(|err| {
-                        error!("Error connecting to sag: {err:?}");
+                    .map_err(|error| {
+                        error!(error:?; "Error connecting to sag");
                         Status::INTERNAL
                     })?;
 

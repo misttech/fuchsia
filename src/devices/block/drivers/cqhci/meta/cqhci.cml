@@ -21,6 +21,12 @@
     ],
     use: [
         {
+            config: "fuchsia.power.SuspendEnabled",
+            from: "parent",
+            key: "suspend_enabled",
+            type: "bool",
+        },
+        {
             protocol: [
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.CpuElementManager",

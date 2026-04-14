@@ -15,6 +15,15 @@ driver_bind_rules("bind") {
   ]
 }
 
+fuchsia_component_manifest("cqhci_manifest") {
+  component_name = "cqhci"
+  manifest = "meta/cqhci.cml"
+}
+
+fuchsia_structured_config_rust_lib("cqhci_config") {
+  cm_label = ":cqhci_manifest"
+}
+
 fuchsia_rust_driver("driver") {
   with_unit_tests = true
   output_name = "cqhci"
@@ -29,6 +38,7 @@ fuchsia_rust_driver("driver") {
     "src/transfer_manager.rs",
   ]
   deps = [
+    ":cqhci_config",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
     "//sdk/fidl/fuchsia.hardware.cqhci:fuchsia.hardware.cqhci_rust_next",
@@ -70,6 +80,7 @@ fuchsia_rust_driver("driver") {
     "//sdk/lib/driver/runtime/rust/env",
     "//sdk/rust/zx",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component/config",
     "//src/storage/lib/block_client/rust",
     "//third_party/rust_crates:test-case",
   ]
@@ -81,7 +92,7 @@ fuchsia_unittest_package("cqhci-test") {
 
 fuchsia_driver_component("cqhci") {
   component_name = "cqhci"
-  manifest = "meta/cqhci.cml"
+  cm_label = ":cqhci_manifest"
   info = "meta/cqhci-info.json"
   deps = [
     ":bind",
