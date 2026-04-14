@@ -26,6 +26,7 @@ rustc_library("fidl_driver") {
     ":*",
     "//sdk/fidl/fuchsia.driver.framework:*",
     "//sdk/fidl/fuchsia.hardware.adcimpl:*",
+    "//sdk/fidl/fuchsia.hardware.clockimpl:*",
     "//sdk/fidl/fuchsia.hardware.cqhci:*",
     "//sdk/fidl/fuchsia.hardware.i2cimpl:*",
     "//sdk/fidl/fuchsia.hardware.inlineencryption:*",

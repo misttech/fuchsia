@@ -38,6 +38,7 @@ rustc_library("fidl_next") {
     "//src/ui/lib/input_pipeline/*",
     "//tools/fidl/fidlc/testdata/*",
     "//tools/fidl/fidlgen_rust_next/*",
+    "//vendor/google/*",
   ]
 }
 
