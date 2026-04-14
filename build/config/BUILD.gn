@@ -709,8 +709,8 @@ config("suppress_iterator_warnings") {
   ]
 }
 
+# LINT.IfChange(default_warnings)
 config("default_warnings") {
-  # LINT.IfChange(default_warnings)
   cflags = [
     "-Wall",
     "-Wextra",
@@ -799,8 +799,6 @@ config("default_warnings") {
       # TODO(https://fxbug.dev/362618077): Spuriously fires.
       "-Wno-alloc-size-larger-than",
     ]
-
-    # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/cc_features.bzl:default_warnings)
   }
 
   configs = [
@@ -829,6 +827,8 @@ config("default_warnings") {
     ":Wno-unused-but-set-global",
   ]
 }
+
+# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/cc_features.bzl:default_warnings)
 
 # Code that goes into the SDK or otherwise contributes to the SDK surface area
 # in source form will be compiled in many different environments. As such, we
