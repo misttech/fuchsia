@@ -96,19 +96,6 @@ class BlockDevice {
                                   const fbl::unique_fd& devfs_root, const uint8_t* guid,
                                   zx::vmo vmo, uint32_t block_size = kBlockSize);
 
-  static void CreateLegacyWithGpt(const fbl::unique_fd& devfs_root, uint64_t block_count,
-                                  uint32_t block_size,
-                                  const std::vector<PartitionDescription>& init_partitions,
-                                  std::unique_ptr<BlockDevice>* device);
-
-  fidl::UnownedClientEnd<fuchsia_storage_block::Block> block_interface() const {
-    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>(volume_.channel().get());
-  }
-
-  fidl::UnownedClientEnd<fuchsia_storage_block::Block> volume_interface() const {
-    return volume_.borrow();
-  }
-
   fidl::ClientEnd<fuchsia_storage_block::Block> Connect() const {
     zx::result result = ramdisk_.ConnectBlock();
     ZX_ASSERT(result.status_value() == ZX_OK);

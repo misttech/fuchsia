@@ -252,6 +252,7 @@ class PaverServiceTest : public PaverTest {
   virtual IsolatedDevmgr::Args DevmgrArgs() {
     IsolatedDevmgr::Args args;
     args.disable_block_watcher = false;
+    args.enable_storage_host = true;
     return args;
   }
 
@@ -2183,8 +2184,7 @@ TEST_F(PaverServiceSkipBlockTest, SysconfigWipeWithBufferredClientLayoutUpdated)
 class PaverServiceUefiTest : public PaverServiceTest {
  protected:
   IsolatedDevmgr::Args DevmgrArgs() override {
-    IsolatedDevmgr::Args args;
-    args.enable_storage_host = true;
+    IsolatedDevmgr::Args args = PaverServiceTest::DevmgrArgs();
     args.fshost_config.emplace_back(component_testing::ConfigCapability{
         .name = "fuchsia.fshost.GptAll", .value = component_testing::ConfigValue::Bool(true)});
     return args;
@@ -2264,15 +2264,11 @@ std::unique_ptr<BlockDevice> PaverServiceUefiTest::InstallUefiGpt(paver::Partiti
        .start = kFvmBlockStart,
        .length = kFvmBlockSize},
   };
-  if (DevmgrArgs().enable_storage_host) {
-    fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
-    fbl::unique_fd fd;
-    EXPECT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
-    BlockDevice::CreateWithGpt(fd, block_count, kBlockSize, init_partitions, &gpt_dev);
-  } else {
-    BlockDevice::CreateLegacyWithGpt(devmgr_.devfs_root(), block_count, kBlockSize, init_partitions,
-                                     &gpt_dev);
-  }
+  ZX_ASSERT(DevmgrArgs().enable_storage_host);
+  fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
+  fbl::unique_fd fd;
+  EXPECT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
+  BlockDevice::CreateWithGpt(fd, block_count, kBlockSize, init_partitions, &gpt_dev);
 
   return gpt_dev;
 }
@@ -2390,18 +2386,12 @@ class PaverServiceGptDeviceTest : public PaverServiceTest {
                            const std::vector<PartitionDescription>& partitions) {
     block_count_ = block_count;
     block_size_ = block_size;
-    if (DevmgrArgs().enable_storage_host) {
-      fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
-      fbl::unique_fd fd;
-      EXPECT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
-      ASSERT_NO_FATAL_FAILURE(
-          BlockDevice::CreateWithGpt(fd, block_count, block_size, partitions, &gpt_dev_));
-    } else {
-      ASSERT_NO_FATAL_FAILURE(BlockDevice::CreateLegacyWithGpt(devmgr_.devfs_root(), block_count,
-                                                               block_size, partitions, &gpt_dev_));
-      std::string path = std::format("class/block/{:03d}", partitions.size());
-      ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), path.c_str()).status_value());
-    }
+    ZX_ASSERT(DevmgrArgs().enable_storage_host);
+    fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
+    fbl::unique_fd fd;
+    EXPECT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
+    ASSERT_NO_FATAL_FAILURE(
+        BlockDevice::CreateWithGpt(fd, block_count, block_size, partitions, &gpt_dev_));
   }
 
   // Reads `count` blocks from disk starting at the given block `offset`.
@@ -2481,8 +2471,7 @@ TEST_F(PaverServiceLuisTest, WriteOpaqueVolume) {
   ASSERT_OK(result.status());
 
   // Create a block partition client to read the written content directly.
-  zx::result block_client = paver::BlockPartitionClient::Create(
-      std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToLegacyController()));
+  zx::result block_client = paver::BlockPartitionClient::Create(gpt_dev_->GetConnector());
   ASSERT_OK(block_client);
 
   // Read the partition directly from block and verify.
@@ -2661,8 +2650,7 @@ TEST_F(PaverServiceLuisTest, WriteSparseVolume) {
   ASSERT_OK(result.status());
 
   // Create a block partition client to read the written content directly.
-  zx::result block_client = paver::BlockPartitionClient::Create(
-      std::make_unique<paver::DevfsVolumeConnector>(gpt_dev_->ConnectToLegacyController()));
+  zx::result block_client = paver::BlockPartitionClient::Create(gpt_dev_->GetConnector());
   ASSERT_OK(block_client);
 
   // Read the partition directly from block and verify.  Read `image.image_length` bytes so we know
@@ -2731,7 +2719,6 @@ class PaverServiceMoonflowerTest : public PaverServiceGptDeviceTest {
   IsolatedDevmgr::Args DevmgrArgs() override {
     IsolatedDevmgr::Args args = PaverServiceGptDeviceTest::DevmgrArgs();
     args.board_name = "sorrel";  // Any moonflower board name is fine here
-    args.enable_storage_host = true;
     args.fshost_config.emplace_back(
         component_testing::ConfigCapability{.name = "fuchsia.fshost.MergeSuperAndUserdata",
                                             .value = component_testing::ConfigValue::Bool(true)});

@@ -190,31 +190,6 @@ void BlockDevice::CreateWithGpt(const fbl::unique_fd& svc_root, uint64_t block_c
       CreateFromVmo(device, svc_root, kEmptyGuid, std::move(*contents), block_size));
 }
 
-void BlockDevice::CreateLegacyWithGpt(const fbl::unique_fd& devfs_root, uint64_t block_count,
-                                      uint32_t block_size,
-                                      const std::vector<PartitionDescription>& init_partitions,
-                                      std::unique_ptr<BlockDevice>* device) {
-  auto dev = std::make_unique<block_client::FakeBlockDevice>(block_count, block_size);
-  zx::result contents = dev->VmoChildReference();
-  ASSERT_OK(contents);
-  zx::result gpt_result = gpt::GptDevice::Create(std::move(dev), block_size, block_count);
-  ASSERT_OK(gpt_result);
-  std::unique_ptr<gpt::GptDevice> gpt = std::move(*gpt_result);
-  ASSERT_OK(gpt->Sync());
-
-  for (auto& part : init_partitions) {
-    uuid::Uuid instance = part.instance.value_or(uuid::Uuid::Generate());
-    ASSERT_OK(gpt->AddPartition(part.name.c_str(), part.type.bytes(), instance.bytes(), part.start,
-                                part.length, 0),
-              "%s", part.name.c_str());
-  }
-  ASSERT_OK(gpt->Sync());
-
-  constexpr const uint8_t kEmptyGuid[ZBI_PARTITION_GUID_LEN] = {0};
-  ASSERT_NO_FATAL_FAILURE(
-      CreateLegacyFromVmo(device, devfs_root, kEmptyGuid, std::move(*contents), block_size));
-}
-
 void BlockDevice::Read(const zx::vmo& vmo, size_t size, size_t dev_offset,
                        size_t vmo_offset) const {
   zx::result block_client = block_client::RemoteBlockDevice::Create(
