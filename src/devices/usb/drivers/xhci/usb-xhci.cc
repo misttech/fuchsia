@@ -1620,7 +1620,7 @@ zx_status_t UsbXhci::CreateNode() {
     }
   }
 
-  std::vector<fuchsia_driver_framework::NodeProperty> props{banjo_server_.property()};
+  std::vector<fuchsia_driver_framework::NodeProperty2> props{banjo_server_.property()};
   compat::DeviceServer::BanjoConfig banjo_config;
   banjo_config.callbacks[ZX_PROTOCOL_USB_HCI] = banjo_server_.callback();
   {

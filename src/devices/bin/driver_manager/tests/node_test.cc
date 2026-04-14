@@ -607,36 +607,6 @@ TEST_F(Dfv2NodeTest, AddChildWithDuplicatePropertyKey) {
                  });
 }
 
-TEST_F(Dfv2NodeTest, AddChildWithDuplicatePropertyArgs) {
-  auto node = CreateNode("test");
-  StartTestDriver(node);
-  ASSERT_TRUE(node->HasDriverComponent());
-  ASSERT_EQ(driver_manager::NodeState::kRunning, node->GetNodeState());
-
-  // Add child with both properties and properties2 set in the args. The call should
-  // fail.
-  zx::result node_controller_endpoints =
-      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
-  ASSERT_EQ(node_controller_endpoints.status_value(), ZX_OK);
-
-  zx::result node_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
-  ASSERT_EQ(node_endpoints.status_value(), ZX_OK);
-
-  fuchsia_driver_framework::NodeAddArgs args{
-      {.name = "child",
-       .properties = {{fdf::MakeProperty("key", "value")}},
-       .properties2 = {{fdf::MakeProperty2("key", "value")}}}};
-  node->AddChild(std::move(args), std::move(node_controller_endpoints->server),
-                 std::move(node_endpoints->server),
-                 [](fit::result<fuchsia_driver_framework::wire::NodeError,
-                                std::shared_ptr<driver_manager::Node>>
-                        result) {
-                   ASSERT_TRUE(result.is_error());
-                   ASSERT_EQ(result.error_value(),
-                             fuchsia_driver_framework::wire::NodeError::kUnsupportedArgs);
-                 });
-}
-
 TEST_F(Dfv2NodeTest, RemoveDuringFailedBind) {
   auto node = CreateNode("test");
   StartTestDriver(node);

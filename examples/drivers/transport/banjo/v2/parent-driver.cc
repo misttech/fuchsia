@@ -28,7 +28,7 @@ zx::result<> ParentBanjoTransportDriver::Start() {
   zx::result child_result =
       AddChild(child_name,
                {{banjo_server_.property(),
-                 fdf::MakeProperty(bind_gizmo_example::TEST_NODE_ID, "banjo_child")}},
+                 fdf::MakeProperty2(bind_gizmo_example::TEST_NODE_ID, "banjo_child")}},
                child_.CreateOffers2());
   if (child_result.is_error()) {
     return child_result.take_error();

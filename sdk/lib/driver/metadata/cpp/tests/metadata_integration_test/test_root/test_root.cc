@@ -29,11 +29,11 @@ void TestRootDriver::AddMetadataSenderNode(AddMetadataSenderNodeRequest& request
                                            AddMetadataSenderNodeCompleter::Sync& completer) {
   bool exposes_metadata_fidl_service = request.exposes_metadata_fidl_service();
 
-  std::vector<fuchsia_driver_framework::NodeProperty> node_properties{
-      fdf::MakeProperty(bind_fuchsia_driver_metadata_test::PURPOSE,
-                        bind_fuchsia_driver_metadata_test::PURPOSE_SEND_METADATA),
-      fdf::MakeProperty(bind_fuchsia_driver_metadata_test::EXPOSES_METADATA_FIDL_SERVICE,
-                        exposes_metadata_fidl_service)};
+  std::vector<fuchsia_driver_framework::NodeProperty2> node_properties{
+      fdf::MakeProperty2(bind_fuchsia_driver_metadata_test::PURPOSE,
+                         bind_fuchsia_driver_metadata_test::PURPOSE_SEND_METADATA),
+      fdf::MakeProperty2(bind_fuchsia_driver_metadata_test::EXPOSES_METADATA_FIDL_SERVICE,
+                         exposes_metadata_fidl_service)};
 
   const std::string node_name = std::format(
       "{}-{}", exposes_metadata_fidl_service ? "expose" : "no_expose", metadata_senders_.size());

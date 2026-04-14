@@ -181,8 +181,8 @@ zx::result<> BtTransportUart::Start() {
 
   auto properties = std::to_array({
       // Prevent the serial core driver from binding to our node.
-      fdf::MakeProperty(bind_fuchsia_hardware_serial::SERVICE,
-                        bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia_hardware_serial::SERVICE,
+                         bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
   });
 
   // Add bt-transport-uart child node.

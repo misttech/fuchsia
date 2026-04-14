@@ -35,8 +35,9 @@ class MetadataSenderTestDriver : public fdf::DriverBase,
  private:
   // Helper function that adds a child node with the name |node_name| and properties
   // |node_properties|. The child node's node controller in `metadata_node_controllers_`.
-  zx_status_t AddChildNode(std::string_view node_name,
-                           const fuchsia_driver_framework::NodePropertyVector& node_properties);
+  zx_status_t AddChildNode(
+      std::string_view node_name,
+      const std::vector<fuchsia_driver_framework::NodeProperty2>& node_properties);
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server_;

@@ -19,8 +19,8 @@ class BanjoServer final {
   BanjoServer(uint32_t proto_id, void* ctx, const void* ops)
       : proto_id_(proto_id), ctx_(ctx), ops_(ops) {}
 
-  fuchsia_driver_framework::NodeProperty property() const {
-    return fdf::MakeProperty(bind_fuchsia::PROTOCOL, proto_id_);
+  fuchsia_driver_framework::NodeProperty2 property() const {
+    return fdf::MakeProperty2(bind_fuchsia::PROTOCOL, proto_id_);
   }
 
   DeviceServer::SpecificGetBanjoProtoCb callback() {

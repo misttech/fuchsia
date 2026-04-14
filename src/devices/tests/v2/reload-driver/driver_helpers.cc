@@ -17,10 +17,10 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
     fdf::Logger& logger, std::string_view child_name,
     fidl::SyncClient<fuchsia_driver_framework::Node>& node_client,
     std::string_view child_test_property) {
-  fuchsia_driver_framework::NodeProperty node_property =
-      fdf::MakeProperty(bindlib::TEST_BIND_PROPERTY, child_test_property);
+  fuchsia_driver_framework::NodeProperty2 node_property =
+      fdf::MakeProperty2(bindlib::TEST_BIND_PROPERTY, child_test_property);
   fuchsia_driver_framework::NodeAddArgs args(
-      {.name = std::string(child_name), .properties = {{node_property}}});
+      {.name = std::string(child_name), .properties2 = {{node_property}}});
 
   // Create endpoints of the `NodeController` for the node.
   auto endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();

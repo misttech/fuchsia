@@ -119,10 +119,10 @@ void SoftmacDriver::Start(fdf::StartCompleter completer) {
         fuchsia_driver_framework::NodeAddChildRequest request;
         request.args({{
             .name = std::string("wlansoftmac-ethernet"),
-            .properties = {{
+            .offers2 = compat_server_.CreateOffers2(),
+            .properties2 = {{
                 banjo_server_.property(),
             }},
-            .offers2 = compat_server_.CreateOffers2(),
         }});
 
         auto controller_endpoints =

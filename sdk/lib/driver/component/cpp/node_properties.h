@@ -12,30 +12,6 @@
 
 namespace fdf {
 
-inline fuchsia_driver_framework::NodeProperty MakeProperty(std::string_view key,
-                                                           std::string_view value) {
-  return fuchsia_driver_framework::NodeProperty{
-      {.key = fuchsia_driver_framework::NodePropertyKey::WithStringValue(std::string(key)),
-       .value = fuchsia_driver_framework::NodePropertyValue::WithStringValue(std::string(value))}};
-}
-
-inline fuchsia_driver_framework::NodeProperty MakeProperty(std::string_view key,
-                                                           const char* value) {
-  return MakeProperty(key, std::string_view(value));
-}
-
-inline fuchsia_driver_framework::NodeProperty MakeProperty(std::string_view key, bool value) {
-  return fuchsia_driver_framework::NodeProperty{
-      {.key = fuchsia_driver_framework::NodePropertyKey::WithStringValue(std::string(key)),
-       .value = fuchsia_driver_framework::NodePropertyValue::WithBoolValue(value)}};
-}
-
-inline fuchsia_driver_framework::NodeProperty MakeProperty(std::string_view key, uint32_t value) {
-  return fuchsia_driver_framework::NodeProperty{
-      {.key = fuchsia_driver_framework::NodePropertyKey::WithStringValue(std::string(key)),
-       .value = fuchsia_driver_framework::NodePropertyValue::WithIntValue(value)}};
-}
-
 inline fuchsia_driver_framework::NodeProperty2 MakeProperty2(std::string_view key,
                                                              std::string_view value) {
   return fuchsia_driver_framework::NodeProperty2{

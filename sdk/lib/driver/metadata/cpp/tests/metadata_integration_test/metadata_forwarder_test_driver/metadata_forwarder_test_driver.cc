@@ -23,10 +23,10 @@ zx::result<> MetadataForwarderTestDriver::Start() {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 #endif
 
-  static const std::vector<fuchsia_driver_framework::NodeProperty> kNodeProperties{
-      fdf::MakeProperty(bind_fuchsia_driver_metadata_test::PURPOSE,
-                        bind_fuchsia_driver_metadata_test::PURPOSE_RETRIEVE_METADATA),
-      fdf::MakeProperty(bind_fuchsia_driver_metadata_test::USES_METADATA_FIDL_SERVICE, true)};
+  static const std::vector<fuchsia_driver_framework::NodeProperty2> kNodeProperties{
+      fdf::MakeProperty2(bind_fuchsia_driver_metadata_test::PURPOSE,
+                         bind_fuchsia_driver_metadata_test::PURPOSE_RETRIEVE_METADATA),
+      fdf::MakeProperty2(bind_fuchsia_driver_metadata_test::USES_METADATA_FIDL_SERVICE, true)};
 
   std::vector<fuchsia_driver_framework::Offer> offers;
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)

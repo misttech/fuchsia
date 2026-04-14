@@ -855,10 +855,10 @@ TEST_P(DriverRunnerTest, StartSecondDriver_UseProperties) {
   PrepareRealmForSecondDriverComponentStart();
   fdfw::NodeAddArgs args({
       .name = "second",
-      .properties =
+      .properties2 =
           {
               {
-                  fdf::MakeProperty("second_node_prop", 0x2301u),
+                  fdf::MakeProperty2("second_node_prop", 0x2301u),
               },
           },
   });
@@ -886,10 +886,10 @@ TEST_P(DriverRunnerTest, CheckOnBindNode) {
   PrepareRealmForSecondDriverComponentStart();
   fdfw::NodeAddArgs args({
       .name = "second",
-      .properties =
+      .properties2 =
           {
               {
-                  fdf::MakeProperty("second_node_prop", 0x2301u),
+                  fdf::MakeProperty2("second_node_prop", 0x2301u),
               },
           },
   });
@@ -1327,11 +1327,11 @@ TEST_P(DriverRunnerTest, StartSecondDriver_BindOrphanToBaseDriver) {
 
   fdfw::NodeAddArgs args({
       .name = "second",
-      .properties =
+      .properties2 =
           {
               {
-                  fdfw::NodeProperty({
-                      .key = fdfw::NodePropertyKey::WithStringValue("driver.prop-one"),
+                  fdfw::NodeProperty2({
+                      .key = "driver.prop-one",
                       .value = fdfw::NodePropertyValue::WithStringValue("value"),
                   }),
               },

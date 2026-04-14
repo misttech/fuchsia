@@ -52,12 +52,12 @@ class RebindParentServer : public fidl::Server<fuchsia_rebind_test::RebindParent
   void AddChild(AddChildCompleter::Sync& completer) override {
     fidl::Arena arena;
 
-    auto properties = fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty>(arena, 1);
-    properties[0] = fdf::MakeProperty(arena, bind_fuchsia::PROTOCOL, 1234u);
+    auto properties = fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2>(arena, 1);
+    properties[0] = fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL, 1234u);
 
     auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                     .name(arena, kChildNodeName)
-                    .properties(properties)
+                    .properties2(properties)
                     .Build();
 
     // Create endpoints of the `NodeController` for the node.

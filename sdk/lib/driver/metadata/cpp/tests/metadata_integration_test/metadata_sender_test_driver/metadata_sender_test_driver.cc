@@ -45,11 +45,11 @@ void MetadataSenderTestDriver::AddMetadataRetrieverNode(
     AddMetadataRetrieverNodeRequest& request, AddMetadataRetrieverNodeCompleter::Sync& completer) {
   bool uses_metadata_fidl_service = request.uses_metadata_fidl_service();
 
-  std::vector<fuchsia_driver_framework::NodeProperty> node_properties = {
-      fdf::MakeProperty(bind_fuchsia_driver_metadata_test::PURPOSE,
-                        bind_fuchsia_driver_metadata_test::PURPOSE_RETRIEVE_METADATA),
-      fdf::MakeProperty(bind_fuchsia_driver_metadata_test::USES_METADATA_FIDL_SERVICE,
-                        uses_metadata_fidl_service)};
+  std::vector<fuchsia_driver_framework::NodeProperty2> node_properties = {
+      fdf::MakeProperty2(bind_fuchsia_driver_metadata_test::PURPOSE,
+                         bind_fuchsia_driver_metadata_test::PURPOSE_RETRIEVE_METADATA),
+      fdf::MakeProperty2(bind_fuchsia_driver_metadata_test::USES_METADATA_FIDL_SERVICE,
+                         uses_metadata_fidl_service)};
 
   const std::string node_name =
       std::format("retriever-{}-{}", uses_metadata_fidl_service ? "use" : "no_use",
@@ -66,9 +66,9 @@ void MetadataSenderTestDriver::AddMetadataRetrieverNode(
 
 void MetadataSenderTestDriver::AddMetadataForwarderNode(
     AddMetadataForwarderNodeCompleter::Sync& completer) {
-  static const std::vector<fuchsia_driver_framework::NodeProperty> kNodeProperties{
-      fdf::MakeProperty(bind_fuchsia_driver_metadata_test::PURPOSE,
-                        bind_fuchsia_driver_metadata_test::PURPOSE_FORWARD_METADATA)};
+  static const std::vector<fuchsia_driver_framework::NodeProperty2> kNodeProperties{
+      fdf::MakeProperty2(bind_fuchsia_driver_metadata_test::PURPOSE,
+                         bind_fuchsia_driver_metadata_test::PURPOSE_FORWARD_METADATA)};
 
   const std::string node_name = std::format("forwarder-{}", metadata_recipients_.size());
   zx_status_t status = AddChildNode(node_name, kNodeProperties);
@@ -83,7 +83,7 @@ void MetadataSenderTestDriver::AddMetadataForwarderNode(
 
 zx_status_t MetadataSenderTestDriver::AddChildNode(
     std::string_view node_name,
-    const fuchsia_driver_framework::NodePropertyVector& node_properties) {
+    const std::vector<fuchsia_driver_framework::NodeProperty2>& node_properties) {
   std::vector<fuchsia_driver_framework::Offer> offers;
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   if (offer_metadata_to_child_nodes_) {

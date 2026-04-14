@@ -120,14 +120,15 @@ zx_status_t WlanInterface::AddWlanFullmacDevice() {
 
   fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers(arena, 1);
   offers[0] = fdf::MakeOffer2<fuchsia_wlan_fullmac::Service>(arena, GetName());
-  auto property = fdf::MakeProperty(arena, bind_fuchsia_wlan_fullmac::SERVICE,
-                                    bind_fuchsia_wlan_fullmac::SERVICE_ZIRCONTRANSPORT);
+  auto property = fdf::MakeProperty2(arena, bind_fuchsia_wlan_fullmac::SERVICE,
+                                     bind_fuchsia_wlan_fullmac::SERVICE_ZIRCONTRANSPORT);
 
-  auto args = fdf::wire::NodeAddArgs::Builder(arena)
-                  .name(arena, GetName())
-                  .properties(fidl::VectorView<fdf::wire::NodeProperty>::FromExternal(&property, 1))
-                  .offers2(offers)
-                  .Build();
+  auto args =
+      fdf::wire::NodeAddArgs::Builder(arena)
+          .name(arena, GetName())
+          .properties2(fidl::VectorView<fdf::wire::NodeProperty2>::FromExternal(&property, 1))
+          .offers2(offers)
+          .Build();
 
   auto endpoints = fidl::CreateEndpoints<fdf::NodeController>();
   if (endpoints.is_error()) {

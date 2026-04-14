@@ -298,9 +298,9 @@ zx::result<> IntelDisplayDriver::InitGpuCoreNode() {
     return compat_server_init_result.take_error();
   }
 
-  const std::vector<fuchsia_driver_framework::NodeProperty> node_properties = {
-      fdf::MakeProperty(bind_fuchsia::PROTOCOL,
-                        bind_fuchsia_intel_platform_gpucore::BIND_PROTOCOL_DEVICE),
+  const std::vector<fuchsia_driver_framework::NodeProperty2> node_properties = {
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL,
+                         bind_fuchsia_intel_platform_gpucore::BIND_PROTOCOL_DEVICE),
   };
   const std::vector<fuchsia_driver_framework::Offer> node_offers =
       gpu_compat_server_.CreateOffers2();
