@@ -6,9 +6,11 @@
 #define ZIRCON_SYSTEM_UTEST_DEVICE_ENUMERATION_COMMON_H_
 
 #include <fidl/fuchsia.driver.development/cpp/fidl.h>
+#include <lib/fit/result.h>
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <zxtest/zxtest.h>
 
@@ -22,11 +24,27 @@ class DeviceEnumerationTest : public zxtest::Test {
   void SetUp() override { ASSERT_NO_FATAL_FAILURE(RetrieveNodeInfo()); }
 
  protected:
+  struct Requirement {
+    enum class Type { kAllOf, kOneOf, kNode };
+    Type type;
+    std::string node;
+    std::vector<Requirement> children;
+  };
+
+  static Requirement AllOf(cpp20::span<const char* const> node_monikers);
+  static Requirement OneOf(cpp20::span<const char* const> node_monikers);
+  static Requirement AllOf(std::vector<Requirement> children);
+  static Requirement OneOf(std::vector<Requirement> children);
+
+  void Verify(Requirement requirement, bool fail_on_unexpected_nodes = false);
   void VerifyNodes(cpp20::span<const char*> node_monikers, bool fail_on_unexpected_nodes = false);
   void VerifyOneOf(cpp20::span<const char*> node_monikers);
 
  private:
+  using MatchResult = fit::result<std::string, std::vector<std::string>>;
+
   void RetrieveNodeInfo();
+  MatchResult GetMatchedNodes(const Requirement& req) const;
 
   std::unordered_map<std::string, fuchsia_driver_development::NodeInfo> node_info_;
 };

@@ -12,6 +12,7 @@
 #include <iostream>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <fbl/string_printf.h>
 #include <fbl/vector.h>
@@ -48,56 +49,116 @@ void WaitForClassDeviceCount(const std::string& path_in_devfs, size_t count) {
 
 }  // namespace device_enumeration
 
-void DeviceEnumerationTest::VerifyNodes(cpp20::span<const char*> node_monikers,
-                                        bool fail_on_unexpected_nodes) {
-  std::vector<std::string> missing_nodes;
-  std::unordered_map<std::string, fuchsia_driver_development::NodeInfo> leftover_nodes{node_info_};
-
+DeviceEnumerationTest::Requirement DeviceEnumerationTest::AllOf(
+    cpp20::span<const char* const> node_monikers) {
+  std::vector<Requirement> children;
   for (const char* moniker : node_monikers) {
-    if (node_info_.contains(moniker)) {
-      leftover_nodes.erase(moniker);
-    } else {
-      missing_nodes.push_back(moniker);
+    children.push_back({Requirement::Type::kNode, moniker, {}});
+  }
+  return {Requirement::Type::kAllOf, "", std::move(children)};
+}
+
+DeviceEnumerationTest::Requirement DeviceEnumerationTest::OneOf(
+    cpp20::span<const char* const> node_monikers) {
+  std::vector<Requirement> children;
+  for (const char* moniker : node_monikers) {
+    children.push_back({Requirement::Type::kNode, moniker, {}});
+  }
+  return {Requirement::Type::kOneOf, "", std::move(children)};
+}
+
+DeviceEnumerationTest::Requirement DeviceEnumerationTest::AllOf(std::vector<Requirement> children) {
+  return {Requirement::Type::kAllOf, "", std::move(children)};
+}
+
+DeviceEnumerationTest::Requirement DeviceEnumerationTest::OneOf(std::vector<Requirement> children) {
+  return {Requirement::Type::kOneOf, "", std::move(children)};
+}
+
+DeviceEnumerationTest::MatchResult DeviceEnumerationTest::GetMatchedNodes(
+    const Requirement& req) const {
+  switch (req.type) {
+    case Requirement::Type::kNode:
+      if (node_info_.contains(req.node)) {
+        return fit::ok(std::vector<std::string>{req.node});
+      }
+      return fit::error("node '" + req.node + "' not found");
+    case Requirement::Type::kAllOf: {
+      std::vector<std::string> all_matches;
+      std::string errors;
+      for (const auto& child : req.children) {
+        MatchResult child_result = GetMatchedNodes(child);
+        if (child_result.is_error()) {
+          if (!errors.empty()) {
+            errors += ", ";
+          }
+          errors += child_result.error_value();
+        } else if (child_result.is_ok()) {
+          all_matches.insert(all_matches.end(), child_result.value().begin(),
+                             child_result.value().end());
+        }
+      }
+      if (!errors.empty()) {
+        return fit::error("AllOf failed: [" + errors + "]");
+      }
+      return fit::ok(std::move(all_matches));
+    }
+    case Requirement::Type::kOneOf: {
+      std::string errors;
+      for (const auto& child : req.children) {
+        MatchResult child_result = GetMatchedNodes(child);
+        if (child_result.is_ok()) {
+          return child_result;
+        }
+        if (!errors.empty()) {
+          errors += ", ";
+        }
+        errors += child_result.error_value();
+      }
+      return fit::error("OneOf failed: [" + errors + "]");
     }
   }
+}
 
-  if (!missing_nodes.empty()) {
-    fprintf(stderr, "Unable to find node(s):\n");
-    for (auto& moniker : missing_nodes) {
-      fprintf(stderr, "     %s:\n", moniker.c_str());
+void DeviceEnumerationTest::Verify(Requirement requirement, bool fail_on_unexpected_nodes) {
+  MatchResult result = GetMatchedNodes(requirement);
+
+  if (result.is_error()) {
+    fprintf(stderr, "Requirement not satisfied: %s\n", result.error_value().c_str());
+  }
+
+  std::unordered_set<std::string> matched_nodes;
+  if (result.is_ok()) {
+    matched_nodes.insert(result.value().begin(), result.value().end());
+  }
+
+  std::unordered_map<std::string, fuchsia_driver_development::NodeInfo> leftover_nodes;
+  for (auto& [moniker, node] : node_info_) {
+    if (!matched_nodes.contains(moniker)) {
+      leftover_nodes[moniker] = node;
     }
   }
 
   if (!leftover_nodes.empty()) {
-    fprintf(stderr, "Found unexpected node(s):\n");
+    fprintf(stderr, "Found %zu unexpected node(s):\n", leftover_nodes.size());
     for (auto& [moniker, node] : leftover_nodes) {
       fprintf(stderr, "     %s:\n", moniker.c_str());
     }
   }
 
-  ASSERT_TRUE(missing_nodes.empty());
+  ASSERT_TRUE(result.is_ok());
   if (fail_on_unexpected_nodes) {
     ASSERT_TRUE(leftover_nodes.empty());
   }
 }
 
-void DeviceEnumerationTest::VerifyOneOf(cpp20::span<const char*> node_monikers) {
-  std::vector<std::string> missing_nodes;
-  bool found_node = false;
-  for (const char* moniker : node_monikers) {
-    if (node_info_.contains(moniker)) {
-      found_node = true;
-      break;
-    }
-  }
+void DeviceEnumerationTest::VerifyNodes(cpp20::span<const char*> node_monikers,
+                                        bool fail_on_unexpected_nodes) {
+  Verify(AllOf(node_monikers), fail_on_unexpected_nodes);
+}
 
-  if (!found_node) {
-    fprintf(stderr, "Unable to find one of the node(s):\n");
-    for (const char* moniker : node_monikers) {
-      fprintf(stderr, "     %s:\n", moniker);
-    }
-  }
-  ASSERT_TRUE(found_node);
+void DeviceEnumerationTest::VerifyOneOf(cpp20::span<const char*> node_monikers) {
+  Verify(OneOf(node_monikers));
 }
 
 void DeviceEnumerationTest::RetrieveNodeInfo() {
