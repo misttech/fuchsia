@@ -7,6 +7,10 @@ use crate::fidl::{IntoFsandboxCapability, RemotableCapability, registry};
 use crate::{Capability, Connector, Dict, DirConnector, Message, WeakInstanceToken};
 use cm_types::RelativePath;
 use fidl::handle::Signals;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::{FutureExt, TryStreamExt};
 use log::warn;
 use std::collections::HashMap;
@@ -17,10 +21,6 @@ use vfs::directory::entry::SubNode;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::directory::simple::Simple;
 use vfs::path::Path;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
 
 type Store = sync::Mutex<HashMap<u64, Capability>>;
 
@@ -568,7 +568,7 @@ fn process_renames(source: &fsandbox::AggregateSource) -> Vec<fdecl::NameMapping
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Data, DirConnectable};
+    use crate::{Data, DirConnectable, Handle};
     use assert_matches::assert_matches;
     use fidl::endpoints::{ServerEnd, create_endpoints};
     use fidl::{AsHandleRef, HandleBased, endpoints};
@@ -586,7 +586,7 @@ mod tests {
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
         let handle_koid = handle.as_handle_ref().koid().unwrap();
-        let cap1 = Capability::Handle(handle.into());
+        let cap1 = Capability::Handle(Handle::new(handle));
         let cap2 = Capability::Data(Data::Int64(42));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
@@ -686,7 +686,7 @@ mod tests {
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
         let handle_koid = handle.as_handle_ref().koid().unwrap();
-        let cap1 = Capability::Handle(handle.into());
+        let cap1 = Capability::Handle(Handle::new(handle));
         let cap2 = Capability::Data(Data::Int64(42));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
@@ -757,7 +757,7 @@ mod tests {
         let (event, _) = fidl::EventPair::create();
         let handle = event.into_handle();
         let handle_koid = handle.as_handle_ref().koid().unwrap();
-        let cap1 = Capability::Handle(handle.into());
+        let cap1 = Capability::Handle(Handle::new(handle));
         store
             .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -807,7 +807,7 @@ mod tests {
         // Channels do not support duplication.
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
-        let cap1 = Capability::Handle(handle.into());
+        let cap1 = Capability::Handle(Handle::new(handle));
         store
             .import(3, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await

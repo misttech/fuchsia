@@ -9,6 +9,9 @@ impl crate::RemotableCapability for Handle {}
 
 impl crate::fidl::IntoFsandboxCapability for Handle {
     fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
-        fsandbox::Capability::Handle(self.into())
+        // This is safe because this is only called during
+        // `fuchsia.component.sandbox.CapabilityStore/Export`, and by design it's not possible to
+        // export the same capability twice.
+        fsandbox::Capability::Handle(self.take().expect("failed to take handle"))
     }
 }

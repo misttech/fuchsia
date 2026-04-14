@@ -4,21 +4,28 @@
 
 use crate::CapabilityBound;
 use fidl::handle::{self, HandleBased};
+use fuchsia_sync::Mutex;
+use std::sync::Arc;
 
 /// A capability that wraps a single Zircon handle.
-#[derive(Debug)]
-pub struct Handle(handle::NullableHandle);
+#[derive(Debug, Clone)]
+pub struct Handle(Arc<Mutex<Option<handle::NullableHandle>>>);
 
 impl Handle {
     /// Creates a new [Handle] containing a Zircon `handle`.
     pub fn new(handle: handle::NullableHandle) -> Self {
-        Self(handle)
+        Self(Arc::new(Mutex::new(Some(handle))))
     }
-}
 
-impl From<handle::NullableHandle> for Handle {
-    fn from(handle: handle::NullableHandle) -> Self {
-        Self(handle)
+    /// Gets a duplicate of the inner handle. Returns None if the handle has been taken or the
+    /// duplicate operation fails.
+    pub fn duplicate(&self) -> Option<handle::NullableHandle> {
+        self.0.lock().as_ref().and_then(|h| h.duplicate_handle(handle::Rights::SAME_RIGHTS).ok())
+    }
+
+    /// Removes the inner handle and returns it.
+    pub fn take(&self) -> Option<handle::NullableHandle> {
+        self.0.lock().take()
     }
 }
 
@@ -30,13 +37,7 @@ impl CapabilityBound for Handle {
 
 impl Handle {
     pub fn try_clone(&self) -> Result<Self, ()> {
-        Ok(Self(self.0.duplicate_handle(fidl::Rights::SAME_RIGHTS).map_err(|_| ())?))
-    }
-}
-
-impl From<Handle> for handle::NullableHandle {
-    fn from(value: Handle) -> Self {
-        value.0
+        self.duplicate().map(Self::new).ok_or(())
     }
 }
 
@@ -56,7 +57,7 @@ mod tests {
         let event = zx::Event::create();
         let expected_koid = event.koid().unwrap();
 
-        let handle = Handle::from(event.into_handle());
+        let handle = Handle::new(event.into_handle());
 
         // Convert the OneShotHandle to FIDL and back.
         let fidl_capability: fsandbox::Capability =
@@ -67,7 +68,7 @@ mod tests {
         let handle = assert_matches!(any, Capability::Handle(h) => h);
 
         // Get the handle.
-        let handle: zx::NullableHandle = handle.into();
+        let handle: zx::NullableHandle = handle.take().unwrap();
 
         // The handle should be for same Event that was in the original OneShotHandle.
         let got_koid = handle.koid().unwrap();
@@ -80,15 +81,14 @@ mod tests {
         let event = zx::Event::create();
         let expected_koid = event.koid().unwrap();
 
-        let handle = Handle::from(event.into_handle());
-        let handle = handle.try_clone().unwrap();
-        let handle: zx::NullableHandle = handle.into();
+        let handle = Handle::new(event.into_handle());
+        let handle = handle.duplicate().unwrap();
 
         let got_koid = handle.koid().unwrap();
         assert_eq!(got_koid, expected_koid);
 
         let (ch, _) = zx::Channel::create();
-        let handle = Handle::from(ch.into_handle());
+        let handle = Handle::new(ch.into_handle());
         assert_matches!(handle.try_clone(), Err(()));
     }
 }

@@ -549,7 +549,7 @@ mod tests {
         dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).unwrap();
         assert_eq!(adjusted_len(&dict, test_type), 1);
         let (ch, _) = fidl::Channel::create();
-        let handle = Handle::from(ch.into_handle());
+        let handle = Handle::new(ch.into_handle());
         dict.insert("h".parse().unwrap(), Capability::Handle(handle)).unwrap();
 
         let dict_ref = Capability::Dictionary(dict.clone())
@@ -606,7 +606,7 @@ mod tests {
 
         // Can't duplicate a channel handle.
         let (ch, _) = fidl::Channel::create();
-        let handle = Handle::from(ch.into_handle());
+        let handle = Handle::new(ch.into_handle());
         store
             .import(3, handle.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
@@ -699,7 +699,7 @@ mod tests {
 
         // Can't duplicate a channel handle.
         let (ch, _) = fidl::Channel::create();
-        let handle = Handle::from(ch.into_handle());
+        let handle = Handle::new(ch.into_handle());
         store
             .import(3, handle.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await

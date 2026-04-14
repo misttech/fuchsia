@@ -117,7 +117,7 @@ impl NamespaceBuilder {
         for (path, cap) in self.entries.flatten() {
             let client_end: ClientEnd<fio::DirectoryMarker> = match cap {
                 Capability::Handle(handle) => ClientEnd::new(fidl::handle::Channel::from(
-                    fidl::handle::NullableHandle::from(handle),
+                    handle.take().expect("namespace handle already taken"),
                 )),
                 Capability::DirConnector(c) => {
                     let (client, server) =
