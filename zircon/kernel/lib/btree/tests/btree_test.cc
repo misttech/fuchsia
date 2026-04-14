@@ -86,8 +86,8 @@ struct IndirectAllocator {
 };
 
 template <typename T>
-using BTree = btree::BTree<T, IndirectAllocator, btree::DefaultTypeTraits<T>, 256,
-                           btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
+using BTree = btree::BTree<T, btree::NoopObserver, IndirectAllocator, btree::DefaultTypeTraits<T>,
+                           256, btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
 
 TEST(BTreeTest, Smoke) {
   HeapTestingAllocator alloc;
@@ -676,4 +676,261 @@ TEST(BTreeTest, Update) {
     EXPECT_TRUE(tree.is_empty());
   }
 }
+struct HashObserver {
+  struct AugmentedState {
+    uint64_t val1 = 0;
+    uint64_t val2 = 0;
+    bool operator==(const AugmentedState& other) const {
+      return val1 == other.val1 && val2 == other.val2;
+    }
+    bool operator!=(const AugmentedState& other) const { return !(*this == other); }
+  };
+
+  template <typename iterator>
+  static AugmentedState UpdateForInsert(AugmentedState old, iterator node_start, iterator node_end,
+                                        iterator insert_start, iterator insert_end) {
+    return Calculate(node_start, node_end);
+  }
+  template <typename iterator>
+  static AugmentedState Calculate(iterator node_start, iterator node_end) {
+    node_end++;
+    uint64_t hash = 0x1234567890abcdef;
+    for (iterator it = node_start; it != node_end; it++) {
+      auto [k, v] = *it;
+      hash ^= k;
+      hash = (hash << 13) | (hash >> 51);
+      hash += static_cast<uint64_t>(v);
+    }
+    return AugmentedState{.val1 = hash, .val2 = ~hash};
+  }
+  static AugmentedState Fold(AugmentedState left, AugmentedState right) {
+    uint64_t hash = left.val1 ^ right.val1;
+    uint64_t res = (hash << 17) | (hash >> 47);
+    return AugmentedState{.val1 = res, .val2 = ~res};
+  }
+};
+
+using HashTree =
+    btree::BTree<uint64_t, HashObserver, IndirectAllocator, btree::DefaultTypeTraits<uint64_t>, 256,
+                 btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
+
+TEST(BTreeTest, AugmentedHash) {
+  HeapTestingAllocator alloc;
+  HashTree tree(IndirectAllocator{alloc});
+
+  ASSERT_TRUE(tree.debug_validate_tree());
+
+  // Insert ascending with end() hint (triggers hinted insertion)
+  for (uint64_t i = 1; i <= 200; i++) {
+    auto it_ins = tree.insert(tree.end(), i * 10, i * 5);
+    ASSERT_TRUE(it_ins != tree.end());
+    ASSERT_TRUE(tree.debug_validate_tree());
+  }
+
+  // Update elements
+  for (uint64_t i = 1; i <= 200; i += 3) {
+    tree.update(tree.find(i * 10), i * 7);
+    ASSERT_TRUE(tree.debug_validate_tree());
+    HashObserver::AugmentedState walk_state;
+    bool found = false;
+    zx_status_t status = tree.walk([](const auto& state) { return ZX_OK; },
+                                   [&](const auto& state, auto begin, auto end) {
+                                     if (!found) {
+                                       for (auto it = begin;; it++) {
+                                         if ((*it).first == i * 10) {
+                                           walk_state = state;
+                                           found = true;
+                                           return ZX_ERR_STOP;
+                                         }
+                                         if (it == end)
+                                           break;
+                                       }
+                                     }
+                                     return ZX_OK;
+                                   });
+    ASSERT_EQ(status, ZX_OK);
+    ASSERT_TRUE(found);
+  }
+
+  // Insert descending with begin() hint
+  for (uint64_t i = 2000; i >= 1800; i--) {
+    auto it_ins = tree.insert(tree.begin(), i * 10, i * 5);
+    ASSERT_TRUE(it_ins != tree.end());
+    ASSERT_TRUE(tree.debug_validate_tree());
+  }
+
+  // Insert in-place with hint
+  for (uint64_t i = 1; i <= 50; i++) {
+    // 5 is between 0 and 10, so hinting find(10) tests in-place hint insertion.
+    auto hint_it = tree.find(i * 10);
+    auto it_ins = tree.insert(hint_it, i * 10 - 5, i * 2);
+    ASSERT_TRUE(it_ins != tree.end());
+    ASSERT_TRUE(tree.debug_validate_tree());
+  }
+
+  // Erase front
+  for (uint64_t i = 1; i <= 50; i++) {
+    tree.erase(tree.find(i * 10 - 5));
+    ASSERT_TRUE(tree.debug_validate_tree());
+    tree.erase(tree.find(i * 10));
+    ASSERT_TRUE(tree.debug_validate_tree());
+  }
+
+  // Erase back
+  for (uint64_t i = 2000; i >= 1950; i--) {
+    tree.erase(tree.find(i * 10));
+    ASSERT_TRUE(tree.debug_validate_tree());
+  }
+
+  // Erase middle
+  for (uint64_t i = 100; i <= 150; i++) {
+    tree.erase(tree.find(i * 10));
+    ASSERT_TRUE(tree.debug_validate_tree());
+  }
+
+  tree.clear();
+  ASSERT_TRUE(tree.debug_validate_tree());
+
+  // Insert random
+  std::mt19937 gen(12345);
+  std::vector<uint64_t> keys;
+  for (uint64_t i = 1; i <= 300; i++)
+    keys.push_back(i * 10);
+  std::shuffle(keys.begin(), keys.end(), gen);
+
+  for (uint64_t k : keys) {
+    auto it_ins = tree.insert(k, k * 2);
+    ASSERT_TRUE(it_ins != tree.end());
+    ASSERT_TRUE(tree.debug_validate_tree());
+  }
+
+  std::shuffle(keys.begin(), keys.end(), gen);
+  for (uint64_t k : keys) {
+    tree.erase(tree.find(k));
+    ASSERT_TRUE(tree.debug_validate_tree());
+  }
+}
+
+struct SumObserver {
+  struct AugmentedState {
+    uint64_t val1 = 0;
+    uint64_t val2 = 0;
+    bool operator==(const AugmentedState& other) const {
+      return val1 == other.val1 && val2 == other.val2;
+    }
+    bool operator!=(const AugmentedState& other) const { return !(*this == other); }
+  };
+
+  template <typename iterator>
+  static AugmentedState Calculate(iterator node_start, iterator node_end) {
+    uint64_t sum = 0;
+    for (iterator it = node_start;; it++) {
+      sum += (*it).first;
+      if (it == node_end)
+        break;
+    }
+    return AugmentedState{.val1 = sum, .val2 = 0};
+  }
+  static AugmentedState Fold(AugmentedState left, AugmentedState right) {
+    return AugmentedState{.val1 = left.val1 + right.val1, .val2 = 0};
+  }
+};
+
+using SumTree =
+    btree::BTree<uint64_t, SumObserver, IndirectAllocator, btree::DefaultTypeTraits<uint64_t>, 256,
+                 btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
+
+TEST(BTreeTest, Walk) {
+  HeapTestingAllocator alloc;
+  SumTree tree(IndirectAllocator{alloc});
+
+  // Empty tree walk
+  zx_status_t status = tree.walk([](const auto& state) { return ZX_OK; },
+                                 [](const auto& state, auto begin, auto end) { return ZX_OK; });
+  EXPECT_EQ(status, ZX_OK);
+
+  // Insert 1 to 100 to ensure we have a multi-level tree
+  uint64_t total_expected_sum = 0;
+  for (uint64_t i = 1; i <= 100; i++) {
+    auto it = tree.insert(i, i * 2);
+    EXPECT_TRUE(it.IsValid());
+    total_expected_sum += i;
+  }
+
+  // Walk over all items and compute sum manually to verify full traversal
+  uint64_t walked_sum = 0;
+  status = tree.walk([](const auto& state) { return ZX_OK; },
+                     [&](const auto& state, auto begin, auto end) {
+                       for (auto it = begin;; it++) {
+                         walked_sum += (*it).first;
+                         if (it == end)
+                           break;
+                       }
+                       return ZX_OK;
+                     });
+  EXPECT_EQ(status, ZX_OK);
+  EXPECT_EQ(walked_sum, total_expected_sum);
+
+  // Use ZX_ERR_NEXT to skip subtrees
+  uint64_t pruned_sum = 0;
+  status = tree.walk(
+      [&](const auto& state) {
+        // Skip any subtrees where the sum of keys > 200
+        if (state.val1 > 200) {
+          return ZX_ERR_NEXT;
+        }
+        return ZX_OK;
+      },
+      [&](const auto& state, auto begin, auto end) {
+        for (auto it = begin;; it++) {
+          pruned_sum += (*it).first;
+          if (it == end)
+            break;
+        }
+        return ZX_OK;
+      });
+  EXPECT_EQ(status, ZX_OK);
+  EXPECT_LT(pruned_sum, total_expected_sum);
+
+  // Use ZX_ERR_STOP in leaf to stop early
+  uint64_t partial_sum = 0;
+  status = tree.walk([](const auto& state) { return ZX_OK; },
+                     [&](const auto& state, auto begin, auto end) {
+                       for (auto it = begin;; it++) {
+                         partial_sum += (*it).first;
+                         if ((*it).first == 50) {
+                           return ZX_ERR_STOP;
+                         }
+                         if (it == end)
+                           break;
+                       }
+                       return ZX_OK;
+                     });
+  EXPECT_EQ(status, ZX_OK);
+  uint64_t expected_partial = 0;
+  for (uint64_t i = 1; i <= 50; i++) {
+    expected_partial += i;
+  }
+  EXPECT_EQ(partial_sum, expected_partial);
+
+  // Use ZX_ERR_STOP in subtree to stop early before exploring
+  uint64_t early_subtree_sum = 0;
+  status = tree.walk([&](const auto& state) { return ZX_ERR_STOP; },
+                     [&](const auto& state, auto begin, auto end) {
+                       for (auto it = begin;; it++) {
+                         early_subtree_sum += (*it).first;
+                         if (it == end)
+                           break;
+                       }
+                       return ZX_OK;
+                     });
+  EXPECT_EQ(status, ZX_OK);
+  EXPECT_EQ(early_subtree_sum, 0u);
+
+  // Any other error status should abort and be returned
+  status = tree.walk([](const auto& state) { return ZX_ERR_INTERNAL; },
+                     [](const auto& state, auto begin, auto end) { return ZX_OK; });
+  EXPECT_EQ(status, ZX_ERR_INTERNAL);
+}
+
 }  // namespace

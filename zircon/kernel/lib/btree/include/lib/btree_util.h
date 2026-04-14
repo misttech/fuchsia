@@ -24,6 +24,31 @@ struct Item {
   uint64_t value;
 };
 
+// An observer allows augmenting the BTree with custom state that is maintained at each node.
+// Implementors of custom observers should provide a structure with the following interface.
+struct NoopObserver {
+  struct State {
+    bool operator==(const State& other) const { return true; }
+    bool operator!=(const State& other) const { return !(*this == other); }
+  };
+
+  // The type of the augmented state stored in each node. Must be default constructible and
+  // support equality operators (== and !=).
+  using AugmentedState = State;
+
+  // Calculates the augmented state for a sequence of items in a leaf node.
+  // |node_start| and |node_end| define the inclusive bounds of the items to calculate the state
+  // over.
+  template <typename iterator>
+  static AugmentedState Calculate(iterator node_start, iterator node_end) {
+    return AugmentedState{};
+  }
+
+  // Combines the augmented state of two nodes/subtrees.
+  // |left| and |right| are the states of two adjacent subtrees in their natural key order.
+  static AugmentedState Fold(AugmentedState left, AugmentedState right) { return AugmentedState{}; }
+};
+
 // Default allocator that provides nodes from a series of global slabs, one for each size class,
 // shared by all btrees.
 struct GlobalSlabAllocator {

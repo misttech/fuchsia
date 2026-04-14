@@ -31,7 +31,7 @@ namespace btree {
 // Because intermediate nodes store minimum keys rather than exact keys, symmetric lower_bound
 // operation across both leaf and intermediate nodes is not possible. Search operations therefore
 // always use upper_bound to find the correct subtree.
-template <size_t NodeSize, TreeValidation Validator>
+template <size_t NodeSize, TreeValidation Validator, typename AugmentedState>
 class Node {
  public:
   // All node constructors need to be told what size they are and whether or not they are a leaf
@@ -169,7 +169,10 @@ class Node {
   static_assert(std::has_single_bit(NodeSize), "NodeSize must be power of 2");
 
   // This is validated in the constructor so that offsetof can see the full definition of Node.
-  static constexpr size_t kHeaderSize = 16;
+  // The AugmentedState is declared with [[no_unique_address]], which allows for empty objects to
+  // overlap (effectively making them zero sized).
+  static constexpr size_t kHeaderSize =
+      16 + (std::is_empty_v<AugmentedState> ? 0 : sizeof(AugmentedState));
 
   static constexpr size_t SizeForCount(size_t count) {
     return std::bit_ceil(kHeaderSize + (sizeof(Item) * count));
@@ -234,6 +237,9 @@ class Node {
     next_.set_data(count);
   }
 
+  AugmentedState& aug_state() { return aug_state_; }
+  const AugmentedState& aug_state() const { return aug_state_; }
+
  private:
   // All other constructors route here. The size_bytes tells us how large the items_ array is by
   // informing us of the total size of the allocation we are situated in. This is stored with the
@@ -288,6 +294,13 @@ class Node {
 
   fbl::PackedPointer<Node, kPrevDataBits, false> prev_;
   fbl::PackedPointer<Node, kNextDataBits, false> next_;
+
+  // If the AugmentedState is greater than 8 byte aligned then the kHeaderSize calculation will
+  // potentially fail. This assertion provides a clearer and more obvious error for this case.
+  // Although some alignments (such as 16) may presently result in a correct header calculation, we
+  // still wish to forbid this as it will be unstable with any future layout changes to Node.
+  static_assert(alignof(AugmentedState) <= 8);
+  [[no_unique_address]] AugmentedState aug_state_;
 
   // The Node will be allocated in block of memory of varying sizes, which determines how many
   // items_ we are storing and so a flexible array memory is used to support this dynamism. The size

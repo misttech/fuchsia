@@ -108,6 +108,16 @@
 // the branching factor of the nodes. A btree, in the kernel, that would exceed this branching
 // factor is, at least for all foreseeable use cases, just using too much kernel memory.
 //
+// ## Augmented State
+//
+// The BTree supports being augmented with custom state that is maintained and folded hierarchically
+// up the tree. This is done by providing an `Observer` template argument. The observer defines the
+// type of the augmented state and the functions to compute it for a leaf node and to fold it
+// between sibling nodes. Maintaining this state enables specialized efficient traversals, such as
+// finding a node by a cumulative sum or skipping entire subtrees during a `walk` operation. When
+// augmented, nodes reserve space for this state which reduces the maximum number of items they can
+// store.
+//
 // ## Validation
 //
 // To aid debugging and development some optional validation strategies are supported as templates
@@ -126,14 +136,15 @@
 
 namespace btree {
 
-template <typename ValueType, typename Allocator = GlobalSlabAllocator,
-          typename Traits = DefaultTypeTraits<ValueType>, size_t NodeSize = 256,
-          IteratorValidation Validation = IteratorValidation::Untracked,
+template <typename ValueType, typename Observer = NoopObserver,
+          typename Allocator = GlobalSlabAllocator, typename Traits = DefaultTypeTraits<ValueType>,
+          size_t NodeSize = 256, IteratorValidation Validation = IteratorValidation::Untracked,
           TreeValidation Validator = TreeValidation::None>
 class BTree {
  public:
-  using ContainerType = BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>;
-  using TreeNode = Node<NodeSize, Validator>;
+  using ContainerType =
+      BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation, Validator>;
+  using TreeNode = Node<NodeSize, Validator, typename Observer::AugmentedState>;
   using Path = PathTracker<TreeNode>;
 
   template <typename>
@@ -249,6 +260,7 @@ class BTree {
     Traits::Reclaim(old_v);
     typename Traits::RawType new_raw = Traits::Leak(value);
     iter.node_->update_value(iter.index_, std::bit_cast<uint64_t>(new_raw));
+    update_leaf_and_propagate_augmented_state(iter.node_, iter.node_->get(iter.index_).key);
   }
   void update(iterator iter, const ValueType& value) { update(iter, ValueType(value)); }
 
@@ -311,6 +323,85 @@ class BTree {
   iterator lower_bound(uint64_t key) {
     const_iterator citer = static_cast<const ContainerType*>(this)->lower_bound(key);
     return iterator(std::move(citer));
+  }
+
+  // Efficiently walks the tree, leveraging the augmented state at each node to potentially prune
+  // entire subtrees from the traversal.
+  //
+  // |subtree| is a callable with the signature:
+  //   zx_status_t subtree(const typename Observer::AugmentedState& state)
+  // It is called for each intermediate node. Returning ZX_OK will cause the walk to descend into
+  // the node's children. Returning ZX_ERR_NEXT will skip the subtree entirely.
+  //
+  // |leaf| is a callable with the signature:
+  //   zx_status_t leaf(const typename Observer::AugmentedState& state,
+  //                    const_iterator begin, const_iterator end)
+  // It is called for each leaf node. |begin| and |end| are inclusive iterators to the first and
+  // last items in the leaf.
+  //
+  // Both |subtree| and |leaf| can return ZX_ERR_STOP to terminate the walk early and return ZX_OK.
+  // Any other error status will also terminate the walk and be returned to the caller.
+  template <typename SubTree, typename Leaf>
+  zx_status_t walk(SubTree subtree, Leaf leaf) const {
+    if (!root_) {
+      return ZX_OK;
+    }
+    // `cur` points to the parent of the node we are about to process. We initialize it to
+    // `nullptr` as a fake parent for the `root_` node. This elegantly allows the backtracking
+    // logic to naturally terminate the traversal when `cur` is restored to `nullptr`.
+    TreeNode* cur = nullptr;
+    Path path;
+    uint32_t index = 0;
+    zx_status_t status = ZX_OK;
+
+    do {
+      // If `cur` is nullptr, we are on the first iteration and should process the `root_`.
+      // Otherwise, we fetch the child node from the current index in `cur`.
+      TreeNode* next = cur ? std::bit_cast<TreeNode*>(cur->get(index).value) : root_;
+      if (!next->is_leaf()) {
+        // Evaluate the intermediate node's augmented state.
+        status = subtree(next->aug_state());
+        if (status == ZX_OK) {
+          // If the subtree callback succeeds, descend into the first child.
+          // We push the current node (`cur`) and `index` to the path. On the very first descent
+          // from the root, this pushes `{nullptr, 0}`, which acts as the termination marker.
+          path.push({cur, index});
+          cur = next;
+          index = 0;
+          continue;
+        }
+        // ZX_ERR_NEXT means skip this subtree and continue to the next sibling.
+        if (status != ZX_ERR_NEXT) {
+          if (status == ZX_ERR_STOP) {
+            status = ZX_OK;
+          }
+          return status;
+        }
+      } else {
+        // Evaluate the leaf node's content.
+        status = leaf(next->aug_state(), const_iterator(this, next, 0),
+                      const_iterator(this, next, next->count() - 1));
+        // Leaves have no children, so ZX_OK and ZX_ERR_NEXT both just advance
+        // to the next sibling/ancestor below.
+        if (status != ZX_OK && status != ZX_ERR_NEXT) {
+          if (status == ZX_ERR_STOP) {
+            status = ZX_OK;
+          }
+          return status;
+        }
+      }
+
+      // Advance to the next item in the current node. If we have exhausted the children of the
+      // current node, traverse back up the path until we find an ancestor with remaining unvisited
+      // children.
+      index++;
+      while (cur && !cur->valid_index(index)) {
+        auto [parent_cur, parent_index] = path.pop();
+        cur = parent_cur;
+        index = parent_index + 1;
+      }
+    } while (cur);
+    return ZX_OK;
   }
 
   // Return an iterator to the item whose key is exactly |key|, or end() if no such item.
@@ -579,6 +670,111 @@ class BTree {
     allocator_.deallocate(size, node);
   }
 
+  // Following are different methods to help update the augmented state in the tree. Various
+  // helpers allow for updating single nodes, or updating and propagating as required all the way to
+  // the root, depending on what the caller needs.
+  // Although these methods are called unconditionally by the btree code due to inlining in the case
+  // of the NoopObserver the compiler can determine that they do nothing, and will not emit any
+  // code for them.
+
+  // Updates the state of a leaf node, without propagating to the root. This is use when changes are
+  // still to be made to the parent, and so there is no point yet in propagating. Returns if it has
+  // a new value that needs propagating.
+  bool update_leaf_augmented_state(TreeNode* leaf) {
+    BTREE_CHECK(leaf->is_leaf());
+    typename Observer::AugmentedState new_state =
+        Observer::Calculate(iterator(this, leaf, 0), iterator(this, leaf, leaf->count() - 1));
+    if (new_state == leaf->aug_state()) {
+      return false;
+    }
+    leaf->aug_state() = new_state;
+    return true;
+  }
+
+  // Updates the state of an intermediate node, returning whether it has a new value that needs
+  // propagating.
+  bool update_intermediate_augmented_state(TreeNode* intermediate) {
+    BTREE_CHECK(!intermediate->is_leaf());
+
+    typename Observer::AugmentedState new_state =
+        std::bit_cast<TreeNode*>(intermediate->get(0).value)->aug_state();
+    for (uint32_t i = 1; i < intermediate->count(); i++) {
+      TreeNode* child = std::bit_cast<TreeNode*>(intermediate->get(i).value);
+      new_state = Observer::Fold(new_state, child->aug_state());
+    }
+    if (new_state == intermediate->aug_state()) {
+      return false;
+    }
+    intermediate->aug_state() = new_state;
+    return true;
+  }
+
+  // Updates the state of an arbitrary node, returning whether it has a new value that needs
+  // propagating.
+  bool update_augmented_state(TreeNode* node) {
+    return node->is_leaf() ? update_leaf_augmented_state(node)
+                           : update_intermediate_augmented_state(node);
+  }
+
+  // Given an updated |node|, propagates its changes to its parents up the tree. |node| itself is
+  // not updated.
+  void propagate_augmented_state(TreeNode* node, Path& path) {
+    while (node != root_) {
+      auto [next, index] = path.pop();
+      if (!update_intermediate_augmented_state(next)) {
+        break;
+      }
+      node = next;
+    }
+  }
+
+  // Updates the state of a leaf node, and propagates to the root if required.
+  void update_leaf_and_propagate_augmented_state(TreeNode* leaf, Path& path) {
+    if (update_leaf_augmented_state(leaf)) {
+      propagate_augmented_state(leaf, path);
+    }
+  }
+
+  // Updates the state of an arbitrary node, and propagates to the root if required.
+  void update_and_propagate_augmented_state(TreeNode* node, Path& path) {
+    if (update_augmented_state(node)) {
+      propagate_augmented_state(node, path);
+    }
+  }
+
+  // Updates the state of a leaf node, and propagates to the root if required. Instead of taking a
+  // path, requires a key that is within the range managed by the node so that a path can be
+  // constructed if required.
+  void update_leaf_and_propagate_augmented_state(TreeNode* leaf, uint64_t approx_key) {
+    if (update_leaf_augmented_state(leaf) && leaf != root_) {
+      Path path;
+      upper_bound_slot_internal(approx_key, leaf, &path);
+      propagate_augmented_state(leaf, path);
+    }
+  }
+
+  // Updates the state of two leaf nodes and their parent, and then propagates the parent change to
+  // the root if required.
+  void update_leaf_and_propagate_augmented_state(TreeNode* leaf1, TreeNode* leaf2, TreeNode* parent,
+                                                 Path& parent_path) {
+    update_leaf_augmented_state(leaf1);
+    update_leaf_augmented_state(leaf2);
+    if (update_intermediate_augmented_state(parent)) {
+      propagate_augmented_state(parent, parent_path);
+    }
+  }
+
+  // Updates the state of two arbitrary nodes and their parent, and then propagates the parent
+  // change to the root if required.
+  void update_and_propagate_augmented_state(TreeNode* node1, TreeNode* node2, TreeNode* parent,
+                                            Path& parent_path) {
+    update_augmented_state(node1);
+    update_augmented_state(node2);
+    if (update_intermediate_augmented_state(parent)) {
+      propagate_augmented_state(parent, parent_path);
+    }
+  }
+
   // Helper for dumping a tree to stdout.
   static void dump(TreeNode* node, uint32_t depth = 0) {
     if (!node) {
@@ -600,9 +796,9 @@ class BTree {
     }
   }
 
-  // Debugging helper that checks if a given subtree is 'valid', i.e. has keys and its own subtrees
-  // in sorted order.
-  static bool subtree_valid(TreeNode* node, uint64_t lower_bound, uint64_t upper_bound);
+  // Debugging helper that checks if a given subtree is 'valid', i.e. has keys, its own subtrees
+  // in sorted order and any augmented state is correct.
+  bool subtree_valid(TreeNode* node, uint64_t lower_bound, uint64_t upper_bound) const;
 
   // If the tree is empty the root_ is always a nullptr, otherwise root_ can point to one of:
   //  * A leaf node of varying size.
@@ -629,9 +825,9 @@ class BTree {
   [[no_unique_address]] BTreeGeneration<Validation> generation_;
 };
 
-template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
-          IteratorValidation Validation, TreeValidation Validator>
-void BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::clear() {
+template <typename ValueType, typename Observer, typename Allocator, typename Traits,
+          size_t NodeSize, IteratorValidation Validation, TreeValidation Validator>
+void BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation, Validator>::clear() {
   generation_++;
 
   if (!root_) {
@@ -677,10 +873,10 @@ void BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::clear
   }
 }
 
-template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
-          IteratorValidation Validation, TreeValidation Validator>
-bool BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::debug_validate_tree()
-    const {
+template <typename ValueType, typename Observer, typename Allocator, typename Traits,
+          size_t NodeSize, IteratorValidation Validation, TreeValidation Validator>
+bool BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation,
+           Validator>::debug_validate_tree() const {
   if (!root_) {
     return true;
   }
@@ -693,12 +889,12 @@ bool BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::debug
   return subtree_valid(root_, 0, UINT64_MAX);
 }
 
-template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
-          IteratorValidation Validation, TreeValidation Validator>
-iterator_base<
-    typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::TreeNode>
-BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::upper_bound_slot_internal(
-    uint64_t key, TreeNode* target, Path* path) const {
+template <typename ValueType, typename Observer, typename Allocator, typename Traits,
+          size_t NodeSize, IteratorValidation Validation, TreeValidation Validator>
+iterator_base<typename BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation,
+                             Validator>::TreeNode>
+BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation,
+      Validator>::upper_bound_slot_internal(uint64_t key, TreeNode* target, Path* path) const {
   TreeNode* cur = root_;
   while (true) {
     uint32_t index = cur->upper_bound(key);
@@ -713,11 +909,11 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::upper_boun
   }
 }
 
-template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
-          IteratorValidation Validation, TreeValidation Validator>
-iterator_base<
-    typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::TreeNode>
-BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::erase_internal(
+template <typename ValueType, typename Observer, typename Allocator, typename Traits,
+          size_t NodeSize, IteratorValidation Validation, TreeValidation Validator>
+iterator_base<typename BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation,
+                             Validator>::TreeNode>
+BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation, Validator>::erase_internal(
     iterator_base<TreeNode> iter) {
   __UNINITIALIZED Path path;
   if (iter.node_ != root_) {
@@ -751,10 +947,12 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::erase_inte
       } else if (node->count() == 1) {
         reduce_root();
       }
+      update_augmented_state(root_);
       return iter;
     }
     // If we haven't underflowed then can return.
     if (node->count() >= TreeNode::kTargetMinValues) {
+      update_and_propagate_augmented_state(node, path);
       return iter;
     }
 
@@ -799,6 +997,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::erase_inte
         }
       }
       free_node(node);
+      update_augmented_state(left);
       node = parent;
       index = parent_index;
       continue;
@@ -816,6 +1015,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::erase_inte
         }
       }
       free_node(right);
+      update_augmented_state(node);
       node = parent;
       index = parent_index + 1;
       continue;
@@ -833,6 +1033,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::erase_inte
         }
       }
       rotate_left(parent, parent_index + 1, node, right, shift);
+      update_and_propagate_augmented_state(node, right, parent, path);
       return iter;
     }
 
@@ -844,6 +1045,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::erase_inte
       if (node == iter.node_ && !iter.end_sentinel()) {
         iter.index_ += shift;
       }
+      update_and_propagate_augmented_state(left, node, parent, path);
       return iter;
     }
 
@@ -853,15 +1055,17 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::erase_inte
     if (node == iter.node_) {
       iter.wrap_to_next();
     }
+    update_and_propagate_augmented_state(node, path);
     return iter;
   }
 }
 
-template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
-          IteratorValidation Validation, TreeValidation Validator>
-iterator_base<
-    typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::TreeNode>
-BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_internal(Item item) {
+template <typename ValueType, typename Observer, typename Allocator, typename Traits,
+          size_t NodeSize, IteratorValidation Validation, TreeValidation Validator>
+iterator_base<typename BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation,
+                             Validator>::TreeNode>
+BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation, Validator>::insert_internal(
+    Item item) {
   // Handle insertion into an empty tree.
   if (is_empty()) {
     // Start the root node at the smallest size.
@@ -872,6 +1076,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
       return {nullptr, 0};
     }
     root_ = std::construct_at(leaf, TreeNode::kSmallestOneItemNode, true, item);
+    update_augmented_state(root_);
     return {root_, 0};
   }
   // Search for the insertion slot.
@@ -879,6 +1084,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
   iterator_base<TreeNode> target = upper_bound_slot_internal(item.key, nullptr, &path);
   if (!target.node_->is_full()) {
     target.node_->insert(target.index_, item);
+    update_and_propagate_augmented_state(target.node_, path);
     return target;
   }
   // Pre-allocate our nodes.
@@ -945,6 +1151,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
       BTREE_CHECK(!target.node_->is_leaf());
       BTREE_CHECK(!leaf_insert);
       target.node_->insert(target.index_, item);
+      update_and_propagate_augmented_state(target.node_, path);
       return ret;
     }
     if (target.node_ == root_) {
@@ -958,9 +1165,11 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
         }
         free_node(root_);
         root_ = new_root;
+        update_augmented_state(root_);
         return ret;
       }
       // Need to allocate a new node.
+      TreeNode* old_node = target.node_;
       TreeNode* right = allocations.take_next(NodeSize, leaf_insert);
       if (leaf_insert) {
         insert_leaf_list(target.node_, right);
@@ -977,6 +1186,8 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
         target.node_->insert(target.index_, item);
       }
       item = Item{.key = right->get(0).key, .value = std::bit_cast<uint64_t>(right)};
+      update_augmented_state(right);
+      update_augmented_state(old_node);
       break;
     }
     iterator_base<TreeNode> parent = path.pop();
@@ -1000,6 +1211,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
         ret = insert_target;
       }
       parent.node_->update_key(parent.index_ + 1, right->get(0).key);
+      update_and_propagate_augmented_state(target.node_, right, parent.node_, path);
       return ret;
     }
     TreeNode* left = left_node(parent.node_, parent.index_);
@@ -1025,11 +1237,13 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
         }
       }
       parent.node_->update_key(parent.index_, target.node_->get(0).key);
+      update_and_propagate_augmented_state(target.node_, left, parent.node_, path);
       return ret;
     }
 
     // Need to allocate a new node. This is not the root node and so is always the largest size.
     TreeNode* new_right = allocations.take_next(NodeSize, leaf_insert);
+    TreeNode* old_node = target.node_;
     if (leaf_insert) {
       insert_leaf_list(target.node_, new_right);
     }
@@ -1048,6 +1262,8 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
 
     // Loop around to insert into parent (if we have one).
     item = Item{.key = new_right->get(0).key, .value = std::bit_cast<uint64_t>(new_right)};
+    update_augmented_state(new_right);
+    update_augmented_state(old_node);
     target = parent;
     target.index_++;
   } while (target.node_);
@@ -1066,15 +1282,16 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_int
     root_->set_prev(old_root->prev());
     root_->set_next(old_root->next());
   }
+  update_augmented_state(root_);
   return ret;
 }
 
-template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
-          IteratorValidation Validation, TreeValidation Validator>
-iterator_base<
-    typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::TreeNode>
-BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_hint_internal(
-    iterator_base<TreeNode> hint, Item item) {
+template <typename ValueType, typename Observer, typename Allocator, typename Traits,
+          size_t NodeSize, IteratorValidation Validation, TreeValidation Validator>
+iterator_base<typename BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation,
+                             Validator>::TreeNode>
+BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation,
+      Validator>::insert_hint_internal(iterator_base<TreeNode> hint, Item item) {
   // Skip empty trees and full nodes.
   if (!hint.node_ || hint.node_->is_full()) {
     return insert_internal(item);
@@ -1087,6 +1304,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_hin
     if (hint.node_->get(c - 1).key < item.key) {
       if (!hint.node_->next()) {
         hint.node_->push(item);
+        update_leaf_and_propagate_augmented_state(hint.node_, item.key);
         return {hint.node_, c};
       }
       return insert_internal(item);
@@ -1097,6 +1315,7 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_hin
   if (hint.index_ <= 1 && hint.node_->get(0).key > item.key) {
     if (!hint.node_->prev()) {
       hint.node_->insert(0, item);
+      update_leaf_and_propagate_augmented_state(hint.node_, item.key);
       return {hint.node_, 0};
     }
     return insert_internal(item);
@@ -1109,17 +1328,18 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::insert_hin
   if (hint.node_->get(hint.index_).key > item.key &&
       hint.node_->get(hint.index_ - 1).key < item.key) {
     hint.node_->insert(hint.index_, item);
+    update_leaf_and_propagate_augmented_state(hint.node_, item.key);
     return hint;
   }
 
   return insert_internal(item);
 }
 
-template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
-          IteratorValidation Validation, TreeValidation Validator>
-typename BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::Utilization
-BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::calculate_utilization_slow()
-    const {
+template <typename ValueType, typename Observer, typename Allocator, typename Traits,
+          size_t NodeSize, IteratorValidation Validation, TreeValidation Validator>
+typename BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation, Validator>::Utilization
+BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation,
+      Validator>::calculate_utilization_slow() const {
   __UNINITIALIZED Path path;
   if (!root_) {
     return Utilization{0, 0, 0};
@@ -1154,10 +1374,10 @@ BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::calculate_
   return util;
 }
 
-template <typename ValueType, typename Allocator, typename Traits, size_t NodeSize,
-          IteratorValidation Validation, TreeValidation Validator>
-bool BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::subtree_valid(
-    TreeNode* node, uint64_t lower_bound, uint64_t upper_bound) {
+template <typename ValueType, typename Observer, typename Allocator, typename Traits,
+          size_t NodeSize, IteratorValidation Validation, TreeValidation Validator>
+bool BTree<ValueType, Observer, Allocator, Traits, NodeSize, Validation, Validator>::subtree_valid(
+    TreeNode* node, uint64_t lower_bound, uint64_t upper_bound) const {
   if (!node) {
     return true;
   }
@@ -1191,6 +1411,26 @@ bool BTree<ValueType, Allocator, Traits, NodeSize, Validation, Validator>::subtr
       }
     }
   }
+
+  typename Observer::AugmentedState expected = {};
+  if (node->is_leaf()) {
+    expected =
+        Observer::Calculate(iterator(this, node, 0), iterator(this, node, node->count() - 1));
+  } else {
+    if (node->count() > 0) {
+      TreeNode* first_child = std::bit_cast<TreeNode*>(node->get(0).value);
+      expected = first_child->aug_state();
+      for (uint32_t i = 1; i < node->count(); i++) {
+        TreeNode* child = std::bit_cast<TreeNode*>(node->get(i).value);
+        expected = Observer::Fold(expected, child->aug_state());
+      }
+    }
+  }
+  if (node->aug_state() != expected) {
+    BTREE_CHECK(node->aug_state() == expected);
+    return false;
+  }
+
   return true;
 }
 
