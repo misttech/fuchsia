@@ -307,8 +307,8 @@ impl TraceRunner {
             // flaky tests that depend on recording a trace when they fail or deadlock.
             assert!(
                 trace_file_size >= 5000,
-                "Written trace file has less than 5K bytes. The generated trace may \
-                                 be missing important debugging information."
+                "Written trace file has less than 5K bytes (size={trace_file_size}). The generated \
+                trace may be missing important debugging information."
             );
 
             Ok(())
