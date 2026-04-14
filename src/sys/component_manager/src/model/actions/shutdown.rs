@@ -253,7 +253,10 @@ fn process_deps(
 ) {
     let self_dep_closure = strong_dependencies.get_closure(&DependencyNode::Self_);
 
-    let mut edges_to_add = vec![];
+    let static_child_count = decl.children.as_ref().map(|c| c.len()).unwrap_or(0);
+    let max_edges = static_child_count + dynamic_children.len();
+
+    let mut edges_to_add: Vec<(DependencyNode, DependencyNode)> = Vec::with_capacity(max_edges);
     if let Some(children) = decl.children.as_ref() {
         for child in children {
             if let Some(child_name) = child.name.as_ref() {

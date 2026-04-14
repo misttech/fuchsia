@@ -566,7 +566,11 @@ async fn create_config_with_capabilities(
     let Some(ref config_decl) = decl.config else {
         return Ok(None);
     };
-    let mut fields = ConfigFields { fields: Vec::new(), checksum: config_decl.checksum.clone() };
+
+    let mut fields = ConfigFields {
+        fields: Vec::with_capacity(config_decl.fields.len()),
+        checksum: config_decl.checksum.clone(),
+    };
     let mut overrides = component.context.get_config_developer_overrides(component.moniker()).await;
     for field in &config_decl.fields {
         let Some(use_config) = ::routing::config::get_use_config_from_key(&field.key, decl) else {
