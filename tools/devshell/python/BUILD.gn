@@ -7,6 +7,7 @@ group("tests") {
   deps = [
     "status:tests",
     "system-status:tests",
+    "test-category:tests",
   ]
 }
 
@@ -14,5 +15,6 @@ group("install") {
   deps = [
     "status:install",
     "system-status:install",
+    "test-category:install",
   ]
 }
