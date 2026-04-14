@@ -16,7 +16,10 @@ group("versioning") {
 group("tests") {
   testonly = true
 
-  deps = [ ":create_api_level_tests" ]
+  deps = [
+    ":create_api_level_tests",
+    ":replace_next_tests",
+  ]
 }
 
 # Run using the following command:
@@ -24,4 +27,11 @@ group("tests") {
 python_host_test("create_api_level_tests") {
   main_source = "create_api_level_tests.py"
   sources = [ "create_api_level.py" ]
+}
+
+# Run using the following command:
+# fx test //scripts/versioning:replace_next_tests
+python_host_test("replace_next_tests") {
+  main_source = "replace_next_tests.py"
+  sources = [ "replace_next.py" ]
 }
