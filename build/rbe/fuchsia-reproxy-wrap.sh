@@ -50,6 +50,8 @@ readonly jq="$project_root/prebuilt/third_party/jq/"$PREBUILT_SUBDIR"/bin/jq"
 
 loas_type=auto
 
+SIGNAL_POLICY="relay"
+
 usage() {
   cat <<EOF
 $script [reproxy options] -- command [args...]
@@ -72,6 +74,17 @@ options:
     'skip' will bypass any preflight authentication checks
     'auto' will attempt to detect as restricted or unrestricted.
   --async_reproxy_termination: shutdown reproxy in the background.
+  --signal-policy {relay,relay-group,passive}: default [$SIGNAL_POLICY]
+    relay: (RECOMMENDED) Isolate the child in a new process group and forward
+      signals to its PID. Safest for well-behaved tools like Ninja and
+      ensures sidecars (reproxy) outlive the main command for data integrity.
+    relay-group: Isolate and forward signals to the child's entire group.
+      Desirable for wrapping "process-leaking" scripts.
+      Note: Risk of signal bombardment if used in nested wrapper chains.
+    passive: (NOT RECOMMENDED) Do not isolate or forward signals. Relies on TTY
+      broadcast. Risk of premature sidecar shutdown (data loss) and
+      fails to propagate signals when nested inside other wrappers.
+      Potentially useful for debugging terminal signal TTY interactions.
   -t: print additional timestamps for measuring overhead.
   -v | --verbose: print events verbosely
   All other flags before -- are forwarded to the reproxy bootstrap.
@@ -132,6 +145,8 @@ do
     --tmpdir) prev_opt=reproxy_tmpdir ;;
     --loas-type=*) loas_type="$optarg" ;;
     --loas-type) prev_opt=loas_type ;;
+    --signal-policy=*) SIGNAL_POLICY="$optarg" ;;
+    --signal-policy) prev_opt=SIGNAL_POLICY ;;
     # Forward some options to shutdown.
     --async_reproxy_termination) shutdown_options+=("$opt") ;;
     -t) print_times=1 ;;
@@ -449,10 +464,26 @@ WRAPPED_PID=""
 # Forwards signals to the wrapped command and waits for it to exit.
 function handle_signal() {
   local signal_name="$1"
-  _timetrace "Received ${signal_name}, forwarding to wrapped command's process group..."
+  _timetrace "Received ${signal_name}, forwarding per policy: ${SIGNAL_POLICY}..."
+
   if [[ -n "${WRAPPED_PID:-}" ]] && kill -0 "${WRAPPED_PID}" 2>/dev/null; then
-    # Forward the signal to the entire process group of the wrapped command.
-    kill "-${signal_name}" "-${WRAPPED_PID}"
+    case "${SIGNAL_POLICY}" in
+      relay)
+        # Forward to the PID only. The child was isolated via set -m.
+        _timetrace "Forwarding ${signal_name} to PID ${WRAPPED_PID}."
+        kill "-${signal_name}" "${WRAPPED_PID}"
+        ;;
+      relay-group)
+        # Forward to the entire process group.
+        _timetrace "Forwarding ${signal_name} to PGID -${WRAPPED_PID}."
+        kill "-${signal_name}" "-${WRAPPED_PID}"
+        ;;
+      passive)
+        # Do nothing. TTY already sent the signal to the whole group.
+        _timetrace "Passive mode: waiting for child to exit on its own."
+        ;;
+    esac
+
     local exit_code=0
     # Wait for the process to terminate.
     wait "${WRAPPED_PID}" || exit_code=$?
@@ -475,12 +506,20 @@ trap 'handle_signal SIGTERM' TERM
 
 # original command is in "$@"
 # Do not 'exec' this, so that the trap takes effect.
-# Enable job control to run the wrapped command in a new process group.
-set -m
+
+# Apply isolation based on policy.
+case "${SIGNAL_POLICY}" in
+  # Enable job control to run the wrapped command in a new process group.
+  "relay" | "relay-group") set -m ;;
+esac
+
 _timetrace "Running wrapped command"
 "${rewrapper_env[@]}" "$@" &
 WRAPPED_PID=$!
-set +m
+
+case "${SIGNAL_POLICY}" in
+  "relay" | "relay-group") set +m ;;
+esac
 
 # Wait for the wrapped command to finish.
 wait "${WRAPPED_PID}"
