@@ -121,6 +121,11 @@
         "value": "5"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.driver.framework/BusType.USB_PERIPHERAL",
+        "value": "12"
+    },
+    {
         "kind": "enum",
         "name": "fuchsia.driver.framework/BusType",
         "strictness": "flexible",

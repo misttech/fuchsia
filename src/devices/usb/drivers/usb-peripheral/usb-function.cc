@@ -4,6 +4,7 @@
 
 #include "src/devices/usb/drivers/usb-peripheral/usb-function.h"
 
+#include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/ddk/metadata.h>
@@ -114,12 +115,35 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
   offers.push_back(mac_address_metadata_server.MakeOffer());
   offers.push_back(serial_number_metadata_server.MakeOffer());
 
-  zx::result child = fdf::AddChild(parent, *fdf::Logger::GlobalInstance(), name_, props, offers);
-  if (child.is_error()) {
-    fdf::error("Failed to add child: {}", child);
-    return child.take_error();
+  auto bus_info = fuchsia_driver_framework::BusInfo{{
+      .bus = fuchsia_driver_framework::BusType::kUsbPeripheral,
+      .address =
+          fuchsia_driver_framework::DeviceAddress::WithIntValue(static_cast<uint8_t>(index_)),
+      .address_stability =
+          fuchsia_driver_framework::DeviceAddressStability::kUnstableBetweenSoftwareUpdate,
+  }};
+
+  fuchsia_driver_framework::NodeAddArgs args{{
+      .name = {std::string(name_)},
+      .offers2 = std::move(offers),
+      .bus_info = std::move(bus_info),
+      .properties2 = std::move(props),
+  }};
+
+  auto [node_controller_client_end, node_controller_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+
+  fidl::Result add_child_result =
+      fidl::Call(parent)->AddChild({std::move(args), std::move(node_controller_server_end), {}});
+
+  if (add_child_result.is_error()) {
+    fdf::error("Failed to add child: {}", add_child_result.error_value().FormatDescription());
+    return zx::error(add_child_result.error_value().is_framework_error()
+                         ? add_child_result.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
   }
-  child_.Bind(std::move(child.value()), dispatcher_,
+
+  child_.Bind(std::move(node_controller_client_end), dispatcher_,
               std::make_unique<NodeControllerEventHandler>(this));
 
   return zx::ok();
