@@ -68,13 +68,13 @@ def get_allowlist_target(type, category, stable, prebuilt_library_format = None)
                 return "//sdk/fidl:partner_idk_fidl_library_allowlist"
             else:
                 return "//sdk/fidl:partner_idk_unstable_fidl_library_allowlist"
-        elif category == "prebuilt":
+        elif category == "prebuilt" and stable:
             return "//sdk/fidl:prebuilt_fidl_library_allowlist"
-        elif category == "host_tool":
+        elif category == "host_tool" and stable:
             return "//sdk/fidl:host_tool_fidl_library_allowlist"
-        elif category == "compat_test":
+        elif category == "compat_test" and stable:
             return "//sdk/fidl:compat_test_fidl_library_allowlist"
-        elif category == "":
+        elif category == "" and not stable:
             return "//sdk/fidl:no_category_fidl_library_allowlist"
     elif type == "host_tool":
         if category == "partner" and stable:
