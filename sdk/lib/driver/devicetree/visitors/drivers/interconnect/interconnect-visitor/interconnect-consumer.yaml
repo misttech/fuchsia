@@ -4,7 +4,7 @@
 
 %YAML 1.2
 ---
-$id: "http://devicetree.org/schemas/interconnect.yaml#"
+$id: http://devicetree.org/schemas/interconnect-consumer.yaml#
 $schema: "http://devicetree.org/meta-schemas/base.yaml#"
 
 title: Devices using interconnect paths

@@ -1,4 +1,4 @@
-# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,6 +11,8 @@ title: Fuchsia Reset
 
 maintainers:
   - gkalsi@google.com
+  - Puneetha Ramachandra (puneetha@google.com)
+  - Sarah Chan (spqchan@google.com)
 
 description: |
   Bindings related to using a reset offered by a reset-controller device.
@@ -19,13 +21,8 @@ select: true
 
 properties:
   resets:
-    minItems: 1
     $ref: /schemas/types.yaml#/definitions/phandle-array
-    items:
-      minItems: 1
-      maxItems: 2
-      description: 1 cell for phandle and 1 for reset specification.
-        Refer to reset-controller.yaml reset-cells field.
+    description: 1 cell for phandle and 1 for reset specification. Refer to reset-controller.yaml reset-cells field.
 
   reset-names:
     description: Names corresponding to the reset references. Repeated names are allowed.

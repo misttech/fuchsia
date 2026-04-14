@@ -1,4 +1,4 @@
-# Copyright 2024 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -12,17 +12,14 @@ title: Mailbox
 maintainers:
   - Puneetha Ramachandra (puneetha@google.com)
   - Braden Kell (bradenkell@google.com)
+  - Sarah Chan (spqchan@google.com)
 
 select: true
 
 properties:
   mboxes:
-    minItems: 1
     $ref: /schemas/types.yaml#/definitions/phandle-array
-    items:
-      maxItems: 2
-      minItems: 2
-      description: 1st cell for phandle and 2nd cell for channel.
+    description: 1st cell for phandle and 2nd cell for channel.
 
   mbox-names:
     $ref: /schemas/types.yaml#/definitions/non-unique-string-array
