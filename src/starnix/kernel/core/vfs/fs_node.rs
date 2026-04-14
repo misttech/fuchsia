@@ -1998,7 +1998,9 @@ impl FsNode {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let mut permission_flags = access.into();
-        if permission_flags.contains(security::PermissionFlags::WRITE) {
+        if permission_flags.contains(security::PermissionFlags::WRITE)
+            && !self.info().mode.is_special()
+        {
             mount.check_readonly_filesystem()?;
         }
         if permission_flags.contains(security::PermissionFlags::EXEC) && !self.is_dir() {

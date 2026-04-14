@@ -8,9 +8,13 @@
 #include <sys/fsuid.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -1129,6 +1133,57 @@ TEST_P(FsMountTest, OpenWithTruncAndCreatOnReadOnlyFsReturnsEROFS) {
     }
   });
   EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST_P(FsMountTest, OpenSpecialFilesOnReadOnlyFs) {
+  std::string reg_file = mount_path_ + "/reg";
+  std::string fifo_file = mount_path_ + "/fifo";
+  std::string dev_file = mount_path_ + "/dev";
+  std::string sock_file = mount_path_ + "/sock";
+
+  {
+    // Create regular file.
+    fbl::unique_fd fd(open(reg_file.c_str(), O_CREAT | O_RDWR, 0600));
+    ASSERT_TRUE(fd.is_valid()) << "failed to create reg file: " << strerror(errno);
+
+    // Create a /devnull device node (major 1, minor 3).
+    ASSERT_THAT(mkfifo(fifo_file.c_str(), 0600), SyscallSucceeds());
+
+    // Create a FIFO.
+    ASSERT_THAT(mknod(dev_file.c_str(), S_IFCHR | 0600, makedev(1, 3)), SyscallSucceeds());
+
+    // Create a Unix-domain socket.
+    fbl::unique_fd sock_fd(socket(AF_UNIX, SOCK_STREAM, 0));
+    ASSERT_THAT(sock_fd.get(), SyscallSucceeds());
+    struct sockaddr_un addr = {.sun_family = AF_UNIX};
+    strncpy(addr.sun_path, sock_file.c_str(), sizeof(addr.sun_path) - 1);
+    ASSERT_THAT(bind(sock_fd.get(), (struct sockaddr *)&addr, sizeof(addr)), SyscallSucceeds());
+  }
+
+  // Remount filesystem as read-only.
+  SAFE_SYSCALL(
+      mount(nullptr, mount_path_.c_str(), "ignored", MS_REMOUNT | MS_BIND | MS_RDONLY, nullptr));
+
+  // Write access to regular file should fail with EROFS.
+  EXPECT_THAT(access(reg_file.c_str(), W_OK), SyscallFailsWithErrno(EROFS));
+  fbl::unique_fd reg_fd(open(reg_file.c_str(), O_WRONLY));
+  EXPECT_THAT(reg_fd.get(), SyscallFailsWithErrno(EROFS));
+
+  // Write access to FIFOs should not be affected by the filesystem MS_RDONLY flag.
+  EXPECT_THAT(access(fifo_file.c_str(), W_OK), SyscallSucceeds());
+  fbl::unique_fd fifo_fd(open(fifo_file.c_str(), O_RDWR));
+  EXPECT_THAT(fifo_fd.get(), SyscallSucceeds());
+
+  // Write access to devices should not be affected by the filesystem MS_RDONLY flag.
+  EXPECT_THAT(access(dev_file.c_str(), W_OK), SyscallSucceeds());
+  fbl::unique_fd dev_fd(open(dev_file.c_str(), O_WRONLY));
+  EXPECT_THAT(dev_fd.get(), SyscallSucceeds());
+
+  // Write access to sockets should not be affected by the filesystem MS_RDONLY flag, but opening
+  // the socket will fail with "no such device" because the listening end has been closed.
+  EXPECT_THAT(access(sock_file.c_str(), W_OK), SyscallSucceeds());
+  fbl::unique_fd sock_fd(open(sock_file.c_str(), O_WRONLY));
+  EXPECT_THAT(sock_fd.get(), SyscallFailsWithErrno(ENXIO));
 }
 
 TEST_P(FsMountTest, OpenWithTruncAndCreatWithExistingFileSucceeds) {

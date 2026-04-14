@@ -104,6 +104,12 @@ impl FileMode {
         (self.bits() & uapi::S_IFMT) == uapi::S_IFSOCK
     }
 
+    /// Returns true if the node is a reference to a kernel resource (i.e. device, FIFO, etc),
+    /// rather than representing stored data (i.e. a regular file, directory, etc).
+    pub const fn is_special(&self) -> bool {
+        self.is_chr() | self.is_blk() | self.is_fifo() | self.is_sock()
+    }
+
     pub fn user_access(&self) -> inner_access::Access {
         inner_access::Access::try_from((self.bits() & 0o700) >> 6).unwrap()
     }
