@@ -90,8 +90,11 @@ impl ActionSet {
     /// Removes an action from the set, completing it.
     fn finish<'a>(&mut self, key: &'a ActionKey) {
         self.rep.remove(key);
-        for sender in self.passive_waiters.entry(key.clone()).or_insert(vec![]).drain(..) {
-            let _ = sender.send(());
+
+        if let Some(waiters) = self.passive_waiters.remove(key) {
+            for sender in waiters {
+                let _ = sender.send(());
+            }
         }
     }
 
@@ -189,18 +192,14 @@ impl ActionSet {
     fn get_abort_action(&self, key: ActionKey) -> Vec<AbortHandle> {
         // Stop and Shutdown will attempt to cancel an in-progress Start.
         match key {
-            ActionKey::Shutdown | ActionKey::Stop => {
-                vec![
-                    self.rep
-                        .get(&ActionKey::Start)
-                        .and_then(|action_controller| action_controller.maybe_abort_handle.clone()),
-                ]
-            }
+            ActionKey::Shutdown | ActionKey::Stop => self
+                .rep
+                .get(&ActionKey::Start)
+                .and_then(|action_controller| action_controller.maybe_abort_handle.clone())
+                .into_iter()
+                .collect(),
             _ => vec![],
         }
-        .into_iter()
-        .flatten()
-        .collect()
     }
 }
 
