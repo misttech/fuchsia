@@ -6,6 +6,22 @@ library fuchsia.hardware.mailbox;
 
 using zx;
 
+/// `Listener` is used to receive messages from a mailbox channel.
+///
+/// The server end of this is held by the mailbox client.
+open protocol Listener {
+    /// Called when a message is received on the mailbox channel.
+    ///
+    /// The mailbox driver will not call `OnMessage` concurrently. It will wait
+    /// for the previous call to complete before sending another message.
+    ///
+    /// If the client fails to respond to `OnMessage` in a timely manner, the
+    /// mailbox driver may run out of memory and drop subsequent messages.
+    flexible OnMessage(struct {
+        message vector<uint8>:MAX;
+    }) -> () error zx.Status;
+};
+
 /// `Channel` represents a single mailbox channel that can be used to send messages to a
 /// destination core.
 @discoverable
@@ -16,6 +32,16 @@ open protocol Channel {
     /// Returns `ZX_ERR_OUT_OF_RANGE` if `message` is larger than what the hardware can support.
     strict SendMessage(struct {
         message vector<uint8>:MAX;
+    }) -> () error zx.Status;
+
+    /// Registers a listener for incoming messages on this channel. Multiple listeners may NOT be
+    /// registered at a time. If a listener is already registered, this call will fail with
+    /// `ZX_ERR_ALREADY_BOUND`.
+    ///
+    /// To unregister a listener, the server will close its end of the channel. Another listener
+    /// may be registered after the previous listener has been unregistered.
+    flexible RegisterListener(resource struct {
+        listener client_end:Listener;
     }) -> () error zx.Status;
 };
 
