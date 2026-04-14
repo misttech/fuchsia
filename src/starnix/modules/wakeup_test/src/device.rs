@@ -8,11 +8,11 @@ use crate::tracing;
 use anyhow::{Result, anyhow};
 use starnix_core::device::DeviceOps;
 use starnix_core::mm::MemoryAccessorExt;
-use starnix_core::perf::TraceEventQueue;
+use starnix_core::perf::TraceEventQueueList;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{CloseFreeSafe, FileObject, FileOps, NamespaceNode, default_ioctl};
 use starnix_core::{fileops_impl_dataless, fileops_impl_noop_sync, fileops_impl_seekless};
-use starnix_logging::{log_error, log_info, log_warn};
+use starnix_logging::{log_error, log_info};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_uapi::errors::Errno;
@@ -117,7 +117,7 @@ impl Commands {
             timer_info.interval,
             timer_info.offset
         );
-        tracing::trace_wakeup_test_type(self.get_trace_event_queue(), self.tid, test_type);
+        tracing::trace_wakeup_test_type(self.get_trace_event_queues(), self.tid, test_type);
         for index in 0..timer_info.num_events {
             let time = (timer_info.interval * (index as i64)) + timer_info.offset;
             log_info!("WakeupTestDevice::set_timer i: {index} for {time}");
@@ -127,16 +127,18 @@ impl Commands {
     }
 
     /// Gets the trace event queue if available to emit trace events.
-    fn get_trace_event_queue(&self) -> Option<Arc<TraceEventQueue>> {
+    fn get_trace_event_queues(&self) -> Option<Arc<TraceEventQueueList>> {
         if let Some(k) = self.kernel.upgrade() {
-            let event_queue = TraceEventQueue::from(&k);
-            if event_queue.is_enabled() {
-                return Some(event_queue);
+            let queues = TraceEventQueueList::from(&k);
+            if queues.is_enabled() {
+                Some(TraceEventQueueList::from(&k))
             } else {
-                log_warn!("Trace event queue is not enabled");
+                log_error!("Trace is not enabled");
+                None
             }
+        } else {
+            None
         }
-        None
     }
 }
 

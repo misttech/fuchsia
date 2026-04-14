@@ -290,10 +290,6 @@ impl TraceEventQueueMetadata {
 
 /// Stores all trace events.
 pub struct TraceEventQueue {
-    /// If true, atrace events written to /sys/kernel/tracing/trace_marker will be stored as
-    /// TraceEvents in `ring_buffer`.
-    tracing_enabled: AtomicBool,
-
     /// Metadata about `ring_buffer`.
     metadata: Mutex<TraceEventQueueMetadata>,
 
@@ -316,9 +312,6 @@ pub struct TraceEventQueue {
     ///   // size of the page header.
     ///   N trace events
     ring_buffer: MemoryObject,
-
-    /// Inspect node used for diagnostics.
-    tracefs_node: fuchsia_inspect::Node,
 
     /// Async ID for read track grouping.
     pub async_id_read: fuchsia_trace::Id,
@@ -353,8 +346,7 @@ const STATIC_WRITE_TRACK_NAMES: [&str; 8] = [
 ];
 
 impl<'a> TraceEventQueue {
-    pub fn new(inspect_node: &fuchsia_inspect::Node, cpu_id: u32) -> Result<Self, Errno> {
-        let tracefs_node = inspect_node.create_child("tracefs");
+    fn new(cpu_id: u32) -> Result<Self, Errno> {
         let metadata = TraceEventQueueMetadata::new();
         let ring_buffer: MemoryObject = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 0)
             .map_err(|_| errno!(ENOMEM))?
@@ -364,10 +356,8 @@ impl<'a> TraceEventQueue {
         let async_id_write = fuchsia_trace::Id::random();
 
         Ok(Self {
-            tracing_enabled: AtomicBool::new(false),
             metadata: Mutex::new(metadata),
             ring_buffer,
-            tracefs_node,
             async_id_read,
             async_id_write,
             cpu_id,
@@ -390,21 +380,7 @@ impl<'a> TraceEventQueue {
         }
     }
 
-    /**
-     * Uses the TraceEventQueue from the kernel or initializes a new one if not present.
-     */
-    pub fn from(kernel: &Kernel) -> Arc<Self> {
-        kernel.expando.get_or_init(|| {
-            TraceEventQueue::new(&kernel.inspect_node, 0)
-                .expect("TraceEventQueue constructed with valid options")
-        })
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.tracing_enabled.load(Ordering::Relaxed)
-    }
-
-    pub fn enable(&self) -> Result<(), Errno> {
+    fn enable(&self) -> Result<(), Errno> {
         // Use the metadata mutex to make sure the state of the metadata and the enabled flag
         // are changed at the same time.
         let mut metadata = self.metadata.lock();
@@ -438,22 +414,20 @@ impl<'a> TraceEventQueue {
         });
 
         self.initialize_page(0, metadata.prev_timestamp)?;
-        self.tracing_enabled.store(true, Ordering::Relaxed);
         Ok(())
     }
 
     /// Disables the event queue and resets it to empty.
     /// The number of dropped pages are recorded for reading via tracefs.
-    pub fn disable(&self) -> Result<(), Errno> {
+    fn disable(&self) -> Result<u64, Errno> {
         // Use the metadata mutex to make sure the state of the metadata and the enabled flag
         // are changed at the same time.
         let mut metadata = self.metadata.lock();
-        self.tracefs_node.record_uint(DROPPED_PAGES, metadata.dropped_pages);
+        let dropped = metadata.dropped_pages;
         *metadata = TraceEventQueueMetadata::new();
         self.ring_buffer.set_size(0).map_err(|e| from_status_like_fdio!(e))?;
-        self.tracing_enabled.store(false, Ordering::Relaxed);
 
-        Ok(())
+        Ok(dropped)
     }
 
     /// Reads a page worth of events. Currently only reads pages that are full.
@@ -557,6 +531,77 @@ impl<'a> TraceEventQueue {
     }
 }
 
+pub struct TraceEventQueueList {
+    pub queues: Vec<Arc<TraceEventQueue>>,
+    tracing_enabled: Arc<AtomicBool>,
+    tracefs_node: fuchsia_inspect::Node,
+}
+
+impl TraceEventQueueList {
+    pub fn from(kernel: &Kernel) -> Arc<Self> {
+        kernel.expando.get_or_init(|| {
+            let num_cpus = zx::system_get_num_cpus();
+            let tracing_enabled = Arc::new(AtomicBool::new(false));
+            let tracefs_node = kernel.inspect_node.create_child("tracefs");
+
+            let mut queues = vec![];
+            for cpu in 0..num_cpus {
+                let queue = Arc::new(TraceEventQueue::new(cpu as u32).expect("create queue"));
+                queues.push(queue);
+            }
+            Self { queues, tracing_enabled, tracefs_node }
+        })
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.tracing_enabled.load(Ordering::Acquire)
+    }
+
+    pub fn enable(&self) -> Result<(), Errno> {
+        let mut first_error = None;
+        for queue in &self.queues {
+            if let Err(e) = queue.enable() {
+                if first_error.is_none() {
+                    first_error = Some(e);
+                }
+            }
+        }
+        if let Some(e) = first_error {
+            return Err(e);
+        }
+        self.tracing_enabled.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    pub fn disable(&self) -> Result<(), Errno> {
+        // Set disabled to stop new access to the queue, then clean up each one.
+        self.tracing_enabled.store(false, Ordering::Release);
+        let mut first_error = None;
+        let mut total_dropped = 0;
+        // queue.disable() synchronizes with writers via the queue's internal metadata mutex.
+        // Writers (in push_event) hold this mutex for the entire duration of their write operation.
+        // disable() must acquire this same mutex before resetting the metadata and unmapping the memory,
+        // ensuring that we never unmap memory while a write is in progress.
+        for queue in &self.queues {
+            match queue.disable() {
+                Ok(dropped) => total_dropped += dropped,
+                Err(e) => {
+                    if first_error.is_none() {
+                        first_error = Some(e);
+                    }
+                }
+            }
+        }
+
+        self.tracefs_node.record_uint(DROPPED_PAGES, total_dropped);
+
+        if let Some(e) = first_error {
+            return Err(e);
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -653,16 +698,14 @@ mod tests {
 
     #[fuchsia::test]
     fn read_empty_queue() {
-        let inspect_node = fuchsia_inspect::Node::default();
-        let queue = TraceEventQueue::new(&inspect_node, 0).expect("create queue");
+        let queue = TraceEventQueue::new(0).expect("create queue");
         let mut buffer = VecOutputBuffer::new(*PAGE_SIZE as usize);
         assert_eq!(queue.read(&mut buffer), error!(EAGAIN));
     }
 
     #[fuchsia::test]
     fn enable_disable_queue() {
-        let inspect_node = fuchsia_inspect::Node::default();
-        let queue = TraceEventQueue::new(&inspect_node, 0).expect("create queue");
+        let queue = TraceEventQueue::new(0).expect("create queue");
         assert_eq!(queue.ring_buffer.get_size(), 0);
 
         // Enable tracing and check the queue's state.
@@ -695,8 +738,7 @@ mod tests {
     // This can be removed when we support reading incomplete pages.
     #[fuchsia::test]
     fn single_trace_event_fails_read() {
-        let inspect_node = fuchsia_inspect::Node::default();
-        let queue = TraceEventQueue::new(&inspect_node, 0).expect("create queue");
+        let queue = TraceEventQueue::new(0).expect("create queue");
         queue.enable().expect("enable queue");
         // Create an event.
         let data = b"B|1234|slice_name";
@@ -713,8 +755,7 @@ mod tests {
 
     #[fuchsia::test]
     fn page_overflow() {
-        let inspect_node = fuchsia_inspect::Node::default();
-        let queue = TraceEventQueue::new(&inspect_node, 0).expect("create queue");
+        let queue = TraceEventQueue::new(0).expect("create queue");
         queue.enable().expect("enable queue");
         let queue_start_timestamp = queue.prev_timestamp();
         let pid = 1234;

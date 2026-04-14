@@ -4,13 +4,13 @@
 
 use crate::ioctl::WakeupTestType;
 use fuchsia_trace::Scope;
-use starnix_core::perf::{TraceEvent, TraceEventQueue};
+use starnix_core::perf::{TraceEvent, TraceEventQueueList};
 use starnix_logging::{log_error, log_info};
 use std::sync::Arc;
 pub(crate) static POWER_CATEGORY: &str = "power";
 
 pub(crate) fn trace_wakeup_test_type(
-    trace_event_queue: Option<Arc<TraceEventQueue>>,
+    trace_event_queues: Option<Arc<TraceEventQueueList>>,
     current_tid: i32,
     test_type: WakeupTestType,
 ) {
@@ -21,12 +21,14 @@ pub(crate) fn trace_wakeup_test_type(
         "type" =><WakeupTestType as Into<&'static str>>::into(test_type)
     );
     // TODO(479889862): Support custom tracepoints for these events.
-    if let Some(trace_event_queue) = trace_event_queue {
-        if trace_event_queue.is_enabled() {
+    if let Some(trace_event_queues) = trace_event_queues {
+        if trace_event_queues.is_enabled() {
             let evt = format!("I|{current_tid}|wakeup_test_type:{:?}\n", test_type);
             let data = evt.as_bytes();
             let event = TraceEvent::new(current_tid, data.len());
-            if let Err(e) = trace_event_queue.push_event(event, data) {
+            // Use the first queue, we're only writing a couple events so it should not affect the balance
+            // between the other queues.
+            if let Err(e) = trace_event_queues.queues[0].push_event(event, data) {
                 log_error!("failed to push trace event: {e:?}");
             }
         } else {

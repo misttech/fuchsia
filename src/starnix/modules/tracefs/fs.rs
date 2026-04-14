@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::tracing_directory::TraceMarkerFile;
-use starnix_core::perf::TraceEventQueue;
+use starnix_core::perf::{TraceEventQueue, TraceEventQueueList};
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::pseudo::dynamic_file::ConstFile;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
@@ -66,8 +66,7 @@ impl TraceFs {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let kernel = current_task.kernel();
-        // Only use a single queue until b/357665908 is addressed.
-        let trace_event_queue = TraceEventQueue::from(kernel);
+        let event_queue_collection = TraceEventQueueList::from(kernel);
         let fs = FileSystem::new(locked, kernel, CacheMode::Uncached, TraceFs, options)?;
         let dir = SimpleDirectory::new();
         dir.edit(&fs, |dir| {
@@ -77,19 +76,11 @@ impl TraceFs {
                 static CPU_DIR_NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
                     (0..zx::system_get_num_cpus()).map(|cpu| format!("cpu{}", cpu)).collect()
                 });
-                for dir_name in CPU_DIR_NAMES.iter().map(|s| s.as_str()) {
+                for (cpu, dir_name) in CPU_DIR_NAMES.iter().map(|s| s.as_str()).enumerate() {
                     dir.subdir(dir_name, 0o755, |dir| {
-                        // We're not able to detect which cpu events are coming from, so we push them
-                        // all into the first cpu.
-                        let ops: Box<dyn FsNodeOps> = if dir_name == "cpu0" {
-                            Box::new(TraceRawFile::new_node(trace_event_queue.clone()))
-                        } else {
-                            track_stub!(
-                                TODO("https://fxbug.dev/357665908"),
-                                "/sys/kernel/tracing/per_cpu/cpuX/trace_pipe_raw"
-                            );
-                            Box::new(EmptyFile::new_node())
-                        };
+                        let ops: Box<dyn FsNodeOps> = Box::new(TraceRawFile::new_node(
+                            event_queue_collection.queues[cpu].clone(),
+                        ));
                         dir.entry("trace_pipe_raw", ops, mode!(IFREG, 0o444));
                         dir.entry("trace", TraceFile::new_node(), mode!(IFREG, 0o444));
                     });
@@ -120,13 +111,13 @@ impl TraceFs {
             });
             dir.entry(
                 "tracing_on",
-                TracingOnFile::new_node(trace_event_queue.clone()),
+                TracingOnFile::new_node(event_queue_collection.clone()),
                 mode!(IFREG, 0o666),
             );
             dir.entry("current_tracer", ConstFile::new_node("nop".into()), mode!(IFREG, 0o755));
             dir.entry(
                 "trace_marker",
-                TraceMarkerFile::new_node(trace_event_queue.clone()),
+                TraceMarkerFile::new_node(event_queue_collection.clone()),
                 mode!(IFREG, 0o222),
             );
             dir.entry("printk_formats", TraceBytesFile::new_node(), mode!(IFREG, 0o755));
@@ -213,33 +204,14 @@ impl FileOps for TraceRawFile {
     }
 }
 
-#[derive(Default)]
-struct EmptyFile {}
-
-impl EmptyFile {
-    #[track_caller]
-    fn new_node() -> impl FsNodeOps {
-        SimpleFileNode::new(move |_, _| Ok(BytesFile::new(Self::default())))
-    }
-}
-
-impl BytesFileOps for EmptyFile {
-    fn write(&self, _current_task: &CurrentTask, _data: Vec<u8>) -> Result<(), Errno> {
-        error!(ENOTSUP)
-    }
-    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        error!(EAGAIN)
-    }
-}
-
 #[derive(Clone)]
 struct TracingOnFile {
-    queue: Arc<TraceEventQueue>,
+    event_queue_collection: Arc<TraceEventQueueList>,
 }
 
 impl TracingOnFile {
-    pub fn new_node(queue: Arc<TraceEventQueue>) -> impl FsNodeOps {
-        BytesFile::new_node(Self { queue })
+    pub fn new_node(event_queue_collection: Arc<TraceEventQueueList>) -> impl FsNodeOps {
+        BytesFile::new_node(Self { event_queue_collection })
     }
 }
 
@@ -248,14 +220,14 @@ impl BytesFileOps for TracingOnFile {
         let state_str = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
         let clean_state_str = state_str.split('\n').next().unwrap_or("");
         match clean_state_str {
-            "0" => self.queue.disable(),
-            "1" => self.queue.enable(),
+            "0" => self.event_queue_collection.disable(),
+            "1" => self.event_queue_collection.enable(),
             _ => error!(EINVAL),
         }
     }
 
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        if self.queue.is_enabled() {
+        if self.event_queue_collection.is_enabled() {
             Ok(Cow::Borrowed(&b"1\n"[..]))
         } else {
             Ok(Cow::Borrowed(&b"0\n"[..]))
