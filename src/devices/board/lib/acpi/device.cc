@@ -642,8 +642,25 @@ zx::result<> Device::AddDevice(const char* name, cpp20::span<zx_device_str_prop_
       ddk::MetadataServer<fuchsia_hardware_i2c_businfo::I2CBusMetadata>::kFidlServiceName,
       ddk::MetadataServer<fuchsia_hardware_spi_businfo::SpiBusMetadata>::kFidlServiceName,
   };
-  zx_status_t status = DdkAdd(
-      ddk::DeviceAddArgs(name).set_flags(DEVICE_ADD_NON_BINDABLE).set_fidl_service_offers(offers));
+
+  auto path_result = acpi_->GetPath(acpi_handle_);
+  std::string address_str = name;
+  if (path_result.is_ok()) {
+    address_str = path_result.value();
+  }
+
+  auto bus_info =
+      std::make_unique<fuchsia_driver_framework::BusInfo>(fuchsia_driver_framework::BusInfo{{
+          .bus = fuchsia_driver_framework::BusType::kAcpi,
+          .address = fuchsia_driver_framework::DeviceAddress::WithStringValue(address_str),
+          .address_stability =
+              fuchsia_driver_framework::DeviceAddressStability::kUnstableBetweenSoftwareUpdate,
+      }});
+
+  zx_status_t status = DdkAdd(ddk::DeviceAddArgs(name)
+                                  .set_flags(DEVICE_ADD_NON_BINDABLE)
+                                  .set_fidl_service_offers(offers)
+                                  .set_bus_info(std::move(bus_info)));
   if (status != ZX_OK) {
     return zx::error(status);
   }
