@@ -48,15 +48,15 @@ GN to Bazel.
 
 ## 2. Register the target
 
-1.  If Bazel target has a category, add it to the appropriate list in
-    `//sdk/fidl/BUILD.bazel` based on its category:
+1.  If Bazel target has a category, add its IDK atom target to the appropriate
+    list in `//sdk/fidl/BUILD.bazel` based on its category:
     -   `partner` (and `stable` is `true`) ->
-        `PARTNER_IDK_STABLE_FIDL_LIBRARIES_TARGETS_LIST`
+        `PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST`
     -   `partner` (and `stable` is `false`) ->
-        `PARTNER_IDK_UNSTABLE_FIDL_LIBRARIES_TARGETS_LIST`
-    -   `prebuilt` -> `PREBUILT_FIDL_LIBRARIES_TARGETS_LIST`
-    -   `host_tool` -> `HOST_TOOL_FIDL_LIBRARIES_TARGETS_LIST`
-    -   `compat_test` -> `COMPAT_TEST_FIDL_LIBRARIES_TARGETS_LIST`
+        `PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST`
+    -   `prebuilt` -> `PREBUILT_FIDL_LIBRARY_ATOMS_LIST`
+    -   `host_tool` -> `HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST`
+    -   `compat_test` -> `COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST`
 
 ## 3. Sync FIDL targets back to GN
 
