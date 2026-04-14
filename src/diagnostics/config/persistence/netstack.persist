@@ -11,10 +11,10 @@
         max_bytes: 9000,
         min_seconds_between_fetch: 720,
         selectors: [
-            "INSPECT:core/network/netstack:Networking\\ Stat\\ Counters:*",
-            "INSPECT:core/network/netstack:Networking\\ Stat\\ Counters/*:*",
-            "INSPECT:core/network/netstack:Networking\\ Stat\\ Counters/*/*:*",
-            "INSPECT:core/network/netstack:Networking\\ Stat\\ Counters/*/*/*:*",
+            "INSPECT:core/network/netstack:[...]Networking\\ Stat\\ Counters:*",
+            "INSPECT:core/network/netstack:[...]Networking\\ Stat\\ Counters/*:*",
+            "INSPECT:core/network/netstack:[...]Networking\\ Stat\\ Counters/*/*:*",
+            "INSPECT:core/network/netstack:[...]Networking\\ Stat\\ Counters/*/*/*:*",
         ],
     },
     {
@@ -25,7 +25,7 @@
         max_bytes: 200,
         min_seconds_between_fetch: 720,
         selectors: [
-            "INSPECT:core/network/netstack:Networking\\ FIDL\\ Protocol\\ Stats:*",
+            "INSPECT:core/network/netstack:[...]Networking\\ FIDL\\ Protocol\\ Stats:*",
         ],
     },
     {
@@ -36,7 +36,7 @@
         max_bytes: 1200,
         min_seconds_between_fetch: 720,
         selectors: [
-            "INSPECT:core/network/netstack:memstats:*",
+            "INSPECT:core/network/netstack:[...]memstats:*",
         ],
     },
     {
@@ -48,12 +48,12 @@
         max_bytes: 90000,
         min_seconds_between_fetch: 720,
         selectors: [
-            "INSPECT:core/network/netstack:NICs/*:*",
-            "INSPECT:core/network/netstack:NICs/*/*:*",
-            "INSPECT:core/network/netstack:NICs/*/*/*:*",
-            "INSPECT:core/network/netstack:NICs/*/*/*/*:*",
-            "INSPECT:core/network/netstack:NICs/*/*/*/*/*:*",
-            "INSPECT:core/network/netstack:NICs/*/*/*/*/*/*:*",
+            "INSPECT:core/network/netstack:[...]NICs/*:*",
+            "INSPECT:core/network/netstack:[...]NICs/*/*:*",
+            "INSPECT:core/network/netstack:[...]NICs/*/*/*:*",
+            "INSPECT:core/network/netstack:[...]NICs/*/*/*/*:*",
+            "INSPECT:core/network/netstack:[...]NICs/*/*/*/*/*:*",
+            "INSPECT:core/network/netstack:[...]NICs/*/*/*/*/*/*:*",
         ],
     },
     {
@@ -65,7 +65,7 @@
         max_bytes: 20000,
         min_seconds_between_fetch: 720,
         selectors: [
-            "INSPECT:core/network/netstack:Routes/*:*",
+            "INSPECT:core/network/netstack:[...]Routes/*:*",
         ],
     },
     {
@@ -76,8 +76,8 @@
         max_bytes: 300,
         min_seconds_between_fetch: 720,
         selectors: [
-            "INSPECT:core/network/netstack:Runtime\\ Configuration\\ Flags:*",
-            "INSPECT:core/network/netstack:Runtime\\ Configuration\\ Flags/*:*",
+            "INSPECT:core/network/netstack:[...]Runtime\\ Configuration\\ Flags:*",
+            "INSPECT:core/network/netstack:[...]Runtime\\ Configuration\\ Flags/*:*",
         ],
     },
     {
@@ -89,9 +89,9 @@
         max_bytes: 225000,
         min_seconds_between_fetch: 720,
         selectors: [
-            "INSPECT:core/network/netstack:Socket\\ Info/*:*",
-            "INSPECT:core/network/netstack:Socket\\ Info/*/*:*",
-            "INSPECT:core/network/netstack:Socket\\ Info/*/*/*:*",
+            "INSPECT:core/network/netstack:[...]Socket\\ Info/*:*",
+            "INSPECT:core/network/netstack:[...]Socket\\ Info/*/*:*",
+            "INSPECT:core/network/netstack:[...]Socket\\ Info/*/*/*:*",
         ],
     },
 ]

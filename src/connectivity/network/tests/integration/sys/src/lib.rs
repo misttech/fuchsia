@@ -240,6 +240,10 @@ async fn persist_root_inspect_nodes_for_selectors(name: &str, test_case: Persist
                 _ => panic!("unknown StringSelector variant {:?}", root_node),
             };
 
+            // Strip the wildcard tree selector prefix used in Netstack2's
+            // persistence selectors.
+            let root_node_name = root_node_name.strip_prefix("[...]").unwrap_or(root_node_name);
+
             // Assert payload has the node name specified in the selector.
             assert_eq!(root_node_name, &inspect_payload.name);
         }
