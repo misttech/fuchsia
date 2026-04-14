@@ -1470,11 +1470,11 @@ group("png-0.17.16") {
 }
 
 group("pretty") {
-  public_deps = [ ":pretty-v0_5_2" ]
+  public_deps = [ ":pretty-v0_12_5" ]
 }
 
-group("pretty-0.5.2") {
-  public_deps = [ ":pretty-v0_5_2" ]
+group("pretty-0.12.5") {
+  public_deps = [ ":pretty-v0_12_5" ]
 }
 
 group("pretty_assertions") {
@@ -3218,6 +3218,40 @@ rustc_library("arrayref-v0_3_9") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":arrayref-v0_3_9.license" ]
+}
+
+license("arrayvec-v0_5_2.license") {
+  public_package_name = "arrayvec"
+  license_files = [
+    "//third_party/rust_crates/vendor/arrayvec-0.5.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/arrayvec-0.5.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("arrayvec-v0_5_2") {
+  crate_name = "arrayvec"
+  source_root = "//third_party/rust_crates/vendor/arrayvec-0.5.2/src/lib.rs"
+  output_name = "arrayvec-395095f31ad81677"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=395095f31ad81677",
+    "-Cextra-filename=-395095f31ad81677",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":arrayvec-v0_5_2.license" ]
 }
 
 license("arrayvec-v0_7_6.license") {
@@ -14809,34 +14843,36 @@ rustc_library("predicates-tree-v1_0_12") {
   applicable_licenses = [ ":predicates-tree-v1_0_12.license" ]
 }
 
-license("pretty-v0_5_2.license") {
+license("pretty-v0_12_5.license") {
   public_package_name = "pretty"
-  license_files = [ "//third_party/rust_crates/vendor/pretty-0.5.2/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/pretty-0.12.5/LICENSE" ]
 }
 
-rustc_library("pretty-v0_5_2") {
+rustc_library("pretty-v0_12_5") {
   crate_name = "pretty"
-  source_root = "//third_party/rust_crates/vendor/pretty-0.5.2/src/lib.rs"
-  output_name = "pretty-80700aa60373011"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/pretty-0.12.5/src/lib.rs"
+  output_name = "pretty-24a792ff5033f222"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":typed-arena-v1_7_0" ]
+  deps += [ ":arrayvec-v0_5_2" ]
+  deps += [ ":typed-arena-v2_0_2" ]
+  deps += [ ":unicode-width-v0_2_2" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=80700aa60373011",
-    "-Cextra-filename=-80700aa60373011",
+    "-Cmetadata=24a792ff5033f222",
+    "-Cextra-filename=-24a792ff5033f222",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pretty-v0_5_2.license" ]
+  applicable_licenses = [ ":pretty-v0_12_5.license" ]
 }
 
 license("pretty_assertions-v1_2_1.license") {
@@ -21420,16 +21456,16 @@ rustc_library("tuf-v0_3_0-beta14") {
   applicable_licenses = [ ":tuf-v0_3_0-beta14.license" ]
 }
 
-license("typed-arena-v1_7_0.license") {
+license("typed-arena-v2_0_2.license") {
   public_package_name = "typed_arena"
   license_files =
-      [ "//third_party/rust_crates/vendor/typed-arena-1.7.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/typed-arena-2.0.2/LICENSE" ]
 }
 
-rustc_library("typed-arena-v1_7_0") {
+rustc_library("typed-arena-v2_0_2") {
   crate_name = "typed_arena"
-  source_root = "//third_party/rust_crates/vendor/typed-arena-1.7.0/src/lib.rs"
-  output_name = "typed_arena-47357e72704db458"
+  source_root = "//third_party/rust_crates/vendor/typed-arena-2.0.2/src/lib.rs"
+  output_name = "typed_arena-b470a0d0a30cec38"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -21441,15 +21477,15 @@ rustc_library("typed-arena-v1_7_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=47357e72704db458",
-    "-Cextra-filename=-47357e72704db458",
+    "-Cmetadata=b470a0d0a30cec38",
+    "-Cextra-filename=-b470a0d0a30cec38",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":typed-arena-v1_7_0.license" ]
+  applicable_licenses = [ ":typed-arena-v2_0_2.license" ]
 }
 
 license("typed-builder-v0_23_2.license") {

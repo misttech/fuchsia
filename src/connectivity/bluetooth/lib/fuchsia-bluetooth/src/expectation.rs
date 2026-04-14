@@ -115,9 +115,9 @@ fn falsify_elem<'p, 't, 'd, T: Debug>(
 ) -> Option<DocBuilder<'d>> {
     pred.falsify(el, doc).map(move |falsification| {
         doc.text(format!("[{}]", index))
-            .append(doc.space().append(doc.text(show_debug(el))).nest(2))
-            .append(doc.space().append(doc.text("BECAUSE")))
-            .append(doc.space().append(falsification.group()).nest(2))
+            .append(doc.line().append(doc.text(show_debug(el))).nest(2))
+            .append(doc.line().append(doc.text("BECAUSE")))
+            .append(doc.line().append(falsification.group()).nest(2))
             .append(doc.text(","))
             .group()
     })
@@ -128,7 +128,7 @@ fn fmt_falsifications<'d>(
     doc: &'d BoxAllocator,
 ) -> Option<DocBuilder<'d>> {
     i.take(MAX_ITER_FALSIFICATIONS).fold(None, |acc: Option<DocBuilder<'d>>, falsification| {
-        Some(acc.map_or_else(|| doc.nil(), |d| d.append(doc.space())).append(falsification))
+        Some(acc.map_or_else(|| doc.nil(), |d| d.append(doc.line())).append(falsification))
     })
 }
 
@@ -253,7 +253,7 @@ impl<T, U> IsOver<T> for OverPred<T, U> {
             OverPred::ByValue(pred, project, path) => (pred.falsify(&(project)(t), doc), path),
         };
         d.map(|falsification| {
-            doc.as_string(path).append(doc.space().append(falsification).nest(2)).group()
+            doc.as_string(path).append(doc.line().append(falsification).nest(2)).group()
         })
     }
 }
@@ -378,9 +378,9 @@ impl<T> Predicate<T> {
             Some(falsification) => {
                 let d = doc
                     .text("FAILED EXPECTATION")
-                    .append(doc.newline().append(self.describe(&doc)).nest(2))
-                    .append(doc.newline().append(doc.text("BECAUSE")))
-                    .append(doc.newline().append(falsification).nest(2));
+                    .append(doc.line().append(self.describe(&doc)).nest(2))
+                    .append(doc.line().append(doc.text("BECAUSE")))
+                    .append(doc.line().append(falsification).nest(2));
                 Err(DebugString(d.1.pretty(FMT_CHAR_WIDTH).to_string()))
             }
             None => Ok(()),

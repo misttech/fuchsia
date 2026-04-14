@@ -2017,14 +2017,14 @@ alias(
 )
 
 alias(
-    name = "pretty-0.5.2",
-    actual = "//third_party/rust_crates/vendor/pretty-0.5.2:pretty",
+    name = "pretty-0.12.5",
+    actual = "//third_party/rust_crates/vendor/pretty-0.12.5:pretty",
     tags = ["manual"],
 )
 
 alias(
     name = "pretty",
-    actual = "//third_party/rust_crates/vendor/pretty-0.5.2:pretty",
+    actual = "//third_party/rust_crates/vendor/pretty-0.12.5:pretty",
     tags = ["manual"],
 )
 
