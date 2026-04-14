@@ -1845,7 +1845,11 @@ impl FileObject {
             let locked = unsafe { Unlocked::new() };
             let mut offset = self.offset.lock();
             let bytes_written = if self.flags().contains(OpenFlags::APPEND) {
-                let (_guard, locked) = self.node().append_lock.write_and(locked, current_task)?;
+                let (_guard, locked) = self.node().ops().append_lock_write(
+                    locked.cast_locked::<BeforeFsNodeAppend>(),
+                    self.node(),
+                    current_task,
+                )?;
                 *offset = self.ops().seek(
                     locked.cast_locked::<FileOpsCore>(),
                     self,
@@ -1855,7 +1859,11 @@ impl FileObject {
                 )?;
                 self.write_common(locked, current_task, *offset as usize, data)
             } else {
-                let (_guard, locked) = self.node().append_lock.read_and(locked, current_task)?;
+                let (_guard, locked) = self.node().ops().append_lock_read(
+                    locked.cast_locked::<BeforeFsNodeAppend>(),
+                    self.node(),
+                    current_task,
+                )?;
                 self.write_common(locked, current_task, *offset as usize, data)
             }?;
             if self.ops().writes_update_seek_offset() {

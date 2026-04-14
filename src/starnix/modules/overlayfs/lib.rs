@@ -12,14 +12,14 @@ use starnix_core::mm::memory::MemoryObject;
 use starnix_core::security;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
-use starnix_core::vfs::rw_queue::RwQueueReadGuard;
+use starnix_core::vfs::rw_queue::{RwQueueReadGuard, RwQueueWriteGuard};
 use starnix_core::vfs::{
-    AlreadyLockedAppendLockStrategy, AppendLockGuard, CacheMode, DirEntry, DirEntryHandle,
-    DirectoryEntryType, DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
-    FsNodeOps, FsStr, FsString, InputBuffer, MountInfo, OutputBuffer, RenameFlags, SeekTarget,
-    SymlinkTarget, UnlinkKind, ValueOrSize, VecInputBuffer, VecOutputBuffer, XattrOp, default_seek,
-    emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
+    AppendLockGuard, CacheMode, DirEntry, DirEntryHandle, DirectoryEntryType, DirentSink,
+    FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
+    FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer,
+    MountInfo, OutputBuffer, RenameFlags, SeekTarget, SymlinkTarget, UnlinkKind, ValueOrSize,
+    VecInputBuffer, VecOutputBuffer, XattrOp, default_seek, emit_dotdot, fileops_impl_directory,
+    fileops_impl_noop_sync, fileops_impl_seekable,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{
@@ -938,6 +938,19 @@ impl FsNodeOps for OverlayNodeOps {
         })
     }
 
+    fn append_lock_write<'a>(
+        &'a self,
+        locked: &'a mut Locked<BeforeFsNodeAppend>,
+        node: &'a FsNode,
+        current_task: &CurrentTask,
+    ) -> Result<(RwQueueWriteGuard<'a, FsNodeAppend>, &'a mut Locked<FsNodeAppend>), Errno> {
+        self.node.as_mounter(current_task, || {
+            let upper_node =
+                self.node.ensure_upper(locked, current_task, &node.fs())?.entry.node.as_ref();
+            upper_node.ops().append_lock_write(locked, upper_node, current_task)
+        })
+    }
+
     fn truncate(
         &self,
         locked: &mut Locked<FileOpsCore>,
@@ -949,13 +962,7 @@ impl FsNodeOps for OverlayNodeOps {
         self.node.as_mounter(current_task, || {
             let upper = self.node.ensure_upper(locked, current_task, &node.fs())?;
 
-            upper.entry().node.truncate_with_strategy(
-                locked,
-                AlreadyLockedAppendLockStrategy::new(guard),
-                current_task,
-                upper.mount(),
-                length,
-            )
+            upper.entry().node.truncate_locked(locked, guard, current_task, length)
         })
     }
 
@@ -971,14 +978,7 @@ impl FsNodeOps for OverlayNodeOps {
     ) -> Result<(), Errno> {
         self.node.as_mounter(current_task, || {
             let node = &self.node.ensure_upper(locked, current_task, &node.fs())?.entry().node;
-            node.fallocate_with_strategy(
-                locked,
-                AlreadyLockedAppendLockStrategy::new(guard),
-                current_task,
-                mode,
-                offset,
-                length,
-            )
+            node.fallocate_locked(locked, guard, current_task, mode, offset, length)
         })
     }
 

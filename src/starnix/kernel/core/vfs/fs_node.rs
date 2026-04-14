@@ -10,7 +10,7 @@ use crate::task::{CurrentTask, CurrentTaskAndLocked, WaitQueue, Waiter, register
 use crate::time::utc;
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::pipe::{Pipe, PipeHandle};
-use crate::vfs::rw_queue::{RwQueue, RwQueueReadGuard};
+use crate::vfs::rw_queue::{RwQueue, RwQueueReadGuard, RwQueueWriteGuard};
 use crate::vfs::socket::SocketHandle;
 use crate::vfs::{
     DefaultDirEntryOps, DirEntryOps, FileObject, FileObjectState, FileOps, FileSystem,
@@ -27,8 +27,8 @@ use starnix_crypt::EncryptionKeyId;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{
-    BeforeFsNodeAppend, FileOpsCore, FsNodeAppend, LockBefore, LockEqualOrBefore, Locked, Mutex,
-    RwLock, RwLockReadGuard, Unlocked,
+    BeforeFsNodeAppend, FileOpsCore, FsNodeAppend, LockEqualOrBefore, Locked, Mutex, RwLock,
+    RwLockReadGuard, Unlocked,
 };
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_types::time::{NANOS_PER_SECOND, timespec_from_time};
@@ -69,56 +69,8 @@ impl Default for FsNodeLinkBehavior {
     }
 }
 
-pub enum AppendLockGuard<'a> {
-    Read(RwQueueReadGuard<'a, FsNodeAppend>),
-    AlreadyLocked(&'a AppendLockGuard<'a>),
-}
-
-pub trait AppendLockStrategy<L> {
-    /// Helper method for acquiring append lock in `truncate`/`allocate`. Acquires the lock when it's not already acquired.
-    fn lock<'a>(
-        &'a self,
-        locked: &'a mut Locked<L>,
-        current_task: &CurrentTask,
-        node: &'a FsNode,
-    ) -> Result<(AppendLockGuard<'a>, &'a mut Locked<FileOpsCore>), Errno>;
-}
-
-struct RealAppendLockStrategy {}
-
-impl AppendLockStrategy<BeforeFsNodeAppend> for RealAppendLockStrategy {
-    fn lock<'a>(
-        &'a self,
-        locked: &'a mut Locked<BeforeFsNodeAppend>,
-        current_task: &CurrentTask,
-        node: &'a FsNode,
-    ) -> Result<(AppendLockGuard<'a>, &'a mut Locked<FileOpsCore>), Errno> {
-        let (guard, new_locked) = node.ops().append_lock_read(locked, node, current_task)?;
-        Ok((AppendLockGuard::Read(guard), new_locked.cast_locked()))
-    }
-}
-
-pub struct AlreadyLockedAppendLockStrategy<'a> {
-    // Keep the reference to the guard, which will be returned in subsequent attempts to acquire this lock.
-    guard: &'a AppendLockGuard<'a>,
-}
-
-impl<'a> AlreadyLockedAppendLockStrategy<'a> {
-    pub fn new(guard: &'a AppendLockGuard<'a>) -> Self {
-        Self { guard }
-    }
-}
-
-impl AppendLockStrategy<FileOpsCore> for AlreadyLockedAppendLockStrategy<'_> {
-    fn lock<'a>(
-        &'a self,
-        locked: &'a mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _node: &'a FsNode,
-    ) -> Result<(AppendLockGuard<'a>, &'a mut Locked<FileOpsCore>), Errno> {
-        Ok((AppendLockGuard::AlreadyLocked(self.guard), locked.cast_locked::<FileOpsCore>()))
-    }
-}
+pub type AppendLockGuard<'a> = RwQueueReadGuard<'a, FsNodeAppend>;
+pub type AppendLockWriteGuard<'a> = RwQueueWriteGuard<'a, FsNodeAppend>;
 
 pub struct FsNode {
     /// The inode number for this FsNode.
@@ -762,6 +714,16 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         current_task: &CurrentTask,
     ) -> Result<(RwQueueReadGuard<'a, FsNodeAppend>, &'a mut Locked<FsNodeAppend>), Errno> {
         return node.append_lock.read_and(locked, current_task);
+    }
+
+    /// Acquire the necessary append lock for operations that need exclusive access (e.g., write append).
+    fn append_lock_write<'a>(
+        &'a self,
+        locked: &'a mut Locked<BeforeFsNodeAppend>,
+        node: &'a FsNode,
+        current_task: &CurrentTask,
+    ) -> Result<(RwQueueWriteGuard<'a, FsNodeAppend>, &'a mut Locked<FsNodeAppend>), Errno> {
+        return node.append_lock.write_and(locked, current_task);
     }
 
     /// Change the length of the file.
@@ -1802,38 +1764,21 @@ impl FsNode {
     where
         L: LockEqualOrBefore<BeforeFsNodeAppend>,
     {
-        self.truncate_with_strategy(locked, RealAppendLockStrategy {}, current_task, mount, length)
-    }
-
-    pub fn truncate_with_strategy<L, M>(
-        &self,
-        locked: &mut Locked<L>,
-        strategy: impl AppendLockStrategy<M>,
-        current_task: &CurrentTask,
-        mount: &MountInfo,
-        length: u64,
-    ) -> Result<(), Errno>
-    where
-        M: LockEqualOrBefore<FileOpsCore>,
-        L: LockEqualOrBefore<M>,
-    {
+        let mut locked = locked.cast_locked::<BeforeFsNodeAppend>();
         if self.is_dir() {
             return error!(EISDIR);
         }
+        self.check_access(
+            &mut locked,
+            current_task,
+            mount,
+            Access::WRITE,
+            CheckAccessReason::InternalPermissionChecks,
+            security::Auditable::Location(std::panic::Location::caller()),
+        )?;
 
-        {
-            let locked = locked.cast_locked::<M>();
-            self.check_access(
-                locked,
-                current_task,
-                mount,
-                Access::WRITE,
-                CheckAccessReason::InternalPermissionChecks,
-                security::Auditable::Location(std::panic::Location::caller()),
-            )?;
-        }
-
-        self.truncate_common(locked, strategy, current_task, length)
+        let (guard, locked) = self.ops().append_lock_read(&mut locked, self, current_task)?;
+        self.truncate_locked(locked, &guard, current_task, length)
     }
 
     /// Avoid calling this method directly. You probably want to call `FileObject::ftruncate()`
@@ -1847,6 +1792,8 @@ impl FsNode {
     where
         L: LockEqualOrBefore<BeforeFsNodeAppend>,
     {
+        let locked = locked.cast_locked::<BeforeFsNodeAppend>();
+
         if self.is_dir() {
             // When truncating a file descriptor, if the descriptor references a directory,
             // return EINVAL. This is different from the truncate() syscall which returns EISDIR.
@@ -1870,37 +1817,32 @@ impl FsNode {
         // "With ftruncate(), the file must be open for writing; with truncate(),
         // the file must be writable."
 
-        self.truncate_common(locked, RealAppendLockStrategy {}, current_task, length)
+        let (guard, locked) = self.ops().append_lock_read(locked, self, current_task)?;
+        self.truncate_locked(locked, &guard, current_task, length)
     }
 
     // Called by `truncate` and `ftruncate` above.
-    fn truncate_common<L, M>(
+    pub fn truncate_locked<L>(
         &self,
         locked: &mut Locked<L>,
-        strategy: impl AppendLockStrategy<M>,
+        guard: &AppendLockGuard<'_>,
         current_task: &CurrentTask,
         length: u64,
     ) -> Result<(), Errno>
     where
-        M: LockEqualOrBefore<FileOpsCore>,
-        L: LockEqualOrBefore<M>,
+        L: LockEqualOrBefore<FileOpsCore>,
     {
+        let locked = locked.cast_locked::<FileOpsCore>();
         if length > MAX_LFS_FILESIZE as u64 {
             return error!(EINVAL);
         }
-        {
-            let locked = locked.cast_locked::<M>().cast_locked::<FileOpsCore>();
-            if length > current_task.thread_group().get_rlimit(locked, Resource::FSIZE) {
-                send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
-                return error!(EFBIG);
-            }
+        if length > current_task.thread_group().get_rlimit(locked, Resource::FSIZE) {
+            send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
+            return error!(EFBIG);
         }
-        let locked = locked.cast_locked::<M>();
         self.clear_suid_and_sgid_bits(locked, current_task)?;
-        // We have to take the append lock since otherwise it would be possible to truncate and for
-        // an append to continue using the old size.
-        let (guard, locked) = strategy.lock(locked, current_task, self)?;
-        self.ops().truncate(locked, &guard, self, current_task, length)?;
+
+        self.ops().truncate(locked, guard, self, current_task, length)?;
         self.update_ctime_mtime();
         Ok(())
     }
@@ -1916,45 +1858,36 @@ impl FsNode {
         length: u64,
     ) -> Result<(), Errno>
     where
-        L: LockBefore<BeforeFsNodeAppend>,
+        L: LockEqualOrBefore<BeforeFsNodeAppend>,
     {
-        self.fallocate_with_strategy(
-            locked,
-            RealAppendLockStrategy {},
-            current_task,
-            mode,
-            offset,
-            length,
-        )
+        let mut locked = locked.cast_locked::<BeforeFsNodeAppend>();
+        let (guard, locked) = self.ops().append_lock_read(&mut locked, self, current_task)?;
+        self.fallocate_locked(locked, &guard, current_task, mode, offset, length)
     }
 
-    pub fn fallocate_with_strategy<L, M>(
+    pub fn fallocate_locked<L>(
         &self,
         locked: &mut Locked<L>,
-        strategy: impl AppendLockStrategy<M>,
+        guard: &AppendLockGuard<'_>,
         current_task: &CurrentTask,
         mode: FallocMode,
         offset: u64,
         length: u64,
     ) -> Result<(), Errno>
     where
-        M: LockEqualOrBefore<FileOpsCore>,
-        L: LockEqualOrBefore<M>,
+        L: LockEqualOrBefore<FileOpsCore>,
     {
+        let locked = locked.cast_locked::<FileOpsCore>();
         let allocate_size = checked_add_offset_and_length(offset as usize, length as usize)
             .map_err(|_| errno!(EFBIG))? as u64;
-        {
-            let locked = locked.cast_locked::<M>().cast_locked::<FileOpsCore>();
-            if allocate_size > current_task.thread_group().get_rlimit(locked, Resource::FSIZE) {
-                send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
-                return error!(EFBIG);
-            }
+        if allocate_size > current_task.thread_group().get_rlimit(locked, Resource::FSIZE) {
+            send_standard_signal(locked, current_task, SignalInfo::kernel(SIGXFSZ));
+            return error!(EFBIG);
         }
 
-        let locked = locked.cast_locked::<M>();
         self.clear_suid_and_sgid_bits(locked, current_task)?;
-        let (guard, locked) = strategy.lock(locked, current_task, self)?;
-        self.ops().allocate(locked, &guard, self, current_task, mode, offset, length)?;
+
+        self.ops().allocate(locked, guard, self, current_task, mode, offset, length)?;
         self.update_ctime_mtime();
         Ok(())
     }

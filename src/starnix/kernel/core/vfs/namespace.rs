@@ -23,7 +23,7 @@ use ref_cast::RefCast;
 use starnix_logging::log_warn;
 use starnix_rcu::RcuHashMap;
 use starnix_sync::{
-    BeforeFsNodeAppend, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked,
+    BeforeFsNodeAppend, FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked,
 };
 use starnix_types::ownership::WeakRef;
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
@@ -1732,7 +1732,7 @@ impl NamespaceNode {
         length: u64,
     ) -> Result<(), Errno>
     where
-        L: LockBefore<BeforeFsNodeAppend>,
+        L: LockEqualOrBefore<BeforeFsNodeAppend>,
     {
         self.entry.node.truncate(locked, current_task, &self.mount, length)?;
         self.entry.notify_ignoring_excl_unlink(InotifyMask::MODIFY);
