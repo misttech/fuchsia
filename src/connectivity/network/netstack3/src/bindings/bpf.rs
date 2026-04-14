@@ -6,15 +6,19 @@ use crate::bindings::BindingsCtx;
 use crate::bindings::util::IntoCore;
 use ebpf::{
     BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfInstruction, EbpfProgram,
-    EbpfProgramContext, FieldMapping, MapReference, MapSchema, Packet, ProgramArgument, Type,
-    VerifiedEbpfProgram,
+    EbpfProgramContext, FieldMapping, FromBpfValue, MapReference, MapSchema, Packet,
+    ProgramArgument, Type, VerifiedEbpfProgram,
 };
 use ebpf_api::{
-    __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef,
+    __sk_buff, BpfSockContext, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef,
     PacketWithLoadBytes, PinnedMap, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF,
-    SOCKET_FILTER_ARGS, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketUidContext,
-    StructId, uid_t,
+    SOCKET_FILTER_ARGS, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketRef, StructId,
+    bpf_sock, uaddr, uid_t,
 };
+use fidl_fuchsia_ebpf as febpf;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_posix as fposix;
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
 use net_types::ip::IpVersion;
@@ -33,10 +37,6 @@ use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
-use {
-    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_posix as fposix,
-};
 
 fn get_linux_packet_mark(marks: &Marks) -> u32 {
     let Mark(mark) = marks.get(fnet::MARK_DOMAIN_SO_MARK.into_core());
@@ -50,6 +50,49 @@ fn code_from_vec(code: Vec<u64>) -> Vec<EbpfInstruction> {
     unsafe {
         let mut code = std::mem::ManuallyDrop::new(code);
         Vec::from_raw_parts(code.as_mut_ptr() as *mut EbpfInstruction, code.len(), code.capacity())
+    }
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct BpfSock {
+    // Must be first field.
+    value: bpf_sock,
+
+    socket_cookie: u64,
+    socket_uid: Option<uid_t>,
+}
+
+impl BpfSock {
+    pub fn new(socket_cookie: SocketCookie, marks: &Marks) -> Self {
+        let Mark(socket_uid) = marks.get(fnet::MARK_DOMAIN_SOCKET_UID.into_core()).clone();
+        Self { value: bpf_sock::default(), socket_cookie: socket_cookie.export_value(), socket_uid }
+    }
+
+    pub fn from_packet_metadata(packet_metadata: &impl FilterPacketMetadata) -> Self {
+        let socket_cookie =
+            packet_metadata.cookie().map(|cookie| cookie.export_value()).unwrap_or(0);
+        let Mark(socket_uid) =
+            packet_metadata.marks().get(fnet::MARK_DOMAIN_SOCKET_UID.into_core()).clone();
+        Self { value: bpf_sock::default(), socket_cookie, socket_uid }
+    }
+}
+
+impl FromBpfValue<EbpfRunContext<'_>> for &'_ BpfSock {
+    unsafe fn from_bpf_value(_context: &mut EbpfRunContext<'_>, v: BpfValue) -> Self {
+        // SAFETY: Caller is expected to call this method only when verifier
+        // checks that `v` is a pointer to `BpfSock`.
+        unsafe { &*v.as_ptr::<BpfSock>() }
+    }
+}
+
+impl SocketRef for &'_ BpfSock {
+    fn get_socket_cookie(&self) -> Option<u64> {
+        Some(self.socket_cookie)
+    }
+
+    fn get_socket_uid(&self) -> Option<uid_t> {
+        self.socket_uid
     }
 }
 
@@ -73,6 +116,8 @@ pub struct SkBuff<'a, C> {
     // Default offset for packet load instructions.
     default_offset: usize,
 
+    bpf_sock: Option<&'a BpfSock>,
+
     // Marker is `fn(C) -> C` to ensure that `SkBuff` is invariant over `C` and that
     // `Send` and `Sync` do not depend on `C`.
     _marker: std::marker::PhantomData<fn(C) -> C>,
@@ -87,18 +132,20 @@ impl<'a, C> SkBuff<'a, C> {
         data: &'a [u8],
         ip_offset: usize,
         default_offset: usize,
+        bpf_sock: Option<&'a BpfSock>,
     ) -> Self {
         // Offsets should be within the data buffer. They may be set to `data.len()`
         // if the packet is empty or it is not serialized.
         assert!(ip_offset <= data.len());
         assert!(default_offset <= data.len());
 
-        SkBuff {
+        let mut result = SkBuff {
             sk_buff: __sk_buff {
                 len: packet_len.try_into().unwrap_or(0),
                 mark,
                 protocol: ethertype.unwrap_or(0).to_be().into(),
                 ifindex,
+
                 ..__sk_buff::default()
             },
             data_ptr: data.as_ptr(),
@@ -108,8 +155,16 @@ impl<'a, C> SkBuff<'a, C> {
             data,
             ip_offset,
             default_offset,
+            bpf_sock,
             _marker: std::marker::PhantomData,
+        };
+
+        if let Some(bpf_sock) = bpf_sock {
+            result.sk_buff.__bindgen_anon_2.sk =
+                (uaddr { addr: BpfValue::from(bpf_sock).into() }).into();
         }
+
+        result
     }
 
     fn from_ip_packet<I: FilterIpExt, P: FilterIpPacket<I>>(
@@ -117,6 +172,7 @@ impl<'a, C> SkBuff<'a, C> {
         ifindex: u32,
         marks: &Marks,
         data_buffer: &'a mut [u8],
+        bpf_sock: Option<&'a BpfSock>,
     ) -> Self {
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
         let serialize_result = packet
@@ -125,7 +181,7 @@ impl<'a, C> SkBuff<'a, C> {
         let packet_len = serialize_result.total_size;
         let packet_data = &data_buffer[..serialize_result.bytes_written];
         let mark = get_linux_packet_mark(marks);
-        SkBuff {
+        let mut result = SkBuff {
             sk_buff: __sk_buff {
                 len: packet_len.try_into().unwrap_or(0),
                 mark,
@@ -140,8 +196,16 @@ impl<'a, C> SkBuff<'a, C> {
             data: packet_data,
             ip_offset: 0,
             default_offset: 0,
+            bpf_sock,
             _marker: std::marker::PhantomData,
+        };
+
+        if let Some(bpf_sock) = bpf_sock {
+            result.sk_buff.__bindgen_anon_2.sk =
+                (uaddr { addr: BpfValue::from(bpf_sock).into() }).into();
         }
+
+        result
     }
 }
 
@@ -239,6 +303,16 @@ impl<C> Packet for &'_ SkBuff<'_, C> {
     }
 }
 
+impl<'a, C> SocketRef for &'a SkBuff<'a, C> {
+    fn get_socket_cookie(&self) -> Option<u64> {
+        self.bpf_sock.and_then(|sock| sock.get_socket_cookie())
+    }
+
+    fn get_socket_uid(&self) -> Option<uid_t> {
+        self.bpf_sock.and_then(|sock| sock.get_socket_uid())
+    }
+}
+
 trait SkBuffContext {
     fn get_sk_buff_type() -> &'static Type;
 }
@@ -264,51 +338,12 @@ impl<C: SkBuffContext> ProgramArgument for &'_ SkBuff<'_, C> {
     }
 }
 
-#[derive(Debug)]
-pub struct SocketInfo {
-    socket_cookie: u64,
-    socket_uid: Option<uid_t>,
-}
-
-impl SocketInfo {
-    pub fn new(socket_cookie: SocketCookie, marks: &Marks) -> Self {
-        let Mark(socket_uid) = marks.get(fnet::MARK_DOMAIN_SOCKET_UID.into_core()).clone();
-        Self { socket_cookie: socket_cookie.export_value(), socket_uid }
-    }
-
-    pub fn from_packet_metadata(packet_metadata: &impl FilterPacketMetadata) -> Self {
-        let socket_cookie =
-            packet_metadata.cookie().map(|cookie| cookie.export_value()).unwrap_or(0);
-        let Mark(socket_uid) =
-            packet_metadata.marks().get(fnet::MARK_DOMAIN_SOCKET_UID.into_core()).clone();
-        Self { socket_cookie, socket_uid }
-    }
-}
-
-pub struct SocketRunContext<'a> {
-    socket_info: SocketInfo,
+#[derive(Default)]
+pub struct EbpfRunContext<'a> {
     map_refs: Vec<MapValueRef<'a>>,
 }
 
-impl SocketRunContext<'_> {
-    fn new(socket_info: SocketInfo) -> Self {
-        Self { socket_info, map_refs: Vec::new() }
-    }
-}
-
-impl<'a, 'b, C> ebpf_api::SocketCookieContext<&'a SkBuff<'a, C>> for SocketRunContext<'b> {
-    fn get_socket_cookie(&self, _sk_buf: &'a SkBuff<'a, C>) -> u64 {
-        self.socket_info.socket_cookie
-    }
-}
-
-impl<'a, 'b, C> SocketUidContext<&'a SkBuff<'a, C>> for SocketRunContext<'b> {
-    fn get_socket_uid(&self, _sk_buf: &'a SkBuff<'a, C>) -> Option<uid_t> {
-        self.socket_info.socket_uid
-    }
-}
-
-impl<'a> ebpf_api::MapsContext<'a> for SocketRunContext<'a> {
+impl<'a> ebpf_api::MapsContext<'a> for EbpfRunContext<'a> {
     fn on_map_access(&mut self, _map: &Map) {
         // Starnix uses `on_map_access` to block suspension while executing
         // eBPF programs that access eBPF maps. This is not a concern here
@@ -320,6 +355,10 @@ impl<'a> ebpf_api::MapsContext<'a> for SocketRunContext<'a> {
     }
 }
 
+impl<'a> BpfSockContext for EbpfRunContext<'a> {
+    type BpfSockRef = &'a BpfSock;
+}
+
 /// An eBPF programs of type `BPF_PROG_TYPE_SOCKET_FILTER`. These programs can
 /// be attached to socket or used as matchers in filters.
 #[derive(Debug)]
@@ -328,7 +367,7 @@ pub(crate) struct SocketFilterProgram {
 }
 
 impl BpfProgramContext for SocketFilterProgram {
-    type RunContext<'a> = SocketRunContext<'a>;
+    type RunContext<'a> = EbpfRunContext<'a>;
     type Packet<'a> = &'a SocketFilterSkBuff<'a>;
     type Map = CachedMapRef;
     const CBPF_CONFIG: &'static CbpfConfig = &SOCKET_FILTER_CBPF_CONFIG;
@@ -372,18 +411,14 @@ impl SocketFilterProgram {
         Ok(Self { program })
     }
 
-    pub(crate) fn run(
-        &self,
-        socket_info: SocketInfo,
-        mut skb: SocketFilterSkBuff<'_>,
-    ) -> SocketFilterResult {
+    pub(crate) fn run(&self, mut skb: SocketFilterSkBuff<'_>) -> SocketFilterResult {
         trace_duration!(
             c"ebpf::socket_filter::run",
             "len" => skb.sk_buff.len,
             "protocol" => skb.sk_buff.protocol
         );
 
-        let mut context = SocketRunContext::new(socket_info);
+        let mut context = EbpfRunContext::default();
         let result = self.program.run(&mut context, &mut skb);
         match result {
             0 => SocketFilterResult::Reject,
@@ -406,12 +441,12 @@ where
         &self,
         packet: &P,
         interfaces: Interfaces<'_, D>,
-        socket_info: &impl FilterPacketMetadata,
+        packet_metadata: &impl FilterPacketMetadata,
     ) -> bool {
         trace_duration!(c"ebpf::packet_matcher");
 
-        let marks = socket_info.marks();
-        let socket_info = SocketInfo::from_packet_metadata(socket_info);
+        let marks = packet_metadata.marks();
+        let bpf_sock = BpfSock::from_packet_metadata(packet_metadata);
 
         // `ifindex` field is set to either ingress or ingress interface index
         // depending on the context. When executing forwarding hooks we have
@@ -426,9 +461,10 @@ where
             ifindex,
             marks,
             &mut data_buffer,
+            Some(&bpf_sock),
         );
 
-        match self.run(socket_info, sk_buff) {
+        match self.run(sk_buff) {
             SocketFilterResult::Accept(_) => true,
             SocketFilterResult::Reject => false,
         }
@@ -451,7 +487,7 @@ impl SkBuffContext for CgroupSkbProgram {
 }
 
 impl EbpfProgramContext for CgroupSkbProgram {
-    type RunContext<'a> = SocketRunContext<'a>;
+    type RunContext<'a> = EbpfRunContext<'a>;
     type Packet<'a> = ();
     type Map = CachedMapRef;
 
@@ -590,14 +626,14 @@ impl CgroupSkbProgram {
         Ok(Self { program })
     }
 
-    fn run(&self, socket_info: SocketInfo, mut sk_buff: CgroupSkBuff<'_>) -> u64 {
+    fn run(&self, mut sk_buff: CgroupSkBuff<'_>) -> u64 {
         trace_duration!(
             c"ebpf::cgroup_skb::run",
             "len" => sk_buff.sk_buff.len,
             "protocol" => sk_buff.sk_buff.protocol
         );
 
-        let mut run_context = SocketRunContext::new(socket_info);
+        let mut run_context = EbpfRunContext::default();
         self.program.run_with_1_argument(&mut run_context, &mut sk_buff)
     }
 }
@@ -790,11 +826,17 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
 
         trace_duration!("ebpf::egress");
 
-        let socket_info = SocketInfo::new(socket_cookie, marks);
+        let bpf_sock = BpfSock::new(socket_cookie, marks);
         let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
-        let sk_buff = SkBuff::from_ip_packet(packet, device.get_ifindex(), marks, &mut data_buffer);
+        let sk_buff = SkBuff::from_ip_packet(
+            packet,
+            device.get_ifindex(),
+            marks,
+            &mut data_buffer,
+            Some(&bpf_sock),
+        );
 
-        let result = prog.run(socket_info, sk_buff);
+        let result = prog.run(sk_buff);
         if result > CgroupSkbProgram::EGRESS_MAX_RESULT {
             // TODO(https://fxbug.dev/413490751): Change this to panic once
             // result validation is implemented in the verifier.
@@ -825,7 +867,7 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
 
         trace_duration!("ebpf::ingress");
 
-        let socket_info = SocketInfo::new(socket_cookie, marks);
+        let bpf_sock = BpfSock::new(socket_cookie, marks);
         let ethertype = EtherType::from_ip_version(ip_version);
         let mark = get_linux_packet_mark(marks);
 
@@ -843,9 +885,10 @@ impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
             &data,
             /*ip_offset=*/ 0,
             /*default_offset=*/ 0,
+            Some(&bpf_sock),
         );
 
-        let result = prog.run(socket_info, skb);
+        let result = prog.run(skb);
 
         if result > CgroupSkbProgram::INGRESS_MAX_RESULT {
             // TODO(https://fxbug.dev/413490751): Change this to panic once
@@ -905,6 +948,7 @@ mod tests {
                 Self::BUFFER,
                 Self::BODY_POSITION,
                 default_offset,
+                None,
             )
         }
     }

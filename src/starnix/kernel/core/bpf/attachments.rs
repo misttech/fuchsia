@@ -14,15 +14,15 @@ use crate::vfs::FdNumber;
 use crate::vfs::socket::{
     SockOptValue, SocketDomain, SocketProtocol, SocketType, ZxioBackedSocket,
 };
-use ebpf::{EbpfProgram, EbpfProgramContext, EbpfPtr, ProgramArgument, Type};
+use ebpf::{BpfValue, EbpfProgram, EbpfProgramContext, EbpfPtr, ProgramArgument, Type};
 use ebpf_api::{
-    AttachType, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE, CgroupSockAddrProgramContext,
+    AttachType, BPF_SOCK_ADDR_TYPE, BPF_SOCK_TYPE, BpfSockContext, CgroupSockAddrProgramContext,
     CgroupSockOptProgramContext, CgroupSockProgramContext, CurrentTaskContext, Map, MapValueRef,
-    MapsContext, PinnedMap, ProgramType, ReturnValueContext, SocketCookieContext,
+    MapsContext, PinnedMap, ProgramType, ReturnValueContext, SocketRef,
 };
 use fidl_fuchsia_net_filter as fnet_filter;
 use fuchsia_component::client::connect_to_protocol_sync;
-use linux_uapi::bpf_sockopt;
+use linux_uapi::{bpf_sockopt, uaddr};
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{EbpfStateLock, FileOpsCore, Locked, OrderedRwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallResult};
@@ -140,7 +140,7 @@ pub fn bpf_prog_detach(
 pub struct BpfSockAddr<'a> {
     sock_addr: bpf_sock_addr,
 
-    socket: &'a ZxioBackedSocket,
+    bpf_sock: &'a BpfSock<'a>,
 }
 
 impl<'a> Deref for BpfSockAddr<'a> {
@@ -162,13 +162,13 @@ impl<'a> ProgramArgument for &'_ mut BpfSockAddr<'a> {
     }
 }
 
-impl<'a, 'b> SocketCookieContext<&'a mut BpfSockAddr<'a>> for EbpfRunContextImpl<'b> {
-    fn get_socket_cookie(&self, bpf_sock_addr: &'a mut BpfSockAddr<'a>) -> u64 {
-        let v = bpf_sock_addr.socket.get_socket_cookie();
-        v.unwrap_or_else(|errno| {
-            log_error!("Failed to get socket cookie: {:?}", errno);
-            0
-        })
+impl<'a, 'b> SocketRef for &'a mut BpfSockAddr<'a> {
+    fn get_socket_cookie(&self) -> Option<u64> {
+        self.bpf_sock.get_socket_cookie()
+    }
+
+    fn get_socket_uid(&self) -> Option<uid_t> {
+        self.bpf_sock.get_socket_uid()
     }
 }
 
@@ -226,7 +226,7 @@ pub struct BpfSock<'a> {
     // Must be first field.
     value: bpf_sock,
 
-    socket: &'a ZxioBackedSocket,
+    socket: Option<&'a ZxioBackedSocket>,
 }
 
 impl<'a> Deref for BpfSock<'a> {
@@ -248,13 +248,18 @@ impl<'a> ProgramArgument for &'_ BpfSock<'a> {
     }
 }
 
-impl<'a, 'b> SocketCookieContext<&'a BpfSock<'a>> for EbpfRunContextImpl<'b> {
-    fn get_socket_cookie(&self, bpf_sock: &'a BpfSock<'a>) -> u64 {
-        let v = bpf_sock.socket.get_socket_cookie();
-        v.unwrap_or_else(|errno| {
-            log_error!("Failed to get socket cookie: {:?}", errno);
-            0
+impl<'a> SocketRef for &'_ BpfSock<'a> {
+    fn get_socket_cookie(&self) -> Option<u64> {
+        self.socket.and_then(|socket| {
+            socket
+                .get_socket_cookie()
+                .inspect_err(|errno| log_error!("Failed to get socket cookie: {:?}", errno))
+                .ok()
         })
+    }
+
+    fn get_socket_uid(&self) -> Option<uid_t> {
+        self.socket.map(|socket| socket.uid())
     }
 }
 
@@ -300,7 +305,8 @@ impl SockProgram {
 type AttachedSockProgramCell = OrderedRwLock<Option<SockProgram>, EbpfStateLock>;
 
 mod internal {
-    use ebpf::{EbpfPtr, ProgramArgument, Type};
+    use super::BpfSock;
+    use ebpf::{BpfValue, EbpfPtr, ProgramArgument, Type};
     use ebpf_api::BPF_SOCKOPT_TYPE;
     use starnix_uapi::{bpf_sockopt, uaddr};
     use std::ops::Deref;
@@ -330,7 +336,14 @@ mod internal {
     }
 
     impl BpfSockOptWithValue {
-        pub fn new(level: u32, optname: u32, value_buf: Vec<u8>, optlen: u32, retval: i32) -> Self {
+        pub fn new(
+            level: u32,
+            optname: u32,
+            value_buf: Vec<u8>,
+            optlen: u32,
+            retval: i32,
+            sock: *const BpfSock<'_>,
+        ) -> Self {
             let mut sockopt = Self {
                 sockopt: BpfSockOpt(bpf_sockopt {
                     level: level as i32,
@@ -350,6 +363,9 @@ mod internal {
                     addr: sockopt.value_buf.as_mut_ptr().add(sockopt.value_buf.len()) as u64,
                 };
             }
+
+            sockopt.sockopt.0.__bindgen_anon_1.sk =
+                (uaddr { addr: BpfValue::from(sock).into() }).into();
 
             sockopt
         }
@@ -427,6 +443,10 @@ impl<'a> ReturnValueContext for SockOptEbpfRunContextImpl<'a> {
         let sockopt = self.sockopt.get_field::<i32, BPF_SOCKOPT_RETVAL_OFFSET>();
         sockopt.load_relaxed()
     }
+}
+
+impl<'a> BpfSockContext for SockOptEbpfRunContextImpl<'a> {
+    type BpfSockRef = &'a BpfSock<'a>;
 }
 
 impl EbpfProgramContext for SockOptProgram {
@@ -574,7 +594,9 @@ impl CgroupEbpfProgramSet {
             return Ok(SockAddrProgramResult::Allow);
         };
 
-        let mut bpf_sockaddr = BpfSockAddr { sock_addr: Default::default(), socket };
+        let bpf_sock = BpfSock { value: Default::default(), socket: Some(socket) };
+
+        let mut bpf_sockaddr = BpfSockAddr { sock_addr: Default::default(), bpf_sock: &bpf_sock };
         bpf_sockaddr.family = domain.as_raw().into();
         bpf_sockaddr.type_ = socket_type.as_raw();
         bpf_sockaddr.protocol = protocol.as_raw();
@@ -603,6 +625,9 @@ impl CgroupEbpfProgramSet {
             }
             _ => return error!(EAFNOSUPPORT),
         }
+
+        bpf_sockaddr.__bindgen_anon_1.sk =
+            (uaddr { addr: BpfValue::from(&bpf_sock).into() }).into();
 
         // UDP recvmsg programs are not allowed to filter packets.
         let can_block = op != SockAddrOp::UdpRecvMsg;
@@ -635,7 +660,7 @@ impl CgroupEbpfProgramSet {
                 protocol: protocol.as_raw(),
                 ..Default::default()
             },
-            socket,
+            socket: Some(socket),
         };
 
         prog.run(locked, current_task, &bpf_sock)
@@ -650,15 +675,24 @@ impl CgroupEbpfProgramSet {
         optval: Vec<u8>,
         optlen: usize,
         error: Option<Errno>,
+        socket: Option<&ZxioBackedSocket>,
     ) -> Result<(Vec<u8>, usize), Errno> {
         let (prog_guard, locked) = self.get_sockopt.read_and(locked);
         let Some(prog) = prog_guard.as_ref() else {
             return error.map(|e| Err(e)).unwrap_or_else(|| Ok((optval, optlen)));
         };
 
+        let bpf_sock = BpfSock { value: Default::default(), socket };
+
         let retval = error.as_ref().map(|e| -(e.code.error_code() as i32)).unwrap_or(0);
-        let mut bpf_sockopt =
-            BpfSockOptWithValue::new(level, optname, optval.clone(), optlen as u32, retval);
+        let mut bpf_sockopt = BpfSockOptWithValue::new(
+            level,
+            optname,
+            optval.clone(),
+            optlen as u32,
+            retval,
+            &bpf_sock,
+        );
 
         // Run the program.
         let result = prog.run(locked, current_task, &mut bpf_sockopt);
@@ -702,6 +736,7 @@ impl CgroupEbpfProgramSet {
         level: u32,
         optname: u32,
         value: SockOptValue,
+        socket: Option<&ZxioBackedSocket>,
     ) -> SetSockOptProgramResult {
         let (prog_guard, locked) = self.set_sockopt.read_and(locked);
         let Some(prog) = prog_guard.as_ref() else {
@@ -717,9 +752,12 @@ impl CgroupEbpfProgramSet {
             Err(err) => return SetSockOptProgramResult::Fail(err),
         };
 
+        let bpf_sock = BpfSock { value: Default::default(), socket };
+
         let buffer_len = buffer.len();
         let optlen = value.len();
-        let mut bpf_sockopt = BpfSockOptWithValue::new(level, optname, buffer, optlen as u32, 0);
+        let mut bpf_sockopt =
+            BpfSockOptWithValue::new(level, optname, buffer, optlen as u32, 0, &bpf_sock);
         let result = prog.run(locked.cast_locked(), current_task, &mut bpf_sockopt);
 
         let retval = bpf_sockopt.retval;

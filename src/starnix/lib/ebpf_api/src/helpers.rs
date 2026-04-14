@@ -17,8 +17,9 @@ use linux_uapi::{
     bpf_func_id_BPF_FUNC_probe_read_user_str, bpf_func_id_BPF_FUNC_ringbuf_discard,
     bpf_func_id_BPF_FUNC_ringbuf_reserve, bpf_func_id_BPF_FUNC_ringbuf_submit,
     bpf_func_id_BPF_FUNC_set_retval, bpf_func_id_BPF_FUNC_sk_fullsock,
-    bpf_func_id_BPF_FUNC_sk_storage_get, bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
-    bpf_func_id_BPF_FUNC_trace_printk, gid_t, pid_t, uid_t,
+    bpf_func_id_BPF_FUNC_sk_storage_get, bpf_func_id_BPF_FUNC_skb_load_bytes,
+    bpf_func_id_BPF_FUNC_skb_load_bytes_relative, bpf_func_id_BPF_FUNC_trace_printk, gid_t, pid_t,
+    uid_t,
 };
 use std::slice;
 
@@ -312,36 +313,58 @@ fn bpf_get_current_pid_tgid<C: CurrentTaskProgramContext>(
     (pid as u64 + (tgid as u64) << 32).into()
 }
 
-pub trait SocketCookieContext<A> {
-    fn get_socket_cookie(&self, arg: A) -> u64;
+// Trait for `EbpfProgramContext` where the first argument is a `SocketRef`,
+// i.e. it references a socket.
+pub trait Arg1IsSocketProgramContext: EbpfProgramContext {
+    type Arg1AsSocket<'a>: FromBpfValue<Self::RunContext<'a>> + SocketRef;
 }
 
-pub trait SocketCookieProgramContext: EbpfProgramContext {
-    fn get_socket_cookie<'a>(context: &mut Self::RunContext<'a>, arg: BpfValue) -> u64;
-}
-
-impl<C: EbpfProgramContext> SocketCookieProgramContext for C
+impl<C> Arg1IsSocketProgramContext for C
 where
-    for<'b, 'c> C::RunContext<'b>: SocketCookieContext<C::Arg1<'c>>,
-    for<'b> C::Arg1<'b>: FromBpfValue<C::RunContext<'b>>,
+    C: EbpfProgramContext,
+    for<'a> Self::Arg1<'a>: FromBpfValue<Self::RunContext<'a>> + SocketRef,
 {
-    fn get_socket_cookie<'a>(context: &mut Self::RunContext<'a>, arg: BpfValue) -> u64 {
-        // SAFETY: Verifier checks that the argument points at the same value
-        // that was passed to the program as the first argument.
-        let arg = unsafe { C::Arg1::from_bpf_value(context, arg) };
-        context.get_socket_cookie(arg)
-    }
+    type Arg1AsSocket<'a> = Self::Arg1<'a>;
 }
+
+// Marker trait for `EbpfProgramContext` that supports `bpf_get_socket_uid`.
+pub trait SocketCookieProgramContext: Arg1IsSocketProgramContext {}
+impl<C> SocketCookieProgramContext for C where C: Arg1IsSocketProgramContext {}
 
 fn bpf_get_socket_cookie<'a, C: SocketCookieProgramContext>(
     context: &mut C::RunContext<'a>,
-    arg: BpfValue,
+    arg1: BpfValue,
     _: BpfValue,
     _: BpfValue,
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    C::get_socket_cookie(context, arg).into()
+    // SAFETY: Verifier checks that the argument points at the value that
+    // that's passed as the first argument.
+    let arg1_as_socket = unsafe { C::Arg1AsSocket::from_bpf_value(context, arg1) };
+    arg1_as_socket.get_socket_cookie().unwrap_or(0).into()
+}
+
+pub trait SocketRef {
+    fn get_socket_cookie(&self) -> Option<u64>;
+    fn get_socket_uid(&self) -> Option<uid_t>;
+}
+
+// A trait for eBPF run context with `bpf_sock` pointers.
+pub trait BpfSockContext: Sized {
+    type BpfSockRef: SocketRef + FromBpfValue<Self>;
+}
+
+pub trait SkStorageProgramContext: EbpfProgramContext {
+    type BpfSockRef<'a>: SocketRef + FromBpfValue<Self::RunContext<'a>>;
+}
+
+impl<C> SkStorageProgramContext for C
+where
+    C: EbpfProgramContext,
+    for<'a> C::RunContext<'a>: BpfSockContext,
+{
+    type BpfSockRef<'a> = <C::RunContext<'a> as BpfSockContext>::BpfSockRef;
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -350,28 +373,9 @@ pub enum LoadBytesBase {
     NetworkHeader,
 }
 
-// Context allowing to retrieve a socket UID from `sk_buf`.
-pub trait SocketUidContext<B> {
-    fn get_socket_uid(&self, sk_buf: B) -> Option<uid_t>;
-}
-
-// Trait for `EbpfProgramContext` that supports `bpf_get_socket_uid`.
-pub trait SocketUidProgramContext: EbpfProgramContext {
-    fn get_socket_uid<'a>(context: &mut Self::RunContext<'a>, sk_buf: BpfValue) -> Option<uid_t>;
-}
-
-impl<C: EbpfProgramContext> SocketUidProgramContext for C
-where
-    for<'b, 'c> C::RunContext<'b>: SocketUidContext<C::Arg1<'c>>,
-    for<'b> C::Arg1<'b>: FromBpfValue<C::RunContext<'b>>,
-{
-    fn get_socket_uid<'a>(context: &mut Self::RunContext<'a>, sk_buf: BpfValue) -> Option<uid_t> {
-        // SAFETY: Verifier checks that the argument points at the same value
-        // that was passed to the program as the first argument.
-        let sk_buf = unsafe { C::Arg1::from_bpf_value(context, sk_buf) };
-        context.get_socket_uid(sk_buf)
-    }
-}
+// Marker trait for `EbpfProgramContext` that supports `bpf_get_socket_uid`.
+pub trait SocketUidProgramContext: Arg1IsSocketProgramContext {}
+impl<C> SocketUidProgramContext for C where C: Arg1IsSocketProgramContext {}
 
 fn bpf_get_socket_uid<'a, C: SocketUidProgramContext>(
     context: &mut C::RunContext<'a>,
@@ -382,7 +386,9 @@ fn bpf_get_socket_uid<'a, C: SocketUidProgramContext>(
     _: BpfValue,
 ) -> BpfValue {
     const OVERFLOW_UID: uid_t = 65534;
-    C::get_socket_uid(context, sk_buf).unwrap_or(OVERFLOW_UID).into()
+    // SAFETY: Verifier checks that the first argument points at a `__sk_buff`.
+    let sk_buf = unsafe { C::Arg1AsSocket::from_bpf_value(context, sk_buf) };
+    sk_buf.get_socket_uid().unwrap_or(OVERFLOW_UID).into()
 }
 
 // Trait for packets that support `bpf_load_bytes_relative`.
@@ -420,6 +426,27 @@ where
     }
 }
 
+fn bpf_skb_load_bytes<'a, C: SkbLoadBytesProgramContext>(
+    context: &mut C::RunContext<'a>,
+    sk_buf: BpfValue,
+    offset: BpfValue,
+    to: BpfValue,
+    len: BpfValue,
+    _: BpfValue,
+) -> BpfValue {
+    let base = LoadBytesBase::NetworkHeader;
+
+    let Ok(offset) = offset.as_u64().try_into() else {
+        return u64::MAX.into();
+    };
+
+    // SAFETY: The verifier ensures that `to` points to a valid buffer of at
+    // least `len` bytes that the eBPF program has permission to access.
+    let buf = unsafe { slice::from_raw_parts_mut(to.as_ptr::<u8>(), len.as_u64() as usize) };
+
+    C::skb_load_bytes_relative(context, sk_buf, base, offset, buf).into()
+}
+
 fn bpf_skb_load_bytes_relative<'a, C: SkbLoadBytesProgramContext>(
     context: &mut C::RunContext<'a>,
     sk_buf: BpfValue,
@@ -445,16 +472,28 @@ fn bpf_skb_load_bytes_relative<'a, C: SkbLoadBytesProgramContext>(
     C::skb_load_bytes_relative(context, sk_buf, base, offset, buf).into()
 }
 
-fn bpf_sk_storage_get<C: EbpfProgramContext>(
-    _context: &mut C::RunContext<'_>,
-    _: BpfValue,
-    _: BpfValue,
-    _: BpfValue,
-    _: BpfValue,
+fn bpf_sk_storage_get<'a, C: SkStorageProgramContext + MapsProgramContext>(
+    context: &mut C::RunContext<'a>,
+    _map: BpfValue,
+    sk: BpfValue,
+    _value: BpfValue,
+    _flags: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_sk_storage_get");
-    0.into()
+    if sk.is_zero() {
+        return BpfValue::default();
+    }
+
+    // SAFETY: Verifier ensures that `sk` is either null or a pointer to
+    // `bpf_sock`. The null case is checked above.
+    let bpf_sock = unsafe { C::BpfSockRef::from_bpf_value(context, sk) };
+
+    // Use socket cookie to identify the socket in the map.
+    let _socket_id = bpf_sock.get_socket_cookie();
+
+    // TODO(https://fxbug.dev/496639039): Implement sk_storage maps.
+
+    BpfValue::default()
 }
 
 fn bpf_sk_fullsock<C: EbpfProgramContext>(
@@ -546,7 +585,10 @@ fn get_current_task_helpers<C: CurrentTaskProgramContext>()
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCK` programs.
 pub trait CgroupSockProgramContext:
-    MapsProgramContext + SocketCookieProgramContext + CurrentTaskProgramContext
+    MapsProgramContext
+    + SocketCookieProgramContext
+    + CurrentTaskProgramContext
+    + SkStorageProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         [
@@ -563,7 +605,10 @@ pub trait CgroupSockProgramContext:
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCKADDR` programs.
 pub trait CgroupSockAddrProgramContext:
-    MapsProgramContext + SocketCookieProgramContext + CurrentTaskProgramContext
+    MapsProgramContext
+    + SocketCookieProgramContext
+    + CurrentTaskProgramContext
+    + SkStorageProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         [
@@ -580,12 +625,13 @@ pub trait CgroupSockAddrProgramContext:
 // Trait for `EbpfProgramContext` implementations that are used for
 // `BPF_PROG_TYPE_CGROUP_SOCKOPT` programs.
 pub trait CgroupSockOptProgramContext:
-    MapsProgramContext + CurrentTaskProgramContext + ReturnValueProgramContext
+    MapsProgramContext + CurrentTaskProgramContext + ReturnValueProgramContext + SkStorageProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         [
             (bpf_func_id_BPF_FUNC_set_retval, EbpfHelperImpl(bpf_set_retval)),
             (bpf_func_id_BPF_FUNC_get_retval, EbpfHelperImpl(bpf_get_retval)),
+            (bpf_func_id_BPF_FUNC_sk_storage_get, EbpfHelperImpl(bpf_sk_storage_get)),
         ]
         .into_iter()
         .chain(get_common_helpers())
@@ -624,11 +670,13 @@ pub trait CgroupSkbProgramContext:
     + SocketUidProgramContext
     + SocketCookieProgramContext
     + SkbLoadBytesProgramContext
+    + SkStorageProgramContext
 {
     fn get_helpers() -> HelperSet<Self> {
         vec![
             (bpf_func_id_BPF_FUNC_get_socket_uid, EbpfHelperImpl(bpf_get_socket_uid)),
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
+            (bpf_func_id_BPF_FUNC_skb_load_bytes, EbpfHelperImpl(bpf_skb_load_bytes)),
             (
                 bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
                 EbpfHelperImpl(bpf_skb_load_bytes_relative),

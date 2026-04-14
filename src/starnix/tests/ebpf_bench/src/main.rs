@@ -7,8 +7,7 @@ use criterion::{Benchmark, Criterion};
 use ebpf::{EbpfProgramContext, FieldMapping, ProgramArgument};
 use ebpf_api::{
     __sk_buff, AttachType, CGROUP_SKB_SK_BUF_TYPE, LoadBytesBase, Map, MapValueRef,
-    PacketWithLoadBytes, PinnedMap, ProgramType, SocketCookieContext, SocketFilterProgramContext,
-    SocketUidContext, uid_t,
+    PacketWithLoadBytes, PinnedMap, ProgramType, SocketFilterProgramContext, SocketRef, uid_t,
 };
 use fuchsia_criterion::FuchsiaCriterion;
 use std::time::Duration;
@@ -72,6 +71,15 @@ impl ProgramArgument for &'_ SkBuff<'_> {
     }
 }
 
+impl<'a> SocketRef for &'a SkBuff<'a> {
+    fn get_socket_cookie(&self) -> Option<u64> {
+        None
+    }
+    fn get_socket_uid(&self) -> Option<uid_t> {
+        None
+    }
+}
+
 #[derive(Default)]
 struct TestEbpfRunContext<'a> {
     map_refs: Vec<MapValueRef<'a>>,
@@ -82,18 +90,6 @@ impl<'a> ebpf_api::MapsContext<'a> for TestEbpfRunContext<'a> {
 
     fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
         self.map_refs.push(map_ref)
-    }
-}
-
-impl<'a, 'b> SocketCookieContext<&'a SkBuff<'a>> for TestEbpfRunContext<'b> {
-    fn get_socket_cookie(&self, sk_buf: &'a SkBuff<'a>) -> u64 {
-        sk_buf.socket_cookie
-    }
-}
-
-impl<'a, 'b> SocketUidContext<&'a SkBuff<'a>> for TestEbpfRunContext<'b> {
-    fn get_socket_uid(&self, sk_buf: &'a SkBuff<'a>) -> Option<uid_t> {
-        Some(sk_buf.uid)
     }
 }
 

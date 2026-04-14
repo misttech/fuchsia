@@ -31,7 +31,7 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     AF_PACKET, BPF_MAXINSNS, MSG_DONTWAIT, MSG_WAITALL, SO_ATTACH_FILTER, SO_BINDTODEVICE,
     SO_BINDTOIFINDEX, SO_COOKIE, c_int, errno, errno_from_zxio_code, error, from_status_like_fdio,
-    sock_filter, uapi, ucred,
+    sock_filter, uapi, ucred, uid_t,
 };
 use static_assertions::const_assert_eq;
 use std::mem::size_of;
@@ -123,6 +123,9 @@ pub struct ZxioBackedSocket {
     // Token resolver for this socket.
     token_resolver: Arc<SocketTokenResolver>,
 
+    // UID of the process that created socket.
+    uid: uid_t,
+
     // TODO(https://fxbug.dev/496276975): Stub TCP_ANDROID_L4S implementation.
     tcp_android_l4s: Mutex<bool>,
 }
@@ -195,6 +198,7 @@ impl ZxioBackedSocket {
             zxio,
             cookie: Default::default(),
             token_resolver,
+            uid,
             tcp_android_l4s: Mutex::new(true),
         }
     }
@@ -420,6 +424,10 @@ impl ZxioBackedSocket {
         let _: Result<(), u64> = self.cookie.set(cookie);
 
         return Ok(cookie);
+    }
+
+    pub fn uid(&self) -> uid_t {
+        self.uid
     }
 }
 

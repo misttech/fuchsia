@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::bpf::attachments::BpfSock;
 use crate::power::EbpfSuspendGuard;
 use crate::task::CurrentTask;
-use ebpf_api::{CurrentTaskContext, Map, MapValueRef, MapsContext};
+use ebpf_api::{BpfSockContext, CurrentTaskContext, Map, MapValueRef, MapsContext};
 use starnix_sync::{EbpfStateLock, Locked};
 use starnix_uapi::{gid_t, pid_t, uid_t};
 
@@ -64,4 +65,8 @@ impl<'a> CurrentTaskContext for EbpfRunContextImpl<'a> {
         let task = &self.current_task.task;
         (task.get_tid(), task.get_pid())
     }
+}
+
+impl<'a> BpfSockContext for EbpfRunContextImpl<'a> {
+    type BpfSockRef = &'a BpfSock<'a>;
 }

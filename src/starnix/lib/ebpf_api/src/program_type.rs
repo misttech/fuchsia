@@ -584,7 +584,13 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                 },
             ),
             (
-                vec![ProgramType::CgroupSock].into(),
+                vec![
+                    ProgramType::CgroupSkb,
+                    ProgramType::CgroupSock,
+                    ProgramType::CgroupSockopt,
+                    ProgramType::CgroupSockAddr,
+                ]
+                .into(),
                 EbpfHelperDefinition {
                     index: bpf_func_id_BPF_FUNC_sk_storage_get,
                     name: "sk_storage_get",
@@ -970,6 +976,11 @@ pub static BPF_SOCK_ADDR_TYPE: LazyLock<Type> = LazyLock::new(|| {
             scalar_u32_field(offset_of!(bpf_sock_addr, protocol)),
             scalar_u32_field(offset_of!(bpf_sock_addr, msg_src_ip4)),
             scalar_field(offset_of!(bpf_sock_addr, msg_src_ip6), 16),
+            // sk
+            ptr_to_mem_field::<bpf_sock>(
+                offset_of!(bpf_sock_addr, __bindgen_anon_1),
+                BPF_SOCK_ID.clone(),
+            ),
         ],
     )
 });
@@ -984,6 +995,11 @@ pub static BPF_SOCK_ADDR_INET4_TYPE: LazyLock<Type> = LazyLock::new(|| {
             scalar_u32_field(offset_of!(bpf_sock_addr, family)),
             scalar_u32_field(offset_of!(bpf_sock_addr, type_)),
             scalar_u32_field(offset_of!(bpf_sock_addr, protocol)),
+            // sk
+            ptr_to_mem_field::<bpf_sock>(
+                offset_of!(bpf_sock_addr, __bindgen_anon_1),
+                BPF_SOCK_ID.clone(),
+            ),
         ],
     )
 });
@@ -1000,6 +1016,11 @@ pub static BPF_SOCK_ADDR_INET6_TYPE: LazyLock<Type> = LazyLock::new(|| {
             scalar_u32_field(offset_of!(bpf_sock_addr, family)),
             scalar_u32_field(offset_of!(bpf_sock_addr, type_)),
             scalar_u32_field(offset_of!(bpf_sock_addr, protocol)),
+            // sk
+            ptr_to_mem_field::<bpf_sock>(
+                offset_of!(bpf_sock_addr, __bindgen_anon_1),
+                BPF_SOCK_ID.clone(),
+            ),
         ],
     )
 });

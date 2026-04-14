@@ -24,7 +24,7 @@ use ebpf::{
 };
 use ebpf_api::{
     LoadBytesBase, PacketWithLoadBytes, PinnedMap, ProgramType, SOCKET_FILTER_CBPF_CONFIG,
-    SOCKET_FILTER_SK_BUF_TYPE, SocketCookieContext, SocketFilterProgramContext, SocketUidContext,
+    SOCKET_FILTER_SK_BUF_TYPE, SocketFilterProgramContext, SocketRef,
 };
 use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
@@ -1128,20 +1128,6 @@ impl Packet for &mut SkBuf {
     }
 }
 
-impl<'a, 'b> SocketCookieContext<&'a mut SkBuf> for EbpfRunContextImpl<'b> {
-    fn get_socket_cookie(&self, _sk_buf: &'a mut SkBuf) -> u64 {
-        track_stub!(TODO("https://fxbug.dev/385015056"), "bpf_get_socket_cookie");
-        0
-    }
-}
-
-impl<'a, 'b> SocketUidContext<&'a mut SkBuf> for EbpfRunContextImpl<'b> {
-    fn get_socket_uid(&self, _sk_buf: &'a mut SkBuf) -> Option<uid_t> {
-        track_stub!(TODO("https://fxbug.dev/385015056"), "bpf_get_socket_uid");
-        None
-    }
-}
-
 impl<'a> PacketWithLoadBytes for &'a mut SkBuf {
     fn load_bytes_relative(&self, _base: LoadBytesBase, _offset: usize, _buf: &mut [u8]) -> i64 {
         track_stub!(TODO("https://fxbug.dev/385015056"), "bpf_load_bytes_relative");
@@ -1152,6 +1138,18 @@ impl<'a> PacketWithLoadBytes for &'a mut SkBuf {
 impl ProgramArgument for &'_ mut SkBuf {
     fn get_type() -> &'static Type {
         &*SOCKET_FILTER_SK_BUF_TYPE
+    }
+}
+
+impl SocketRef for &'_ mut SkBuf {
+    fn get_socket_cookie(&self) -> Option<u64> {
+        track_stub!(TODO("https://fxbug.dev/385015056"), "bpf_get_socket_cookie");
+        None
+    }
+
+    fn get_socket_uid(&self) -> Option<uid_t> {
+        track_stub!(TODO("https://fxbug.dev/385015056"), "bpf_get_socket_uid");
+        None
     }
 }
 

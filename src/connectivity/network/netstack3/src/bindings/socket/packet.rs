@@ -31,8 +31,7 @@ use packet_formats::ethernet::EtherType;
 use zx::{self as zx, HandleBased as _};
 
 use crate::bindings::bpf::{
-    SocketFilterProgram, SocketFilterResult, SocketFilterSkBuff, SocketInfo as BpfSocketInfo,
-    ValidVerifiedProgram,
+    SocketFilterProgram, SocketFilterResult, SocketFilterSkBuff, ValidVerifiedProgram,
 };
 use crate::bindings::devices::BindingId;
 use crate::bindings::errno::ErrnoError;
@@ -45,7 +44,6 @@ use crate::bindings::util::{
     TryIntoCoreWithContext as _, TryIntoFidlWithContext,
 };
 use crate::bindings::{BindingsCtx, Ctx};
-use netstack3_core::routes::Marks;
 
 /// State held in the bindings context for a single socket.
 #[derive(Debug)]
@@ -78,9 +76,8 @@ impl DeviceSocketBindingsContext<DeviceId<Self>> for BindingsCtx {
                     fppacket::Kind::Network => (frame.into_body().len(), frame.body_offset()),
                     fppacket::Kind::Link => (raw.len(), 0),
                 };
-                // TODO(https://fxbug.dev/477940321): Pass actual socket UID
-                // and marks here when eBPF is supported.
-                let socket_info = BpfSocketInfo::new(socket_id.socket_cookie(), &Marks::default());
+                // TODO(https://fxbug.dev/477940321): Pass BpfSock` when eBPF
+                // is support is added.
                 let packet = SocketFilterSkBuff::new(
                     frame.protocol(),
                     packet_size,
@@ -89,8 +86,9 @@ impl DeviceSocketBindingsContext<DeviceId<Self>> for BindingsCtx {
                     raw,
                     frame.body_offset(),
                     default_offset,
+                    None,
                 );
-                let result = program.run(socket_info, packet);
+                let result = program.run(packet);
                 match result {
                     SocketFilterResult::Reject => return Ok(()),
                     SocketFilterResult::Accept(size) => size,

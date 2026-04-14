@@ -369,6 +369,10 @@ impl From<BpfValue> for usize {
 }
 
 impl BpfValue {
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
     pub fn as_u8(&self) -> u8 {
         self.0 as u8
     }
