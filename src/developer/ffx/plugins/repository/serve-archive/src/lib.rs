@@ -17,7 +17,7 @@ use ffx_repository_server_start_args::{
     StartCommand, default_alias_conflict_mode, default_tunnel_addr,
 };
 use ffx_writer::VerifiedMachineWriter;
-use fho::{Deferred, FfxMain, FfxTool, Result};
+use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, Result};
 use package_tool::{RepoCreateCommand, RepoPublishCommand, cmd_repo_create, cmd_repo_publish};
 use std::marker::PhantomData;
 use target_connector::Connector;
@@ -128,6 +128,7 @@ impl ServeArchiveTools for DefaultServeArchiveTools {
 }
 
 #[derive(FfxTool)]
+#[check(AvailabilityFlag("repository.serve-archive"))]
 pub struct ServeArchiveTool<T: ServeArchiveTools> {
     #[command]
     pub cmd: ServeArchiveCommand,
