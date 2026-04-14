@@ -11,7 +11,6 @@ use errors::{ActionError, DestroyActionError};
 use futures::Future;
 use futures::future::join_all;
 use hooks::EventPayload;
-use std::pin::{Pin, pin};
 use std::sync::Arc;
 
 /// Destroy this component instance, including all instances nested in its component.
@@ -50,19 +49,13 @@ async fn do_destroy(component: &Arc<ComponentInstance>) -> Result<(), ActionErro
             .await
             .map_err(|e| DestroyActionError::ShutdownFailed { err: Box::new(e) })?;
 
-        let nfs = {
+        let children_to_destroy = {
             match *component.lock_state().await {
-                InstanceState::Shutdown(ref state, _) => {
-                    let mut nfs = vec![];
-                    for (m, c) in state.children.iter() {
-                        let component = component.clone();
-                        let m = m.clone();
-                        let incarnation = c.incarnation_id();
-                        let nf = async move { component.destroy_child(m, incarnation).await };
-                        nfs.push(nf);
-                    }
-                    nfs
-                }
+                InstanceState::Shutdown(ref state, _) => state
+                    .children
+                    .iter()
+                    .map(|(m, c)| (m.clone(), c.incarnation_id()))
+                    .collect::<Vec<_>>(),
                 InstanceState::Unresolved(_)
                 | InstanceState::Resolved(_)
                 | InstanceState::Started(_, _) => {
@@ -77,7 +70,14 @@ async fn do_destroy(component: &Arc<ComponentInstance>) -> Result<(), ActionErro
                 }
             }
         };
-        let results = join_all(nfs).await;
+
+        let results = join_all(
+            children_to_destroy
+                .into_iter()
+                .map(|(m, incarnation)| component.destroy_child(m, incarnation)),
+        )
+        .await;
+
         ok_or_first_error(results)?;
 
         // Now that all children have been destroyed, destroy the parent.
@@ -93,12 +93,8 @@ async fn do_destroy(component: &Arc<ComponentInstance>) -> Result<(), ActionErro
         let start_shutdown = wait(component.actions().wait(ActionKey::Start).await);
         let execution_scope = &component.execution_scope;
         execution_scope.shutdown();
-        join_all([
-            pin!(resolve_shutdown) as Pin<&mut (dyn Future<Output = ()> + Send)>,
-            pin!(start_shutdown),
-            pin!(execution_scope.wait()),
-        ])
-        .await;
+
+        futures::join!(resolve_shutdown, start_shutdown, execution_scope.wait());
 
         // Only consider the component fully destroyed once it's no longer executing any lifecycle
         // transitions.
