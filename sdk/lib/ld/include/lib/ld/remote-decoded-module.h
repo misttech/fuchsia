@@ -387,7 +387,7 @@ class RemoteDecodedModule : public RemoteDecodedFile, public RemoteDecodedModule
     // If there was a PT_TLS, fill in tls_module() to be published later.
     // The TLS module ID is not meaningful here, it just has to be nonzero.
     if (tls_phdr) {
-      this->SetTls(diag, memory, *tls_phdr, 1);
+      this->SetTls(diag, memory, page_size, *tls_phdr, 1);
     }
 
     // Decode everything else from the PT_DYNAMIC data.  Each DT_NEEDED has an

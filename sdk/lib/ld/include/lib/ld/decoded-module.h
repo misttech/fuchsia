@@ -185,7 +185,8 @@ class DecodedModule : public DecodedModuleBase {
   // tls_module_id() values returned by this object.  In a derived object only
   // used as a pure cache of the ELF file's metadata, constant 1 is fine.
   template <class Diagnostics, class Memory>
-  constexpr bool SetTls(Diagnostics& diag, Memory& memory, const Phdr& tls_phdr, size_type modid) {
+  constexpr bool SetTls(Diagnostics& diag, Memory& memory, size_type page_size,
+                        const Phdr& tls_phdr, size_type modid) {
     using PhdrError = elfldltl::internal::PhdrError<elfldltl::ElfPhdrType::kTls>;
 
     assert(modid != 0);
@@ -196,6 +197,11 @@ class DecodedModule : public DecodedModuleBase {
       if (!diag.FormatError(PhdrError::kBadAlignment)) {
         return false;
       }
+    } else if (alignment > page_size) [[unlikely]] {
+      if (!diag.FormatError("PT_TLS has p_align ", alignment, " > system page size ", page_size)) {
+        return false;
+      }
+      tls_module_.tls_alignment = page_size;
     } else {
       tls_module_.tls_alignment = alignment;
     }

@@ -148,7 +148,7 @@ class DecodedModuleInMemory : public DecodedModule<ElfLayout, SegmentContainer, 
 
     // If there was a PT_TLS, fill in tls_module() to be published later.
     if (tls_phdr) {
-      this->SetTls(diag, memory, *tls_phdr, ++max_tls_modid);
+      this->SetTls(diag, memory, page_size, *tls_phdr, ++max_tls_modid);
     }
 
     auto dynamic = this->DecodeDynamic(diag, memory, dyn_phdr,

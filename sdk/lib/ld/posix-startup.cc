@@ -131,7 +131,8 @@ std::pair<StartupModule*, size_t> LoadExecutable(Diagnostics& diag, StartupData&
   elfldltl::DecodePhdrs(diag, phdrs, PhdrMemoryBuildIdObserver(main_executable->memory(), module));
 
   if (phdr_info->tls_phdr) {
-    main_executable->decoded().SetTls(diag, main_executable->memory(), *phdr_info->tls_phdr, 1);
+    main_executable->decoded().SetTls(diag, main_executable->memory(), startup.page_size,
+                                      *phdr_info->tls_phdr, 1);
   }
 
   std::span<const Addr> preinit_array;
