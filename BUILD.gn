@@ -2617,6 +2617,9 @@ group("root_targets") {
     # The Bazel SDK test suite running against the in-tree @fuchsia_sdk repository.
     "//build/bazel/bazel_sdk:bazel_sdk_tests",
 
+    # Tests of platform Bazel rules, macros, and migrated targets.
+    "//build/bazel/rules/tests",
+
     # This target is listed explicitly by multiple CI bot build configurations.
     # See https://fxbug.dev/42162374 for context.
     "//build/images:record_filesystem_sizes",

@@ -11,17 +11,19 @@ otherwise part of the build.
 """
 
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 load(":rules.bzl", "build_for_host", "build_with_platform_api_level")
 
-# Runs all tests.
-filegroup(
+# Runs all tests and writes a stamp file.
+stamp_group(
     name = "tests",
     testonly = True,
-    srcs = [
-        ":build_only_tests",
-    ],
+    stamp = "tests.bazel_stamp",
     # Individual test groups can transition to host as needed.
     target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":build_only_tests",
+    ],
 )
 
 # Builds targets for which building successfully is the test.

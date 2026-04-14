@@ -991,11 +991,10 @@ build_for_host(
         # linked into the executable on the host toolchain.
         ":test-static-library",
         ":test_static_library_zx",
-        # These `cc_import()` targets do not actually build the underlying
-        # shared libraries. If they did, they would fail to link without symbols
-        # from their Fuchsia-only dependencies.
-        ":test-shared-library",
-        ":test_shared_library_zx",
+        # The shared library targets fail to link without symbols from their
+        # Fuchsia-only dependencies.
+        # Note: The `cc_import()` targets only build the shared libraries when
+        # building from GN via `bazel_build_action()`.
 
         # Exercise FIDL bindings.
         # Bindings for a library with dependencies.

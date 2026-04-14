@@ -115,6 +115,7 @@ group("bazel_action_allowlist") {
     "//build/bazel/examples/hello_world",
     "//build/bazel/host:bazel_root_targets",
     "//build/bazel/host:sdk_host_tools_arm64",
+    "//build/bazel/rules/tests",
   ]
 
   visibility += [ "//vendor/*" ]

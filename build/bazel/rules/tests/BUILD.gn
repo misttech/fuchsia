@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bazel/bazel_build_action.gni")
+
+bazel_build_action("tests") {
+  testonly = true
+  bazel_target = ":tests"
+  copy_outputs = [
+    {
+      bazel = "{{BAZEL_TARGET_OUT_DIR}}/tests.bazel_stamp"
+      ninja = "tests.bazel_stamp"
+    },
+  ]
+
+  # The SDK is required because the C++ tests rely on it for the sysroot.
+  # TODO(https://fxbug.dev/443766378): Set to true once a proper sysroot is
+  # available for the platform build.
+  no_sdk = false
+}
