@@ -42,6 +42,7 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox",
     "//sdk/fidl/fuchsia.component.test:fuchsia.component.test",
     "//sdk/fidl/fuchsia.data:fuchsia.data",
+    "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics",
     "//sdk/fidl/fuchsia.diagnostics.system:fuchsia.diagnostics.system",
     "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types",
@@ -113,6 +114,7 @@ _partner_idk_unstable_fidl_libraries_targets_list = [
     # keep-sorted: begin
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl",
     "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata",
+    "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption",
     "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo",
     "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor",
