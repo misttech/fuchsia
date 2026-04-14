@@ -161,7 +161,7 @@ struct GlobalIdPair {
       if (!had_acquire_fences) {                                                       \
         EXPECT_CALL(*mock_flatland_presenter_,                                         \
                     ScheduleUpdateForSession((args).requested_presentation_time, _,    \
-                                             (args).unsquashable, _, _, _));           \
+                                             (args).unsquashable, _, _, _, _));        \
       }                                                                                \
       RunLoopUntilIdle();                                                              \
       if (!(args).skip_session_update_and_release_fences) {                            \
@@ -254,14 +254,16 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   void SetUp() override {
     mock_flatland_presenter_ = new ::testing::StrictMock<MockFlatlandPresenter>();
 
-    ON_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _))
+    ON_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _))
         .WillByDefault(::testing::Invoke(
             [&](zx::time requested_presentation_time, scheduling::SchedulingIdPair id_pair,
                 bool unsquashable, std::vector<zx::event> release_fences,
-                std::vector<zx::counter> present_fences, bool schedule_asap) {
+                std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
+                bool schedule_asap) {
               // The ID must not already be registered.
               EXPECT_FALSE(pending_release_fences_.find(id_pair) != pending_release_fences_.end());
               pending_release_fences_[id_pair] = std::move(release_fences);
+              pending_release_counters_[id_pair] = std::move(release_counters);
 
               // Ensure IDs are strictly increasing.
               auto current_id_kv = pending_instance_updates_.find(id_pair.session_id);
@@ -477,6 +479,15 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
         }
       }
       pending_release_fences_.erase(begin, end);
+
+      auto begin_counters = pending_release_counters_.lower_bound({session_id, 0});
+      auto end_counters = pending_release_counters_.upper_bound({session_id, present_id});
+      for (auto counters_kv = begin_counters; counters_kv != end_counters; ++counters_kv) {
+        for (auto& counter : counters_kv->second) {
+          counter.signal(0, ZX_COUNTER_SIGNALED);
+        }
+      }
+      pending_release_counters_.erase(begin_counters, end_counters);
     }
 
     pending_instance_updates_.clear();
@@ -608,7 +619,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     EXPECT_CALL(*mock_flatland_presenter_,
                 ScheduleUpdateForSession(
                     zx::time(0), scheduling::SchedulingIdPair{display->session_id(), present_id},
-                    true, _, _, _));
+                    true, _, _, _, _));
     display->SetContent(std::move(parent_token),
                         fidl::NaturalToHLCPP(child_view_watcher_server_end));
     child->CreateView2(std::move(child_token),
@@ -669,6 +680,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
 
   // Storage for |mock_flatland_presenter_|.
   std::map<scheduling::SchedulingIdPair, std::vector<zx::event>> pending_release_fences_;
+  std::map<scheduling::SchedulingIdPair, std::vector<zx::counter>> pending_release_counters_;
   std::map<scheduling::SchedulingIdPair, zx::time> requested_presentation_times_;
   std::unordered_map<scheduling::SessionId, scheduling::PresentId> pending_instance_updates_;
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
@@ -833,7 +845,7 @@ TEST_F(FlatlandTest, PresentWithNoFieldsSet) {
 
   EXPECT_CALL(*mock_flatland_presenter_,
               ScheduleUpdateForSession(kDefaultRequestedPresentationTime, _, kDefaultUnsquashable,
-                                       _, _, _));
+                                       _, _, _, _));
   RunLoopUntilIdle();
 }
 
@@ -874,7 +886,7 @@ TEST_F(FlatlandTest, PresentWaitsForAcquireFences) {
   // instance, and the release fence is signaled.
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   RunLoopUntilIdle();
 
   // After signaling the final acquire fence (and running the loop), there is now a registered
@@ -927,7 +939,7 @@ TEST_F(FlatlandTest, PresentForwardsRequestedPresentationTime) {
   // presentation time.
   acquire_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   RunLoopUntilIdle();
 
   registered_presents = GetRegisteredPresents(flatland->GetRoot().GetInstanceId());
@@ -957,7 +969,7 @@ TEST_F(FlatlandTest, PresentWithSignaledFencesUpdatesImmediately) {
   // update immediately, and the release fence should be signaled. The PRESENT macro only expects
   // the ScheduleUpdateForSession() call when no acquire fences are present, but since this test
   // specifically tests pre-signaled fences, the EXPECT_CALL must be added here.
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   PRESENT_WITH_ARGS(flatland, std::move(args), true);
 
   auto registered_presents = GetRegisteredPresents(flatland->GetRoot().GetInstanceId());
@@ -1035,7 +1047,7 @@ TEST_F(FlatlandTest, PresentsUpdateInCallOrder) {
   // registered Presents and an UberStruct with a 2-element topology: the local root, and kId.
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _)).Times(2);
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _)).Times(2);
   RunLoopUntilIdle();
 
   ApplySessionUpdatesAndSignalFences();
@@ -2761,7 +2773,7 @@ TEST_F(FlatlandTest, ClearDelaysLinkDestructionUntilPresent) {
   // Signal the acquire fence to unbind the links.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end));
@@ -2798,7 +2810,7 @@ TEST_F(FlatlandTest, ClearDelaysLinkDestructionUntilPresent) {
   // Signal the acquire fence to unbind the links.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end2));
@@ -3185,7 +3197,7 @@ TEST_F(FlatlandTest, ValidChildToParentFlow_ChildUsedCreateView2) {
 
   // Signal the acquire fence to unblock the present.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   RunLoopUntilIdle();
   ApplySessionUpdatesAndSignalFences();
   UpdateLinks(parent->GetRoot());
@@ -3281,7 +3293,7 @@ TEST_F(FlatlandTest, ContentHasPresentedSignalWaitsForAcquireFences) {
   EXPECT_FALSE(cvs.has_value());
 
   // Signal the acquire fence.
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   acquire1_copy.signal(0, ZX_EVENT_SIGNALED);
   RunLoopUntilIdle();
   ApplySessionUpdatesAndSignalFences();
@@ -3956,7 +3968,7 @@ TEST_F(FlatlandTest, ReleaseViewportViaFidlClient) {
 
     // Now present.  We do this via the FIDL client to ensure correct sequencing (i.e. this way the
     // `Present()` is guaranteed to follow the `ReleaseViewport()`).
-    EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+    EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
     async::PostTask(client_server->client_loop().dispatcher(), [&]() {
       fuchsia_ui_composition::PresentArgs present_args;
       present_args.requested_presentation_time(0)
@@ -4014,7 +4026,7 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOriginalToken) {
   // Signal the acquire fence to unbind the link.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
 
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end));
@@ -5975,7 +5987,7 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
   // We post this task onto the other Flatland's thread, so that we can have a *chance* of locking
   // the LinkSystem mutex in between the execution of the two link-resolution closures (each of
   // which also locks the LinkSystem mutex).
-  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   libsync::Completion completion;
   async::PostTask(child_flatland_thread_loop.dispatcher(), ([&]() {
                     child_flatland->CreateView2(
@@ -6088,7 +6100,7 @@ TEST_F(FlatlandTest, PresentWithScheduleAsapConfig) {
   std::shared_ptr<Flatland> flatland = CreateFlatland(std::move(config));
 
   EXPECT_CALL(*mock_flatland_presenter_,
-              ScheduleUpdateForSession(_, _, _, _, _, /*schedule_asap=*/true));
+              ScheduleUpdateForSession(_, _, _, _, _, _, /*schedule_asap=*/true));
 
   fuchsia_ui_composition::PresentArgs present_args;
   present_args.requested_presentation_time(0);

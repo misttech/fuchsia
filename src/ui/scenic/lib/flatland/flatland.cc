@@ -374,6 +374,9 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
   if (!args.present_fences().has_value()) {
     args.present_fences(std::vector<zx::counter>{});
   }
+  if (!args.release_counters().has_value()) {
+    args.release_counters(std::vector<zx::counter>{});
+  }
   if (!args.unsquashable().has_value()) {
     args.unsquashable(false);
   }
@@ -544,6 +547,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
                unsquashable = args.unsquashable().value(), uber_struct = std::move(uber_struct),
                link_operations = std::move(pending_link_operations_),
                release_fences = std::move(*args.release_fences()),
+               release_counters = std::move(*args.release_counters()),
                present_fences = std::move(*args.present_fences()), trace_enabled,
                kLoadBearingTraceNonce, recompute_view_tree]() mutable {
     // NOTE: this name is important for benchmarking.  Do not remove or modify it
@@ -566,7 +570,8 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     uber_struct_queue_->Push(present_id, std::move(uber_struct), recompute_view_tree);
     flatland_presenter_->ScheduleUpdateForSession(
         zx::time(requested_presentation_time), {session_id_, present_id}, unsquashable,
-        std::move(release_fences), std::move(present_fences), config_.schedule_asap);
+        std::move(release_fences), std::move(release_counters), std::move(present_fences),
+        config_.schedule_asap);
 
     // Finalize Link destruction operations after publishing the new UberStruct. This
     // ensures that any local Transforms referenced by the to-be-deleted Links are already

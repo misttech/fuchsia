@@ -691,13 +691,11 @@ zx::result<> DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trac
   return fit::ok();
 }
 
-bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
-                                              const uint64_t trace_flow_id,
-                                              const zx::time_monotonic presentation_time,
-                                              const std::vector<RenderData>& render_data_list,
-                                              std::vector<zx::event> release_fences,
-                                              std::vector<zx::counter> present_fences,
-                                              scheduling::FramePresentedCallback callback) {
+bool DisplayCompositor::PerformGpuComposition(
+    const uint64_t frame_number, const uint64_t trace_flow_id,
+    const zx::time_monotonic presentation_time, const std::vector<RenderData>& render_data_list,
+    std::vector<zx::event> release_fences, std::vector<zx::counter> release_counters,
+    std::vector<zx::counter> present_fences, scheduling::FramePresentedCallback callback) {
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::PerformGpuComposition");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   // Create an event that will be signaled when the final display's content has finished
@@ -830,17 +828,17 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
 
   // See ReleaseFenceManager comments for details.
   FX_DCHECK(render_finished_fence);
-  release_fence_manager_.OnGpuCompositedFrame(frame_number, std::move(render_finished_fence),
-                                              std::move(release_fences), std::move(present_fences),
-                                              std::move(callback));
+  release_fence_manager_.OnGpuCompositedFrame(
+      frame_number, std::move(render_finished_fence), std::move(release_fences),
+      std::move(release_counters), std::move(present_fences), std::move(callback));
   return true;
 }
 
 DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
     const uint64_t frame_number, const zx::time_monotonic presentation_time,
     const std::vector<RenderData>& render_data_list, std::vector<zx::event> release_fences,
-    std::vector<zx::counter> present_fences, scheduling::FramePresentedCallback callback,
-    RenderFrameTestArgs test_args) {
+    std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
+    scheduling::FramePresentedCallback callback, RenderFrameTestArgs test_args) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::RenderFrame");
   std::scoped_lock lock(lock_);
@@ -877,14 +875,15 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
 
       // See ReleaseFenceManager comments for details.
       release_fence_manager_.OnDirectScanoutFrame(frame_number, std::move(release_fences),
+                                                  std::move(release_counters),
                                                   std::move(present_fences), std::move(callback));
       return RenderFrameResult::kDirectToDisplay;
     }
   }
 
   if (PerformGpuComposition(frame_number, trace_flow_id, presentation_time, render_data_list,
-                            std::move(release_fences), std::move(present_fences),
-                            std::move(callback))) {
+                            std::move(release_fences), std::move(release_counters),
+                            std::move(present_fences), std::move(callback))) {
     for (const auto& data : render_data_list) {
       const int32_t num_render_data = static_cast<int32_t>(data.layers.size());
       const uint64_t display_id = data.display_id.value();

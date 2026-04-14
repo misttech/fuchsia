@@ -30,6 +30,10 @@ class FlatlandPresenterImpl final : public FlatlandPresenter,
     // which are too complicated to replicate here.
     std::vector<zx::event> release_fences;
 
+    // Fences which are signaled when the resources associated with the fences are safe to reuse.
+    // This is similar to `release_fences` but uses counters instead of events.
+    std::vector<zx::counter> release_counters;
+
     // Fences which are signaled when a Vsync event notifies Scenic that the frame corresponding to
     // the fences has been presented.
     std::vector<zx::counter> present_fences;
@@ -45,6 +49,7 @@ class FlatlandPresenterImpl final : public FlatlandPresenter,
   void ScheduleUpdateForSession(zx::time requested_presentation_time,
                                 scheduling::SchedulingIdPair id_pair, bool unsquashable,
                                 std::vector<zx::event> release_fences,
+                                std::vector<zx::counter> release_counters,
                                 std::vector<zx::counter> present_fences,
                                 bool schedule_asap) override;
 

@@ -88,7 +88,8 @@ TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) 
   bool kScheduleAsap = false;
 
   presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair, kUnsquashable,
-                                      /*release_fences=*/{}, /*present_fences=*/{}, kScheduleAsap);
+                                      /*release_fences=*/{}, /*release_counters=*/{},
+                                      /*present_fences=*/{}, kScheduleAsap);
   RunLoopUntilIdle();
 
   EXPECT_EQ(last_presentation_time, kPresentationTime);
@@ -103,7 +104,8 @@ TEST_F(FlatlandPresenterTest, ScheduleUpdateForSessionForwardsToFrameScheduler) 
       .present_id = 3,
   });
   presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair2, kUnsquashable,
-                                      /*release_fences=*/{}, /*present_fences=*/{},
+                                      /*release_fences=*/{}, /*release_counters=*/{},
+                                      /*present_fences=*/{},
                                       /*schedule_asap=*/kScheduleAsap);
   RunLoopUntilIdle();
 
@@ -147,7 +149,8 @@ TEST_F(FlatlandPresenterTest, ScheduleAsapDoesNotModifyPresentationTime) {
   const bool kScheduleAsap = true;
 
   presenter->ScheduleUpdateForSession(kPresentationTime, kIdPair, kUnsquashable,
-                                      /*release_fences=*/{}, /*present_fences=*/{}, kScheduleAsap);
+                                      /*release_fences=*/{}, /*release_counters=*/{},
+                                      /*present_fences=*/{}, kScheduleAsap);
   RunLoopUntilIdle();
 
   // zx::time is passed through.
@@ -259,19 +262,19 @@ TEST_F(FlatlandPresenterTest, TakeFences) {
 
   const auto present_id_A1 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdA, present_id_A1},
-                                      /*unsquashable=*/true, std::move(release_fences_A1),
+                                      /*unsquashable=*/true, std::move(release_fences_A1), {},
                                       std::move(present_fences_A1), false);
   const auto present_id_A2 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdA, present_id_A2},
-                                      /*unsquashable=*/true, std::move(release_fences_A2),
+                                      /*unsquashable=*/true, std::move(release_fences_A2), {},
                                       std::move(present_fences_A2), false);
   const auto present_id_B1 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B1},
-                                      /*unsquashable=*/true, std::move(release_fences_B1),
+                                      /*unsquashable=*/true, std::move(release_fences_B1), {},
                                       std::move(present_fences_B1), false);
   const auto present_id_B2 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B2},
-                                      /*unsquashable=*/true, std::move(release_fences_B2),
+                                      /*unsquashable=*/true, std::move(release_fences_B2), {},
                                       std::move(present_fences_B2), false);
 
   // There will be no fences yet, because ScheduleUpdateForSession() stashes the fences in a task
@@ -322,7 +325,7 @@ TEST_F(FlatlandPresenterTest, TakeFences) {
   // Register one more present.
   const auto present_id_B3 = scheduling::GetNextPresentId();
   presenter->ScheduleUpdateForSession(zx::time(0), {kSessionIdB, present_id_B3},
-                                      /*unsquashable=*/true, std::move(release_fences_B3),
+                                      /*unsquashable=*/true, std::move(release_fences_B3), {},
                                       std::move(present_fences_B3), false);
   RunLoopUntilIdle();
   auto fences_B2B3 = TakeFences(presenter, {
@@ -416,7 +419,7 @@ TEST_F(FlatlandPresenterTest, MultithreadedAccess) {
         auto present_id = scheduling::GetNextPresentId();
         presenter->ScheduleUpdateForSession(zx::time(0), {session_id, present_id},
                                             /*unsquashable=*/true, /*release_fences=*/{},
-                                            /*present_fences=*/{}, false);
+                                            /*release_counters=*/{}, /*present_fences=*/{}, false);
         presents.push_back(present_id);
 
         // Yield with some randomness so the threads get jumbled up a bit.

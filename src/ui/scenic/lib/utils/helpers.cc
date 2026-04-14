@@ -299,7 +299,7 @@ void SignalReleaseFences(const std::vector<zx::event>& fences) {
 }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-void SignalPresentFences(const std::vector<zx::counter>& fences, zx::time timestamp) {
+void SignalCounterFences(const std::vector<zx::counter>& fences, zx::time timestamp) {
   for (auto& c : fences) {
     c.write(timestamp.get());
     c.signal(0u, ZX_COUNTER_SIGNALED);

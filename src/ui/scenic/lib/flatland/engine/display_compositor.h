@@ -124,7 +124,8 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   RenderFrameResult RenderFrame(
       uint64_t frame_number, zx::time presentation_time,
       const std::vector<RenderData>& render_data_list, std::vector<zx::event> release_fences,
-      std::vector<zx::counter> present_fences, scheduling::FramePresentedCallback callback,
+      std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
+      scheduling::FramePresentedCallback callback,
       // Allows customization of behavior for tests.  Default values are used in production.
       RenderFrameTestArgs test_args = RenderFrameTestArgs::Default()) FXL_LOCKS_EXCLUDED(lock_);
 
@@ -217,13 +218,11 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
       allocation::GlobalBufferCollectionId collection_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Used when we're forced to fall back to GPU rendering.
-  bool PerformGpuComposition(uint64_t frame_number, uint64_t trace_flow_id,
-                             zx::time presentation_time,
-                             const std::vector<RenderData>& render_data_list,
-                             std::vector<zx::event> release_fences,
-                             std::vector<zx::counter> present_fences,
-                             scheduling::FramePresentedCallback callback)
-      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  bool PerformGpuComposition(
+      uint64_t frame_number, uint64_t trace_flow_id, zx::time presentation_time,
+      const std::vector<RenderData>& render_data_list, std::vector<zx::event> release_fences,
+      std::vector<zx::counter> release_counters, std::vector<zx::counter> present_fences,
+      scheduling::FramePresentedCallback callback) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Does all the setup for applying the render data, which includes images and rectangles,
   // onto the display via the display coordinator interface. Returns false if this cannot

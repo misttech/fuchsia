@@ -79,6 +79,7 @@ class ReleaseFenceManager final {
   //   - all previous callbacks have been invoked
   void OnGpuCompositedFrame(uint64_t frame_number, zx::event render_finished_fence,
                             std::vector<zx::event> release_fences,
+                            std::vector<zx::counter> release_counters,
                             std::vector<zx::counter> present_fences,
                             scheduling::FramePresentedCallback frame_presented_callback);
 
@@ -88,6 +89,7 @@ class ReleaseFenceManager final {
   //   - corresponding OnVsync() has been called, and:
   //   - all previous callbacks have been invoked
   void OnDirectScanoutFrame(uint64_t frame_number, std::vector<zx::event> release_fences,
+                            std::vector<zx::counter> release_counters,
                             std::vector<zx::counter> present_fences,
                             scheduling::FramePresentedCallback frame_presented_callback);
 
@@ -108,6 +110,8 @@ class ReleaseFenceManager final {
 
     std::vector<zx::event> release_fences_to_signal_when_render_finished;
     std::vector<zx::event> release_fences_to_signal_when_frame_presented;
+    std::vector<zx::counter> release_counters_to_signal_when_render_finished;
+    std::vector<zx::counter> release_counters_to_signal_when_frame_presented;
     std::vector<zx::counter> present_fences;
 
     scheduling::FramePresentedCallback frame_presented_callback;
@@ -146,7 +150,8 @@ class ReleaseFenceManager final {
   // separate method, which is called from both OnGpuCompositedFrame() and OnDirectScanoutFrame().
   void SignalOrScheduleSignalForReleaseFences(uint64_t frame_number,
                                               FrameRecord& current_frame_record,
-                                              std::vector<zx::event> release_fences);
+                                              std::vector<zx::event> release_fences,
+                                              std::vector<zx::counter> release_counters);
 
   // In order to invoke the callback, rendering needs to be finished *and* the frame must be
   // presented, since both of these are needed to populate the timestamps in the callback arg (a

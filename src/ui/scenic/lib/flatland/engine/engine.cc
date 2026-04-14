@@ -176,7 +176,8 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
       {{.layers = std::move(layers),
         .images = std::move(images),
         .display_id = hw_display->display_id()}},
-      std::move(fences.release_fences), std::move(fences.present_fences), std::move(callback));
+      std::move(fences.release_fences), std::move(fences.release_counters),
+      std::move(fences.present_fences), std::move(callback));
   RecordFrameResult(frame_result);
 }
 
@@ -328,7 +329,8 @@ void Engine::SkipRender(scheduling::FramePresentedCallback callback, bool rotate
   const zx::time now = async::Now(async_get_default_dispatcher());
   auto fences = flatland_presenter_->TakeFences();
   utils::SignalReleaseFences(fences.release_fences);
-  utils::SignalPresentFences(fences.present_fences, now);
+  utils::SignalCounterFences(fences.release_counters, now);
+  utils::SignalCounterFences(fences.present_fences, now);
   callback({.render_done_time = now, .actual_presentation_time = now});
 }
 

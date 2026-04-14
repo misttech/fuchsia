@@ -33,6 +33,7 @@ class FlatlandPresenter {
   virtual void ScheduleUpdateForSession(zx::time requested_presentation_time,
                                         scheduling::SchedulingIdPair id_pair, bool squashable,
                                         std::vector<zx::event> release_fences,
+                                        std::vector<zx::counter> release_counters,
                                         std::vector<zx::counter> present_fences,
                                         bool schedule_asap) = 0;
 
