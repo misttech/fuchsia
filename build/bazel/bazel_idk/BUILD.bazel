@@ -2,6 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//sdk:atom_lists.bzl",
+    "ALL_HOST_TOOL_ATOMS",
+    "CC_PREBUILT_SHARED_LIBRARY_ATOMS",
+    "CC_PREBUILT_STATIC_LIBRARY_ATOMS",
+    "DATA_ATOMS",
+    "STABLE_CC_SOURCE_LIBRARY_ATOMS",
+    "UNSTABLE_CC_SOURCE_LIBRARY_ATOMS",
+)
+
 # Allowlists for each IDK atom type.
 #
 # Each list specifies which directories can define each type of IDK atom.
@@ -15,65 +25,40 @@ filegroup(
     name = "partner_idk_cc_source_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
-        "//sdk/lib/async:__pkg__",
-        "//sdk/lib/async-loop:__pkg__",
-        "//sdk/lib/fidl:__pkg__",
-        "//sdk/lib/fidl/cpp:__pkg__",
-        "//sdk/lib/fidl/cpp/wire:__pkg__",
-        "//sdk/lib/fidl/hlcpp:__pkg__",
-        "//sdk/lib/fidl_base:__pkg__",
-        "//sdk/lib/fit:__pkg__",
-        "//sdk/lib/fit-promise:__pkg__",
-        "//sdk/lib/magma_common:__pkg__",
-        "//sdk/lib/media/cpp:__pkg__",
-        "//sdk/lib/stdcompat:__pkg__",
-        "//sdk/lib/utf-utils:__pkg__",
-        "//zircon/system/ulib/sync:__pkg__",
-        "//zircon/system/ulib/zx:__pkg__",
-    ],
+    ] + [target.split(":")[0] + ":__pkg__" for target in STABLE_CC_SOURCE_LIBRARY_ATOMS],
 )
 
 filegroup(
     name = "partner_idk_unstable_cc_source_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
-        "//sdk/lib/memory_barriers:__pkg__",
-    ],
+    ] + [target.split(":")[0] + ":__pkg__" for target in UNSTABLE_CC_SOURCE_LIBRARY_ATOMS],
 )
 
 filegroup(
     name = "partner_idk_cc_prebuilt_shared_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
-        "//sdk/lib/async-default:__pkg__",
-    ],
+    ] + [target.split(":")[0] + ":__pkg__" for target in CC_PREBUILT_SHARED_LIBRARY_ATOMS],
 )
 
 filegroup(
     name = "partner_idk_cc_prebuilt_static_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
-        "//sdk/lib/async-loop:__pkg__",
-        "//zircon/system/ulib/sync:__pkg__",
-    ],
+    ] + [target.split(":")[0] + ":__pkg__" for target in CC_PREBUILT_STATIC_LIBRARY_ATOMS],
 )
 
 filegroup(
     name = "partner_idk_data_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
-    ],
+    ] + [target.split(":")[0] + ":__pkg__" for target in DATA_ATOMS],
 )
 
 # partner_idk*_fidl_library_allowlist are defined in //sdk/fidl/BUILD.bazel.
 
 filegroup(
     name = "partner_idk_host_tool_allowlist",
-    visibility = [
-        "//tools/fidl/fidlc:__pkg__",
-        "//tools/fidl/fidlgen_cpp:__pkg__",
-        "//tools/fidl/fidlgen_hlcpp:__pkg__",
-        "//tools/fidl/fidlgen_rust:__pkg__",
-        "//tools/net/device-finder:__pkg__",
-    ],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in ALL_HOST_TOOL_ATOMS],
 )

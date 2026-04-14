@@ -3,6 +3,14 @@
 # found in the LICENSE file.
 
 load("//build/bazel/bazel_idk:defs.bzl", "idk_host_molecule", "idk_molecule")
+load(
+    "//sdk:atom_lists.bzl",
+    "ALL_CC_PREBUILT_LIBRARY_ATOMS",
+    "ALL_CC_SOURCE_LIBRARY_ATOMS",
+    "BUILD_HOST_TOOLS_ATOMS",
+    "DATA_ATOMS",
+    "NON_BUILD_HOST_TOOLS_ATOMS",
+)
 
 # All atoms to be produced by the main build configuration for inclusion in the Fuchsia IDK.
 # For now, there is no distinction between the in-tree IDK and real Fuchsia IDK.
@@ -15,6 +23,7 @@ idk_molecule(
     deps = [
         ":cc_prebuilt_libraries_idk",
         ":cc_source_libraries_idk",
+        ":data_atoms_idk",
         "//sdk/fidl:fidl_idk",
 
         # Host tools.
@@ -27,11 +36,7 @@ idk_molecule(
 # level. Must export symbols with C linkage.
 idk_molecule(
     name = "cc_prebuilt_libraries_idk",
-    deps = [
-        "//sdk/lib/async-default:async-default_idk",
-        "//sdk/lib/async-loop:async-loop-default_idk",
-        "//zircon/system/ulib/sync:sync_idk",
-    ],
+    deps = ALL_CC_PREBUILT_LIBRARY_ATOMS,
 )
 
 # C/C++ code that is provided as source in the IDK.
@@ -43,42 +48,20 @@ idk_molecule(
 # are complete at all API levels.
 idk_molecule(
     name = "cc_source_libraries_idk",
-    deps = [
-        "//sdk/lib/async:async-cpp_idk",
-        "//sdk/lib/async:async_idk",
-        "//sdk/lib/async-loop:async-loop-cpp_idk",
-        "//sdk/lib/async-loop:async-loop_idk",
-        "//sdk/lib/fidl:fidl_idk",
-        "//sdk/lib/fidl/cpp:cpp_base_idk",
-        "//sdk/lib/fidl/cpp:cpp_idk",
-        "//sdk/lib/fidl/cpp/wire:wire_idk",
-        "//sdk/lib/fidl/hlcpp:hlcpp_base_idk",
-        "//sdk/lib/fidl/hlcpp:hlcpp_idk",
-        "//sdk/lib/fidl/hlcpp:hlcpp_sync_idk",
-        "//sdk/lib/fidl_base:fidl_base_idk",
-        "//sdk/lib/fit:fit_idk",
-        "//sdk/lib/fit-promise:fit-promise_idk",
-        "//sdk/lib/magma_common:magma_common_idk",
-        "//sdk/lib/media/cpp:no_converters_idk",
-        "//sdk/lib/memory_barriers:memory_barriers_idk",
-        "//sdk/lib/stdcompat:stdcompat_idk",
-        "//sdk/lib/utf-utils:utf-utils_idk",
-        "//zircon/system/ulib/sync:sync-cpp_idk",
-        "//zircon/system/ulib/zx:zx_idk",
-    ],
+    deps = ALL_CC_SOURCE_LIBRARY_ATOMS,
+)
+
+# Data atoms provided in the IDK.
+idk_molecule(
+    name = "data_atoms_idk",
+    deps = DATA_ATOMS,
 )
 
 # Tools and data used on a host development machine to build software to run
 # on Fuchsia.
 idk_host_molecule(
     name = "build_host_tools_idk",
-    deps = [
-        "//tools/fidl/fidlc:fidl-format_idk",
-        "//tools/fidl/fidlc:fidlc_idk",
-        "//tools/fidl/fidlgen_cpp:fidlgen_cpp_idk",
-        "//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp_idk",
-        "//tools/fidl/fidlgen_rust:fidlgen_rust_idk",
-    ],
+    deps = BUILD_HOST_TOOLS_ATOMS,
 )
 
 # Tools and data used on a host development machine to interact with a
@@ -86,9 +69,5 @@ idk_host_molecule(
 # Some tools may depend on tools in peer molecules.
 idk_host_molecule(
     name = "non_build_host_tools_idk",
-    deps = [
-        # TODO(https://fxbug.dev/426130024): Fix the build and uncomment.
-        # "//src/sys/pkg/testing/fake-omaha-client:bin_idk",
-        "//tools/net/device-finder:device-finder_idk",
-    ],
+    deps = NON_BUILD_HOST_TOOLS_ATOMS,
 )
