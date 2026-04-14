@@ -4,6 +4,7 @@
 
 #include "sdio-function-device.h"
 
+#include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -142,11 +143,19 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
     }
   }
 
+  auto bus_info =
+      fuchsia_driver_framework::wire::BusInfo::Builder(arena)
+          .bus(fuchsia_driver_framework::wire::BusType::kSdio)
+          .address(fuchsia_driver_framework::wire::DeviceAddress::WithIntValue(function_))
+          .address_stability(fuchsia_driver_framework::wire::DeviceAddressStability::kStable)
+          .Build();
+
   const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                         .name(arena, sdio_function_name_)
                         .offers2(arena, std::move(offers))
                         .properties2(properties)
                         .devfs_args(devfs)
+                        .bus_info(bus_info)
                         .Build();
 
   auto result =
