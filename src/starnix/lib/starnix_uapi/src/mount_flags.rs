@@ -114,9 +114,13 @@ impl std::fmt::Display for FileSystemFlags {
     }
 }
 
+/// Display trait implementation for the subset of flags that are stored with mounts or superblocks.
 impl std::fmt::Display for MountFlags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `RDONLY` is stored both with the mount and the superblock flags.
         write!(f, "{}", if self.contains(Self::RDONLY) { "ro" } else { "rw" })?;
+
+        // Stored only in the mount flags.
         if self.contains(Self::NOEXEC) {
             write!(f, ",noexec")?;
         }
@@ -129,15 +133,28 @@ impl std::fmt::Display for MountFlags {
         if self.contains(Self::NOATIME) {
             write!(f, ",noatime")?;
         }
-        if self.contains(Self::SILENT) {
-            write!(f, ",silent")?;
+        if self.contains(Self::NODIRATIME) {
+            write!(f, ",nodiratime")?;
         }
-        if self.contains(Self::BIND) {
-            write!(f, ",bind")?;
+        if self.contains(Self::RELATIME) {
+            write!(f, ",relatime")?;
+        }
+
+        // Stored only on the superblock.
+        if self.contains(Self::DIRSYNC) {
+            write!(f, ",dirsync")?;
         }
         if self.contains(Self::LAZYTIME) {
             write!(f, ",lazytime")?;
         }
+        if self.contains(Self::MANDLOCK) {
+            write!(f, ",mand")?;
+        }
+        // `SILENT` is not reported in proc-mounts nor proc-pid-mountinfo.
+        if self.contains(Self::SYNCHRONOUS) {
+            write!(f, ",sync")?;
+        }
+
         Ok(())
     }
 }

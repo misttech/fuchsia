@@ -680,8 +680,8 @@ TEST_F(ProcMountsTest, Basic) {
     GTEST_SKIP() << "ProcMountsTest::Basic can not be run on Linux, skipping.";
   }
   EXPECT_THAT(read_mounts(), IsSupersetOf({
-                                 "data/system / remote_bundle ro,nosuid,nodev 0 0",
-                                 "none /dev devtmpfs rw,nosuid 0 0",
+                                 "data/system / remote_bundle ro,nosuid,nodev,relatime 0 0",
+                                 "none /dev devtmpfs rw,nosuid,relatime 0 0",
                                  ". /tmp tmpfs rw 0 0",
                              }));
 }
@@ -829,5 +829,116 @@ TEST_F(MountTest, RecFlagIsNotStored) {
 
   ASSERT_THAT(umount(dir.c_str()), SyscallSucceeds());
 }
+
+struct ProcMountinfoTestParams {
+  int flag;
+  std::vector<std::string> expected_options;
+};
+
+const char *MountFlagName(int flag) {
+  switch (flag) {
+    case MS_RDONLY:
+      return "MS_RDONLY";
+    case MS_NOSUID:
+      return "MS_NOSUID";
+    case MS_NODEV:
+      return "MS_NODEV";
+    case MS_NOEXEC:
+      return "MS_NOEXEC";
+    case MS_NOATIME:
+      return "MS_NOATIME";
+    case MS_NODIRATIME:
+      return "MS_NODIRATIME";
+    case MS_LAZYTIME:
+      return "MS_LAZYTIME";
+    case MS_RELATIME:
+      return "MS_RELATIME";
+    case MS_STRICTATIME:
+      return "MS_STRICTATIME";
+    case MS_SYNCHRONOUS:
+      return "MS_SYNCHRONOUS";
+    case MS_DIRSYNC:
+      return "MS_DIRSYNC";
+    case MS_MANDLOCK:
+      return "MS_MANDLOCK";
+    case MS_SILENT:
+      return "MS_SILENT";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+class ProcMountinfoPerMountFlagsTest
+    : public ProcMountsTest,
+      public ::testing::WithParamInterface<ProcMountinfoTestParams> {};
+
+TEST_P(ProcMountinfoPerMountFlagsTest, FlagReporting) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+
+  test_helper::ScopedTempDir temp_dir;
+  ASSERT_THAT(mount("none", temp_dir.path().c_str(), "tmpfs", GetParam().flag, nullptr),
+              SyscallSucceeds());
+
+  auto info = test_helper::ReadMountInfoLine(temp_dir.path());
+  ASSERT_TRUE(info.has_value());
+
+  auto mount_options =
+      fxl::SplitString(info->mount_options, ",", fxl::kKeepWhitespace, fxl::kSplitWantAll);
+  EXPECT_THAT(mount_options, UnorderedElementsAreArray(GetParam().expected_options));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    MountTest, ProcMountinfoPerMountFlagsTest,
+    ::testing::Values(ProcMountinfoTestParams{MS_RDONLY, {"ro", "relatime"}},
+                      ProcMountinfoTestParams{MS_NOSUID, {"rw", "nosuid", "relatime"}},
+                      ProcMountinfoTestParams{MS_NODEV, {"rw", "nodev", "relatime"}},
+                      ProcMountinfoTestParams{MS_NOEXEC, {"rw", "noexec", "relatime"}},
+                      ProcMountinfoTestParams{MS_NOATIME, {"rw", "noatime"}},
+                      ProcMountinfoTestParams{MS_NODIRATIME, {"rw", "nodiratime", "relatime"}},
+                      ProcMountinfoTestParams{MS_RELATIME, {"rw", "relatime"}},
+                      ProcMountinfoTestParams{MS_STRICTATIME, {"rw"}}),
+    [](const ::testing::TestParamInfo<ProcMountinfoTestParams> &info) {
+      return MountFlagName(info.param.flag);
+    });
+
+class ProcMountinfoSuperblockFlagsTest
+    : public ProcMountsTest,
+      public ::testing::WithParamInterface<ProcMountinfoTestParams> {};
+
+TEST_P(ProcMountinfoSuperblockFlagsTest, FlagReporting) {
+  // TODO(https://fxbug.dev/317285180) don't skip on baseline
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+
+  test_helper::ScopedTempDir temp_dir;
+  ASSERT_THAT(mount("none", temp_dir.path().c_str(), "tmpfs", GetParam().flag, nullptr),
+              SyscallSucceeds());
+
+  auto info = test_helper::ReadMountInfoLine(temp_dir.path());
+  ASSERT_TRUE(info.has_value());
+
+  auto super_options_vec =
+      fxl::SplitString(info->super_options, ",", fxl::kKeepWhitespace, fxl::kSplitWantAll);
+  std::set<std::string_view> super_options(super_options_vec.begin(), super_options_vec.end());
+  super_options.erase("inode64");
+
+  EXPECT_THAT(super_options, UnorderedElementsAreArray(GetParam().expected_options));
+}
+
+INSTANTIATE_TEST_SUITE_P(MountTest, ProcMountinfoSuperblockFlagsTest,
+                         ::testing::Values(ProcMountinfoTestParams{MS_RDONLY, {"ro"}},
+                                           ProcMountinfoTestParams{MS_SYNCHRONOUS, {"rw", "sync"}},
+                                           ProcMountinfoTestParams{MS_DIRSYNC, {"rw", "dirsync"}},
+                                           ProcMountinfoTestParams{MS_MANDLOCK, {"rw", "mand"}},
+                                           ProcMountinfoTestParams{MS_SILENT, {"rw"}},
+                                           ProcMountinfoTestParams{MS_LAZYTIME,
+                                                                   {"rw", "lazytime"}}),
+                         [](const ::testing::TestParamInfo<ProcMountinfoTestParams> &info) {
+                           return MountFlagName(info.param.flag);
+                         });
 
 }  // namespace
