@@ -3,12 +3,11 @@
 // found in the LICENSE file.
 
 use crate::task_metrics::constants::*;
-use core::cmp::Reverse;
 use fuchsia_inspect::{self as inspect, ArrayProperty};
 
 use injectable_time::TimeSource;
 use std::cmp::{Eq, Ord, PartialEq, PartialOrd, max};
-use std::collections::BinaryHeap;
+use std::collections::VecDeque;
 use std::ops::{AddAssign, SubAssign};
 use std::sync::Arc;
 
@@ -114,64 +113,70 @@ impl MostRecentMeasurement {
     }
 }
 
-/// MeasurementsQueue is a priority queue with a maximum size. It guarantees that there will be
-/// at most `max_measurements` true measurements and post invalidation measurements.
+/// Merge two queues together.
 ///
-/// A "true" measurement is an instance of `Measurement`. A post invalidation measurement is a
-/// counter incremented by `MeasurementsQueue::post_invalidation_insertion`, tracking how many
-/// measurements would have been taken if the owning task wasn't invalid. The goal is to keep
-/// a record of measurements for `max_measurements` minutes.
+/// `AddAssign` sets `self.post_invalidation_measurements` to the minimum
+/// of the values of the two queues.
+impl AddAssign<Self> for MeasurementsQueue {
+    fn add_assign(&mut self, mut other: Self) {
+        // Pre-allocate our new merged queue
+        let mut merged = VecDeque::with_capacity(self.max_measurements);
+
+        // Because both deques are sorted oldest-to-newest, we just peek
+        // at the front of both and pull whichever is older!
+        while let (Some(lhs), Some(rhs)) = (self.values.front(), other.values.front()) {
+            if lhs.can_merge(rhs) {
+                // They match! Pop both, merge them, and push to the new queue.
+                let mut l = self.values.pop_front().unwrap();
+                let r = other.values.pop_front().unwrap();
+                l += &r;
+                merged.push_back(l);
+            } else if lhs.timestamp < rhs.timestamp {
+                // Left is older, pop it first
+                merged.push_back(self.values.pop_front().unwrap());
+            } else {
+                // Right is older, pop it first
+                merged.push_back(other.values.pop_front().unwrap());
+            }
+        }
+
+        // Once one of the queues is empty, just append everything left in the other.
+        // (Only one of these extends will actually do anything)
+        merged.extend(self.values.drain(..));
+        merged.extend(other.values.drain(..));
+
+        self.values = merged;
+        self.most_recent_measurement.combine(other.most_recent_measurement);
+        self.clean_stale();
+    }
+}
+
+/// `MeasurementsQueue` is a chronological ring buffer (sliding window) that maintains
+/// a limited history of CPU measurements. It guarantees that it will hold at most
+/// `max_measurements` entries.
 ///
-/// The queue is prioritized by `Measurement`'s `Ord` impl such that the oldest
-/// measurements are dropped first when `max_period` is exceeded. No two measurements should have
-/// the same timestamp.
+/// The queue tracks two types of data:
+/// 1. "True" measurements: Concrete instances of `Measurement` taken while the task is valid.
+/// 2. Post-invalidation measurements: Placeholders inserted after a task becomes invalid.
+///    These represent missed samples to ensure the temporal history remains accurate.
+///
+/// Measurements are stored in strictly chronological order. As new measurements are pushed
+/// to the back of the queue, the oldest measurements are automatically popped from the front
+/// once they fall outside the `max_period` window or exceed the `max_measurements` capacity.
+/// No two measurements should have the same timestamp.
 #[derive(Debug)]
 pub struct MeasurementsQueue {
-    values: BinaryHeap<Reverse<Measurement>>,
-    // outer option refers to initialization
+    values: VecDeque<Measurement>,
     most_recent_measurement: MostRecentMeasurement,
     ts: Arc<dyn TimeSource + Send + Sync>,
     max_period: zx::BootDuration,
     max_measurements: usize,
 }
 
-/// Merge two queues together.
-///
-/// `AddAssign` sets `self.post_invalidation_measurements` to the minimum
-/// of the values of the two queues.
-impl AddAssign<Self> for MeasurementsQueue {
-    fn add_assign(&mut self, other: Self) {
-        // collect the measurements into an owning vector, arbitrarily ordered
-        let mut rhs_values = other.values.into_vec();
-        let mut new_heap = BinaryHeap::new();
-
-        while let Some(Reverse(mut lhs)) = self.values.pop() {
-            rhs_values.retain(|Reverse(rhs)| {
-                if lhs.can_merge(rhs) {
-                    lhs += rhs;
-                    false
-                } else {
-                    true
-                }
-            });
-
-            new_heap.push(Reverse(lhs));
-        }
-
-        for leftover in rhs_values {
-            new_heap.push(leftover);
-        }
-
-        self.values = new_heap;
-        self.most_recent_measurement.combine(other.most_recent_measurement);
-        self.clean_stale();
-    }
-}
-
 impl MeasurementsQueue {
     pub fn new(max_measurements: usize, ts: Arc<dyn TimeSource + Send + Sync>) -> Self {
         Self {
-            values: BinaryHeap::new(),
+            values: VecDeque::new(),
             most_recent_measurement: MostRecentMeasurement::Init,
             ts,
             max_period: (CPU_SAMPLE_PERIOD * max_measurements as u32).into(),
@@ -179,8 +184,6 @@ impl MeasurementsQueue {
         }
     }
 
-    /// Insert a new measurement into the priority queue.
-    /// Measurements must have distinct timestamps.
     pub fn insert(&mut self, measurement: Measurement) {
         self.insert_internal(Some(measurement));
     }
@@ -188,45 +191,6 @@ impl MeasurementsQueue {
     /// Insert a false measurement, typically after the invalidation of a task.
     pub fn insert_post_invalidation(&mut self) {
         self.insert_internal(None);
-    }
-
-    fn insert_internal(&mut self, measurement_wrapper: Option<Measurement>) {
-        self.most_recent_measurement.update(measurement_wrapper.clone());
-
-        if let Some(measurement) = measurement_wrapper {
-            self.values.push(Reverse(measurement));
-        }
-
-        self.clean_stale();
-    }
-
-    fn clean_stale(&mut self) {
-        let now = zx::BootInstant::from_nanos(self.ts.now());
-        while let Some(Reverse(oldest)) = self.values.peek() {
-            if (*oldest.timestamp() > now - self.max_period)
-                && self.values.len() <= self.max_measurements
-            {
-                return;
-            }
-
-            self.values.pop();
-        }
-    }
-
-    #[cfg(test)]
-    pub fn true_measurement_count(&self) -> usize {
-        self.values.len()
-    }
-
-    /// Sorted from newest to oldest:
-    /// Index: Timestamp
-    /// 0: t + N
-    /// 1: t+ (N-1)
-    /// 2: t+ (N-2)
-    /// ...
-    /// N: t
-    pub fn iter_sorted(&self) -> impl DoubleEndedIterator<Item = Measurement> {
-        self.values.clone().into_sorted_vec().into_iter().map(|Reverse(v)| v).into_iter()
     }
 
     /// Checks whether or not there are any true measurements. This says nothing
@@ -247,12 +211,44 @@ impl MeasurementsQueue {
         }
     }
 
+    #[cfg(test)]
+    pub fn true_measurement_count(&self) -> usize {
+        self.values.len()
+    }
+
+    fn insert_internal(&mut self, measurement_wrapper: Option<Measurement>) {
+        self.most_recent_measurement.update(measurement_wrapper.clone());
+
+        if let Some(measurement) = measurement_wrapper {
+            self.values.push_back(measurement);
+        }
+
+        self.clean_stale();
+    }
+
+    fn clean_stale(&mut self) {
+        let now = zx::BootInstant::from_nanos(self.ts.now());
+
+        while let Some(oldest) = self.values.front() {
+            if (*oldest.timestamp() > now - self.max_period)
+                && self.values.len() <= self.max_measurements
+            {
+                return;
+            }
+            self.values.pop_front();
+        }
+    }
+
+    pub fn iter_sorted(&self) -> impl DoubleEndedIterator<Item = &Measurement> {
+        self.values.iter().rev()
+    }
+
     pub fn record_to_node(&self, node: &inspect::Node) {
-        // gather measurements ordered oldest -> newest
         let count = self.values.len();
         let timestamps = node.create_int_array(TIMESTAMPS, count);
         let cpu_times = node.create_int_array(CPU_TIMES, count);
         let queue_times = node.create_int_array(QUEUE_TIMES, count);
+
         for (i, measurement) in self.iter_sorted().rev().enumerate() {
             timestamps.set(i, measurement.timestamp.into_nanos());
             cpu_times.set(i, measurement.cpu_time.into_nanos());
@@ -444,8 +440,7 @@ mod tests {
         clock1.set_ticks(clock2.now());
         q1 += q2;
 
-        let sorted = q1.values.into_sorted_vec();
-        let actual = sorted.iter().map(|Reverse(m)| m).collect::<Vec<_>>();
+        let actual: Vec<&Measurement> = q1.iter_sorted().collect();
 
         let d = |secs| -> MonotonicDuration { Duration::from_secs(secs).into() };
         assert_eq!(&d(3), actual[0].cpu_time());
@@ -511,8 +506,7 @@ mod tests {
 
         q1 += q2;
 
-        let sorted = q1.values.into_sorted_vec();
-        let actual = sorted.into_iter().map(|Reverse(m)| m).collect::<Vec<_>>();
+        let actual: Vec<&Measurement> = q1.iter_sorted().collect();
 
         let d = |secs| -> MonotonicDuration { Duration::from_secs(secs).into() };
         assert_eq!(&d(3), actual[0].cpu_time());
