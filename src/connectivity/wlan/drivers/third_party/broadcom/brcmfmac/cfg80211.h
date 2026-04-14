@@ -75,7 +75,7 @@ namespace fuchsia_wlan_phyimpl_wire = fuchsia_wlan_phyimpl::wire;
 #define BRCMF_LOW_DATA_RATE_DUR_RESET_THRESHOLD     ZX_MIN(60)
 
 // Thresholds to trigger additional debug information.
-#define BRCMF_LOW_DATA_RATE_THRESHOLD     (6)     // 6Mbps
+#define BRCMF_LOW_DATA_RATE_THRESHOLD     (10)     // 10 Mbps
 #define BRCMF_HIGH_ERR_RATE_THRESHOLD     (0.05)  // 5% packet err rate.
 
 // WME error threshold to trigger a deauth.
