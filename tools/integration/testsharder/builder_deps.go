@@ -113,7 +113,7 @@ func GetBuilderDeps(shards []*Shard, buildDir, checkoutDir string, tools build.T
 	}
 
 	// Add tools to deps file that will be run on the orchestrator which runs on an x64 host.
-	toolsToAdd := []string{"llvm-symbolizer", "symbolizer", "tefmocheck", "triage", "resultdb", "perfcompare"}
+	toolsToAdd := []string{"llvm-symbolizer", "symbolizer", "tefmocheck", "triage", "resultdb", "perfcompare", "test_filterer"}
 	for _, tool := range toolsToAdd {
 		t, err := tools.LookupTool(hostPlatform, tool)
 		if err != nil {
