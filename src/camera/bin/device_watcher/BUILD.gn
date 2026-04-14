@@ -27,18 +27,17 @@ source_set("lib") {
 
   public_deps = [
     ":fuchsia.camera.test_cpp",
-    "//sdk/fidl/fuchsia.camera2.hal:fuchsia.camera2.hal_hlcpp",
+    "//sdk/fidl/fuchsia.camera2.hal:fuchsia.camera2.hal_cpp",
     "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_cpp",
-    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_hlcpp",
-    "//sdk/fidl/fuchsia.component:fuchsia.component_hlcpp",
-    "//sdk/fidl/fuchsia.hardware.camera:fuchsia.hardware.camera_hlcpp",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
-    "//sdk/fidl/fuchsia.process:fuchsia.process_hlcpp",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+    "//sdk/fidl/fuchsia.hardware.camera:fuchsia.hardware.camera_cpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+    "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fit-promise",
-    "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fsl",
   ]
@@ -73,9 +72,9 @@ cc_test_executable("camera_device_watcher_unittest_bin") {
   testonly = true
   sources = [ "device_watcher_unittest.cc" ]
   deps = [
-    ":fuchsia.camera.test_hlcpp",
+    ":fuchsia.camera.test_cpp",
     ":lib",
-    "//sdk/lib/sys/cpp/testing:unit",
+    "//sdk/lib/component/incoming/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//src/storage/lib/vfs/cpp",

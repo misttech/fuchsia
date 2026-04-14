@@ -4,16 +4,15 @@
 
 #include <fidl/fuchsia.camera.test/cpp/fidl.h>
 #include <fidl/fuchsia.camera3/cpp/fidl.h>
-#include <fuchsia/camera3/cpp/fidl.h>
-#include <fuchsia/component/cpp/fidl.h>
-#include <fuchsia/hardware/camera/cpp/fidl.h>
+#include <fidl/fuchsia.component/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.camera/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fdio.h>
 #include <lib/fidl/cpp/binding_set.h>
-#include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -22,7 +21,8 @@
 
 class DeviceWatcherTesterImpl : public fidl::Server<fuchsia_camera_test::DeviceWatcherTester> {
  public:
-  using InjectDeviceCallback = fit::function<void(fuchsia::hardware::camera::DeviceHandle)>;
+  using InjectDeviceCallback =
+      fit::function<void(fidl::ClientEnd<fuchsia_hardware_camera::Device>)>;
   using InjectDeviceByPathCallback = fit::function<void(std::string)>;
 
   explicit DeviceWatcherTesterImpl(InjectDeviceCallback callback)
@@ -33,8 +33,7 @@ class DeviceWatcherTesterImpl : public fidl::Server<fuchsia_camera_test::DeviceW
   // |fuchsia_camera_test::DeviceWatcherTester|
   void InjectDevice(InjectDeviceRequest& request, InjectDeviceCompleter::Sync& completer) override {
     ZX_ASSERT(callback_);
-    fuchsia::hardware::camera::DeviceHandle camera(request.camera().TakeChannel());
-    callback_(std::move(camera));
+    callback_(std::move(request.camera()));
   }
 
   void InjectDeviceByPath(InjectDeviceByPathRequest& request,
@@ -74,17 +73,14 @@ int main(int argc, char* argv[]) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   async_dispatcher_t* dispatcher = loop.dispatcher();
 
-  auto context = sys::ComponentContext::Create();
-
-  fuchsia::component::RealmHandle realm;
-  zx_status_t status = context->svc()->Connect(realm.NewRequest());
-  if (status != ZX_OK) {
-    FX_PLOGS(FATAL, status) << "Failed to connect to realm service.";
+  auto realm_client = component::Connect<fuchsia_component::Realm>();
+  if (realm_client.is_error()) {
+    FX_LOGS(FATAL) << "Failed to connect to realm service: " << realm_client.status_string();
     return EXIT_FAILURE;
   }
 
   auto server_create_result =
-      camera::DeviceWatcherImpl::Create(std::move(context), std::move(realm), loop.dispatcher());
+      camera::DeviceWatcherImpl::Create(std::move(realm_client.value()), loop.dispatcher());
   if (server_create_result.is_error()) {
     FX_PLOGS(FATAL, server_create_result.error());
     return EXIT_FAILURE;
@@ -112,8 +108,7 @@ int main(int argc, char* argv[]) {
 
   zx::result server_result = outgoing.AddUnmanagedProtocol<fuchsia_camera3::DeviceWatcher>(
       [&](fidl::ServerEnd<fuchsia_camera3::DeviceWatcher> server_end) {
-        fidl::InterfaceRequest<fuchsia::camera3::DeviceWatcher> request(server_end.TakeChannel());
-        server->OnNewRequest(std::move(request));
+        server->OnNewRequest(std::move(server_end));
       });
   if (server_result.is_error()) {
     FX_LOGS(ERROR) << "Failed to add DeviceWatcher protocol: " << server_result.status_string();

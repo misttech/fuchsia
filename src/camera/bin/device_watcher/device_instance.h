@@ -5,16 +5,15 @@
 #ifndef SRC_CAMERA_BIN_DEVICE_WATCHER_DEVICE_INSTANCE_H_
 #define SRC_CAMERA_BIN_DEVICE_WATCHER_DEVICE_INSTANCE_H_
 
-#include <fuchsia/camera2/hal/cpp/fidl.h>
-#include <fuchsia/camera3/cpp/fidl.h>
-#include <fuchsia/component/cpp/fidl.h>
-#include <fuchsia/hardware/camera/cpp/fidl.h>
-#include <fuchsia/io/cpp/fidl.h>
+#include <fidl/fuchsia.camera2.hal/cpp/fidl.h>
+#include <fidl/fuchsia.camera3/cpp/fidl.h>
+#include <fidl/fuchsia.component/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.camera/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/result.h>
-#include <lib/sys/cpp/service_directory.h>
 #include <zircon/status.h>
 
 namespace camera {
@@ -23,9 +22,9 @@ namespace camera {
 class DeviceInstance {
  public:
   static fpromise::result<std::unique_ptr<DeviceInstance>, zx_status_t> Create(
-      fuchsia::hardware::camera::DeviceHandle camera, const fuchsia::component::RealmPtr& realm,
-      async_dispatcher_t* dispatcher, const std::string& collection_name,
-      const std::string& child_name, const std::string& url);
+      fidl::ClientEnd<fuchsia_hardware_camera::Device> camera,
+      const fidl::Client<fuchsia_component::Realm>& realm, async_dispatcher_t* dispatcher,
+      const std::string& collection_name, const std::string& child_name, const std::string& url);
   const std::string& name() { return name_; }
   const std::string& collection_name() { return collection_name_; }
 
@@ -33,7 +32,7 @@ class DeviceInstance {
   async_dispatcher_t* dispatcher_;
   std::string name_;
   std::string collection_name_;
-  fuchsia::hardware::camera::DevicePtr camera_;
+  fidl::Client<fuchsia_hardware_camera::Device> camera_;
 };
 
 }  // namespace camera
