@@ -289,27 +289,35 @@ mod internal {
         }
 
         fn node_size(&self) -> usize {
+            NODE_HEADER_SIZE + self.key_size as usize
+        }
+
+        fn padded_node_size(&self) -> usize {
             NODE_HEADER_SIZE + self.padded_key_size()
         }
 
         fn node_offset(&self, index: u32) -> usize {
-            TRIE_HEADER_SIZE + self.node_size() * (index as usize)
+            TRIE_HEADER_SIZE + self.padded_node_size() * (index as usize)
         }
 
         fn data_entry_size(&self) -> usize {
+            DATA_ENTRY_HEADER_SIZE + self.value_size as usize
+        }
+
+        fn padded_data_entry_size(&self) -> usize {
             DATA_ENTRY_HEADER_SIZE + self.padded_value_size()
         }
 
         fn data_entry_offset(&self, index: u32) -> usize {
             TRIE_HEADER_SIZE
-                + self.node_size() * self.num_nodes()
-                + self.data_entry_size() * (index as usize)
+                + self.padded_node_size() * self.num_nodes()
+                + self.padded_data_entry_size() * (index as usize)
         }
 
         pub fn total_size(&self) -> usize {
             TRIE_HEADER_SIZE
-                + self.node_size() * self.num_nodes()
-                + self.data_entry_size() * (self.max_entries as usize)
+                + self.padded_node_size() * self.num_nodes()
+                + self.padded_data_entry_size() * (self.max_entries as usize)
         }
     }
 
@@ -502,10 +510,6 @@ mod internal {
                     LpmTrieState { header: &mut lpm_trie_header.state, store },
                 )
             }
-        }
-
-        pub fn layout(&self) -> &Layout {
-            &self.store.layout
         }
 
         // Returns `LpmTrieNode` for the node at the specified index.
@@ -930,10 +934,6 @@ impl MapImpl for LpmTrie {
     fn get_next_key(&self, key: Option<&[u8]>) -> Result<MapKey, MapError> {
         let state = self.store().trie().read();
 
-        fn key_from_node(node: &LpmTrieNode<'_>, layout: &Layout) -> MapKey {
-            node.key().slice(..layout.key_size as usize).unwrap().load()
-        }
-
         fn get_leftmost_node<'a>(
             state: &LpmTrieState<'a>,
             mut node: LpmTrieNode<'a>,
@@ -942,7 +942,7 @@ impl MapImpl for LpmTrie {
                 node = match node.left() {
                     None => {
                         assert!(node.has_value());
-                        return Ok(key_from_node(&node, &state.layout()));
+                        return Ok(node.key().load());
                     }
                     Some(index) => state.node(index),
                 };
@@ -983,7 +983,7 @@ impl MapImpl for LpmTrie {
             // parent then proceed to the right branch.
             if parent.left() == Some(node.index()) {
                 if parent.has_value() {
-                    return Ok(key_from_node(&parent, &self.layout));
+                    return Ok(parent.key().load());
                 }
 
                 if let Some(right) = parent.right() {
@@ -1078,9 +1078,8 @@ mod test {
         )
         .unwrap();
 
-        let lookup = |trie: &LpmTrie, key: &[u8]| {
-            trie.lookup(&key).unwrap().ptr().load::<16>()[..4].to_owned()
-        };
+        let lookup =
+            |trie: &LpmTrie, key: &[u8]| trie.lookup(&key).unwrap().ptr().load::<16>().to_vec();
 
         let key1 = serialize_key(8, &[0b01010001]);
         assert!(&trie.lookup(&key1).is_none());
@@ -1221,14 +1220,14 @@ mod test {
         // Try looking up all entries.
         for id in 0..NUM_ENTRIES {
             let key = get_key(id as usize);
-            let value = trie.lookup(&key).unwrap().ptr().load::<16>()[0..4].to_owned();
+            let value = trie.lookup(&key).unwrap().ptr().load::<16>();
             assert_eq!(&value[..], &[id, 1, 2, 3]);
 
             // Try looking up the same key with an extra bit at the end. This
             // should yield the same result or another key that's longer than the current one.
             let mut key2 = Key::read_from_bytes(&key).unwrap();
             key2.len += 1;
-            let value = trie.lookup(&key2.as_bytes()).unwrap().ptr().load::<16>()[0..4].to_owned();
+            let value = trie.lookup(&key2.as_bytes()).unwrap().ptr().load::<16>();
             if &value[..] != &[id, 1, 2, 3] {
                 let found_id = value[0] as usize;
                 assert!(get_key(found_id).as_slice().key_len() > key.as_slice().key_len());
@@ -1269,7 +1268,7 @@ mod test {
         // Try looking up all entries.
         for id in 0..NUM_ENTRIES {
             let key = get_key(id as usize);
-            let value = trie.lookup(&key).unwrap().ptr().load::<16>()[0..4].to_owned();
+            let value = trie.lookup(&key).unwrap().ptr().load::<16>();
             assert_eq!(&value[..], &[id as u8, 1, 2, 3]);
         }
 

@@ -209,19 +209,23 @@ mod internal {
         }
 
         fn data_entry_size(&self) -> usize {
+            DATA_ENTRY_HEADER_SIZE + self.padded_key_size() + self.value_size as usize
+        }
+
+        fn padded_data_entry_size(&self) -> usize {
             DATA_ENTRY_HEADER_SIZE + self.padded_key_size() + self.padded_value_size()
         }
 
         fn data_entry_offset(&self, index: u32) -> usize {
             MAP_HEADER_SIZE
                 + BUCKET_SIZE * (self.num_buckets() as usize)
-                + self.data_entry_size() * (index as usize)
+                + self.padded_data_entry_size() * (index as usize)
         }
 
         pub fn total_size(&self) -> usize {
             MAP_HEADER_SIZE
                 + BUCKET_SIZE * (self.num_buckets() as usize)
-                + self.data_entry_size() * (self.max_entries as usize)
+                + self.padded_data_entry_size() * (self.max_entries as usize)
         }
     }
 

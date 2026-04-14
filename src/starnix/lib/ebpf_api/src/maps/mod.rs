@@ -268,7 +268,7 @@ impl Map {
     }
 
     pub fn load(&self, key: &[u8]) -> Option<MapValue> {
-        self.lookup(key).map(|v| v.ptr().slice(0..self.schema.value_size as usize).unwrap().load())
+        self.lookup(key).map(|v| v.ptr().load())
     }
 
     pub fn update(&self, key: &[u8], value: EbpfBufferPtr<'_>, flags: u64) -> Result<(), MapError> {

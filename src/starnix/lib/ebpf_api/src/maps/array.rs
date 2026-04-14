@@ -64,7 +64,7 @@ impl Array {
     fn value_ptr<'a>(&'a self, key: &[u8]) -> Option<EbpfBufferPtr<'a>> {
         let index = array_key_to_index(key) as usize;
         let base = index * self.bytes_per_element;
-        let limit = base + self.bytes_per_element;
+        let limit = base + self.value_size;
         self.buffer.ptr().slice(base..limit)
     }
 }
@@ -127,8 +127,13 @@ mod test {
         };
 
         let array = Array::new(&schema, "test").unwrap();
-        assert_eq!(array.lookup(&[0, 0, 0, 0]).unwrap().ptr().raw_ptr() as usize % 8, 0);
-        assert_eq!(array.lookup(&[1, 0, 0, 0]).unwrap().ptr().raw_ptr() as usize % 8, 0);
+        let value1 = array.lookup(&[0, 0, 0, 0]).unwrap();
+        assert_eq!(value1.ptr().raw_ptr() as usize % 8, 0);
+        assert_eq!(value1.ptr().len(), 5);
+
+        let value2 = array.lookup(&[1, 0, 0, 0]).unwrap();
+        assert_eq!(value2.ptr().raw_ptr() as usize % 8, 0);
+        assert_eq!(value2.ptr().len(), 5);
 
         let schema = MapSchema {
             map_type: bpf_map_type_BPF_MAP_TYPE_ARRAY,
@@ -139,7 +144,12 @@ mod test {
         };
 
         let array = Array::new(&schema, "test").unwrap();
-        assert_eq!(array.lookup(&[0, 0, 0, 0]).unwrap().ptr().raw_ptr() as usize % 8, 0);
-        assert_eq!(array.lookup(&[1, 0, 0, 0]).unwrap().ptr().raw_ptr() as usize % 8, 0);
+        let value1 = array.lookup(&[0, 0, 0, 0]).unwrap();
+        assert_eq!(value1.ptr().raw_ptr() as usize % 8, 0);
+        assert_eq!(value1.ptr().len(), 10);
+
+        let value2 = array.lookup(&[1, 0, 0, 0]).unwrap();
+        assert_eq!(value2.ptr().raw_ptr() as usize % 8, 0);
+        assert_eq!(value2.ptr().len(), 10);
     }
 }
