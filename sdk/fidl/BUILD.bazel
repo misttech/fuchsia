@@ -8,18 +8,18 @@ load("//build/bazel/bazel_idk:defs.bzl", "idk_molecule")
 # Targets must be included if and only if the `fidl()` target specifies:
 # `category = "<list category>"`.
 #
-# Only libraries in `_partner_idk_*` are distributed in the Fuchsia IDK.
+# Only libraries in `PARTNER_IDK_*` are distributed in the Fuchsia IDK.
 # When removing a library from all such lists, delete all of its history files:
 #   git rm sdk/history/*/<library_name>.api_summary.json
 
-_partner_idk_stable_fidl_libraries_targets_list = [
-    # keep-sorted: begin
+PARTNER_IDK_STABLE_FIDL_LIBRARIES_TARGETS_LIST = [
+    # buildifier: keep sorted
     "//sdk/fidl/fuchsia.accessibility.gesture:fuchsia.accessibility.gesture",
     "//sdk/fidl/fuchsia.audio.effects:fuchsia.audio.effects",
-    "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth",
     "//sdk/fidl/fuchsia.bluetooth.a2dp:fuchsia.bluetooth.a2dp",
     "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr",
     "//sdk/fidl/fuchsia.bluetooth.fastpair:fuchsia.bluetooth.fastpair",
+    "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth",
     "//sdk/fidl/fuchsia.bluetooth.gatt:fuchsia.bluetooth.gatt",
     "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2",
     "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys",
@@ -34,8 +34,8 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.castsetup:fuchsia.castsetup",
     "//sdk/fidl/fuchsia.castsysteminfo:fuchsia.castsysteminfo",
     "//sdk/fidl/fuchsia.castwindow:fuchsia.castwindow",
-    "//sdk/fidl/fuchsia.component:fuchsia.component",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl",
+    "//sdk/fidl/fuchsia.component:fuchsia.component",
     "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution",
     "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner",
     "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime",
@@ -59,9 +59,9 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger",
     "//sdk/fidl/fuchsia.math:fuchsia.math",
-    "//sdk/fidl/fuchsia.media:fuchsia.media",
     "//sdk/fidl/fuchsia.media.audio:fuchsia.media.audio",
     "//sdk/fidl/fuchsia.media.drm:fuchsia.media.drm",
+    "//sdk/fidl/fuchsia.media:fuchsia.media",
     "//sdk/fidl/fuchsia.media.sessions2:fuchsia.media.sessions2",
     "//sdk/fidl/fuchsia.media.sounds:fuchsia.media.sounds",
     "//sdk/fidl/fuchsia.media.target:fuchsia.media.target",
@@ -91,10 +91,10 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views",
     "//sdk/fidl/fuchsia.ultrasound:fuchsia.ultrasound",
     "//sdk/fidl/fuchsia.unknown:fuchsia.unknown",
-    "//sdk/fidl/fuchsia.update:fuchsia.update",
     "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel",
     "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol",
     "//sdk/fidl/fuchsia.update.config:fuchsia.update.config",
+    "//sdk/fidl/fuchsia.update:fuchsia.update",
     "//sdk/fidl/fuchsia.url:fuchsia.url",
     "//sdk/fidl/fuchsia.version:fuchsia.version",
     "//sdk/fidl/fuchsia.weave:fuchsia.weave",
@@ -107,11 +107,10 @@ _partner_idk_stable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration",
     "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac",
     "//zircon/vdso/zx:zx",
-    # keep-sorted: end
 ]
 
-_partner_idk_unstable_fidl_libraries_targets_list = [
-    # keep-sorted: begin
+PARTNER_IDK_UNSTABLE_FIDL_LIBRARIES_TARGETS_LIST = [
+    # buildifier: keep sorted
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl",
     "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata",
     "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption",
@@ -119,38 +118,34 @@ _partner_idk_unstable_fidl_libraries_targets_list = [
     "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint",
-    "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request",
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy",
+    "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy",
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac",
     "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats",
-    # keep-sorted: end
 ]
 
-_prebuilt_fidl_libraries_targets_list = [
-    # keep-sorted: begin
+PREBUILT_FIDL_LIBRARIES_TARGETS_LIST = [
+    # buildifier: keep sorted
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader",
-    # keep-sorted: end
 ]
 
-_host_tool_fidl_libraries_targets_list = [
-    # keep-sorted: begin
+HOST_TOOL_FIDL_LIBRARIES_TARGETS_LIST = [
+    # buildifier: keep sorted
     "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host",
     "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2",
-    # keep-sorted: end
 ]
 
-_compat_test_fidl_libraries_targets_list = [
-    # keep-sorted: begin
+COMPAT_TEST_FIDL_LIBRARIES_TARGETS_LIST = [
+    # buildifier: keep sorted
     "//examples/fidl/fuchsia.examples:fuchsia.examples",
     "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness",
     "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment",
     "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance",
     "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context",
-    # keep-sorted: end
 ]
 
 # GN note: Unlike the GN target, this does not depend on libraries in the
@@ -160,8 +155,8 @@ idk_molecule(
     visibility = ["//sdk:__pkg__"],
     deps = [
         target + "_idk"
-        for target in (_partner_idk_stable_fidl_libraries_targets_list +
-                       _partner_idk_unstable_fidl_libraries_targets_list)
+        for target in (PARTNER_IDK_STABLE_FIDL_LIBRARIES_TARGETS_LIST +
+                       PARTNER_IDK_UNSTABLE_FIDL_LIBRARIES_TARGETS_LIST)
     ],
 )
 
@@ -173,9 +168,9 @@ idk_molecule(
     # compatibility test targets.
     deps = [":fidl_idk"] + [
         target + "_idk"
-        for target in (_prebuilt_fidl_libraries_targets_list +
-                       _host_tool_fidl_libraries_targets_list +
-                       _compat_test_fidl_libraries_targets_list)
+        for target in (PREBUILT_FIDL_LIBRARIES_TARGETS_LIST +
+                       HOST_TOOL_FIDL_LIBRARIES_TARGETS_LIST +
+                       COMPAT_TEST_FIDL_LIBRARIES_TARGETS_LIST)
     ],
 )
 
@@ -216,27 +211,27 @@ filegroup(
 
 filegroup(
     name = "partner_idk_fidl_library_allowlist",
-    visibility = [target.split(":")[0] + ":__pkg__" for target in _partner_idk_stable_fidl_libraries_targets_list],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in PARTNER_IDK_STABLE_FIDL_LIBRARIES_TARGETS_LIST],
 )
 
 filegroup(
     name = "partner_idk_unstable_fidl_library_allowlist",
-    visibility = [target.split(":")[0] + ":__pkg__" for target in _partner_idk_unstable_fidl_libraries_targets_list],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in PARTNER_IDK_UNSTABLE_FIDL_LIBRARIES_TARGETS_LIST],
 )
 
 filegroup(
     name = "prebuilt_fidl_library_allowlist",
-    visibility = [target.split(":")[0] + ":__pkg__" for target in _prebuilt_fidl_libraries_targets_list],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in PREBUILT_FIDL_LIBRARIES_TARGETS_LIST],
 )
 
 filegroup(
     name = "host_tool_fidl_library_allowlist",
-    visibility = [target.split(":")[0] + ":__pkg__" for target in _host_tool_fidl_libraries_targets_list],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in HOST_TOOL_FIDL_LIBRARIES_TARGETS_LIST],
 )
 
 filegroup(
     name = "compat_test_fidl_library_allowlist",
-    visibility = [target.split(":")[0] + ":__pkg__" for target in _compat_test_fidl_libraries_targets_list],
+    visibility = [target.split(":")[0] + ":__pkg__" for target in COMPAT_TEST_FIDL_LIBRARIES_TARGETS_LIST],
 )
 
 filegroup(

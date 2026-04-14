@@ -51,12 +51,12 @@ GN to Bazel.
 1.  If Bazel target has a category, add it to the appropriate list in
     `//sdk/fidl/BUILD.bazel` based on its category:
     -   `partner` (and `stable` is `true`) ->
-        `_partner_idk_stable_fidl_libraries_targets_list`
+        `PARTNER_IDK_STABLE_FIDL_LIBRARIES_TARGETS_LIST`
     -   `partner` (and `stable` is `false`) ->
-        `_partner_idk_unstable_fidl_libraries_targets_list`
-    -   `prebuilt` -> `_prebuilt_fidl_libraries_targets_list`
-    -   `host_tool` -> `_host_tool_fidl_libraries_targets_list`
-    -   `compat_test` -> `_compat_test_fidl_libraries_targets_list`
+        `PARTNER_IDK_UNSTABLE_FIDL_LIBRARIES_TARGETS_LIST`
+    -   `prebuilt` -> `PREBUILT_FIDL_LIBRARIES_TARGETS_LIST`
+    -   `host_tool` -> `HOST_TOOL_FIDL_LIBRARIES_TARGETS_LIST`
+    -   `compat_test` -> `COMPAT_TEST_FIDL_LIBRARIES_TARGETS_LIST`
 
 ## 3. Sync FIDL targets back to GN
 
