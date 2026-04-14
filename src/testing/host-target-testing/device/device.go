@@ -773,22 +773,6 @@ func (c *Client) SetUpdateChannel(
 	return ffx.TargetUpdateChannelSet(ctx, target, channel)
 }
 
-// Waits until the update is committed
-func (c *Client) WaitForCommit(
-	ctx context.Context,
-	ffx *ffx.FFXTool,
-	target string,
-) error {
-	if err := ffx.TargetUpdateWaitForCommit(ctx, target); err != nil {
-		logger.Warningf(ctx, "ffx target update wait-for-commit failed: %v, retrying with /bin/update", err)
-		cmd := []string{"/bin/update", "wait-for-commit"}
-		if err := c.Run(ctx, cmd, os.Stdout, os.Stderr); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (c *Client) Name() string {
 	return c.deviceResolver.NodeName()
 }
