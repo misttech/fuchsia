@@ -839,7 +839,6 @@ impl ComponentInstance {
             // If the component is in a resolved state, then we have to route its storage
             // capabilities. We shouldn't do this while holding the state lock, so let's do this in
             // advance before grabbing the state lock below.
-            let mut routed_storage = vec![];
             let storage_uses = {
                 let state = self.lock_state().await;
                 match &*state {
@@ -847,6 +846,8 @@ impl ComponentInstance {
                     _ => vec![],
                 }
             };
+
+            let mut routed_storage = Vec::with_capacity(storage_uses.len());
             for storage_use in &storage_uses {
                 if let Ok(info) = routing::route_storage(storage_use.clone(), &self).await {
                     routed_storage.push(info);
@@ -863,9 +864,18 @@ impl ComponentInstance {
                 )),
                 InstanceState::Resolved(resolved_state) => {
                     let children = resolved_state.children.clone();
-                    if storage_uses != get_storage_uses(&resolved_state) {
+                    let current_storage_iter =
+                        resolved_state.resolved_component.decl.uses.iter().filter_map(|use_| {
+                            match use_ {
+                                UseDecl::Storage(storage_use) => Some(storage_use),
+                                _ => None,
+                            }
+                        });
+
+                    if current_storage_iter.ne(storage_uses.iter()) {
                         continue;
                     }
+
                     Some(InstanceState::Shutdown(
                         ShutdownInstanceState { children, routed_storage },
                         resolved_state.to_unresolved(),
@@ -939,9 +949,7 @@ impl ComponentInstance {
         let routed_storage = {
             let mut state = self.lock_state().await;
             match *state {
-                InstanceState::Shutdown(ref mut s, _) => {
-                    s.routed_storage.drain(..).collect::<Vec<_>>()
-                }
+                InstanceState::Shutdown(ref mut s, _) => std::mem::take(&mut s.routed_storage),
                 _ => panic!(
                     "cannot destroy component instance {} because it is not shutdown, it is in state {:?}",
                     self.moniker, *state
@@ -968,30 +976,32 @@ impl ComponentInstance {
 
     /// Registers actions to destroy all dynamic children of collections belonging to this instance.
     async fn destroy_dynamic_children(self: &Arc<Self>) -> Result<(), ActionError> {
-        let moniker_incarnations: Vec<_> = {
+        let dynamic_children: Vec<_> = {
             match *self.lock_state().await {
-                InstanceState::Resolved(ref state) | InstanceState::Started(ref state, _) => {
-                    state.children().map(|(k, c)| (k.clone(), c.incarnation_id())).collect()
-                }
-                InstanceState::Shutdown(ref state, _) => {
-                    state.children.iter().map(|(k, c)| (k.clone(), c.incarnation_id())).collect()
-                }
+                InstanceState::Resolved(ref state) | InstanceState::Started(ref state, _) => state
+                    .children()
+                    .filter(|(k, _)| k.collection().is_some())
+                    .map(|(k, c)| (k.clone(), c.incarnation_id()))
+                    .collect(),
+                InstanceState::Shutdown(ref state, _) => state
+                    .children
+                    .iter()
+                    .filter(|(k, _)| k.collection().is_some())
+                    .map(|(k, c)| (k.clone(), c.incarnation_id()))
+                    .collect(),
                 _ => {
                     // Component instance was not resolved, so no dynamic children.
                     return Ok(());
                 }
             }
         };
-        let mut futures = vec![];
-        // Destroy all children that belong to a collection.
-        for (m, id) in moniker_incarnations {
-            if m.collection().is_some() {
-                let nf = self.destroy_child(m.into(), id);
-                futures.push(nf);
-            }
-        }
+
+        let futures =
+            join_all(dynamic_children.into_iter().map(|(m, id)| self.destroy_child(m.into(), id)))
+                .await;
+
         #[allow(clippy::manual_try_fold, reason = "mass allow for https://fxbug.dev/381896734")]
-        join_all(futures).await.into_iter().fold(Ok(()), |acc, r| acc.and(r))
+        futures.into_iter().fold(Ok(()), |acc, r| acc.and(r))
     }
 
     pub async fn destroy_child(
@@ -1203,29 +1213,26 @@ impl ComponentInstance {
     ) -> BoxFuture<'a, ()> {
         let this = self.clone();
         let f = async move {
-            let futures: Vec<_> = instances_to_bind
-                .iter()
-                .map(|component| {
-                    let this = this.clone();
-                    async move {
-                        match component.ensure_started(&StartReason::Eager).await {
-                            Ok(()) => {}
-                            Err(err) => {
-                                this.log(
-                                    log::Level::Warn,
-                                    format!("eager child of {} failed to start", this.moniker),
-                                    &[
-                                        &("moniker", format!("{}", component.moniker).as_str()),
-                                        &("err", format!("{err}").as_str()),
-                                    ],
-                                )
-                                .await;
-                            }
+            join_all(instances_to_bind.iter().map(|component| {
+                let this = this.clone();
+                async move {
+                    match component.ensure_started(&StartReason::Eager).await {
+                        Ok(()) => {}
+                        Err(err) => {
+                            this.log(
+                                log::Level::Warn,
+                                format!("eager child of {} failed to start", this.moniker),
+                                &[
+                                    &("moniker", format!("{}", component.moniker).as_str()),
+                                    &("err", format!("{err}").as_str()),
+                                ],
+                            )
+                            .await;
                         }
                     }
-                })
-                .collect();
-            join_all(futures).await;
+                }
+            }))
+            .await;
         };
         Box::pin(f)
     }
