@@ -205,6 +205,24 @@ TEST_F(OverlayFsTest, CopyUpDeniedIfMounterLacksWrite) {
   }));
 }
 
+// Verify that if the mounter only has append permission to a file then it cannot be copied-up even
+// if the caller is only requesting append access.
+TEST_F(OverlayFsTest, CopyUpDeniedForAppendIfMounterLacksWrite) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(files::WriteFile(lower_ + "/file", "upper_data"));
+  ASSERT_EQ(
+      SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_append_only_file_t:s0"),
+      fit::ok());
+
+  ASSERT_NO_FATAL_FAILURE(Mount());
+
+  // Open the file for writing with O_APPEND. This should succeed.
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
+    EXPECT_THAT(open((overlay_ + "/file").c_str(), O_WRONLY | O_APPEND),
+                SyscallFailsWithErrno(EACCES));
+  }));
+}
+
 // Verify the set of checks that are made when a file is opened and written by the caller, by
 // running in permissive mode and accessing a file that neither caller nor mounter can access.
 TEST_F(OverlayFsTest, AuditChecksFileOpenAndWrite) {

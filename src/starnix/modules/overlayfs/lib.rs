@@ -9,17 +9,17 @@ use once_cell::sync::OnceCell;
 use rand::Rng;
 use starnix_core::fs::tmpfs::{TmpFs, TmpFsDirectory};
 use starnix_core::mm::memory::MemoryObject;
-use starnix_core::security;
+use starnix_core::security::{self, PermissionFlags};
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::rw_queue::{RwQueueReadGuard, RwQueueWriteGuard};
 use starnix_core::vfs::{
-    AppendLockGuard, CacheMode, DirEntry, DirEntryHandle, DirectoryEntryType, DirentSink,
-    FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
-    FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer,
-    MountInfo, OutputBuffer, RenameFlags, SeekTarget, SymlinkTarget, UnlinkKind, ValueOrSize,
-    VecInputBuffer, VecOutputBuffer, XattrOp, default_seek, emit_dotdot, fileops_impl_directory,
-    fileops_impl_noop_sync, fileops_impl_seekable,
+    AppendLockGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryHandle, DirectoryEntryType,
+    DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
+    FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
+    InputBuffer, MountInfo, OutputBuffer, RenameFlags, SeekTarget, SymlinkTarget, UnlinkKind,
+    ValueOrSize, VecInputBuffer, VecOutputBuffer, XattrOp, default_seek, emit_dotdot,
+    fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{
@@ -559,6 +559,71 @@ struct OverlayNodeOps {
 }
 
 impl FsNodeOps for OverlayNodeOps {
+    fn check_access(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        node: &FsNode,
+        current_task: &CurrentTask,
+        access: security::PermissionFlags,
+        info: &RwLock<FsNodeInfo>,
+        reason: CheckAccessReason,
+        audit_context: security::Auditable<'_>,
+    ) -> Result<(), Errno> {
+        node.default_check_access_impl(current_task, access, reason, info.read(), audit_context)?;
+
+        self.node.as_mounter(current_task, || {
+            if let Some(entry) = self.node.upper.get() {
+                entry.entry.node.check_access(
+                    locked,
+                    current_task,
+                    entry.mount(),
+                    access,
+                    reason,
+                    audit_context,
+                )
+            } else {
+                let entry = self.node.lower.as_ref().expect("Either upper or lower node is set");
+                let lower_node = &entry.entry.node;
+
+                // If the lower node is a regular file, directory or symlink then opening it for
+                // write access will cause it to be copied-up, so the mounter only requires read
+                // access to the underlying node.
+                //
+                // If the lower node is "special" (i.e. a device, FIFO or socket) then writes will
+                // affect the underlying resource, so to avoid privilege escalation via overlays,
+                // the mounter is still required to have write access to the node. This works
+                // even if the lower filesystem is readonly because special nodes remain writable
+                // in that case (though they may not be modified or unlinked, which would require
+                // actually writing to the filesystem).
+                let mut access = access;
+                if access.contains(PermissionFlags::WRITE) && !lower_node.info().mode.is_special() {
+                    // Verify that the mounter will be able to write to copy-up the node.
+                    // TODO: https://fxbug.dev/403260093 - Fix this to also verify discretionary
+                    // write access to the mounter, while correctly taking into account the
+                    // `context=` mount option (if any) for the mandatory write access check.
+                    security::fs_node_permission(
+                        current_task,
+                        node,
+                        PermissionFlags::WRITE,
+                        audit_context,
+                    )?;
+
+                    access |= PermissionFlags::READ;
+                    access &= !(PermissionFlags::WRITE | PermissionFlags::APPEND);
+                }
+
+                lower_node.check_access(
+                    locked,
+                    current_task,
+                    &entry.mount,
+                    access,
+                    reason,
+                    audit_context,
+                )
+            }
+        })
+    }
+
     fn create_file_ops(
         &self,
         locked: &mut Locked<FileOpsCore>,

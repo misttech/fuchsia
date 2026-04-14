@@ -841,18 +841,18 @@
         {
             "name": "OverlayFsTest.AuditChecksFileOpenAndRead",
             "audit_expectations": [
-                "avc:  denied  { read } for name=\"file\" dev=\"overlay\" ino=108 scontext=test_u:test_r:test_overlayfs_caller_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1"
+                "avc:  denied  { read } for name=\"file\" dev=\"overlay\" ino=120 scontext=test_u:test_r:test_overlayfs_caller_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1"
             ]
         },
         {
             "name": "OverlayFsTest.AuditChecksFileOpenAndWrite",
             "audit_expectations": [
-                "avc:  denied  { getattr } for name=\"file\" dev=\"tmpfs\" ino=96 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
-                "avc:  denied  { read } for name=\"file\" dev=\"tmpfs\" ino=96 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
-                "avc:  denied  { write } for name=\"file\" dev=\"overlay\" ino=96 scontext=test_u:test_r:test_overlayfs_caller_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
-                "avc:  denied  { write } for path=2F202864656C6574656429 dev=\"tmpfs\" ino=101 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
-                "avc:  denied  { setattr } for name=\"#101\" dev=\"tmpfs\" ino=101 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
-                "avc:  denied  { link } for name=\"#101\" dev=\"tmpfs\" ino=101 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1"
+                "avc:  denied  { getattr } for name=\"file\" dev=\"tmpfs\" ino=108 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
+                "avc:  denied  { read } for name=\"file\" dev=\"tmpfs\" ino=108 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
+                "avc:  denied  { write } for name=\"file\" dev=\"overlay\" ino=108 scontext=test_u:test_r:test_overlayfs_caller_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
+                "avc:  denied  { write } for path=2F202864656C6574656429 dev=\"tmpfs\" ino=113 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
+                "avc:  denied  { setattr } for name=\"#113\" dev=\"tmpfs\" ino=113 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1",
+                "avc:  denied  { link } for name=\"#113\" dev=\"tmpfs\" ino=113 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_no_access_file_t:s0 tclass=file permissive=1"
             ]
         },
         {
@@ -865,6 +865,12 @@
             "name": "OverlayFsTest.ClearAppendDeniedIfMounterLacksWrite",
             "audit_expectations": [
                 "avc:  denied  { write } for path=2F202864656C6574656429 dev=\"tmpfs\" ino=78 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_mounter_append_only_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "OverlayFsTest.CopyUpDeniedForAppendIfMounterLacksWrite",
+            "audit_expectations": [
+                "avc:  denied  { write } for path=2F202864656C6574656429 dev=\"tmpfs\" ino=101 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_mounter_append_only_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
