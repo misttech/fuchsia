@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use assert_matches::assert_matches;
 use async_helpers::hanging_get::asynchronous as hanging_get;
 use diagnostics_assertions::assert_data_tree;
@@ -21,7 +21,7 @@ use log::info;
 use std::collections::{HashMap, HashSet};
 
 use crate::build_config::{BrEdrConfig, Config};
-use crate::host_dispatcher::{test as hd_test, HostDispatcher, NameReplace, DEFAULT_DEVICE_NAME};
+use crate::host_dispatcher::{DEFAULT_DEVICE_NAME, HostDispatcher, NameReplace, test as hd_test};
 use crate::store::stash::Stash;
 use crate::types;
 
@@ -336,4 +336,32 @@ async fn test_notify_host_watcher_of_active_hosts() {
     assert_eq!(hosts.len(), 1);
     assert_eq!(hosts[0].id, Some(host_id_0.into()));
     assert_eq!(hosts[0].active, Some(true));
+}
+
+#[fuchsia::test]
+async fn test_set_active_host_invalid_id_does_not_shutdown_active_host() {
+    let host_dispatcher = hd_test::make_simple_test_dispatcher();
+    let host_id = HostId(42);
+    let (mut host_server, _, _gatt_server, _bonding) =
+        hd_test::create_and_add_test_host_to_dispatcher(host_id, &host_dispatcher).await.unwrap();
+    assert!(host_is_in_dispatcher(&host_id, &host_dispatcher));
+
+    // The host should be active by default.
+    let active_host = host_dispatcher.active_host().await;
+    assert!(active_host.is_some());
+    assert_eq!(active_host.unwrap().id(), host_id);
+
+    // Try to set active host to an invalid ID.
+    let invalid_id = HostId(0);
+    let result = host_dispatcher.set_active_host(invalid_id);
+    assert!(result.is_err());
+
+    // Verify that the active host is still the original host.
+    let active_host = host_dispatcher.active_host().await;
+    assert!(active_host.is_some());
+    assert_eq!(active_host.unwrap().id(), host_id);
+
+    // Verify that no shutdown request was sent to the active host.
+    let next_request = host_server.next().now_or_never();
+    assert!(next_request.is_none(), "Expected no request to host, but got: {:?}", next_request);
 }

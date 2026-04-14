@@ -316,6 +316,10 @@ struct HostDispatcherState {
 impl HostDispatcherState {
     /// Set the active adapter for this HostDispatcher
     pub fn set_active_host(&mut self, adapter_id: HostId) -> types::Result<()> {
+        if !self.host_devices.contains_key(&adapter_id) {
+            return Err(types::Error::no_host());
+        }
+
         if let Some(id) = self.active_id {
             if id == adapter_id {
                 return Ok(());
@@ -325,12 +329,8 @@ impl HostDispatcherState {
             let _ = self.host_devices[&id].shutdown();
         }
 
-        if self.host_devices.contains_key(&adapter_id) {
-            self.set_active_id(Some(adapter_id));
-            Ok(())
-        } else {
-            Err(types::Error::no_host())
-        }
+        self.set_active_id(Some(adapter_id));
+        Ok(())
     }
 
     /// Used to set the pairing delegate. If there is a prior pairing delegate connected to the
