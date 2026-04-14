@@ -14,6 +14,7 @@ use crate::fetcher::PersistenceData;
 
 const CURRENT_DATA: &str = "/cache/current.json";
 const PREVIOUS_DATA: &str = "/cache/previous.json";
+const TEMP_DATA: &str = "/cache/current.json.tmp";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Timestamps {
@@ -123,8 +124,9 @@ pub async fn forget_old_data(config: &Config) -> Result<(), Error> {
     remove_tags_without_persist_across_boot(&mut data, config)
         .context("Failed to remove tags without persist_across_boot")?;
 
-    let file = File::create(CURRENT_DATA).context("Failed to open current data")?;
-    serde_json::to_writer(file, &data).context("Failed to write current data")
+    let file = File::create(TEMP_DATA).context("Failed to open temp data")?;
+    serde_json::to_writer(file, &data).context("Failed to write temp data")?;
+    std::fs::rename(TEMP_DATA, CURRENT_DATA).context("Failed to rename temp data to current")
 }
 
 fn remove_tags_without_persist_across_boot(
@@ -175,14 +177,15 @@ pub(crate) async fn previous_data() -> Result<Option<PersistenceData>, Error> {
 
 pub(crate) async fn write_current_data(data: &PersistenceData) -> Result<(), Error> {
     let file = fuchsia_fs::file::open_in_namespace(
-        CURRENT_DATA,
+        TEMP_DATA,
         fuchsia_fs::Flags::FLAG_MAYBE_CREATE
             | fuchsia_fs::Flags::FILE_TRUNCATE
             | fuchsia_fs::Flags::PERM_WRITE_BYTES,
     )
-    .context("Failed to open current Persistence data for writing")?;
+    .context("Failed to open temp Persistence data for writing")?;
     let buf = serde_json::to_vec(data).context("Failed to serialize Persistence data")?;
-    fuchsia_fs::file::write(&file, &buf).await.context("Failed to write current Persistence data")
+    fuchsia_fs::file::write(&file, &buf).await.context("Failed to write temp Persistence data")?;
+    std::fs::rename(TEMP_DATA, CURRENT_DATA).context("Failed to rename temp data to current")
 }
 
 #[cfg(test)]

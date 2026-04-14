@@ -420,6 +420,103 @@ async fn always_idles() {
     realm.verify_diagnostics_persistence_publication(Published::Int(19)).await;
 }
 
+#[fuchsia::test]
+async fn write_smaller_after_larger() {
+    let options = TestRealmOptions::new(include_str!("test_data/config/single_tag.persist"));
+    let cache_path = options.filesystem.cache().to_string();
+    let current_data_path = format!("{}/current.json", cache_path);
+
+    // 1. Manually write a large, valid JSON string to current.json that matches PersistenceData structure.
+    let large_data = serde_json::json!({
+        "test-service": {
+            "test-component-metric": {
+                "data": {},
+                "errors": ["A".repeat(10000)],
+                "timestamps": {
+                    "last_sample_boot": 0,
+                    "last_sample_utc": 0
+                },
+                "total_bytes": 0,
+                "max_bytes": 10000,
+                "selectors": []
+            }
+        }
+    });
+    let large_str = serde_json::to_string(&large_data).unwrap();
+    std::fs::write(&current_data_path, &large_str).expect("Failed to write large data");
+
+    // 2. Create the realm and start persistence.
+    let realm = TestRealm::new(options).await;
+    realm.set_inspect(Some(19i64)).await;
+    wait_for_inspect_source(&realm.instance).await;
+    realm.start_persistence().await;
+
+    // Wait for the file to be overwritten (i.e. it no longer contains the large garbage).
+    loop {
+        let current_content =
+            std::fs::read_to_string(&current_data_path).expect("Failed to read current data");
+        if !current_content.contains(&"A".repeat(1000)) {
+            break;
+        }
+        fasync::Timer::new(fuchsia_async::MonotonicDuration::from_millis(100)).await;
+    }
+
+    // 3. Read current.json and verify it is valid JSON and contains only the expected small data.
+    let current_content =
+        std::fs::read_to_string(&current_data_path).expect("Failed to read current data");
+
+    // Verify it parses as JSON.
+    let mut parsed: serde_json::Value =
+        serde_json::from_str(&current_content).expect("Failed to parse current data as JSON");
+
+    // Remove variable fields to allow exact comparison
+    if let Some(obj) = parsed
+        .get_mut("test-service")
+        .and_then(|s| s.get_mut("test-component-metric"))
+        .and_then(|t| t.as_object_mut())
+    {
+        obj.remove("timestamps");
+        obj.remove("total_bytes");
+        if let Some(data_obj) = obj.get_mut("data").and_then(|d| d.as_object_mut()) {
+            for (_moniker, val) in data_obj.iter_mut() {
+                if let Some(val_obj) = val.as_object_mut() {
+                    val_obj.remove("metadata");
+                }
+            }
+        }
+    }
+
+    let expected_data = serde_json::json!({
+        "test-service": {
+            "test-component-metric": {
+                "data": {
+                    format!("realm_builder:{}/single_counter", realm.options.name): {
+                        "data_source": "Inspect",
+                        "moniker": format!("realm_builder:{}/single_counter", realm.options.name),
+                        "payload": {
+                            "root": {
+                                "samples": {
+                                    "integer_1": 10,
+                                    "optional": 19
+                                }
+                            }
+                        },
+                        "version": 1
+                    }
+                },
+                "errors": [],
+                "max_bytes": 10000,
+                "selectors": [
+                    "INSPECT:\"realm*/single_counter:root/samples:optional\"",
+                    "INSPECT:\"realm*/single_counter:root/samples:integer_1\""
+                ]
+            }
+        }
+    });
+
+    assert_eq!(parsed, expected_data);
+}
+
 /// The Inspect source may not publish Inspect (via take_and_serve_directory_handle()) until
 /// some time after the FIDL call that woke it up has returned. This function verifies that
 /// the Inspect source is actually publishing data to avoid a race condition.
