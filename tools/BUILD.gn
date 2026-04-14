@@ -136,6 +136,7 @@ group("tests_no_e2e") {
     "//tools/test_pilot:tests",
     "//tools/testgen:tests",
     "//tools/testing:tests($host_toolchain)",
+    "//tools/testing_metadata:tests($host_toolchain)",
     "//tools/update_crates:tests($host_toolchain)",
     "//tools/validate_test_type:tests",
     "//tools/virtual_device:tests($host_toolchain)",

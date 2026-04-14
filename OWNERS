@@ -60,3 +60,6 @@ per-file .ignore = *
 
 per-file GEMINI.md = file:.gemini/OWNERS
 per-file CIDER_AGENT.md = file:.gemini/OWNERS
+
+# Testing team can update metadata files.
+per-file **TESTING.json5 = file:/src/testing/OWNERS
