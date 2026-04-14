@@ -585,16 +585,13 @@ void x86_exception_handler(iframe_t* frame) {
 
   bool do_preempt = int_handler_finish(&state);
 
-  /* if we came from user space, check to see if we have any signals to handle */
-  if (unlikely(from_user)) {
-    /* in the case of receiving a kill signal, this function may not return,
-     * but the scheduler would have been invoked so it's fine.
-     */
-    arch_iframe_process_pending_signals(frame);
-  }
-
   if (do_preempt) {
     Thread::Current::Preempt();
+  }
+
+  /* if we came from user space, check to see if we have any signals to handle */
+  if (unlikely(from_user)) {
+    arch_iframe_process_pending_signals(frame);
   }
 
   DEBUG_ASSERT_MSG(arch_ints_disabled(),

@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <thread>
+#include <vector>
 
 #include <zxtest/zxtest.h>
 
@@ -29,6 +30,12 @@ NEEDS_NEXT_SYSCALL(zx_thread_set_rseq);
 //
 // See rseq-arm64.S, rseq-riscv64.S, rseq-x64.S.
 extern "C" int SpinUntilMigratedOrAborted(zx_rseq_t* rseq);
+
+// Executes a restartable sequence to increment a counter.
+// Returns 1 on successful execution. If the sequence is aborted by Zircon,
+// this function does not return normally but instead branches to the abort_ip.
+// The calling code will observe a return value other than 1 in case of an abort.
+extern "C" int RseqIncrement(uintptr_t* counter, uintptr_t val, zx_rseq_t* rseq, uint32_t cpu);
 
 namespace {
 
@@ -312,6 +319,68 @@ TEST(RseqTest, UpdateCpuId) {
 
   // After registration, the kernel should have updated the cpu_id to a valid value.
   ASSERT_NE(kInvalidCpuId, rseq->cpu_id);
+}
+
+// Verifies that using rseq for per-CPU operations, such as incrementing a
+// per-CPU counter, does not result in lost updates, even when threads are
+// migrated between CPUs. This test simulates a pattern similar to
+// Read-Copy-Update (RCU) where operations are retried upon abort.
+TEST(RseqTest, NoLostUpdates) {
+  const int kNumThreads = zx_system_get_num_cpus() * 8;
+  const int kNumIterations = 10000;
+  const uint32_t kMaxCpus = zx_system_get_num_cpus();
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  zx_vaddr_t addr;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+                                       zx_system_get_page_size(), &addr));
+  auto unmap = fit::defer(
+      [addr]() { ASSERT_OK(zx::vmar::root_self()->unmap(addr, zx_system_get_page_size())); });
+
+  std::vector<uintptr_t> counters(kMaxCpus, 0);
+  std::atomic<uint64_t> success_count{0};
+  std::atomic<uint64_t> abort_count{0};
+
+  std::vector<std::thread> threads(kNumThreads);
+  for (int i = 0; i < kNumThreads; ++i) {
+    threads[i] = std::thread([&, i]() {
+      zx_rseq_t* rseq = reinterpret_cast<zx_rseq_t*>(addr + i * sizeof(zx_rseq_t));
+
+      // Register RSEQ for this thread.
+      ASSERT_OK(zx_thread_set_rseq(vmo.get(), i * sizeof(zx_rseq_t), sizeof(zx_rseq_t)));
+      auto cleanup = fit::defer([]() { ASSERT_OK(zx_thread_set_rseq(ZX_HANDLE_INVALID, 0, 0)); });
+
+      for (int j = 0; j < kNumIterations; ++j) {
+        uint32_t cpu = rseq->cpu_id;
+        if (cpu >= kMaxCpus) {
+          cpu = 0;  // Fallback or handle error.
+        }
+        uintptr_t* counter_ptr = &counters[cpu];
+
+        int result = RseqIncrement(counter_ptr, 1, rseq, cpu);
+        if (result == 1) {
+          success_count.fetch_add(1, std::memory_order_relaxed);
+        } else {
+          abort_count.fetch_add(1, std::memory_order_relaxed);
+          // Retry on abort (like RCU does).
+          --j;
+        }
+      }
+    });
+  }
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    threads[i].join();
+  }
+
+  uintptr_t total_sum = 0;
+  for (uint32_t i = 0; i < kMaxCpus; ++i) {
+    total_sum += counters[i];
+  }
+
+  EXPECT_EQ(total_sum, (uintptr_t)kNumThreads * kNumIterations, "Lost updates detected!");
 }
 
 }  // namespace

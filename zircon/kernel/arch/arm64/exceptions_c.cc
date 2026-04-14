@@ -566,17 +566,14 @@ extern "C" void arm64_irq(iframe_t* iframe, uint exception_flags) {
 
   bool do_preempt = int_handler_finish(&state);
 
-  /* if we came from user space, check to see if we have any signals to handle */
-  if (unlikely(is_user)) {
-    /* in the case of receiving a kill signal, this function may not return,
-     * but the scheduler would have been invoked so it's fine.
-     */
-    arch_iframe_process_pending_signals(iframe);
-  }
-
   /* preempt the thread if the interrupt has signaled it */
   if (do_preempt) {
     Thread::Current::Preempt();
+  }
+
+  /* if we came from user space, check to see if we have any signals to handle */
+  if (unlikely(is_user)) {
+    arch_iframe_process_pending_signals(iframe);
   }
 }
 

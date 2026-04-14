@@ -47,3 +47,53 @@
     mov $1, %rax
     ret
 .end_function
+
+// int RseqIncrement(uintptr_t* counter, uintptr_t val, zx_rseq_t* rseq, uint32_t cpu);
+//
+// rdi=counter, rsi=val, rdx=rseq, rcx=cpu
+
+.function RseqIncrement, global
+    // Set up the sequence.
+    leaq .Lincr_start(%rip), %rax
+    // start_ip
+    movq %rax, 8(%rdx)
+    // post_commit_offset
+    movq $(.Lincr_post - .Lincr_start), 16(%rdx)
+    leaq .Lincr_abort(%rip), %rax
+    // abort_ip
+    movq %rax, 24(%rdx)
+
+.Lincr_start:
+    // Load cpu_id
+    movl (%rdx), %r8d
+    // Compare with expected cpu
+    cmpl %ecx, %r8d
+    // Abort if not equal
+    jne .Lincr_abort
+
+    // Load value from *counter
+    movq (%rdi), %r9
+    // Increment value
+    addq %rsi, %r9
+
+    // Widen the window for interrupts
+    .rept 1000
+    nop
+    .endr
+
+    // Store value back to *counter
+    movq %r9, (%rdi)
+.Lincr_post:
+    // Success. Clear start_ip to deactivate.
+    movq $0, 8(%rdx)
+    // Return 1 (success)
+    movl $1, %eax
+    ret
+
+.Lincr_abort:
+    // Abort. Clear start_ip to deactivate.
+    movq $0, 8(%rdx)
+    // Return 0 (failure)
+    xorl %eax, %eax
+    ret
+.end_function

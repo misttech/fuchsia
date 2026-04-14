@@ -51,3 +51,56 @@
     mov x0, #1
     ret
 .end_function
+
+// int RseqIncrement(uintptr_t* counter, uintptr_t val, zx_rseq_t* rseq, uint32_t cpu);
+//
+// x0=counter, x1=val, x2=rseq, x3=cpu
+
+.function RseqIncrement, global
+    // Set up the sequence.
+    adr x4, .Lincr_start
+    // start_ip
+    str x4, [x2, #8]
+    mov x4, #(.Lincr_post - .Lincr_start)
+    // post_commit_offset
+    str x4, [x2, #16]
+    adr x4, .Lincr_abort
+    // abort_ip
+    str x4, [x2, #24]
+
+.Lincr_start:
+    // Load cpu_id
+    ldr w4, [x2]
+    // Compare with expected cpu
+    cmp w4, w3
+    // Abort if not equal
+    b.ne .Lincr_abort
+
+    // Load *counter
+    ldr x5, [x0]
+    // Add val
+    add x5, x5, x1
+
+    // Widen the window for interrupts
+    .rept 1000
+    nop
+    .endr
+
+    // Store *counter
+    str x5, [x0]
+.Lincr_post:
+    // Success. Clear start_ip to deactivate.
+    mov x4, #0
+    str x4, [x2, #8]
+    // Return 1 (success)
+    mov w0, #1
+    ret
+
+.Lincr_abort:
+    // Abort. Clear start_ip to deactivate.
+    mov x4, #0
+    str x4, [x2, #8]
+    // Return 0 (failure)
+    mov w0, #0
+    ret
+.end_function

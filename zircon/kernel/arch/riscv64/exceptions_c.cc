@@ -340,13 +340,12 @@ extern "C" void riscv64_exception_handler(int64_t cause, struct iframe_t* frame)
     }
   }
 
-  if (unlikely(user)) {
-    // In the case of receiving a kill signal, this function may not return,
-    // but the scheduler would have been invoked so it's fine.
-    arch_iframe_process_pending_signals(frame);
-  }
   if (do_preempt) {
     Thread::Current::Preempt();
+  }
+
+  if (unlikely(user)) {
+    arch_iframe_process_pending_signals(frame);
   }
 }
 
