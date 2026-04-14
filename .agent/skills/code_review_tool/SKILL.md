@@ -50,6 +50,17 @@ key mappings and differences you need to know:
 - **Example**: To reply to a review comment on line 42 of `src/foo.cc`:
   `fx gh pr comment 1569017 --path src/foo.cc --line 42 -m "Done. Fixed as suggested."`
 
+#### `pr edit` and `pr review`
+- **Approving a Change**: To add a `Code-Review+2` vote, use
+  `fx gh pr review <id> --approve`.
+- **Triggering CQ (Commit Queue)**: To set Gerrit labels like `Commit-Queue+1`
+  or `Commit-Queue+2`, you must use the `edit` subcommand with the `--add-label` flag.
+  - **Example**: `fx gh pr edit <id> --add-label Commit-Queue+1`
+
+#### `pr cherry-pick`
+- **Cherry-picking a CL**: To fetch and apply a Gerrit change to your current
+  local Git branch, use `fx gh pr cherry-pick <id>`.
+
 ### 4. Uploading Changes
 - You do **not** need to use `fx gh` to upload or update CLs.
 - Use the normal `git push` commands to upload changes to Gerrit (e.g.,
@@ -61,3 +72,5 @@ key mappings and differences you need to know:
 - List open changes: `fx gh pr list --author me`
 - Comment on a specific line:
   `fx gh pr comment 1569017 --path src/foo.cc --line 42 -m "Looks good"`
+- Mark a CL for CQ dry-run: `fx gh pr edit 1569017 --add-label Commit-Queue+1`
+- Cherry-pick a change locally: `fx gh pr cherry-pick 1569017`
