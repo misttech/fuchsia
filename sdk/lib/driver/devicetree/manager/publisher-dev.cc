@@ -33,6 +33,9 @@ zx::result<> PublisherDev::AddBoardChildNode(BoardChildNode args) {
   }
 
   node_add_args.properties2() = std::move(args.properties);
+  if (args.bus_info) {
+    node_add_args.bus_info() = std::move(*args.bus_info);
+  }
   auto [client_end, server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
   auto result = fdf_node_->AddChild({std::move(node_add_args), std::move(server_end), {}});

@@ -18,6 +18,7 @@ struct BoardChildNode {
   std::string name;
   std::vector<fuchsia_driver_framework::NodeProperty2> properties;
   std::optional<std::string> driver_host;
+  std::optional<fuchsia_driver_framework::BusInfo> bus_info;
 };
 
 class PublisherInterface {

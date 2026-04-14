@@ -178,11 +178,18 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
   } else if (add_board_child) {
     fdf::debug("Adding node '{}' as board driver child.", fdf_name());
 
+    fuchsia_driver_framework::BusInfo bus_info{{
+        .bus = fuchsia_driver_framework::BusType::kDeviceTree,
+        .address = fuchsia_driver_framework::DeviceAddress::WithStringValue(fdf_name()),
+        .address_stability = fuchsia_driver_framework::DeviceAddressStability::kStable,
+    }};
+
     auto result = publisher.AddBoardChildNode(
         {.name = fdf_name(),
          .properties = node_properties_,
          .driver_host =
-             !driver_host_.empty() ? std::optional<std::string>(driver_host_) : std::nullopt});
+             !driver_host_.empty() ? std::optional<std::string>(driver_host_) : std::nullopt,
+         .bus_info = std::move(bus_info)});
     if (result.is_error()) {
       return result.take_error();
     }
