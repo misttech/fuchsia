@@ -9,3 +9,4 @@ pub mod task;
 pub mod vdso;
 
 pub const ARCH_NAME: &'static [u8] = b"riscv64";
+pub const ARCH_NAME32: &'static [u8] = b"riscv32";

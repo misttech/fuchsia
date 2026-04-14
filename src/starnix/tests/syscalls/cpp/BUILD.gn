@@ -79,6 +79,7 @@ syscall_tests = [
   "netlink_test",
   "overlayfs_test",
   "perf_event_open_test",
+  "personality_test",
   "pidfd_test",
   "pipe_test",
   "poll_test",

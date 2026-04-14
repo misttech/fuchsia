@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::arch::ARCH_NAME;
+use crate::arch::{ARCH_NAME, ARCH_NAME32};
 use crate::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::task::CurrentTask;
@@ -66,7 +66,14 @@ pub fn do_uname(
     })?;
 
     init_array(&mut result.version, version.as_bytes());
-    init_array(&mut result.machine, ARCH_NAME);
+
+    let personality = current_task.thread_group().read().personality;
+    let machine = if personality.execution_domain() == (uapi::PER_LINUX32 as u32) {
+        ARCH_NAME32
+    } else {
+        ARCH_NAME
+    };
+    init_array(&mut result.machine, machine);
 
     {
         // Get the UTS namespace from the perspective of this task.
@@ -249,11 +256,7 @@ pub fn sys_personality(
     persona: u32,
 ) -> Result<SyscallResult, Errno> {
     let mut state = current_task.task.thread_group().write();
-    let previous_value = state.personality.bits();
-    if persona != 0xffffffff {
-        // Use `from_bits_retain()` since we want to keep unknown flags.
-        state.personality = PersonalityFlags::from_bits_retain(persona);
-    }
+    let previous_value = state.personality.update_from_syscall(persona);
     Ok(previous_value.into())
 }
 

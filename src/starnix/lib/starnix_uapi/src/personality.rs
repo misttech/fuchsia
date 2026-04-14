@@ -21,3 +21,22 @@ bitflags! {
         const ADDR_LIMIT_3GB = uapi::ADDR_LIMIT_3GB;
     }
 }
+
+impl PersonalityFlags {
+    /// Returns the execution domain (persona) part of the personality flags.
+    pub fn execution_domain(&self) -> u32 {
+        self.bits() & (uapi::PER_MASK as u32)
+    }
+
+    /// Updates the personality flags from a syscall argument.
+    /// If `value` is `0xffffffff`, it does not update the flags.
+    /// Returns the previous value of the flags as a u32.
+    pub fn update_from_syscall(&mut self, value: u32) -> u32 {
+        let prev = self.bits();
+        if value != 0xffffffff {
+            // Use `from_bits_retain()` since we want to keep unknown flags.
+            *self = PersonalityFlags::from_bits_retain(value);
+        }
+        prev
+    }
+}
