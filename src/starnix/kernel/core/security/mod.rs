@@ -104,3 +104,9 @@ pub struct BpfProgState {
 pub struct PerfEventState {
     state: selinux_hooks::PerfEventState,
 }
+
+/// Opaque structure holding security state for a current task.
+#[derive(Default, Debug)]
+pub struct CurrentTaskState {
+    pub state: selinux_hooks::CurrentTaskState,
+}

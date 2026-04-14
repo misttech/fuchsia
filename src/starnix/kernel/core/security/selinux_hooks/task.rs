@@ -4,9 +4,9 @@
 
 use crate::security::selinux_hooks::{
     CommonFsNodePermission, FileClass, KernelPermission, PermissionCheck, ProcessPermission,
-    check_permission, check_self_permission, current_task_state, fs_node_effective_sid_and_class,
-    fs_node_ensure_class, fs_node_set_label_with_task, has_file_permissions, is_internal_operation,
-    permissions_from_flags, task_consistent_attrs,
+    build_permission_check, check_permission, check_self_permission, current_task_state,
+    fs_node_effective_sid_and_class, fs_node_ensure_class, fs_node_set_label_with_task,
+    has_file_permissions, is_internal_operation, permissions_from_flags, task_consistent_attrs,
 };
 use crate::security::{Arc, Auditable, ProcAttr, ResolvedElfState, SecurityId, SecurityServer};
 use crate::signals::QueuedSignals;
@@ -148,7 +148,7 @@ fn close_inaccessible_file_descriptors(
 
     let audit_context = current_task.into();
     let source_sid = new_sid;
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     // Remap-to-null any fds that failed a check for allowing
     // `[child-process] [fd-from-child-fd-table]:fd { use }`,
     // or for any of the file permissions associated with the file mode and flags.
@@ -181,7 +181,7 @@ fn maybe_reset_rlimits<L>(
     L: LockBefore<ThreadGroupLimits>,
 {
     let audit_context = current_task.into();
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     if check_permission(
         &permission_check,
         current_task,
@@ -227,7 +227,7 @@ fn maybe_reset_signal_state(
     new_sid: SecurityId,
 ) {
     let audit_context = current_task.into();
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     if check_permission(
         &permission_check,
         current_task,
@@ -366,7 +366,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
     current_task: &CurrentTask,
     executable: &NamespaceNode,
 ) -> Result<ResolvedElfState, Errno> {
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     let TaskAttrs { current_sid, exec_sid, .. } = *task_consistent_attrs(current_task);
 
     let executable_sid = fs_node_effective_sid_and_class(&executable.entry.node).sid;
@@ -972,7 +972,7 @@ pub(in crate::security) fn set_procattr(
     };
 
     let audit_context = current_task.into();
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     let current_sid = task_consistent_attrs(current_task).current_sid;
     let mut creds = Credentials::clone(&current_task.current_creds());
 
@@ -1105,7 +1105,10 @@ mod tests {
                 });
 
                 assert_eq!(
-                    check_task_create_access(&security_server.as_permission_check(), &current_task),
+                    check_task_create_access(
+                        &build_permission_check(current_task, &security_server),
+                        &current_task
+                    ),
                     Ok(())
                 );
             },
@@ -1124,7 +1127,10 @@ mod tests {
                 });
 
                 assert_eq!(
-                    check_task_create_access(&security_server.as_permission_check(), &current_task),
+                    check_task_create_access(
+                        &build_permission_check(current_task, &security_server),
+                        &current_task
+                    ),
                     error!(EACCES)
                 );
             },
@@ -1584,7 +1590,7 @@ mod tests {
                 });
                 assert_eq!(
                     check_setsched_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task
                     ),
@@ -1614,7 +1620,7 @@ mod tests {
 
                 assert_eq!(
                     check_setsched_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task
                     ),
@@ -1644,7 +1650,7 @@ mod tests {
 
                 assert_eq!(
                     check_getsched_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task
                     ),
@@ -1674,7 +1680,7 @@ mod tests {
 
                 assert_eq!(
                     check_getsched_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task
                     ),
@@ -1704,7 +1710,7 @@ mod tests {
 
                 assert_eq!(
                     check_getpgid_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task
                     ),
@@ -1734,7 +1740,7 @@ mod tests {
 
                 assert_eq!(
                     check_getpgid_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task
                     ),
@@ -1764,7 +1770,7 @@ mod tests {
 
                 assert_eq!(
                     check_signal_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task,
                         SIGKILL,
@@ -1795,7 +1801,7 @@ mod tests {
 
                 assert_eq!(
                     check_signal_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task,
                         SIGCHLD,
@@ -1826,7 +1832,7 @@ mod tests {
 
                 assert_eq!(
                     check_signal_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task,
                         SIGSTOP,
@@ -1858,7 +1864,7 @@ mod tests {
                 // The `signal` permission allows signals other than SIGKILL, SIGCHLD, SIGSTOP.
                 assert_eq!(
                     check_signal_access(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &target_task,
                         SIGTERM,
@@ -1891,7 +1897,7 @@ mod tests {
                 for signal in [SIGCHLD, SIGKILL, SIGSTOP] {
                     assert_eq!(
                         check_signal_access(
-                            &security_server.as_permission_check(),
+                            &build_permission_check(current_task, &security_server),
                             &current_task,
                             &target_task,
                             signal,
@@ -1923,7 +1929,7 @@ mod tests {
 
                 assert_eq!(
                     ptrace_access_check(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &tracee_task,
                         PTRACE_MODE_ATTACH
@@ -1954,7 +1960,7 @@ mod tests {
 
                 assert_eq!(
                     ptrace_access_check(
-                        &security_server.as_permission_check(),
+                        &build_permission_check(current_task, &security_server),
                         &current_task,
                         &tracee_task,
                         PTRACE_MODE_ATTACH

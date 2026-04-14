@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 
 use super::file::file_receive;
-use super::{BinderConnectionState, check_permission, check_self_permission, current_task_state};
+use super::{
+    BinderConnectionState, build_permission_check, check_permission, check_self_permission,
+    current_task_state,
+};
 use crate::task::{CurrentTask, Task};
 use crate::vfs::FileObject;
 use selinux::{BinderPermission, SecurityServer};
@@ -33,7 +36,7 @@ pub(in crate::security) fn binder_set_context_mgr(
     let audit_context = current_task.into();
     let sid = current_task_state(current_task).current_sid;
     check_self_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         sid,
         BinderPermission::SetContextMgr,
@@ -54,7 +57,7 @@ pub(in crate::security) fn binder_transaction(
     let target_sid = target_task.real_creds().security_state.current_sid;
     if source_sid != connection_security_state.sid {
         check_permission(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             source_sid,
             connection_security_state.sid,
@@ -63,7 +66,7 @@ pub(in crate::security) fn binder_transaction(
         )?;
     }
     check_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         connection_security_state.sid,
         target_sid,
@@ -84,7 +87,7 @@ pub(in crate::security) fn binder_transfer_binder(
     let source_sid = current_task_state(current_task).current_sid;
     let target_sid = target_task.real_creds().security_state.current_sid;
     check_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         source_sid,
         target_sid,

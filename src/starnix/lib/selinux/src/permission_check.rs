@@ -6,10 +6,13 @@ use crate::access_vector_cache::{AccessVectorCache, Query};
 use crate::policy::{AccessVector, KernelAccessDecision, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsKind};
 use crate::security_server::SecurityServer;
 use crate::{
-    ClassPermission, FsNodeClass, KernelClass, KernelPermission, NullessByteStr, SecurityId,
+    ClassPermission, FdPermission, FsNodeClass, KernelClass, KernelPermission, NullessByteStr,
+    SecurityId,
 };
 
 use std::num::NonZeroU32;
+
+pub use crate::local_cache::PerThreadCache;
 
 /// Describes the result of a permission lookup between two Security Contexts.
 #[derive(Clone, Debug, PartialEq)]
@@ -45,14 +48,16 @@ impl PermissionCheckResult {
 pub struct PermissionCheck<'a> {
     security_server: &'a SecurityServer,
     access_vector_cache: &'a AccessVectorCache,
+    local_cache: &'a PerThreadCache,
 }
 
 impl<'a> PermissionCheck<'a> {
     pub(crate) fn new(
         security_server: &'a SecurityServer,
         access_vector_cache: &'a AccessVectorCache,
+        local_cache: &'a PerThreadCache,
     ) -> Self {
-        Self { security_server, access_vector_cache }
+        Self { security_server, access_vector_cache, local_cache }
     }
 
     /// Returns whether the `source_sid` has the specified `permission` on `target_sid`.
@@ -66,6 +71,7 @@ impl<'a> PermissionCheck<'a> {
     ) -> PermissionCheckResult {
         has_permission(
             self.security_server.is_enforcing(),
+            self.local_cache,
             self.access_vector_cache,
             source_sid,
             target_sid,
@@ -96,14 +102,24 @@ impl<'a> PermissionCheck<'a> {
         permission: P,
         xperm: u16,
     ) -> PermissionCheckResult {
-        has_extended_permission(
-            self.security_server.is_enforcing(),
-            self.access_vector_cache,
+        let permission: KernelPermission = permission.into();
+        self.local_cache.check_xperm(
             xperms_kind,
             source_sid,
             target_sid,
-            permission.into(),
+            permission.clone(),
             xperm,
+            || {
+                has_extended_permission(
+                    self.security_server.is_enforcing(),
+                    self.access_vector_cache,
+                    xperms_kind,
+                    source_sid,
+                    target_sid,
+                    permission.into(),
+                    xperm,
+                )
+            },
         )
     }
 
@@ -156,22 +172,53 @@ impl<'a> PermissionCheck<'a> {
         target_sid: SecurityId,
         target_class: KernelClass,
     ) -> KernelAccessDecision {
-        self.access_vector_cache.compute_access_decision(source_sid, target_sid, target_class)
+        self.local_cache.lookup_access_decision(source_sid, target_sid, target_class, || {
+            self.access_vector_cache.compute_access_decision(source_sid, target_sid, target_class)
+        })
     }
 }
 
 /// Internal implementation of the `has_permission()` API, in terms of the `Query` trait.
 fn has_permission(
     is_enforcing: bool,
+    local_cache: &PerThreadCache,
     query: &impl Query,
     source_sid: SecurityId,
     target_sid: SecurityId,
     permission: KernelPermission,
 ) -> PermissionCheckResult {
-    let target_class = permission.class();
     let permission_access_vector = permission.as_access_vector();
 
-    let decision = query.compute_access_decision(source_sid, target_sid, target_class.into());
+    if permission == KernelPermission::Fd(FdPermission::Use) {
+        // fd use checks are cached separately.
+        return local_cache.lookup_fd_use(source_sid, target_sid, || {
+            let decision = query.compute_access_decision(source_sid, target_sid, KernelClass::Fd);
+            access_decision_to_permission_check_result(
+                is_enforcing,
+                permission_access_vector,
+                decision,
+            )
+        });
+    }
+
+    let decision =
+        local_cache.lookup_access_decision(source_sid, target_sid, permission.class(), || {
+            query.compute_access_decision(source_sid, target_sid, permission.class())
+        });
+    let result = access_decision_to_permission_check_result(
+        is_enforcing,
+        permission_access_vector,
+        decision,
+    );
+
+    result
+}
+
+fn access_decision_to_permission_check_result(
+    is_enforcing: bool,
+    permission_access_vector: AccessVector,
+    decision: KernelAccessDecision,
+) -> PermissionCheckResult {
     let permissive = decision.flags & SELINUX_AVD_FLAGS_PERMISSIVE != 0;
     let granted = permission_access_vector & decision.allow == permission_access_vector;
     let audit = permission_access_vector & decision.audit != AccessVector::NONE;
@@ -179,15 +226,8 @@ fn has_permission(
 
     if !result.granted {
         if !is_enforcing {
-            // If the security server is not currently enforcing then permit all access.
             result.permissive = true;
         } else if decision.todo_bug.is_some() {
-            // If the access decision includes a `todo_bug` then permit the access and return the
-            // bug id to the caller, for audit logging.
-            //
-            // This is checked before the "permissive" settings because exceptions work-around
-            // issues in our implementation, or policy builds, so permissive treatment can lead
-            // to logspam as well as losing bug-tracking information.
             result.granted = true;
             result.todo_bug = decision.todo_bug;
         }
@@ -408,9 +448,11 @@ mod tests {
         // `access_vector_from_permission`.
         let permissions = [ProcessPermission::Fork, ProcessPermission::Transition];
         for permission in permissions {
+            let local_cache1 = PerThreadCache::default();
             // DenyAllPermissions denies.
             let result = has_permission(
                 /*is_enforcing=*/ true,
+                &local_cache1,
                 &deny_all,
                 *A_TEST_SID,
                 *A_TEST_SID,
@@ -427,9 +469,11 @@ mod tests {
             );
             assert!(!result.permit());
 
+            let local_cache2 = PerThreadCache::default();
             // AllowAllPermissions allows.
             let result = has_permission(
                 /*is_enforcing=*/ true,
+                &local_cache2,
                 &allow_all,
                 *A_TEST_SID,
                 *A_TEST_SID,

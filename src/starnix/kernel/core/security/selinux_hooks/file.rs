@@ -7,9 +7,9 @@
 
 use super::bpf::{check_bpf_map_access, check_bpf_prog_access};
 use super::{
-    FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags, check_permission,
-    current_task_state, fs_node_effective_sid_and_class, has_file_ioctl_permission,
-    has_file_permissions, permissions_from_flags,
+    FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags, build_permission_check,
+    check_permission, current_task_state, fs_node_effective_sid_and_class,
+    has_file_ioctl_permission, has_file_permissions, permissions_from_flags,
 };
 use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingNameRef, MappingOptions, ProtectionFlags};
@@ -51,7 +51,7 @@ pub(in crate::security) fn file_permission(
     }
 
     has_file_permissions(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         file,
@@ -67,7 +67,7 @@ pub(in crate::security) fn file_receive(
     receiving_sid: SecurityId,
     file: &FileObject,
 ) -> Result<(), Errno> {
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     let fs_node_class = fs_node_effective_sid_and_class(file.node()).class;
     let permission_flags = file.flags().into();
 
@@ -116,7 +116,7 @@ pub(in crate::security) fn check_file_ioctl_access(
     file: &FileObject,
     request: u32,
 ) -> Result<(), Errno> {
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     let subject_sid = current_task_state(current_task).current_sid;
     match canonicalize_ioctl_request(current_task, request) {
         FIBMAP | FIONREAD | FIGETBSZ | FS_IOC_GETFLAGS | FS_IOC_GETVERSION => has_file_permissions(
@@ -167,7 +167,7 @@ pub(in crate::security) fn check_file_lock_access(
     current_task: &CurrentTask,
     file: &FileObject,
 ) -> Result<(), Errno> {
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     let subject_sid = current_task_state(current_task).current_sid;
     has_file_permissions(
         &permission_check,
@@ -188,7 +188,7 @@ pub(in crate::security) fn check_file_fcntl_access(
     fcntl_cmd: u32,
     fcntl_arg: u64,
 ) -> Result<(), Errno> {
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     let subject_sid = current_task_state(current_task).current_sid;
 
     match fcntl_cmd {
@@ -226,7 +226,7 @@ pub(in crate::security) fn check_file_fcntl_access(
         // clear the `O_APPEND` bit from an `O_RDONLY` file.
         if old_flags.contains(OpenFlags::APPEND) && !new_flags.contains(OpenFlags::APPEND) {
             has_fs_node_permissions(
-                &security_server.as_permission_check(),
+                &build_permission_check(current_task, security_server),
                 current_task,
                 subject_sid,
                 file.node(),
@@ -276,7 +276,7 @@ pub(in crate::security) fn file_mprotect(
         if let Some(permission) = permission {
             let subject_sid = current_task_state(current_task).current_sid;
             check_self_permission(
-                &security_server.as_permission_check(),
+                &build_permission_check(current_task, security_server),
                 current_task,
                 subject_sid,
                 permission,
@@ -319,7 +319,7 @@ pub(in crate::security) fn mmap_file(
             }
         } else {
             has_file_permissions(
-                &security_server.as_permission_check(),
+                &build_permission_check(current_task, security_server),
                 &current_task,
                 current_sid,
                 file,
@@ -354,7 +354,7 @@ fn file_map_prot_check(
         if anonymous_mapping || private_writable_mapping {
             let current_sid = current_task_state(current_task).current_sid;
             check_permission(
-                &security_server.as_permission_check(),
+                &build_permission_check(current_task, security_server),
                 current_task,
                 current_sid,
                 current_sid,
@@ -382,7 +382,7 @@ fn file_map_prot_check(
         let permissions = permissions_from_flags(flags, node_class);
         let current_sid = current_task_state(current_task).current_sid;
         has_fs_node_permissions(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             current_sid,
             fs_node,

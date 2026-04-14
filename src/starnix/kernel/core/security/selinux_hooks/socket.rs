@@ -4,7 +4,9 @@
 
 use super::audit::Auditable;
 use super::fs_node::compute_new_fs_node_sid;
-use super::{check_permission, current_task_state, fs_node_effective_sid_and_class};
+use super::{
+    build_permission_check, check_permission, current_task_state, fs_node_effective_sid_and_class,
+};
 use crate::security::selinux_hooks::{FsNodeSidAndClass, superblock};
 use crate::task::CurrentTask;
 use crate::vfs::socket::{
@@ -181,7 +183,7 @@ where
     };
 
     check_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         new_socket_sid,
@@ -234,7 +236,7 @@ pub(in crate::security) fn check_socket_bind_access(
     // TODO: https://fxbug.dev/364569010 - Add checks for `name_bind` between the socket and the SID
     // of the port number, and for `node_bind` between the socket and the SID of the IP address.
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,
@@ -256,7 +258,7 @@ pub(in crate::security) fn check_socket_connect_access(
     // TODO: https://fxbug.dev/364568577 - Add checks for `name_connect` between the socket and the
     // SID of the port number for TCP sockets.
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket.file().node(),
@@ -282,7 +284,7 @@ pub(in crate::security) fn check_socket_listen_access(
 
     let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,
@@ -303,7 +305,7 @@ pub(in crate::security) fn socket_accept(
     let listening_security_state =
         (*listening_socket.file().node().security_state.0.read()).clone();
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &listening_socket.file().node(),
@@ -334,7 +336,7 @@ pub(in crate::security) fn check_socket_getsockopt_access(
     let audit_context = &[current_task.into(), Auditable::SockOptArguments(level, optname)];
     let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,
@@ -360,7 +362,7 @@ pub(in crate::security) fn check_socket_setsockopt_access(
     };
     let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,
@@ -384,7 +386,7 @@ pub(in crate::security) fn check_socket_sendmsg_access(
     };
     let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,
@@ -408,7 +410,7 @@ pub(in crate::security) fn check_socket_recvmsg_access(
     };
     let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,
@@ -433,7 +435,7 @@ pub(in crate::security) fn check_socket_getname_access(
 
     let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,
@@ -459,7 +461,7 @@ pub(in crate::security) fn check_socket_shutdown_access(
 
     let current_sid = current_task_state(current_task).current_sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,
@@ -512,7 +514,7 @@ pub(in crate::security) fn unix_may_send(
 
     let sending_sid = fs_node_effective_sid_and_class(&sending_node).sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         sending_sid,
         &receiving_node,
@@ -540,7 +542,7 @@ pub(in crate::security) fn unix_stream_connect(
     // Verify whether the `client_socket` has permission to connect to the `listening_socket`.
     let client_sid = fs_node_effective_sid_and_class(&client_node).sid;
     has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         client_sid,
         &listening_node,
@@ -566,7 +568,7 @@ pub(in crate::security) fn check_tun_dev_create_access(
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
     check_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         current_sid,

@@ -6,7 +6,7 @@ use crate::access_vector_cache::{
     AccessVectorCache, CacheStats, KernelXpermsAccessDecision, Query,
 };
 use crate::exceptions_config::ExceptionsConfig;
-use crate::permission_check::PermissionCheck;
+use crate::permission_check::{PerThreadCache, PermissionCheck};
 use crate::policy::metadata::HandleUnknown;
 use crate::policy::parser::PolicyData;
 use crate::policy::{
@@ -191,8 +191,11 @@ impl SecurityServer {
 
     /// Converts a shared pointer to [`SecurityServer`] to a [`PermissionCheck`] without consuming
     /// the pointer.
-    pub fn as_permission_check<'a>(self: &'a Self) -> PermissionCheck<'a> {
-        PermissionCheck::new(self, &self.access_vector_cache)
+    pub fn as_permission_check<'a>(
+        self: &'a Self,
+        local_cache: &'a PerThreadCache,
+    ) -> PermissionCheck<'a> {
+        PermissionCheck::new(self, &self.access_vector_cache, local_cache)
     }
 
     /// Returns the security ID mapped to `security_context`, creating it if it does not exist.
@@ -899,7 +902,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -926,7 +929,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -953,7 +956,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -979,7 +982,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -1006,7 +1009,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -1032,7 +1035,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -1058,7 +1061,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -1085,7 +1088,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -1111,7 +1114,7 @@ mod tests {
             .expect("creating SID from security context should succeed");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(source_sid, target_sid, FileClass::File.into(), "".into())
             .expect("new sid computed");
         let computed_context = security_server
@@ -1139,7 +1142,7 @@ mod tests {
 
         const SPECIAL_FILE_NAME: &[u8] = b"special_file";
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(
                 source_sid,
                 target_sid,
@@ -1155,7 +1158,7 @@ mod tests {
         assert_eq!(computed_context, b"source_u:object_r:special_transition_t:s0");
 
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(
                 source_sid,
                 target_sid,
@@ -1173,7 +1176,7 @@ mod tests {
 
         const OTHER_FILE_NAME: &[u8] = b"other_file";
         let computed_sid = security_server
-            .as_permission_check()
+            .as_permission_check(&Default::default())
             .compute_new_fs_node_sid(
                 source_sid,
                 target_sid,
@@ -1200,7 +1203,8 @@ mod tests {
         let security_server = SecurityServer::new_default();
         security_server.set_enforcing(true);
 
-        let permission_check = security_server.as_permission_check();
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // Load the minimal policy and get a SID for the context.
         assert_eq!(
@@ -1217,6 +1221,9 @@ mod tests {
             Ok(()),
             security_server.load_policy(allow_fork_bytes).map_err(|e| format!("{:?}", e))
         );
+
+        // Reuse the cache to check invalidation.
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // The now-loaded "allow_fork" policy allows the context represented by `sid` to fork.
         assert!(permission_check.has_permission(sid, sid, ProcessPermission::Fork).granted);
@@ -1265,7 +1272,8 @@ mod tests {
             security_server.security_context_to_sid(allowed_type_context.into()).unwrap()
         );
 
-        let permission_check = security_server.as_permission_check();
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // "allowed_t" is allowed the process getsched capability to "unlabeled_t" - but since
         // the currently-loaded policy defines "additional_t", the SID for "additional_t" does
@@ -1298,6 +1306,9 @@ mod tests {
                 .load_policy(with_unlabeled_access_domain_policy_bytes)
                 .map_err(|e| format!("{:?}", e))
         );
+
+        // Reuse the cache to check invalidation.
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // The now-loaded policy allows "allowed_t" the process getsched capability
         // to "unlabeled_t" and since the now-loaded policy does not recognize "additional_t",
@@ -1353,7 +1364,8 @@ mod tests {
 
         let sid =
             security_server.security_context_to_sid("user0:object_r:type0:s0".into()).unwrap();
-        let permission_check = security_server.as_permission_check();
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // Test policy grants "type0" the process-fork permission to itself.
         // Since the permission is granted by policy, the check will not be audit logged.
@@ -1400,7 +1412,8 @@ mod tests {
 
         let sid =
             security_server.security_context_to_sid("user0:object_r:type0:s0".into()).unwrap();
-        let permission_check = security_server.as_permission_check();
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // Test policy grants "type0" the process-fork permission to itself.
         let result = permission_check.has_permission(sid, sid, ProcessPermission::Fork);
@@ -1461,7 +1474,8 @@ mod tests {
             .security_context_to_sid("user0:object_r:non_permissive_t:s0".into())
             .unwrap();
 
-        let permission_check = security_server.as_permission_check();
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // Test policy grants process-getsched permission to both of the test domains.
         let result = permission_check.has_permission(
@@ -1559,7 +1573,8 @@ mod tests {
             .security_context_to_sid("user0:object_r:test_audit_t:s0".into())
             .unwrap();
 
-        let permission_check = security_server.as_permission_check();
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // Test policy grants the domain self-fork permission, and marks it audit-allow.
         let result = permission_check.has_permission(audit_sid, audit_sid, ProcessPermission::Fork);
@@ -1659,7 +1674,8 @@ mod tests {
             )
             .unwrap();
 
-        let permission_check = security_server.as_permission_check();
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // Source SID has no "process" permissions to target SID, and no exceptions.
         let result =
@@ -1698,7 +1714,7 @@ mod tests {
                 granted: true,
                 audit: false,
                 permissive: false,
-                todo_bug: None
+                todo_bug: None,
             }
         );
         assert!(result.permit());
@@ -1847,7 +1863,8 @@ mod tests {
         const DENY_POLICY: &[u8] =
             include_bytes!("../testdata/composite_policies/compiled/handle_unknown_policy-deny.pp");
         assert!(security_server.load_policy(DENY_POLICY.to_vec()).is_ok());
-        let permission_check = security_server.as_permission_check();
+        let local_cache = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache);
 
         // Check against undefined classes or permissions should deny access and audit.
         let result = permission_check.has_permission(sid, sid, ProcessPermission::GetSched);
@@ -1902,7 +1919,8 @@ mod tests {
             "../testdata/composite_policies/compiled/handle_unknown_policy-allow.pp"
         );
         assert!(security_server.load_policy(ALLOW_POLICY.to_vec()).is_ok());
-        let permission_check = security_server.as_permission_check();
+        let local_cache2 = Default::default();
+        let permission_check = security_server.as_permission_check(&local_cache2);
 
         // Check against undefined classes or permissions should grant access without audit.
         let result = permission_check.has_permission(sid, sid, ProcessPermission::GetSched);
@@ -1940,6 +1958,7 @@ mod tests {
             }
         );
         assert!(result.permit());
+
         let result = permission_check.has_permission(sid, sid, DirPermission::Reparent);
         assert_eq!(
             result,

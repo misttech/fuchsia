@@ -4,7 +4,7 @@
 
 use crate::security::Auditable;
 use crate::security::selinux_hooks::{
-    KernelPermission, check_permission_and_xperms, current_task_state,
+    KernelPermission, build_permission_check, check_permission_and_xperms, current_task_state,
     fs_node_effective_sid_and_class, socket,
 };
 use crate::task::CurrentTask;
@@ -171,7 +171,7 @@ pub(in crate::security) fn check_netlink_send_access(
         let socket_sid = fs_node_effective_sid_and_class(&socket_node).sid;
         let audit_context = &[audit_context.into(), socket_node.as_ref().as_ref().into()];
         return check_permission_and_xperms(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             current_sid,
             socket_sid,
@@ -191,7 +191,7 @@ pub(in crate::security) fn check_netlink_send_access(
 
     let current_sid = current_task_state(current_task).current_sid;
     socket::has_socket_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         current_sid,
         &socket_node,

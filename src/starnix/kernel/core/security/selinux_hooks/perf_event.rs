@@ -13,7 +13,7 @@ use selinux::{
 };
 use starnix_uapi::errors::Errno;
 
-use super::{check_self_permission, current_task_state};
+use super::{build_permission_check, check_self_permission, current_task_state};
 
 /// Checks whether `current_task` has the necessary permissions to open a perf_event for the given
 /// target task.
@@ -28,7 +28,7 @@ pub(in crate::security) fn check_perf_event_open_access(
     let subject_sid = current_task_state(current_task).current_sid;
     // Always check `perf_event { open }` permission on the current task.
     check_self_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         subject_sid,
         PerfEventPermission::Open,
@@ -37,7 +37,7 @@ pub(in crate::security) fn check_perf_event_open_access(
     // Check capability `capability2 { perfmon }` first, and if it fails check
     // `capability { sys_admin }` instead.
     if check_self_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         subject_sid,
         CommonCap2Permission::Perfmon.for_class(Cap2Class::Capability2),
@@ -46,7 +46,7 @@ pub(in crate::security) fn check_perf_event_open_access(
     .is_err()
     {
         check_self_permission(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
             CommonCapPermission::SysAdmin.for_class(CapClass::Capability),
@@ -57,7 +57,7 @@ pub(in crate::security) fn check_perf_event_open_access(
     // Check `perf_event { kernel }` permission when `exclude_kernel` is 0.
     if attr.exclude_kernel() == 0 {
         check_self_permission(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
             PerfEventPermission::Kernel,
@@ -78,7 +78,7 @@ pub(in crate::security) fn check_perf_event_open_access(
     };
     if check_cpu {
         check_self_permission(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
             PerfEventPermission::Cpu,
@@ -89,7 +89,7 @@ pub(in crate::security) fn check_perf_event_open_access(
     // Check `perf_event { tracepoint }` permission when type is PERF_TYPE_TRACEPOINT
     if event_type == PerfEventType::Tracepoint {
         check_self_permission(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
             PerfEventPermission::Tracepoint,
@@ -115,7 +115,7 @@ pub(in crate::security) fn check_perf_event_read_access(
     let subject_sid = current_task_state(current_task).current_sid;
     let target_sid = perf_event_file.security_state.state.sid;
     check_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         subject_sid,
         target_sid,
@@ -134,7 +134,7 @@ pub(in crate::security) fn check_perf_event_write_access(
     let subject_sid = current_task_state(current_task).current_sid;
     let target_sid = perf_event_file.security_state.state.sid;
     check_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         subject_sid,
         target_sid,

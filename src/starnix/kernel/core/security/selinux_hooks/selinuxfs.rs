@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use super::{
-    PolicyCapSupport, check_permission, current_task_state, policycap_support, set_cached_sid,
-    superblock,
+    PolicyCapSupport, build_permission_check, check_permission, current_task_state,
+    policycap_support, set_cached_sid, superblock,
 };
 
 use crate::task::CurrentTask;
@@ -105,7 +105,7 @@ pub(in crate::security) fn selinuxfs_check_access(
 ) -> Result<(), Errno> {
     let source_sid = current_task_state(current_task).current_sid;
     let target_sid = InitialSid::Security.into();
-    let permission_check = security_server.as_permission_check();
+    let permission_check = build_permission_check(current_task, security_server);
     check_permission(
         &permission_check,
         current_task,

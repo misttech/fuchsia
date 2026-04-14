@@ -6,7 +6,8 @@
 #![allow(non_upper_case_globals)]
 
 use super::{
-    BpfMapState, BpfProgState, check_permission, check_self_permission, current_task_state,
+    BpfMapState, BpfProgState, build_permission_check, check_permission, check_self_permission,
+    current_task_state,
 };
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
@@ -47,7 +48,7 @@ pub(in crate::security) fn check_bpf_access<Attr: FromBytes>(
         _ => return Ok(()),
     };
     check_self_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         sid,
         permission,
@@ -68,7 +69,7 @@ pub(in crate::security) fn check_bpf_map_access(
 
     if flags.contains(PermissionFlags::READ) {
         check_permission(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
             bpf_map.security_state.state.sid,
@@ -78,7 +79,7 @@ pub(in crate::security) fn check_bpf_map_access(
     }
     if flags.contains(PermissionFlags::WRITE) {
         check_permission(
-            &security_server.as_permission_check(),
+            &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
             bpf_map.security_state.state.sid,
@@ -100,7 +101,7 @@ pub(in crate::security) fn check_bpf_prog_access(
     let audit_context = current_task.into();
 
     check_permission(
-        &security_server.as_permission_check(),
+        &build_permission_check(current_task, security_server),
         current_task,
         subject_sid,
         bpf_program.security_state.state.sid,

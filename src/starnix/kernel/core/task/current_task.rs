@@ -142,6 +142,8 @@ pub struct CurrentTask {
     // &mut CurrentTask around instead of &CurrentTask.
     pub current_creds: RefCell<CurrentCreds>,
 
+    pub security_state: security::CurrentTaskState,
+
     /// Makes CurrentTask neither Sync not Send.
     _local_marker: PhantomData<*mut u8>,
 }
@@ -204,7 +206,13 @@ impl fmt::Debug for CurrentTask {
 impl CurrentTask {
     pub fn new(task: OwnedRef<Task>, thread_state: ThreadState<RegisterStorageEnum>) -> Self {
         let current_creds = RefCell::new(CurrentCreds::Cached(task.clone_creds()));
-        Self { task, thread_state, current_creds, _local_marker: Default::default() }
+        Self {
+            task,
+            thread_state,
+            current_creds,
+            security_state: Default::default(),
+            _local_marker: Default::default(),
+        }
     }
 
     /// Returns the live state of the task.

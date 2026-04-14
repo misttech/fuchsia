@@ -1031,7 +1031,7 @@ pub fn is_task_capable_noaudit(
             current_task,
             |security_server| {
                 selinux_hooks::task::is_task_capable_noaudit(
-                    &security_server.as_permission_check(),
+                    &selinux_hooks::build_permission_check(current_task, security_server),
                     &current_task,
                     capability,
                 )
@@ -1050,7 +1050,7 @@ pub fn check_task_capable(
     common_cap::capable(current_task, capability)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::task::check_task_capable(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(current_task, security_server),
             &current_task,
             capability,
         )
@@ -1066,7 +1066,7 @@ pub fn check_task_create_access(current_task: &CurrentTask) -> Result<(), Errno>
     track_hook_duration!("security.hooks.check_task_create_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::task::check_task_create_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(current_task, security_server),
             current_task,
         )
     })
@@ -1443,7 +1443,7 @@ pub fn check_getsched_access(source: &CurrentTask, target: &Task) -> Result<(), 
     track_hook_duration!("security.hooks.check_getsched_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_getsched_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
         )
@@ -1456,7 +1456,7 @@ pub fn check_setsched_access(source: &CurrentTask, target: &Task) -> Result<(), 
     track_hook_duration!("security.hooks.check_setsched_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_setsched_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
         )
@@ -1469,7 +1469,7 @@ pub fn check_getpgid_access(source: &CurrentTask, target: &Task) -> Result<(), E
     track_hook_duration!("security.hooks.check_getpgid_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_getpgid_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
         )
@@ -1482,7 +1482,7 @@ pub fn check_setpgid_access(source: &CurrentTask, target: &Task) -> Result<(), E
     track_hook_duration!("security.hooks.check_setpgid_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_setpgid_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
         )
@@ -1495,7 +1495,7 @@ pub fn check_task_getsid(source: &CurrentTask, target: &Task) -> Result<(), Errn
     track_hook_duration!("security.hooks.check_task_getsid");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_task_getsid(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
         )
@@ -1508,7 +1508,7 @@ pub fn check_getcap_access(source: &CurrentTask, target: &Task) -> Result<(), Er
     track_hook_duration!("security.hooks.check_getcap_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_getcap_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
         )
@@ -1522,7 +1522,7 @@ pub fn check_setcap_access(source: &CurrentTask, target: &Task) -> Result<(), Er
     track_hook_duration!("security.hooks.check_setcap_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_setcap_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
         )
@@ -1539,7 +1539,7 @@ pub fn check_signal_access(
     track_hook_duration!("security.hooks.check_signal_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_signal_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
             signal,
@@ -1553,7 +1553,7 @@ pub fn check_syslog_access(source: &CurrentTask, action: SyslogAction) -> Result
     track_hook_duration!("security.hooks.check_syslog_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_syslog_access(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             action,
         )
@@ -1568,7 +1568,7 @@ pub fn ptrace_traceme(current_task: &CurrentTask, parent_tracer_task: &Task) -> 
     common_cap::ptrace_traceme(current_task, parent_tracer_task)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::task::ptrace_traceme(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(current_task, security_server),
             current_task,
             parent_tracer_task,
         )
@@ -1587,7 +1587,7 @@ pub fn ptrace_access_check(
     common_cap::ptrace_access_check(current_task, tracee_task, mode)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::task::ptrace_access_check(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(current_task, security_server),
             current_task,
             tracee_task,
             mode,
@@ -1606,7 +1606,7 @@ pub fn task_prlimit(
     track_hook_duration!("security.hooks.task_prlimit");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::task_prlimit(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
             check_get_rlimit,
@@ -1626,7 +1626,7 @@ pub fn task_setrlimit(
     track_hook_duration!("security.hooks.task_setrlimit");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::task_setrlimit(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(source, security_server),
             &source,
             &target,
             old_limit,
@@ -1641,7 +1641,7 @@ pub fn sb_kern_mount(current_task: &CurrentTask, fs: &FileSystem) -> Result<(), 
     track_hook_duration!("security.hooks.sb_kern_mount");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::superblock::sb_kern_mount(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(current_task, security_server),
             current_task,
             fs,
         )
@@ -1659,7 +1659,7 @@ pub fn sb_mount(
     track_hook_duration!("security.hooks.sb_mount");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::superblock::sb_mount(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(current_task, security_server),
             current_task,
             path,
             flags,
@@ -1696,7 +1696,7 @@ pub fn sb_statfs(current_task: &CurrentTask, fs: &FileSystem) -> Result<(), Errn
     track_hook_duration!("security.hooks.sb_statfs");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::superblock::sb_statfs(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(current_task, security_server),
             current_task,
             fs,
         )
@@ -1714,7 +1714,7 @@ pub fn sb_umount(
     track_hook_duration!("security.hooks.sb_umount");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::superblock::sb_umount(
-            &security_server.as_permission_check(),
+            &selinux_hooks::build_permission_check(current_task, security_server),
             current_task,
             node,
             flags,

@@ -560,6 +560,14 @@ pub(in crate::security) fn task_consistent_attrs(current_task: &CurrentTask) -> 
     current_task_state(current_task)
 }
 
+/// Builds a `PermissionCheck` from the local cache of `current_task` and the given `security_server`.
+pub(in crate::security) fn build_permission_check<'a>(
+    current_task: &'a CurrentTask,
+    security_server: &'a SecurityServer,
+) -> PermissionCheck<'a> {
+    security_server.as_permission_check(&current_task.security_state.state.local_cache)
+}
+
 /// Security state for a [`crate::vfs::FileObject`] instance. This currently just holds the SID
 /// that the [`crate::task::Task`] that created the file object had.
 #[derive(Debug)]
@@ -830,4 +838,10 @@ fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
             PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))
         }
     }
+}
+
+/// Security state for a current task. This holds the task-local cache for permission check results.
+#[derive(Default, Debug)]
+pub struct CurrentTaskState {
+    pub local_cache: selinux::permission_check::PerThreadCache,
 }
