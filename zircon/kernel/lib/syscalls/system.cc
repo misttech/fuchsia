@@ -271,20 +271,17 @@ static zx_status_t vmo_coalesce_pages(zx_handle_t vmo_hdl, const size_t extra_by
 
   paddr_t base_addr;
   list_node list = LIST_INITIAL_VALUE(list);
-  st = pmm_alloc_contiguous(num_pages, PMM_ALLOC_FLAG_ANY, 0, &base_addr, &list);
+  st = Pmm::Node().AllocContiguous(num_pages, PMM_ALLOC_FLAG_ANY, 0, &base_addr, &list);
   if (st != ZX_OK) {
-    // TODO(gkalsi): Free pages allocated by pmm_alloc_contiguous pages
-    //               and return an error.
-    panic("Failed to allocate contiguous memory");
+    return st;
   }
 
-  uint8_t* dst_addr = (uint8_t*)paddr_to_physmap(base_addr);
+  uint8_t* dst_addr = static_cast<uint8_t*>(paddr_to_physmap(base_addr));
 
   st = vmo->Read(dst_addr, 0, vmo_size);
   if (st != ZX_OK) {
-    // TODO(gkalsi): Free pages allocated by pmm_alloc_contiguous pages
-    //               and return an error.
-    panic("Failed to read to contiguous vmo");
+    Pmm::Node().FreeList(&list);
+    return st;
   }
 
   arch_clean_invalidate_cache_range((vaddr_t)dst_addr, vmo_size);

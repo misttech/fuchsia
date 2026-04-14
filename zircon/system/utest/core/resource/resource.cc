@@ -3,7 +3,11 @@
 // found in the LICENSE file.
 
 #include <lib/standalone-test/standalone.h>
+#include <lib/zbi-format/kernel.h>
+#include <lib/zbi-format/zbi.h>
 #include <lib/zx/interrupt.h>
+#include <lib/zx/pager.h>
+#include <lib/zx/port.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/vmo.h>
 #include <limits.h>
@@ -15,6 +19,8 @@
 #include <zircon/syscalls/port.h>
 #include <zircon/syscalls/resource.h>
 #include <zircon/types.h>
+
+#include <thread>
 
 #include <zxtest/zxtest.h>
 
@@ -353,6 +359,83 @@ TEST(Resource, Ioports) {
   EXPECT_EQ(zx_ioports_release(one_io.get(), io_base, io_size), ZX_ERR_OUT_OF_RANGE);
 
   EXPECT_EQ(zx_ioports_release(one_io.get(), 0x80, 1), ZX_OK);
+}
+
+// Regression test for https://fxbug.dev/502277149
+TEST(Resource, MexecPagerPanic) {
+  const zx::unowned_resource system = get_system();
+  if (!system->is_valid()) {
+    ZXTEST_SKIP("System resource not available");
+  }
+
+  // Create a valid-looking ZBI for kernel_vmo
+  zx::vmo kernel_vmo;
+  ASSERT_OK(zx::vmo::create(8192, 0, &kernel_vmo));
+
+  zbi_header_t header = {
+      .type = ZBI_TYPE_CONTAINER,
+      .length = static_cast<uint32_t>(sizeof(zbi_header_t) + sizeof(zbi_kernel_t)),
+      .extra = ZBI_CONTAINER_MAGIC,
+      .flags = ZBI_FLAGS_VERSION,
+      .reserved0 = 0,
+      .reserved1 = 0,
+      .magic = ZBI_ITEM_MAGIC,
+      .crc32 = ZBI_ITEM_NO_CRC32,
+  };
+  zbi_header_t kheader = {
+      .type = ZBI_TYPE_KERNEL_X64,
+      .length = static_cast<uint32_t>(sizeof(zbi_kernel_t)),
+      .extra = 0,
+      .flags = ZBI_FLAGS_VERSION,
+      .reserved0 = 0,
+      .reserved1 = 0,
+      .magic = ZBI_ITEM_MAGIC,
+      .crc32 = ZBI_ITEM_NO_CRC32,
+  };
+  zbi_kernel_t kernel = {
+      .entry = 0x100,
+      .reserve_memory_size = 0,
+  };
+  ASSERT_OK(kernel_vmo.write(&header, 0, sizeof(header)));
+  ASSERT_OK(kernel_vmo.write(&kheader, sizeof(header), sizeof(kheader)));
+  ASSERT_OK(kernel_vmo.write(&kernel, sizeof(header) + sizeof(kheader), sizeof(kernel)));
+
+  zx::pager pager;
+  zx::port port;
+  zx::vmo vmo;
+  ASSERT_OK(zx::pager::create(0, &pager));
+  ASSERT_OK(zx::port::create(0, &port));
+  ASSERT_OK(pager.create_vmo(0, port, 0, zx_system_get_page_size(), &vmo));
+
+  std::thread t([&pager, &port, &vmo]() {
+    for (;;) {
+      zx_port_packet_t packet;
+      zx_status_t status = port.wait(zx::time::infinite(), &packet);
+      if (status != ZX_OK)
+        break;
+
+      if (packet.type == ZX_PKT_TYPE_USER)
+        break;
+
+      if (packet.type == ZX_PKT_TYPE_PAGE_REQUEST &&
+          packet.page_request.command == ZX_PAGER_VMO_READ) {
+        pager.op_range(ZX_PAGER_OP_FAIL, vmo, packet.page_request.offset,
+                       packet.page_request.length, ZX_ERR_IO);
+      }
+    }
+  });
+
+  // Call mexec.
+  // This should return an error, but not panic!
+  zx_status_t status = zx_system_mexec(system->get(), kernel_vmo.get(), vmo.get());
+
+  EXPECT_NE(status, ZX_OK);
+
+  // Cleanup
+  zx_port_packet_t packet = {};
+  packet.type = ZX_PKT_TYPE_USER;
+  port.queue(&packet);
+  t.join();
 }
 
 #endif  // defined(__x86_64__)
