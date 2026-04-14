@@ -4,6 +4,7 @@
 
 #include "src/devices/usb/drivers/usb-bus/usb-device.h"
 
+#include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.usb.device/cpp/wire.h>
 #include <fuchsia/hardware/usb/bus/c/banjo.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
@@ -978,11 +979,21 @@ zx_status_t UsbDevice::Init(async_dispatcher_t* dispatcher) {
       ddk::MakeStrProperty(bind_fuchsia::USB_PROTOCOL,
                            static_cast<uint32_t>(device_desc_.b_device_protocol)),
   };
+  auto bus_info =
+      std::make_unique<fuchsia_driver_framework::BusInfo>(fuchsia_driver_framework::BusInfo{{
+          .bus = fuchsia_driver_framework::BusType::kUsb,
+          .address = fuchsia_driver_framework::DeviceAddress::WithIntValue(
+              static_cast<uint8_t>(device_id_)),
+          .address_stability =
+              fuchsia_driver_framework::DeviceAddressStability::kUnstableBetweenBoot,
+      }});
+
   status = DdkAdd(ddk::DeviceAddArgs(name)
                       .set_str_props(props)
                       .set_proto_id(bind_fuchsia_usb::BIND_PROTOCOL_DEVICE)
                       .set_fidl_service_offers(offers)
-                      .set_outgoing_dir(endpoints->client.TakeChannel()));
+                      .set_outgoing_dir(endpoints->client.TakeChannel())
+                      .set_bus_info(std::move(bus_info)));
   if (status != ZX_OK) {
     return status;
   }
