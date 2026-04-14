@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 
+import local_workflow
 import scipy.stats
 
 # For comparing results from a performance test, we calculate
@@ -714,6 +715,8 @@ def Main(argv, out_fh, run_cmd=subprocess.check_call):
     )
     subparser.add_argument("results_dirs", nargs="+")
     subparser.set_defaults(func=lambda args: ValidatePerfCompare(args, out_fh))
+
+    local_workflow.register_subparsers(subparsers, out_fh)
 
     args = parser.parse_args(argv)
     args.func(args)
