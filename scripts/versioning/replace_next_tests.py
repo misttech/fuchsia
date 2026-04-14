@@ -75,6 +75,57 @@ class TestSubstitution(unittest.TestCase):
         #     """ZX_REMOVED_SINCE(1, 42, 42, "Use ProtocolReceive instead");""",
         # )
 
+        # Test NEVER_REPLACE_NEXT.
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT) // NEVER_REPLACE_NEXT",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT) // NEVER_REPLACE_NEXT",
+        )
+        self.assertSubstitution(
+            path,
+            """ZX_REMOVED_SINCE(1, 19,
+                                NEXT,  // NEVER_REPLACE_NEXT
+                                "Use DoNewThing() instead")""",
+            """ZX_REMOVED_SINCE(1, 19,
+                                NEXT,  // NEVER_REPLACE_NEXT
+                                "Use DoNewThing() instead")""",
+        )
+        self.assertSubstitution(
+            path,
+            """ZX_REMOVED_SINCE(1, 19,
+                                NEXT,
+                                "Use DoNewThing() instead")  // NEVER_REPLACE_NEXT""",
+            """ZX_REMOVED_SINCE(1, 19,
+                                42,
+                                "Use DoNewThing() instead")  // NEVER_REPLACE_NEXT""",
+        )
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // :NEVER_REPLACE_NEXT.",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // :NEVER_REPLACE_NEXT.",
+        )
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // Some text (NEVER REPLACE NEXT)",
+            # TODO(https://fxbug.dev/453724925): Fix the bug and use this line:
+            # "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // Some text (NEVER REPLACE NEXT)",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // Some text (NEVER REPLACE NEXT)",
+        )
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // Do this later (NEXT)",
+            # TODO(https://fxbug.dev/453724925): Fix the bug and use this line:
+            # "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // Do this later (NEXT)",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // Do this later (42)",
+        )
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // NEVER REPLACE NEXT",
+            # TODO(https://fxbug.dev/453724925): Fix the bug and use this line:
+            # "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // NEVER REPLACE NEXT",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // NEVER REPLACE NEXT",
+        )
+
     def test_rust(self) -> None:
         path = pathlib.Path("test.rs")
         self.assertSubstitution(
@@ -95,6 +146,44 @@ class TestSubstitution(unittest.TestCase):
         #     """cfg(all(fuchsia_api_level_at_least = "NEXT", fuchsia_api_level_less_than = "NEXT"))""",
         #     """cfg(all(fuchsia_api_level_at_least = "42", fuchsia_api_level_less_than = "42"))""",
         # )
+
+        # Test NEVER_REPLACE_NEXT.
+        self.assertSubstitution(
+            path,
+            """cfg(fuchsia_api_level_at_least = "NEXT") // NEVER_REPLACE_NEXT""",
+            """cfg(fuchsia_api_level_at_least = "NEXT") // NEVER_REPLACE_NEXT""",
+        )
+        self.assertSubstitution(
+            path,
+            """cfg(
+                fuchsia_api_level_at_least = "NEXT") // NEVER_REPLACE_NEXT""",
+            """cfg(
+                fuchsia_api_level_at_least = "NEXT") // NEVER_REPLACE_NEXT""",
+        )
+        self.assertSubstitution(
+            path,
+            """cfg(
+                fuchsia_api_level_at_least = "NEXT"
+                ) // NEVER_REPLACE_NEXT""",
+            """cfg(
+                fuchsia_api_level_at_least = "42"
+                ) // NEVER_REPLACE_NEXT""",
+        )
+        self.assertSubstitution(
+            path,
+            """cfg(fuchsia_api_level_at_least = "NEXT") // Some text (NEVER REPLACE NEXT)""",
+            """cfg(fuchsia_api_level_at_least = "42") // Some text (NEVER REPLACE NEXT)""",
+        )
+        self.assertSubstitution(
+            path,
+            """cfg(fuchsia_api_level_at_least = "NEXT") // Do this later (NEXT)""",
+            """cfg(fuchsia_api_level_at_least = "42") // Do this later (NEXT)""",
+        )
+        self.assertSubstitution(
+            path,
+            """cfg(fuchsia_api_level_at_least = "NEXT") // NEVER REPLACE NEXT""",
+            """cfg(fuchsia_api_level_at_least = "42") // NEVER REPLACE NEXT""",
+        )
 
     def test_fidl(self) -> None:
         path = pathlib.Path("test.fidl")
@@ -130,6 +219,46 @@ class TestSubstitution(unittest.TestCase):
             path,
             """@available(added=NEXT, deprecated=NEXT)""",
             """@available(added=42, deprecated=42)""",
+        )
+
+        # Test NEVER_REPLACE_NEXT.
+        self.assertSubstitution(
+            path,
+            """@available(added=NEXT)  // NEVER_REPLACE_NEXT""",
+            """@available(added=NEXT)  // NEVER_REPLACE_NEXT""",
+        )
+        self.assertSubstitution(
+            path,
+            """@available(added=15, deprecated=22,
+                removed=NEXT)  // NEVER_REPLACE_NEXT""",
+            """@available(added=15, deprecated=22,
+                removed=NEXT)  // NEVER_REPLACE_NEXT""",
+        )
+        self.assertSubstitution(
+            path,
+            """@available(added=15,
+                          deprecated=22,
+                          removed=NEXT
+            )  // NEVER_REPLACE_NEXT""",
+            """@available(added=15,
+                          deprecated=22,
+                          removed=42
+            )  // NEVER_REPLACE_NEXT""",
+        )
+        self.assertSubstitution(
+            path,
+            """@available(added=NEXT) // Some text (NEVER REPLACE NEXT)""",
+            """@available(added=42) // Some text (NEVER REPLACE NEXT)""",
+        )
+        self.assertSubstitution(
+            path,
+            """@available(added=NEXT) // Do this later (NEXT)""",
+            """@available(added=42) // Do this later (NEXT)""",
+        )
+        self.assertSubstitution(
+            path,
+            """@available(added=NEXT) // NEVER REPLACE NEXT""",
+            """@available(added=42) // NEVER REPLACE NEXT""",
         )
 
 

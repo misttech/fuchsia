@@ -49,6 +49,17 @@ class Pattern:
         """Performs the substitution and returns the result."""
 
         def sub_fn(m: re.Match[str]) -> str:
+            position_of_next = m.start() + len(m.group("prefix"))
+            start_of_line = text.rfind("\n", 0, position_of_next) + 1
+            end_of_line = text.find("\n", position_of_next)
+            if end_of_line == -1:
+                end_of_line = len(text)
+
+            line = text[start_of_line:end_of_line]
+
+            if "NEVER_REPLACE_NEXT" in line:
+                return m.group(0)
+
             return m.group("prefix") + new_api_level + m.group("suffix")
 
         return self.sub_regex.sub(sub_fn, text)

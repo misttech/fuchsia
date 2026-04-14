@@ -385,8 +385,9 @@ open protocol Node {
     });
 
     /// DEPRECATED - Use `Node.GetAttributes` instead.
-    // TODO(https://fxbug.dev/324081103): Delete (don't just set removed at NEXT) this method once
-    // we have no remaining out-of-tree callers, or when we drop support for API level 28.
+    // TODO(https://fxbug.dev/324081103): Delete (don't just set removed=NEXT)  // NEVER_REPLACE_NEXT
+    // this method once we have no remaining out-of-tree callers, or when we
+    // drop support for API level 28.
     @available(added=28, deprecated=HEAD, note="Use fuchsia.io/Node.GetAttributes instead.")
     @selector("fuchsia.io1/Node.GetAttr")
     strict DeprecatedGetAttr() -> (struct {
@@ -411,8 +412,9 @@ open protocol Node {
 
 
     /// DEPRECATED - Use `Node.UpdateAttributes` instead.
-    // TODO(https://fxbug.dev/324081103): Delete (don't just set removed at NEXT) this method once
-    // we have no remaining out-of-tree callers, or when we drop support for API level 28.
+    // TODO(https://fxbug.dev/324081103): Delete (don't just set removed=NEXT)  // NEVER_REPLACE_NEXT
+    // this method once  we have no remaining out-of-tree callers, or when we
+    // drop support for API level 28.
     @available(added=28, deprecated=HEAD, note="Use fuchsia.io/Node.UpdateAttributes instead.")
     @selector("fuchsia.io1/Node.SetAttr")
     strict DeprecatedSetAttr(struct {
