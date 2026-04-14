@@ -1015,7 +1015,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
 }
 }
   lsan = {
@@ -4300,6 +4300,16 @@ on the Bazel graph correctly.
 **Current value (from the default):** `[]`
 
 From //build/bazel/bazel_build_action_labels.gni:11
+
+### extra_kernel_test_images
+
+Each kernel_zbi_test() will stamp out a zbi_test() per entry in the provided list of kernel
+images; this list unconditionally extends that selection. This enables devs and builders to
+introduce more kinds of tests in the GN graph without affecting gen times by default.
+
+**Current value (from the default):** `[]`
+
+From //build/testing/boot_tests/kernel_zbi_test.gni:27
 
 ### extra_package_labels
 
@@ -8821,7 +8831,7 @@ toolchain, so that recompilations with the new compiler can be triggered.
 When using the prebuilt, this is ignored and the CIPD instance ID of the
 prebuilt is used.
 
-**Current value (from the default):** `"_R5lvvs3thQg9-RFMGbGumvO2z_r7tQ2ulUtAw2o1j0C"`
+**Current value (from the default):** `"okfvjdWp7YvxHy2noloaA38MM165uGdoxIyus58uTQQC"`
 
 From //build/rust/config.gni:47
 
