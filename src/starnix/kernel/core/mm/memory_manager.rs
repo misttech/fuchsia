@@ -3176,11 +3176,11 @@ impl MemoryManager {
                             // is private to each process.
                             backing.memory().clone()
                         } else {
-                            let basic_info = backing.memory().basic_info();
+                            let memory_obj = backing.memory();
                             let options = mapping.flags().options();
                             let memory =
-                                clone_cache.entry(basic_info.koid).or_insert_with_fallible(
-                                    || backing.memory().clone_memory(basic_info.rights, options),
+                                clone_cache.entry(memory_obj.get_koid()).or_insert_with_fallible(
+                                    || memory_obj.clone_memory(memory_obj.get_rights(), options),
                                 )?;
                             memory.clone()
                         };

@@ -217,12 +217,12 @@ impl FileOps for BpfHandle {
                 }
 
                 self.as_map()?.get_memory(locked, || {
-                    let vmo_dup = vmo
+                    let vmo_dup: zx::Vmo = vmo
                         .as_handle_ref()
                         .duplicate(zx::Rights::SAME_RIGHTS)
                         .map_err(|_| errno!(EIO))?
                         .into();
-                    Ok(Arc::new(MemoryObject::Vmo(vmo_dup)))
+                    Ok(Arc::new(MemoryObject::from(vmo_dup)))
                 })
             }
 

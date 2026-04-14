@@ -367,7 +367,7 @@ mod tests {
             assert!(mm.inflight_vmspliced_payloads.payloads.lock().is_empty());
 
             let memory_size = page_size * NUM_PAGES;
-            let memory = Arc::new(MemoryObject::Vmo(zx::Vmo::create(memory_size).unwrap()));
+            let memory = Arc::new(MemoryObject::from(zx::Vmo::create(memory_size).unwrap()));
             let mut bytes = vec![0; memory_size as usize];
             for i in 0..NUM_PAGES {
                 bytes[(page_size * i) as usize..][..(page_size as usize)].fill('A' as u8 + i as u8)
@@ -388,7 +388,7 @@ mod tests {
 
             // A unmapping a different `MemoryObject` should do nothing.
             {
-                let memory = Arc::new(MemoryObject::Vmo(zx::Vmo::create(page_size).unwrap()));
+                let memory = Arc::new(MemoryObject::from(zx::Vmo::create(page_size).unwrap()));
                 mm.inflight_vmspliced_payloads
                     .handle_unmapping(&memory, &(UserAddress::NULL..(u64::MAX.into())))
                     .unwrap();

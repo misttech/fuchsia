@@ -430,7 +430,8 @@ impl FileOps for PerfEventFile {
         let perf_event_file = self.perf_event_file.read();
         match perf_event_file.perf_data_vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS) {
             Ok(vmo) => {
-                let memory = MemoryObject::Vmo(vmo.into());
+                let vmo: zx::Vmo = vmo.into();
+                let memory = MemoryObject::from(vmo);
                 return Ok(Arc::new(memory));
             }
             Err(_) => {
