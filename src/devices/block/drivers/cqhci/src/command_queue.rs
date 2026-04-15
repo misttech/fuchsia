@@ -761,8 +761,10 @@ impl CommandQueueExcl {
         // Per JESD84-B51A Annex B, poll until the HALT bit is set.  There is also a HAC interrupt
         // bit which can be used, but since we use this for recovery and the device may be in a bad
         // state, polling is safer.
-        const HALT_DEADLINE: std::time::Duration = std::time::Duration::from_millis(100);
         const HALT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_micros(500);
+
+        // NOTE: for tests, the deadline is disabled because it can cause test flakes.
+        const HALT_DEADLINE: std::time::Duration = std::time::Duration::from_millis(100);
 
         let start = std::time::Instant::now();
         loop {
@@ -771,7 +773,7 @@ impl CommandQueueExcl {
             );
             if ctl.contains(CqhciCqCtlRegister::HALT) {
                 break;
-            } else if start.elapsed() >= HALT_DEADLINE {
+            } else if cfg!(not(test)) && start.elapsed() >= HALT_DEADLINE {
                 warn!("Failed to halt CQE after deadline; assuming stalled");
                 break;
             }

@@ -20,10 +20,12 @@ use fidl_next_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
+use futures::future::join;
 use futures::{FutureExt as _, StreamExt as _};
 use sdmmc_spec::{CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, SdhciInterruptStatusRegister};
 use std::pin::pin;
 use std::sync::Arc;
+use std::time::Duration;
 use test_case::test_case;
 use zx::HandleBased as _;
 
@@ -704,7 +706,8 @@ async fn test_shutdown_with_blocked_transfers() {
     blocker.block(!(1 << CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT));
 
     let read_scope = fixture.scope.new_child();
-    for _ in 0..31 {
+    // Queue up 32 requests, which is one more than the available number of slots.
+    for _ in 0..32 {
         let block_client = connect_block_client(&started_driver, "user").await;
         read_scope.spawn(async move {
             let mut buf = vec![0x00; 512];
@@ -712,12 +715,16 @@ async fn test_shutdown_with_blocked_transfers() {
         });
     }
 
-    // Wait for allrequests to be enqueued and submitted to the hardware.
+    // Wait for 31 requests to be enqueued and submitted to the hardware.
     let unblock: Vec<_> = blocker.take(31).collect().await;
 
-    started_driver.stop_driver().await;
-
-    drop(unblock);
+    join(started_driver.stop_driver(), async {
+        // The halt timeout is disabled in tests, so unblock the 31 requests after a short while so
+        // that the shutdown can complete.
+        fasync::Timer::new(Duration::from_millis(10)).await;
+        drop(unblock);
+    })
+    .await;
 
     read_scope.await;
 }

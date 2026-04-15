@@ -962,7 +962,7 @@ impl Blocker {
             async move {
                 if should_block.load(Ordering::Relaxed) & (1 << task_id) != 0 {
                     let (unblock_tx, unblock_rx) = oneshot::channel::<()>();
-                    blocked_tx.send(unblock_tx).await.unwrap();
+                    let _ = blocked_tx.send(unblock_tx).await;
                     let _ = unblock_rx.await;
                 }
             }
