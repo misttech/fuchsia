@@ -75,7 +75,6 @@ impl runtime_capabilities::Routable<DirConnector> for AggregateRouter {
         if debug {
             let data: Data = self
                 .get_capability_source_with_instances()
-                .await
                 .try_into()
                 .expect("failed to persist capability source");
             return Ok(RouterResponse::Debug(data));
@@ -114,7 +113,7 @@ impl AggregateRouter {
 
     /// Returns `self.capability_source` with the `instances` field filled in if this is an
     /// anonymizing aggregate.
-    async fn get_capability_source_with_instances(&self) -> CapabilitySource {
+    fn get_capability_source_with_instances(&self) -> CapabilitySource {
         let mut anonymized_aggregate_source = match &self.capability_source {
             AnonymizedOrFiltered::AnonymizedAggregate(source) => source.clone(),
             AnonymizedOrFiltered::FilteredAggregateProvider(source) => {
