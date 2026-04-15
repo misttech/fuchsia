@@ -14,7 +14,7 @@ use fuchsia_inspect::ArrayProperty;
 use futures::TryStreamExt;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
-use sandbox::{Capability, Message, RouterResponse};
+use runtime_capabilities::{Capability, Message, RouterResponse};
 use std::sync::{Arc, Weak};
 
 #[derive(Debug, Clone)]

@@ -29,7 +29,7 @@ use zx::JobCriticalOptions;
 use ::routing::component_instance::ComponentInstanceInterface;
 
 #[cfg(feature = "heapdump")]
-use sandbox::Routable;
+use runtime_capabilities::Routable;
 
 #[cfg(feature = "tracing")]
 use cm_config::TraceProvider;
@@ -123,14 +123,14 @@ fn connect_to_heapdump(builtin_environment: &BuiltinEnvironment) {
         );
         let heapdump_connector =
             match heapdump_router.route(None, false, model.root().clone().as_weak().into()).await {
-                Ok(sandbox::RouterResponse::Capability(connector)) => connector,
+                Ok(runtime_capabilities::RouterResponse::Capability(connector)) => connector,
                 other_value => {
                     error!("Failed to connect to heapdump collector: {:?}", other_value);
                     return;
                 }
             };
         let (client_end, server_end) = zx::Channel::create();
-        match heapdump_connector.send(sandbox::Message { channel: server_end }) {
+        match heapdump_connector.send(runtime_capabilities::Message { channel: server_end }) {
             Ok(_) => heapdump::bind_with_channel(client_end),
             Err(e) => error!("Failed to send handle to heapdump collector: {:?}", e),
         };

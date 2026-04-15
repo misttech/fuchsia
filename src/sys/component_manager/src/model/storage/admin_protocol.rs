@@ -33,7 +33,7 @@ use futures::{Future, TryFutureExt, TryStreamExt};
 use log::{debug, error, warn};
 use moniker::{ChildName, Moniker};
 use routing::{DictExt, WithPorcelain};
-use sandbox::{Capability, DirConnector, Router, RouterResponse};
+use runtime_capabilities::{Capability, DirConnector, Router, RouterResponse};
 use std::path::PathBuf;
 use std::sync::Arc;
 

@@ -66,7 +66,7 @@ use manager::ComponentManagerInstance;
 use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::{Explain, RouterError};
 use runner::component::StopInfo;
-use sandbox::{
+use runtime_capabilities::{
     Capability, Connector, Data, Dict, DirConnector, Message, Request, Routable, Router,
     RouterResponse, WeakInstanceToken,
 };
@@ -262,7 +262,7 @@ pub const DEFAULT_KILL_TIMEOUT: Duration = Duration::from_secs(1);
 pub struct IncomingCapabilities {
     pub numbered_handles: Vec<fprocess::HandleInfo>,
     pub additional_namespace_entries: Vec<NamespaceEntry>,
-    pub dict: Option<sandbox::Dict>,
+    pub dict: Option<runtime_capabilities::Dict>,
 }
 
 impl Default for IncomingCapabilities {

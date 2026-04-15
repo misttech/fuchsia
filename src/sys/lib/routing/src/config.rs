@@ -8,7 +8,7 @@ use crate::component_instance::ComponentInstanceInterface;
 use crate::{RouterResponse, RoutingError};
 use cm_rust::{Availability, FidlIntoNative};
 use router_error::Explain;
-use sandbox::Data;
+use runtime_capabilities::Data;
 use std::sync::Arc;
 use zx_status as zx;
 
@@ -46,7 +46,7 @@ where
                 .into());
             }
         };
-    let sandbox::Capability::DataRouter(router) = capability else {
+    let runtime_capabilities::Capability::DataRouter(router) = capability else {
         return Err(RoutingError::BedrockWrongCapabilityType {
             actual: format!("{:?}", capability),
             expected: "Router".to_string(),
@@ -54,8 +54,9 @@ where
         }
         .into());
     };
-    let request =
-        sandbox::Request { metadata: request_metadata::config_metadata(use_config.availability) };
+    let request = runtime_capabilities::Request {
+        metadata: request_metadata::config_metadata(use_config.availability),
+    };
     let data = match router.route(Some(request), false, component.as_weak().into()).await {
         Ok(RouterResponse::<Data>::Capability(d)) => d,
         Ok(RouterResponse::<Data>::Unavailable) => return Ok(use_config.default.clone()),
@@ -74,7 +75,7 @@ where
         }
         Err(e) => return Err(e),
     };
-    let sandbox::Data::Bytes(bytes) = data else {
+    let Data::Bytes(bytes) = data else {
         return Err(RoutingError::BedrockWrongCapabilityType {
             actual: format!("{:?}", data),
             expected: "Data::bytes".to_string(),

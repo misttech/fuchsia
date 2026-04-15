@@ -29,7 +29,7 @@ use routing::{
     SandboxPath, debug_route_sandbox_path, debug_route_sandbox_path_with_request,
     debug_route_storage_backing_directory,
 };
-use sandbox::{Capability, Data};
+use runtime_capabilities::{Capability, Data};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -1009,7 +1009,7 @@ mod tests {
     use routing::capability_source::CapabilitySource;
     use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
     use routing::error::ComponentInstanceError;
-    use sandbox::{Capability, Request, RouterResponse};
+    use runtime_capabilities::{Capability, Request, RouterResponse};
     use std::collections::HashMap;
     use std::sync::Arc;
 

@@ -12,7 +12,7 @@ use routing::bedrock::request_metadata::{
     protocol_metadata, resolver_metadata, runner_metadata, service_metadata, storage_metadata,
 };
 use routing::capability_source::CapabilitySource;
-use sandbox::Request;
+use runtime_capabilities::Request;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, PartialEq, Debug, Serialize)]

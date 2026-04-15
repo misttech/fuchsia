@@ -9,7 +9,7 @@ use futures::StreamExt;
 use futures::channel::oneshot;
 use futures::stream::FuturesUnordered;
 use router_error::RouterError;
-use sandbox::{
+use runtime_capabilities::{
     Capability, Dict, EntryUpdate, Request, Routable, Router, RouterResponse,
     UpdateNotifierRetention, WeakInstanceToken,
 };

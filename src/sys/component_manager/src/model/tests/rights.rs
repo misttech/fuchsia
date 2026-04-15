@@ -13,7 +13,7 @@ use cm_rust_testing::*;
 use fidl_fuchsia_io as fio;
 use routing::WithPorcelain;
 use routing::error::RouteRequestErrorInfo;
-use sandbox::{DirConnector, Request, Router, WeakInstanceToken};
+use runtime_capabilities::{DirConnector, Request, Router, WeakInstanceToken};
 
 #[fuchsia::test]
 async fn offer_increasing_rights() {

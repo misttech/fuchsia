@@ -13,7 +13,7 @@ use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component_internal as finternal;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
-use sandbox::{Capability, Dict, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{Capability, Dict, RouterResponse, WeakInstanceToken};
 
 pub fn serve(
     chan: zx::Channel,

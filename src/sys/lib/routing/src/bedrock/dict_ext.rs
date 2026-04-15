@@ -11,7 +11,7 @@ use cm_types::{IterablePath, RelativePath};
 use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use sandbox::{
+use runtime_capabilities::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
     RouterResponse, WeakInstanceToken,
 };

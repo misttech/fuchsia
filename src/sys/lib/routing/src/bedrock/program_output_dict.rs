@@ -19,10 +19,12 @@ use async_trait::async_trait;
 use cm_rust::{CapabilityTypeName, NativeIntoFidl};
 use cm_types::{Path, RelativePath};
 use component_id_index::InstanceId;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
 use log::warn;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
-use sandbox::{
+use runtime_capabilities::{
     Connector, Data, Dict, DirConnector, Request, Routable, Router, RouterResponse,
     WeakInstanceToken,
 };
@@ -30,7 +32,6 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
 pub trait ProgramOutputGenerator<C: ComponentInstanceInterface + 'static> {
     /// Get a router for [Dict] that forwards the request to a [Router] served at `path`
@@ -339,9 +340,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             );
         }
         cm_rust::CapabilityDecl::Config(c) => {
-            let data = sandbox::Data::Bytes(
-                fidl::persist(&c.value.clone().native_into_fidl()).unwrap().into(),
-            );
+            let data =
+                Data::Bytes(fidl::persist(&c.value.clone().native_into_fidl()).unwrap().into());
             struct ConfigRouter {
                 data: Data,
                 source: CapabilitySource,

@@ -14,7 +14,7 @@ use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use sandbox::{
+use runtime_capabilities::{
     Capability, CapabilityBound, Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken,
 };
 use std::collections::HashMap;
@@ -444,7 +444,7 @@ mod tests {
     use fuchsia_sync::Mutex;
     use moniker::Moniker;
     use router_error::RouterError;
-    use sandbox::{Data, Dict};
+    use runtime_capabilities::{Data, Dict};
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -528,7 +528,7 @@ mod tests {
             &self,
             _request: &RouteRequestErrorInfo,
             _err: &RouterError,
-            _route_target: sandbox::WeakInstanceToken,
+            _route_target: WeakInstanceToken,
         ) {
             let mut reported = self.reported.lock();
             if *reported {

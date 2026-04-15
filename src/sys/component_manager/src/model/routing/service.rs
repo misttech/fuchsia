@@ -24,7 +24,7 @@ use routing::capability_source::{
 };
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
-use sandbox::{DirConnector, Router, RouterResponse};
+use runtime_capabilities::{DirConnector, Router, RouterResponse};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -908,7 +908,7 @@ mod tests {
     use maplit::hashmap;
     use proptest::prelude::*;
     use rand::SeedableRng;
-    use sandbox::{Request, WeakInstanceToken};
+    use runtime_capabilities::{Request, WeakInstanceToken};
     use std::collections::HashSet;
     use vfs::pseudo_directory;
 

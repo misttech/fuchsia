@@ -37,7 +37,7 @@ use moniker::Moniker;
 use num_traits::cast::FromPrimitive;
 use router_error::RouterError;
 use routing::bedrock::request_metadata::runner_metadata;
-use sandbox::{
+use runtime_capabilities::{
     Capability, Connector, Dict, DirConnector, Message, Request, Router, RouterResponse,
     WeakInstanceToken,
 };
@@ -133,7 +133,8 @@ fn open_protocols_with_numbered_handle(
                             };
                             match res {
                                 RouterResponse::Capability(c) => {
-                                    let _ = c.send(sandbox::Message { channel: server });
+                                    let _ =
+                                        c.send(runtime_capabilities::Message { channel: server });
                                 }
                                 RouterResponse::Unavailable => {}
                                 RouterResponse::Debug(_) => {
@@ -148,7 +149,7 @@ fn open_protocols_with_numbered_handle(
                     }
                     Some(Capability::Connector(c)) => {
                         let (client, server) = fidl::Channel::create();
-                        let _ = c.send(sandbox::Message { channel: server });
+                        let _ = c.send(runtime_capabilities::Message { channel: server });
                         handle_info_from(client, numbered_handle)
                     }
                     Some(_) => {

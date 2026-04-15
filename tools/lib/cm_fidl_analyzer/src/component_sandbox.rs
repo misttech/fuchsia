@@ -42,7 +42,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{FutureExt, future};
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
-use sandbox::{
+use runtime_capabilities::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
     RouterResponse, WeakInstanceToken,
 };
@@ -108,7 +108,7 @@ pub fn build_root_component_input(
     for (name, capability_source, capability_type, route_request_info) in
         names_and_capability_sources
     {
-        let data: sandbox::Data = capability_source
+        let data: runtime_capabilities::Data = capability_source
             .clone()
             .try_into()
             .expect("failed to convert capability source to Data");
@@ -187,7 +187,9 @@ pub fn build_root_component_input(
     for event_stream_decl in event_stream_decls {
         let event_stream_name = event_stream_decl.name.clone();
         let router = Router::<Dict>::new(
-            move |request: Option<sandbox::Request>, debug: bool, _target: WeakInstanceToken| {
+            move |request: Option<runtime_capabilities::Request>,
+                  debug: bool,
+                  _target: WeakInstanceToken| {
                 let event_stream_name = event_stream_name.clone();
                 async move {
                     assert!(debug);
@@ -235,7 +237,7 @@ impl ErrorReporter for NullErrorReporter {
         &self,
         _: &RouteRequestErrorInfo,
         _: &RouterError,
-        _: sandbox::WeakInstanceToken,
+        _: runtime_capabilities::WeakInstanceToken,
     ) {
     }
 }
@@ -462,7 +464,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         component: &Arc<ComponentInstanceForAnalyzer>,
         _decl: &cm_rust::ComponentDecl,
         capability: &cm_rust::CapabilityDecl,
-    ) -> Router<sandbox::DirConnector> {
+    ) -> Router<runtime_capabilities::DirConnector> {
         if !self.executable {
             return Router::<DirConnector>::new_error(RoutingError::from(
                 ComponentInstanceError::InstanceNotExecutable {
@@ -554,7 +556,9 @@ pub fn new_event_stream_multiplexing_router(
     sources: Vec<EventStreamSourceRouter>,
 ) -> Router<Connector> {
     Router::new(
-        move |_request: Option<sandbox::Request>, debug: bool, target: WeakInstanceToken| {
+        move |_request: Option<runtime_capabilities::Request>,
+              debug: bool,
+              target: WeakInstanceToken| {
             assert!(debug, "non-debug routing is unsupported");
             let sources = sources.clone();
             async move {

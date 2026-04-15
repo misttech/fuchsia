@@ -23,7 +23,7 @@ use log::warn;
 use router_error::{Explain, RouterError};
 use routing::bedrock::request_metadata::Metadata;
 use routing::subdir::SubDir;
-use sandbox::{
+use runtime_capabilities::{
     Connectable, Connector, DirConnectable, DirConnector, Message, Request, Routable, Router,
     RouterResponse, WeakInstanceToken,
 };
@@ -268,7 +268,7 @@ impl LaunchTaskOnReceive {
 
 /// Porcelain methods on [`Routable`] objects.
 pub trait RoutableExt: Routable<Connector> {
-    /// Returns a router that resolves with a [`sandbox::Connector`] that watches for
+    /// Returns a router that resolves with a [`runtime_capabilities::Connector`] that watches for
     /// the channel to be readable, then delegates to the current router. The wait
     /// is performed in the provided `scope`.
     fn on_readable(self, scope: ExecutionScope) -> Router<Connector>;
@@ -440,7 +440,7 @@ pub mod tests {
     use routing::bedrock::request_metadata::Metadata;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::{DictExt, GenericRouterResponse, LazyGet, test_invalid_instance_token};
-    use sandbox::{Capability, Data, Dict, RemotableCapability};
+    use runtime_capabilities::{Capability, Data, Dict, RemotableCapability};
     use std::pin::pin;
     use std::sync::Weak;
     use std::task::Poll;

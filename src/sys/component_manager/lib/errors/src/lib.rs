@@ -16,7 +16,7 @@ use fidl_fuchsia_sys2 as fsys;
 use fuchsia_fs::directory::WatcherCreateError;
 use moniker::{ChildName, ExtendedMoniker, Moniker, MonikerError};
 use router_error::{Explain, RouterError};
-use sandbox::ConversionError;
+use runtime_capabilities::ConversionError;
 use serve_processargs::BuildNamespaceError;
 use std::sync::Arc;
 use thiserror::Error;

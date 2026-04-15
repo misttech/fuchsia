@@ -13,7 +13,7 @@ use cm_rust::{CapabilityDecl, CollectionDecl, ExposeDecl, UseDecl};
 use cm_types::{Name, Url};
 use derivative::Derivative;
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
-use sandbox::{WeakInstanceToken, WeakInstanceTokenAny};
+use runtime_capabilities::{WeakInstanceToken, WeakInstanceTokenAny};
 use std::clone::Clone;
 use std::sync::{Arc, Weak};
 

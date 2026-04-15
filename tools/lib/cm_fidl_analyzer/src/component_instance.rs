@@ -172,7 +172,7 @@ impl ComponentInstanceForAnalyzer {
                 &self,
                 _: &RouteRequestErrorInfo,
                 _: &RouterError,
-                _: sandbox::WeakInstanceToken,
+                _: runtime_capabilities::WeakInstanceToken,
             ) {
             }
         }

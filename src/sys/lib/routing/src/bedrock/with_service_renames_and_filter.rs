@@ -8,8 +8,8 @@ use cm_rust::NameMapping;
 use cm_rust::offer::{OfferDecl, OfferServiceDecl};
 use router_error::RouterError;
 #[cfg(target_os = "fuchsia")]
-use sandbox::RemotableCapability;
-use sandbox::{
+use runtime_capabilities::RemotableCapability;
+use runtime_capabilities::{
     Capability, Connector, Data, Dict, DirConnector, Request, Routable, Router, RouterResponse,
     WeakInstanceToken,
 };

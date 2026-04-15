@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use fuchsia_runtime::{HandleInfo, HandleType};
-use sandbox::{Capability, DictKey};
+use runtime_capabilities::{Capability, DictKey};
 use std::collections::HashMap;
 use thiserror::Error;
 
 mod namespace;
 
-pub use crate::namespace::{ignore_not_found, BuildNamespaceError, NamespaceBuilder};
+pub use crate::namespace::{BuildNamespaceError, NamespaceBuilder, ignore_not_found};
 
 /// How to deliver a particular capability from a dict to an Elf process. Broadly speaking,
 /// one could either deliver a capability using namespace entries, or using numbered handles.
@@ -19,8 +19,8 @@ pub enum Delivery {
     /// As a result, a namespace entry will be created in the resulting processargs, corresponding
     /// to the parent directory, e.g. "/svc/foo".
     ///
-    /// For example, installing a `sandbox::Sender` at "/svc/fuchsia.examples.Echo" will
-    /// cause the framework to spin up a `fuchsia.io/Directory` implementation backing "/svc",
+    /// For example, installing a `runtime_capabilities::Connector` at "/svc/fuchsia.examples.Echo"
+    /// will cause the framework to spin up a `fuchsia.io/Directory` implementation backing "/svc",
     /// containing a filesystem object named "fuchsia.examples.Echo".
     ///
     /// Not all capability types are installable as `fuchsia.io` objects. A one-shot handle is not
@@ -33,7 +33,7 @@ pub enum Delivery {
     /// [Delivery::NamespaceEntry] is that the former will create a namespace entry at the parent
     /// directory.
     ///
-    /// For example, installing a `sandbox::Directory` at "/data" will result in a namespace entry
+    /// For example, installing a `runtime_capabilities::Directory` at "/data" will result in a namespace entry
     /// at "/data". A request will be sent to the capability when the user writes to the
     /// namespace entry.
     NamespaceEntry(cm_types::Path),

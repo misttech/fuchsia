@@ -79,7 +79,7 @@ use hooks::{CapabilityReceiver, EventPayload, EventType};
 use log::{error, warn};
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
-use sandbox::{
+use runtime_capabilities::{
     Capability, Connector, Data, Dict, DirConnector, RemotableCapability, Request, Routable,
     Router, RouterResponse, WeakInstanceToken,
 };
@@ -591,8 +591,8 @@ impl ResolvedInstanceState {
             #[derivative(Debug = "ignore")]
             node: Arc<dyn DirectoryEntry>,
         }
-        impl sandbox::Connectable for OutgoingConnector {
-            fn send(&self, message: sandbox::Message) -> Result<(), ()> {
+        impl runtime_capabilities::Connectable for OutgoingConnector {
+            fn send(&self, message: runtime_capabilities::Message) -> Result<(), ()> {
                 let scope = ExecutionScope::new();
                 const FLAGS: fio::Flags = fio::Flags::PROTOCOL_SERVICE;
                 FLAGS.to_object_request(message.channel).handle(|object_request| {
@@ -608,7 +608,7 @@ impl ResolvedInstanceState {
             }
         }
         let node = Arc::new(SubNode::new(outgoing_dir_entry, relative_path, entry_type));
-        let connector = sandbox::Connector::new_sendable(OutgoingConnector { node });
+        let connector = runtime_capabilities::Connector::new_sendable(OutgoingConnector { node });
         let hook = CapabilityRequestedHook {
             source: component.as_weak(),
             name: name.clone(),
@@ -1496,7 +1496,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
                 ))
             }
         }
-        impl sandbox::DirConnectable for OutgoingDirConnector {
+        impl runtime_capabilities::DirConnectable for OutgoingDirConnector {
             fn maximum_flags(&self) -> fio::Flags {
                 self.flags
             }
@@ -1527,13 +1527,14 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
                 Ok(())
             }
         }
-        let dir_connector = sandbox::DirConnector::new_sendable(OutgoingDirConnector {
-            outgoing_dir: source_component.get_outgoing(),
-            scope: source_component.execution_scope.clone(),
-            moniker: source_component.moniker.clone(),
-            path,
-            flags: rights.into(),
-        });
+        let dir_connector =
+            runtime_capabilities::DirConnector::new_sendable(OutgoingDirConnector {
+                outgoing_dir: source_component.get_outgoing(),
+                scope: source_component.execution_scope.clone(),
+                moniker: source_component.moniker.clone(),
+                path,
+                flags: rights.into(),
+            });
         let capability_source =
             if let CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
                 capability,

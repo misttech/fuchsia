@@ -15,7 +15,7 @@ use router_error::RouterError;
 use routing::DictExt;
 use routing::bedrock::request_metadata::storage_metadata;
 use routing::error::RoutingError;
-use sandbox::{Capability, Dict, Request};
+use runtime_capabilities::{Capability, Dict, Request};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -107,7 +107,7 @@ fn add_pkg_directory(
     pkg_dir: fio::DirectoryProxy,
 ) -> Result<(), BuildNamespaceError> {
     let pkg_handle = pkg_dir.into_channel().unwrap().into_zx_channel().into_handle();
-    let sandbox_handle = sandbox::Handle::new(pkg_handle);
+    let sandbox_handle = runtime_capabilities::Handle::new(pkg_handle);
     let path = cm_types::NamespacePath::new(PKG_PATH.to_str().unwrap()).unwrap();
     namespace.add_entry(sandbox_handle.into(), &path)?;
     Ok(())

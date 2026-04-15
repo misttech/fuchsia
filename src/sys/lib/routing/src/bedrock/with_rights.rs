@@ -8,7 +8,9 @@ use crate::rights::Rights;
 use async_trait::async_trait;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use sandbox::{CapabilityBound, Request, Routable, Router, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{
+    CapabilityBound, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+};
 
 struct RightsRouter<T: CapabilityBound> {
     router: Router<T>,
@@ -75,7 +77,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_fuchsia_io as fio;
     use router_error::RouterError;
-    use sandbox::{Data, Dict, WeakInstanceToken};
+    use runtime_capabilities::{Data, Dict, WeakInstanceToken};
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -87,7 +89,7 @@ mod tests {
         }
     }
 
-    impl sandbox::WeakInstanceTokenAny for FakeComponentToken {
+    impl runtime_capabilities::WeakInstanceTokenAny for FakeComponentToken {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }

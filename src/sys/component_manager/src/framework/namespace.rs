@@ -16,7 +16,7 @@ use futures::future::BoxFuture;
 use futures::prelude::*;
 use log::warn;
 use namespace::NamespaceError;
-use sandbox::{Dict, WeakInstanceToken};
+use runtime_capabilities::{Dict, WeakInstanceToken};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
@@ -49,7 +49,12 @@ async fn serve_inner(
     let target_clone = target.clone();
     let _store_task = fasync::Task::spawn(async move {
         let receiver_scope = fasync::Scope::new();
-        let _ = sandbox::serve_capability_store(store_stream, &receiver_scope, target_clone).await;
+        let _ = runtime_capabilities::serve_capability_store(
+            store_stream,
+            &receiver_scope,
+            target_clone,
+        )
+        .await;
     });
     while let Some(request) = stream.try_next().await? {
         let method_name = request.method_name();
@@ -114,8 +119,8 @@ async fn create(
             .map_err(|_| ERR)?
             .map_err(|_| ERR)?;
         let dict = store.export(dict_id).await.map_err(|_| ERR)?.map_err(|_| ERR)?;
-        let dict = sandbox::Capability::try_from(dict).map_err(|_| ERR)?;
-        let sandbox::Capability::Dictionary(dict) = dict else {
+        let dict = runtime_capabilities::Capability::try_from(dict).map_err(|_| ERR)?;
+        let runtime_capabilities::Capability::Dictionary(dict) = dict else {
             return Err(ERR);
         };
         for (key, capability) in dict.enumerate() {
@@ -187,7 +192,7 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_component::client;
     use futures::TryStreamExt;
-    use sandbox::{Capability, Connector, Dict};
+    use runtime_capabilities::{Capability, Connector, Dict};
     use std::sync::{Arc, Weak};
 
     #[cfg(fuchsia_api_level_less_than = "HEAD")]
@@ -236,7 +241,9 @@ mod tests {
         let root_token = root.as_weak().into();
         tasks.spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            sandbox::serve_capability_store(stream, &receiver_scope, root_token).await.unwrap()
+            runtime_capabilities::serve_capability_store(stream, &receiver_scope, root_token)
+                .await
+                .unwrap()
         });
 
         let mut namespace_pairs = vec![];
@@ -403,9 +410,13 @@ mod tests {
                 let root_token = root.as_weak().into();
                 tasks.spawn(async move {
                     let receiver_scope = fasync::Scope::new();
-                    sandbox::serve_capability_store(stream, &receiver_scope, root_token)
-                        .await
-                        .unwrap()
+                    runtime_capabilities::serve_capability_store(
+                        stream,
+                        &receiver_scope,
+                        root_token,
+                    )
+                    .await
+                    .unwrap()
                 });
 
                 let dict_id = next_id;

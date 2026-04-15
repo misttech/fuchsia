@@ -8,7 +8,9 @@ use fuchsia_async as fasync;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use namespace::{Entry as NamespaceEntry, EntryError, Namespace, NamespaceError, Tree};
 use router_error::Explain;
-use sandbox::{Capability, Dict, RemotableCapability, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{
+    Capability, Dict, RemotableCapability, RouterResponse, WeakInstanceToken,
+};
 use thiserror::Error;
 use vfs::directory::entry::serve_directory;
 use vfs::execution_scope::ExecutionScope;
@@ -42,7 +44,7 @@ pub enum BuildNamespaceError {
     Conversion {
         path: NamespacePath,
         #[source]
-        err: sandbox::ConversionError,
+        err: runtime_capabilities::ConversionError,
     },
 
     #[error("unable to serve `{path}` after converting to directory: {err}")]
@@ -182,7 +184,7 @@ impl NamespaceBuilder {
                     if entry.entry_info().type_() != fio::DirentType::Directory {
                         return Err(BuildNamespaceError::Conversion {
                             path: path.clone(),
-                            err: sandbox::ConversionError::NotSupported,
+                            err: runtime_capabilities::ConversionError::NotSupported,
                         });
                     }
                     serve_directory(
@@ -281,7 +283,7 @@ mod tests {
     use fuchsia_fs::directory::DirEntry;
     use futures::channel::mpsc;
     use futures::{StreamExt, TryStreamExt};
-    use sandbox::{Connector, DirConnector, Receiver};
+    use runtime_capabilities::{Connector, DirConnector, Receiver};
     use std::sync::Arc;
     use test_case::test_case;
     use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
@@ -559,7 +561,7 @@ mod tests {
         let scope = ExecutionScope::new();
         let mut namespace =
             NamespaceBuilder::new(scope, not_found_sender, WeakInstanceToken::new_invalid());
-        let (_, sender) = sandbox::Connector::new();
+        let (_, sender) = runtime_capabilities::Connector::new();
         assert_matches!(
             namespace.add_entry(sender.into(), &ns_path("/a")),
             Err(BuildNamespaceError::NamespaceError(NamespaceError::EntryError(

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use cm_types::IterablePath;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use sandbox::{
+use runtime_capabilities::{
     CapabilityBound, Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken,
 };
 use std::fmt::Debug;

@@ -33,7 +33,9 @@ use futures::{FutureExt, TryStreamExt, future};
 use hooks::EventType;
 use log::warn;
 use router_error::RouterError;
-use sandbox::{Capability, Data, DirConnector, Router, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{
+    Capability, Data, DirConnector, Router, RouterResponse, WeakInstanceToken,
+};
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::{ExecutionScope, Path, ToObjectRequest, WeakExecutionScope};
@@ -194,7 +196,9 @@ impl RootInputBuilder {
             capability: ComponentCapability::Directory(directory.clone()),
         });
         let router = Router::<DirConnector>::new(
-            move |request: Option<sandbox::Request>, debug, _target: WeakInstanceToken| {
+            move |request: Option<runtime_capabilities::Request>,
+                  debug,
+                  _target: WeakInstanceToken| {
                 if debug {
                     return futures::future::ready(Ok(RouterResponse::Debug(
                         capability_source
@@ -461,7 +465,9 @@ impl RootInputBuilder {
     pub fn add_event_stream_capabilities(&self) {
         for event_type in EventType::values() {
             let router = Router::new(
-                move |request: Option<sandbox::Request>, debug, _target: WeakInstanceToken| {
+                move |request: Option<runtime_capabilities::Request>,
+                      debug,
+                      _target: WeakInstanceToken| {
                     async move {
                         if debug {
                             let name = Name::new(event_type.as_str()).unwrap();
@@ -514,7 +520,7 @@ impl ErrorReporter for NullErrorReporter {
         &self,
         _: &RouteRequestErrorInfo,
         _: &RouterError,
-        _: sandbox::WeakInstanceToken,
+        _: runtime_capabilities::WeakInstanceToken,
     ) {
     }
 }

@@ -19,7 +19,7 @@ use futures::future::BoxFuture;
 use moniker::Moniker;
 use router_error::RouterError;
 use routing::capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
-use sandbox::{Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken};
 use std::sync::Arc;
 
 pub mod binder;

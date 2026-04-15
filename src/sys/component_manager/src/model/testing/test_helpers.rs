@@ -24,7 +24,7 @@ use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use hooks::{EventType, HooksRegistration};
 use moniker::{BorrowedChildName, ChildName, Moniker};
-use sandbox::{Capability, Message, Request, RouterResponse};
+use runtime_capabilities::{Capability, Message, Request, RouterResponse};
 use std::collections::HashSet;
 use std::sync::Arc;
 use zx::{self as zx, Koid};

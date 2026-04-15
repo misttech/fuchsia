@@ -3,64 +3,63 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{ConversionError, Dict, Router, RouterResponse, WeakInstanceToken};
+use crate::{ConversionError, Data, Router, RouterResponse, WeakInstanceToken};
 use fidl::AsHandleRef;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use futures::TryStreamExt;
 use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::execution_scope::ExecutionScope;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio};
 
-impl crate::RemotableCapability for Router<Dict> {
+impl crate::RemotableCapability for Router<Data> {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
         token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        Ok(self.into_directory_entry(fio::DirentType::Directory, scope, token))
+        Ok(self.into_directory_entry(fio::DirentType::Service, scope, token))
     }
 }
 
-impl TryFrom<RouterResponse<Dict>> for fsandbox::DictionaryRouterRouteResponse {
+impl TryFrom<RouterResponse<Data>> for fsandbox::DataRouterRouteResponse {
     type Error = fsandbox::RouterError;
 
-    fn try_from(resp: RouterResponse<Dict>) -> Result<Self, Self::Error> {
+    fn try_from(resp: RouterResponse<Data>) -> Result<Self, Self::Error> {
         match resp {
-            RouterResponse::<Dict>::Capability(c) => {
-                Ok(fsandbox::DictionaryRouterRouteResponse::Dictionary(c.into()))
+            RouterResponse::<Data>::Capability(c) => {
+                Ok(fsandbox::DataRouterRouteResponse::Data(c.into()))
             }
-            RouterResponse::<Dict>::Unavailable => {
-                Ok(fsandbox::DictionaryRouterRouteResponse::Unavailable(fsandbox::Unit {}))
+            RouterResponse::<Data>::Unavailable => {
+                Ok(fsandbox::DataRouterRouteResponse::Unavailable(fsandbox::Unit {}))
             }
-            RouterResponse::<Dict>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
+            RouterResponse::<Data>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
         }
     }
 }
 
-impl crate::fidl::IntoFsandboxCapability for Router<Dict> {
+impl crate::fidl::IntoFsandboxCapability for Router<Data> {
     fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
         let (client_end, sender_stream) =
-            fidl::endpoints::create_request_stream::<fsandbox::DictionaryRouterMarker>();
+            fidl::endpoints::create_request_stream::<fsandbox::DataRouterMarker>();
         self.serve_and_register(sender_stream, client_end.as_handle_ref().koid().unwrap(), token);
-        fsandbox::Capability::DictionaryRouter(client_end)
+        fsandbox::Capability::DataRouter(client_end)
     }
 }
 
-impl Router<Dict> {
+impl Router<Data> {
     async fn serve_router(
         self,
-        mut stream: fsandbox::DictionaryRouterRequestStream,
+        mut stream: fsandbox::DataRouterRequestStream,
         token: WeakInstanceToken,
     ) -> Result<(), fidl::Error> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
-                fsandbox::DictionaryRouterRequest::Route { payload, responder } => {
+                fsandbox::DataRouterRequest::Route { payload, responder } => {
                     responder.send(router::route_from_fidl(&self, payload, token.clone()).await)?;
                 }
-                fsandbox::DictionaryRouterRequest::_UnknownMethod { ordinal, .. } => {
-                    log::warn!(
-                        ordinal:%; "Received unknown DictionaryRouter request"
-                    );
+                fsandbox::DataRouterRequest::_UnknownMethod { ordinal, .. } => {
+                    log::warn!(ordinal:%; "Received unknown DataRouter request");
                 }
             }
         }
@@ -70,7 +69,7 @@ impl Router<Dict> {
     /// Serves the `fuchsia.sandbox.Router` protocol and moves ourself into the registry.
     pub fn serve_and_register(
         self,
-        stream: fsandbox::DictionaryRouterRequestStream,
+        stream: fsandbox::DataRouterRequestStream,
         koid: zx::Koid,
         token: WeakInstanceToken,
     ) {

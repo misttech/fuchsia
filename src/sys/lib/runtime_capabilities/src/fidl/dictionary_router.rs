@@ -3,64 +3,64 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{Connector, ConversionError, Router, RouterResponse, WeakInstanceToken};
+use crate::{ConversionError, Dict, Router, RouterResponse, WeakInstanceToken};
 use fidl::AsHandleRef;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use futures::TryStreamExt;
 use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::execution_scope::ExecutionScope;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio};
 
-impl crate::RemotableCapability for Router<Connector> {
+impl crate::RemotableCapability for Router<Dict> {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
         token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        Ok(self.into_directory_entry(fio::DirentType::Service, scope, token))
+        Ok(self.into_directory_entry(fio::DirentType::Directory, scope, token))
     }
 }
 
-impl TryFrom<RouterResponse<Connector>> for fsandbox::ConnectorRouterRouteResponse {
+impl TryFrom<RouterResponse<Dict>> for fsandbox::DictionaryRouterRouteResponse {
     type Error = fsandbox::RouterError;
 
-    fn try_from(resp: RouterResponse<Connector>) -> Result<Self, Self::Error> {
+    fn try_from(resp: RouterResponse<Dict>) -> Result<Self, Self::Error> {
         match resp {
-            RouterResponse::<Connector>::Capability(c) => {
-                Ok(fsandbox::ConnectorRouterRouteResponse::Connector(c.into()))
+            RouterResponse::<Dict>::Capability(c) => {
+                Ok(fsandbox::DictionaryRouterRouteResponse::Dictionary(c.into()))
             }
-            RouterResponse::<Connector>::Unavailable => {
-                Ok(fsandbox::ConnectorRouterRouteResponse::Unavailable(fsandbox::Unit {}))
+            RouterResponse::<Dict>::Unavailable => {
+                Ok(fsandbox::DictionaryRouterRouteResponse::Unavailable(fsandbox::Unit {}))
             }
-            RouterResponse::<Connector>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
+            RouterResponse::<Dict>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
         }
     }
 }
 
-impl crate::fidl::IntoFsandboxCapability for Router<Connector> {
+impl crate::fidl::IntoFsandboxCapability for Router<Dict> {
     fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
         let (client_end, sender_stream) =
-            fidl::endpoints::create_request_stream::<fsandbox::ConnectorRouterMarker>();
+            fidl::endpoints::create_request_stream::<fsandbox::DictionaryRouterMarker>();
         self.serve_and_register(sender_stream, client_end.as_handle_ref().koid().unwrap(), token);
-        fsandbox::Capability::ConnectorRouter(client_end)
+        fsandbox::Capability::DictionaryRouter(client_end)
     }
 }
 
-impl Router<Connector> {
+impl Router<Dict> {
     async fn serve_router(
         self,
-        mut stream: fsandbox::ConnectorRouterRequestStream,
+        mut stream: fsandbox::DictionaryRouterRequestStream,
         token: WeakInstanceToken,
     ) -> Result<(), fidl::Error> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
-                fsandbox::ConnectorRouterRequest::Route { payload, responder } => {
+                fsandbox::DictionaryRouterRequest::Route { payload, responder } => {
                     responder.send(router::route_from_fidl(&self, payload, token.clone()).await)?;
                 }
-                fsandbox::ConnectorRouterRequest::_UnknownMethod { ordinal, .. } => {
+                fsandbox::DictionaryRouterRequest::_UnknownMethod { ordinal, .. } => {
                     log::warn!(
-                        ordinal:%;
-                        "Received unknown ConnectorRouter request"
+                        ordinal:%; "Received unknown DictionaryRouter request"
                     );
                 }
             }
@@ -71,7 +71,7 @@ impl Router<Connector> {
     /// Serves the `fuchsia.sandbox.Router` protocol and moves ourself into the registry.
     pub fn serve_and_register(
         self,
-        stream: fsandbox::ConnectorRouterRequestStream,
+        stream: fsandbox::DictionaryRouterRequestStream,
         koid: zx::Koid,
         token: WeakInstanceToken,
     ) {

@@ -27,7 +27,8 @@ pub struct ModelContext {
     pub scope_factory: Box<dyn Fn() -> ExecutionScope + Send + Sync + 'static>,
     remote_capabilities: Arc<RemotedRuntimeCapabilities>,
     #[cfg(test)]
-    pub extra_framework_capabilities: Mutex<HashMap<cm_types::Name, sandbox::Capability>>,
+    pub extra_framework_capabilities:
+        Mutex<HashMap<cm_types::Name, runtime_capabilities::Capability>>,
     /// Inspect routing errors.
     pub routing_errors: Arc<RoutingErrors>,
     inspector: Inspector,
@@ -118,7 +119,7 @@ impl ModelContext {
     pub async fn add_framework_capability(
         &self,
         name: impl Into<String>,
-        capability: impl Into<sandbox::Capability>,
+        capability: impl Into<runtime_capabilities::Capability>,
     ) {
         let mut framework_capabilities = self.extra_framework_capabilities.lock();
         framework_capabilities.insert(cm_types::Name::new(name.into()).unwrap(), capability.into());

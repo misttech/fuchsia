@@ -28,7 +28,7 @@ use namespace::{Namespace, NamespaceError};
 use routing::capability_source::{BuiltinSource, CapabilitySource};
 use routing::policy::ScopedPolicyChecker;
 use runner::component::{Controllable, Controller, StopInfo};
-use sandbox::{Capability, Dict, RemotableCapability, WeakInstanceToken};
+use runtime_capabilities::{Capability, Dict, RemotableCapability, WeakInstanceToken};
 use std::sync::Arc;
 use thiserror::Error;
 use vfs::directory::entry::{OpenRequest, serve_directory};
@@ -657,6 +657,7 @@ mod tests {
     use fuchsia_runtime::{HandleInfo, HandleType};
     use futures::channel::{self, oneshot};
     use moniker::Moniker;
+    use runtime_capabilities::Handle;
     use serve_processargs::NamespaceBuilder;
     use std::pin::pin;
     use std::sync::LazyLock;
@@ -1081,10 +1082,7 @@ mod tests {
             NamespaceBuilder::new(scope, not_found, WeakInstanceToken::new_invalid());
         let pkg_handle = pkg.into_channel().unwrap().into_zx_channel().into_handle();
         namespace
-            .add_entry(
-                sandbox::Handle::new(pkg_handle).into(),
-                &NamespacePath::new("/pkg").unwrap(),
-            )
+            .add_entry(Handle::new(pkg_handle).into(), &NamespacePath::new("/pkg").unwrap())
             .unwrap();
 
         let moniker = Moniker::try_from(["signal_then_hang"]).unwrap();

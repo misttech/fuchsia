@@ -25,7 +25,7 @@ use cm_types::{IterablePath, Name, RelativePath};
 use fidl_fuchsia_io::RW_STAR_DIR;
 use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker};
-use sandbox::{
+use runtime_capabilities::{
     Capability, CapabilityBound, Dict, DirConnector, Request, Routable, Router, RouterResponse,
 };
 use std::fmt::Debug;

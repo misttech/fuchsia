@@ -5,7 +5,7 @@
 use crate::DictExt;
 use cm_types::{BorrowedName, IterablePath, Name};
 use fidl_fuchsia_component_sandbox as fsandbox;
-use sandbox::{Capability, Data, Dict};
+use runtime_capabilities::{Capability, Data, Dict};
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::LazyLock;
@@ -340,7 +340,7 @@ fn get_or_insert(this: &Dict, key: &Name) -> Dict {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use sandbox::DictKey;
+    use runtime_capabilities::DictKey;
 
     impl StructuredDict for Dict {
         fn from_dict(dict: Dict) -> Self {

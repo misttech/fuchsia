@@ -10,6 +10,9 @@ use crate::{
 };
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::{ClientEnd, ServerEnd};
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use std::fmt;
 use std::sync::Arc;
@@ -17,7 +20,6 @@ use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest
 use vfs::execution_scope::ExecutionScope;
 use vfs::object_request::{ObjectRequest, ObjectRequestRef};
 use vfs::remote::RemoteLike;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 impl DirConnector {
     pub(crate) fn new_with_fidl_receiver(

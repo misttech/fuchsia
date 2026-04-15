@@ -6,11 +6,13 @@ use crate::fidl::{IntoFsandboxCapability, RemotableCapability};
 use crate::{
     Capability, CapabilityBound, Dict, Request, Router, RouterResponse, WeakInstanceToken,
 };
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use router_error::{Explain, RouterError};
 use std::sync::Arc;
 use vfs::directory::entry::{self, DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo};
 use vfs::execution_scope::ExecutionScope;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, zx};
+use zx;
 
 impl Request {
     pub fn into_fsandbox_request(self, token: WeakInstanceToken) -> fsandbox::RouteRequest {

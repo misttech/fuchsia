@@ -24,7 +24,7 @@ use routing::bedrock::request_metadata::Metadata;
 use routing::bedrock::sandbox_construction::{EventStreamFilter, EventStreamSourceRouter};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
-use sandbox::{
+use runtime_capabilities::{
     Capability, Connector, Data, Dict, Receiver, Request, Routable, Router, RouterResponse,
     WeakInstanceToken,
 };

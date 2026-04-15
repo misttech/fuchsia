@@ -859,7 +859,7 @@ pub trait ErrorReporter: Clone + Send + Sync + 'static {
         &self,
         request: &RouteRequestErrorInfo,
         err: &RouterError,
-        route_target: sandbox::WeakInstanceToken,
+        route_target: runtime_capabilities::WeakInstanceToken,
     );
 }
 

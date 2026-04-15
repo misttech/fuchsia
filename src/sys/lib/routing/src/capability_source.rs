@@ -24,7 +24,7 @@ use fidl_fuchsia_sys2 as fsys;
 use from_enum::FromEnum;
 use futures::future::BoxFuture;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
-use sandbox::{Capability, Data};
+use runtime_capabilities::{Capability, Data};
 use std::fmt;
 use thiserror::Error;
 

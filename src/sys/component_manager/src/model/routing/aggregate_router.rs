@@ -23,7 +23,7 @@ use routing::capability_source::{
 };
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
-use sandbox::{
+use runtime_capabilities::{
     Capability, Data, Dict, DirConnector, RemotableCapability, Request, Router, RouterResponse,
     WeakInstanceToken,
 };
@@ -64,7 +64,7 @@ pub struct AggregateRouter {
 }
 
 #[async_trait]
-impl sandbox::Routable<DirConnector> for AggregateRouter {
+impl runtime_capabilities::Routable<DirConnector> for AggregateRouter {
     async fn route(
         &self,
         request: Option<Request>,

@@ -14,7 +14,7 @@ use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
 use moniker::Moniker;
-use sandbox::{Capability, Data, Dict, DictKey};
+use runtime_capabilities::{Capability, Data, Dict, DictKey};
 
 /// A type which has accessors for route request metadata of type T.
 pub trait Metadata<T> {
@@ -355,16 +355,16 @@ impl Metadata<StorageSourceMoniker> for Dict {
 }
 
 /// Returns a `Dict` containing Router Request metadata specifying a Protocol porcelain type.
-pub fn protocol_metadata(availability: cm_types::Availability) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+pub fn protocol_metadata(availability: cm_types::Availability) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::Protocol);
     metadata.set_metadata(availability);
     metadata
 }
 
 /// Returns a `Dict` containing Router Request metadata specifying a Dictionary porcelain type.
-pub fn dictionary_metadata(availability: cm_types::Availability) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+pub fn dictionary_metadata(availability: cm_types::Availability) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::Dictionary);
     metadata.set_metadata(availability);
     metadata
@@ -375,8 +375,8 @@ pub fn directory_metadata(
     availability: cm_types::Availability,
     rights: Option<Rights>,
     subdir: Option<SubDir>,
-) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::Directory);
     if let Some(subdir) = subdir {
         metadata.set_metadata(subdir);
@@ -395,32 +395,32 @@ pub fn directory_metadata(
 }
 
 /// Returns a `Dict` containing Router Request metadata specifying a Config porcelain type.
-pub fn config_metadata(availability: cm_types::Availability) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+pub fn config_metadata(availability: cm_types::Availability) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::Config);
     metadata.set_metadata(availability);
     metadata
 }
 
 /// Returns a `Dict` containing Router Request metadata specifying a Runner porcelain type.
-pub fn runner_metadata(availability: cm_types::Availability) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+pub fn runner_metadata(availability: cm_types::Availability) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::Runner);
     metadata.set_metadata(availability);
     metadata
 }
 
 /// Returns a `Dict` Containing Router Request metadata specifying a Resolver porcelain type.
-pub fn resolver_metadata(availability: cm_types::Availability) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+pub fn resolver_metadata(availability: cm_types::Availability) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::Resolver);
     metadata.set_metadata(availability);
     metadata
 }
 
 /// Returns a `Dict` Containing Router Request metadata specifying a Service porcelain type.
-pub fn service_metadata(availability: cm_types::Availability) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+pub fn service_metadata(availability: cm_types::Availability) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::Service);
     metadata.set_metadata(availability);
     // Service capabilities are implemented as DirConnectors. When the Router<DirConnector> that
@@ -440,8 +440,8 @@ pub fn service_metadata(availability: cm_types::Availability) -> sandbox::Dict {
 pub fn event_stream_metadata(
     availability: cm_types::Availability,
     route_metadata: finternal::EventStreamRouteMetadata,
-) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::EventStream);
     metadata.set_metadata(availability);
     metadata.set_metadata(route_metadata);
@@ -449,8 +449,8 @@ pub fn event_stream_metadata(
 }
 
 /// Returns a `Dict` containing Router Request metadata specifying a Storage porcelain type.
-pub fn storage_metadata(availability: cm_types::Availability) -> sandbox::Dict {
-    let metadata = sandbox::Dict::new();
+pub fn storage_metadata(availability: cm_types::Availability) -> Dict {
+    let metadata = Dict::new();
     metadata.set_metadata(CapabilityTypeName::Storage);
     metadata.set_metadata(availability);
     metadata.set_metadata(Rights::from(fio::RW_STAR_DIR));

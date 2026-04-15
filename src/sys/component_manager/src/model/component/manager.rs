@@ -18,7 +18,7 @@ use fuchsia_sync::Mutex;
 use log::warn;
 use moniker::Moniker;
 use routing::error::{ComponentInstanceError, RoutingError};
-use sandbox::{Connector, Request, Routable, WeakInstanceToken};
+use runtime_capabilities::{Connector, Request, Routable, WeakInstanceToken};
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
@@ -114,7 +114,7 @@ impl ComponentManagerInstance {
                     .component_output
                     .clone();
                 match component_output.capabilities().get(&self.source_name) {
-                    Some(sandbox::Capability::ConnectorRouter(router)) => {
+                    Some(runtime_capabilities::Capability::ConnectorRouter(router)) => {
                         Ok(router.route(request, debug, target).await?)
                     }
                     _ => Err(RouterError::NotFound(Arc::new(

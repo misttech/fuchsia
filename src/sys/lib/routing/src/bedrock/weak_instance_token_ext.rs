@@ -8,7 +8,7 @@ use crate::component_instance::{
 };
 use crate::error::ComponentInstanceError;
 use moniker::ExtendedMoniker;
-use sandbox::WeakInstanceToken;
+use runtime_capabilities::WeakInstanceToken;
 use std::sync::Arc;
 
 /// A trait to add functions WeakComponentInstancethat know about the component

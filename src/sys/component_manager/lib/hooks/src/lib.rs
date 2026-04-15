@@ -14,7 +14,7 @@ use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
-use sandbox::{Connector, Receiver, WeakInstanceToken};
+use runtime_capabilities::{Connector, Receiver, WeakInstanceToken};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};

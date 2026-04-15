@@ -11,7 +11,7 @@ use moniker::ExtendedMoniker;
 use routing::bedrock::request_metadata::resolver_metadata;
 use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
-use sandbox::{Capability, Request, RouterResponse};
+use runtime_capabilities::{Capability, Request, RouterResponse};
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::v2_component_model::V2ComponentModel;
 use serde::{Deserialize, Serialize};

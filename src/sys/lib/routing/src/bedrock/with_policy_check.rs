@@ -10,8 +10,10 @@ use async_trait::async_trait;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 #[cfg(not(target_os = "fuchsia"))]
-use sandbox::Capability;
-use sandbox::{CapabilityBound, Request, Routable, Router, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::Capability;
+use runtime_capabilities::{
+    CapabilityBound, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+};
 
 /// If the metadata for a route contains a Data::Uint64 value under this key with a value greater
 /// than 0, then no policy checks will be performed. This behavior is limited to non-fuchsia
@@ -86,7 +88,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
     ) -> Result<RouterResponse<T>, RouterError> {
         let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
         #[cfg(not(target_os = "fuchsia"))]
-        if let Some(Capability::Data(sandbox::Data::Uint64(num))) =
+        if let Some(Capability::Data(runtime_capabilities::Data::Uint64(num))) =
             request.metadata.get(&cm_types::Name::new(SKIP_POLICY_CHECKS).unwrap())
         {
             if num > 0 {

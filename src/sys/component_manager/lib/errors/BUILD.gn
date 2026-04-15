@@ -14,7 +14,6 @@ rustc_library("errors") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-fs",
     "//src/sys/component_manager/lib/router_error",
-    "//src/sys/component_manager/lib/sandbox",
     "//src/sys/component_manager/lib/serve_processargs",
     "//src/sys/lib/cm_config",
     "//src/sys/lib/cm_fidl_validator",
@@ -24,6 +23,7 @@ rustc_library("errors") {
     "//src/sys/lib/config_encoder",
     "//src/sys/lib/moniker",
     "//src/sys/lib/routing",
+    "//src/sys/lib/runtime_capabilities",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:thiserror",
   ]

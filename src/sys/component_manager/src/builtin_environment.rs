@@ -99,7 +99,7 @@ use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use hooks::EventType;
 use log::{error, info, warn};
-use sandbox::{Capability, Message, Request, RouterResponse};
+use runtime_capabilities::{Capability, Message, Request, RouterResponse};
 use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;

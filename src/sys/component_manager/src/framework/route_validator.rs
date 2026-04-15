@@ -16,7 +16,9 @@ use futures::{FutureExt, TryStreamExt};
 use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
-use sandbox::{Capability, CapabilityBound, Data, Dict, Router, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{
+    Capability, CapabilityBound, Data, Dict, Router, RouterResponse, WeakInstanceToken,
+};
 
 pub fn serve(
     server_end: zx::Channel,

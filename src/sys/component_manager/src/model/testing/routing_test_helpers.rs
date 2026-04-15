@@ -39,7 +39,7 @@ use futures::prelude::*;
 use hooks::HooksRegistration;
 use moniker::Moniker;
 use router_error::Explain;
-use sandbox::{Capability, Message, RouterResponse};
+use runtime_capabilities::{Capability, Message, RouterResponse};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;

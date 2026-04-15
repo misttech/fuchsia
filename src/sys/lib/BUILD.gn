@@ -30,6 +30,7 @@ group("tests") {
     "notify-batch-watcher:tests",
     "routing:tests",
     "runner:tests",
+    "runtime_capabilities:tests",
     "socket-to-stdio:tests",
     "socket_parsing:tests",
     "task-exceptions:tests",

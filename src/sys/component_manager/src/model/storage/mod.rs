@@ -25,7 +25,7 @@ use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use moniker::{ChildName, Moniker};
 use routing::capability_source::StorageBackingDirectorySource;
-use sandbox::{Dict, DirConnector, Router, RouterResponse};
+use runtime_capabilities::{Dict, DirConnector, Router, RouterResponse};
 use std::path::PathBuf;
 use std::sync::Arc;
 use vfs::ToObjectRequest;
@@ -205,7 +205,7 @@ pub async fn route_backing_directory(
     );
     let source: CapabilitySource = match backing_dir_router
         .route(
-            Some(sandbox::Request {
+            Some(runtime_capabilities::Request {
                 metadata: routing::bedrock::request_metadata::directory_metadata(
                     cm_types::Availability::Transitional,
                     Some(fio::RW_STAR_DIR.into()),

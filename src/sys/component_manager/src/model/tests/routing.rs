@@ -64,7 +64,7 @@ use {
     routing_test_helpers::{
         RoutingTestModel, default_service_capability, instantiate_common_routing_tests,
     },
-    sandbox::{Connector, Router, RouterResponse, WeakInstanceToken},
+    runtime_capabilities::{Connector, Router, RouterResponse, WeakInstanceToken},
     std::time::Duration,
     std::{
         collections::HashSet,
@@ -937,9 +937,9 @@ async fn create_child_with_dict() {
     ];
 
     // Create a dictionary with a sender for the `hippo` protocol.
-    let dict = sandbox::Dict::new();
+    let dict = runtime_capabilities::Dict::new();
 
-    let (receiver, sender) = sandbox::Connector::new();
+    let (receiver, sender) = runtime_capabilities::Connector::new();
 
     // Serve the `fidl.examples.routing.echo.Echo` protocol on the receiver.
     let _task = fasync::Task::spawn(async move {
@@ -3330,7 +3330,9 @@ async fn source_component_stopping_when_routing() {
         let cap = Router::<Connector>::try_from(cap).unwrap();
         let Ok(RouterResponse::Capability(conn)) = cap
             .route(
-                Some(sandbox::Request { metadata: protocol_metadata(Availability::Required) }),
+                Some(runtime_capabilities::Request {
+                    metadata: protocol_metadata(Availability::Required),
+                }),
                 false,
                 root.as_weak().into(),
             )
@@ -3340,7 +3342,7 @@ async fn source_component_stopping_when_routing() {
         };
 
         // Connect to the capability.
-        conn.send(sandbox::Message { channel: server_end }).unwrap()
+        conn.send(runtime_capabilities::Message { channel: server_end }).unwrap()
     };
 
     // Both should complete after the response delay has passed.
@@ -3394,7 +3396,9 @@ async fn source_component_stopped_after_routing_before_open() {
     let cap = Router::<Connector>::try_from(cap).unwrap();
     let Ok(RouterResponse::Capability(conn)) = cap
         .route(
-            Some(sandbox::Request { metadata: protocol_metadata(Availability::Required) }),
+            Some(runtime_capabilities::Request {
+                metadata: protocol_metadata(Availability::Required),
+            }),
             false,
             root.as_weak().into(),
         )
@@ -3416,7 +3420,7 @@ async fn source_component_stopped_after_routing_before_open() {
 
     // Connect to the capability. The component should be started again.
     let (client_end, server_end) = zx::Channel::create();
-    conn.send(sandbox::Message { channel: server_end }).unwrap();
+    conn.send(runtime_capabilities::Message { channel: server_end }).unwrap();
 
     let server_end = open_request_rx.next().await.unwrap();
     assert_eq!(
@@ -3463,7 +3467,9 @@ async fn source_component_shutdown_after_routing_before_open() {
     let cap = Router::<Connector>::try_from(cap).unwrap();
     let Ok(RouterResponse::Capability(conn)) = cap
         .route(
-            Some(sandbox::Request { metadata: protocol_metadata(Availability::Required) }),
+            Some(runtime_capabilities::Request {
+                metadata: protocol_metadata(Availability::Required),
+            }),
             false,
             root.as_weak().into(),
         )
@@ -3485,7 +3491,7 @@ async fn source_component_shutdown_after_routing_before_open() {
 
     // Connect to the capability. The request will fail and the component is not started.
     let (client_end, server_end) = zx::Channel::create();
-    conn.send(sandbox::Message { channel: server_end }).unwrap();
+    conn.send(runtime_capabilities::Message { channel: server_end }).unwrap();
     fasync::OnSignals::new(&client_end, zx::Signals::CHANNEL_PEER_CLOSED).await.unwrap();
     assert!(!root.is_started().await);
 }

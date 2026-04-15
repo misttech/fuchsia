@@ -16,7 +16,6 @@ group("hermetic_tests") {
     "diagnostics:tests",
     "hooks:tests",
     "processargs:tests",
-    "sandbox:tests",
     "serve_processargs:tests",
     "util:tests",
   ]

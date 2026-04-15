@@ -4,8 +4,9 @@
 
 use crate::WeakInstanceToken;
 use fidl::handle::{EventPair, Signals};
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fuchsia_async as fasync;
 use zx::Koid;
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
 impl crate::RemotableCapability for WeakInstanceToken {}
 impl crate::fidl::IntoFsandboxCapability for crate::WeakInstanceToken {

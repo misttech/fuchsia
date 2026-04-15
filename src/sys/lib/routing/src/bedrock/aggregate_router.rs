@@ -4,7 +4,7 @@
 
 use crate::capability_source::{AggregateInstance, CapabilitySource};
 use cm_types::Name;
-use sandbox::{DirConnector, Router};
+use runtime_capabilities::{DirConnector, Router};
 use std::sync::Arc;
 
 /// Functions of this signature are used during sandbox to construct new aggregate routers. These

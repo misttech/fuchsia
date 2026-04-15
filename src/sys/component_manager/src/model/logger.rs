@@ -13,7 +13,7 @@ use fuchsia_sync::Mutex;
 use log::Log;
 use moniker::Moniker;
 use routing::DictExt;
-use sandbox::{Capability, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{Capability, RouterResponse, WeakInstanceToken};
 use std::collections::LinkedList;
 use std::sync::{Arc, LazyLock};
 
@@ -106,7 +106,7 @@ impl LoggerCache {
             };
             match res {
                 RouterResponse::Capability(c) => {
-                    let _ = c.send(sandbox::Message { channel: server.into() });
+                    let _ = c.send(runtime_capabilities::Message { channel: server.into() });
                 }
                 RouterResponse::Unavailable => {}
                 RouterResponse::Debug(_) => {
@@ -158,7 +158,7 @@ mod tests {
     use hooks::Hooks;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::component_instance::ComponentInstanceInterface;
-    use sandbox::{Capability, Connector, Receiver, Router};
+    use runtime_capabilities::{Capability, Connector, Receiver, Router};
     use std::str::FromStr;
     use std::sync::{Arc, Weak};
 

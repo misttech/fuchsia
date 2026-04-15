@@ -38,7 +38,7 @@ use routing_test_helpers::{
     CheckUse, ComponentEventRoute, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
     ServiceInstance,
 };
-use sandbox::{Capability, RouterResponse};
+use runtime_capabilities::{Capability, RouterResponse};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;

@@ -36,7 +36,7 @@ use itertools::Itertools;
 use log::warn;
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
-use sandbox::{
+use runtime_capabilities::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
     RouterResponse, WeakInstanceToken,
 };

@@ -3,62 +3,66 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{ConversionError, Data, Router, RouterResponse, WeakInstanceToken};
+use crate::{ConversionError, DirConnector, Router, RouterResponse, WeakInstanceToken};
 use fidl::AsHandleRef;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use futures::TryStreamExt;
 use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::execution_scope::ExecutionScope;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio};
 
-impl crate::RemotableCapability for Router<Data> {
+impl crate::RemotableCapability for Router<DirConnector> {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
         token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        Ok(self.into_directory_entry(fio::DirentType::Service, scope, token))
+        Ok(self.into_directory_entry(fio::DirentType::Directory, scope, token))
     }
 }
 
-impl TryFrom<RouterResponse<Data>> for fsandbox::DataRouterRouteResponse {
+impl TryFrom<RouterResponse<DirConnector>> for fsandbox::DirConnectorRouterRouteResponse {
     type Error = fsandbox::RouterError;
 
-    fn try_from(resp: RouterResponse<Data>) -> Result<Self, Self::Error> {
+    fn try_from(resp: RouterResponse<DirConnector>) -> Result<Self, Self::Error> {
         match resp {
-            RouterResponse::<Data>::Capability(c) => {
-                Ok(fsandbox::DataRouterRouteResponse::Data(c.into()))
+            RouterResponse::<DirConnector>::Capability(c) => {
+                Ok(fsandbox::DirConnectorRouterRouteResponse::DirConnector(c.into()))
             }
-            RouterResponse::<Data>::Unavailable => {
-                Ok(fsandbox::DataRouterRouteResponse::Unavailable(fsandbox::Unit {}))
+            RouterResponse::<DirConnector>::Unavailable => {
+                Ok(fsandbox::DirConnectorRouterRouteResponse::Unavailable(fsandbox::Unit {}))
             }
-            RouterResponse::<Data>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
+            RouterResponse::<DirConnector>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
         }
     }
 }
 
-impl crate::fidl::IntoFsandboxCapability for Router<Data> {
+impl crate::fidl::IntoFsandboxCapability for Router<DirConnector> {
     fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
         let (client_end, sender_stream) =
-            fidl::endpoints::create_request_stream::<fsandbox::DataRouterMarker>();
+            fidl::endpoints::create_request_stream::<fsandbox::DirConnectorRouterMarker>();
         self.serve_and_register(sender_stream, client_end.as_handle_ref().koid().unwrap(), token);
-        fsandbox::Capability::DataRouter(client_end)
+        fsandbox::Capability::DirConnectorRouter(client_end)
     }
 }
 
-impl Router<Data> {
+impl Router<DirConnector> {
     async fn serve_router(
         self,
-        mut stream: fsandbox::DataRouterRequestStream,
+        mut stream: fsandbox::DirConnectorRouterRequestStream,
         token: WeakInstanceToken,
     ) -> Result<(), fidl::Error> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
-                fsandbox::DataRouterRequest::Route { payload, responder } => {
+                fsandbox::DirConnectorRouterRequest::Route { payload, responder } => {
                     responder.send(router::route_from_fidl(&self, payload, token.clone()).await)?;
                 }
-                fsandbox::DataRouterRequest::_UnknownMethod { ordinal, .. } => {
-                    log::warn!(ordinal:%; "Received unknown DataRouter request");
+                fsandbox::DirConnectorRouterRequest::_UnknownMethod { ordinal, .. } => {
+                    log::warn!(
+                        ordinal:%;
+                        "Received unknown DirConnectorRouter request"
+                    );
                 }
             }
         }
@@ -68,7 +72,7 @@ impl Router<Data> {
     /// Serves the `fuchsia.sandbox.Router` protocol and moves ourself into the registry.
     pub fn serve_and_register(
         self,
-        stream: fsandbox::DataRouterRequestStream,
+        stream: fsandbox::DirConnectorRouterRequestStream,
         koid: zx::Koid,
         token: WeakInstanceToken,
     ) {

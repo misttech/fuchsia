@@ -17,7 +17,7 @@ use errors::ModelError;
 use log::error;
 use router_error::RouterError;
 use routing::component_instance::ComponentInstanceInterface;
-use sandbox::{Capability, RouterResponse};
+use runtime_capabilities::{Capability, RouterResponse};
 use std::sync::Arc;
 
 pub struct RoutedStorage {
@@ -80,7 +80,7 @@ impl ErrorReporter for RoutingFailureErrorReporter {
         &self,
         request: &RouteRequestErrorInfo,
         err: &RouterError,
-        target: sandbox::WeakInstanceToken,
+        target: runtime_capabilities::WeakInstanceToken,
     ) {
         let component_to_log_at = match WeakComponentInstance::try_from(target) {
             Ok(target) => target,

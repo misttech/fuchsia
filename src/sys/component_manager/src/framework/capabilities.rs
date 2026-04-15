@@ -22,7 +22,7 @@ use router_error::{Explain, RouterError};
 use routing::bedrock::request_metadata::Metadata;
 use routing::capability_source::{CapabilitySource, RemotedAtSource};
 use routing::error::RoutingError;
-use sandbox::{
+use runtime_capabilities::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dict, DirConnectable, DirConnector,
     Message, RemotableCapability, Request, Routable, Router, RouterResponse, WeakInstanceToken,
 };

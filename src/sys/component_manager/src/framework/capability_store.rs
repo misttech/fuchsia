@@ -4,10 +4,11 @@
 
 use crate::model::component::WeakComponentInstance;
 use crate::sandbox_util::take_handle_as_stream;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fuchsia_async as fasync;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use std::sync::LazyLock;
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
 static RECEIVER_SCOPE: LazyLock<fasync::Scope> = LazyLock::new(|| fasync::Scope::new());
 
@@ -18,7 +19,7 @@ pub fn serve(
 ) -> BoxFuture<'static, Result<(), anyhow::Error>> {
     async move {
         let stream = take_handle_as_stream::<fsandbox::CapabilityStoreMarker>(server_end);
-        sandbox::serve_capability_store(stream, &*RECEIVER_SCOPE, source.into())
+        runtime_capabilities::serve_capability_store(stream, &*RECEIVER_SCOPE, source.into())
             .await
             .map_err(Into::into)
     }

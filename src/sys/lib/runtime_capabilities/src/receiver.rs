@@ -76,10 +76,11 @@ impl DirReceiver {
 mod tests {
     use crate::Connector;
     use assert_matches::assert_matches;
+    use fidl_fuchsia_component_sandbox as fsandbox;
+    use fuchsia_async as fasync;
     use futures::future::{self, Either};
     use std::pin::pin;
     use zx::{self as zx, Peered};
-    use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
     use super::*;
 
