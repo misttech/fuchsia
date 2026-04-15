@@ -1110,25 +1110,15 @@ impl PagedObjectHandle {
 
     /// Returns true if the handle needs flushing.
     pub fn needs_flush(&self) -> bool {
-        let mut inner = self.inner.lock();
-        if inner.dirty_crtime.needs_flush()
+        let inner = self.inner.lock();
+        // There should be no need to call `was_file_modified_since_last_call` because we check
+        // `dirty_pages` here and there shouldn't be anything to flush if `dirty_pages` is zero
+        // and `mtime` does not need flushing (truncating a file can leave `dirty_pages` as
+        // zero but it will always update `mtime`).
+        inner.dirty_crtime.needs_flush()
             || inner.dirty_mtime.needs_flush()
             || inner.dirty_pages.total() > 0
             || inner.pending_shrink != PendingShrink::None
-        {
-            return true;
-        }
-        match self.was_file_modified_since_last_call() {
-            Ok(true) => {
-                inner.dirty_mtime = DirtyTimestamp::Some(Timestamp::now());
-                true
-            }
-            Ok(false) => false,
-            Err(_) => {
-                // We can't return errors, so play it safe and assume the file needs flushing.
-                true
-            }
-        }
     }
 
     /// Pre-allocate a region of this file on-disk.
