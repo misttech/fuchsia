@@ -337,22 +337,6 @@ impl PackageBuilder {
         Ok(())
     }
 
-    /// Remove a blob from the package builder.
-    ///
-    /// Errors
-    ///
-    /// Will return an error if any special package metadata paths are used.
-    /// Will return an error if `overwrite_files` is not true.
-    pub fn remove_blob(&mut self, at_path: impl AsRef<str>) -> Result<()> {
-        let at_path = at_path.as_ref();
-        self.validate_ok_to_add_as_blob(at_path)?;
-        if !self.overwrite_files {
-            bail!("Cannot remove blob '{}' because overwrite_files is false", at_path);
-        }
-        self.blobs.remove(at_path);
-        Ok(())
-    }
-
     /// Same as [add_file_as_blob], but deduplicates identical images at the same path.
     ///
     /// Deduplication is based on image contents, not the `file` source path.
@@ -1259,25 +1243,5 @@ mod tests {
         );
         assert!(builder.subpackages.get(&url).unwrap().0 == package_hash2);
         assert!(builder.subpackages.get(&url).unwrap().1 == package_manifest_path2);
-    }
-
-    #[test]
-    fn test_builder_remove_blob() {
-        let mut builder = PackageBuilder::new("some_pkg_name", FAKE_ABI_REVISION);
-        builder.overwrite_files(true);
-
-        // Cannot delete a reserved path even with overwrite_files enabled.
-        assert!(builder.remove_blob("meta/package").is_err());
-
-        builder.add_file_as_blob("some/path", "some/source").unwrap();
-
-        // Cannot delete when overwrite_files is false.
-        builder.overwrite_files(false);
-        assert!(builder.remove_blob("some/path").is_err());
-
-        // Success case.
-        builder.overwrite_files(true);
-        builder.remove_blob("some/path").unwrap();
-        assert!(!builder.blobs.contains_key("some/path"));
     }
 }
