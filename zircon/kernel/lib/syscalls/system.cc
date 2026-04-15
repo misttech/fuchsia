@@ -314,17 +314,17 @@ zx_status_t sys_system_mexec_payload_get(zx_handle_t resource, user_out_ptr<void
   }
 
   fbl::AllocChecker ac;
-  auto buffer = new (&ac) ktl::byte[buffer_size];
+  ktl::unique_ptr<ktl::byte[]> buffer(new (&ac) ktl::byte[buffer_size]);
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
 
-  if (auto result = WriteMexecData({buffer, buffer_size}); result.is_error()) {
+  if (auto result = WriteMexecData({buffer.get(), buffer_size}); result.is_error()) {
     return result.error_value();
   } else {
     size_t zbi_size = ktl::move(result).value();
     ZX_DEBUG_ASSERT(zbi_size <= buffer_size);
-    return user_buffer.reinterpret<ktl::byte>().copy_array_to_user(buffer, zbi_size);
+    return user_buffer.reinterpret<ktl::byte>().copy_array_to_user(buffer.get(), zbi_size);
   }
 }
 
