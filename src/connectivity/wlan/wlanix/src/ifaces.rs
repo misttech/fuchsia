@@ -1615,37 +1615,46 @@ mod tests {
         fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync, rand,
     };
 
-    fn setup_test_manager() -> (
-        fasync::TestExecutor,
-        fidl_device_service::DeviceMonitorRequestStream,
-        mpsc::Receiver<TelemetryEvent>,
-        DeviceMonitorIfaceManager,
-    ) {
+    pub struct TestValuesNoIface {
+        pub monitor_stream: fidl_device_service::DeviceMonitorRequestStream,
+        pub telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
+        pub manager: DeviceMonitorIfaceManager,
+        // The executor is last in the struct so it gets dropped last.
+        pub exec: fasync::TestExecutor,
+    }
+
+    /// For tests that should start without any ifaces
+    fn setup_test_manager() -> TestValuesNoIface {
         let exec = fasync::TestExecutor::new();
         let (monitor_svc, monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
-        (
-            exec,
+        TestValuesNoIface {
             monitor_stream,
             telemetry_receiver,
-            DeviceMonitorIfaceManager {
+            manager: DeviceMonitorIfaceManager {
                 monitor_svc,
                 ifaces: Mutex::new(HashMap::new()),
                 telemetry_sender: TelemetrySender::new(telemetry_sender),
             },
-        )
+            exec,
+        }
+    }
+
+    pub struct TestValuesWithIface {
+        pub monitor_stream: fidl_device_service::DeviceMonitorRequestStream,
+        pub sme_stream: fidl_sme::ClientSmeRequestStream,
+        pub telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
+        pub manager: DeviceMonitorIfaceManager,
+        pub iface: Arc<SmeClientIface>,
+        // The executor is last in the struct so it gets dropped last.
+        pub exec: fasync::TestExecutor,
     }
 
     const TEST_IFACE_ID: u16 = 123;
-    fn setup_test_manager_with_iface() -> (
-        fasync::TestExecutor,
-        fidl_device_service::DeviceMonitorRequestStream,
-        fidl_sme::ClientSmeRequestStream,
-        mpsc::Receiver<TelemetryEvent>,
-        DeviceMonitorIfaceManager,
-        Arc<SmeClientIface>,
-    ) {
+    /// For tests that should start with an iface. The iface can be accessed through the returned
+    /// test values struct and has ID TEST_FACE_ID.
+    fn setup_test_manager_with_iface() -> TestValuesWithIface {
         let mut exec = fasync::TestExecutor::new();
         let (monitor_svc, monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
@@ -1668,17 +1677,10 @@ mod tests {
         let mut client_fut = manager.get_client_iface(TEST_IFACE_ID);
         let iface = exec.run_singlethreaded(&mut client_fut).expect("Failed to get client iface");
         drop(client_fut);
-        (exec, monitor_stream, sme_stream, telemetry_receiver, manager, iface)
+        TestValuesWithIface { monitor_stream, sme_stream, telemetry_receiver, manager, iface, exec }
     }
 
-    fn setup_test_manager_with_iface_and_fake_time() -> (
-        fasync::TestExecutor,
-        fidl_device_service::DeviceMonitorRequestStream,
-        fidl_sme::ClientSmeRequestStream,
-        mpsc::Receiver<TelemetryEvent>,
-        DeviceMonitorIfaceManager,
-        Arc<SmeClientIface>,
-    ) {
+    fn setup_test_manager_with_iface_and_fake_time() -> TestValuesWithIface {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
         let (monitor_svc, monitor_stream) =
@@ -1727,7 +1729,7 @@ mod tests {
         let mut client_fut = manager.get_client_iface(1);
         let iface = assert_matches!(exec.run_until_stalled(&mut client_fut), Poll::Ready(Ok(iface)) => iface);
         drop(client_fut);
-        (exec, monitor_stream, sme_stream, telemetry_receiver, manager, iface)
+        TestValuesWithIface { monitor_stream, sme_stream, telemetry_receiver, manager, iface, exec }
     }
 
     #[test]
@@ -1791,42 +1793,41 @@ mod tests {
 
     #[test]
     fn test_get_country() {
-        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
-        let mut fut = manager.get_country(123);
+        let mut test_values = setup_test_manager();
+        let mut fut = test_values.manager.get_country(123);
 
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let (phy_id, responder) = assert_matches!(
-                 exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetCountry { phy_id, responder })) => (phy_id, responder));
         assert_eq!(phy_id, 123);
         responder
             .send(Ok(&fidl_device_service::GetCountryResponse { alpha2: [b'A', b'B'] }))
             .expect("Failed to respond to GetCountry");
 
-        let country =
-            assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(info)) => info);
+        let country = assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Ok(info)) => info);
         assert_eq!(country, [b'A', b'B']);
     }
 
     #[test]
     fn test_create_and_serve_client_iface() {
-        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
-        let mut fut = manager.create_client_iface(0);
+        let mut test_values = setup_test_manager();
+        let mut fut = test_values.manager.create_client_iface(0);
 
         // No interfaces to begin.
-        assert!(manager.list_ifaces().is_empty());
+        assert!(test_values.manager.list_ifaces().is_empty());
 
         // Indicate that there are no existing ifaces.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::ListIfaces { responder })) => responder);
         responder.send(&[]).expect("Failed to respond to ListIfaces");
 
         // Create a new iface.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::CreateIface { responder, .. })) => responder);
         responder
             .send(Ok(&fidl_device_service::DeviceMonitorCreateIfaceResponse {
@@ -1836,49 +1837,52 @@ mod tests {
             .expect("Failed to send CreateIface response");
 
         // Establish a connection to the new iface.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetClientSme { responder, .. })) => responder);
         responder.send(Ok(())).expect("Failed to send GetClientSme response");
 
         // Creation complete!
-        let request_id = exec.run_singlethreaded(&mut fut).expect("Creation completes ok");
+        let request_id =
+            test_values.exec.run_singlethreaded(&mut fut).expect("Creation completes ok");
         assert_eq!(request_id, FAKE_IFACE_RESPONSE.id);
 
         // The new iface shows up in ListInterfaces.
-        assert_eq!(manager.list_ifaces(), vec![FAKE_IFACE_RESPONSE.id]);
+        assert_eq!(test_values.manager.list_ifaces(), vec![FAKE_IFACE_RESPONSE.id]);
 
         // The new iface is ready for use.
         let _iface = assert_matches!(
-            exec.run_until_stalled(&mut manager.get_client_iface(FAKE_IFACE_RESPONSE.id)),
+            test_values.exec.run_until_stalled(&mut test_values.manager.get_client_iface(FAKE_IFACE_RESPONSE.id)),
             Poll::Ready(Ok(i)) => i
         );
     }
 
     #[test]
     fn test_create_iface_fails() {
-        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
-        let mut fut = manager.create_client_iface(0);
+        let mut test_values = setup_test_manager();
+        let mut fut = test_values.manager.create_client_iface(0);
 
         // Indicate that there are no existing ifaces.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::ListIfaces { responder })) => responder);
         responder.send(&[]).expect("Failed to respond to ListIfaces");
 
         // Return an error for CreateIface.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::CreateIface { responder, .. })) => responder);
         responder
             .send(Err(fidl_device_service::DeviceMonitorError::unknown()))
             .expect("Failed to send CreateIface response");
 
         assert_matches!(
-            exec.run_until_stalled(&mut manager.get_client_iface(FAKE_IFACE_RESPONSE.id)),
+            test_values.exec.run_until_stalled(
+                &mut test_values.manager.get_client_iface(FAKE_IFACE_RESPONSE.id)
+            ),
             Poll::Ready(Err(_))
         );
     }
@@ -1886,31 +1890,31 @@ mod tests {
     // TODO(b/298030838): Delete test when wlanix is the sole config path.
     #[test]
     fn test_create_iface_with_unmanaged() {
-        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
-        let mut fut = manager.create_client_iface(0);
+        let mut test_values = setup_test_manager();
+        let mut fut = test_values.manager.create_client_iface(0);
 
         // No interfaces to begin.
-        assert!(manager.list_ifaces().is_empty());
+        assert!(test_values.manager.list_ifaces().is_empty());
 
         // Indicate that there is a fake iface.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::ListIfaces { responder })) => responder);
         responder.send(&[FAKE_IFACE_RESPONSE.id]).expect("Failed to respond to ListIfaces");
 
         // Respond with iface info.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let (iface_id, responder) = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::QueryIface { iface_id, responder })) => (iface_id, responder));
         assert_eq!(iface_id, FAKE_IFACE_RESPONSE.id);
         responder.send(Ok(&FAKE_IFACE_RESPONSE)).expect("Failed to respond to QueryIface");
 
         // Establish a connection to the new iface.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetClientSme { responder, .. })) => responder);
         responder.send(Ok(())).expect("Failed to send GetClientSme response");
 
@@ -1918,25 +1922,24 @@ mod tests {
         // the power broker FIDL can take a few loops.
         let mut fut_with_timeout =
             pin!(fut.expect_within(zx::MonotonicDuration::from_seconds(5), "Awaiting iface"));
-        let id = assert_matches!(exec.run_singlethreaded(&mut fut_with_timeout), Ok(id) => id);
+        let id = assert_matches!(test_values.exec.run_singlethreaded(&mut fut_with_timeout), Ok(id) => id);
         assert_eq!(id, FAKE_IFACE_RESPONSE.id);
-        assert_eq!(&manager.list_ifaces()[..], [id]);
+        assert_eq!(&test_values.manager.list_ifaces()[..], [id]);
     }
 
     #[test]
     fn test_destroy_iface() {
-        let (mut exec, mut monitor_stream, _sme_stream, _telemetry_receiver, manager, _iface) =
-            setup_test_manager_with_iface();
-        let mut fut = manager.destroy_iface(TEST_IFACE_ID);
+        let mut test_values = setup_test_manager_with_iface();
+        let mut fut = test_values.manager.destroy_iface(TEST_IFACE_ID);
 
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::DestroyIface { responder, .. })) => responder);
         responder.send(0).expect("Failed to send DestroyIface response");
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
-        assert!(manager.ifaces.lock().is_empty());
+        assert!(test_values.manager.ifaces.lock().is_empty());
     }
 
     // TODO(b/298030838): Delete test when wlanix is the sole config path.
@@ -2003,123 +2006,123 @@ mod tests {
 
     #[test]
     fn test_get_client_iface_fails_no_such_iface() {
-        let (mut exec, _monitor_stream, _sme_stream, _telemetry_receiver, manager, _iface) =
-            setup_test_manager_with_iface();
-        let mut fut = manager.get_client_iface(TEST_IFACE_ID + 1);
+        let mut test_values = setup_test_manager_with_iface();
+        let mut fut = test_values.manager.get_client_iface(TEST_IFACE_ID + 1);
 
         // No ifaces exist, so this should always error.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_e)));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Err(_e)));
     }
 
     #[test]
     fn test_destroy_iface_no_such_iface() {
-        let (mut exec, _monitor_stream, _sme_stream, _telemetry_receiver, manager, _iface) =
-            setup_test_manager_with_iface();
-        let mut fut = manager.destroy_iface(TEST_IFACE_ID + 1);
+        let mut test_values = setup_test_manager_with_iface();
+        let mut fut = test_values.manager.destroy_iface(TEST_IFACE_ID + 1);
 
         // No ifaces exist, so this should always return immediately.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
     }
 
     #[test]
     fn test_set_country() {
-        let (mut exec, mut monitor_stream, _sme_stream, _telemetry_receiver, manager, _iface) =
-            setup_test_manager_with_iface();
-        let mut set_country_fut = manager.set_country(123, *b"WW");
-        assert_matches!(exec.run_until_stalled(&mut set_country_fut), Poll::Pending);
+        let mut test_values = setup_test_manager_with_iface();
+        let mut set_country_fut = test_values.manager.set_country(123, *b"WW");
+        assert_matches!(test_values.exec.run_until_stalled(&mut set_country_fut), Poll::Pending);
         let (req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetCountry { req, responder }))) => (req, responder));
         assert_eq!(req, fidl_device_service::SetCountryRequest { phy_id: 123, alpha2: *b"WW" });
         responder.send(0).expect("Failed to send result");
-        assert_matches!(exec.run_until_stalled(&mut set_country_fut), Poll::Ready(Ok(())));
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut set_country_fut),
+            Poll::Ready(Ok(()))
+        );
     }
 
     #[test]
     fn test_set_country_on_iface() {
-        let (mut exec, mut monitor_stream, _sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
-        let mut set_country_fut = iface.set_country(*b"WW");
-        assert_matches!(exec.run_until_stalled(&mut set_country_fut), Poll::Pending);
+        let mut test_values = setup_test_manager_with_iface();
+        let mut set_country_fut = test_values.iface.set_country(*b"WW");
+        assert_matches!(test_values.exec.run_until_stalled(&mut set_country_fut), Poll::Pending);
         let (req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetCountry { req, responder }))) => (req, responder));
         assert_eq!(
             req,
-            fidl_device_service::SetCountryRequest { phy_id: iface.phy_id, alpha2: *b"WW" }
+            fidl_device_service::SetCountryRequest {
+                phy_id: test_values.iface.phy_id,
+                alpha2: *b"WW"
+            }
         );
         responder.send(0).expect("Failed to send result");
-        assert_matches!(exec.run_until_stalled(&mut set_country_fut), Poll::Ready(Ok(())));
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut set_country_fut),
+            Poll::Ready(Ok(()))
+        );
     }
 
     #[test]
     fn test_set_mac_address_on_iface() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
         let test_mac_addr = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC];
-        let mut set_mac_fut = iface.set_mac_address(test_mac_addr);
+        let mut set_mac_fut = test_values.iface.set_mac_address(test_mac_addr);
 
-        assert_matches!(exec.run_until_stalled(&mut set_mac_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut set_mac_fut), Poll::Pending);
 
         let (mac_addr, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetMacAddress { mac_addr, responder }))) => (mac_addr, responder)
         );
         assert_eq!(mac_addr, test_mac_addr);
         responder.send(Ok(())).expect("Failed to send SetMacAddress response");
 
-        assert_matches!(exec.run_until_stalled(&mut set_mac_fut), Poll::Ready(Ok(())));
+        assert_matches!(test_values.exec.run_until_stalled(&mut set_mac_fut), Poll::Ready(Ok(())));
     }
 
     #[test]
     fn test_install_apf_packet_filter_on_iface() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
         let test_program = vec![1, 2, 3, 4];
-        let mut install_fut = iface.install_apf_packet_filter(test_program.clone());
+        let mut install_fut = test_values.iface.install_apf_packet_filter(test_program.clone());
 
-        assert_matches!(exec.run_until_stalled(&mut install_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut install_fut), Poll::Pending);
 
         let (program, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::InstallApfPacketFilter { program, responder }))) => (program, responder)
         );
         assert_eq!(program, test_program);
         responder.send(Ok(())).expect("Failed to send InstallApfPacketFilter response");
 
-        assert_matches!(exec.run_until_stalled(&mut install_fut), Poll::Ready(Ok(())));
+        assert_matches!(test_values.exec.run_until_stalled(&mut install_fut), Poll::Ready(Ok(())));
     }
 
     #[test]
     fn test_read_apf_packet_filter_data_on_iface() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
-        let mut read_fut = iface.read_apf_packet_filter_data();
+        let mut test_values = setup_test_manager_with_iface();
+        let mut read_fut = test_values.iface.read_apf_packet_filter_data();
 
-        assert_matches!(exec.run_until_stalled(&mut read_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut read_fut), Poll::Pending);
 
         let responder = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::ReadApfPacketFilterData { responder }))) => responder
         );
         let test_data = vec![5, 6, 7, 8];
         responder.send(Ok(&test_data)).expect("Failed to send ReadApfPacketFilterData response");
 
-        let result =
-            assert_matches!(exec.run_until_stalled(&mut read_fut), Poll::Ready(Ok(data)) => data);
+        let result = assert_matches!(test_values.exec.run_until_stalled(&mut read_fut), Poll::Ready(Ok(data)) => data);
         assert_eq!(result, test_data);
     }
 
     #[test]
     fn test_query_on_iface() {
-        let (mut exec, mut monitor_stream, _sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
-        let mut query_fut = iface.query();
-        assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Pending);
+        let mut test_values = setup_test_manager_with_iface();
+        let mut query_fut = test_values.iface.query();
+        assert_matches!(test_values.exec.run_until_stalled(&mut query_fut), Poll::Pending);
         let (iface_id, responder) = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.next()),
             Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::QueryIface { iface_id, responder }))) => (iface_id, responder));
-        assert_eq!(iface_id, iface.iface_id);
+        assert_eq!(iface_id, test_values.iface.iface_id);
         const RESPONSE: fidl_device_service::QueryIfaceResponse =
             fidl_device_service::QueryIfaceResponse {
                 role: fidl_common::WlanMacRole::Client,
@@ -2130,87 +2133,94 @@ mod tests {
                 factory_addr: [4, 5, 6, 7, 8, 9],
             };
         responder.send(Ok(&RESPONSE)).expect("Failed to send result");
-        let response = assert_matches!(exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(response)) => response);
+        let response = assert_matches!(test_values.exec.run_until_stalled(&mut query_fut), Poll::Ready(Ok(response)) => response);
         assert_eq!(response, RESPONSE);
     }
 
     #[test]
     fn test_trigger_scan_success() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
-        assert!(iface.get_last_scan_results().is_empty());
-        let mut scan_fut = iface.trigger_scan();
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut test_values = setup_test_manager_with_iface();
+        assert!(test_values.iface.get_last_scan_results().is_empty());
+        let mut scan_fut = test_values.iface.trigger_scan();
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
-            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
-        );
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
         let result = wlan_common::scan::write_vmo(vec![test_utils::fake_scan_result()])
             .expect("Failed to write scan VMO");
         responder.send(Ok(result)).expect("Failed to send result");
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(ScanEnd::Complete)));
-        assert_eq!(iface.get_last_scan_results().len(), 1);
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut scan_fut),
+            Poll::Ready(Ok(ScanEnd::Complete))
+        );
+        assert_eq!(test_values.iface.get_last_scan_results().len(), 1);
     }
 
     #[test]
     fn test_trigger_scan_failure() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
-        let mut scan_fut = iface.trigger_scan();
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut test_values = setup_test_manager_with_iface();
+        let mut scan_fut = test_values.iface.trigger_scan();
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
         responder.send(Err(fidl_sme::ScanErrorCode::InternalError)).expect("Failed to send result");
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
     }
 
     #[test]
     fn test_trigger_scan_cancelled() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
-        let mut scan_fut = iface.trigger_scan();
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut test_values = setup_test_manager_with_iface();
+        let mut scan_fut = test_values.iface.trigger_scan();
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
         responder
             .send(Err(fidl_sme::ScanErrorCode::CanceledByDriverOrFirmware))
             .expect("Failed to send result");
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(ScanEnd::Cancelled)));
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut scan_fut),
+            Poll::Ready(Ok(ScanEnd::Cancelled))
+        );
     }
 
     #[test]
     fn test_abort_scan() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
-        assert!(iface.get_last_scan_results().is_empty());
-        let mut scan_fut = iface.trigger_scan();
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut test_values = setup_test_manager_with_iface();
+        assert!(test_values.iface.get_last_scan_results().is_empty());
+        let mut scan_fut = test_values.iface.trigger_scan();
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, _responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
         // trigger_scan returns after we abort the scan, even though we have no results from SME.
-        assert_matches!(exec.run_until_stalled(&mut iface.abort_scan()), Poll::Ready(Ok(())));
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(ScanEnd::Cancelled)));
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.iface.abort_scan()),
+            Poll::Ready(Ok(()))
+        );
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut scan_fut),
+            Poll::Ready(Ok(ScanEnd::Cancelled))
+        );
     }
 
     #[test]
     fn test_trigger_scan_timeout() {
-        let (mut exec, _monitor_stream, mut sme_stream, mut telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface_and_fake_time();
-        assert!(iface.get_last_scan_results().is_empty());
-        let mut scan_fut = iface.trigger_scan();
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut test_values = setup_test_manager_with_iface_and_fake_time();
+        assert!(test_values.iface.get_last_scan_results().is_empty());
+        let mut scan_fut = test_values.iface.trigger_scan();
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, _responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
-        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(61_000_000_000));
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
+        test_values.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(61_000_000_000));
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
 
-        let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event =
+            assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
         assert_matches!(event, TelemetryEvent::SmeTimeout);
     }
 
@@ -2225,8 +2235,7 @@ mod tests {
 
     #[test]
     fn test_start_sched_scan_exact_match() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
         let ssid = b"TestSSID";
         let request = fidl_wlanix::SchedScanRequest {
             ssids: Some(vec![]),
@@ -2237,12 +2246,12 @@ mod tests {
             }]),
             ..Default::default()
         };
-        let mut scan_fut = iface.start_sched_scan(request, true);
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut scan_fut = test_values.iface.start_sched_scan(request, true);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         // Respond to the SME scan request
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
         let mut result = test_utils::fake_scan_result();
@@ -2256,57 +2265,54 @@ mod tests {
             wlan_common::scan::write_vmo(vec![result]).expect("Failed to write scan VMO");
         responder.send(Ok(scan_result)).expect("Failed to send result");
 
-        let found_results =
-            assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
+        let found_results = assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
         assert_eq!(found_results.len(), 1);
     }
 
     #[fuchsia::test]
     fn test_second_sched_scan_stops_first() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
         let request1 = fidl_wlanix::SchedScanRequest::default();
         let request2 = fidl_wlanix::SchedScanRequest::default();
 
         // Start a first PNO scan
-        let mut scan_fut1 = iface.start_sched_scan(request1, true);
-        assert_matches!(exec.run_until_stalled(&mut scan_fut1), Poll::Pending);
+        let mut scan_fut1 = test_values.iface.start_sched_scan(request1, true);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut1), Poll::Pending);
 
         // Verify that a scan request was sent to SME
         let (_req, _responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
         );
 
         // Start a second PNO scan, which should cause the first PNO scan to stop
-        let mut scan_fut2 = iface.start_sched_scan(request2, true);
-        assert_matches!(exec.run_until_stalled(&mut scan_fut2), Poll::Pending);
+        let mut scan_fut2 = test_values.iface.start_sched_scan(request2, true);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut2), Poll::Pending);
 
         // Check if a scan request was made for the second PNO scan.
         let (_req2, _responder2) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder)
         );
 
         // The first scan future should finish running with no results
-        assert_matches!(exec.run_until_stalled(&mut scan_fut1), Poll::Ready(Ok(results)) if results.is_empty());
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut1), Poll::Ready(Ok(results)) if results.is_empty());
 
         // The second PNO scan should still be running
-        assert_matches!(exec.run_until_stalled(&mut scan_fut2), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut2), Poll::Pending);
     }
 
     #[fuchsia::test]
     fn test_sched_scan_resumes_when_charging_starts() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface_and_fake_time();
+        let mut test_values = setup_test_manager_with_iface_and_fake_time();
         let request = fidl_wlanix::SchedScanRequest::default();
 
-        let mut scan_fut = iface.start_sched_scan(request, false); // initial_charging_status = false
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut scan_fut = test_values.iface.start_sched_scan(request, false); // initial_charging_status = false
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         // Verify that it sent a scan request to SME (first scan is always triggered)
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
         // Complete the scan with empty results
@@ -2314,74 +2320,84 @@ mod tests {
         responder.send(Ok(scan_result)).expect("Failed to send result");
 
         // Scan should complete and NOT trigger another scan since we are not charging
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Pending
+        );
 
         // Advance time by 5 hours
-        let new_time = exec.now() + fasync::MonotonicDuration::from_hours(5);
-        exec.set_fake_time(new_time);
-        let _ = exec.wake_expired_timers();
+        let new_time = test_values.exec.now() + fasync::MonotonicDuration::from_hours(5);
+        test_values.exec.set_fake_time(new_time);
+        let _ = test_values.exec.wake_expired_timers();
 
         // Still no new scan
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Pending
+        );
 
         // Set that the device is charging
-        iface.set_charging_status(true).expect("Failed to set charging status");
+        test_values.iface.set_charging_status(true).expect("Failed to set charging status");
 
         // A new scan should be triggered after charging starts
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, _responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
     }
 
     #[fuchsia::test]
     fn test_sched_scan_pauses_and_resumes() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface_and_fake_time();
+        let mut test_values = setup_test_manager_with_iface_and_fake_time();
         let request = fidl_wlanix::SchedScanRequest::default();
 
-        let mut scan_fut = iface.start_sched_scan(request, true); // initial_charging_status = true
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut scan_fut = test_values.iface.start_sched_scan(request, true); // initial_charging_status = true
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         // Verify that it sent a scan request to SME
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
         // Stop charging!
-        iface.set_charging_status(false).expect("Failed to set charging status");
+        test_values.iface.set_charging_status(false).expect("Failed to set charging status");
 
         // Complete the scan with empty results
         let scan_result = wlan_common::scan::write_vmo(vec![]).expect("Failed to write scan VMO");
         responder.send(Ok(scan_result)).expect("Failed to send result");
 
         // Scan should complete and NOT trigger another scan
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Pending
+        );
 
         // Advance time to make sure no scans are sent after some time.
-        let new_time = exec.now() + fasync::MonotonicDuration::from_hours(5);
-        exec.set_fake_time(new_time);
-        let _ = exec.wake_expired_timers();
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
-        assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
+        let new_time = test_values.exec.now() + fasync::MonotonicDuration::from_hours(5);
+        test_values.exec.set_fake_time(new_time);
+        let _ = test_values.exec.wake_expired_timers();
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Pending
+        );
 
         // Now back to charging
-        iface.set_charging_status(true).expect("Failed to set charging status");
+        test_values.iface.set_charging_status(true).expect("Failed to set charging status");
 
         // A scan should be triggered now that the device is charging again
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, _responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
     }
 
     #[test]
     fn test_start_sched_scan_rssi_too_low() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface_and_fake_time();
+        let mut test_values = setup_test_manager_with_iface_and_fake_time();
         let ssid = b"TestSSID";
         let request = fidl_wlanix::SchedScanRequest {
             ssids: Some(vec![]),
@@ -2392,12 +2408,12 @@ mod tests {
             }]),
             ..Default::default()
         };
-        let mut scan_fut = iface.start_sched_scan(request, true);
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut scan_fut = test_values.iface.start_sched_scan(request, true);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         // Respond to the scan request with the right SSID but a low RSSI
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
         let mut result = test_utils::fake_scan_result();
@@ -2412,18 +2428,18 @@ mod tests {
         responder.send(Ok(scan_result)).expect("Failed to send result");
 
         // Scan should NOT complete because no matches were found, and should trigger the loop to start another scan
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
-        let new_time = exec.now() + fasync::MonotonicDuration::from_minutes(6);
-        exec.set_fake_time(new_time);
-        let _ = exec.wake_expired_timers();
+        let new_time = test_values.exec.now() + fasync::MonotonicDuration::from_minutes(6);
+        test_values.exec.set_fake_time(new_time);
+        let _ = test_values.exec.wake_expired_timers();
 
         // Advance scan_fut so it handles the timer and requests the next scan
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         // The loop should schedule a new scan
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
         // Now send a match to verify that the subsequent scan would succeed
@@ -2436,25 +2452,23 @@ mod tests {
         let scan_result =
             wlan_common::scan::write_vmo(vec![result]).expect("Failed to write scan VMO");
         responder.send(Ok(scan_result)).expect("Failed to send result");
-        let found_results =
-            assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
+        let found_results = assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
         assert_eq!(found_results.len(), 1);
     }
 
     #[test]
     fn test_start_sched_scan_empty_match_sets() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
         let request = fidl_wlanix::SchedScanRequest {
             ssids: Some(vec![]),
             match_sets: Some(vec![]),
             ..Default::default()
         };
-        let mut scan_fut = iface.start_sched_scan(request, true);
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut scan_fut = test_values.iface.start_sched_scan(request, true);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
         let mut result = test_utils::fake_scan_result();
@@ -2469,21 +2483,19 @@ mod tests {
         responder.send(Ok(scan_result)).expect("Failed to send result");
 
         // With an empty match set, any scan result counts as a match and completes the PNO scan loop.
-        let found_results =
-            assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
+        let found_results = assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
         assert_eq!(found_results.len(), 1);
     }
 
     #[test]
     fn test_start_sched_scan_cancelled() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
         let request = fidl_wlanix::SchedScanRequest::default();
-        let mut scan_fut = iface.start_sched_scan(request, true);
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut scan_fut = test_values.iface.start_sched_scan(request, true);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
 
         responder
@@ -2491,24 +2503,22 @@ mod tests {
             .expect("Failed to send result");
 
         // Should return empty list indicating PNO scan was aborted/cancelled
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
     }
 
     #[test]
     fn test_start_sched_scan_stop_signal() {
-        let (mut exec, _monitor_stream, _sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
         let request = fidl_wlanix::SchedScanRequest::default();
 
-        let mut scan_fut = iface.start_sched_scan(request, true);
-        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let mut scan_fut = test_values.iface.start_sched_scan(request, true);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
-        let mut stop_fut = iface.stop_sched_scan();
-        assert_matches!(exec.run_until_stalled(&mut stop_fut), Poll::Ready(Ok(())));
+        let mut stop_fut = test_values.iface.stop_sched_scan();
+        assert_matches!(test_values.exec.run_until_stalled(&mut stop_fut), Poll::Ready(Ok(())));
 
         // When the stop signal is received, the scan should complete and return an empty list
-        let found_results =
-            assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
+        let found_results = assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
         assert!(found_results.is_empty());
     }
 
@@ -2581,15 +2591,14 @@ mod tests {
         bssid_specified: bool,
         expected_authentication: fidl_security::Authentication,
     ) {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
 
         let bss_description = fake_fidl_bss_description!(protection => fake_protection_cfg,
             ssid: Ssid::try_from("foo").unwrap(),
             bssid: [1, 2, 3, 4, 5, 6],
             rssi_dbm: -30,
         );
-        *iface.last_scan_results.lock() = Some(LastScanResults::new(
+        *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
             fasync::BootInstant::now(),
             vec![fidl_sme::ScanResult {
                 bss_description: bss_description.clone(),
@@ -2600,13 +2609,13 @@ mod tests {
             }],
         ));
 
-        assert_matches!(iface.get_connected_network(), None);
+        assert_matches!(test_values.iface.get_connected_network(), None);
 
         let bssid = if bssid_specified { Some(Bssid::from([1, 2, 3, 4, 5, 6])) } else { None };
-        let mut connect_fut = iface.connect_to_network(b"foo", credential, bssid);
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let mut connect_fut = test_values.iface.connect_to_network(b"foo", credential, bssid);
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (req, connect_txn) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn: Some(txn), .. }))) => (req, txn));
         assert_eq!(req.bss_description, bss_description);
         assert_eq!(req.authentication, expected_authentication);
@@ -2619,32 +2628,34 @@ mod tests {
         });
         assert_matches!(result, Ok(()));
 
-        let connect_result =
-            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(r) => r);
+        let connect_result = assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Ready(r) => r);
         let connected_result = assert_matches!(connect_result, Ok(ConnectResult::Success(r)) => r);
         assert_eq!(connected_result.bss.ssid, Ssid::try_from("foo").unwrap());
         assert_eq!(connected_result.bss.bssid, Bssid::from([1, 2, 3, 4, 5, 6]));
 
-        let connected_network = assert_matches!(iface.get_connected_network(), Some(n) => n);
+        let connected_network =
+            assert_matches!(test_values.iface.get_connected_network(), Some(n) => n);
         assert_eq!(connected_network.bssid, Bssid::from([1, 2, 3, 4, 5, 6]));
         assert_eq!(connected_network.rssi, -30);
     }
 
     #[test]
     fn test_connect_to_network_before_scan() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
 
         let bssid = [1, 2, 3, 4, 5, 6];
         let bss_description = fake_fidl_bss_description!(protection => FakeProtectionCfg::Open,
             ssid: Ssid::try_from("foo").unwrap(),
             bssid: bssid,
         );
-        let mut connect_fut =
-            iface.connect_to_network(b"foo", Credential::None, Some(Bssid::from(bssid)));
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let mut connect_fut = test_values.iface.connect_to_network(
+            b"foo",
+            Credential::None,
+            Some(Bssid::from(bssid)),
+        );
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
         let result = wlan_common::scan::write_vmo(vec![fidl_sme::ScanResult {
             bss_description: bss_description.clone(),
@@ -2655,10 +2666,10 @@ mod tests {
         }])
         .expect("Failed to write scan VMO");
         responder.send(Ok(result)).expect("Failed to send result");
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
 
         let (req, connect_txn) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn: Some(txn), .. }))) => (req, txn));
         assert_eq!(req.bss_description, bss_description);
 
@@ -2670,8 +2681,7 @@ mod tests {
         });
         assert_matches!(result, Ok(()));
 
-        let connect_result =
-            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(r) => r);
+        let connect_result = assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Ready(r) => r);
         let connected_result = assert_matches!(connect_result, Ok(ConnectResult::Success(r)) => r);
         assert_eq!(connected_result.bss.ssid, Ssid::try_from("foo").unwrap());
         assert_eq!(connected_result.bss.bssid, Bssid::from(bssid));
@@ -2679,14 +2689,13 @@ mod tests {
 
     #[test]
     fn test_connect_to_network_stale_scan() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface_and_fake_time();
+        let mut test_values = setup_test_manager_with_iface_and_fake_time();
 
         let other_bss_description = fake_fidl_bss_description!(protection => FakeProtectionCfg::Open,
             ssid: Ssid::try_from("bar").unwrap(),
             bssid: [11, 22, 33, 44, 55, 66],
         );
-        *iface.last_scan_results.lock() = Some(LastScanResults::new(
+        *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
             fasync::BootInstant::from_nanos(1),
             vec![fidl_sme::ScanResult {
                 bss_description: other_bss_description.clone(),
@@ -2699,17 +2708,20 @@ mod tests {
 
         // Set current time to 31st second so that a scan would be triggered when handling
         // connect request.
-        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(31_000_000_000));
+        test_values.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(31_000_000_000));
         let bssid = [1, 2, 3, 4, 5, 6];
         let bss_description = fake_fidl_bss_description!(protection => FakeProtectionCfg::Open,
             ssid: Ssid::try_from("foo").unwrap(),
             bssid: bssid,
         );
-        let mut connect_fut =
-            iface.connect_to_network(b"foo", Credential::None, Some(Bssid::from(bssid)));
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let mut connect_fut = test_values.iface.connect_to_network(
+            b"foo",
+            Credential::None,
+            Some(Bssid::from(bssid)),
+        );
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
         let result = wlan_common::scan::write_vmo(vec![fidl_sme::ScanResult {
             bss_description: bss_description.clone(),
@@ -2720,10 +2732,10 @@ mod tests {
         }])
         .expect("Failed to write scan VMO");
         responder.send(Ok(result)).expect("Failed to send result");
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
 
         let (req, connect_txn) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn: Some(txn), .. }))) => (req, txn));
         assert_eq!(req.bss_description, bss_description);
 
@@ -2735,8 +2747,7 @@ mod tests {
         });
         assert_matches!(result, Ok(()));
 
-        let connect_result =
-            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(r) => r);
+        let connect_result = assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Ready(r) => r);
         let connected_result = assert_matches!(connect_result, Ok(ConnectResult::Success(r)) => r);
         assert_eq!(connected_result.bss.ssid, Ssid::try_from("foo").unwrap());
         assert_eq!(connected_result.bss.bssid, Bssid::from(bssid));
@@ -2782,15 +2793,14 @@ mod tests {
         credential: Credential,
         bssid: Option<Bssid>,
     ) {
-        let (mut exec, _monitor_stream, _sme_stream, _telemetry_stream, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
 
         if has_network {
             let bss_description = fake_fidl_bss_description!(protection => fake_protection_cfg,
                 ssid: Ssid::try_from("foo").unwrap(),
                 bssid: [1, 2, 3, 4, 5, 6],
             );
-            *iface.last_scan_results.lock() = Some(LastScanResults::new(
+            *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
                 fasync::BootInstant::now(),
                 vec![fidl_sme::ScanResult {
                     bss_description: bss_description.clone(),
@@ -2801,24 +2811,23 @@ mod tests {
                 }],
             ));
         } else {
-            *iface.last_scan_results.lock() =
+            *test_values.iface.last_scan_results.lock() =
                 Some(LastScanResults::new(fasync::BootInstant::now(), vec![]));
         }
 
-        let mut connect_fut = iface.connect_to_network(b"foo", credential, bssid);
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Err(_e)));
+        let mut connect_fut = test_values.iface.connect_to_network(b"foo", credential, bssid);
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Ready(Err(_e)));
     }
 
     #[test]
     fn test_connect_fails_at_sme() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_stream, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
 
         let bss_description = fake_fidl_bss_description!(Open,
             ssid: Ssid::try_from("foo").unwrap(),
             bssid: [1, 2, 3, 4, 5, 6],
         );
-        *iface.last_scan_results.lock() = Some(LastScanResults::new(
+        *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
             fasync::BootInstant::now(),
             vec![fidl_sme::ScanResult {
                 bss_description: bss_description.clone(),
@@ -2829,10 +2838,10 @@ mod tests {
             }],
         ));
 
-        let mut connect_fut = iface.connect_to_network(b"foo", Credential::None, None);
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let mut connect_fut = test_values.iface.connect_to_network(b"foo", Credential::None, None);
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (req, connect_txn) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn: Some(txn), .. }))) => (req, txn));
         assert_eq!(req.bss_description, bss_description);
         assert_eq!(
@@ -2851,8 +2860,7 @@ mod tests {
         });
         assert_matches!(result, Ok(()));
 
-        let connect_result =
-            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(r)) => r);
+        let connect_result = assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(r)) => r);
         let failure = assert_matches!(connect_result, ConnectResult::Fail(failure) => failure);
         assert_eq!(failure.status_code, fidl_ieee80211::StatusCode::RefusedExternalReason);
         assert!(!failure.timed_out);
@@ -2860,14 +2868,13 @@ mod tests {
 
     #[test]
     fn test_connect_fails_with_timeout() {
-        let (mut exec, _monitor_stream, mut sme_stream, mut telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface_and_fake_time();
+        let mut test_values = setup_test_manager_with_iface_and_fake_time();
 
         let bss_description = fake_fidl_bss_description!(Open,
             ssid: Ssid::try_from("foo").unwrap(),
             bssid: [1, 2, 3, 4, 5, 6],
         );
-        *iface.last_scan_results.lock() = Some(LastScanResults::new(
+        *test_values.iface.last_scan_results.lock() = Some(LastScanResults::new(
             fasync::BootInstant::now(),
             vec![fidl_sme::ScanResult {
                 bss_description: bss_description.clone(),
@@ -2878,19 +2885,19 @@ mod tests {
             }],
         ));
 
-        let mut connect_fut = iface.connect_to_network(b"foo", Credential::None, None);
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        let mut connect_fut = test_values.iface.connect_to_network(b"foo", Credential::None, None);
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (_req, _connect_txn) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn: Some(txn), .. }))) => (req, txn));
-        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(40_000_000_000));
+        test_values.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(40_000_000_000));
 
-        let connect_result =
-            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(r)) => r);
+        let connect_result = assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(r)) => r);
         let failure = assert_matches!(connect_result, ConnectResult::Fail(failure) => failure);
         assert!(failure.timed_out);
 
-        let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event =
+            assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
         assert_matches!(event, TelemetryEvent::SmeTimeout);
     }
 
@@ -2962,8 +2969,9 @@ mod tests {
         recent_connect_failure: Option<(fidl_common::BssDescription, fidl_sme::ConnectResult)>,
         expected_bssid: Bssid,
     ) {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_stream, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
+        let iface = test_values.iface;
+        let mut sme_stream = test_values.sme_stream;
 
         if let Some((bss_description, connect_failure)) = recent_connect_failure {
             // Set up a connect failure so that later in the test, there'd be a score penalty
@@ -2980,13 +2988,16 @@ mod tests {
             ));
 
             let mut connect_fut = iface.connect_to_network(b"foo", Credential::None, None);
-            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+            assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
             let (_req, connect_txn) = assert_matches!(
-                exec.run_until_stalled(&mut sme_stream.next()),
+                test_values.exec.run_until_stalled(&mut sme_stream.next()),
                 Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn: Some(txn), .. }))) => (req, txn));
             let connect_txn_handle = connect_txn.into_stream_and_control_handle().1;
             let _result = connect_txn_handle.send_on_connect_result(&connect_failure);
-            assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Ready(Ok(_r)));
+            assert_matches!(
+                test_values.exec.run_until_stalled(&mut connect_fut),
+                Poll::Ready(Ok(_r))
+            );
         }
 
         *iface.last_scan_results.lock() = Some(LastScanResults::new(
@@ -3004,90 +3015,99 @@ mod tests {
         ));
 
         let mut connect_fut = iface.connect_to_network(b"foo", Credential::None, None);
-        assert_matches!(exec.run_until_stalled(&mut connect_fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut connect_fut), Poll::Pending);
         let (req, _connect_txn) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Connect { req, txn: Some(txn), .. }))) => (req, txn));
         assert_eq!(req.bss_description.bssid, expected_bssid.to_array());
     }
 
     #[test]
     fn test_disconnect() {
-        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_stream, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
 
-        let mut disconnect_fut = iface.disconnect();
-        assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Pending);
+        let mut disconnect_fut = test_values.iface.disconnect();
+        assert_matches!(test_values.exec.run_until_stalled(&mut disconnect_fut), Poll::Pending);
         let (disconnect_reason, disconnect_responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Disconnect { reason, responder }))) => (reason, responder));
         assert_eq!(disconnect_reason, fidl_sme::UserDisconnectReason::Unknown);
 
         assert_matches!(disconnect_responder.send(), Ok(()));
-        assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Ready(Ok(())));
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut disconnect_fut),
+            Poll::Ready(Ok(()))
+        );
     }
 
     #[test]
     fn test_disconnect_timeout() {
-        let (mut exec, _monitor_stream, mut sme_stream, mut telemetry_receiver, _manager, iface) =
-            setup_test_manager_with_iface_and_fake_time();
+        let mut test_values = setup_test_manager_with_iface_and_fake_time();
 
-        let mut disconnect_fut = iface.disconnect();
-        assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Pending);
+        let mut disconnect_fut = test_values.iface.disconnect();
+        assert_matches!(test_values.exec.run_until_stalled(&mut disconnect_fut), Poll::Pending);
         let (_disconnect_reason, _disconnect_responder) = assert_matches!(
-            exec.run_until_stalled(&mut sme_stream.next()),
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Disconnect { reason, responder }))) => (reason, responder));
 
-        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(11_000_000_000));
-        assert_matches!(exec.run_until_stalled(&mut disconnect_fut), Poll::Ready(Err(_)));
+        test_values.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(11_000_000_000));
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut disconnect_fut),
+            Poll::Ready(Err(_))
+        );
 
-        let event = assert_matches!(telemetry_receiver.try_next(), Ok(Some(event)) => event);
+        let event =
+            assert_matches!(test_values.telemetry_receiver.try_next(), Ok(Some(event)) => event);
         assert_matches!(event, TelemetryEvent::SmeTimeout);
     }
 
     #[test]
     fn test_on_disconnect() {
-        let (_exec, _monitor_stream, _sme_stream, _telemetry_stream, _manager, iface) =
-            setup_test_manager_with_iface();
+        let test_values = setup_test_manager_with_iface();
 
-        *iface.connected_network.lock() = Some(test_utils::fake_connected_network());
-        assert_matches!(iface.get_connected_network(), Some(_));
-        iface.on_disconnect(&fidl_sme::DisconnectSource::User(
+        *test_values.iface.connected_network.lock() = Some(test_utils::fake_connected_network());
+        assert_matches!(test_values.iface.get_connected_network(), Some(_));
+        test_values.iface.on_disconnect(&fidl_sme::DisconnectSource::User(
             fidl_sme::UserDisconnectReason::Unknown,
         ));
-        assert_matches!(iface.get_connected_network(), None);
+        assert_matches!(test_values.iface.get_connected_network(), None);
     }
 
     #[test]
     fn test_on_signal_report() {
-        let (_exec, _monitor_stream, _sme_stream, _telemetry_stream, _manager, iface) =
-            setup_test_manager_with_iface();
+        let test_values = setup_test_manager_with_iface();
 
-        assert_matches!(iface.get_connected_network(), None);
-        iface.on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
-        assert_matches!(iface.get_connected_network(), None);
+        assert_matches!(test_values.iface.get_connected_network(), None);
+        test_values
+            .iface
+            .on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
+        assert_matches!(test_values.iface.get_connected_network(), None);
 
-        *iface.connected_network.lock() = Some(test_utils::fake_connected_network());
-        assert_matches!(iface.get_connected_network().map(|n| n.rssi), Some(-35));
-        iface.on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
-        assert_matches!(iface.get_connected_network().map(|n| n.rssi), Some(-40));
+        *test_values.iface.connected_network.lock() = Some(test_utils::fake_connected_network());
+        assert_matches!(test_values.iface.get_connected_network().map(|n| n.rssi), Some(-35));
+        test_values
+            .iface
+            .on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
+        assert_matches!(test_values.iface.get_connected_network().map(|n| n.rssi), Some(-40));
     }
 
     #[test]
     fn test_set_bt_coexistence_mode() {
-        let (mut exec, mut monitor_stream, _sme_stream, _telemetry_stream, _manager, iface) =
-            setup_test_manager_with_iface();
+        let mut test_values = setup_test_manager_with_iface();
 
         let mut set_bt_coex_fut =
-            iface.set_bt_coexistence_mode(fidl_internal::BtCoexistenceMode::ModeAuto);
-        assert_matches!(exec.run_until_stalled(&mut set_bt_coex_fut), Poll::Pending);
+            test_values.iface.set_bt_coexistence_mode(fidl_internal::BtCoexistenceMode::ModeAuto);
+        assert_matches!(test_values.exec.run_until_stalled(&mut set_bt_coex_fut), Poll::Pending);
         let (mode, responder) = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::SetBtCoexistenceMode { mode, responder, .. })) => (mode, responder));
         assert_eq!(mode, fidl_internal::BtCoexistenceMode::ModeAuto);
         assert_matches!(responder.send(Ok(())), Ok(()));
 
-        assert_matches!(exec.run_until_stalled(&mut set_bt_coex_fut), Poll::Ready(Ok(())));
+        assert_matches!(
+            test_values.exec.run_until_stalled(&mut set_bt_coex_fut),
+            Poll::Ready(Ok(()))
+        );
     }
 
     #[derive(PartialEq)]
@@ -3390,17 +3410,17 @@ mod tests {
 
     #[fuchsia::test]
     fn test_reset_tx_power_scenario_succeeds() {
-        let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
+        let mut test_values = setup_test_manager();
         let test_phy_id = 123;
 
         // Attempt to reset the SAR scenario.
-        let fut = manager.reset_tx_power_scenario(test_phy_id);
+        let fut = test_values.manager.reset_tx_power_scenario(test_phy_id);
         let mut fut = pin!(fut);
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
 
         // Verify that the request has been passed on to the device monitor service.
         assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::ResetTxPowerScenario {
                 phy_id,
                 responder })
@@ -3412,28 +3432,30 @@ mod tests {
 
         // Verify that metric has been logged.
         assert_matches!(
-            exec.run_until_stalled(&mut telemetry_stream.select_next_some()),
+            test_values
+                .exec
+                .run_until_stalled(&mut test_values.telemetry_receiver.select_next_some()),
             Poll::Ready(TelemetryEvent::ResetTxPowerScenario)
         );
 
         // Run the future to completion.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
     }
 
     #[test]
     fn test_reset_tx_power_scenario_fails() {
-        let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
+        let mut test_values = setup_test_manager();
         let test_phy_id = 123;
 
         // Attempt to reset the SAR scenario.
-        let fut = manager.reset_tx_power_scenario(test_phy_id);
+        let fut = test_values.manager.reset_tx_power_scenario(test_phy_id);
         let mut fut = pin!(fut);
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
 
         // Verify that the request has been passed on to the device monitor service and send back
         // an error.
         assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::ResetTxPowerScenario {
                 phy_id,
                 responder })
@@ -3445,12 +3467,14 @@ mod tests {
 
         // Verify that metric has been logged.
         assert_matches!(
-            exec.run_until_stalled(&mut telemetry_stream.select_next_some()),
+            test_values
+                .exec
+                .run_until_stalled(&mut test_values.telemetry_receiver.select_next_some()),
             Poll::Ready(TelemetryEvent::ResetTxPowerScenario)
         );
 
         // Run the future to completion.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
     }
 
     #[test_case(fidl_internal::TxPowerScenario::Default)]
@@ -3462,17 +3486,17 @@ mod tests {
     #[test_case(fidl_internal::TxPowerScenario::BodyBtActive)]
     #[fuchsia::test(add_test_attr = false)]
     fn test_set_tx_power_scenario_succeeds(test_scenario: fidl_internal::TxPowerScenario) {
-        let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
+        let mut test_values = setup_test_manager();
         let test_phy_id = 123;
 
         // Attempt to reset the SAR scenario.
-        let fut = manager.set_tx_power_scenario(test_phy_id, test_scenario);
+        let fut = test_values.manager.set_tx_power_scenario(test_phy_id, test_scenario);
         let mut fut = pin!(fut);
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
 
         // Verify that the request has been passed on to the device monitor service.
         assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::SetTxPowerScenario {
                 phy_id,
                 scenario,
@@ -3486,31 +3510,31 @@ mod tests {
 
         // Verify that metric has been logged.
         assert_matches!(
-            exec.run_until_stalled(&mut telemetry_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.telemetry_receiver.select_next_some()),
             Poll::Ready(TelemetryEvent::SetTxPowerScenario { scenario }) => {
                 assert_eq!(scenario, test_scenario);
             }
         );
 
         // Run the future to completion.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
     }
 
     #[test]
     fn test_set_tx_power_scenario_fails() {
-        let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
+        let mut test_values = setup_test_manager();
         let test_phy_id = 123;
         let test_scenario = fidl_internal::TxPowerScenario::Default;
 
         // Attempt to reset the SAR scenario.
-        let fut = manager.set_tx_power_scenario(test_phy_id, test_scenario);
+        let fut = test_values.manager.set_tx_power_scenario(test_phy_id, test_scenario);
         let mut fut = pin!(fut);
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
 
         // Verify that the request has been passed on to the device monitor service and send back a
         // failure.
         assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::SetTxPowerScenario {
                 phy_id,
                 scenario,
@@ -3524,47 +3548,47 @@ mod tests {
 
         // Verify that metric has been logged.
         assert_matches!(
-            exec.run_until_stalled(&mut telemetry_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.telemetry_receiver.select_next_some()),
             Poll::Ready(TelemetryEvent::SetTxPowerScenario { scenario }) => {
                 assert_eq!(scenario, test_scenario);
             }
         );
 
         // Run the future to completion.
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
     }
 
     #[test]
     fn test_reset_phy() {
-        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
+        let mut test_values = setup_test_manager();
         let phy_id = 123;
-        let mut fut = manager.reset_phy(phy_id);
+        let mut fut = test_values.manager.reset_phy(phy_id);
 
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let (req_phy_id, responder) = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::Reset { phy_id, responder })) => (phy_id, responder));
         assert_eq!(req_phy_id, phy_id);
         responder.send(Ok(())).expect("Failed to respond to ResetPhy");
 
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
     }
 
     #[test]
     fn test_reset_phy_failure() {
-        let (mut exec, mut monitor_stream, _telemetry_receiver, manager) = setup_test_manager();
+        let mut test_values = setup_test_manager();
         let phy_id = 123;
-        let mut fut = manager.reset_phy(phy_id);
+        let mut fut = test_values.manager.reset_phy(phy_id);
 
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let (req_phy_id, responder) = assert_matches!(
-            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::Reset { phy_id, responder })) => (phy_id, responder));
         assert_eq!(req_phy_id, phy_id);
         responder
             .send(Err(zx::Status::INTERNAL.into_raw()))
             .expect("Failed to respond to ResetPhy");
 
-        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
     }
 }
