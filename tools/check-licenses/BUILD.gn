@@ -45,6 +45,12 @@ if (is_host) {
     outputs = [ "check-licenses" ]
   }
 }
+if (is_host) {
+  go_library("v2_pipeline") {
+    sources = [ "v2/pipeline/interfaces.go" ]
+    visibility = [ "//tools/check-licenses/*" ]
+  }
+}
 group("tests") {
   deps = [
     "//tools/check-licenses/cmd:cmd_test",

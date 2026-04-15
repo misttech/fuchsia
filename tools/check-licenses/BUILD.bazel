@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
@@ -18,6 +19,14 @@ install_host_tools(
     implementation_deps = [":check-licenses"],
     target_compatible_with = HOST_CONSTRAINTS,
     tool_output_names = ["check-licenses"],
+)
+
+go_library(
+    name = "v2_pipeline",
+    srcs = ["v2/pipeline/interfaces.go"],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
 )
 
 test_suite(
