@@ -1436,7 +1436,7 @@ mod tests {
             .expect("fidl call failed")
             .expect("get_child_output_deprecated() failed");
 
-        let child_output_dictionary: runtime_capabilities::Dict =
+        let child_output_dictionary: runtime_capabilities::Dictionary =
             child_output_dictionary_ref.try_into().unwrap();
         assert_eq!(
             vec!["fidl.examples.Echo".to_string()],
@@ -1475,7 +1475,7 @@ mod tests {
             .expect("fidl call failed")
             .expect("get_child_output() failed");
 
-        let child_output_dictionary: runtime_capabilities::Dict = test
+        let child_output_dictionary: runtime_capabilities::Dictionary = test
             .component()
             .context
             .remote_capabilities()

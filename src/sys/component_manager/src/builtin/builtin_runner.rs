@@ -14,7 +14,7 @@ use fidl::endpoints;
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy, RequestStream, ServerEnd};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runner as fcrunner;
-use fidl_fuchsia_data::Dictionary;
+use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_memory_attribution as fattribution;
 use fidl_fuchsia_process as fprocess;
@@ -28,7 +28,7 @@ use namespace::{Namespace, NamespaceError};
 use routing::capability_source::{BuiltinSource, CapabilitySource};
 use routing::policy::ScopedPolicyChecker;
 use runner::component::{Controllable, Controller, StopInfo};
-use runtime_capabilities::{Capability, Dict, RemotableCapability, WeakInstanceToken};
+use runtime_capabilities::{Capability, Dictionary, RemotableCapability, WeakInstanceToken};
 use std::sync::Arc;
 use thiserror::Error;
 use vfs::directory::entry::{OpenRequest, serve_directory};
@@ -139,7 +139,7 @@ impl BuiltinRunner {
             "false" => None,
             _ => return Err(BuiltinRunnerError::IllegalProgram),
         };
-        let program_section: Option<Dictionary> = start_info.program.take();
+        let program_section: Option<fdata::Dictionary> = start_info.program.take();
         let config_vmo: Option<zx::Vmo> = start_info.encoded_config.take().map(|data| match data {
             fidl_fuchsia_mem::Data::Buffer(buffer) => buffer.vmo,
             _ => panic!("Unexpected config buffer variant"),
@@ -172,7 +172,7 @@ impl BuiltinRunner {
                       namespace: Namespace,
                       outgoing_dir: ServerEnd<fio::DirectoryMarker>,
                       lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-                      _program: Option<Dictionary>,
+                      _program: Option<fdata::Dictionary>,
                       _config: Option<zx::Vmo>| {
                     async move {
                         let program = ElfRunnerProgram::new(job, namespace, elf_runner_resources);
@@ -192,7 +192,7 @@ impl BuiltinRunner {
                       namespace: Namespace,
                       outgoing_dir: ServerEnd<fio::DirectoryMarker>,
                       _lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-                      _program: Option<Dictionary>,
+                      _program: Option<fdata::Dictionary>,
                       config: Option<zx::Vmo>| {
                     Dispatcher::run(namespace, outgoing_dir, config).boxed()
                 },
@@ -207,7 +207,7 @@ impl BuiltinRunner {
                       namespace: Namespace,
                       outgoing_dir: ServerEnd<fio::DirectoryMarker>,
                       lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-                      _program: Option<Dictionary>,
+                      _program: Option<fdata::Dictionary>,
                       _config: Option<zx::Vmo>| {
                     async move {
                         let ns_entries: Vec<fprocess::NameInfo> = namespace.into();
@@ -229,7 +229,7 @@ impl BuiltinRunner {
                       namespace: Namespace,
                       outgoing_dir: ServerEnd<fio::DirectoryMarker>,
                       lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-                      _program: Option<Dictionary>,
+                      _program: Option<fdata::Dictionary>,
                       config: Option<zx::Vmo>| {
                     async move {
                         let _lifecycle_server = lifecycle_server;
@@ -258,7 +258,7 @@ impl BuiltinRunner {
                       namespace: Namespace,
                       outgoing_dir: ServerEnd<fio::DirectoryMarker>,
                       lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-                      program: Option<Dictionary>,
+                      program: Option<fdata::Dictionary>,
                       _config: Option<zx::Vmo>| {
                     async move {
                         let ns_entries: Vec<fprocess::NameInfo> = namespace.into();
@@ -359,7 +359,7 @@ type BuiltinProgramFn = Box<
             Namespace,
             ServerEnd<fio::DirectoryMarker>,
             ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-            Option<Dictionary>,
+            Option<fdata::Dictionary>,
             Option<zx::Vmo>,
         ) -> BoxFuture<'static, ()>
         + Send
@@ -375,7 +375,7 @@ impl BuiltinProgram {
         namespace: Namespace,
         outgoing_dir: ServerEnd<fio::DirectoryMarker>,
         lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-        program: Option<Dictionary>,
+        program: Option<fdata::Dictionary>,
         config_vmo: Option<zx::Vmo>,
     ) -> Self {
         let (abort_scope, task_abort) = AbortableScope::new();
@@ -467,7 +467,7 @@ impl Controllable for BuiltinProgram {
 /// The program of the ELF runner component.
 struct ElfRunnerProgram {
     scope: ExecutionScope,
-    output: Dict,
+    output: Dictionary,
     job: zx::Job,
 }
 
@@ -534,9 +534,9 @@ impl ElfRunnerProgram {
                 std::future::ready(Result::<(), anyhow::Error>::Ok(())).boxed()
             }),
         ));
-        let output = Dict::new();
+        let output = Dictionary::new();
         let svc = {
-            let svc = Dict::new();
+            let svc = Dictionary::new();
             svc.insert(
                 fcrunner::ComponentRunnerMarker::PROTOCOL_NAME.parse().unwrap(),
                 elf_runner.into_sender(WeakComponentInstance::invalid()).into(),
@@ -649,7 +649,6 @@ mod tests {
     use cm_types::NamespacePath;
     use fcrunner::{ComponentNamespaceEntry, ComponentStartInfo};
     use fidl::endpoints::ClientEnd;
-    use fidl_fuchsia_data::{DictionaryEntry, DictionaryValue};
     use fidl_fuchsia_io::{self as fio, DirectoryProxy};
     use fidl_fuchsia_process as fprocess;
     use fuchsia_async::TestExecutor;
@@ -708,7 +707,7 @@ mod tests {
         let (outgoing_dir, outgoing_server_end) = fidl::endpoints::create_proxy();
         let mut start_info = ComponentStartInfo {
             resolved_url: Some("fuchsia-builtin://elf_runner.cm".to_string()),
-            program: Some(Dictionary { entries: Some(vec![]), ..Default::default() }),
+            program: Some(fdata::Dictionary { entries: Some(vec![]), ..Default::default() }),
             ns: Some(vec![ComponentNamespaceEntry {
                 path: Some("/svc".to_string()),
                 directory: Some(svc_dir),
@@ -722,10 +721,12 @@ mod tests {
             ..Default::default()
         };
         if main_process_critical {
-            start_info.program.as_mut().unwrap().entries.as_mut().unwrap().push(DictionaryEntry {
-                key: "main_process_critical".into(),
-                value: Some(Box::new(DictionaryValue::Str("true".into()))),
-            });
+            start_info.program.as_mut().unwrap().entries.as_mut().unwrap().push(
+                fdata::DictionaryEntry {
+                    key: "main_process_critical".into(),
+                    value: Some(Box::new(fdata::DictionaryValue::Str("true".into()))),
+                },
+            );
         }
         (start_info, outgoing_dir)
     }
@@ -737,7 +738,7 @@ mod tests {
                       _namespace: Namespace,
                       _outgoing_dir: ServerEnd<fio::DirectoryMarker>,
                       lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-                      _program: Option<Dictionary>,
+                      _program: Option<fdata::Dictionary>,
                       _config: Option<zx::Vmo>| {
                     async move {
                         let _lifecycle_server = lifecycle_server;
@@ -755,7 +756,7 @@ mod tests {
                       _namespace: Namespace,
                       _outgoing_dir: ServerEnd<fio::DirectoryMarker>,
                       lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-                      _program: Option<Dictionary>,
+                      _program: Option<fdata::Dictionary>,
                       _config: Option<zx::Vmo>| {
                     async move {
                         let mut stream = lifecycle_server.into_stream();
@@ -785,7 +786,7 @@ mod tests {
                       _namespace: Namespace,
                       _outgoing_dir: ServerEnd<fio::DirectoryMarker>,
                       lifecycle_server: ServerEnd<fprocess_lifecycle::LifecycleMarker>,
-                      _program: Option<Dictionary>,
+                      _program: Option<fdata::Dictionary>,
                       _config: Option<zx::Vmo>| {
                     async move {
                         let _lifecycle_server = lifecycle_server;
@@ -1094,15 +1095,15 @@ mod tests {
 
         let start_info = StartInfo {
             url: "fuchsia://signal-then-hang.cm".to_string(),
-            program: Dictionary {
+            program: fdata::Dictionary {
                 entries: Some(vec![
-                    DictionaryEntry {
+                    fdata::DictionaryEntry {
                         key: "runner".to_string(),
-                        value: Some(Box::new(DictionaryValue::Str("elf".to_string()))),
+                        value: Some(Box::new(fdata::DictionaryValue::Str("elf".to_string()))),
                     },
-                    DictionaryEntry {
+                    fdata::DictionaryEntry {
                         key: "binary".to_string(),
-                        value: Some(Box::new(DictionaryValue::Str(
+                        value: Some(Box::new(fdata::DictionaryValue::Str(
                             "bin/signal_then_hang".to_string(),
                         ))),
                     },

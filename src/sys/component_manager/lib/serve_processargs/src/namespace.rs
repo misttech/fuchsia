@@ -9,7 +9,7 @@ use futures::channel::mpsc::{UnboundedSender, unbounded};
 use namespace::{Entry as NamespaceEntry, EntryError, Namespace, NamespaceError, Tree};
 use router_error::Explain;
 use runtime_capabilities::{
-    Capability, Dict, RemotableCapability, RouterResponse, WeakInstanceToken,
+    Capability, Dictionary, RemotableCapability, RouterResponse, WeakInstanceToken,
 };
 use thiserror::Error;
 use vfs::directory::entry::serve_directory;
@@ -255,9 +255,9 @@ impl NamespaceBuilder {
         Ok(ns)
     }
 
-    fn make_dict_with_not_found_logging(&self, root_path: String) -> Dict {
+    fn make_dict_with_not_found_logging(&self, root_path: String) -> Dictionary {
         let not_found = self.not_found.clone();
-        let new_dict = Dict::new_with_not_found(move |key| {
+        let new_dict = Dictionary::new_with_not_found(move |key| {
             let requested_path = format!("{}/{}", root_path, key);
             // Ignore the result of sending. The receiver is free to break away to ignore all the
             // not-found errors.

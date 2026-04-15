@@ -77,7 +77,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_fuchsia_io as fio;
     use router_error::RouterError;
-    use runtime_capabilities::{Data, Dict, WeakInstanceToken};
+    use runtime_capabilities::{Data, Dictionary, WeakInstanceToken};
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -100,7 +100,7 @@ mod tests {
         let source = Data::String("hello".into());
         let base = Router::<Data>::new_ok(source);
         let proxy = base.with_rights(ExtendedMoniker::ComponentManager, fio::RW_STAR_DIR.into());
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::R_STAR_DIR));
         let capability = proxy
@@ -119,7 +119,7 @@ mod tests {
         let source = Data::String("hello".into());
         let base = Router::<Data>::new_ok(source);
         let proxy = base.with_rights(ExtendedMoniker::ComponentManager, fio::R_STAR_DIR.into());
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::RW_STAR_DIR));
         let error = proxy
@@ -145,7 +145,7 @@ mod tests {
             .with_rights(ExtendedMoniker::ComponentManager, fio::R_STAR_DIR.into());
         let intermediate =
             base.with_rights(ExtendedMoniker::ComponentManager, fio::RW_STAR_DIR.into());
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::R_STAR_DIR));
         let error = intermediate

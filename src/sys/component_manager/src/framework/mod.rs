@@ -19,7 +19,9 @@ use futures::future::BoxFuture;
 use moniker::Moniker;
 use router_error::RouterError;
 use routing::capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
-use runtime_capabilities::{Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{
+    Dictionary, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+};
 use std::sync::Arc;
 
 pub mod binder;
@@ -36,10 +38,10 @@ pub mod realm_query;
 pub mod route_validator;
 
 /// Returns a router that returns a dictionary containing routers for all of the framework
-/// capabilities scoped to the component `scope`. Making this a Router instead of a Dict
-/// saves memory compared to generating a Dict of framework capabilities for each component up
-/// front.
-pub(crate) fn get_framework_router(scope: &Arc<ComponentInstance>) -> Router<Dict> {
+/// capabilities scoped to the component `scope`. Making this a Router instead of a Dictionary
+/// saves memory compared to generating a Dictionary of framework capabilities for each component
+/// up front.
+pub(crate) fn get_framework_router(scope: &Arc<ComponentInstance>) -> Router<Dictionary> {
     Router::new(FrameworkRouter { scope: scope.moniker.clone() })
 }
 
@@ -48,13 +50,13 @@ struct FrameworkRouter {
 }
 
 #[async_trait]
-impl Routable<Dict> for FrameworkRouter {
+impl Routable<Dictionary> for FrameworkRouter {
     async fn route(
         &self,
         _request: Option<Request>,
         _debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dict>, RouterError> {
+    ) -> Result<RouterResponse<Dictionary>, RouterError> {
         let target = target
             .inner
             .as_any()
@@ -71,7 +73,7 @@ impl Routable<Dict> for FrameworkRouter {
             return Err(RouterError::InvalidArgs);
         }
 
-        let framework_dictionary = Dict::new();
+        let framework_dictionary = Dictionary::new();
         add_protocol::<fcomponent::BinderMarker>(&component, &framework_dictionary, binder::serve);
         add_protocol::<fruntime::CapabilitiesMarker>(
             &component,
@@ -138,7 +140,7 @@ impl Routable<Dict> for FrameworkRouter {
 
 fn add_protocol<P: DiscoverableProtocolMarker>(
     component: &Arc<ComponentInstance>,
-    dict: &Dict,
+    dict: &Dictionary,
     task_to_launch: impl Fn(
         zx::Channel,
         /*target: */ WeakComponentInstance,
@@ -171,7 +173,7 @@ fn add_protocol<P: DiscoverableProtocolMarker>(
     .unwrap();
 }
 
-fn add_pkg_dir(component: &Arc<ComponentInstance>, dict: &Dict) {
+fn add_pkg_dir(component: &Arc<ComponentInstance>, dict: &Dictionary) {
     let weak_source_component = component.as_weak();
     let launch_task_on_receive = LaunchTaskOnReceive::new(
         CapabilitySource::Framework(FrameworkSource {

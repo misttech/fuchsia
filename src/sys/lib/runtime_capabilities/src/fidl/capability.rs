@@ -41,7 +41,7 @@ impl TryFrom<fsandbox::Capability> for Capability {
             fsandbox::Capability::Data(data_capability) => {
                 Ok(crate::Data::try_from(data_capability)?.into())
             }
-            fsandbox::Capability::Dictionary(dict) => Ok(crate::Dict::try_from(dict)?.into()),
+            fsandbox::Capability::Dictionary(dict) => Ok(crate::Dictionary::try_from(dict)?.into()),
             fsandbox::Capability::Connector(connector) => {
                 let any = try_from_handle_in_registry(connector.token.as_handle_ref())?;
                 match &any {

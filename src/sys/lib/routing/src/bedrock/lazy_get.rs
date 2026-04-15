@@ -9,12 +9,12 @@ use cm_types::IterablePath;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    CapabilityBound, Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+    CapabilityBound, Dictionary, Request, Routable, Router, RouterResponse, WeakInstanceToken,
 };
 use std::fmt::Debug;
 
-/// Implements the `lazy_get` function for [`Routable<Dict>`].
-pub trait LazyGet<T: CapabilityBound>: Routable<Dict> {
+/// Implements the `lazy_get` function for [`Routable<Dictionary>`].
+pub trait LazyGet<T: CapabilityBound>: Routable<Dictionary> {
     /// Returns a router that requests a dictionary from the specified `path` relative to
     /// the base routable or fails the request with `not_found_error` if the member is not
     /// found.
@@ -23,14 +23,14 @@ pub trait LazyGet<T: CapabilityBound>: Routable<Dict> {
         P: IterablePath + Debug + 'static;
 }
 
-impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
+impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
     fn lazy_get<P>(self, path: P, not_found_error: RoutingError) -> Router<T>
     where
         P: IterablePath + Debug + 'static,
     {
         #[derive(Debug)]
         struct ScopedDictRouter<P: IterablePath + Debug + 'static> {
-            router: Router<Dict>,
+            router: Router<Dictionary>,
             path: P,
             not_found_error: RoutingError,
         }
@@ -56,10 +56,10 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
 
                 // If `debug` is true, that should only apply to the capability at `path`.
                 // Here we're looking up the containing dictionary, so set `debug = false`, to
-                // obtain the actual Dict and not its debug info.
+                // obtain the actual Dictionary and not its debug info.
                 let init_request = (get_init_request)()?;
                 match self.router.route(init_request, false, target.clone()).await? {
-                    RouterResponse::<Dict>::Capability(dict) => {
+                    RouterResponse::<Dictionary>::Capability(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
                         let resp = dict
                             .get_with_request(&moniker, &self.path, request, debug, target.clone())
@@ -75,8 +75,10 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
                         })?;
                         return Ok(resp);
                     }
-                    RouterResponse::<Dict>::Debug(data) => Ok(RouterResponse::<T>::Debug(data)),
-                    RouterResponse::<Dict>::Unavailable => {
+                    RouterResponse::<Dictionary>::Debug(data) => {
+                        Ok(RouterResponse::<T>::Debug(data))
+                    }
+                    RouterResponse::<Dictionary>::Unavailable => {
                         if !debug {
                             Ok(RouterResponse::<T>::Unavailable)
                         } else {
@@ -86,7 +88,7 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
                             // info to the caller (which ought to be [`CapabilitySource::Void`]).
                             let init_request = (get_init_request)()?;
                             match self.router.route(init_request, true, target).await? {
-                                RouterResponse::<Dict>::Debug(d) => {
+                                RouterResponse::<Dictionary>::Debug(d) => {
                                     Ok(RouterResponse::<T>::Debug(d))
                                 }
                                 _ => {
@@ -107,7 +109,7 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
         }
 
         Router::<T>::new(ScopedDictRouter {
-            router: Router::<Dict>::new(self),
+            router: Router::<Dictionary>::new(self),
             path,
             not_found_error: not_found_error.into(),
         })

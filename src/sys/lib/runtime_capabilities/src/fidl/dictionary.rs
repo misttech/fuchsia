@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::dict::{EntryUpdate, UpdateNotifierRetention};
+use crate::dictionary::{EntryUpdate, UpdateNotifierRetention};
 use crate::fidl::registry::{self, try_from_handle_in_registry};
 use crate::{
-    Capability, ConversionError, Dict, RemotableCapability, RemoteError, WeakInstanceToken,
+    Capability, ConversionError, Dictionary, RemotableCapability, RemoteError, WeakInstanceToken,
 };
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fuchsia_sync::Mutex;
@@ -19,53 +19,53 @@ use vfs::directory::immutable::simple as pfs;
 use vfs::execution_scope::ExecutionScope;
 use vfs::name::Name;
 
-impl From<Dict> for fsandbox::DictionaryRef {
-    fn from(dict: Dict) -> Self {
+impl From<Dictionary> for fsandbox::DictionaryRef {
+    fn from(dict: Dictionary) -> Self {
         fsandbox::DictionaryRef { token: registry::insert_token(dict.into()) }
     }
 }
 
-impl crate::fidl::IntoFsandboxCapability for Dict {
+impl crate::fidl::IntoFsandboxCapability for Dictionary {
     fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
         fsandbox::Capability::Dictionary(self.into())
     }
 }
 
-impl TryFrom<fsandbox::DictionaryRef> for Dict {
+impl TryFrom<fsandbox::DictionaryRef> for Dictionary {
     type Error = RemoteError;
 
     fn try_from(dict: fsandbox::DictionaryRef) -> Result<Self, Self::Error> {
         let any = try_from_handle_in_registry(dict.token.as_handle_ref())?;
         let Capability::Dictionary(dict) = any else {
-            panic!("BUG: registry has a non-Dict capability under a Dict koid");
+            panic!("BUG: registry has a non-Dictionary capability under a Dictionary koid");
         };
         Ok(dict)
     }
 }
 
 // Conversion from legacy channel type.
-impl TryFrom<fidl::Channel> for Dict {
+impl TryFrom<fidl::Channel> for Dictionary {
     type Error = RemoteError;
 
     fn try_from(dict: fidl::Channel) -> Result<Self, Self::Error> {
         let any = try_from_handle_in_registry(dict.as_handle_ref())?;
         let Capability::Dictionary(dict) = any else {
-            panic!("BUG: registry has a non-Dict capability under a Dict koid");
+            panic!("BUG: registry has a non-Dictionary capability under a Dictionary koid");
         };
         Ok(dict)
     }
 }
 
-impl Dict {
+impl Dictionary {
     /// Like [RemotableCapability::try_into_directory_entry], but this version actually consumes
-    /// the contents of the [Dict]. In other words, if this function returns `Ok`, `self` will
-    /// be empty. If any items are added to `self` later, they will not appear in the directory.
-    /// This method is useful when the caller has no need to keep the original [Dict]. Note
-    /// that even if there is only one reference to the [Dict], calling
+    /// the contents of the [Dictionary]. In other words, if this function returns `Ok`, `self`
+    /// will be empty. If any items are added to `self` later, they will not appear in the
+    /// directory. This method is useful when the caller has no need to keep the original
+    /// [Dictionary]. Note that even if there is only one reference to the [Dictionary], calling
     /// [RemotableCapability::try_into_directory_entry] does not have the same effect because the
-    /// `vfs` keeps alive reference to the [Dict] -- see the comment in the implementation.
+    /// `vfs` keeps alive reference to the [Dictionary] -- see the comment in the implementation.
     ///
-    /// This is transitive: any [Dict]s nested in this one will be consumed as well.
+    /// This is transitive: any [Dictionary]s nested in this one will be consumed as well.
     pub fn try_into_directory_entry_oneshot(
         self,
         scope: ExecutionScope,
@@ -94,7 +94,7 @@ impl Dict {
     }
 }
 
-impl RemotableCapability for Dict {
+impl RemotableCapability for Dictionary {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
@@ -175,11 +175,11 @@ impl RemotableCapability for Dict {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dict::{
+    use crate::dictionary::{
         BorrowedKey, HYBRID_SWITCH_INSERTION_LEN, HYBRID_SWITCH_REMOVAL_LEN, HybridMap, Key,
     };
     use crate::fidl::IntoFsandboxCapability;
-    use crate::{Data, Dict, DirConnector, Handle, serve_capability_store};
+    use crate::{Data, Dictionary, DirConnector, Handle, serve_capability_store};
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream};
     use fidl::handle::{Channel, HandleBased, Status};
@@ -450,7 +450,7 @@ mod tests {
 
         let dict = new_dict(test_type);
 
-        // Insert a Data into the Dict.
+        // Insert a Data into the Dictionary.
         dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).unwrap();
         assert_eq!(adjusted_len(&dict, test_type), 1);
 
@@ -602,7 +602,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        // Create a Dict with a Data inside, and copy the Dict.
+        // Create a Dictionary with a Data inside, and copy the Dictionary.
         let dict = new_dict(test_type);
         dict.insert("data1".parse().unwrap(), Capability::Data(Data::Int64(1))).unwrap();
         store
@@ -633,7 +633,7 @@ mod tests {
             assert!(copy.entries.iter().all(|(_, value)| matches!(value, Capability::Data(_))));
         }
 
-        // The original Dict should have only one Data.
+        // The original Dictionary should have only one Data.
         {
             assert_eq!(adjusted_len(&dict, test_type), 1);
             let dict = dict.lock();
@@ -910,7 +910,7 @@ mod tests {
     /// Tests batching for read APIs.
     #[fuchsia::test]
     async fn read_batches() {
-        // Number of entries in the Dict that will be enumerated.
+        // Number of entries in the Dictionary that will be enumerated.
         //
         // This value was chosen such that that GetNext returns multiple chunks of different sizes.
         const NUM_ENTRIES: u32 = fsandbox::MAX_DICTIONARY_ITERATOR_CHUNK * 2 + 1;
@@ -921,8 +921,8 @@ mod tests {
 
         let id_gen = sandbox::CapabilityIdGenerator::new();
 
-        // Create a Dict with [NUM_ENTRIES] entries that have Data values.
-        let dict = Dict::new();
+        // Create a Dictionary with [NUM_ENTRIES] entries that have Data values.
+        let dict = Dictionary::new();
         for i in 0..NUM_ENTRIES {
             dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
                 .unwrap();
@@ -943,7 +943,7 @@ mod tests {
         let (item_iterator, server_end) = create_proxy();
         store.dictionary_enumerate(dict_id, server_end).await.unwrap().unwrap();
 
-        // Get all the entries from the Dict with `GetNext`.
+        // Get all the entries from the Dictionary with `GetNext`.
         let mut num_got_items: u32 = 0;
         let mut start_id = 100;
         let limit = fsandbox::MAX_DICTIONARY_ITERATOR_CHUNK;
@@ -970,7 +970,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn drain_batches() {
-        // Number of entries in the Dict that will be enumerated.
+        // Number of entries in the Dictionary that will be enumerated.
         //
         // This value was chosen such that that GetNext returns multiple chunks of different sizes.
         const NUM_ENTRIES: u32 = fsandbox::MAX_DICTIONARY_ITERATOR_CHUNK * 2 + 1;
@@ -979,8 +979,8 @@ mod tests {
         const EXPECTED_CHUNK_LENGTHS: &[u32] =
             &[fsandbox::MAX_DICTIONARY_ITERATOR_CHUNK, fsandbox::MAX_DICTIONARY_ITERATOR_CHUNK, 1];
 
-        // Create a Dict with [NUM_ENTRIES] entries that have Data values.
-        let dict = Dict::new();
+        // Create a Dictionary with [NUM_ENTRIES] entries that have Data values.
+        let dict = Dictionary::new();
         for i in 0..NUM_ENTRIES {
             dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
                 .unwrap();
@@ -999,7 +999,7 @@ mod tests {
         let (item_iterator, server_end) = create_proxy();
         store.dictionary_drain(dict_id, Some(server_end)).await.unwrap().unwrap();
 
-        // Get all the entries from the Dict with `GetNext`.
+        // Get all the entries from the Dictionary with `GetNext`.
         let mut num_got_items: u32 = 0;
         let mut start_id = 100;
         let limit = fsandbox::MAX_DICTIONARY_ITERATOR_CHUNK;
@@ -1133,7 +1133,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn try_into_open_error_not_supported() {
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1)))
             .expect("dict entry already exists");
         let scope = ExecutionScope::new();
@@ -1170,7 +1170,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn try_into_open_success() {
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         let mock_dir = Arc::new(MockDir(Counter::new(0)));
         dict.insert(
             CAP_KEY.clone(),
@@ -1193,7 +1193,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn try_into_open_success_nested() {
-        let inner_dict = Dict::new();
+        let inner_dict = Dictionary::new();
         let mock_dir = Arc::new(MockDir(Counter::new(0)));
         inner_dict
             .insert(
@@ -1201,7 +1201,7 @@ mod tests {
                 DirConnector::from_directory_entry(mock_dir.clone(), fio::PERM_READABLE).into(),
             )
             .expect("dict entry already exists");
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         dict.insert(CAP_KEY.clone(), Capability::Dictionary(inner_dict)).unwrap();
 
         let scope = ExecutionScope::new();
@@ -1239,7 +1239,7 @@ mod tests {
             serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         let dict_ref = Capability::Dictionary(dict.clone())
             .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = 1;
@@ -1487,7 +1487,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn live_update_add_nodes() {
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         let scope = ExecutionScope::new();
         let remote = dict
             .clone()
@@ -1558,7 +1558,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn live_update_remove_nodes() {
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         let fs = pseudo_directory! {};
         let dir_connector = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
         dict.insert("a".parse().unwrap(), dir_connector.clone().into())
@@ -1651,8 +1651,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn into_directory_oneshot() {
-        let dict = Dict::new();
-        let inner_dict = Dict::new();
+        let dict = Dictionary::new();
+        let inner_dict = Dictionary::new();
         let fs = pseudo_directory! {};
         let dir_connector = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
         inner_dict.insert("x".parse().unwrap(), dir_connector.clone().into()).unwrap();
@@ -1693,7 +1693,7 @@ mod tests {
         assert!(dict.is_empty());
         assert!(inner_dict.is_empty());
 
-        // Adding to the empty Dict has no impact on the directory.
+        // Adding to the empty Dictionary has no impact on the directory.
         dict.insert("z".parse().unwrap(), dir_connector.clone().into()).unwrap();
         let mut readdir_results = fuchsia_fs::directory::readdir(&dir_proxy).await.unwrap();
         readdir_results.sort_by(|entry_1, entry_2| entry_1.name.cmp(&entry_2.name));
@@ -1714,8 +1714,8 @@ mod tests {
         iter::repeat("A").take(i).collect::<String>().parse().unwrap()
     }
 
-    fn new_dict(test_type: TestType) -> Dict {
-        let dict = Dict::new();
+    fn new_dict(test_type: TestType) -> Dictionary {
+        let dict = Dictionary::new();
         match test_type {
             TestType::Small => {}
             TestType::Big => {
@@ -1730,7 +1730,7 @@ mod tests {
         dict
     }
 
-    fn adjusted_len(dict: &Dict, test_type: TestType) -> usize {
+    fn adjusted_len(dict: &Dictionary, test_type: TestType) -> usize {
         let ofs = match test_type {
             TestType::Small => 0,
             TestType::Big => HYBRID_SWITCH_INSERTION_LEN,

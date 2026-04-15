@@ -19,14 +19,14 @@ pub type BorrowedKey = cm_types::BorrowedName;
 
 /// A capability that represents a dictionary of capabilities.
 #[derive(Debug, Clone)]
-pub struct Dict {
+pub struct Dictionary {
     inner: Arc<Mutex<DictInner>>,
 }
 
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub(crate) struct DictInner {
-    /// The contents of the [Dict].
+    /// The contents of the [Dictionary].
     pub(crate) entries: HybridMap,
 
     /// When an external request tries to access a non-existent entry, this closure will be invoked
@@ -48,7 +48,7 @@ pub(crate) struct DictInner {
     update_notifiers: UpdateNotifiers,
 }
 
-impl CapabilityBound for Dict {
+impl CapabilityBound for Dictionary {
     fn debug_typename() -> &'static str {
         "Dictionary"
     }
@@ -88,7 +88,7 @@ pub enum UpdateNotifierRetention {
 pub type UpdateNotifierFn =
     Box<dyn for<'a> FnMut(EntryUpdate<'a>) -> UpdateNotifierRetention + Sync + Send>;
 
-impl Default for Dict {
+impl Default for Dictionary {
     fn default() -> Self {
         Self {
             inner: Arc::new(Mutex::new(DictInner {
@@ -102,7 +102,7 @@ impl Default for Dict {
     }
 }
 
-impl Dict {
+impl Dictionary {
     /// Creates an empty dictionary.
     pub fn new() -> Self {
         Self::default()
@@ -159,7 +159,7 @@ impl Dict {
         entries.insert(key, capability, update_notifiers)
     }
 
-    pub fn append(&self, other: &Dict) -> Result<(), ()> {
+    pub fn append(&self, other: &Dictionary) -> Result<(), ()> {
         let DictInner { entries, update_notifiers, .. } = &mut *self.lock();
         let other = other.lock();
         entries.append(&other.entries, update_notifiers)
@@ -220,7 +220,7 @@ impl Dict {
         self.lock().entries.is_empty()
     }
 
-    /// Removes all entries from the Dict and returns them as an iterator.
+    /// Removes all entries from the Dictionary and returns them as an iterator.
     pub fn drain(&self) -> impl Iterator<Item = (Key, Capability)> + use<> {
         let DictInner { entries, update_notifiers, .. } = &mut *self.lock();
         let entries = std::mem::replace(entries, HybridMap::default());
@@ -230,7 +230,7 @@ impl Dict {
         entries.into_iter()
     }
 
-    /// Creates a new Dict with entries cloned from this Dict.
+    /// Creates a new Dictionary with entries cloned from this Dictionary.
     ///
     /// This is a shallow copy. Values are cloned, not copied, so are new references to the same
     /// underlying data.
@@ -270,7 +270,7 @@ pub(crate) const HYBRID_SWITCH_REMOVAL_LEN: usize = 5;
 /// where the threshold is defined by the constant `HYBRID_SWITCH_INSERTION_LEN` for insertion and
 /// `HYBRID_SWITCH_REMOVAL_LEN` for removal. This is a more space efficient representation for
 /// small `N` than a `BTreeMap`, which has a big impact because component_manager creates lots of
-/// `Dict` objects for component sandboxes.
+/// `Dictionary` objects for component sandboxes.
 ///
 /// Details: Rust's `BTreeMap` implementation uses a `B` value of 6, which means each node in the
 /// `BTreeMap` reserves space for 11 entries. Inserting 1 entry will allocate a node with space for
@@ -390,7 +390,7 @@ impl HybridMap {
             return Ok(());
         }
 
-        // If any clone would fail, throw an error early and don't modify the dict
+        // If any clone would fail, throw an error early and don't modify the Dictionary
         for (k, _) in other.iter() {
             let contains_key = match self {
                 Self::Vec(vec) => matches!(Self::sorted_vec_index_of(vec, k), Ok(_)),
@@ -507,4 +507,4 @@ impl UpdateNotifiers {
     }
 }
 
-// Tests are located in fidl/dict.rs.
+// Tests are located in fidl/dictionary.rs.

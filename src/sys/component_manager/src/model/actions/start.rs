@@ -38,7 +38,7 @@ use num_traits::cast::FromPrimitive;
 use router_error::RouterError;
 use routing::bedrock::request_metadata::runner_metadata;
 use runtime_capabilities::{
-    Capability, Connector, Dict, DirConnector, Message, Request, Router, RouterResponse,
+    Capability, Connector, Dictionary, DirConnector, Message, Request, Router, RouterResponse,
     WeakInstanceToken,
 };
 use serve_processargs::NamespaceBuilder;
@@ -328,8 +328,8 @@ async fn do_start(
     start_component(&component, resolved_component.decl, start_context).await
 }
 
-fn dict_deep_copy(dict: &Dict) -> Dict {
-    let out = Dict::new();
+fn dict_deep_copy(dict: &Dictionary) -> Dictionary {
+    let out = Dictionary::new();
     for (key, cap) in dict.enumerate() {
         match cap {
             Capability::Dictionary(d) => {
@@ -344,7 +344,7 @@ fn dict_deep_copy(dict: &Dict) -> Dict {
     out
 }
 
-fn dict_merge(dict1: &Dict, dict2: Dict) {
+fn dict_merge(dict1: &Dictionary, dict2: Dictionary) {
     for (key, value) in dict2.drain() {
         match value {
             Capability::Dictionary(inner_dict2) => {

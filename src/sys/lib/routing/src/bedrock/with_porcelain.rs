@@ -15,7 +15,8 @@ use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Dictionary, Request, Routable, Router, RouterResponse,
+    WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -85,7 +86,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             if !supply_default {
                 Err(RouterError::InvalidArgs)?;
             }
-            let metadata = Dict::new();
+            let metadata = Dictionary::new();
             metadata.set_metadata(*porcelain_type);
             metadata.set_metadata(*availability);
             if let Some(rights) = rights {
@@ -227,7 +228,7 @@ fn check_and_compute_subdir(
     Ok(Some(subdir_from_decl))
 }
 
-pub type DefaultMetadataFn = Arc<dyn Fn(Availability) -> Dict + Send + Sync + 'static>;
+pub type DefaultMetadataFn = Arc<dyn Fn(Availability) -> Dictionary + Send + Sync + 'static>;
 
 /// Builds a router that ensures the capability request has an availability
 /// strength that is at least the provided `availability`. A default `Request`
@@ -408,16 +409,18 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 
 pub fn metadata_for_porcelain_type(
     typename: CapabilityTypeName,
-) -> Arc<dyn Fn(Availability) -> Dict + Send + Sync + 'static> {
-    type MetadataMap =
-        HashMap<CapabilityTypeName, Arc<dyn Fn(Availability) -> Dict + Send + Sync + 'static>>;
+) -> Arc<dyn Fn(Availability) -> Dictionary + Send + Sync + 'static> {
+    type MetadataMap = HashMap<
+        CapabilityTypeName,
+        Arc<dyn Fn(Availability) -> Dictionary + Send + Sync + 'static>,
+    >;
     static CLOSURES: LazyLock<MetadataMap> = LazyLock::new(|| {
         fn entry_for_typename(
             typename: CapabilityTypeName,
-        ) -> (CapabilityTypeName, Arc<dyn Fn(Availability) -> Dict + Send + Sync + 'static>)
+        ) -> (CapabilityTypeName, Arc<dyn Fn(Availability) -> Dictionary + Send + Sync + 'static>)
         {
             let v = Arc::new(move |availability: Availability| {
-                let metadata = Dict::new();
+                let metadata = Dictionary::new();
                 metadata.set_metadata(typename);
                 metadata.set_metadata(availability);
                 metadata
@@ -444,7 +447,7 @@ mod tests {
     use fuchsia_sync::Mutex;
     use moniker::Moniker;
     use router_error::RouterError;
-    use runtime_capabilities::{Data, Dict};
+    use runtime_capabilities::{Data, Dictionary};
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -558,7 +561,7 @@ mod tests {
             .error_info(&error_info())
             .error_reporter(TestErrorReporter::new())
             .build();
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(CapabilityTypeName::Protocol);
         metadata.set_metadata(Availability::Optional);
 
@@ -587,7 +590,7 @@ mod tests {
             .error_info(&error_info())
             .error_reporter(reporter)
             .build();
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
 
         let error = proxy
@@ -622,7 +625,7 @@ mod tests {
             .error_info(&error_info())
             .error_reporter(reporter)
             .build();
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(CapabilityTypeName::Service);
         metadata.set_metadata(Availability::Optional);
 
@@ -660,7 +663,7 @@ mod tests {
             .error_info(&error_info())
             .error_reporter(reporter)
             .build();
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(CapabilityTypeName::Protocol);
         metadata.set_metadata(Availability::Required);
 

@@ -10,7 +10,7 @@ use futures::channel::oneshot;
 use futures::stream::FuturesUnordered;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, Dict, EntryUpdate, Request, Routable, Router, RouterResponse,
+    Capability, Dictionary, EntryUpdate, Request, Routable, Router, RouterResponse,
     UpdateNotifierRetention, WeakInstanceToken,
 };
 
@@ -20,8 +20,8 @@ use runtime_capabilities::{
 pub struct UseDictionaryRouter {
     path: cm_types::Path,
     moniker: moniker::Moniker,
-    original_dictionary: Dict,
-    dictionary_routers: Vec<Router<Dict>>,
+    original_dictionary: Dictionary,
+    dictionary_routers: Vec<Router<Dictionary>>,
     capability_source: CapabilitySource,
 }
 
@@ -29,10 +29,10 @@ impl UseDictionaryRouter {
     pub fn new(
         path: cm_types::Path,
         moniker: moniker::Moniker,
-        original_dictionary: Dict,
-        dictionary_routers: Vec<Router<Dict>>,
+        original_dictionary: Dictionary,
+        dictionary_routers: Vec<Router<Dictionary>>,
         capability_source: CapabilitySource,
-    ) -> Router<Dict> {
+    ) -> Router<Dictionary> {
         Router::new(Self {
             path,
             moniker,
@@ -50,8 +50,8 @@ impl UseDictionaryRouter {
     /// will be ignored, and the preexisting entry in `self` will take precedence.
     async fn dictionary_follow_updates_from(
         &self,
-        self_dictionary: Dict,
-        other_dict: Dict,
+        self_dictionary: Dictionary,
+        other_dict: Dictionary,
     ) -> Vec<(cm_types::Name, Capability, Capability)> {
         let self_clone = self_dictionary;
         let (sender, receiver) = oneshot::channel();
@@ -85,13 +85,13 @@ impl UseDictionaryRouter {
 }
 
 #[async_trait]
-impl Routable<Dict> for UseDictionaryRouter {
+impl Routable<Dictionary> for UseDictionaryRouter {
     async fn route(
         &self,
         request: Option<Request>,
         debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dict>, RouterError> {
+    ) -> Result<RouterResponse<Dictionary>, RouterError> {
         if debug {
             return Ok(RouterResponse::Debug(
                 self.capability_source

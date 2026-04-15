@@ -67,7 +67,7 @@ use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::{Explain, RouterError};
 use runner::component::StopInfo;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dict, DirConnector, Message, Request, Routable, Router,
+    Capability, Connector, Data, Dictionary, DirConnector, Message, Request, Routable, Router,
     RouterResponse, WeakInstanceToken,
 };
 use std::clone::Clone;
@@ -262,7 +262,7 @@ pub const DEFAULT_KILL_TIMEOUT: Duration = Duration::from_secs(1);
 pub struct IncomingCapabilities {
     pub numbered_handles: Vec<fprocess::HandleInfo>,
     pub additional_namespace_entries: Vec<NamespaceEntry>,
-    pub dict: Option<runtime_capabilities::Dict>,
+    pub dict: Option<runtime_capabilities::Dictionary>,
 }
 
 impl Default for IncomingCapabilities {
@@ -300,7 +300,7 @@ impl IncomingCapabilities {
         let dict_2 = if let Some(dictionary_handle) = args.additional_inputs {
             Some(
                 remote_capabilities
-                    .get::<Dict>(dictionary_handle)
+                    .get::<Dictionary>(dictionary_handle)
                     .map_err(|_| fcomponent::Error::InvalidArguments)?,
             )
         } else {
@@ -576,7 +576,7 @@ impl ComponentInstance {
                 let router: Capability = match value {
                     Capability::Connector(s) => Router::<Connector>::new_ok(s).into(),
                     Capability::DirConnector(s) => Router::<DirConnector>::new_ok(s).into(),
-                    Capability::Dictionary(s) => Router::<Dict>::new_ok(s).into(),
+                    Capability::Dictionary(s) => Router::<Dictionary>::new_ok(s).into(),
                     Capability::Data(d) => Router::<Data>::new_ok(d).into(),
                     c => c,
                 };
@@ -588,7 +588,7 @@ impl ComponentInstance {
         }
 
         if let Some(dictionary_handle) = child_args.additional_inputs {
-            let dictionary: Dict = self
+            let dictionary: Dictionary = self
                 .context
                 .remote_capabilities()
                 .get(dictionary_handle)
@@ -598,7 +598,7 @@ impl ComponentInstance {
                 let router: Capability = match value {
                     Capability::Connector(s) => Router::<Connector>::new_ok(s).into(),
                     Capability::DirConnector(s) => Router::<DirConnector>::new_ok(s).into(),
-                    Capability::Dictionary(s) => Router::<Dict>::new_ok(s).into(),
+                    Capability::Dictionary(s) => Router::<Dictionary>::new_ok(s).into(),
                     Capability::Data(d) => Router::<Data>::new_ok(d).into(),
                     c => c,
                 };
@@ -1093,7 +1093,7 @@ impl ComponentInstance {
     }
 
     /// Obtains the component output dict.
-    pub async fn get_component_output_dict(self: &Arc<Self>) -> Result<Dict, RouterError> {
+    pub async fn get_component_output_dict(self: &Arc<Self>) -> Result<Dictionary, RouterError> {
         Ok(self
             .lock_resolved_state()
             .await
@@ -1109,26 +1109,28 @@ impl ComponentInstance {
     }
 
     /// Returns a router that delegates to the component output dict.
-    pub(super) fn component_output(self: &Arc<Self>) -> Router<Dict> {
+    pub(super) fn component_output(self: &Arc<Self>) -> Router<Dictionary> {
         #[derive(Debug)]
         struct ComponentOutput {
             component: WeakComponentInstance,
         }
 
         #[async_trait]
-        impl Routable<Dict> for ComponentOutput {
+        impl Routable<Dictionary> for ComponentOutput {
             async fn route(
                 &self,
                 _request: Option<Request>,
                 _debug: bool,
                 _target: WeakInstanceToken,
-            ) -> Result<RouterResponse<Dict>, RouterError> {
+            ) -> Result<RouterResponse<Dictionary>, RouterError> {
                 let component = self.component.upgrade().map_err(RoutingError::from)?;
-                Ok(RouterResponse::<Dict>::Capability(component.get_component_output_dict().await?))
+                Ok(RouterResponse::<Dictionary>::Capability(
+                    component.get_component_output_dict().await?,
+                ))
             }
         }
 
-        Router::<Dict>::new(ComponentOutput { component: self.as_weak() })
+        Router::<Dictionary>::new(ComponentOutput { component: self.as_weak() })
     }
 
     /// Opens this instance's exposed directory if it has been resolved.

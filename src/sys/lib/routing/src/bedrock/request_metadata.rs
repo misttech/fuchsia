@@ -14,7 +14,7 @@ use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
 use moniker::Moniker;
-use runtime_capabilities::{Capability, Data, Dict, DictKey};
+use runtime_capabilities::{Capability, Data, DictKey, Dictionary};
 
 /// A type which has accessors for route request metadata of type T.
 pub trait Metadata<T> {
@@ -28,20 +28,19 @@ pub trait Metadata<T> {
     fn get_metadata(&self) -> Option<T>;
 }
 
-impl Metadata<CapabilityTypeName> for Dict {
+impl Metadata<CapabilityTypeName> for Dictionary {
     const KEY: &'static str = "type";
 
     fn set_metadata(&self, value: CapabilityTypeName) {
         let key = DictKey::new(<Self as Metadata<CapabilityTypeName>>::KEY)
             .expect("dict key creation failed unexpectedly");
         match self.insert(key, Capability::Data(Data::String(value.to_string().into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
@@ -58,20 +57,19 @@ impl Metadata<CapabilityTypeName> for Dict {
     }
 }
 
-impl Metadata<Availability> for Dict {
+impl Metadata<Availability> for Dictionary {
     const KEY: &'static str = "availability";
 
     fn set_metadata(&self, value: Availability) {
         let key = DictKey::new(<Self as Metadata<Availability>>::KEY)
             .expect("dict key creation failed unexpectedly");
         match self.insert(key, Capability::Data(Data::String(value.to_string().into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
@@ -92,20 +90,19 @@ impl Metadata<Availability> for Dict {
     }
 }
 
-impl Metadata<Rights> for Dict {
+impl Metadata<Rights> for Dictionary {
     const KEY: &'static str = "rights";
 
     fn set_metadata(&self, value: Rights) {
         let key = DictKey::new(<Self as Metadata<Rights>>::KEY)
             .expect("dict key creation failed unexpectedly");
         match self.insert(key, Capability::Data(Data::Uint64(value.into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
@@ -120,7 +117,7 @@ impl Metadata<Rights> for Dict {
         Some(Rights::from(rights))
     }
 }
-impl Metadata<finternal::EventStreamRouteMetadata> for Dict {
+impl Metadata<finternal::EventStreamRouteMetadata> for Dictionary {
     const KEY: &'static str = "event_stream_route_metadata";
 
     fn set_metadata(&self, esrm: finternal::EventStreamRouteMetadata) {
@@ -128,13 +125,12 @@ impl Metadata<finternal::EventStreamRouteMetadata> for Dict {
             .expect("dict key creation failed unexpectedly");
         let value = persist(&esrm).expect("failed to persist event stream route metadata");
         match self.insert(key, Data::Bytes(value.into()).into()) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
@@ -152,7 +148,7 @@ impl Metadata<finternal::EventStreamRouteMetadata> for Dict {
 /// The directory rights associated with the previous declaration in a multi-step route.
 pub struct IntermediateRights(pub Rights);
 
-impl Metadata<IntermediateRights> for Dict {
+impl Metadata<IntermediateRights> for Dictionary {
     const KEY: &'static str = "intermediate_rights";
 
     fn set_metadata(&self, value: IntermediateRights) {
@@ -160,13 +156,12 @@ impl Metadata<IntermediateRights> for Dict {
             .expect("dict key creation failed unexpectedly");
         let IntermediateRights(value) = value;
         match self.insert(key, Capability::Data(Data::Uint64(value.into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
@@ -186,27 +181,26 @@ impl Metadata<IntermediateRights> for Dict {
 /// if they were not present in an expose or offer declaration.
 pub struct InheritRights(pub bool);
 
-impl Metadata<InheritRights> for Dict {
+impl Metadata<InheritRights> for Dictionary {
     const KEY: &'static str = "inherit_rights";
 
     fn set_metadata(&self, value: InheritRights) {
         let key = DictKey::new(<Self as Metadata<InheritRights>>::KEY)
-            .expect("dict key creation failed unexpectedly");
+            .expect("dictionary key creation failed unexpectedly");
         let InheritRights(value) = value;
         match self.insert(key, Capability::Data(Data::Uint64(value.into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
     fn get_metadata(&self) -> Option<InheritRights> {
         let key = DictKey::new(<Self as Metadata<InheritRights>>::KEY)
-            .expect("dict key creation failed unexpectedly");
+            .expect("dictionary key creation failed unexpectedly");
         let capability = self.get(&key)?;
         let inherit = match capability {
             Capability::Data(Data::Uint64(inherit)) => inherit != 0,
@@ -216,26 +210,25 @@ impl Metadata<InheritRights> for Dict {
     }
 }
 
-impl Metadata<SubDir> for Dict {
+impl Metadata<SubDir> for Dictionary {
     const KEY: &'static str = "subdir";
 
     fn set_metadata(&self, value: SubDir) {
         let key = DictKey::new(<Self as Metadata<SubDir>>::KEY)
-            .expect("dict key creation failed unexpectedly");
+            .expect("dictionary key creation failed unexpectedly");
         match self.insert(key, Capability::Data(Data::String(value.to_string().into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
     fn get_metadata(&self) -> Option<SubDir> {
         let key = DictKey::new(<Self as Metadata<SubDir>>::KEY)
-            .expect("dict key creation failed unexpectedly");
+            .expect("dictionary key creation failed unexpectedly");
         let capability = self.get(&key)?;
         match capability {
             Capability::Data(Data::String(subdir)) => SubDir::new(subdir).ok(),
@@ -248,23 +241,22 @@ impl Metadata<SubDir> for Dict {
 /// component of a storage capability.
 pub struct IsolatedStoragePath(pub PathBuf);
 
-impl Metadata<IsolatedStoragePath> for Dict {
+impl Metadata<IsolatedStoragePath> for Dictionary {
     const KEY: &'static str = "isolated_storage_path";
 
     fn set_metadata(&self, value: IsolatedStoragePath) {
         let key = DictKey::new(<Self as Metadata<IsolatedStoragePath>>::KEY)
-            .expect("dict key creation failed unexpectedly");
+            .expect("dictionary key creation failed unexpectedly");
         match self.insert(
             key,
             Capability::Data(Data::String(value.0.to_string_lossy().into_owned().into())),
         ) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
@@ -291,20 +283,20 @@ impl Metadata<IsolatedStoragePath> for Dict {
 /// {IsolatedStoragePath}/{SubDir}/{StorageSubdir}.
 pub struct StorageSubdir(pub RelativePath);
 
-impl Metadata<StorageSubdir> for Dict {
+impl Metadata<StorageSubdir> for Dictionary {
     const KEY: &'static str = "storage_subdir";
 
     fn set_metadata(&self, value: StorageSubdir) {
         let key = DictKey::new(<Self as Metadata<StorageSubdir>>::KEY)
             .expect("dict key creation failed unexpectedly");
         match self.insert(key, Capability::Data(Data::String(value.0.to_string().into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
+            // When an entry already exists for a key in a Dictionary, insert() will
             // still replace that entry with the new value, even though it
             // returns an ItemAlreadyExists error. As a result, we can treat
             // ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
@@ -324,20 +316,19 @@ impl Metadata<StorageSubdir> for Dict {
 /// The moniker of the component that provides a Storage porcelain capability.
 pub struct StorageSourceMoniker(pub Moniker);
 
-impl Metadata<StorageSourceMoniker> for Dict {
+impl Metadata<StorageSourceMoniker> for Dictionary {
     const KEY: &'static str = "storage_source_moniker";
 
     fn set_metadata(&self, value: StorageSourceMoniker) {
         let key = DictKey::new(<Self as Metadata<StorageSourceMoniker>>::KEY)
             .expect("dict key creation failed unexpectedly");
         match self.insert(key, Capability::Data(Data::String(value.0.to_string().into()))) {
-            // When an entry already exists for a key in a Dict, insert() will
-            // still replace that entry with the new value, even though it
-            // returns an ItemAlreadyExists error. As a result, we can treat
-            // ItemAlreadyExists as a success case.
+            // When an entry already exists for a key in a Dictionary, insert() will still replace
+            // that entry with the new value, even though it returns an ItemAlreadyExists error. As
+            // a result, we can treat ItemAlreadyExists as a success case.
             Ok(()) | Err(fsandbox::CapabilityStoreError::ItemAlreadyExists) => (),
-            // Dict::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
-            Err(e) => panic!("unexpected error variant returned from Dict::insert(): {e:?}"),
+            // Dictionary::insert() only returns `CapabilityStoreError::ItemAlreadyExists` variant
+            Err(e) => panic!("unexpected error variant returned from Dictionary::insert(): {e:?}"),
         }
     }
 
@@ -354,29 +345,31 @@ impl Metadata<StorageSourceMoniker> for Dict {
     }
 }
 
-/// Returns a `Dict` containing Router Request metadata specifying a Protocol porcelain type.
-pub fn protocol_metadata(availability: cm_types::Availability) -> Dict {
-    let metadata = Dict::new();
+/// Returns a `Dictionary` containing Router Request metadata specifying a Protocol porcelain type.
+pub fn protocol_metadata(availability: cm_types::Availability) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::Protocol);
     metadata.set_metadata(availability);
     metadata
 }
 
-/// Returns a `Dict` containing Router Request metadata specifying a Dictionary porcelain type.
-pub fn dictionary_metadata(availability: cm_types::Availability) -> Dict {
-    let metadata = Dict::new();
+/// Returns a `Dictionary` containing Router Request metadata specifying a Dictionary porcelain
+/// type.
+pub fn dictionary_metadata(availability: cm_types::Availability) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::Dictionary);
     metadata.set_metadata(availability);
     metadata
 }
 
-/// Returns a `Dict` containing Router Request metadata specifying a Directory porcelain type.
+/// Returns a `Dictionary` containing Router Request metadata specifying a Directory porcelain
+/// type.
 pub fn directory_metadata(
     availability: cm_types::Availability,
     rights: Option<Rights>,
     subdir: Option<SubDir>,
-) -> Dict {
-    let metadata = Dict::new();
+) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::Directory);
     if let Some(subdir) = subdir {
         metadata.set_metadata(subdir);
@@ -394,33 +387,33 @@ pub fn directory_metadata(
     metadata
 }
 
-/// Returns a `Dict` containing Router Request metadata specifying a Config porcelain type.
-pub fn config_metadata(availability: cm_types::Availability) -> Dict {
-    let metadata = Dict::new();
+/// Returns a `Dictionary` containing Router Request metadata specifying a Config porcelain type.
+pub fn config_metadata(availability: cm_types::Availability) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::Config);
     metadata.set_metadata(availability);
     metadata
 }
 
-/// Returns a `Dict` containing Router Request metadata specifying a Runner porcelain type.
-pub fn runner_metadata(availability: cm_types::Availability) -> Dict {
-    let metadata = Dict::new();
+/// Returns a `Dictionary` containing Router Request metadata specifying a Runner porcelain type.
+pub fn runner_metadata(availability: cm_types::Availability) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::Runner);
     metadata.set_metadata(availability);
     metadata
 }
 
-/// Returns a `Dict` Containing Router Request metadata specifying a Resolver porcelain type.
-pub fn resolver_metadata(availability: cm_types::Availability) -> Dict {
-    let metadata = Dict::new();
+/// Returns a `Dictionary` Containing Router Request metadata specifying a Resolver porcelain type.
+pub fn resolver_metadata(availability: cm_types::Availability) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::Resolver);
     metadata.set_metadata(availability);
     metadata
 }
 
-/// Returns a `Dict` Containing Router Request metadata specifying a Service porcelain type.
-pub fn service_metadata(availability: cm_types::Availability) -> Dict {
-    let metadata = Dict::new();
+/// Returns a `Dictionary` Containing Router Request metadata specifying a Service porcelain type.
+pub fn service_metadata(availability: cm_types::Availability) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::Service);
     metadata.set_metadata(availability);
     // Service capabilities are implemented as DirConnectors. When the Router<DirConnector> that
@@ -440,17 +433,17 @@ pub fn service_metadata(availability: cm_types::Availability) -> Dict {
 pub fn event_stream_metadata(
     availability: cm_types::Availability,
     route_metadata: finternal::EventStreamRouteMetadata,
-) -> Dict {
-    let metadata = Dict::new();
+) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::EventStream);
     metadata.set_metadata(availability);
     metadata.set_metadata(route_metadata);
     metadata
 }
 
-/// Returns a `Dict` containing Router Request metadata specifying a Storage porcelain type.
-pub fn storage_metadata(availability: cm_types::Availability) -> Dict {
-    let metadata = Dict::new();
+/// Returns a `Dictionary` containing Router Request metadata specifying a Storage porcelain type.
+pub fn storage_metadata(availability: cm_types::Availability) -> Dictionary {
+    let metadata = Dictionary::new();
     metadata.set_metadata(CapabilityTypeName::Storage);
     metadata.set_metadata(availability);
     metadata.set_metadata(Rights::from(fio::RW_STAR_DIR));

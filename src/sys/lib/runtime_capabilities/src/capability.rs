@@ -84,18 +84,18 @@ impl Explain for RemoteError {
 pub enum Capability {
     Connector(crate::Connector),
     DirConnector(crate::DirConnector),
-    Dictionary(crate::Dict),
+    Dictionary(crate::Dictionary),
     Data(crate::Data),
     Handle(crate::Handle),
     ConnectorRouter(crate::Router<crate::Connector>),
-    DictionaryRouter(crate::Router<crate::Dict>),
+    DictionaryRouter(crate::Router<crate::Dictionary>),
     DirConnectorRouter(crate::Router<crate::DirConnector>),
     DataRouter(crate::Router<crate::Data>),
     Instance(crate::WeakInstanceToken),
 }
 
 impl Capability {
-    pub fn to_dictionary(self) -> Option<crate::Dict> {
+    pub fn to_dictionary(self) -> Option<crate::Dictionary> {
         match self {
             Self::Dictionary(d) => Some(d),
             _ => None,
@@ -107,10 +107,10 @@ impl Capability {
             Self::Connector(_) => crate::Connector::debug_typename(),
             Self::DirConnector(_) => crate::DirConnector::debug_typename(),
             Self::ConnectorRouter(_) => crate::Router::<crate::Connector>::debug_typename(),
-            Self::DictionaryRouter(_) => crate::Router::<crate::Dict>::debug_typename(),
+            Self::DictionaryRouter(_) => crate::Router::<crate::Dictionary>::debug_typename(),
             Self::DirConnectorRouter(_) => crate::Router::<crate::DirConnector>::debug_typename(),
             Self::DataRouter(_) => crate::Router::<crate::Data>::debug_typename(),
-            Self::Dictionary(_) => crate::Dict::debug_typename(),
+            Self::Dictionary(_) => crate::Dictionary::debug_typename(),
             Self::Data(_) => crate::Data::debug_typename(),
             Self::Handle(_) => crate::Handle::debug_typename(),
             Self::Instance(_) => "Instance",
@@ -140,7 +140,7 @@ impl TryFrom<Capability> for crate::DirConnector {
     }
 }
 
-impl TryFrom<Capability> for crate::Dict {
+impl TryFrom<Capability> for crate::Dictionary {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {
@@ -173,7 +173,7 @@ impl TryFrom<Capability> for crate::Handle {
     }
 }
 
-impl TryFrom<Capability> for Router<crate::Dict> {
+impl TryFrom<Capability> for Router<crate::Dictionary> {
     type Error = ();
 
     fn try_from(c: Capability) -> Result<Self, Self::Error> {

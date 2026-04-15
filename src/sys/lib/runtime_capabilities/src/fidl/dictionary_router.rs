@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{ConversionError, Dict, Router, RouterResponse, WeakInstanceToken};
+use crate::{ConversionError, Dictionary, Router, RouterResponse, WeakInstanceToken};
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::execution_scope::ExecutionScope;
 
-impl crate::RemotableCapability for Router<Dict> {
+impl crate::RemotableCapability for Router<Dictionary> {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
@@ -22,23 +22,23 @@ impl crate::RemotableCapability for Router<Dict> {
     }
 }
 
-impl TryFrom<RouterResponse<Dict>> for fsandbox::DictionaryRouterRouteResponse {
+impl TryFrom<RouterResponse<Dictionary>> for fsandbox::DictionaryRouterRouteResponse {
     type Error = fsandbox::RouterError;
 
-    fn try_from(resp: RouterResponse<Dict>) -> Result<Self, Self::Error> {
+    fn try_from(resp: RouterResponse<Dictionary>) -> Result<Self, Self::Error> {
         match resp {
-            RouterResponse::<Dict>::Capability(c) => {
+            RouterResponse::<Dictionary>::Capability(c) => {
                 Ok(fsandbox::DictionaryRouterRouteResponse::Dictionary(c.into()))
             }
-            RouterResponse::<Dict>::Unavailable => {
+            RouterResponse::<Dictionary>::Unavailable => {
                 Ok(fsandbox::DictionaryRouterRouteResponse::Unavailable(fsandbox::Unit {}))
             }
-            RouterResponse::<Dict>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
+            RouterResponse::<Dictionary>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
         }
     }
 }
 
-impl crate::fidl::IntoFsandboxCapability for Router<Dict> {
+impl crate::fidl::IntoFsandboxCapability for Router<Dictionary> {
     fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
         let (client_end, sender_stream) =
             fidl::endpoints::create_request_stream::<fsandbox::DictionaryRouterMarker>();
@@ -47,7 +47,7 @@ impl crate::fidl::IntoFsandboxCapability for Router<Dict> {
     }
 }
 
-impl Router<Dict> {
+impl Router<Dictionary> {
     async fn serve_router(
         self,
         mut stream: fsandbox::DictionaryRouterRequestStream,

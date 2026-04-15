@@ -4,7 +4,7 @@
 
 use crate::fidl::{IntoFsandboxCapability, RemotableCapability};
 use crate::{
-    Capability, CapabilityBound, Dict, Request, Router, RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Dictionary, Request, Router, RouterResponse, WeakInstanceToken,
 };
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
@@ -31,13 +31,13 @@ impl Request {
     }
 }
 
-impl TryFrom<fsandbox::DictionaryRouterRouteResponse> for RouterResponse<Dict> {
+impl TryFrom<fsandbox::DictionaryRouterRouteResponse> for RouterResponse<Dictionary> {
     type Error = crate::RemoteError;
 
     fn try_from(resp: fsandbox::DictionaryRouterRouteResponse) -> Result<Self, Self::Error> {
         Ok(match resp {
             fsandbox::DictionaryRouterRouteResponse::Dictionary(dict) => {
-                RouterResponse::<Dict>::Capability(dict.try_into()?)
+                RouterResponse::<Dictionary>::Capability(dict.try_into()?)
             }
             fsandbox::DictionaryRouterRouteResponse::Unavailable(_) => RouterResponse::Unavailable,
         })

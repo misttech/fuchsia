@@ -15,7 +15,7 @@ use router_error::RouterError;
 use routing::DictExt;
 use routing::bedrock::request_metadata::storage_metadata;
 use routing::error::RoutingError;
-use runtime_capabilities::{Capability, Dict, Request};
+use runtime_capabilities::{Capability, Dictionary, Request};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ pub async fn create_namespace(
     package: Option<&Package>,
     component: &Arc<ComponentInstance>,
     decl: &ComponentDecl,
-    program_input_dict: &Dict,
+    program_input_dict: &Dictionary,
     scope: ExecutionScope,
 ) -> Result<NamespaceBuilder, CreateNamespaceError> {
     let not_found_sender = not_found_logging(component);
@@ -117,7 +117,7 @@ fn add_pkg_directory(
 fn program_input_dict_to_namespace(
     prefix: &str,
     namespace: &mut NamespaceBuilder,
-    program_input_dict: &Dict,
+    program_input_dict: &Dictionary,
     dont_flatten_past: HashSet<NamespacePath>,
 ) -> Result<(), serve_processargs::BuildNamespaceError> {
     // Convert (the transformed) program_input_dict to namespace.

@@ -24,8 +24,8 @@ use routing::capability_source::{
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use runtime_capabilities::{
-    Capability, Data, Dict, DirConnector, RemotableCapability, Request, Router, RouterResponse,
-    WeakInstanceToken,
+    Capability, Data, Dictionary, DirConnector, RemotableCapability, Request, Router,
+    RouterResponse, WeakInstanceToken,
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -213,7 +213,7 @@ impl AggregateRouter {
                 self.component.clone().into(),
             ));
         }
-        let aggregate_dictionary = Dict::new();
+        let aggregate_dictionary = Dictionary::new();
         while let Some(router_response) = routing_futures.next().await {
             let source_dir = match router_response {
                 Ok(RouterResponse::Capability(dir_connector)) => dir_connector,

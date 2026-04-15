@@ -5,44 +5,44 @@
 use crate::DictExt;
 use cm_types::{BorrowedName, IterablePath, Name};
 use fidl_fuchsia_component_sandbox as fsandbox;
-use runtime_capabilities::{Capability, Data, Dict};
+use runtime_capabilities::{Capability, Data, Dictionary};
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::LazyLock;
 
-/// This trait is implemented by types that wrap a [Dict] and wish to present an abstracted
-/// interface over the [Dict].
+/// This trait is implemented by types that wrap a [Dictionary] and wish to present an abstracted
+/// interface over the [Dictionary].
 ///
 /// All such types are defined in this module, so this trait is private.
 ///
 /// See also: [StructuredDictMap]
-trait StructuredDict: Into<Dict> + Default + Clone + fmt::Debug {
-    /// Converts from [Dict] to `Self`.
+trait StructuredDict: Into<Dictionary> + Default + Clone + fmt::Debug {
+    /// Converts from [Dictionary] to `Self`.
     ///
-    /// REQUIRES: [Dict] is a valid representation of `Self`.
+    /// REQUIRES: [Dictionary] is a valid representation of `Self`.
     ///
-    /// IMPORTANT: The caller should know that [Dict] is a valid representation of [Self]. This
-    /// function is not guaranteed to perform any validation.
-    fn from_dict(dict: Dict) -> Self;
+    /// IMPORTANT: The caller should know that [Dictionary] is a valid representation of [Self].
+    /// This function is not guaranteed to perform any validation.
+    fn from_dict(dict: Dictionary) -> Self;
 }
 
-/// A collection type for mapping [Name] to [StructuredDict], using [Dict] as the underlying
+/// A collection type for mapping [Name] to [StructuredDict], using [Dictionary] as the underlying
 /// representation.
 ///
 /// For example, this can be used to store a map of child or collection names to [ComponentInput]s
 /// (where [ComponentInput] is the type that implements [StructuredDict]).
 ///
-/// Because the representation of this type is [Dict], this type itself implements
+/// Because the representation of this type is [Dictionary], this type itself implements
 /// [StructuredDict].
 #[derive(Clone, Debug, Default)]
 #[allow(private_bounds)]
 pub struct StructuredDictMap<T: StructuredDict> {
-    inner: Dict,
+    inner: Dictionary,
     phantom: PhantomData<T>,
 }
 
 impl<T: StructuredDict> StructuredDict for StructuredDictMap<T> {
-    fn from_dict(dict: Dict) -> Self {
+    fn from_dict(dict: Dictionary) -> Self {
         Self { inner: dict, phantom: Default::default() }
     }
 }
@@ -50,7 +50,7 @@ impl<T: StructuredDict> StructuredDict for StructuredDictMap<T> {
 #[allow(private_bounds)]
 impl<T: StructuredDict> StructuredDictMap<T> {
     pub fn insert(&self, key: Name, value: T) -> Result<(), fsandbox::CapabilityStoreError> {
-        let dict: Dict = value.into();
+        let dict: Dictionary = value.into();
         self.inner.insert(key, dict.into())
     }
 
@@ -84,7 +84,7 @@ impl<T: StructuredDict> StructuredDictMap<T> {
     }
 }
 
-impl<T: StructuredDict> From<StructuredDictMap<T>> for Dict {
+impl<T: StructuredDict> From<StructuredDictMap<T>> for Dictionary {
     fn from(m: StructuredDictMap<T>) -> Self {
         m.inner
     }
@@ -116,9 +116,9 @@ static STOP_TIMEOUT: LazyLock<Name> = LazyLock::new(|| "stop_timeout".parse().un
 static NAME: LazyLock<Name> = LazyLock::new(|| "name".parse().unwrap());
 
 /// Contains the capabilities component receives from its parent and environment. Stored as a
-/// [Dict] containing two nested [Dict]s for the parent and environment.
+/// [Dictionary] containing two nested [Dictionary]s for the parent and environment.
 #[derive(Clone, Debug)]
-pub struct ComponentInput(Dict);
+pub struct ComponentInput(Dictionary);
 
 impl Default for ComponentInput {
     fn default() -> Self {
@@ -127,17 +127,17 @@ impl Default for ComponentInput {
 }
 
 impl StructuredDict for ComponentInput {
-    fn from_dict(dict: Dict) -> Self {
+    fn from_dict(dict: Dictionary) -> Self {
         Self(dict)
     }
 }
 
 impl ComponentInput {
     pub fn new(environment: ComponentEnvironment) -> Self {
-        let dict = Dict::new();
+        let dict = Dictionary::new();
 
         if !environment.0.is_empty() {
-            dict.insert(ENVIRONMENT.clone(), Dict::from(environment).into()).unwrap();
+            dict.insert(ENVIRONMENT.clone(), Dictionary::from(environment).into()).unwrap();
         }
         Self(dict)
     }
@@ -147,17 +147,17 @@ impl ComponentInput {
     /// This is a shallow copy. Values are cloned, not copied, so are new references to the same
     /// underlying data.
     pub fn shallow_copy(&self) -> Result<Self, ()> {
-        // Note: We call [Dict::copy] on the nested [Dict]s, not the root [Dict], because
-        // [Dict::copy] only goes one level deep and we want to copy the contents of the
-        // inner sandboxes.
-        let dest = Dict::new();
+        // Note: We call [Dictionary::copy] on the nested [Dictionary]s, not the root [Dictionary],
+        // because [Dictionary::copy] only goes one level deep and we want to copy the contents of
+        // the inner sandboxes.
+        let dest = Dictionary::new();
         shallow_copy(&self.0, &dest, &*PARENT)?;
         shallow_copy(&self.0, &dest, &*ENVIRONMENT)?;
         Ok(Self(dest))
     }
 
     /// Returns the sub-dictionary containing capabilities routed by the component's parent.
-    pub fn capabilities(&self) -> Dict {
+    pub fn capabilities(&self) -> Dictionary {
         get_or_insert(&self.0, &*PARENT)
     }
 
@@ -175,25 +175,25 @@ impl ComponentInput {
     }
 }
 
-impl From<ComponentInput> for Dict {
+impl From<ComponentInput> for Dictionary {
     fn from(e: ComponentInput) -> Self {
         e.0
     }
 }
 
-/// The capabilities a component has in its environment. Stored as a [Dict] containing a nested
-/// [Dict] holding the environment's debug capabilities.
+/// The capabilities a component has in its environment. Stored as a [Dictionary] containing a
+/// nested [Dictionary] holding the environment's debug capabilities.
 #[derive(Clone, Debug)]
-pub struct ComponentEnvironment(Dict);
+pub struct ComponentEnvironment(Dictionary);
 
 impl Default for ComponentEnvironment {
     fn default() -> Self {
-        Self(Dict::new())
+        Self(Dictionary::new())
     }
 }
 
 impl StructuredDict for ComponentEnvironment {
-    fn from_dict(dict: Dict) -> Self {
+    fn from_dict(dict: Dictionary) -> Self {
         Self(dict)
     }
 }
@@ -204,17 +204,17 @@ impl ComponentEnvironment {
     }
 
     /// Capabilities listed in the `debug_capabilities` portion of its environment.
-    pub fn debug(&self) -> Dict {
+    pub fn debug(&self) -> Dictionary {
         get_or_insert(&self.0, &*DEBUG)
     }
 
     /// Capabilities listed in the `runners` portion of its environment.
-    pub fn runners(&self) -> Dict {
+    pub fn runners(&self) -> Dictionary {
         get_or_insert(&self.0, &*RUNNERS)
     }
 
     /// Capabilities listed in the `resolvers` portion of its environment.
-    pub fn resolvers(&self) -> Dict {
+    pub fn resolvers(&self) -> Dictionary {
         get_or_insert(&self.0, &*RESOLVERS)
     }
 
@@ -245,10 +245,10 @@ impl ComponentEnvironment {
     }
 
     pub fn shallow_copy(&self) -> Result<Self, ()> {
-        // Note: We call [Dict::shallow_copy] on the nested [Dict]s, not the root [Dict], because
-        // [Dict::shallow_copy] only goes one level deep and we want to copy the contents of the
-        // inner sandboxes.
-        let dest = Dict::new();
+        // Note: We call [Dictionary::shallow_copy] on the nested [Dictionary]s, not the root
+        // [Dictionary], because [Dictionary::shallow_copy] only goes one level deep and we want to
+        // copy the contents of the inner sandboxes.
+        let dest = Dictionary::new();
         shallow_copy(&self.0, &dest, &*DEBUG)?;
         shallow_copy(&self.0, &dest, &*RUNNERS)?;
         shallow_copy(&self.0, &dest, &*RESOLVERS)?;
@@ -256,17 +256,17 @@ impl ComponentEnvironment {
     }
 }
 
-impl From<ComponentEnvironment> for Dict {
+impl From<ComponentEnvironment> for Dictionary {
     fn from(e: ComponentEnvironment) -> Self {
         e.0
     }
 }
 
 /// Contains the capabilities a component makes available to its parent or the framework. Stored as
-/// a [Dict] containing two nested [Dict]s for the capabilities made available to the parent and to
-/// the framework.
+/// a [Dictionary] containing two nested [Dictionary]s for the capabilities made available to the
+/// parent and to the framework.
 #[derive(Clone, Debug)]
-pub struct ComponentOutput(Dict);
+pub struct ComponentOutput(Dictionary);
 
 impl Default for ComponentOutput {
     fn default() -> Self {
@@ -275,14 +275,14 @@ impl Default for ComponentOutput {
 }
 
 impl StructuredDict for ComponentOutput {
-    fn from_dict(dict: Dict) -> Self {
+    fn from_dict(dict: Dictionary) -> Self {
         Self(dict)
     }
 }
 
 impl ComponentOutput {
     pub fn new() -> Self {
-        Self(Dict::new())
+        Self(Dictionary::new())
     }
 
     /// Creates a new ComponentOutput with entries cloned from this ComponentOutput.
@@ -290,10 +290,10 @@ impl ComponentOutput {
     /// This is a shallow copy. Values are cloned, not copied, so are new references to the same
     /// underlying data.
     pub fn shallow_copy(&self) -> Result<Self, ()> {
-        // Note: We call [Dict::copy] on the nested [Dict]s, not the root [Dict], because
-        // [Dict::copy] only goes one level deep and we want to copy the contents of the
-        // inner sandboxes.
-        let dest = Dict::new();
+        // Note: We call [Dictionary::copy] on the nested [Dictionary]s, not the root [Dictionary],
+        // because [Dictionary::copy] only goes one level deep and we want to copy the contents of
+        // the inner sandboxes.
+        let dest = Dictionary::new();
         shallow_copy(&self.0, &dest, &*PARENT)?;
         shallow_copy(&self.0, &dest, &*FRAMEWORK)?;
         Ok(Self(dest))
@@ -301,35 +301,35 @@ impl ComponentOutput {
 
     /// Returns the sub-dictionary containing capabilities routed to the component's parent.
     /// framework. Lazily adds the dictionary if it does not exist yet.
-    pub fn capabilities(&self) -> Dict {
+    pub fn capabilities(&self) -> Dictionary {
         get_or_insert(&self.0, &*PARENT)
     }
 
     /// Returns the sub-dictionary containing capabilities exposed by the component to the
     /// framework. Lazily adds the dictionary if it does not exist yet.
-    pub fn framework(&self) -> Dict {
+    pub fn framework(&self) -> Dictionary {
         get_or_insert(&self.0, &*FRAMEWORK)
     }
 }
 
-impl From<ComponentOutput> for Dict {
+impl From<ComponentOutput> for Dictionary {
     fn from(e: ComponentOutput) -> Self {
         e.0
     }
 }
 
-fn shallow_copy(src: &Dict, dest: &Dict, key: &Name) -> Result<(), ()> {
+fn shallow_copy(src: &Dictionary, dest: &Dictionary, key: &Name) -> Result<(), ()> {
     if let Some(d) = src.get(key) {
         let Capability::Dictionary(d) = d else {
-            unreachable!("{key} entry must be a dict: {d:?}");
+            unreachable!("{key} entry must be a dictionary: {d:?}");
         };
         dest.insert(key.clone(), d.shallow_copy()?.into()).ok();
     }
     Ok(())
 }
 
-fn get_or_insert(this: &Dict, key: &Name) -> Dict {
-    let cap = this.get_or_insert(&key, || Capability::Dictionary(Dict::new()));
+fn get_or_insert(this: &Dictionary, key: &Name) -> Dictionary {
+    let cap = this.get_or_insert(&key, || Capability::Dictionary(Dictionary::new()));
     let Capability::Dictionary(dict) = cap else {
         unreachable!("{key} entry must be a dict: {cap:?}");
     };
@@ -342,8 +342,8 @@ mod tests {
     use assert_matches::assert_matches;
     use runtime_capabilities::DictKey;
 
-    impl StructuredDict for Dict {
-        fn from_dict(dict: Dict) -> Self {
+    impl StructuredDict for Dictionary {
+        fn from_dict(dict: Dictionary) -> Self {
             dict
         }
     }
@@ -351,27 +351,27 @@ mod tests {
     #[fuchsia::test]
     async fn structured_dict_map() {
         let dict1 = {
-            let dict = Dict::new();
-            dict.insert("a".parse().unwrap(), Dict::new().into())
+            let dict = Dictionary::new();
+            dict.insert("a".parse().unwrap(), Dictionary::new().into())
                 .expect("dict entry already exists");
             dict
         };
         let dict2 = {
-            let dict = Dict::new();
-            dict.insert("b".parse().unwrap(), Dict::new().into())
+            let dict = Dictionary::new();
+            dict.insert("b".parse().unwrap(), Dictionary::new().into())
                 .expect("dict entry already exists");
             dict
         };
         let dict2_alt = {
-            let dict = Dict::new();
-            dict.insert("c".parse().unwrap(), Dict::new().into())
+            let dict = Dictionary::new();
+            dict.insert("c".parse().unwrap(), Dictionary::new().into())
                 .expect("dict entry already exists");
             dict
         };
         let name1 = Name::new("1").unwrap();
         let name2 = Name::new("2").unwrap();
 
-        let map: StructuredDictMap<Dict> = Default::default();
+        let map: StructuredDictMap<Dictionary> = Default::default();
         assert_matches!(map.get(&name1), None);
         assert!(map.insert(name1.clone(), dict1).is_ok());
         let d = map.get(&name1).unwrap();

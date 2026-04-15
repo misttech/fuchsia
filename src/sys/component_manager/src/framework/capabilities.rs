@@ -23,8 +23,9 @@ use routing::bedrock::request_metadata::Metadata;
 use routing::capability_source::{CapabilitySource, RemotedAtSource};
 use routing::error::RoutingError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Connectable, Connector, Data, Dict, DirConnectable, DirConnector,
-    Message, RemotableCapability, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Connectable, Connector, Data, Dictionary, DirConnectable,
+    DirConnector, Message, RemotableCapability, Request, Routable, Router, RouterResponse,
+    WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -183,7 +184,7 @@ impl Capabilities {
                 fruntime::CapabilitiesRequest::DictionaryCreate {
                     dictionary, responder, ..
                 } => {
-                    let res = self.remote_capabilities.store(dictionary, Dict::new());
+                    let res = self.remote_capabilities.store(dictionary, Dictionary::new());
                     let _ = responder.send(res);
                 }
                 fruntime::CapabilitiesRequest::DataCreate {
@@ -228,7 +229,7 @@ impl Capabilities {
                     responder,
                     ..
                 } => {
-                    let remote_router = Router::<Dict>::new(RemoteRouter::new(
+                    let remote_router = Router::<Dictionary>::new(RemoteRouter::new(
                         router_client_end.into_proxy(),
                         self.remote_capabilities.clone(),
                         self.moniker.clone(),
@@ -291,7 +292,7 @@ impl Capabilities {
                     ..
                 } => {
                     let res = (|| {
-                        let dictionary: Dict = self.remote_capabilities.get(dictionary)?;
+                        let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
                         let key =
                             Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
                         let value: Capability = self.remote_capabilities.get(value)?;
@@ -308,7 +309,7 @@ impl Capabilities {
                     ..
                 } => {
                     let res = (|| {
-                        let dictionary: Dict = self.remote_capabilities.get(dictionary)?;
+                        let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
                         let key =
                             Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
                         let cap = dictionary
@@ -325,7 +326,7 @@ impl Capabilities {
                     let res = (|| {
                         let handle =
                             payload.dictionary.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
-                        let dictionary: Dict = self.remote_capabilities.get(handle)?;
+                        let dictionary: Dictionary = self.remote_capabilities.get(handle)?;
                         let key = payload.key.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
                         let key =
                             Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
@@ -348,7 +349,7 @@ impl Capabilities {
                     ..
                 } => {
                     let res = (|| {
-                        let dictionary: Dict = self.remote_capabilities.get(dictionary)?;
+                        let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
                         self.weak_scope.spawn(handle_key_iterator_stream(
                             dictionary,
                             key_iterator.into_stream(),
@@ -424,7 +425,7 @@ impl Capabilities {
                     responder,
                     ..
                 } => {
-                    let res = route_from_remote::<Dict>(
+                    let res = route_from_remote::<Dictionary>(
                         &self.remote_capabilities,
                         router,
                         request,
@@ -719,7 +720,7 @@ fn capability_as_type(cap: &Capability) -> Result<fruntime::CapabilityType, Erro
 }
 
 async fn handle_key_iterator_stream(
-    dictionary: Dict,
+    dictionary: Dictionary,
     mut stream: fruntime::DictionaryKeyIteratorRequestStream,
 ) {
     fn round_up_to_nearest_8(num: usize) -> usize {

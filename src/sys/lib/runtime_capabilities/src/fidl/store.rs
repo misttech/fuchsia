@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::dict::Key;
+use crate::dictionary::Key;
 use crate::fidl::{IntoFsandboxCapability, RemotableCapability, registry};
-use crate::{Capability, Connector, Dict, DirConnector, Message, WeakInstanceToken};
+use crate::{Capability, Connector, Dictionary, DirConnector, Message, WeakInstanceToken};
 use cm_types::RelativePath;
 use fidl::handle::Signals;
 use fidl_fuchsia_component_decl as fdecl;
@@ -113,7 +113,8 @@ pub async fn serve_capability_store(
                 responder.send(result)?;
             }
             fsandbox::CapabilityStoreRequest::DictionaryCreate { id, responder } => {
-                let result = insert_capability(&mut store, id, Capability::Dictionary(Dict::new()));
+                let result =
+                    insert_capability(&mut store, id, Capability::Dictionary(Dictionary::new()));
                 responder.send(result)?;
             }
             fsandbox::CapabilityStoreRequest::DictionaryLegacyImport {
@@ -122,7 +123,7 @@ pub async fn serve_capability_store(
                 responder,
             } => {
                 let result = (|| {
-                    let capability = Dict::try_from(client_end)
+                    let capability = Dictionary::try_from(client_end)
                         .map_err(|_| fsandbox::CapabilityStoreError::BadCapability)?
                         .into();
                     insert_capability(&mut store, id, capability)
@@ -471,7 +472,7 @@ fn get_dir_connector(
 fn get_dictionary(
     store: &HashMap<u64, Capability>,
     id: u64,
-) -> Result<&Dict, fsandbox::CapabilityStoreError> {
+) -> Result<&Dictionary, fsandbox::CapabilityStoreError> {
     let dict = store.get(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
     if let Capability::Dictionary(dict) = dict {
         Ok(dict)

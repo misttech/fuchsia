@@ -25,7 +25,7 @@ use routing::bedrock::sandbox_construction::{EventStreamFilter, EventStreamSourc
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dict, Receiver, Request, Routable, Router, RouterResponse,
+    Capability, Connector, Data, Dictionary, Receiver, Request, Routable, Router, RouterResponse,
     WeakInstanceToken,
 };
 use std::pin::{Pin, pin};
@@ -132,14 +132,14 @@ impl EventStreamUseRouter {
 /// dictionaries of data found by an `EventStreamUseRouter`, it will implement the server end of
 /// `fuchsia.component.EventStream` on any channels that are delivered to its `receiver`.
 struct EventStreamUseReceiver {
-    routed_dictionaries: Vec<(Dict, EventStreamFilter)>,
+    routed_dictionaries: Vec<(Dictionary, EventStreamFilter)>,
     weak_target_component: WeakComponentInstance,
     receiver: Receiver,
 }
 
 impl EventStreamUseReceiver {
     fn new(
-        routed_dictionaries: Vec<(Dict, EventStreamFilter)>,
+        routed_dictionaries: Vec<(Dictionary, EventStreamFilter)>,
         target_component: Arc<ComponentInstance>,
     ) -> (Connector, Self) {
         let (receiver, connector) = Connector::new();

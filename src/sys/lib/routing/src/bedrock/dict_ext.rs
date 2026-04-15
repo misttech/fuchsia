@@ -12,8 +12,8 @@ use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
-    RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Request, Routable,
+    Router, RouterResponse, WeakInstanceToken,
 };
 use std::fmt::Debug;
 
@@ -22,12 +22,12 @@ pub trait DictExt {
     /// Returns the capability at the path, if it exists. Returns `None` if path is empty.
     fn get_capability(&self, path: &impl IterablePath) -> Option<Capability>;
 
-    /// Looks up a top-level router in this [Dict] with return type `T`. If it's not found (or it's
-    /// not a router) returns a router that always returns `not_found_error`. If `path` has one
-    /// segment and a router was found, returns that router.
+    /// Looks up a top-level router in this [Dictionary] with return type `T`. If it's not found
+    /// (or it's not a router) returns a router that always returns `not_found_error`. If `path`
+    /// has one segment and a router was found, returns that router.
     ///
-    /// If `path` is a multi-segment path, the returned router performs a [Dict] lookup with the
-    /// remaining path relative to the top-level router (see [LazyGet::lazy_get]).
+    /// If `path` is a multi-segment path, the returned router performs a [Dictionary] lookup with
+    /// the remaining path relative to the top-level router (see [LazyGet::lazy_get]).
     ///
     /// REQUIRES: `path` is not empty.
     fn get_router_or_not_found<T>(
@@ -99,7 +99,7 @@ impl<T: CapabilityBound> TryFrom<GenericRouterResponse> for RouterResponse<T> {
 }
 
 #[async_trait]
-impl DictExt for Dict {
+impl DictExt for Dictionary {
     fn get_capability(&self, path: &impl IterablePath) -> Option<Capability> {
         let mut segments = path.iter_segments();
         let Some(mut current_name) = segments.next() else { return Some(self.clone().into()) };
@@ -148,11 +148,11 @@ impl DictExt for Dict {
         }
 
         /// This uses the same algorithm as [LazyGet], but that is implemented for
-        /// [Router<Dict>] while this is implemented for [Router]. This duplication will go
+        /// [Router<Dictionary>] while this is implemented for [Router]. This duplication will go
         /// away once [Router] is replaced with [Router].
         #[derive(Debug)]
         struct ScopedDictRouter<P: IterablePath + Debug + 'static> {
-            router: Router<Dict>,
+            router: Router<Dictionary>,
             path: P,
             not_found_error: RoutingError,
         }
@@ -169,11 +169,11 @@ impl DictExt for Dict {
 
                 // If `debug` is true, that should only apply to the capability at `path`.
                 // Here we're looking up the containing dictionary, so set `debug = false`, to
-                // obtain the actual Dict and not its debug info. For the same reason, we need
-                // to set the capability type on the first request to Dictionary.
+                // obtain the actual Dictionary and not its debug info. For the same reason, we
+                // need to set the capability type on the first request to Dictionary.
                 let init_request = (get_init_request)()?;
                 match self.router.route(init_request, false, target.clone()).await? {
-                    RouterResponse::<Dict>::Capability(dict) => {
+                    RouterResponse::<Dictionary>::Capability(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
                         let resp = dict
                             .get_with_request(&moniker, &self.path, request, debug, target)
@@ -189,8 +189,10 @@ impl DictExt for Dict {
                         })?;
                         Ok(resp)
                     }
-                    RouterResponse::<Dict>::Debug(data) => Ok(RouterResponse::<T>::Debug(data)),
-                    RouterResponse::<Dict>::Unavailable => {
+                    RouterResponse::<Dictionary>::Debug(data) => {
+                        Ok(RouterResponse::<T>::Debug(data))
+                    }
+                    RouterResponse::<Dictionary>::Unavailable => {
                         if !debug {
                             Ok(RouterResponse::<T>::Unavailable)
                         } else {
@@ -200,7 +202,7 @@ impl DictExt for Dict {
                             // info to the caller (which ought to be [`CapabilitySource::Void`]).
                             let init_request = (get_init_request)()?;
                             match self.router.route(init_request, true, target).await? {
-                                RouterResponse::<Dict>::Debug(d) => {
+                                RouterResponse::<Dictionary>::Debug(d) => {
                                     Ok(RouterResponse::<T>::Debug(d))
                                 }
                                 _ => {
@@ -233,7 +235,7 @@ impl DictExt for Dict {
             return Router::<T>::new(ErrorRouter { not_found_error: not_found_error.into() });
         };
         let router = match cap {
-            Capability::Dictionary(d) => Router::<Dict>::new_ok(d),
+            Capability::Dictionary(d) => Router::<Dictionary>::new_ok(d),
             Capability::DictionaryRouter(r) => r,
             _ => {
                 return Router::<T>::new(ErrorRouter { not_found_error: not_found_error.into() });
@@ -280,7 +282,7 @@ impl DictExt for Dict {
                                 return Ok(());
                             }
                             None => {
-                                let dict = Dict::new();
+                                let dict = Dictionary::new();
                                 current_dict.insert(
                                     current_name.into(),
                                     Capability::Dictionary(dict.clone()),
@@ -344,8 +346,8 @@ impl DictExt for Dict {
             };
 
             if next_idx < num_segments - 1 {
-                // Not at the end of the path yet, so there's more nesting. We expect to
-                // have found a [Dict], or a [Dict] router -- traverse into this [Dict].
+                // Not at the end of the path yet, so there's more nesting. We expect to have found
+                // a [Dictionary], or a [Dictionary] router -- traverse into this [Dictionary].
                 let dict_request = request_with_dictionary_replacement(request.as_ref())?;
                 match capability {
                     Capability::Dictionary(d) => {
@@ -353,27 +355,27 @@ impl DictExt for Dict {
                     }
                     Capability::DictionaryRouter(r) => {
                         match r.route(dict_request, false, target.clone()).await? {
-                            RouterResponse::<Dict>::Capability(d) => {
+                            RouterResponse::<Dictionary>::Capability(d) => {
                                 current_dict = d;
                             }
-                            RouterResponse::<Dict>::Debug(d) => {
+                            RouterResponse::<Dictionary>::Debug(d) => {
                                 // This shouldn't happen (we passed debug=false). Just pass it up
                                 // the chain so the caller can decide how to deal with it.
                                 return Ok(Some(GenericRouterResponse::Debug(d)));
                             }
-                            RouterResponse::<Dict>::Unavailable => {
+                            RouterResponse::<Dictionary>::Unavailable => {
                                 if !debug {
                                     return Ok(Some(GenericRouterResponse::Unavailable));
                                 } else {
-                                    // `debug=true` was the input to this function but the call above
-                                    // to [`Router::route`] used `debug=false`. Call the router again
-                                    // with the same arguments but with `debug=true` so that we return
-                                    // the debug info to the caller (which ought to be
-                                    // [`CapabilitySource::Void`]).
+                                    // `debug=true` was the input to this function but the call
+                                    // above to [`Router::route`] used `debug=false`. Call the
+                                    // router again with the same arguments but with `debug=true`
+                                    // so that we return the debug info to the caller (which ought
+                                    // to be [`CapabilitySource::Void`]).
                                     let dict_request =
                                         request_with_dictionary_replacement(request.as_ref())?;
                                     match r.route(dict_request, true, target).await? {
-                                        RouterResponse::<Dict>::Debug(d) => {
+                                        RouterResponse::<Dictionary>::Debug(d) => {
                                             return Ok(Some(GenericRouterResponse::Debug(d)));
                                         }
                                         _ => {
@@ -392,7 +394,7 @@ impl DictExt for Dict {
                     }
                     _ => {
                         return Err(RoutingError::BedrockWrongCapabilityType {
-                            expected: Dict::debug_typename().into(),
+                            expected: Dictionary::debug_typename().into(),
                             actual: capability.debug_typename().into(),
                             moniker: moniker.clone(),
                         }
@@ -409,11 +411,11 @@ impl DictExt for Dict {
                 let capability: Capability = match capability {
                     Capability::DictionaryRouter(r) => {
                         match r.route(request, debug, target).await? {
-                            RouterResponse::<Dict>::Capability(c) => c.into(),
-                            RouterResponse::<Dict>::Unavailable => {
+                            RouterResponse::<Dictionary>::Capability(c) => c.into(),
+                            RouterResponse::<Dictionary>::Unavailable => {
                                 return Ok(Some(GenericRouterResponse::Unavailable));
                             }
-                            RouterResponse::<Dict>::Debug(d) => {
+                            RouterResponse::<Dictionary>::Debug(d) => {
                                 return Ok(Some(GenericRouterResponse::Debug(d)));
                             }
                         }
@@ -504,21 +506,21 @@ pub(super) fn request_with_dictionary_replacement(
 }
 
 struct AdditiveDictionaryRouter {
-    preexisting_router: Router<Dict>,
+    preexisting_router: Router<Dictionary>,
     path: RelativePath,
     capability: Capability,
 }
 
 #[async_trait]
-impl Routable<Dict> for AdditiveDictionaryRouter {
+impl Routable<Dictionary> for AdditiveDictionaryRouter {
     async fn route(
         &self,
         request: Option<Request>,
         debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dict>, RouterError> {
+    ) -> Result<RouterResponse<Dictionary>, RouterError> {
         let dictionary = match self.preexisting_router.route(request, debug, target).await {
-            Ok(RouterResponse::<Dict>::Capability(dictionary)) => {
+            Ok(RouterResponse::<Dictionary>::Capability(dictionary)) => {
                 dictionary.shallow_copy().unwrap()
             }
             other_response => return other_response,

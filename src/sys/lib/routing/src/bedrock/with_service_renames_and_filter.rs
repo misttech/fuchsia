@@ -10,8 +10,8 @@ use router_error::RouterError;
 #[cfg(target_os = "fuchsia")]
 use runtime_capabilities::RemotableCapability;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dict, DirConnector, Request, Routable, Router, RouterResponse,
-    WeakInstanceToken,
+    Capability, Connector, Data, Dictionary, DirConnector, Request, Routable, Router,
+    RouterResponse, WeakInstanceToken,
 };
 
 /// A router that will apply renames/filtering on any dictionaries routed through it.
@@ -46,7 +46,7 @@ impl ServiceRenameRouter {
         match result {
             #[cfg(target_os = "fuchsia")]
             Ok(RouterResponse::Capability(source_services_directory)) => {
-                let target_services_dict = Dict::new();
+                let target_services_dict = Dictionary::new();
                 for rename in &self.renames {
                     let path = cm_types::RelativePath::new(&rename.source_name).unwrap();
                     let dir_connector = source_services_directory.clone().with_subdir(path);
@@ -119,7 +119,7 @@ pub trait WithServiceRenamesAndFilter {
     fn with_service_renames_and_filter(self, offer: OfferDecl) -> Capability;
 }
 
-impl WithServiceRenamesAndFilter for Router<Dict> {
+impl WithServiceRenamesAndFilter for Router<Dictionary> {
     fn with_service_renames_and_filter(self, _offer: OfferDecl) -> Capability {
         self.into()
     }

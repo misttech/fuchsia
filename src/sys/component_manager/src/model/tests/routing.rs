@@ -937,7 +937,7 @@ async fn create_child_with_dict() {
     ];
 
     // Create a dictionary with a sender for the `hippo` protocol.
-    let dict = runtime_capabilities::Dict::new();
+    let dict = runtime_capabilities::Dictionary::new();
 
     let (receiver, sender) = runtime_capabilities::Connector::new();
 

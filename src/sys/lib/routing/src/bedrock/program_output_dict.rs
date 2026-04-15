@@ -25,7 +25,7 @@ use log::warn;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Connector, Data, Dict, DirConnector, Request, Routable, Router, RouterResponse,
+    Connector, Data, Dictionary, DirConnector, Request, Routable, Router, RouterResponse,
     WeakInstanceToken,
 };
 use std::collections::HashMap;
@@ -34,14 +34,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub trait ProgramOutputGenerator<C: ComponentInstanceInterface + 'static> {
-    /// Get a router for [Dict] that forwards the request to a [Router] served at `path`
+    /// Get a router for [Dictionary] that forwards the request to a [Router] served at `path`
     /// in the program's outgoing directory.
     fn new_program_dictionary_router(
         &self,
         component: WeakComponentInstanceInterface<C>,
         path: Path,
         capability: ComponentCapability,
-    ) -> Router<Dict>;
+    ) -> Router<Dictionary>;
 
     /// Get an outgoing directory router for `capability` that returns [Connector]. `capability`
     /// should be a type that maps to [Connector].
@@ -66,11 +66,11 @@ pub fn build_program_output_dictionary<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     decl: &cm_rust::ComponentDecl,
     component_input: &ComponentInput,
-    child_outgoing_dictionary_routers: &HashMap<ChildName, Router<Dict>>,
+    child_outgoing_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
     router_gen: &impl ProgramOutputGenerator<C>,
-) -> (Dict, Dict) {
-    let program_output_dict = Dict::new();
-    let declared_dictionaries = Dict::new();
+) -> (Dictionary, Dictionary) {
+    let program_output_dict = Dictionary::new();
+    let declared_dictionaries = Dictionary::new();
     for capability in &decl.capabilities {
         extend_dict_with_capability(
             component,
@@ -92,10 +92,10 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     decl: &cm_rust::ComponentDecl,
     capability: &cm_rust::CapabilityDecl,
-    program_output_dict: &Dict,
-    declared_dictionaries: &Dict,
+    program_output_dict: &Dictionary,
+    declared_dictionaries: &Dictionary,
     component_input: &ComponentInput,
-    child_outgoing_dictionary_routers: &HashMap<ChildName, Router<Dict>>,
+    child_outgoing_dictionary_routers: &HashMap<ChildName, Router<Dictionary>>,
     router_gen: &impl ProgramOutputGenerator<C>,
 ) {
     match capability {
@@ -389,8 +389,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
 fn extend_dict_with_dictionary<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     decl: &cm_rust::DictionaryDecl,
-    program_output_dict: &Dict,
-    declared_dictionaries: &Dict,
+    program_output_dict: &Dictionary,
+    declared_dictionaries: &Dictionary,
     router_gen: &impl ProgramOutputGenerator<C>,
 ) {
     let router;
@@ -404,7 +404,7 @@ fn extend_dict_with_dictionary<C: ComponentInstanceInterface + 'static>(
         );
         declared_dict = None;
     } else {
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         router = make_simple_dict_router(dict.clone(), component, decl);
         declared_dict = Some(dict);
     }
@@ -422,22 +422,22 @@ fn extend_dict_with_dictionary<C: ComponentInstanceInterface + 'static>(
 
 /// Makes a router that always returns the given dictionary.
 fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
-    dict: Dict,
+    dict: Dictionary,
     component: &Arc<C>,
     decl: &cm_rust::DictionaryDecl,
-) -> Router<Dict> {
+) -> Router<Dictionary> {
     struct DictRouter {
-        dict: Dict,
+        dict: Dictionary,
         source: CapabilitySource,
     }
     #[async_trait]
-    impl Routable<Dict> for DictRouter {
+    impl Routable<Dictionary> for DictRouter {
         async fn route(
             &self,
             _request: Option<Request>,
             debug: bool,
             _target: WeakInstanceToken,
-        ) -> Result<RouterResponse<Dict>, RouterError> {
+        ) -> Result<RouterResponse<Dictionary>, RouterError> {
             if debug {
                 Ok(RouterResponse::Debug(
                     self.source
@@ -454,5 +454,5 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
         capability: ComponentCapability::Dictionary(decl.clone()),
         moniker: component.moniker().clone(),
     });
-    Router::<Dict>::new(DictRouter { dict, source })
+    Router::<Dictionary>::new(DictRouter { dict, source })
 }

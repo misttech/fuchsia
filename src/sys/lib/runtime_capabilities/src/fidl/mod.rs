@@ -7,7 +7,7 @@ mod connector;
 mod connector_router;
 mod data;
 mod data_router;
-pub(crate) mod dict;
+pub(crate) mod dictionary;
 mod dictionary_router;
 mod dir_connector;
 mod dir_connector_router;

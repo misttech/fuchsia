@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Capability, CapabilityBound, Data, Dict, WeakInstanceToken};
+use crate::{Capability, CapabilityBound, Data, Dictionary, WeakInstanceToken};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use router_error::RouterError;
@@ -14,12 +14,12 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct Request {
     /// Metadata associated with the request.
-    pub metadata: Dict,
+    pub metadata: Dictionary,
 }
 
 impl Request {
-    /// Clones the [`Request`] where the metadata [`Dict`] is a shallow copy. As a
-    /// result, the metadata [`Dict`] must not contain a nested [`Dict`] otherwise a
+    /// Clones the [`Request`] where the metadata [`Dictionary`] is a shallow copy. As a
+    /// result, the metadata [`Dictionary`] must not contain a nested [`Dictionary`] otherwise a
     /// [`RouterError::InvalidArgs`] error will be returned.
     pub fn try_clone(&self) -> Result<Self, RouterError> {
         self.metadata
@@ -99,7 +99,7 @@ impl CapabilityBound for Router<crate::Data> {
         "DataRouter"
     }
 }
-impl CapabilityBound for Router<crate::Dict> {
+impl CapabilityBound for Router<crate::Dictionary> {
     fn debug_typename() -> &'static str {
         "DictionaryRouter"
     }

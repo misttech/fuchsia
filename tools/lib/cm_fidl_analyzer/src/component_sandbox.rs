@@ -43,8 +43,8 @@ use futures::{FutureExt, future};
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
-    RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Request, Routable,
+    Router, RouterResponse, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -186,7 +186,7 @@ pub fn build_root_component_input(
         });
     for event_stream_decl in event_stream_decls {
         let event_stream_name = event_stream_decl.name.clone();
-        let router = Router::<Dict>::new(
+        let router = Router::<Dictionary>::new(
             move |request: Option<runtime_capabilities::Request>,
                   debug: bool,
                   _target: WeakInstanceToken| {
@@ -242,7 +242,9 @@ impl ErrorReporter for NullErrorReporter {
     }
 }
 
-pub(crate) fn build_framework_router(scope: &Arc<ComponentInstanceForAnalyzer>) -> Router<Dict> {
+pub(crate) fn build_framework_router(
+    scope: &Arc<ComponentInstanceForAnalyzer>,
+) -> Router<Dictionary> {
     Router::new(FrameworkRouter { scope: scope.moniker().clone() })
 }
 
@@ -251,13 +253,13 @@ struct FrameworkRouter {
 }
 
 #[async_trait]
-impl Routable<Dict> for FrameworkRouter {
+impl Routable<Dictionary> for FrameworkRouter {
     async fn route(
         &self,
         _request: Option<Request>,
         _debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dict>, RouterError> {
+    ) -> Result<RouterResponse<Dictionary>, RouterError> {
         let target = target
             .inner
             .as_any()
@@ -274,7 +276,7 @@ impl Routable<Dict> for FrameworkRouter {
             return Err(RouterError::InvalidArgs);
         }
 
-        let framework_dict = Dict::new();
+        let framework_dict = Dictionary::new();
         for protocol_name in &[
             fcomponent::BinderMarker::PROTOCOL_NAME,
             fsandbox::CapabilityStoreMarker::PROTOCOL_NAME,
@@ -319,8 +321,8 @@ impl Routable<Dict> for FrameworkRouter {
 pub fn build_capability_sourced_capabilities_dictionary(
     component: &Arc<ComponentInstanceForAnalyzer>,
     decl: &cm_rust::ComponentDecl,
-) -> Dict {
-    let output = Dict::new();
+) -> Dictionary {
+    let output = Dictionary::new();
     for capability in &decl.capabilities {
         if let cm_rust::CapabilityDecl::Storage(storage_decl) = capability {
             let router = new_debug_only_specific_router::<Connector>(CapabilitySource::Capability(
@@ -347,7 +349,7 @@ impl ProgramOutputGenerator {
         dynamic_dictionaries: &Arc<DynamicDictionaryConfig>,
         component: &WeakComponentInstanceInterface<ComponentInstanceForAnalyzer>,
         capability: &ComponentCapability,
-    ) -> Result<RouterResponse<Dict>, RouterError> {
+    ) -> Result<RouterResponse<Dictionary>, RouterError> {
         let ComponentCapability::Dictionary(DictionaryDecl { name: requested_name, .. }) =
             capability
         else {
@@ -374,7 +376,7 @@ impl ProgramOutputGenerator {
                 },
             )));
         };
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         for (capability_type, capability_name) in capabilities {
             match capability_type {
                 CapabilityTypeName::Protocol => {
@@ -409,7 +411,7 @@ impl ProgramOutputGenerator {
                 ),
             }
         }
-        Ok(RouterResponse::<Dict>::Capability(dict))
+        Ok(RouterResponse::<Dictionary>::Capability(dict))
     }
 }
 
@@ -421,14 +423,14 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         component: WeakComponentInstanceInterface<ComponentInstanceForAnalyzer>,
         _relative_path: Path,
         capability: ComponentCapability,
-    ) -> Router<Dict> {
+    ) -> Router<Dictionary> {
         if !self.executable {
-            return Router::<Dict>::new_error(RoutingError::from(
+            return Router::<Dictionary>::new_error(RoutingError::from(
                 ComponentInstanceError::InstanceNotExecutable { moniker: component.moniker },
             ));
         }
         let dynamic_dictionaries = self.dynamic_dictionaries.clone();
-        Router::<Dict>::new(
+        Router::<Dictionary>::new(
             move |_request: Option<Request>, _debug: bool, _target: WeakInstanceToken| {
                 future::ready(Self::maybe_route_dynamic_dict(
                     &dynamic_dictionaries,
@@ -501,19 +503,19 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
 pub(crate) fn static_children_component_output_dictionary_routers(
     component: &Arc<ComponentInstanceForAnalyzer>,
     decl: &ComponentDecl,
-) -> HashMap<ChildName, Router<Dict>> {
+) -> HashMap<ChildName, Router<Dictionary>> {
     struct ChildrenComponentOutputRouters {
         weak_component: WeakComponentInstanceInterface<ComponentInstanceForAnalyzer>,
         child_name: ChildName,
     }
     #[async_trait]
-    impl Routable<Dict> for ChildrenComponentOutputRouters {
+    impl Routable<Dictionary> for ChildrenComponentOutputRouters {
         async fn route(
             &self,
             _request: Option<Request>,
             _debug: bool,
             _target: WeakInstanceToken,
-        ) -> Result<RouterResponse<Dict>, RouterError> {
+        ) -> Result<RouterResponse<Dictionary>, RouterError> {
             let component =
                 self.weak_component.upgrade().expect("part of component tree was dropped");
             let child = component.children.read().get(&self.child_name).cloned().ok_or(
@@ -524,7 +526,7 @@ pub(crate) fn static_children_component_output_dictionary_routers(
                 ))),
             )?;
             let component_output_dict = child.sandbox.component_output.capabilities();
-            Ok(RouterResponse::<Dict>::Capability(component_output_dict))
+            Ok(RouterResponse::<Dictionary>::Capability(component_output_dict))
         }
     }
 
@@ -534,7 +536,7 @@ pub(crate) fn static_children_component_output_dictionary_routers(
         let child_name = ChildName::new(child_decl.name.clone(), None);
         output.insert(
             child_name.clone(),
-            Router::<Dict>::new(ChildrenComponentOutputRouters {
+            Router::<Dictionary>::new(ChildrenComponentOutputRouters {
                 weak_component: weak_component.clone(),
                 child_name,
             }),

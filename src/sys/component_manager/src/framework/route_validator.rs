@@ -17,7 +17,7 @@ use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Data, Dict, Router, RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Data, Dictionary, Router, RouterResponse, WeakInstanceToken,
 };
 
 pub fn serve(
@@ -261,7 +261,7 @@ fn fill_in_report_with_route_result(
 
 fn validate_dictionary(
     path: RelativePath,
-    dictionary: Dict,
+    dictionary: Dictionary,
     component_instance_token: WeakInstanceToken,
     decl_type: fsys::DeclType,
 ) -> BoxFuture<'static, Vec<fsys::RouteReport>> {

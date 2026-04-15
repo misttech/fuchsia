@@ -440,7 +440,7 @@ pub mod tests {
     use routing::bedrock::request_metadata::Metadata;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::{DictExt, GenericRouterResponse, LazyGet, test_invalid_instance_token};
-    use runtime_capabilities::{Capability, Data, Dict, RemotableCapability};
+    use runtime_capabilities::{Capability, Data, Dictionary, RemotableCapability};
     use std::pin::pin;
     use std::sync::Weak;
     use std::task::Poll;
@@ -449,14 +449,14 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_capability() {
-        let sub_dict = Dict::new();
+        let sub_dict = Dictionary::new();
         sub_dict
-            .insert("bar".parse().unwrap(), Capability::Dictionary(Dict::new()))
+            .insert("bar".parse().unwrap(), Capability::Dictionary(Dictionary::new()))
             .expect("dict entry already exists");
         let (_, sender) = Connector::new();
         sub_dict.insert("baz".parse().unwrap(), sender.into()).expect("dict entry already exists");
 
-        let test_dict = Dict::new();
+        let test_dict = Dictionary::new();
         test_dict
             .insert("foo".parse().unwrap(), Capability::Dictionary(sub_dict))
             .expect("dict entry already exists");
@@ -471,10 +471,10 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn insert_capability() {
-        let test_dict = Dict::new();
+        let test_dict = Dictionary::new();
         assert!(
             test_dict
-                .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dict::new().into())
+                .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dictionary::new().into())
                 .is_ok()
         );
         assert!(test_dict.get_capability(&RelativePath::new("foo/bar").unwrap()).is_some());
@@ -490,10 +490,10 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn remove_capability() {
-        let test_dict = Dict::new();
+        let test_dict = Dictionary::new();
         assert!(
             test_dict
-                .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dict::new().into())
+                .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dictionary::new().into())
                 .is_ok()
         );
         assert!(test_dict.get_capability(&RelativePath::new("foo/bar").unwrap()).is_some());
@@ -508,23 +508,23 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_with_request_ok() {
-        let bar = Dict::new();
+        let bar = Dictionary::new();
         let data = Data::String("hello".into());
         assert!(bar.insert_capability(&RelativePath::new("data").unwrap(), data.into()).is_ok());
-        let bar_router = Router::<Dict>::new_ok(bar);
+        let bar_router = Router::<Dictionary>::new_ok(bar);
 
-        let foo = Dict::new();
+        let foo = Dictionary::new();
         assert!(
             foo.insert_capability(&RelativePath::new("bar").unwrap(), bar_router.into()).is_ok()
         );
-        let foo_router = Router::<Dict>::new_ok(foo);
+        let foo_router = Router::<Dictionary>::new_ok(foo);
 
-        let dict = Dict::new();
+        let dict = Dictionary::new();
         assert!(
             dict.insert_capability(&RelativePath::new("foo").unwrap(), foo_router.into()).is_ok()
         );
 
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let cap = dict
             .get_with_request(
@@ -544,12 +544,12 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_with_request_error() {
-        let dict = Dict::new();
-        let foo = Router::<Dict>::new_error(RoutingError::SourceCapabilityIsVoid {
+        let dict = Dictionary::new();
+        let foo = Router::<Dictionary>::new_error(RoutingError::SourceCapabilityIsVoid {
             moniker: Moniker::root(),
         });
         assert!(dict.insert_capability(&RelativePath::new("foo").unwrap(), foo.into()).is_ok());
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let cap = dict
             .get_with_request(
@@ -573,8 +573,8 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_with_request_missing() {
-        let dict = Dict::new();
-        let metadata = Dict::new();
+        let dict = Dictionary::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let cap = dict
             .get_with_request(
@@ -590,13 +590,13 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn get_with_request_missing_deep() {
-        let dict = Dict::new();
+        let dict = Dictionary::new();
 
-        let foo = Dict::new();
-        let foo = Router::<Dict>::new_ok(foo);
+        let foo = Dictionary::new();
+        let foo = Router::<Dictionary>::new_ok(foo);
         assert!(dict.insert_capability(&RelativePath::new("foo").unwrap(), foo.into()).is_ok());
 
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let cap = dict
             .get_with_request(
@@ -612,7 +612,7 @@ pub mod tests {
             Ok(Some(GenericRouterResponse::Capability(Capability::Dictionary(_))))
         );
 
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let cap = dict
             .get_with_request(
@@ -674,7 +674,7 @@ pub mod tests {
             "test:///root".parse().unwrap(),
         )
         .await;
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let RouterResponse::<Connector>::Capability(conn) = router
             .route(Some(Request { metadata }), false, component.as_weak().into())
@@ -726,7 +726,7 @@ pub mod tests {
             "test:///root".parse().unwrap(),
         )
         .await;
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let RouterResponse::<Connector>::Capability(conn) = router
             .route(Some(Request { metadata }), false, component.as_weak().into())
@@ -787,7 +787,7 @@ pub mod tests {
             "test:///target".parse().unwrap(),
         )
         .await;
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let resp =
             router.route(Some(Request { metadata }), true, target.as_weak().into()).await.unwrap();
@@ -800,16 +800,16 @@ pub mod tests {
     #[fuchsia::test]
     async fn lazy_get() {
         let source = Capability::Data(Data::String("hello".into()));
-        let dict1 = Dict::new();
+        let dict1 = Dictionary::new();
         dict1.insert("source".parse().unwrap(), source).expect("dict entry already exists");
 
-        let base_router = Router::<Dict>::new_ok(dict1);
+        let base_router = Router::<Dictionary>::new_ok(dict1);
         let downscoped_router: Router<Data> = base_router.lazy_get(
             RelativePath::new("source").unwrap(),
             RoutingError::BedrockMemberAccessUnsupported { moniker: Moniker::root().into() },
         );
 
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
         let capability = downscoped_router
             .route(
@@ -829,28 +829,28 @@ pub mod tests {
     #[fuchsia::test]
     async fn lazy_get_deep() {
         let source = Capability::Data(Data::String("hello".into()));
-        let dict1 = Dict::new();
+        let dict1 = Dictionary::new();
         dict1.insert("source".parse().unwrap(), source).expect("dict entry already exists");
-        let dict2 = Dict::new();
+        let dict2 = Dictionary::new();
         dict2
             .insert("dict1".parse().unwrap(), Capability::Dictionary(dict1))
             .expect("dict entry already exists");
-        let dict3 = Dict::new();
+        let dict3 = Dictionary::new();
         dict3
             .insert("dict2".parse().unwrap(), Capability::Dictionary(dict2))
             .expect("dict entry already exists");
-        let dict4 = Dict::new();
+        let dict4 = Dictionary::new();
         dict4
             .insert("dict3".parse().unwrap(), Capability::Dictionary(dict3))
             .expect("dict entry already exists");
 
-        let base_router = Router::<Dict>::new_ok(dict4);
+        let base_router = Router::<Dictionary>::new_ok(dict4);
         let downscoped_router: Router<Data> = base_router.lazy_get(
             RelativePath::new("dict3/dict2/dict1/source").unwrap(),
             RoutingError::BedrockMemberAccessUnsupported { moniker: Moniker::root().into() },
         );
 
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
         let capability = downscoped_router
             .route(
@@ -870,7 +870,7 @@ pub mod tests {
     #[fuchsia::test]
     async fn get_router_or_not_found() {
         let source = Router::<Data>::new_ok(Data::String("hello".into()));
-        let dict1 = Dict::new();
+        let dict1 = Dictionary::new();
         dict1.insert("source".parse().unwrap(), source.into()).expect("dict entry already exists");
 
         let router = dict1.get_router_or_not_found::<Data>(
@@ -878,7 +878,7 @@ pub mod tests {
             RoutingError::BedrockMemberAccessUnsupported { moniker: Moniker::root().into() },
         );
 
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
         let capability = router.route(None, false, WeakInstanceToken::new_invalid()).await.unwrap();
         let capability = match capability {
@@ -891,19 +891,19 @@ pub mod tests {
     #[fuchsia::test]
     async fn get_router_or_not_found_deep() {
         let source = Data::String("hello".into());
-        let dict1 = Dict::new();
+        let dict1 = Dictionary::new();
         dict1.insert("source".parse().unwrap(), source.into()).expect("dict entry already exists");
-        let dict2 = Dict::new();
+        let dict2 = Dictionary::new();
         dict2
             .insert("dict1".parse().unwrap(), Capability::Dictionary(dict1))
             .expect("dict entry already exists");
-        let dict3 = Dict::new();
+        let dict3 = Dictionary::new();
         dict3
             .insert("dict2".parse().unwrap(), Capability::Dictionary(dict2))
             .expect("dict entry already exists");
-        let dict4 = Dict::new();
+        let dict4 = Dictionary::new();
         dict4
-            .insert("dict3".parse().unwrap(), Router::<Dict>::new_ok(dict3).into())
+            .insert("dict3".parse().unwrap(), Router::<Dictionary>::new_ok(dict3).into())
             .expect("dict entry already exists");
 
         let router = dict4.get_router_or_not_found::<Data>(
@@ -911,7 +911,7 @@ pub mod tests {
             RoutingError::BedrockMemberAccessUnsupported { moniker: Moniker::root().into() },
         );
 
-        let metadata = Dict::new();
+        let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
         let capability = router.route(None, false, WeakInstanceToken::new_invalid()).await.unwrap();
         let capability = match capability {

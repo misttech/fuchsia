@@ -80,7 +80,7 @@ use log::{error, warn};
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
 use runtime_capabilities::{
-    Capability, Connector, Data, Dict, DirConnector, RemotableCapability, Request, Routable,
+    Capability, Connector, Data, Dictionary, DirConnector, RemotableCapability, Request, Routable,
     Router, RouterResponse, WeakInstanceToken,
 };
 use std::collections::HashMap;
@@ -296,8 +296,8 @@ pub struct ResolvedInstanceState {
     /// [StartChildArgs].
     namespace_dir: Once<Arc<pfs::Simple>>,
 
-    /// Holds a [Dict] mapping the component's exposed capabilities. Created on demand.
-    exposed_dict: Once<Dict>,
+    /// Holds a [Dictionary] mapping the component's exposed capabilities. Created on demand.
+    exposed_dict: Once<Dictionary>,
 
     /// Hosts a directory mapping the component's exposed capabilities, generated from `exposed_dict`.
     /// Created on demand.
@@ -445,8 +445,12 @@ impl ResolvedInstanceState {
                 component: WeakComponentInstanceInterface<ComponentInstance>,
                 source_path: Path,
                 capability: ComponentCapability,
-            ) -> Router<Dict> {
-                Router::<Dict>::new(ProgramDictionaryRouter { component, source_path, capability })
+            ) -> Router<Dictionary> {
+                Router::<Dictionary>::new(ProgramDictionaryRouter {
+                    component,
+                    source_path,
+                    capability,
+                })
             }
 
             fn new_outgoing_dir_connector_router(
@@ -776,7 +780,7 @@ impl ResolvedInstanceState {
 
     async fn extend_program_input_namespace_with_injected_capabilities(
         component: &Arc<ComponentInstance>,
-        out_dict: &Dict,
+        out_dict: &Dictionary,
     ) {
         let top_instance = component.top_instance().await;
 
@@ -810,11 +814,12 @@ impl ResolvedInstanceState {
         }
     }
 
-    /// Returns a [`Dict`] with contents similar to `component_output_dict`, but adds capabilities
-    /// backed by legacy routing. This [`Dict`] is used to generate the `exposed_dir`.
-    pub async fn get_exposed_dict(&self) -> &Dict {
+    /// Returns a [`Dictionary`] with contents similar to `component_output_dict`, but adds
+    /// capabilities backed by legacy routing. This [`Dictionary`] is used to generate the
+    /// `exposed_dir`.
+    pub async fn get_exposed_dict(&self) -> &Dictionary {
         let create_exposed_dict = async || {
-            let dict = Dict::new();
+            let dict = Dictionary::new();
             for (key, value) in self.sandbox.component_output.capabilities().enumerate() {
                 let _ = dict.insert(key, value);
             }
@@ -1133,7 +1138,9 @@ impl ResolvedInstanceState {
         }
     }
 
-    fn get_child_component_output_dictionary_routers(&self) -> HashMap<ChildName, Router<Dict>> {
+    fn get_child_component_output_dictionary_routers(
+        &self,
+    ) -> HashMap<ChildName, Router<Dictionary>> {
         self.children.iter().map(|(name, child)| (name.clone(), child.component_output())).collect()
     }
 }
@@ -1571,13 +1578,13 @@ struct ProgramDictionaryRouter {
 }
 
 #[async_trait]
-impl Routable<Dict> for ProgramDictionaryRouter {
+impl Routable<Dictionary> for ProgramDictionaryRouter {
     async fn route(
         &self,
         request: Option<Request>,
         debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dict>, RouterError> {
+    ) -> Result<RouterResponse<Dictionary>, RouterError> {
         if debug {
             let source = CapabilitySource::Component(ComponentSource {
                 capability: self.capability.clone(),
@@ -1588,7 +1595,7 @@ impl Routable<Dict> for ProgramDictionaryRouter {
             let Capability::Data(data) = cap else {
                 panic!("failed to convert capability source to Debug");
             };
-            return Ok(RouterResponse::<Dict>::Debug(data));
+            return Ok(RouterResponse::<Dictionary>::Debug(data));
         }
         let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
         fn open_error(e: OpenOutgoingDirError) -> OpenError {

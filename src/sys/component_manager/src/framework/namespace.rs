@@ -16,7 +16,7 @@ use futures::future::BoxFuture;
 use futures::prelude::*;
 use log::warn;
 use namespace::NamespaceError;
-use runtime_capabilities::{Dict, WeakInstanceToken};
+use runtime_capabilities::{Dictionary, WeakInstanceToken};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
@@ -109,7 +109,7 @@ async fn create(
         const ERR: fcomponent::NamespaceError = fcomponent::NamespaceError::DictionaryRead;
 
         // This API accepts legacy [Dictionary] channel. Round-trip through the import/export
-        // CapabilityStore API to convert the channel to a local Dict object that we can
+        // CapabilityStore API to convert the channel to a local Dictionary object that we can
         // enumerate.
         let path = entry.path;
         let dict_id = 1;
@@ -146,7 +146,7 @@ async fn create2(
         const ERR: fcomponent::NamespaceError = fcomponent::NamespaceError::DictionaryRead;
         let path = entry.path;
 
-        let Ok(dictionary) = remote_capabilities.get::<Dict>(entry.capability) else {
+        let Ok(dictionary) = remote_capabilities.get::<Dictionary>(entry.capability) else {
             return Err(ERR);
         };
 
@@ -192,7 +192,7 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_component::client;
     use futures::TryStreamExt;
-    use runtime_capabilities::{Capability, Connector, Dict};
+    use runtime_capabilities::{Capability, Connector, Dictionary};
     use std::sync::{Arc, Weak};
 
     #[cfg(fuchsia_api_level_less_than = "HEAD")]
@@ -263,7 +263,7 @@ mod tests {
             });
 
             // Create a dictionary and add the Sender to it.
-            let dict = Dict::new();
+            let dict = Dictionary::new();
             dict.insert(
                 fecho::EchoMarker::DEBUG_NAME.parse().unwrap(),
                 Capability::Connector(sender),
@@ -333,7 +333,7 @@ mod tests {
             });
 
             // Create a dictionary and add the Sender to it.
-            let dictionary = Dict::new();
+            let dictionary = Dictionary::new();
             dictionary
                 .insert(
                     fecho::EchoMarker::DEBUG_NAME.parse().unwrap(),
@@ -396,7 +396,7 @@ mod tests {
             });
 
             // Create a dictionary and add the Sender to it.
-            let dict = Dict::new();
+            let dict = Dictionary::new();
             dict.insert(
                 fecho::EchoMarker::DEBUG_NAME.parse().unwrap(),
                 Capability::Connector(sender),

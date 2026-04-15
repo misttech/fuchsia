@@ -26,7 +26,8 @@ use fidl_fuchsia_io::RW_STAR_DIR;
 use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker};
 use runtime_capabilities::{
-    Capability, CapabilityBound, Dict, DirConnector, Request, Routable, Router, RouterResponse,
+    Capability, CapabilityBound, Dictionary, DirConnector, Request, Routable, Router,
+    RouterResponse,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -133,7 +134,7 @@ pub async fn debug_route_sandbox_path_with_request<C: ComponentInstanceInterface
     let sandbox_path = sandbox_path.into();
     let path: RelativePath = sandbox_path.clone().into();
     let sandbox = component.component_sandbox().await.map_err(RoutingError::from)?;
-    let sandbox_dictionary: Dict = sandbox.into();
+    let sandbox_dictionary: Dictionary = sandbox.into();
     let maybe_response = sandbox_dictionary
         .get_with_request(
             &ExtendedMoniker::ComponentManager,
@@ -189,9 +190,9 @@ pub async fn debug_route_storage_backing_directory<C: ComponentInstanceInterface
 }
 
 async fn route_capability_inner<T, C>(
-    dictionary: &Dict,
+    dictionary: &Dictionary,
     path: &impl IterablePath,
-    metadata: Dict,
+    metadata: Dictionary,
     target: &Arc<C>,
 ) -> Result<CapabilitySource, RoutingError>
 where
@@ -211,7 +212,7 @@ where
 
 async fn perform_route<T, C>(
     router: impl Routable<T>,
-    metadata: Dict,
+    metadata: Dictionary,
     target: &Arc<C>,
 ) -> Result<CapabilitySource, RoutingError>
 where
