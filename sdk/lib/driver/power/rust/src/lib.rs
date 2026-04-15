@@ -26,7 +26,9 @@ pub trait SuspendableDriver: Driver {
     fn suspend(&self) -> impl Future<Output = ()> + Send;
 
     /// Called after `suspend` to indicate the system is no longer in suspend. The system may not
-    /// have actually entered suspension in between `suspend` and `resume` invocations.
+    /// have actually entered suspension in between `suspend` and `resume` invocations. NOTE: there
+    /// is no initial call to `resume`; drivers are expected to start in a non-suspended state and
+    /// `resume` will only be called after `suspend`.
     fn resume(&self) -> impl Future<Output = ()> + Send;
 
     /// Returns whether or not suspend is enabled. If false is returned, suspend and resume methods
@@ -79,21 +81,19 @@ async fn run_element_runner<T: SuspendableDriver>(
     let mut first_activation_occurred = false;
     while let Some(req) = service.try_next().await.unwrap_or_default() {
         if let fpower_broker::ElementRunnerRequest::SetLevel { level, responder } = req {
+            let Some(driver) = driver.upgrade() else { return };
             if level != fhw_power::FrameworkElementLevels::Off.into_primitive() as u8 {
-                first_activation_occurred = true;
-                if let Some(driver) = driver.upgrade() {
+                // Hide the initial resume because drivers should start in a resumed state and it is
+                // easier for users if we guarantee that a call to resume always follows a call to
+                // suspend.
+                if first_activation_occurred {
                     driver.resume().await;
-                } else {
-                    return;
                 }
-            } else if first_activation_occurred {
-                if let Some(driver) = driver.upgrade() {
-                    driver.suspend().await;
-                } else {
-                    return;
-                }
+            } else {
+                driver.suspend().await;
             }
             let _ = responder.send();
+            first_activation_occurred = true;
         }
     }
 }
@@ -237,10 +237,9 @@ mod tests {
 
         let runner_proxy = runner_client.into_proxy();
 
-        // Level 1 should trigger resume
+        // Level 1 should NOT trigger resume as it's the initial activation
         runner_proxy.set_level(1).await.expect("Failed to set level");
-        assert!(test_driver_resume_called.load(Ordering::SeqCst));
-        test_driver_resume_called.store(false, Ordering::SeqCst);
+        assert!(!test_driver_resume_called.load(Ordering::SeqCst));
 
         // Level 0 should trigger suspend
         runner_proxy.set_level(0).await.expect("Failed to set level");
