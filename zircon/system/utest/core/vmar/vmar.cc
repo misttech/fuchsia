@@ -3300,4 +3300,25 @@ TEST(Vmar, SpecificOverwriteMergeMappings) {
   EXPECT_EQ(maps[2].size, page_size * 5);
 }
 
+// Test to validate that VmMapping::ForceWritable behaves correctly, triggered by using
+// zx_process_write_memory.
+TEST(Vmar, WriteReadOnlyMemory) {
+  zx::vmo vmo;
+
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  zx::vmo read_vmo;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_READ | ZX_RIGHT_MAP, &read_vmo));
+  vmo.reset();
+
+  uintptr_t addr = 0;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, read_vmo, 0, zx_system_get_page_size(),
+                                       &addr));
+  read_vmo.reset();
+  auto unmap = fit::defer([&]() { zx::vmar::root_self()->unmap(addr, zx_system_get_page_size()); });
+
+  size_t actual = 0;
+  EXPECT_OK(zx::process::self()->write_memory(addr, &addr, 8, &actual));
+}
+
 }  // namespace
