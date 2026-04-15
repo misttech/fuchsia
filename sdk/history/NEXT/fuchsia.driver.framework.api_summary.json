@@ -126,6 +126,11 @@
         "value": "12"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.driver.framework/BusType.VIRTIO",
+        "value": "13"
+    },
+    {
         "kind": "enum",
         "name": "fuchsia.driver.framework/BusType",
         "strictness": "flexible",

@@ -4,6 +4,7 @@
 
 #include "netdevice.h"
 
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -163,17 +164,32 @@ zx_status_t NetworkDevice::AddDevice() {
     return status.error_value();
   }
 
-  fdf::Arena arena(0u);
   std::vector offers = compat_server_.CreateOffers2();
   offers.push_back(fdf::MakeOffer2<netdev::Service>());
 
-  std::array<fuchsia_driver_framework::NodeProperty2, 0> properties{};
-  zx::result netdev_child = driver_->AddChild("virtio-net-netdev", properties, offers);
-  if (netdev_child.is_error()) {
-    fdf::error("Failed to add net device child node: {}", netdev_child.status_string());
-    return netdev_child.status_value();
+  auto [controller_client, controller_server] =
+      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+
+  auto args = fuchsia_driver_framework::NodeAddArgs{{
+      .name = "virtio-net-netdev",
+      .offers2 = std::move(offers),
+      .bus_info = fuchsia_driver_framework::BusInfo{{
+          .bus = fuchsia_driver_framework::BusType::kVirtio,
+      }},
+  }};
+
+  auto result = fidl::Call(driver_->node())
+                    ->AddChild({{
+                        .args = std::move(args),
+                        .controller = std::move(controller_server),
+                        .node = {},
+                    }});
+  if (result.is_error()) {
+    fdf::error("Failed to add net device child node: {}", result.error_value());
+    return result.error_value().is_domain_error() ? ZX_ERR_INTERNAL
+                                                  : result.error_value().framework_error().status();
   }
-  netdev_child_ = std::move(netdev_child.value());
+  netdev_child_ = std::move(controller_client);
   return ZX_OK;
 }
 
