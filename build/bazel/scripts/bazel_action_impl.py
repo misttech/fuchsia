@@ -7,7 +7,6 @@
 
 import contextlib
 import dataclasses
-import functools
 import json
 import os
 import shlex
@@ -21,6 +20,7 @@ sys.path.insert(0, _SCRIPT_DIR)
 # LINT.IfChange(imports)
 import bazel_action_utils
 import bazel_label_mapper
+import bazel_rust_analyzer_utils
 import bazel_source_path_mapper
 import build_utils
 import stdio_redirection
@@ -164,11 +164,15 @@ class BazelActionResult(object):
         source_files:  A dict of lists of the Bazel build files and input source files
             that were used by each of the built targets, as standard filesystem paths,
             keyed by the bazel target.
+
+        rust_project_crates: A list of CrateSpec dictionaries describing the crates of the
+            the build targets and their dependencies.
     """
 
     configured_args: list[str]
     output_files: list[Path]
     source_files: dict[str, list[str]]
+    rust_crates: list[bazel_rust_analyzer_utils.Crate]
 
 
 class BazelActionRunner(object):
@@ -306,33 +310,23 @@ class BazelActionRunner(object):
             "--aspects=//build/bazel/debug_symbols:aspects.bzl%generate_manifest",
         ]
 
+        cmd_args += [
+            # Ensure rust-analyzer manifests are generated during the build.
+            "--output_groups={}".format(
+                ",".join(
+                    f"+{group}"
+                    for group in bazel_rust_analyzer_utils.RUST_ANALYZER_OUTPUT_GROUPS
+                )
+            ),
+            "--aspects=//build/bazel/aspects:rust_analyzer.bzl%generate_rust_analyzer_manifest",
+        ]
+
         # Add --sandbox_debug if enabled in the build environment.
         if self.global_args.sandbox_debug:
             cmd_args += ["--sandbox_debug"]
 
         # Always enable verbose failures
         cmd_args += ["--verbose_failures"]
-
-        # Now that there's a complete command string calculated, print it to debug or the command
-        # file output if we have one.
-        if _DEBUG:
-            # This is all arguments on one line, so that they can be run via cut/paste.
-            debug(
-                "BUILD_CMD: "
-                + build_utils.cmd_args_to_string(
-                    [self.paths.launcher] + cmd_args
-                )
-            )
-        if extra_outputs.command_file:
-            # This file is one argument per line.
-            write_file_if_changed(
-                extra_outputs.command_file,
-                " \\\n  ".join(
-                    shlex.quote(str(c))
-                    for c in [self.paths.launcher] + cmd_args
-                )
-                + "\n",
-            )
 
         # To capture the set of dependencies for targets, a genquery that can find
         # all the BUILD.bazel and .bzl files needed for each target.
@@ -347,7 +341,8 @@ class BazelActionRunner(object):
         ) = self._create_buildfiles_genqueries(targets)
 
         # Add the genquery target to the list of targets and add those to the
-        # command line for bazel
+        # command line for bazel. IMPORTANT: The aspects listed above will also apply to
+        # these targets and generate corresponding files in the buildfiles_genquery/ directory.
         cmd_args += targets
         cmd_args += [
             genquery.genquery_target_label
@@ -359,27 +354,39 @@ class BazelActionRunner(object):
         # command line that we'll use with Bazel).
         cmd: list[str] = [command]
         cmd += configured_args
-        cmd += targets
-        cmd += [
-            genquery.genquery_target_label
-            for genquery in input_files_genqueries.values()
-        ]
         cmd += cmd_args
 
-        with FileCleaner(
-            # These files need to be deleted after the running of the action, to make
-            # sure that ninja doesn't see them as files that can cause consistency or
-            # non-convergence issues.
-            [
-                genquery_build_file,
-                *[
-                    info.genquery_output_path
-                    for info in input_files_genqueries.values()
-                ],
-            ]
-        ):
+        # Now that there's a complete command string calculated, print it to debug or the command
+        # file output if we have one.
+        if _DEBUG:
+            # This is all arguments on one line, so that they can be run via cut/paste.
+            debug(
+                "BUILD_CMD: "
+                + build_utils.cmd_args_to_string([self.paths.launcher] + cmd)
+            )
+        if extra_outputs.command_file:
+            # This file is one argument per line.
+            write_file_if_changed(
+                extra_outputs.command_file,
+                " \\\n  ".join(
+                    shlex.quote(str(c)) for c in [self.paths.launcher] + cmd
+                )
+                + "\n",
+            )
+
+        with contextlib.ExitStack() as on_exit:
+            # Remove all files in buildfiles_genquery/ after the action completes, to make sure
+            # that ninja doesn't see them as files that can cause consistency or non-convergence
+            # issues.
+            on_exit.callback(
+                shutil.rmtree,
+                self.paths.workspace / "bazel-bin/buildfiles_genquery",
+                ignore_errors=True,
+            )
+
             aspect_prefix_map = {
                 "debug_symbol_manifest_paths": _BAZEL_DEBUG_SYMBOLS_MANIFEST_PATH_PREFIX,
+                "rust_analyzer_manifest_paths": bazel_rust_analyzer_utils.FUCHSIA_RUST_ANALYZER_MANIFEST_PATH_PREFIX,
             }
 
             aspect_recorded_map = self._invoke_bazel_and_return_aspect_outputs(
@@ -389,9 +396,26 @@ class BazelActionRunner(object):
                 time_profile,
             )
 
-            debug_symbol_manifest_paths = aspect_recorded_map[
+            def get_recorded_aspect_paths(key_name: str) -> list[str]:
+                """Return the recorded manifest paths recorded by aspects, filtering the genquery ones.
+
+                Args:
+                    key_name: One of the aspect_prefix_map keys.
+                Returns:
+                    A list of manifest paths, relative to the Bazel execroot.
+                """
+                return [
+                    path
+                    for path in aspect_recorded_map[key_name]
+                    if not "buildfiles_genquery" in path
+                ]
+
+            debug_symbol_manifest_paths = get_recorded_aspect_paths(
                 "debug_symbol_manifest_paths"
-            ]
+            )
+            rust_manifest_paths = get_recorded_aspect_paths(
+                "rust_analyzer_manifest_paths"
+            )
 
             input_files = {}
             if command == "build":
@@ -410,8 +434,6 @@ class BazelActionRunner(object):
                     configured_args,
                     time_profile,
                 )
-
-        # Temporary files have now been deleted by the FileCleaner.
 
         if command == "build" and outputs.packages:
             # If we have packages, query to get the paths to the package archives,
@@ -445,10 +467,33 @@ class BazelActionRunner(object):
             time_profile,
         )
 
+        # Handle the rust analyzer manifests.
+        crate_spec_paths: set[Path] = set()
+        for manifest_path in rust_manifest_paths:
+            manifest_path = self.paths.execroot / manifest_path
+            with manifest_path.open() as f:
+                manifest_json = json.load(f)
+                crate_spec_paths.update(
+                    self.paths.execroot / spec
+                    for spec in manifest_json["crate_specs"]
+                )
+
+        rust_crate_specs = (
+            bazel_rust_analyzer_utils.load_crate_specs_from_json_files(
+                list(crate_spec_paths),
+                self.paths,
+            )
+        )
+
+        rust_crates = bazel_rust_analyzer_utils.convert_crate_specs_to_rust_project_crates(
+            rust_crate_specs
+        )
+
         return BazelActionResult(
             configured_args=configured_args,
             output_files=all_output_files,
             source_files=input_files,
+            rust_crates=rust_crates,
         )
 
     def query_for_package_archives(
@@ -532,6 +577,8 @@ class BazelActionRunner(object):
             "",
         ]
 
+        genquery_dir = self.paths.workspace / "bazel-bin/buildfiles_genquery"
+
         generated_targets = {}
         for target in targets:
             input_files_target_name = filename_from_target_label(
@@ -551,11 +598,7 @@ class BazelActionRunner(object):
             ]
 
             label = f"//buildfiles_genquery:{input_files_target_name}"
-            output_path = (
-                self.paths.workspace
-                / "bazel-bin/buildfiles_genquery"
-                / input_files_target_name
-            )
+            output_path = genquery_dir / input_files_target_name
 
             generated_targets[target] = _InputFileGenQueryInfo(
                 label,
@@ -563,6 +606,12 @@ class BazelActionRunner(object):
             )
 
         genquery_build_content = "\n".join(query_buildfile_lines)
+
+        if False:
+            print(
+                f"GENQUERY BUILD CONTENT:\n{genquery_build_content}\n",
+                file=sys.stderr,
+            )
 
         genquery_build_file = (
             self.paths.workspace / "buildfiles_genquery/BUILD.bazel"
@@ -1135,17 +1184,6 @@ def run_bazel_query(
             else None
         ),
     )
-
-
-class FileCleaner(contextlib.ExitStack):
-    """A context manager that unlinks files upon exiting."""
-
-    def __init__(self, files: T.Sequence[Path]) -> None:
-        super().__init__()
-        # Register each file's unlinking to be done as the exit
-        # callback.
-        for file in files:
-            self.callback(functools.partial(file.unlink, missing_ok=True))
 
 
 class _BazelOutputCopier(object):

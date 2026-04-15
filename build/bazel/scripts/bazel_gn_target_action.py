@@ -16,7 +16,6 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import bazel_action_impl
 import bazel_compdb_utils
-import bazel_rust_analyzer_utils
 import build_utils
 from bazel_action_file_copy_utils import write_file_if_changed
 from bazel_action_utils import (
@@ -509,14 +508,8 @@ def main() -> int:
             "generate_rust_project_json",
             "Generate {}".format(args.rust_project_json),
         )
-        rust_project_json = (
-            bazel_rust_analyzer_utils.generate_rust_project_json_crates(
-                bazel_paths,
-                configured_args,
-                args.bazel_targets,
-            )
-        )
         _sysroot_src_subdir = Path("lib/rustlib/src/rust/library")
+
         write_file_if_changed(
             args.rust_project_json,
             json.dumps(
@@ -526,7 +519,7 @@ def main() -> int:
                         args.rust_sysroot.resolve().absolute()
                         / _sysroot_src_subdir
                     ),
-                    "crates": rust_project_json,
+                    "crates": action_result.rust_crates,
                 },
                 indent=2,
             ),
