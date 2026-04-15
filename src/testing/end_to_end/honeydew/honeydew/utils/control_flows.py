@@ -85,12 +85,11 @@ async def retry_until_deadline(
                 raise e
             else:
                 _LOGGER.info(
-                    "%s failed, will retry again in %s (%s) (error=%s type=%s)",
+                    "%s raised %r. Next attempt in %s. (%s)",
                     _pretty_func_name(task),
+                    e,
                     retry_delay,
                     deadline,
-                    e,
-                    type(e),
                 )
 
         await sleep_for_duration(retry_delay)
@@ -143,17 +142,18 @@ async def retry(
                 limit = "<unbounded>"
             elif attempts == max_tries:
                 _LOGGER.info(
-                    "%s failed %s times, aborting.", task_name, attempts
+                    "%s did not complete after %s attempts, aborting.",
+                    task_name,
+                    attempts,
                 )
                 raise e
             _LOGGER.info(
-                "%s failed (%s out of %s), will retry again in %s (error=%s type=%s)",
+                "%s raised %r (Attempt %s of %s). Next attempt in %s.",
                 task_name,
+                e,
                 attempts,
                 limit,
                 retry_delay,
-                e,
-                type(e),
             )
 
         await sleep_for_duration(retry_delay)
