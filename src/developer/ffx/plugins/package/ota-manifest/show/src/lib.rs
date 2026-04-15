@@ -190,7 +190,7 @@ fn write_table(
             writeln!(writer, "{table}")?;
         }
     } else {
-        writeln!(writer, "(omitted, use --blobs to show)")?;
+        writeln!(writer, "(omitted, use --print-blobs to show)")?;
     }
 
     Ok(())
