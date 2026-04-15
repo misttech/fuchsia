@@ -83,19 +83,15 @@ const (
 )
 
 var (
-	namingRe = regexp.MustCompile(`\[netcfg\].*` + regexp.QuoteMeta(namingPolicyStr) + `: \[(.*)\]`)
 	// LINT.IfChange(device_class_enum_tefmo)
 	ethernetStaticRe = regexp.MustCompile(`DeviceClasses\(\[Ethernet\]\).*?naming_scheme:\s*\[Static\s*\{\s*value:\s*"([^"]+)"`)
 	// LINT.ThenChange(//src/connectivity/policy/netcfg/src/lib.rs:device_class_enum_tefmo)
 )
 
 func (s *ethernetState) setPrefix(lineBytes []byte) {
-	m := namingRe.FindSubmatch(lineBytes)
+	m := ethernetStaticRe.FindSubmatch(lineBytes)
 	if len(m) > 1 {
-		m2 := ethernetStaticRe.FindSubmatch(m[1])
-		if len(m2) > 1 {
-			s.prefix = string(m2[1])
-		}
+		s.prefix = string(m[1])
 	}
 	// Always append "eth" as a fallback or suffix.
 	// If the naming policy yielded no prefix, this ensures we still match "eth"

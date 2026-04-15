@@ -159,6 +159,19 @@ func TestCdcEthernetStateCheck(t *testing.T) {
 			},
 			tags: []string{"device_type:Sorrel", "product:vendor/google/products/fuchsia_internal.gni"},
 		},
+		{
+			name: "pass on truncated prefix output",
+			log: []byte(`
+[00001.000] 03977:03979> [driver] INFO: Found driver: fuchsia-pkg://fuchsia.com/usb-cdc-function#meta/usb-cdc-function.cm
+[00010.296] 21413:21415> [netcfg] INFO: using naming policy: [NamingRule { matchers: {DeviceClasses([Ethernet])}, naming_scheme: [Static { value: "fnp" }, Default] }, NamingRule { matchers: {DeviceClasses([WlanClient])}, naming_scheme: [Static { value: "w
+lan" }] }]
+[netstack] INFO: created interface Ethernet(3=>fnpethx69)
+[netstack] INFO: updated core state to ipv4_enabled=true, ipv6_enabled=true on Ethernet(3=>fnpethx69), prev v4=false,v6=false
+[netcfg] INFO: starting DHCPv4 client for fnpethx69 (id=3)
+[netstack] INFO: adding addr AddrSubnet { addr: 192.168.234.10, subnet: 192.168.234.0/24 } config Ipv4AddrConfig { config: CommonAddressConfig
+`),
+			expectFailure: false,
+		},
 	}
 
 	for _, tc := range tests {
