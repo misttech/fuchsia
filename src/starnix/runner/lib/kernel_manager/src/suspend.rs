@@ -131,21 +131,22 @@ pub async fn suspend_container(
         // TODO: We will likely have to handle a larger number of wake sources in the
         // future, at which point we may want to consider a Port-based approach. This
         // would also allow us to unblock this thread.
-        {
+        let wait_result = {
             fuchsia_trace::duration!("power", "starnix-runner:waiting-on-container-wake");
             if wait_items.len() > 0 {
                 log::info!("Waiting on container to receive incoming message on wake proxies");
-                match zx::object_wait_many(
+                zx::object_wait_many(
                     &mut wait_items,
                     zx::MonotonicInstant::after(zx::Duration::from_seconds(9)),
-                ) {
-                    Ok(_) => (),
-                    Err(e) => {
-                        warn!("error waiting for wake event {:?}", e);
-                    }
-                };
+                )
+                .inspect_err(|e| {
+                    warn!("error waiting for wake event {:?}", e);
+                })
+                .map(|_| ())
+            } else {
+                Ok(())
             }
-        }
+        };
         log::info!("Finished waiting on container wake proxies.");
 
         let mut resume_reasons: Vec<String> = Vec::new();
@@ -159,9 +160,16 @@ pub async fn suspend_container(
             }
         }
 
-        let resume_reason =
-            if resume_reasons.is_empty() { None } else { Some(resume_reasons.join(",")) };
-        resume_reason
+        if resume_reasons.is_empty() {
+            match wait_result {
+                // Expose the suspend timeout injected by Starnix.
+                Err(zx::Status::TIMED_OUT) => Some("starnix-container-timeout".into()),
+                // An error was already printed earlier. Ok(_) was always silent.
+                _ => None,
+            }
+        } else {
+            Some(resume_reasons.join(","))
+        }
     };
 
     log::info!("Pre-acquire wake lease");
