@@ -8,31 +8,42 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use cm_rust::NativeIntoFidl as _;
-use fidl::endpoints::DiscoverableProtocolMarker as _;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_net_debug as fnet_debug,
-    fidl_fuchsia_net_dhcp as fnet_dhcp, fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6,
-    fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_masquerade as fnet_masquerade,
-    fidl_fuchsia_net_multicast_admin as fnet_multicast_admin, fidl_fuchsia_net_name as fnet_name,
-    fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_neighbor as fnet_neighbor,
-    fidl_fuchsia_net_policy_properties as fnp_properties,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_policy_testing as fnp_testing, fidl_fuchsia_net_power as fnet_power,
-    fidl_fuchsia_net_reachability as fnet_reachability, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_settings as fnet_settings, fidl_fuchsia_net_sockets as fnet_sockets,
-    fidl_fuchsia_net_stack as fnet_stack, fidl_fuchsia_net_test_realm as fntr,
-    fidl_fuchsia_net_virtualization as fnet_virtualization, fidl_fuchsia_netemul as fnetemul,
-    fidl_fuchsia_posix_socket as fposix_socket,
-    fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw, fidl_fuchsia_scheduler as fscheduler,
-    fidl_fuchsia_stash as fstash, fidl_fuchsia_update_verify as fupdate_verify,
-};
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_hardware_network as fhwnet;
+use fidl_fuchsia_net_debug as fnet_debug;
+use fidl_fuchsia_net_dhcp as fnet_dhcp;
+use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_masquerade as fnet_masquerade;
+use fidl_fuchsia_net_multicast_admin as fnet_multicast_admin;
+use fidl_fuchsia_net_name as fnet_name;
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_testing as fnp_testing;
+use fidl_fuchsia_net_power as fnet_power;
+use fidl_fuchsia_net_reachability as fnet_reachability;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_settings as fnet_settings;
+use fidl_fuchsia_net_sockets as fnet_sockets;
+use fidl_fuchsia_net_stack as fnet_stack;
+use fidl_fuchsia_net_test_realm as fntr;
+use fidl_fuchsia_net_virtualization as fnet_virtualization;
+use fidl_fuchsia_netemul as fnetemul;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
+use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
+use fidl_fuchsia_scheduler as fscheduler;
+use fidl_fuchsia_stash as fstash;
+use fidl_fuchsia_update_verify as fupdate_verify;
 
 use anyhow::Context as _;
 
@@ -818,35 +829,45 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                         fcomponent::RealmMarker::PROTOCOL_NAME.to_string(),
                     ]),
                     uses: Some(fnetemul::ChildUses::Capabilities(
-                        std::iter::once(fnetemul::Capability::LogSink(fnetemul::Empty {}))
-                            .chain(
-                                require_outer_netstack
-                                    .then_some([
-                                        fnetemul::Capability::ChildDep(protocol_dep::<
-                                            fnet_stack::StackMarker,
-                                        >(
-                                            constants::netstack::COMPONENT_NAME,
-                                        )),
-                                        fnetemul::Capability::ChildDep(protocol_dep::<
-                                            fnet_debug::InterfacesMarker,
-                                        >(
-                                            constants::netstack::COMPONENT_NAME,
-                                        )),
-                                        fnetemul::Capability::ChildDep(protocol_dep::<
-                                            fnet_root::InterfacesMarker,
-                                        >(
-                                            constants::netstack::COMPONENT_NAME,
-                                        )),
-                                        fnetemul::Capability::ChildDep(protocol_dep::<
-                                            fnet_interfaces::StateMarker,
-                                        >(
-                                            constants::netstack::COMPONENT_NAME,
-                                        )),
-                                    ])
-                                    .into_iter()
-                                    .flatten(),
-                            )
-                            .collect::<Vec<_>>(),
+                        [
+                            fnetemul::Capability::LogSink(fnetemul::Empty {}),
+                            fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                                name: Some(fnetemul::NETEMUL_SERVICES_COMPONENT_NAME.to_string()),
+                                capability: Some(fnetemul::ExposedCapability::Service(
+                                    fhwnet::ServiceMarker::SERVICE_NAME.to_string(),
+                                )),
+                                ..Default::default()
+                            }),
+                        ]
+                        .into_iter()
+                        .chain(
+                            require_outer_netstack
+                                .then_some([
+                                    fnetemul::Capability::ChildDep(protocol_dep::<
+                                        fnet_stack::StackMarker,
+                                    >(
+                                        constants::netstack::COMPONENT_NAME,
+                                    )),
+                                    fnetemul::Capability::ChildDep(protocol_dep::<
+                                        fnet_debug::InterfacesMarker,
+                                    >(
+                                        constants::netstack::COMPONENT_NAME,
+                                    )),
+                                    fnetemul::Capability::ChildDep(protocol_dep::<
+                                        fnet_root::InterfacesMarker,
+                                    >(
+                                        constants::netstack::COMPONENT_NAME,
+                                    )),
+                                    fnetemul::Capability::ChildDep(protocol_dep::<
+                                        fnet_interfaces::StateMarker,
+                                    >(
+                                        constants::netstack::COMPONENT_NAME,
+                                    )),
+                                ])
+                                .into_iter()
+                                .flatten(),
+                        )
+                        .collect::<Vec<_>>(),
                     )),
                     ..Default::default()
                 }

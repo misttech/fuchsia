@@ -42,6 +42,10 @@
             type: "bool",
             default: false,
         },
+        {
+            service: "fuchsia.hardware.network.Service",
+            from: "parent",
+        },
     ],
     expose: [
         {

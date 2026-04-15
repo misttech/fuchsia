@@ -12,6 +12,9 @@ using zx;
 
 type Empty = struct {};
 
+/// The name of the child component that runs the netemul services.
+const NETEMUL_SERVICES_COMPONENT_NAME string = "netemul-services";
+
 /// `Sandbox` is a hermetic container for network emulation testing.
 ///
 /// Every connection to `Sandbox` represents a self-contained context where
@@ -240,6 +243,21 @@ closed protocol ManagedRealm {
     ///     protocol.
     strict ConnectToProtocol(resource struct {
         protocol_name fuchsia.component.name;
+        child_name fuchsia.component.name:optional;
+        req zx.Handle:CHANNEL;
+    });
+    /// Connects to a service named `service_name` provided by a child in this
+    /// realm.
+    ///
+    /// If `child_name` is not provided, connects to the first child offering
+    /// `service_name`.
+    ///
+    /// + request `service_name` the name of the service to connect to.
+    /// + request `child_name` the name of the child component that is exposing
+    ///     the requested service.
+    /// + request `req` a channel to be bound to the service directory.
+    strict ConnectToService(resource struct {
+        service_name fuchsia.component.name;
         child_name fuchsia.component.name:optional;
         req zx.Handle:CHANNEL;
     });
