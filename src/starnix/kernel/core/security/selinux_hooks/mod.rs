@@ -835,7 +835,7 @@ fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
         PolicyCap::NnpNosuidTransition => PolicyCapSupport::Configurable,
         PolicyCap::OpenPerms => PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565")),
         PolicyCap::UserspaceInitialContext => {
-            PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))
+            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
         }
     }
 }
