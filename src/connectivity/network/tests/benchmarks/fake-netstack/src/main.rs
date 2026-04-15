@@ -30,6 +30,16 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::{TryFrom as _, TryInto as _};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SocketCookie(u64);
+
+static NEXT_COOKIE: AtomicU64 = AtomicU64::new(1);
+
+fn next_cookie() -> SocketCookie {
+    SocketCookie(NEXT_COOKIE.fetch_add(1, Ordering::Relaxed))
+}
 
 #[fuchsia::main]
 async fn main() {
@@ -200,6 +210,7 @@ struct DatagramSocket {
     control_handle: fposix_socket::SynchronousDatagramSocketControlHandle,
     _local_event: zx::EventPair,
     peer_event: zx::EventPair,
+    cookie: SocketCookie,
 }
 
 impl DatagramSocket {
@@ -223,6 +234,7 @@ impl DatagramSocket {
             control_handle,
             _local_event: local_event,
             peer_event,
+            cookie: next_cookie(),
         })
     }
 
@@ -262,6 +274,7 @@ struct StreamSocket {
     // future.
     local_socket: Option<zx::Socket>,
     peer_socket: zx::Socket,
+    cookie: SocketCookie,
 }
 
 type StreamSocketCell = Rc<RefCell<StreamSocket>>;
@@ -283,6 +296,7 @@ impl StreamSocket {
             send_buffer_size: DEFAULT_BUFFER_SIZE,
             local_socket: Some(local_socket),
             peer_socket,
+            cookie: next_cookie(),
         }
     }
 
@@ -691,6 +705,9 @@ async fn handle_datagram_request(
         } => {
             responder.send(Ok(())).context("send SetMark response")?;
         }
+        fposix_socket::SynchronousDatagramSocketRequest::GetCookie { responder } => {
+            responder.send(Ok(socket.borrow().cookie.0)).context("send GetCookie response")?;
+        }
         other => error!("got unexpected datagram socket request: {:#?}", other),
     }
     Ok(())
@@ -802,6 +819,9 @@ async fn handle_stream_request(
         }
         fposix_socket::StreamSocketRequest::SetMark { domain: _, mark: _, responder } => {
             responder.send(Ok(())).context("send SetMark response")?;
+        }
+        fposix_socket::StreamSocketRequest::GetCookie { responder } => {
+            responder.send(Ok(socket.borrow().cookie.0)).context("send GetCookie response")?;
         }
         other => {
             error!("got unexpected stream socket request: {:#?}", other);
