@@ -82,12 +82,6 @@ static bool timeout_test() {
   END_TEST;
 }
 
-static int wait_sema_thread(void* arg) {
-  auto sema = reinterpret_cast<Semaphore*>(arg);
-  auto status = sema->Wait(Deadline::infinite());
-  return static_cast<int>(status);
-}
-
 static bool thread_is_blocked(const Thread* t) {
   SingleChainLockGuard guard{IrqSaveOption, t->get_lock(),
                              CLT_TAG("thread_is_blocked (semaphore tests)")};
@@ -96,7 +90,7 @@ static bool thread_is_blocked(const Thread* t) {
 
 enum class Signal { kPost, kPostQueue, kKill, kSuspend };
 
-template <Signal signal>
+template <Signal signal, Interruptible interruptible>
 static bool signal_test() {
   BEGIN_TEST;
 
@@ -105,6 +99,16 @@ static bool signal_test() {
   ASSERT_EQ(0, sema.count());
   ASSERT_EQ(0u, sema.num_waiters());
 
+  auto wait_sema_thread = [](void* arg) -> int {
+    auto sema = reinterpret_cast<Semaphore*>(arg);
+    zx_status_t status;
+    if constexpr (interruptible == Interruptible::Yes) {
+      status = sema->Wait(Deadline::infinite());
+    } else {
+      status = sema->Wait();
+    }
+    return static_cast<int>(status);
+  };
   auto thread = Thread::Create("test semaphore", wait_sema_thread, &sema, DEFAULT_PRIORITY);
 
   ASSERT(nullptr != thread);
@@ -137,14 +141,26 @@ static bool signal_test() {
 
     case Signal::kKill:
       thread->Kill();
-      expected_error = ZX_ERR_INTERNAL_INTR_KILLED;
-      expected_count = -1;
+      if constexpr (interruptible == Interruptible::Yes) {
+        expected_error = ZX_ERR_INTERNAL_INTR_KILLED;
+        expected_count = -1;
+      } else {
+        sema.Post();
+        expected_error = ZX_OK;
+        expected_count = 0;
+      }
       break;
 
     case Signal::kSuspend:
       thread->Suspend();
-      expected_error = ZX_ERR_INTERNAL_INTR_RETRY;
-      expected_count = -1;
+      if constexpr (interruptible == Interruptible::Yes) {
+        expected_error = ZX_ERR_INTERNAL_INTR_RETRY;
+        expected_count = -1;
+      } else {
+        sema.Post();
+        expected_error = ZX_OK;
+        expected_count = 0;
+      }
       break;
   }
 
@@ -157,11 +173,23 @@ static bool signal_test() {
   END_TEST;
 }
 
+template <Signal signal>
+static bool interruptible_signal_test() {
+  return signal_test<signal, Interruptible::Yes>();
+}
+
+template <Signal signal>
+static bool uninterruptible_signal_test() {
+  return signal_test<signal, Interruptible::No>();
+}
+
 UNITTEST_START_TESTCASE(semaphore_tests)
 UNITTEST("smoke_test", smoke_test)
 UNITTEST("timeout_test", timeout_test)
-UNITTEST("post_signal_test", signal_test<Signal::kPost>)
-UNITTEST("post_queue_signal_test", signal_test<Signal::kPostQueue>)
-UNITTEST("kill_signal_test", signal_test<Signal::kKill>)
-UNITTEST("suspend_signal_test", signal_test<Signal::kSuspend>)
+UNITTEST("post_signal_test", interruptible_signal_test<Signal::kPost>)
+UNITTEST("post_queue_signal_test", interruptible_signal_test<Signal::kPostQueue>)
+UNITTEST("kill_signal_test", interruptible_signal_test<Signal::kKill>)
+UNITTEST("suspend_signal_test", interruptible_signal_test<Signal::kSuspend>)
+UNITTEST("kill_uninterruptible_signal_test", uninterruptible_signal_test<Signal::kKill>)
+UNITTEST("suspend_uninterruptible_signal_test", uninterruptible_signal_test<Signal::kSuspend>)
 UNITTEST_END_TESTCASE(semaphore_tests, "semaphore", "Semaphore tests")

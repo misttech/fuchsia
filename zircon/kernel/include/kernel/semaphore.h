@@ -52,14 +52,22 @@ class Semaphore {
   void Post(OwnedWaitQueue* queue_to_own = nullptr) TA_EXCL(chainlock_transaction_token);
 
   // If the count is positive, decrement the count and return ZX_OK.  Otherwise,
-  // decrement the count and wait until some other thread wakes us via |Post|,
-  // or our wait is interrupted by timeout, thread suspend, or thread kill.
-  //
-  // The return value can be ZX_ERR_TIMED_OUT if the deadline had passed or one
-  // of ZX_ERR_INTERNAL_INTR errors if the thread had a signal delivered.
+  // decrement the count and wait (uninterruptibly) until some other thread
+  // wakes us via |Post|.
   //
   // |Wait| has acquire memory order semantics and synchronizes with |Post|.
-  zx_status_t Wait(const Deadline& deadline) TA_EXCL(chainlock_transaction_token);
+  zx_status_t Wait() TA_EXCL(chainlock_transaction_token) {
+    return WaitInternal(Deadline::infinite(), Interruptible::No);
+  }
+
+  // Just like Wait(), but interruptible.  In addition to ZX_OK, the return
+  // value can be ZX_ERR_TIMED_OUT if the deadline had passed or one of the
+  // ZX_ERR_INTERNAL_INTR errors if the thread had a signal delivered.
+  //
+  // |Wait| has acquire memory order semantics and synchronizes with |Post|.
+  zx_status_t Wait(const Deadline& deadline) TA_EXCL(chainlock_transaction_token) {
+    return WaitInternal(deadline, Interruptible::Yes);
+  }
 
   // Observe the current internal count of the semaphore.
   //
@@ -75,6 +83,8 @@ class Semaphore {
   }
 
  private:
+  zx_status_t WaitInternal(const Deadline& deadline, Interruptible interruptible);
+
   // This class has two fields that must be kept in sync, a count and a
   // WaitQueue.  There are some rules for keeping them in sync.  See the
   // implementation comments of |Post| and |Wait| for details.

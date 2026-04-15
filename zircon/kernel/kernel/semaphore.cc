@@ -180,7 +180,7 @@ void Semaphore::Post(OwnedWaitQueue* queue_to_own) {
 // At this point Thread3 is blocked as it should be (two Posts and one failed
 // Wait), however, a subsequent call to Post will not unblock it.  We have a
 // "lost wakeup".
-zx_status_t Semaphore::Wait(const Deadline& deadline) {
+zx_status_t Semaphore::WaitInternal(const Deadline& deadline, Interruptible interruptible) {
   // Is the count greater than zero?  If so, decrement and return.  Take care to
   // not decrement zero or a negative value.
   int64_t old_count = count_.load(ktl::memory_order_relaxed);
@@ -249,6 +249,6 @@ zx_status_t Semaphore::Wait(const Deadline& deadline) {
           arch::Yield();
         }
         ChainLockTransaction::Finalize();
-        return waitq_.Block(current_thread, deadline, Interruptible::Yes);
+        return waitq_.Block(current_thread, deadline, interruptible);
       });
 }
