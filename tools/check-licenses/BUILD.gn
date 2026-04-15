@@ -51,8 +51,16 @@ if (is_host) {
     visibility = [ "//tools/check-licenses/*" ]
   }
 }
+if (is_host) {
+  go_library("v2_stages_discover") {
+    sources = [ "v2/stages/discover/discover.go" ]
+    visibility = [ "//tools/check-licenses/*" ]
+    deps = [ ":v2_pipeline" ]
+  }
+}
 group("tests") {
   deps = [
+    ":v2_stages_discover_test",
     "//tools/check-licenses/cmd:cmd_test",
     "//tools/check-licenses/directory:directory_test",
     "//tools/check-licenses/file:file_test",
@@ -63,4 +71,10 @@ group("tests") {
     "//tools/check-licenses/util:util_test",
   ]
   testonly = true
+}
+if (is_host) {
+  go_test("v2_stages_discover_test") {
+    sources = [ "v2/stages/discover/discover_test.go" ]
+    embed = [ ":v2_stages_discover" ]
+  }
 }

@@ -29,9 +29,21 @@ go_library(
     visibility = ["//tools/check-licenses:__subpackages__"],
 )
 
+go_library(
+    name = "v2_stages_discover",
+    srcs = ["v2/stages/discover/discover.go"],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        ":v2_pipeline",
+    ],
+)
+
 test_suite(
     name = "tests",
     tests = [
+        ":v2_stages_discover_test",
         "//tools/check-licenses/cmd:cmd_test",
         "//tools/check-licenses/directory:directory_test",
         "//tools/check-licenses/file:file_test",
@@ -41,4 +53,11 @@ test_suite(
         "//tools/check-licenses/result:result_test",
         "//tools/check-licenses/util:util_test",
     ],
+)
+
+go_test(
+    name = "v2_stages_discover_test",
+    srcs = ["v2/stages/discover/discover_test.go"],
+    embed = [":v2_stages_discover"],
+    target_compatible_with = HOST_CONSTRAINTS,
 )
