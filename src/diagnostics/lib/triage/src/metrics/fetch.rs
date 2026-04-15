@@ -449,6 +449,7 @@ mod test {
     use crate::metrics::variable::VariableName;
     use crate::metrics::{Metric, MetricState, Problem, ValueSource};
     use crate::{assert_problem, make_metrics};
+    use assert_matches::assert_matches;
     use serde_json::Value as JsonValue;
 
     static LOCAL_M: LazyLock<HashMap<String, JsonValue>> = LazyLock::new(|| {
@@ -910,23 +911,12 @@ mod test {
         );
 
         // Test that a selector that does not follow the correct syntax results in parse error.
-        assert_eq!(
-            format!(
-                "{:?}",
-                SelectorString::try_from("INSPECT:not a selector".to_string()).err().unwrap()
-            ),
-            "Failed to parse the input. Error: 0: at line 1, in Tag:\nnot a selector\n   ^\n\n"
-        );
+        assert_matches!(SelectorString::try_from("INSPECT:not a selector".to_string()), Err(_));
 
         // Test that an invalid selector results in a parse error.
-        assert_eq!(
-            format!(
-                "{:?}",
-                SelectorString::try_from("INSPECT:*/foo/*:root:data:Int".to_string())
-                    .err()
-                    .unwrap()
-            ),
-            "Failed to parse the input. Error: 0: at line 1, in Eof:\n*/foo/*:root:data:Int\n                 ^\n\n"
+        assert_matches!(
+            SelectorString::try_from("INSPECT:*/foo/*:root:data:Int".to_string()),
+            Err(_)
         );
 
         Ok(())

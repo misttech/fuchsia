@@ -72,6 +72,7 @@ rustc_test("triage-lib-unittests") {
   edition = "2024"
   deps = [
            "//src/lib/fuchsia",
+           "//third_party/rust_crates:assert_matches",
            "//third_party/rust_crates:maplit",
          ] + lib_deps
 

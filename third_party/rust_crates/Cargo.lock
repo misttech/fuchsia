@@ -1889,6 +1889,7 @@ dependencies = [
  "wait-timeout",
  "walkdir",
  "which",
+ "winnow",
  "x509-cert",
  "xattr",
  "xml-rs",

@@ -18,9 +18,8 @@ rustc_library("selectors") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:itertools",
-    "//third_party/rust_crates:nom",
-    "//third_party/rust_crates:nom-language",
     "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:winnow",
   ]
 
   if (current_build_target_api_level_as_integer > 26) {

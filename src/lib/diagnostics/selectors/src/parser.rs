@@ -6,18 +6,17 @@ use crate::error::ParseError;
 use crate::ir::*;
 use crate::validate::{ValidateComponentSelectorExt, ValidateExt, ValidateTreeSelectorExt};
 use bitflags::bitflags;
-use nom::branch::alt;
-use nom::bytes::complete::{escaped, tag, take_while};
-use nom::character::complete::{alphanumeric1, multispace0, none_of, one_of};
-use nom::combinator::{all_consuming, complete, cond, map, opt, peek, recognize, verify};
-use nom::error::{ErrorKind, ParseError as NomParseError};
-use nom::multi::{many1_count, separated_list1};
-use nom::sequence::{pair, preceded, separated_pair};
-use nom::{IResult, Parser};
+
+use winnow::Parser;
+use winnow::ascii::{multispace0, take_escaped};
+use winnow::combinator::{alt, cond, eof, opt, preceded, separated};
+use winnow::error::{ErrMode, ParserError};
+use winnow::token::{none_of, one_of, take_while};
 
 const ALL_TREE_NAMES_SELECTED_SYMBOL: &str = "...";
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct RequireEscaped: u8 {
         const NONE = 0;
         const COLONS = 1;
@@ -26,134 +25,95 @@ bitflags! {
 }
 
 /// Recognizes 0 or more spaces or tabs.
-fn whitespace0<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
+fn whitespace0<'a, E>(input: &mut &'a str) -> Result<&'a str, ErrMode<E>>
 where
-    E: NomParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
-    take_while(move |c| c == ' ' || c == '\t').parse(input)
+    take_while(0.., (' ', '\t')).parse_next(input)
 }
 
 /// Parses an input containing any number and type of whitespace at the front.
-fn spaced<'a, E, F, O>(parser: F) -> impl Parser<&'a str, Output = O, Error = E>
+fn spaced<'a, E, F, O>(parser: F) -> impl Parser<&'a str, O, ErrMode<E>>
 where
-    F: Parser<&'a str, Output = O, Error = E>,
-    E: NomParseError<&'a str>,
+    F: Parser<&'a str, O, ErrMode<E>>,
+    E: ParserError<&'a str>,
 {
-    preceded(whitespace0, parser)
+    preceded(whitespace0::<E>, parser)
 }
 
-fn extract_conjoined_names<'a, E>(input: &'a str) -> IResult<&'a str, Option<&'a str>, E>
+fn tree_name_item<'a, E>(input: &mut &'a str) -> Result<&'a str, ErrMode<E>>
 where
-    E: NomParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
-    let split = parse_quote_sensitive_separator(input, ']');
-    if split.len() == 1 { Ok((split[0], None)) } else { Ok((split[1], Some(&split[0][1..]))) }
+    let value_parser = alt((
+        winnow::combinator::delimited(
+            '"',
+            take_escaped(none_of(['\\', '"']), '\\', one_of(['"', '*', '/', ':', ' '])),
+            '"',
+        ),
+        take_while(1.., |c| c != ',' && c != ']'),
+    ));
+    let (_, _, value) = spaced(("name", "=", value_parser)).parse_next(input)?;
+    Ok(value)
+}
+
+fn conjoined_tree_names<'a, E>() -> impl Parser<&'a str, Option<TreeNames<'a>>, ErrMode<E>>
+where
+    E: winnow::error::ParserError<&'a str>,
+{
+    opt(winnow::combinator::delimited(
+        '[',
+        alt((
+            spaced(ALL_TREE_NAMES_SELECTED_SYMBOL).map(|_| TreeNames::All),
+            separated(1.., tree_name_item::<E>, spaced(",")).map(|items: Vec<&str>| items.into()),
+        )),
+        ']',
+    ))
 }
 
 fn extract_from_quotes(input: &str) -> &str {
     if input.starts_with('"') && input.len() > 1 { &input[1..input.len() - 1] } else { input }
 }
 
-fn parse_quote_sensitive_separator(input: &str, sep: char) -> Vec<&str> {
-    let mut inside_quotes = false;
-    let mut last_split_index = 0;
-    let mut chars = input.chars().enumerate().peekable();
-    let mut result = vec![];
-
-    let mut push_substr = |curr_index| {
-        result.push(input[last_split_index..curr_index].trim_start());
-        last_split_index = curr_index + 1;
-    };
-
-    while let (Some((_, c1)), Some((idx2, c2))) = (chars.next(), chars.peek()) {
-        match (c1, c2) {
-            ('\\', '"') => {
-                chars.next();
-            }
-            ('"', c) if *c == sep && inside_quotes => {
-                inside_quotes = !inside_quotes;
-                push_substr(*idx2);
-            }
-            ('"', _) => {
-                inside_quotes = !inside_quotes;
-            }
-            (_, c) if *c == sep && !inside_quotes => {
-                push_substr(*idx2);
-            }
-            _ => {}
-        }
-    }
-
-    // if a split is produced by a trailing comma then last_split_index is input.len() + 1
-    if last_split_index < input.len() {
-        let maybe_last_segment = input[last_split_index..].trim_start();
-        if !maybe_last_segment.is_empty() {
-            result.push(maybe_last_segment);
-        }
-    }
-
-    result
-}
-
 /// Returns the parser for a tree selector, which is a node selector and an optional property selector.
 fn tree_selector<'a, E>(
-    // this can't be determined from the input to the resulting parser, because this function is
-    // used on both whole selector strings and strings that are only tree selectors
     required_escapes: RequireEscaped,
-) -> impl Parser<&'a str, Output = TreeSelector<'a>, Error = E>
+) -> impl Parser<&'a str, TreeSelector<'a>, ErrMode<E>>
 where
-    E: NomParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
-    move |input| {
-        let mut esc = if required_escapes.intersects(RequireEscaped::WHITESPACE) {
-            escaped(none_of(":/\\ \t\n"), '\\', one_of("* \t/:\\"))
-        } else {
-            escaped(none_of(":/\\\t\n"), '\\', one_of("* \t/:\\"))
+    move |input: &mut &'a str| {
+        let mut esc = move |input: &mut &'a str| {
+            if required_escapes.intersects(RequireEscaped::WHITESPACE) {
+                take_escaped(
+                    none_of([':', '/', '\\', ' ', '\t', '\n']),
+                    '\\',
+                    one_of(['*', ' ', '\t', '/', ':', '\\']),
+                )
+                .parse_next(input)
+            } else {
+                take_escaped(
+                    none_of([':', '/', '\\', '\t', '\n']),
+                    '\\',
+                    one_of(['*', ' ', '\t', '/', ':', '\\']),
+                )
+                .parse_next(input)
+            }
         };
 
-        let (rest, unparsed_name_list) =
-            extract_conjoined_names::<E>(input).unwrap_or((input, None));
+        let tree_names = conjoined_tree_names::<E>().parse_next(input)?;
 
-        let tree_names = if unparsed_name_list == Some(ALL_TREE_NAMES_SELECTED_SYMBOL) {
-            Some(TreeNames::All)
-        } else {
-            // because of strict requirements around using quotation marks and the context of
-            // list brackets, not that much stuff needs to be escaped. Note that `"` is both
-            // an allowed normal character and an escaped character because at the time this
-            // parser is applied, wrapper quotes have not been stripped
-            let mut name_escapes = escaped(none_of(r#"*\"#), '\\', one_of(r#""*"#));
-            unparsed_name_list
-                .map(|names: &str| {
-                    parse_quote_sensitive_separator(names, ',')
-                        .into_iter()
-                        .map(|name| {
-                            let (_, (_, value)) =
-                                spaced(separated_pair(tag("name"), tag("="), &mut name_escapes))
-                                    .parse(name)?;
-                            Ok(extract_from_quotes(value))
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?
-                .map(|value| value.into())
-        };
-
-        let (rest, node_segments) = separated_list1(tag("/"), &mut esc).parse(rest)?;
-        let (rest, property_segment) = if peek(tag::<_, _, E>(":")).parse(rest).is_ok() {
-            let (rest, _) = tag(":").parse(rest)?;
-            let (rest, property) = verify(esc, |value: &str| !value.is_empty()).parse(rest)?;
-            (rest, Some(property))
-        } else {
-            (rest, None)
-        };
-        Ok((
-            rest,
-            TreeSelector {
-                node: node_segments.into_iter().map(|value| value.into()).collect(),
-                property: property_segment.map(|value| value.into()),
-                tree_names,
-            },
+        let node_segments: Vec<&str> = separated(1.., esc.by_ref(), "/").parse_next(input)?;
+        let property_segment: Option<&str> = opt(winnow::combinator::preceded(
+            ":",
+            esc.by_ref().verify(|value: &str| !value.is_empty()),
         ))
+        .parse_next(input)?;
+        Ok(TreeSelector {
+            node: node_segments.into_iter().map(|value| value.into()).collect(),
+            property: property_segment.map(|value| value.into()),
+            tree_names,
+        })
     }
 }
 
@@ -161,106 +121,90 @@ where
 /// the argument `escape_colons`.
 fn component_selector<'a, E>(
     required_escapes: RequireEscaped,
-) -> impl Parser<&'a str, Output = ComponentSelector<'a>, Error = E>
+) -> impl Parser<&'a str, ComponentSelector<'a>, ErrMode<E>>
 where
-    E: NomParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
-    fn inner_component_selector<'a, F, E>(
-        segment: F,
-        input: &'a str,
-    ) -> IResult<&'a str, ComponentSelector<'a>, E>
-    where
-        F: Parser<&'a str, Output = &'a str, Error = E>,
-        E: NomParseError<&'a str>,
-    {
-        // Monikers (the first part of a selector) can optionally be preceded by "/" or "./".
-        let (rest, segments) =
-            preceded(opt(alt((tag("./"), tag("/")))), separated_list1(tag("/"), segment))
-                .parse(input)?;
-        Ok((
-            rest,
-            ComponentSelector { segments: segments.into_iter().map(Segment::from).collect() },
-        ))
-    }
-
-    move |input| {
-        if required_escapes.intersects(RequireEscaped::COLONS) {
-            inner_component_selector(
-                recognize(escaped(
-                    alt((
-                        alphanumeric1,
-                        tag("*"),
-                        tag("."),
-                        tag("-"),
-                        tag("_"),
-                        tag(">"),
-                        tag("<"),
-                    )),
-                    '\\',
-                    tag(":"),
-                )),
-                input,
+    move |input: &mut &'a str| {
+        let segments: Vec<&str> = if required_escapes.intersects(RequireEscaped::COLONS) {
+            let mut segment = take_escaped(
+                take_while(1.., ('a'..='z', 'A'..='Z', '0'..='9', '*', '.', '-', '_', '>', '<')),
+                '\\',
+                ":",
+            );
+            winnow::combinator::preceded(
+                opt(alt(("./", "/"))),
+                separated(1.., segment.by_ref(), "/"),
             )
+            .parse_next(input)?
         } else {
-            inner_component_selector(
-                recognize(many1_count(alt((
-                    alphanumeric1,
-                    tag("*"),
-                    tag("."),
-                    tag("-"),
-                    tag("_"),
-                    tag(">"),
-                    tag("<"),
-                    tag(":"),
-                )))),
-                input,
+            let mut segment = take_while(
+                1..,
+                ('a'..='z', 'A'..='Z', '0'..='9', '*', '.', '-', '_', '>', '<', ':'),
+            );
+            winnow::combinator::preceded(
+                opt(alt(("./", "/"))),
+                separated(1.., segment.by_ref(), "/"),
             )
-        }
+            .parse_next(input)?
+        };
+        Ok(ComponentSelector { segments: segments.into_iter().map(Segment::from).collect() })
     }
 }
 
-/// A comment allowed in selector files.
-fn comment<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
+fn comment<'a, E>(input: &mut &'a str) -> Result<&'a str, ErrMode<E>>
 where
-    E: NomParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
-    let (rest, comment) =
-        spaced(preceded(tag("//"), take_while(|c| c != '\n' && c != '\r'))).parse(input)?;
-    if !rest.is_empty() {
-        let (rest, _) = one_of("\n\r").parse(rest)?; // consume the newline character
-        return Ok((rest, comment));
+    let comment = spaced(winnow::combinator::preceded(
+        "//",
+        take_while(0.., |c: char| c != '\n' && c != '\r'),
+    ))
+    .parse_next(input)?;
+    if !input.is_empty() {
+        let _ = one_of(['\n', '\r']).parse_next(input)?;
     }
-    Ok((rest, comment))
+    Ok(comment)
 }
 
 /// Parses a core selector (component + tree + property). It accepts both raw selectors or
 /// selectors wrapped in double quotes. Selectors wrapped in quotes accept spaces in the tree and
 /// property names and require internal quotes to be escaped.
 fn core_selector<'a, E>(
-    input: &'a str,
-) -> IResult<&'a str, (ComponentSelector<'a>, TreeSelector<'a>), E>
+    input: &mut &'a str,
+) -> Result<(ComponentSelector<'a>, TreeSelector<'a>), ErrMode<E>>
 where
-    E: NomParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
-    let required_tree_escape =
-        if input.starts_with('"') { RequireEscaped::empty() } else { RequireEscaped::WHITESPACE };
-    let (rest, (component, _, tree)) =
-        (component_selector(RequireEscaped::COLONS), tag(":"), tree_selector(required_tree_escape))
-            .parse(extract_from_quotes(input))?;
-    Ok((rest, (component, tree)))
+    let input_str = *input;
+    let required_tree_escape = if input_str.starts_with('"') {
+        RequireEscaped::empty()
+    } else {
+        RequireEscaped::WHITESPACE
+    };
+    let unwrapped = extract_from_quotes(input_str);
+    let mut unwrapped_input = unwrapped;
+    let (component, _, tree, _, _) = (
+        component_selector::<E>(RequireEscaped::COLONS),
+        ":",
+        tree_selector::<E>(required_tree_escape),
+        whitespace0::<E>,
+        eof,
+    )
+        .parse_next(&mut unwrapped_input)?;
+    *input = "";
+    Ok((component, tree))
 }
 
 /// Recognizes selectors, with comments allowed or disallowed.
 fn do_parse_selector<'a, E>(
     allow_inline_comment: bool,
-) -> impl Parser<&'a str, Output = Selector<'a>, Error = E>
+) -> impl Parser<&'a str, Selector<'a>, ErrMode<E>>
 where
-    E: NomParseError<&'a str>,
+    E: ParserError<&'a str>,
 {
-    map(
-        (spaced(core_selector), cond(allow_inline_comment, opt(comment)), multispace0),
-        move |((component, tree), _, _)| Selector { component, tree },
-    )
+    (spaced(core_selector::<E>), cond(allow_inline_comment, opt(comment::<E>)), whitespace0::<E>)
+        .map(|((component, tree), _, _)| Selector { component, tree })
 }
 
 /// A fast efficient error that won't provide much information besides the name kind of nom parsers
@@ -280,24 +224,25 @@ mod private {
 
 /// Implemented by types which can be used to specify the error strategy the parsers should use.
 pub trait ParsingError<'a>: private::Sealed {
-    type Internal: NomParseError<&'a str>;
+    type Internal: ParserError<&'a str>;
 
-    fn to_error(input: &str, err: Self::Internal) -> ParseError;
+    fn to_error(input: &str, err: ErrMode<Self::Internal>) -> ParseError;
 }
 
 impl<'a> ParsingError<'a> for FastError {
-    type Internal = (&'a str, ErrorKind);
+    type Internal = winnow::error::InputError<&'a str>;
 
-    fn to_error(_: &str, (part, error_kind): Self::Internal) -> ParseError {
-        ParseError::Fast(part.to_owned(), error_kind)
+    fn to_error(_: &str, err: ErrMode<Self::Internal>) -> ParseError {
+        let e = err.into_inner().unwrap();
+        ParseError::Fast { input: e.input.to_string() }
     }
 }
 
 impl<'a> ParsingError<'a> for VerboseError {
-    type Internal = nom_language::error::VerboseError<&'a str>;
+    type Internal = winnow::error::ContextError;
 
-    fn to_error(input: &str, err: Self::Internal) -> ParseError {
-        ParseError::Verbose(nom_language::error::convert_error(input, err))
+    fn to_error(_input: &str, err: ErrMode<Self::Internal>) -> ParseError {
+        ParseError::Verbose(format!("{:?}", err.into_inner().unwrap()))
     }
 }
 
@@ -306,17 +251,14 @@ pub fn selector<'a, E>(input: &'a str) -> Result<Selector<'a>, ParseError>
 where
     E: ParsingError<'a>,
 {
-    let result = complete(all_consuming(do_parse_selector::<<E as ParsingError<'_>>::Internal>(
-        /*allow_inline_comment=*/ false,
-    )))
-    .parse(input);
+    let mut input_ref = input;
+    let result = (do_parse_selector::<E::Internal>(false), eof).parse_next(&mut input_ref);
     match result {
-        Ok((_, selector)) => {
+        Ok((selector, _)) => {
             selector.validate()?;
             Ok(selector)
         }
-        Err(nom::Err::Error(e) | nom::Err::Failure(e)) => Err(E::to_error(input, e)),
-        _ => unreachable!("through the complete combinator we get rid of Incomplete"),
+        Err(e) => Err(E::to_error(input, e)),
     }
 }
 
@@ -328,18 +270,17 @@ where
 {
     let required_tree_escape =
         if input.starts_with('"') { RequireEscaped::empty() } else { RequireEscaped::WHITESPACE };
-    let result = nom::combinator::all_consuming(pair(
-        spaced(tree_selector(required_tree_escape)),
-        multispace0,
-    ))
-    .parse(extract_from_quotes(input));
+    let unwrapped = extract_from_quotes(input);
+
+    let mut input_ref = unwrapped;
+    let result = (spaced(tree_selector::<E::Internal>(required_tree_escape)), multispace0, eof)
+        .parse_next(&mut input_ref);
     match result {
-        Ok((_, (tree_selector, _))) => {
+        Ok((tree_selector, _, _)) => {
             tree_selector.validate()?;
             Ok(tree_selector)
         }
-        Err(nom::Err::Error(e) | nom::Err::Failure(e)) => Err(E::to_error(input, e)),
-        _ => unreachable!("through the complete combinator we get rid of Incomplete"),
+        Err(e) => Err(E::to_error(input, e)),
     }
 }
 
@@ -352,18 +293,15 @@ pub fn consuming_component_selector<'a, E>(
 where
     E: ParsingError<'a>,
 {
-    let result = nom::combinator::all_consuming(pair(
-        spaced(component_selector(required_escapes)),
-        multispace0,
-    ))
-    .parse(input);
+    let mut input_ref = input;
+    let result = (spaced(component_selector::<E::Internal>(required_escapes)), multispace0, eof)
+        .parse_next(&mut input_ref);
     match result {
-        Ok((_, (component_selector, _))) => {
+        Ok((component_selector, _, _)) => {
             component_selector.validate()?;
             Ok(component_selector)
         }
-        Err(nom::Err::Error(e) | nom::Err::Failure(e)) => Err(E::to_error(input, e)),
-        _ => unreachable!("through the complete combinator we get rid of Incomplete"),
+        Err(e) => Err(E::to_error(input, e)),
     }
 }
 
@@ -372,26 +310,23 @@ pub fn selector_or_comment<'a, E>(input: &'a str) -> Result<Option<Selector<'a>>
 where
     E: ParsingError<'a>,
 {
-    let result = complete(all_consuming(alt((
-        map(comment, |_| None),
-        map(
-            do_parse_selector::<<E as ParsingError<'_>>::Internal>(
-                /*allow_inline_comment=*/ true,
-            ),
-            Some,
-        ),
-    ))))
-    .parse(input);
-    match result {
-        Ok((_, maybe_selector)) => match maybe_selector {
-            None => Ok(None),
-            Some(selector) => {
-                selector.validate()?;
-                Ok(Some(selector))
-            }
-        },
-        Err(nom::Err::Error(e) | nom::Err::Failure(e)) => Err(E::to_error(input, e)),
-        _ => unreachable!("through the complete combinator we get rid of Incomplete"),
+    let mut input_ref = input;
+    let maybe_selector: Option<Selector<'a>> = match comment::<E::Internal>(&mut input_ref) {
+        Ok(_) => Ok(None),
+        Err(ErrMode::Backtrack(_)) => {
+            do_parse_selector::<E::Internal>(true).parse_next(&mut input_ref).map(Some)
+        }
+        Err(e) => Err(e),
+    }
+    .map_err(|e| E::to_error(input, e))?;
+
+    let _: &str = eof.parse_next(&mut input_ref).map_err(|e| E::to_error(input, e))?;
+
+    if let Some(selector) = maybe_selector {
+        selector.validate()?;
+        Ok(Some(selector))
+    } else {
+        Ok(None)
     }
 }
 
@@ -456,62 +391,47 @@ mod tests {
         ];
 
         for (test_string, expected_segments) in test_vector {
-            let (_, selector) = component_selector::<nom_language::error::VerboseError<&str>>(
-                RequireEscaped::COLONS,
-            )
-            .parse(test_string)
-            .unwrap();
-            assert_eq!(
-                expected_segments, selector.segments,
-                "For '{test_string}', got: {selector:?}",
-            );
+            let selector =
+                component_selector::<winnow::error::ContextError>(RequireEscaped::COLONS)
+                    .parse(test_string)
+                    .unwrap();
+
+            assert_eq!(expected_segments, selector.segments);
 
             // Component selectors can start with `/`
             let test_moniker_string = format!("/{test_string}");
-            let (_, selector) = component_selector::<nom_language::error::VerboseError<&str>>(
-                RequireEscaped::COLONS,
-            )
-            .parse(&test_moniker_string)
-            .unwrap();
-            assert_eq!(
-                expected_segments, selector.segments,
-                "For '{test_moniker_string}', got: {selector:?}",
-            );
+            let selector =
+                component_selector::<winnow::error::ContextError>(RequireEscaped::COLONS)
+                    .parse(&test_moniker_string)
+                    .unwrap();
+            assert_eq!(expected_segments, selector.segments);
 
             // Component selectors can start with `./`
             let test_moniker_string = format!("./{test_string}");
-            let (_, selector) = component_selector::<nom_language::error::VerboseError<&str>>(
-                RequireEscaped::COLONS,
-            )
-            .parse(&test_moniker_string)
-            .unwrap();
-            assert_eq!(
-                expected_segments, selector.segments,
-                "For '{test_moniker_string}', got: {selector:?}",
-            );
+            let selector =
+                component_selector::<winnow::error::ContextError>(RequireEscaped::COLONS)
+                    .parse(&test_moniker_string)
+                    .unwrap();
+            assert_eq!(expected_segments, selector.segments);
 
             // We can also accept component selectors without escaping
             let test_moniker_string = test_string.replace("\\:", ":");
-            let (_, selector) = component_selector::<nom_language::error::VerboseError<&str>>(
-                RequireEscaped::empty(),
-            )
-            .parse(&test_moniker_string)
-            .unwrap();
-            assert_eq!(
-                expected_segments, selector.segments,
-                "For '{test_moniker_string}', got: {selector:?}",
-            );
+            let selector =
+                component_selector::<winnow::error::ContextError>(RequireEscaped::empty())
+                    .parse(&test_moniker_string)
+                    .unwrap();
+            assert_eq!(expected_segments, selector.segments);
         }
     }
 
     #[fuchsia::test]
     fn missing_path_component_selector_test() {
         let component_selector_string = "c";
-        let (_, component_selector) =
-            component_selector::<nom_language::error::VerboseError<&str>>(RequireEscaped::COLONS)
-                .parse(component_selector_string)
-                .unwrap();
-        let mut path_vec = component_selector.segments;
+        let cs = component_selector::<winnow::error::ContextError>(RequireEscaped::COLONS)
+            .parse(component_selector_string)
+            .unwrap();
+
+        let mut path_vec = cs.segments;
         assert_eq!(path_vec.pop(), Some(Segment::ExactMatch("c".into())));
         assert!(path_vec.is_empty());
     }
@@ -748,16 +668,11 @@ mod tests {
             ),
         ];
         for (string, node, property) in with_spaces {
-            assert_eq!(
-                all_consuming(tree_selector(RequireEscaped::WHITESPACE))
-                    .parse(string)
-                    .unwrap_or_else(|e: nom::Err<nom_language::error::VerboseError<_>>| panic!(
-                        "all_consuming |{string}| failed: {e}"
-                    ))
-                    .1,
-                TreeSelector { node, property, tree_names: None },
-                "input: |{string}|",
-            );
+            let ts = (tree_selector::<()>(RequireEscaped::WHITESPACE), eof)
+                .map(|(r, _)| r)
+                .parse(string)
+                .unwrap();
+            assert_eq!(ts, TreeSelector { node, property, tree_names: None });
         }
 
         // Un-escaped quotes aren't accepted when parsing with spaces.
@@ -938,12 +853,15 @@ mod tests {
     fn extract_name_list() {
         let test_cases = [
             ("root:prop", ("root:prop", None)),
-            ("[name=foo]root:prop", ("root:prop", Some("name=foo"))),
-            (r#"[name="with internal ,"]root"#, ("root", Some(r#"name="with internal ,""#))),
-            (r#"[name="f[o]o"]root:prop"#, ("root:prop", Some(r#"name="f[o]o""#))),
+            ("[name=foo]root:prop", ("root:prop", Some(TreeNames::from(vec!["foo"])))),
+            (
+                r#"[name="with internal ,"]root"#,
+                ("root", Some(TreeNames::from(vec!["with internal ,"]))),
+            ),
+            (r#"[name="f[o]o"]root:prop"#, ("root:prop", Some(TreeNames::from(vec!["f[o]o"])))),
             (
                 r#"[name="fo]o", name="[bar,baz"]root:prop"#,
-                ("root:prop", Some(r#"name="fo]o", name="[bar,baz""#)),
+                ("root:prop", Some(TreeNames::from(vec!["fo]o", "[bar,baz"]))),
             ),
             (r#"ab/\ d:c\ "#, (r#"ab/\ d:c\ "#, None)),
         ];
@@ -951,8 +869,10 @@ mod tests {
         for (case_number, (input, (expected_residue, expected_name_list))) in
             test_cases.into_iter().enumerate()
         {
-            let (actual_residue, actual_name_list) =
-                extract_conjoined_names::<nom_language::error::VerboseError<&str>>(input).unwrap();
+            let mut i = input;
+            let actual_name_list =
+                conjoined_tree_names::<winnow::error::ContextError>().parse_next(&mut i).unwrap();
+            let actual_residue = i;
             assert_eq!(
                 expected_residue, actual_residue,
                 "failed test case {case_number} on residue: |{input}|",
@@ -967,29 +887,25 @@ mod tests {
     #[fuchsia::test]
     fn comma_separated_name_lists() {
         let test_cases = [
-            (r#"name=foo, name=bar"#, vec!["name=foo", "name=bar"]),
-            (r#"name="with internal ,""#, vec![r#"name="with internal ,""#]),
-            (r#"name="foo", name=bar"#, vec![r#"name="foo""#, "name=bar"]),
-            (r#"name="foo,bar", name=baz"#, vec![r#"name="foo,bar""#, "name=baz"]),
-            (r#"name="foo,bar", name="baz""#, vec![r#"name="foo,bar""#, r#"name="baz""#]),
-            (r#"name="foo ,bar", name=baz"#, vec![r#"name="foo ,bar""#, "name=baz"]),
-            (r#"name="foo\",bar", name="baz""#, vec![r#"name="foo\",bar""#, r#"name="baz""#]),
-            (r#"name="foo\" ,bar", name="baz""#, vec![r#"name="foo\" ,bar""#, r#"name="baz""#]),
-            (r#"name="foo,bar", name=" baz  ""#, vec![r#"name="foo,bar""#, r#"name=" baz  ""#]),
-            (
-                r#"name="foo\", bar,", name=",,baz,,,""#,
-                vec![r#"name="foo\", bar,""#, r#"name=",,baz,,,""#],
-            ),
+            (r#"name=foo, name=bar"#, vec!["foo", "bar"]),
+            (r#"name="with internal ,""#, vec!["with internal ,"]),
+            (r#"name="foo", name=bar"#, vec!["foo", "bar"]),
+            (r#"name="foo,bar", name=baz"#, vec!["foo,bar", "baz"]),
+            (r#"name="foo,bar", name="baz""#, vec!["foo,bar", "baz"]),
+            (r#"name="foo ,bar", name=baz"#, vec!["foo ,bar", "baz"]),
+            (r#"name="foo\",bar", name="baz""#, vec![r#"foo\",bar"#, "baz"]),
+            (r#"name="foo\" ,bar", name="baz""#, vec![r#"foo\" ,bar"#, "baz"]),
+            (r#"name="foo,bar", name=" baz  ""#, vec!["foo,bar", " baz  "]),
+            (r#"name="foo\", bar,", name=",,baz,,,""#, vec![r#"foo\", bar,"#, ",,baz,,,"]),
         ];
 
         for (case_number, (input, expected)) in test_cases.into_iter().enumerate() {
-            let actual = parse_quote_sensitive_separator(input, ',');
-            let actual_len = actual.len();
-            let expected_len = expected.len();
-            assert_eq!(
-                expected, actual,
-                "failed test case {case_number}: |{input}|\nexpected length: {expected_len}\nactual length: {actual_len}",
-            );
+            let mut i = input;
+            let actual: Vec<&str> =
+                separated(1.., tree_name_item::<winnow::error::ContextError>, spaced(","))
+                    .parse_next(&mut i)
+                    .unwrap();
+            assert_eq!(expected, actual, "failed test case {case_number} on list: |{input}|",);
         }
     }
 }

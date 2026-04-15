@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use nom::error::ErrorKind;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -37,8 +36,8 @@ pub enum Error {
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("Failed to parse the input. Failed at: {0:?} with: {1:?}")]
-    Fast(String, ErrorKind),
+    #[error("Failed to parse input \"{input:?}\"")]
+    Fast { input: String },
 
     #[error("Failed to parse the input. Error: {0}")]
     Verbose(String),
