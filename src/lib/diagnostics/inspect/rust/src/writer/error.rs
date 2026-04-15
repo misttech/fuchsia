@@ -18,6 +18,14 @@ pub enum Error {
     #[cfg(target_os = "fuchsia")]
     GetVmoSize(#[source] zx::Status),
 
+    #[error("VMO is not frozen")]
+    #[cfg(target_os = "fuchsia")]
+    VmoNotFrozen,
+
+    #[error("Failed to duplicate vmo")]
+    #[cfg(target_os = "fuchsia")]
+    DuplicateVmoFailed(#[source] zx::Status),
+
     #[error("Failed to get frozen vmo; transaction_count={0}")]
     #[cfg(target_os = "fuchsia")]
     ConcurrentTransaction(usize),
@@ -26,8 +34,8 @@ pub enum Error {
     #[cfg(target_os = "fuchsia")]
     CreateChildVmo(#[source] zx::Status),
 
-    #[error("Expected Inspector state, but found None")]
-    MissingState,
+    #[error("Expected a backing VMO for this operation, but found none")]
+    VmoMissing,
 
     #[error("Failed to free {value_type} index={index}")]
     Free {

@@ -13,6 +13,8 @@ use std::cmp::max;
 use std::sync::Arc;
 
 #[cfg(target_os = "fuchsia")]
+use inspect_format::{BlockAccessorExt, Header};
+#[cfg(target_os = "fuchsia")]
 use zx::HandleBased;
 
 /// Root of the Inspect API. Through this API, further nodes can be created and inspect can be
@@ -86,8 +88,25 @@ impl Inspector {
         if let Some(state) = self.state() {
             let mut guard = state.try_lock()?;
             guard.frozen_vmo_copy()
+        } else if let Some(vmo) = self.storage.as_ref() {
+            if is_vmo_frozen(vmo) {
+                // No-op Inspector was created with a frozen VMO, duplicate it.
+                vmo.duplicate_handle(
+                    // TODO(https://github.com/rust-lang/rust/issues/143802): Make this a const
+                    // and share with duplicate_vmo().
+                    zx::Rights::BASIC
+                        | zx::Rights::READ
+                        | zx::Rights::MAP
+                        | zx::Rights::GET_PROPERTY,
+                )
+                .map_err(Error::DuplicateVmoFailed)
+            } else {
+                // No-op Inspector was created with a non-frozen VMO; we can't
+                // freeze it since we don't have write rights to the VMO.
+                Err(Error::VmoNotFrozen)
+            }
         } else {
-            Err(Error::MissingState)
+            Err(Error::VmoMissing)
         }
     }
 
@@ -109,21 +128,23 @@ impl Inspector {
         self.storage.clone()
     }
 
-    /// Returns Ok(()) if VMO is frozen, and the generation count if it is not.
-    /// Very unsafe. Propagates unrelated errors by panicking.
     #[cfg(test)]
-    pub fn is_frozen(&self) -> Result<(), u64> {
-        use inspect_format::{BlockAccessorExt, Header};
-        let vmo = self.storage.as_ref().unwrap();
-        let mut buffer: [u8; 16] = [0; 16];
-        vmo.read(&mut buffer, 0).unwrap();
-        let block = buffer.block_at_unchecked::<Header>(inspect_format::BlockIndex::EMPTY);
-        if block.generation_count() == constants::VMO_FROZEN {
-            Ok(())
-        } else {
-            Err(block.generation_count())
+    pub(crate) fn is_frozen(&self) -> bool {
+        if let Some(vmo) = self.storage.as_ref() {
+            return is_vmo_frozen(vmo);
         }
+        false
     }
+}
+
+#[cfg(target_os = "fuchsia")]
+fn is_vmo_frozen(vmo: impl AsRef<zx::Vmo>) -> bool {
+    let mut buffer: [u8; 32] = [0; 32];
+    if vmo.as_ref().read(&mut buffer, 0).is_ok() {
+        let block = buffer.block_at_unchecked::<Header>(inspect_format::BlockIndex::EMPTY);
+        return block.generation_count() == inspect_format::constants::VMO_FROZEN;
+    }
+    false
 }
 
 #[cfg(not(target_os = "fuchsia"))]
@@ -408,23 +429,41 @@ mod fuchsia_tests {
             inspector.state().unwrap().with_current_header(|header| header.generation_count());
         let vmo = inspector.frozen_vmo_copy();
 
-        let is_frozen_result = inspector.is_frozen();
-        assert!(is_frozen_result.is_err());
+        assert!(!inspector.is_frozen());
 
-        assert_eq!(initial + 2, is_frozen_result.err().unwrap());
-        assert!(is_frozen_result.err().unwrap().is_multiple_of(2));
+        let mut buffer: [u8; 32] = [0; 32];
+        inspector.storage.as_ref().unwrap().read(&mut buffer, 0).unwrap();
+        let block = buffer.block_at_unchecked::<Header>(inspect_format::BlockIndex::EMPTY);
+        let gen_count = block.generation_count();
+
+        assert_eq!(initial + 2, gen_count);
+        assert!(gen_count.is_multiple_of(2));
 
         let frozen_insp = Inspector::new(InspectorConfig::default().no_op().vmo(vmo.unwrap()));
-        assert!(frozen_insp.is_frozen().is_ok());
+        assert!(frozen_insp.is_frozen());
     }
 
     #[fuchsia::test]
-    fn no_op_vmo_fails_to_freeze() {
+    fn no_op_inspector_with_frozen_vmo_can_be_frozen() {
+        const VMO_SIZE: u64 = 4096;
+
+        let original_inspector = Inspector::new(InspectorConfig::default().size(VMO_SIZE as usize));
+        let frozen_vmo = original_inspector.frozen_vmo_copy().unwrap();
+        let inspector = Inspector::new(InspectorConfig::default().no_op().vmo(frozen_vmo));
+
+        assert_matches!(inspector.state(), None);
+        assert_matches!(inspector.frozen_vmo_copy(), Ok(copy) => {
+            assert_eq!(copy.get_size().unwrap(), VMO_SIZE);
+        });
+    }
+
+    #[fuchsia::test]
+    fn no_op_inspector_with_non_frozen_vmo_cannot_be_frozen() {
         let inspect_vmo = zx::Vmo::create(4096).unwrap();
         let inspector = Inspector::new(InspectorConfig::default().no_op().vmo(inspect_vmo));
 
         assert_matches!(inspector.state(), None);
-        assert_matches!(inspector.frozen_vmo_copy(), Err(Error::MissingState));
+        assert_matches!(inspector.frozen_vmo_copy(), Err(Error::VmoNotFrozen));
     }
 
     #[fuchsia::test]
