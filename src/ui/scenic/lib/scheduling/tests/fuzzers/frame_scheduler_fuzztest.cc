@@ -36,7 +36,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* Data, size_t Size) {
 
   // Set up DefaultFrameScheduler.
   auto vsync_timing = std::make_shared<VsyncTiming>();
-  vsync_timing->set_vsync_interval(vsync_interval);
+  vsync_timing->AddVsyncInterval(vsync_interval);
   vsync_timing->set_last_vsync_time(last_vsync_time);
 
   DefaultFrameScheduler frame_scheduler(

@@ -18,6 +18,7 @@ cc_test_executable("unittests") {
     "default_frame_scheduler_unittest.cc",
     "frame_predictor_unittest.cc",
     "frame_stats_unittest.cc",
+    "median_duration_predictor_unittest.cc",
     "pessimistic_duration_predictor_unittest.cc",
     "present2_helper_unittest.cc",
   ]

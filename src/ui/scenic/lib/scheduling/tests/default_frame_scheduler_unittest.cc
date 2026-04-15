@@ -32,7 +32,7 @@ class FrameSchedulerTest : public ::gtest::TestLoopFixture {
     // Needs to be big enough so that FrameScheduler can always fit a latch point
     // in the frame.
     const auto vsync_interval = zx::msec(100);
-    vsync_timing_->set_vsync_interval(vsync_interval);
+    vsync_timing_->AddVsyncInterval(vsync_interval);
     vsync_timing_->set_last_vsync_time(zx::time(0));
 
     scheduler_.Initialize(
@@ -455,7 +455,7 @@ TEST_F(FrameSchedulerTest, LongRenderTime_ShouldTriggerAReschedule_WithALatePres
 
   // Guarantee the vsync interval here is what we expect.
   zx::duration interval = zx::msec(100);
-  vsync_timing_->set_vsync_interval(interval);
+  vsync_timing_->AddVsyncInterval(interval);
   EXPECT_EQ(0, Now().get());
 
   // Schedule a frame

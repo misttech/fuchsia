@@ -8,6 +8,8 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 
+#include "src/ui/scenic/lib/scheduling/median_duration_predictor.h"
+
 namespace scheduling {
 
 class VsyncTiming {
@@ -17,13 +19,13 @@ class VsyncTiming {
   // Obtain the time of the last Vsync, in nanoseconds.
   zx::time last_vsync_time() const { return last_vsync_time_; }
 
-  // Obtain the interval between Vsyncs, in nanoseconds.
-  zx::duration vsync_interval() const { return vsync_interval_; }
-
   void set_last_vsync_time(zx::time last_vsync_time) { last_vsync_time_ = last_vsync_time; }
-  void set_vsync_interval(zx::duration vsync_interval) {
-    vsync_interval_ = vsync_interval;
-    FX_DCHECK(vsync_interval_.get() > 0);
+
+  // Obtain the smoothed, median-filtered vsync interval, in nanoseconds.
+  zx::duration vsync_interval() const { return vsync_interval_predictor_.GetPrediction(); }
+
+  void AddVsyncInterval(zx::duration vsync_interval) {
+    vsync_interval_predictor_.InsertNewMeasurement(vsync_interval);
   }
 
  private:
@@ -32,7 +34,7 @@ class VsyncTiming {
   static constexpr zx::duration kNsecsFor60fps = zx::nsec(16'666'667);  // 16.666667ms
 
   zx::time last_vsync_time_;
-  zx::duration vsync_interval_;
+  MedianDurationPredictor vsync_interval_predictor_;
 };
 
 }  // namespace scheduling

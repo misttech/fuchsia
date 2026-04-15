@@ -29,7 +29,7 @@ Display::Display(WireDisplayId id, const WireDisplayMode& mode, uint32_t width_i
   device_pixel_ratio_.store({1.f, 1.f});
 
   // Most displays will have a longer interval.  If so, `OnVsync()` will adjust.
-  vsync_timing_->set_vsync_interval(kMinimumVsyncInterval);
+  vsync_timing_->AddVsyncInterval(kMinimumVsyncInterval);
 }
 
 Display::Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px,
@@ -67,7 +67,7 @@ void Display::OnVsync(zx::time_monotonic timestamp, WireConfigStamp displayed_co
   // potential issues during long breaks.
   const zx::duration time_since_last_vsync = timestamp - vsync_timing_->last_vsync_time();
   if (time_since_last_vsync < kMaximumVsyncInterval) {
-    vsync_timing_->set_vsync_interval(std::max(kMinimumVsyncInterval, time_since_last_vsync));
+    vsync_timing_->AddVsyncInterval(std::max(kMinimumVsyncInterval, time_since_last_vsync));
   }
 
   vsync_timing_->set_last_vsync_time(timestamp);

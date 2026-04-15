@@ -19,18 +19,16 @@ source_set("frame_scheduler") {
     "constant_frame_predictor.h",
     "default_frame_scheduler.cc",
     "default_frame_scheduler.h",
-    "duration_predictor.h",
     "frame_predictor.cc",
     "frame_predictor.h",
     "frame_scheduler.h",
     "frame_stats.cc",
     "frame_stats.h",
-    "pessimistic_duration_predictor.cc",
-    "pessimistic_duration_predictor.h",
     "windowed_frame_predictor.cc",
     "windowed_frame_predictor.h",
   ]
   deps = [
+    ":duration_predictors",
     ":frame_metrics_registry",
     "//src/lib/fxl",
     "//src/ui/scenic/lib/utils",
@@ -67,6 +65,19 @@ source_set("vsync_timing") {
     "//src/lib/fxl",
     "//zircon/system/ulib/zx",
   ]
+  public_deps = [ ":duration_predictors" ]
+}
+
+source_set("duration_predictors") {
+  sources = [
+    "duration_predictor.h",
+    "median_duration_predictor.cc",
+    "median_duration_predictor.h",
+    "pessimistic_duration_predictor.cc",
+    "pessimistic_duration_predictor.h",
+  ]
+  deps = [ "//sdk/lib/syslog/cpp" ]
+  public_deps = [ "//zircon/system/ulib/zx" ]
 }
 
 source_set("present_helpers") {
