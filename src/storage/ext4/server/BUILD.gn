@@ -63,7 +63,8 @@ fuchsia_component("ext4_server_comp") {
   deps = [ ":bin" ]
 }
 
-fuchsia_package("ext4_server") {
+fuchsia_package("ext4_server_pkg") {
+  package_name = "ext4_server"
   deps = [ ":ext4_server_comp" ]
 }
 
@@ -73,7 +74,8 @@ fuchsia_component("ext4_readonly_comp") {
   deps = [ ":bin" ]
 }
 
-fuchsia_package("ext4_readonly") {
+fuchsia_package("ext4_readonly_pkg") {
+  package_name = "ext4_readonly"
   deps = [ ":ext4_readonly_comp" ]
 }
 
