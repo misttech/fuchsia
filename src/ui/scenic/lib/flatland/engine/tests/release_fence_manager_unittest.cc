@@ -707,4 +707,41 @@ TEST_F(ReleaseFenceManagerTest, SignalPresentFencesWithMultipleCounters) {
   }
 }
 
+TEST_F(ReleaseFenceManagerTest, ReleaseCountersOfSameFrameHaveIdenticalTimestamp) {
+  for (bool previous_frame_is_gpu_composited : {true, false}) {
+    ReleaseFenceManager manager(dispatcher());
+
+    zx::event render_finished_fence = utils::CreateEvent();
+    if (previous_frame_is_gpu_composited) {
+      manager.OnGpuCompositedFrame(
+          /*frame_number*/ 1, utils::CopyZxHandle(render_finished_fence), {}, {}, {},
+          [](scheduling::Timestamps) {});
+    } else {
+      manager.OnDirectScanoutFrame(
+          /*frame_number*/ 1, {}, {}, {}, [](scheduling::Timestamps) {});
+    }
+
+    std::vector<zx::counter> release_counters = utils::CreateCounterArray(2);
+    manager.OnDirectScanoutFrame(
+        /*frame_number*/ 2, {}, utils::CopyZxHandleVector(release_counters), {},
+        [](scheduling::Timestamps) {});
+
+    EXPECT_FALSE(utils::IsCounterSignalled(release_counters[0], ZX_COUNTER_SIGNALED));
+    EXPECT_FALSE(utils::IsCounterSignalled(release_counters[1], ZX_COUNTER_SIGNALED));
+
+    if (previous_frame_is_gpu_composited) {
+      render_finished_fence.signal(0u, ZX_EVENT_SIGNALED);
+      RunLoopUntilIdle();
+    } else {
+      const zx::time_monotonic kVsyncTime(55555);
+      manager.OnVsync(/*frame_number*/ 2, kVsyncTime);
+    }
+
+    EXPECT_TRUE(utils::IsCounterSignalled(release_counters[0], ZX_COUNTER_SIGNALED));
+    EXPECT_TRUE(utils::IsCounterSignalled(release_counters[1], ZX_COUNTER_SIGNALED));
+
+    EXPECT_EQ(utils::ReadCounter(release_counters[0]), utils::ReadCounter(release_counters[1]));
+  }
+}
+
 }  // namespace flatland::test
