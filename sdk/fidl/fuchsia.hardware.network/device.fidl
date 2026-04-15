@@ -157,6 +157,11 @@ closed protocol Device {
     });
 };
 
+@available(added=HEAD)
+service Service {
+    device client_end:Device;
+};
+
 /// Provides iteration over and updates for ports attached to a device.
 @available(added=HEAD)
 closed protocol PortWatcher {
