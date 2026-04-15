@@ -344,6 +344,8 @@ class DevicetreeChosenNodeMatcherBase
 
   DevicetreeIrqResolver uart_irq_;
 
+  std::array<std::string_view, 32> serial_aliases_;
+
   // Command line provided by the devicetree.
   std::string_view cmdline_;
 

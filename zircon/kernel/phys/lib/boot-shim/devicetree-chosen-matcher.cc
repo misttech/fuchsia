@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/boot-options/boot-options.h>
 #include <lib/devicetree/matcher.h>
 #include <lib/fit/defer.h>
 
@@ -142,6 +143,21 @@ devicetree::ScanState DevicetreeChosenNodeMatcherBase::HandleBootstrapStdout(
 
 devicetree::ScanState DevicetreeChosenNodeMatcherBase::OnNode(
     const devicetree::NodePath& path, const devicetree::PropertyDecoder& decoder) {
+  if (path.CompareWith("/aliases") == devicetree::NodePath::Comparison::kEqual) {
+    for (auto prop : decoder.properties()) {
+      constexpr std::string_view kSerialPrefix = "serial";
+      if (prop.name.starts_with(kSerialPrefix)) {
+        std::string_view index_str = prop.name.substr(kSerialPrefix.size());
+        auto index = BootOptions::ParseInt(index_str);
+        if (index && *index >= 0 && static_cast<size_t>(*index) < serial_aliases_.size()) {
+          size_t idx = static_cast<size_t>(*index);
+          serial_aliases_[idx] = prop.value.AsString().value_or("");
+        }
+      }
+    }
+    return devicetree::ScanState::kActive;
+  }
+
   if (found_chosen_) {
     if (uart_irq_.NeedsInterruptParent()) {
       if (auto result = uart_irq_.ResolveIrqController(decoder); result.is_ok()) {
@@ -189,6 +205,8 @@ devicetree::ScanState DevicetreeChosenNodeMatcherBase::OnNode(
     }
   }
 
+  // If stdout-path is present, use it. Otherwise we will try to find a tty device via the command
+  // line.
   if (stdout_path) {
     stdout_path_ = stdout_path->AsString().value_or("");
   } else if (legacy_stdout_path) {
@@ -201,7 +219,15 @@ devicetree::ScanState DevicetreeChosenNodeMatcherBase::OnNode(
   if (!stdout_path_.empty()) {
     stdout_path_ = stdout_path_.substr(0, stdout_path_.find(':'));
   } else {
+    // If we haven't found the stdout path, try to resolve the tty via the command line.
     tty_ = boot_shim::TtyFromCmdline(cmdline_);
+    if (tty_) {
+      // Check if the tty is an alias in the aliases node.
+      if (auto resolved_path = boot_shim::ResolveTtyAlias(*tty_, serial_aliases_)) {
+        stdout_path_ = *resolved_path;
+        Log("DevicetreeChosenNodeMatcherBase::OnNode: resolved tty via aliases\n");
+      }
+    }
   }
 
   if (ramdisk_start && ramdisk_end) {

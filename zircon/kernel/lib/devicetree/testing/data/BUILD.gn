@@ -45,6 +45,7 @@ dts_synthetic = [
   "synthetic/arm_timer_mmio.dts",
   "synthetic/chosen.dts",
   "synthetic/chosen_with_console.dts",
+  "synthetic/chosen_with_serial_alias.dts",
   "synthetic/chosen_no_uart_interrupts.dts",
   "synthetic/chosen_with_console_aml.dts",
   "synthetic/chosen_with_console_and_stdout_path.dts",

@@ -11,6 +11,7 @@
 #include <lib/zbi-format/driver-config.h>
 
 #include <cstdint>
+#include <span>
 
 namespace boot_shim {
 
@@ -39,6 +40,10 @@ struct Tty {
 
 // Best effort at parsing Linux-compatible `console=` command, if present.
 std::optional<Tty> TtyFromCmdline(std::string_view cmdline);
+
+// Resolves a TTY against a list of serial aliases.
+std::optional<std::string_view> ResolveTtyAlias(const Tty& tty,
+                                                std::span<const std::string_view> serial_aliases);
 
 }  // namespace boot_shim
 

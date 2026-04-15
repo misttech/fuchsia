@@ -11,6 +11,7 @@
 #include <lib/zbi-format/driver-config.h>
 
 #include <optional>
+#include <span>
 #include <string_view>
 
 namespace boot_shim {
@@ -93,6 +94,14 @@ std::optional<Tty> TtyFromCmdline(std::string_view cmdline) {
   }
 
   return Tty{.type = type, .index = static_cast<size_t>(*index), .vendor = TtyVendor(type)};
+}
+
+std::optional<std::string_view> ResolveTtyAlias(const Tty& tty,
+                                                std::span<const std::string_view> serial_aliases) {
+  if (tty.index < serial_aliases.size() && !serial_aliases[tty.index].empty()) {
+    return serial_aliases[tty.index];
+  }
+  return std::nullopt;
 }
 
 }  // namespace boot_shim
