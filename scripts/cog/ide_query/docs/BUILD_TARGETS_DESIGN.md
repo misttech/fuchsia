@@ -111,13 +111,9 @@ If a file cannot be mapped to a target, its `build_targets` list will be empty, 
 
 ## Consumption of Targets
 
-The primary purpose of identifying these targets is to allow the IDE (or a wrapper script) to invoke the build system for precisely the artifacts needed for the current working set.
+The identifying of these targets allows `ide-query` to automatically invoke the build system for precisely the artifacts needed for the current working set. This is handled internally by the tool using a shadow build directory.
 
-**Workflow**:
-1.  Cider (via the build companion) invokes `fx ide-query --file <path>`.
-2.  The tool returns the JSON above.
-3.  The caller extracts the unique set of `build_targets`.
-4.  The caller executes `fx build <target1> <target2> ...`.
+See [BUILD_VERIFICATION.md](file:///google/cog/cloud/chaselatta/ide-query/fuchsia/scripts/cog/ide_query/docs/BUILD_VERIFICATION.md) for details on how these targets are built and verified.
 
 This ensures that generated headers and other build or analysis dependencies are up-to-date before the language server processes the files.
 

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -243,7 +244,152 @@ func (ctx *WorkspaceContext) PopulateTargets() error {
 		ctx.Files[i] = f
 	}
 
+	if err := ctx.VerifyBuild(); err != nil {
+		return fmt.Errorf("failed during build verification: %w", err)
+	}
+
 	return nil
+}
+
+// VerifyBuild handles the synchronization of the shadow build directory and executes the build.
+func (ctx *WorkspaceContext) VerifyBuild() error {
+	if ctx.BuildDir == "" {
+		ctx.setAnalysisErrorOnFoundFiles("Build directory not specified and .fx-build-dir is missing.")
+		return nil
+	}
+
+	ideAnalysisDir := filepath.Join(ctx.FuchsiaDir, "out", ".ide-analysis")
+	argsGnPath := filepath.Join(ctx.BuildDir, "args.gn")
+	destArgsGnPath := filepath.Join(ideAnalysisDir, "args.gn")
+
+	// 1. Check for args.gn in primary build directory.
+	if _, err := os.Stat(argsGnPath); os.IsNotExist(err) {
+		ctx.setAnalysisErrorOnFoundFiles("args.gn missing in primary build directory: %s", ctx.BuildDir)
+		return nil
+	}
+
+	// 2. Sync args.gn and run fx gen if needed.
+	changed, err := syncFile(argsGnPath, destArgsGnPath)
+	if err != nil {
+		ctx.setAnalysisErrorOnFoundFiles("failed to sync args.gn: %v", err)
+		return nil
+	}
+
+	if changed {
+		if err := ctx.runFx(ideAnalysisDir, "gen"); err != nil {
+			ctx.setAnalysisErrorOnFoundFiles("fx gen failed: %v", err)
+			return nil
+		}
+	}
+
+	// 3. Collect targets and execute build.
+	targets := make([]string, 0)
+	targetToFiles := make(map[string][]int)
+	for i, f := range ctx.Files {
+		if f.Status == StatusNotFound {
+			ctx.Files[i].AnalysisResult = &AnalysisResult{Status: AnalysisStatusNotFound}
+			continue
+		}
+		if len(f.BuildTargets) == 0 || f.BuildTargets[0] == unknownTarget {
+			ctx.Files[i].AnalysisResult = &AnalysisResult{Status: AnalysisStatusUnknown}
+			continue
+		}
+		for _, t := range f.BuildTargets {
+			if _, ok := targetToFiles[t]; !ok {
+				targets = append(targets, t)
+			}
+			targetToFiles[t] = append(targetToFiles[t], i)
+		}
+	}
+
+	if len(targets) == 0 {
+		return nil
+	}
+
+	// 4. Execute build and populate results.
+	// Try to build all targets at once first for performance.
+	// If that fails, fall back to building them one by one to identify specific failures.
+
+	batchArgs := append([]string{"build"}, targets...)
+	batchErr := ctx.runFx(ideAnalysisDir, batchArgs...)
+
+	if batchErr == nil {
+		// All targets built successfully.
+		for _, target := range targets {
+			for _, i := range targetToFiles[target] {
+				if ctx.Files[i].AnalysisResult == nil || ctx.Files[i].AnalysisResult.Status != AnalysisStatusBuildFailed {
+					ctx.Files[i].AnalysisResult = &AnalysisResult{Status: AnalysisStatusOk}
+				}
+			}
+		}
+	} else {
+		// Fallback to serial builds to identify specific failures.
+		for _, target := range targets {
+			buildErr := ctx.runFx(ideAnalysisDir, "build", target)
+			for _, i := range targetToFiles[target] {
+				if buildErr != nil {
+					ctx.Files[i].AnalysisResult = &AnalysisResult{
+						Status:  AnalysisStatusBuildFailed,
+						Message: "File failed to build.",
+					}
+				} else {
+					// Only set to OK if it hasn't been set as failed by another target.
+					if ctx.Files[i].AnalysisResult == nil || ctx.Files[i].AnalysisResult.Status != AnalysisStatusBuildFailed {
+						ctx.Files[i].AnalysisResult = &AnalysisResult{Status: AnalysisStatusOk}
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// setAnalysisErrorOnFoundFiles sets the AnalysisError field on all files with StatusFound.
+func (ctx *WorkspaceContext) setAnalysisErrorOnFoundFiles(format string, a ...interface{}) {
+	errMsg := fmt.Sprintf(format, a...)
+	for i := range ctx.Files {
+		if ctx.Files[i].Status == StatusFound {
+			ctx.Files[i].AnalysisError = errMsg
+		}
+	}
+}
+
+func (ctx *WorkspaceContext) runFx(dir string, args ...string) error {
+	return runFx(ctx, dir, args...)
+}
+
+var runFx = func(ctx *WorkspaceContext, dir string, args ...string) error {
+	fxPath := filepath.Join(ctx.FuchsiaDir, ".jiri_root", "bin", "fx")
+	fullArgs := append([]string{"--dir", dir}, args...)
+	cmd := exec.Command(fxPath, fullArgs...)
+	cmd.Dir = ctx.FuchsiaDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("fx %v failed: %w\nOutput: %s", args, err, string(out))
+	}
+	return nil
+}
+
+func syncFile(src, dst string) (bool, error) {
+	srcContent, err := os.ReadFile(src)
+	if err != nil {
+		return false, err
+	}
+
+	dstContent, err := os.ReadFile(dst)
+	if err == nil && bytes.Equal(srcContent, dstContent) {
+		return false, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return false, err
+	}
+
+	if err := os.WriteFile(dst, srcContent, 0644); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // toRel normalizes a path to be relative to the Fuchsia root,

@@ -18,6 +18,20 @@ const (
     StatusNotFound FileStatus = "not_found"
 )
 
+type AnalysisStatus string
+
+const (
+    AnalysisStatusOk          AnalysisStatus = "OK"
+    AnalysisStatusNotFound    AnalysisStatus = "NOT_FOUND"
+    AnalysisStatusBuildFailed AnalysisStatus = "BUILD_FAILED"
+    AnalysisStatusUnknown     AnalysisStatus = "UNKNOWN"
+)
+
+type AnalysisResult struct {
+    Status  AnalysisStatus `json:"status"`
+    Message string         `json:"message,omitempty"`
+}
+
 type FileEntry struct {
     // AbsPath is the absolute, canonicalized path to the file.
     AbsPath string `json:"abs_path"`
@@ -27,6 +41,12 @@ type FileEntry struct {
     Status FileStatus `json:"status"`
     // IsDirectory is true if the path points to a directory.
     IsDirectory bool `json:"is_directory"`
+    // BuildTargets is a list of GN labels that need to be built for this file.
+    BuildTargets []string `json:"build_targets,omitempty"`
+    // AnalysisError is a human-readable string populated if the query fails.
+    AnalysisError string `json:"analysis_error,omitempty"`
+    // AnalysisResult captures the build state of the file.
+    AnalysisResult *AnalysisResult `json:"analysis_result,omitempty"`
 }
 
 type WorkspaceContext struct {

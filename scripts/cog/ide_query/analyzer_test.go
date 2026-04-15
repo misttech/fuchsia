@@ -6,9 +6,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -186,6 +188,180 @@ func TestPopulateTargets_NestedHeader(t *testing.T) {
 
 	if len(ctx.Files[0].BuildTargets) != 1 || ctx.Files[0].BuildTargets[0] != "//zircon/kernel/lib/arch/x86:x86" {
 		t.Errorf("expected //zircon/kernel/lib/arch/x86:x86, got %v", ctx.Files[0].BuildTargets)
+	}
+}
+func TestVerifyBuild_NoArgsGn(t *testing.T) {
+	tmpDir := t.TempDir()
+	fuchsiaDir := filepath.Join(tmpDir, "fuchsia")
+	buildDir := filepath.Join(fuchsiaDir, "out/default")
+	os.MkdirAll(buildDir, 0755)
+
+	ctx := &WorkspaceContext{
+		FuchsiaDir: fuchsiaDir,
+		BuildDir:   buildDir,
+		Files: []FileEntry{
+			{AbsPath: filepath.Join(fuchsiaDir, "src/main.cc"), Status: StatusFound},
+		},
+	}
+
+	if err := ctx.VerifyBuild(); err != nil {
+		t.Fatalf("VerifyBuild failed: %v", err)
+	}
+
+	if !strings.Contains(ctx.Files[0].AnalysisError, "args.gn missing") {
+		t.Errorf("expected AnalysisError about missing args.gn, got %q", ctx.Files[0].AnalysisError)
+	}
+}
+
+func TestVerifyBuild_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+	fuchsiaDir := filepath.Join(tmpDir, "fuchsia")
+	buildDir := filepath.Join(fuchsiaDir, "out/default")
+	os.MkdirAll(buildDir, 0755)
+	os.WriteFile(filepath.Join(buildDir, "args.gn"), []byte("foo=bar"), 0644)
+
+	// Mock runFx
+	oldRunFx := runFx
+	defer func() { runFx = oldRunFx }()
+	runFxCalled := false
+	runFx = func(ctx *WorkspaceContext, dir string, args ...string) error {
+		if args[0] == "build" {
+			runFxCalled = true
+		}
+		return nil
+	}
+
+	ctx := &WorkspaceContext{
+		FuchsiaDir: fuchsiaDir,
+		BuildDir:   buildDir,
+		Files: []FileEntry{
+			{
+				AbsPath:      filepath.Join(fuchsiaDir, "src/main.cc"),
+				Status:       StatusFound,
+				BuildTargets: []string{"//src:main"},
+			},
+		},
+	}
+
+	if err := ctx.VerifyBuild(); err != nil {
+		t.Fatalf("VerifyBuild failed: %v", err)
+	}
+
+	if !runFxCalled {
+		t.Error("expected runFx to be called for build")
+	}
+
+	if ctx.Files[0].AnalysisResult == nil || ctx.Files[0].AnalysisResult.Status != AnalysisStatusOk {
+		t.Errorf("expected AnalysisStatusOk, got %+v", ctx.Files[0].AnalysisResult)
+	}
+}
+
+func TestVerifyBuild_Failure(t *testing.T) {
+	tmpDir := t.TempDir()
+	fuchsiaDir := filepath.Join(tmpDir, "fuchsia")
+	buildDir := filepath.Join(fuchsiaDir, "out/default")
+	os.MkdirAll(buildDir, 0755)
+	os.WriteFile(filepath.Join(buildDir, "args.gn"), []byte("foo=bar"), 0644)
+
+	// Mock runFx to fail on build
+	oldRunFx := runFx
+	defer func() { runFx = oldRunFx }()
+	runFx = func(ctx *WorkspaceContext, dir string, args ...string) error {
+		if args[0] == "build" {
+			return fmt.Errorf("build failed")
+		}
+		return nil
+	}
+
+	ctx := &WorkspaceContext{
+		FuchsiaDir: fuchsiaDir,
+		BuildDir:   buildDir,
+		Files: []FileEntry{
+			{
+				AbsPath:      filepath.Join(fuchsiaDir, "src/main.cc"),
+				Status:       StatusFound,
+				BuildTargets: []string{"//src:main"},
+			},
+		},
+	}
+
+	if err := ctx.VerifyBuild(); err != nil {
+		t.Fatalf("VerifyBuild failed: %v", err)
+	}
+
+	if ctx.Files[0].AnalysisResult == nil || ctx.Files[0].AnalysisResult.Status != AnalysisStatusBuildFailed {
+		t.Errorf("expected AnalysisStatusBuildFailed, got %+v", ctx.Files[0].AnalysisResult)
+	}
+	if ctx.Files[0].AnalysisResult.Message != "File failed to build." {
+		t.Errorf("expected 'File failed to build.', got %q", ctx.Files[0].AnalysisResult.Message)
+	}
+}
+
+func TestVerifyBuild_GenFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	fuchsiaDir := filepath.Join(tmpDir, "fuchsia")
+	buildDir := filepath.Join(fuchsiaDir, "out/default")
+	os.MkdirAll(buildDir, 0755)
+	os.WriteFile(filepath.Join(buildDir, "args.gn"), []byte("foo=bar"), 0644)
+
+	// Mock runFx to fail on gen
+	oldRunFx := runFx
+	defer func() { runFx = oldRunFx }()
+	runFx = func(ctx *WorkspaceContext, dir string, args ...string) error {
+		if args[0] == "gen" {
+			return fmt.Errorf("gen failed")
+		}
+		return nil
+	}
+
+	ctx := &WorkspaceContext{
+		FuchsiaDir: fuchsiaDir,
+		BuildDir:   buildDir,
+		Files: []FileEntry{
+			{
+				AbsPath: filepath.Join(fuchsiaDir, "src/main.cc"),
+				Status:  StatusFound,
+			},
+		},
+	}
+
+	if err := ctx.VerifyBuild(); err != nil {
+		t.Fatalf("VerifyBuild failed: %v", err)
+	}
+
+	if !strings.Contains(ctx.Files[0].AnalysisError, "fx gen failed") {
+		t.Errorf("expected AnalysisError about fx gen failure, got %q", ctx.Files[0].AnalysisError)
+	}
+}
+
+func TestVerifyBuild_SyncFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	fuchsiaDir := filepath.Join(tmpDir, "fuchsia")
+	buildDir := filepath.Join(fuchsiaDir, "out/default")
+	os.MkdirAll(buildDir, 0755)
+	os.WriteFile(filepath.Join(buildDir, "args.gn"), []byte("foo=bar"), 0644)
+
+	// Create a file where ide-analysis/args.gn should go, and make it a directory to cause WriteFile to fail.
+	ideAnalysisDir := filepath.Join(fuchsiaDir, "out", ".ide-analysis")
+	os.MkdirAll(filepath.Join(ideAnalysisDir, "args.gn"), 0755)
+
+	ctx := &WorkspaceContext{
+		FuchsiaDir: fuchsiaDir,
+		BuildDir:   buildDir,
+		Files: []FileEntry{
+			{
+				AbsPath: filepath.Join(fuchsiaDir, "src/main.cc"),
+				Status:  StatusFound,
+			},
+		},
+	}
+
+	if err := ctx.VerifyBuild(); err != nil {
+		t.Fatalf("VerifyBuild failed: %v", err)
+	}
+
+	if !strings.Contains(ctx.Files[0].AnalysisError, "failed to sync args.gn") {
+		t.Errorf("expected AnalysisError about sync failure, got %q", ctx.Files[0].AnalysisError)
 	}
 }
 
