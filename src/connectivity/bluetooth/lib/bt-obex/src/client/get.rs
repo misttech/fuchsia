@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use futures::SinkExt;
 use log::trace;
 
 use crate::client::SrmOperation;
@@ -113,7 +114,7 @@ impl<'a> GetOperation<'a> {
 
         let request = RequestPacket::new_get(headers);
         trace!(request:?; "Making outgoing GET request");
-        self.transport.send(request)?;
+        self.transport.send(request).await?;
         trace!("Successfully made GET request");
 
         // Only expect a response if SRM is inactive.
@@ -146,7 +147,7 @@ impl<'a> GetOperation<'a> {
             // SRM is disabled.
             if first_request || self.srm != SingleResponseMode::Enable {
                 trace!(request:?; "Making outgoing GET final request");
-                self.transport.send(request.clone())?;
+                self.transport.send(request.clone()).await?;
                 trace!("Successfully made GET final request");
                 // All subsequent GetFinal requests will not contain any headers.
                 request = RequestPacket::new_get_final(HeaderSet::new());
@@ -183,7 +184,7 @@ impl<'a> GetOperation<'a> {
 
         let request = RequestPacket::new_abort(headers);
         trace!(request:?; "Making outgoing {opcode:?} request");
-        self.transport.send(request)?;
+        self.transport.send(request).await?;
         trace!("Successfully made {opcode:?} request");
         let response = self.transport.receive_response(opcode).await?;
         response.expect_code(opcode, ResponseCode::Ok).map(Into::into)
@@ -214,10 +215,10 @@ mod tests {
 
     use crate::error::PacketError;
     use crate::header::{Header, HeaderIdentifier};
+    use crate::transport::ObexTransportManager;
     use crate::transport::test_utils::{
         expect_code, expect_request, expect_request_and_reply, new_manager, reply,
     };
-    use crate::transport::ObexTransportManager;
 
     fn setup_get_operation(mgr: &ObexTransportManager, initial: HeaderSet) -> GetOperation<'_> {
         let transport = mgr.try_new_operation().expect("can start operation");
@@ -383,12 +384,12 @@ mod tests {
         let response_headers2 = HeaderSet::from_header(Header::Body(vec![4, 5, 6]));
         let response2 = ResponsePacket::new_no_data(ResponseCode::Continue, response_headers2);
         expect_stream_pending(&mut exec, &mut remote);
-        reply(&mut remote, response2);
+        reply(&mut exec, &mut remote, response2);
         // Final user data packet.
         let response_headers3 = HeaderSet::from_header(Header::EndOfBody(vec![7, 8, 9]));
         let response3 = ResponsePacket::new_no_data(ResponseCode::Ok, response_headers3);
         expect_stream_pending(&mut exec, &mut remote);
-        reply(&mut remote, response3);
+        reply(&mut exec, &mut remote, response3);
         // All user data packets are received and the concatenated data object is returned.
         let user_data = exec
             .run_until_stalled(&mut data_fut)
@@ -496,13 +497,13 @@ mod tests {
         let response_headers2 = HeaderSet::from_header(Header::Body(vec![2, 2]));
         let response2 = ResponsePacket::new_no_data(ResponseCode::Continue, response_headers2);
         expect_stream_pending(&mut exec, &mut remote);
-        reply(&mut remote, response2);
+        reply(&mut exec, &mut remote, response2);
 
         // Final user data packet.
         let response_headers3 = HeaderSet::from_header(Header::EndOfBody(vec![3, 3]));
         let response3 = ResponsePacket::new_no_data(ResponseCode::Ok, response_headers3);
         expect_stream_pending(&mut exec, &mut remote);
-        reply(&mut remote, response3);
+        reply(&mut exec, &mut remote, response3);
         // All user data packets are received and the concatenated data object is returned.
         let user_data = exec
             .run_until_stalled(&mut get_data_fut)

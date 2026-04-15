@@ -7,18 +7,23 @@ use bt_rfcomm::frame::mux_commands::MuxCommandMarker;
 use bt_rfcomm::frame::{Frame, FrameData, UIHData, UserData};
 use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::Channel;
-use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::stream::Stream;
 use futures::task::Poll;
+use futures::{SinkExt, StreamExt, pin_mut};
 use packet_encoding::Encodable;
 
 /// Simulates the peer sending an RFCOMM frame over the L2CAP `remote` channel
 #[track_caller]
-pub fn send_peer_frame(remote: &Channel, frame: Frame) {
+pub fn send_peer_frame(exec: &mut fasync::TestExecutor, remote: &mut Channel, frame: Frame) {
     let mut buf = vec![0; frame.encoded_len()];
     assert!(frame.encode(&mut buf[..]).is_ok());
-    assert!(remote.write(&buf).is_ok());
+    let write_fut = remote.send(buf);
+    pin_mut!(write_fut);
+    match exec.run_until_stalled(&mut write_fut) {
+        Poll::Ready(Ok(())) => {}
+        x => panic!("Expected write to complete successfully, got {:?}", x),
+    }
 }
 
 /// Expects a frame to be received by the peer. This expectation does not validate the

@@ -7,9 +7,11 @@ use futures::stream::{FusedStream, TryStreamExt};
 use log::{info, trace};
 use packet_encoding::Encodable;
 use std::cell::{RefCell, RefMut};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use crate::error::{Error, PacketError};
-use crate::operation::{OpCode, ResponsePacket, MAX_PACKET_SIZE, MIN_MAX_PACKET_SIZE};
+use crate::operation::{MAX_PACKET_SIZE, MIN_MAX_PACKET_SIZE, OpCode, ResponsePacket};
 
 /// Returns the maximum packet size that will be used for the OBEX session.
 /// `transport_max` is the maximum size that the underlying transport (e.g. L2CAP, RFCOMM) supports.
@@ -58,15 +60,6 @@ impl<'a> ObexTransport<'a> {
         self.type_.srm_supported()
     }
 
-    /// Encodes and sends the OBEX `data` to the remote peer.
-    /// Returns Error if the send operation could not be completed.
-    pub fn send(&self, data: impl Encodable<Error = PacketError>) -> Result<(), Error> {
-        let mut buf = vec![0; data.encoded_len()];
-        data.encode(&mut buf[..])?;
-        let _ = self.channel.write(&buf)?;
-        Ok(())
-    }
-
     /// Attempts to receive and parse an OBEX response packet from the `channel`.
     /// Returns the parsed packet on success, Error otherwise.
     // TODO(https://fxbug.dev/42076096): Make this more generic to decode either request or response packets
@@ -87,6 +80,35 @@ impl<'a> ObexTransport<'a> {
                 Err(Error::PeerDisconnected)
             }
         }
+    }
+}
+
+impl<'a, T> futures::sink::Sink<T> for ObexTransport<'a>
+where
+    T: Encodable<Error = PacketError>,
+{
+    type Error = Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        Pin::new(&mut *this.channel).poll_ready(cx).map_err(Into::into)
+    }
+
+    fn start_send(self: Pin<&mut Self>, data: T) -> Result<(), Self::Error> {
+        let mut buf = vec![0; data.encoded_len()];
+        data.encode(&mut buf[..])?;
+        let this = self.get_mut();
+        Pin::new(&mut *this.channel).start_send(buf).map_err(Into::into)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        Pin::new(&mut *this.channel).poll_flush(cx).map_err(Into::into)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        Pin::new(&mut *this.channel).poll_close(cx).map_err(Into::into)
     }
 }
 
@@ -127,12 +149,14 @@ impl ObexTransportManager {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
+    use futures::SinkExt;
 
     use async_test_helpers::expect_stream_item;
     use fuchsia_async as fasync;
     use packet_encoding::Decodable;
 
     use crate::operation::RequestPacket;
+    use async_utils::PollExt;
 
     /// Set `srm_supported` to true to build a transport that supports the OBEX SRM feature.
     pub(crate) fn new_manager(srm_supported: bool) -> (ObexTransportManager, Channel) {
@@ -164,22 +188,23 @@ pub(crate) mod test_utils {
     }
 
     #[track_caller]
-    pub fn reply(channel: &mut Channel, response: ResponsePacket) {
+    pub fn reply(exec: &mut fasync::TestExecutor, channel: &mut Channel, response: ResponsePacket) {
         let mut response_buf = vec![0; response.encoded_len()];
         response.encode(&mut response_buf[..]).expect("can encode response");
-        let _ = channel.write(&response_buf[..]).expect("write to channel success");
+        let mut fut = channel.send(response_buf.to_vec());
+        exec.run_until_stalled(&mut fut).expect("write to channel success").expect("write success");
     }
 
-    /// Sends the `packet` over the provided `channel`.
     #[track_caller]
-    pub fn send_packet<T>(channel: &mut Channel, packet: T)
+    pub fn send_packet<T>(exec: &mut fasync::TestExecutor, channel: &mut Channel, packet: T)
     where
         T: Encodable,
         <T as Encodable>::Error: std::fmt::Debug,
     {
         let mut buf = vec![0; packet.encoded_len()];
         packet.encode(&mut buf[..]).expect("can encode packet");
-        let _ = channel.write(&buf[..]).expect("write to channel success");
+        let mut fut = channel.send(buf.to_vec());
+        exec.run_until_stalled(&mut fut).expect("write to channel success").expect("write success");
     }
 
     #[track_caller]
@@ -218,7 +243,7 @@ pub(crate) mod test_utils {
         F: FnOnce(RequestPacket),
     {
         expect_request(exec, channel, expectation);
-        reply(channel, response)
+        reply(exec, channel, response)
     }
 
     pub fn expect_code(code: OpCode) -> impl FnOnce(RequestPacket) {
@@ -232,6 +257,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::SinkExt;
 
     use assert_matches::assert_matches;
 
@@ -242,12 +268,12 @@ mod tests {
     use crate::header::HeaderSet;
     use crate::operation::{RequestPacket, ResponseCode};
     use crate::transport::test_utils::{
-        expect_code, expect_request_and_reply, new_manager, TestPacket,
+        TestPacket, expect_code, expect_request_and_reply, new_manager,
     };
 
     #[fuchsia::test]
     fn transport_manager_new_operation() {
-        let _exec = fasync::TestExecutor::new();
+        let mut exec = fasync::TestExecutor::new();
         let (manager, _remote) = new_manager(/* srm_supported */ false);
 
         // Nothing should be in progress.
@@ -260,9 +286,12 @@ mod tests {
 
         // Once the first finishes, another can be claimed.
         drop(transport1);
-        let transport2 = manager.try_new_operation().expect("can start another operation");
+        let mut transport2 = manager.try_new_operation().expect("can start another operation");
         let request = RequestPacket::new_connect(100, HeaderSet::new());
-        transport2.send(request).expect("can send request");
+        let mut send_fut = pin!(transport2.send(request));
+        exec.run_until_stalled(&mut send_fut)
+            .expect("send result ready")
+            .expect("can send request");
     }
 
     #[fuchsia::test]
@@ -273,7 +302,12 @@ mod tests {
 
         // Local makes a request
         let request = RequestPacket::new_connect(100, HeaderSet::new());
-        transport.send(request).expect("can send request");
+        {
+            let mut send_fut = pin!(transport.send(request));
+            exec.run_until_stalled(&mut send_fut)
+                .expect("send result ready")
+                .expect("can send request");
+        }
         // Remote end should receive it - send an example response back.
         let peer_response =
             ResponsePacket::new(ResponseCode::Ok, vec![0x10, 0x00, 0x00, 0xff], HeaderSet::new());
@@ -296,14 +330,14 @@ mod tests {
     #[fuchsia::test]
     async fn send_while_channel_closed_is_error() {
         let (manager, remote) = new_manager(/* srm_supported */ false);
-        let transport = manager.try_new_operation().expect("can start operation");
+        let mut transport = manager.try_new_operation().expect("can start operation");
         drop(remote);
 
         let data = TestPacket(10);
-        let send_result = transport.send(data.clone());
+        let send_result = transport.send(data.clone()).await;
         assert_matches!(send_result, Err(Error::IOError(_)));
         // Trying again is still an Error.
-        let send_result = transport.send(data.clone());
+        let send_result = transport.send(data.clone()).await;
         assert_matches!(send_result, Err(Error::IOError(_)));
     }
 

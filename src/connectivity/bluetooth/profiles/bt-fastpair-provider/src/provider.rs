@@ -13,7 +13,7 @@ use fuchsia_inspect::{self as inspect, NumericProperty, Property};
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::mpsc;
 use futures::stream::{FusedStream, StreamExt};
-use futures::{FutureExt, select};
+use futures::{FutureExt, SinkExt, select};
 use host_watcher::{HostEvent, HostWatcher};
 use log::{debug, info, trace, warn};
 use std::pin::pin;
@@ -463,7 +463,7 @@ impl Provider {
         }
     }
 
-    fn handle_message_stream_update(&mut self, id: PeerId) {
+    async fn handle_message_stream_update(&mut self, id: PeerId) {
         debug!(id:%; "Incoming Message Stream connection");
         // Send the Model Id and current BLE address to the connected Seeker.
         let Some(address) = self.host_watcher.ble_address() else {
@@ -471,13 +471,13 @@ impl Provider {
         };
 
         let model_id_packet = MessageStreamPacket::new_model_id(self.state.config.model_id);
-        if let Err(e) = self.message_stream.send(model_id_packet) {
+        if let Err(e) = self.message_stream.send(model_id_packet).await {
             warn!(id:%; "Couldn't send Model ID over message stream: {e:?}");
             return;
         }
 
         let address_packet = MessageStreamPacket::new_address(address);
-        if let Err(e) = self.message_stream.send(address_packet) {
+        if let Err(e) = self.message_stream.send(address_packet).await {
             warn!(id:%; "Couldn't send Address over message stream: {e:?}");
         }
     }
@@ -576,7 +576,7 @@ impl Provider {
                 message_stream_update = self.message_stream.select_next_some() => {
                     // It's OK if the Message Stream terminates for any reason. `select_next_some`
                     // will ignore the case where the stream is exhausted.
-                    self.handle_message_stream_update(message_stream_update);
+                    self.handle_message_stream_update(message_stream_update).await;
                 }
                 _ = upstream_client_closed_fut => {
                     info!("Upstream client disabled Fast Pair");

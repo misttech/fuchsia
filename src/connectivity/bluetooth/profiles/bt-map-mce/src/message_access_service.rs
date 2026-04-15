@@ -3,18 +3,19 @@
 // found in the LICENSE file.
 
 use bt_map::{
-    Error, MapSupportedFeatures, MAP_SUPPORTED_FEATURES_TAG_ID, NOTIFICATION_STATUS_TAG_ID,
+    Error, MAP_SUPPORTED_FEATURES_TAG_ID, MapSupportedFeatures, NOTIFICATION_STATUS_TAG_ID,
 };
+use bt_obex::ObexError;
 use bt_obex::client::*;
 use bt_obex::header::{Header, HeaderSet};
-use bt_obex::ObexError;
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_bluetooth_map as fidl_map;
 use fuchsia_bluetooth::types::Channel;
 use fuchsia_sync::Mutex;
 use log::trace;
-use uuid::{uuid, Uuid};
-use {fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_bluetooth_map as fidl_map};
+use uuid::{Uuid, uuid};
 
-use crate::profile::{mns_supported_features, MasConfig};
+use crate::profile::{MasConfig, mns_supported_features};
 
 /// MAP v1.4.2 Section 6.3 Table 6.5.
 const MAS_TARGET: Uuid = uuid!("bb582b40-420c-11db-b0de-0800200c9a66");
@@ -163,7 +164,7 @@ pub(crate) mod tests {
     use bt_obex::header::HeaderIdentifier;
     use bt_obex::operation::{OpCode, RequestPacket, ResponseCode, ResponsePacket};
     use fuchsia_async as fasync;
-    use futures::StreamExt;
+    use futures::{SinkExt, StreamExt};
     use std::pin::pin;
 
     use packet_encoding::{Decodable, Encodable};
@@ -173,13 +174,16 @@ pub(crate) mod tests {
 
     const CONNECTION_ID: u32 = 0x1;
 
-    #[track_caller]
-    pub(crate) fn send_ok_response(channel: &mut Channel, headers: Vec<Header>, data: Vec<u8>) {
+    pub(crate) async fn send_ok_response(
+        channel: &mut Channel,
+        headers: Vec<Header>,
+        data: Vec<u8>,
+    ) {
         let response =
             ResponsePacket::new(ResponseCode::Ok, data, HeaderSet::from_headers(headers).unwrap());
         let mut response_buf = vec![0; response.encoded_len()];
         response.encode(&mut response_buf[..]).unwrap();
-        let _ = channel.write(&response_buf[..]).unwrap();
+        let _ = channel.send(response_buf).await.unwrap();
     }
 
     /// Returns a [MasConfig] with specified features and id of 1, support for SMS CDMA message
@@ -224,11 +228,12 @@ pub(crate) mod tests {
             .unwrap();
             assert_eq!(request.headers(), &expected_headers);
 
-            send_ok_response(
+            let mut response_fut = pin!(send_ok_response(
                 &mut remote,
                 vec![Header::ConnectionId(CONNECTION_ID.try_into().unwrap())],
                 CONNECTION_RESPONSE_DATA.to_vec(),
-            );
+            ));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
             let _ = exec.run_until_stalled(&mut conn_fut).expect("complete").expect("no error");
         }
 
@@ -275,11 +280,12 @@ pub(crate) mod tests {
             .unwrap();
             assert_eq!(request.headers(), &expected_headers);
 
-            send_ok_response(
+            let mut response_fut = pin!(send_ok_response(
                 &mut remote,
                 vec![Header::ConnectionId(CONNECTION_ID.try_into().unwrap())],
                 CONNECTION_RESPONSE_DATA.to_vec(),
-            );
+            ));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
 
             let _ = exec.run_until_stalled(&mut conn_fut).expect("complete").expect("no error");
         }
@@ -308,11 +314,12 @@ pub(crate) mod tests {
             exec.run_until_stalled(&mut conn_fut).expect_pending("waiting for response");
 
             let _ = expect_stream_item(exec, &mut remote).unwrap();
-            send_ok_response(
+            let mut response_fut = pin!(send_ok_response(
                 &mut remote,
                 vec![Header::ConnectionId(CONNECTION_ID.try_into().unwrap())],
                 CONNECTION_RESPONSE_DATA.to_vec(),
-            );
+            ));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
 
             let _ = exec.run_until_stalled(&mut conn_fut).expect("complete").expect("no error");
         }
@@ -353,7 +360,8 @@ pub(crate) mod tests {
                 ))
             );
 
-            send_ok_response(&mut remote, vec![], vec![]);
+            let mut response_fut = pin!(send_ok_response(&mut remote, vec![], vec![]));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
 
             let _ =
                 exec.run_until_stalled(&mut notification_fut).expect("complete").expect("no error");
@@ -378,7 +386,8 @@ pub(crate) mod tests {
                 ))
             );
 
-            send_ok_response(&mut remote, vec![], vec![]);
+            let mut response_fut = pin!(send_ok_response(&mut remote, vec![], vec![]));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
 
             let _ =
                 exec.run_until_stalled(&mut notification_fut).expect("complete").expect("no error");
@@ -412,11 +421,14 @@ pub(crate) mod tests {
 
             assert_eq!(request.code(), &OpCode::Connect);
 
-            send_ok_response(
-                &mut remote,
-                vec![Header::ConnectionId(CONNECTION_ID.try_into().unwrap())],
-                CONNECTION_RESPONSE_DATA.to_vec(),
-            );
+            {
+                let mut response_fut = pin!(send_ok_response(
+                    &mut remote,
+                    vec![Header::ConnectionId(CONNECTION_ID.try_into().unwrap())],
+                    CONNECTION_RESPONSE_DATA.to_vec(),
+                ));
+                exec.run_until_stalled(&mut response_fut).expect("response should complete");
+            }
 
             exec.run_until_stalled(&mut notification_fut).expect_pending("waiting for response");
 

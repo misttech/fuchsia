@@ -526,6 +526,7 @@ mod tests {
     };
     use fuchsia_async as fasync;
     use fuchsia_bluetooth::profile::DataElement;
+    use futures::SinkExt;
     use packet_encoding::{Decodable, Encodable};
     use std::pin::pin;
 
@@ -549,11 +550,12 @@ mod tests {
         assert_eq!(request.code(), &OpCode::Connect);
 
         if remote_response_ok {
-            let _ = send_ok_response(
+            let mut response_fut = pin!(send_ok_response(
                 remote_mas_channel,
                 vec![Header::ConnectionId(1.try_into().unwrap())],
                 vec![0x10, 0x00, 0xff, 0xff], // data for connection
-            );
+            ));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
         } else {
             let response = ResponsePacket::new(
                 ResponseCode::Forbidden,
@@ -562,7 +564,10 @@ mod tests {
             );
             let mut response_buf = vec![0; response.encoded_len()];
             response.encode(&mut response_buf[..]).unwrap();
-            let _ = remote_mas_channel.write(&response_buf[..]).unwrap();
+            let mut write_fut = pin!(remote_mas_channel.send(response_buf.to_vec()));
+            exec.run_until_stalled(&mut write_fut)
+                .expect("write should complete")
+                .expect("no error");
         }
     }
 
@@ -659,7 +664,7 @@ mod tests {
             ])])
             .unwrap(),
         );
-        send_packet(&mut remote_mns, connect_packet);
+        send_packet(exec, &mut remote_mns, connect_packet);
 
         exec.run_until_stalled(&mut connect_fut).expect("should not be pending").expect("no error");
 
@@ -857,7 +862,8 @@ mod tests {
             let request_raw = expect_stream_item(&mut exec, &mut remote_mas).expect("request");
             let request = RequestPacket::decode(&request_raw[..]).expect("can decode request");
             assert_eq!(request.code(), &OpCode::PutFinal);
-            let _ = send_ok_response(&mut remote_mas, vec![], vec![]);
+            let mut response_fut = pin!(send_ok_response(&mut remote_mas, vec![], vec![]));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
         };
 
         // Still should be pending for response since MNS connection wasn't made.
@@ -886,7 +892,8 @@ mod tests {
             let request_raw = expect_stream_item(&mut exec, &mut remote_mas).expect("request");
             let request = RequestPacket::decode(&request_raw[..]).expect("can decode request");
             assert_eq!(request.code(), &OpCode::PutFinal);
-            let _ = send_ok_response(&mut remote_mas, vec![], vec![]);
+            let mut response_fut = pin!(send_ok_response(&mut remote_mas, vec![], vec![]));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
 
             exec.run_until_stalled(&mut accessor_fut)
                 .expect_pending("accessor server still running");
@@ -920,7 +927,8 @@ mod tests {
             let request_raw = expect_stream_item(&mut exec, &mut remote_mas).expect("request");
             let request = RequestPacket::decode(&request_raw[..]).expect("can decode request");
             assert_eq!(request.code(), &OpCode::PutFinal);
-            let _ = send_ok_response(&mut remote_mas, vec![], vec![]);
+            let mut response_fut = pin!(send_ok_response(&mut remote_mas, vec![], vec![]));
+            exec.run_until_stalled(&mut response_fut).expect("response should complete");
         };
 
         // Still should be pending for response since MNS connection wasn't made.

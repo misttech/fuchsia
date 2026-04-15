@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fuchsia_bluetooth::types::Channel;
+use futures::SinkExt;
 use log::{trace, warn};
 
 pub use crate::client::get::GetOperation;
@@ -13,7 +14,7 @@ use crate::header::{
 };
 use crate::operation::{OpCode, RequestPacket, ResponseCode, ResponsePacket, SetPathFlags};
 pub use crate::transport::TransportType;
-use crate::transport::{max_packet_size_from_transport, ObexTransportManager};
+use crate::transport::{ObexTransportManager, max_packet_size_from_transport};
 use fuchsia_sync::Mutex;
 
 /// Implements the OBEX PUT operation.
@@ -181,8 +182,7 @@ impl ObexClient {
         let response = {
             let request = RequestPacket::new_connect(self.max_packet_size(), headers);
             let mut transport = self.transport.try_new_operation()?;
-            trace!("Making outgoing CONNECT request: {request:?}");
-            transport.send(request)?;
+            transport.send(request).await?;
             trace!("Successfully made CONNECT request");
             transport.receive_response(OpCode::Connect).await?
         };
@@ -205,7 +205,7 @@ impl ObexClient {
             let request = RequestPacket::new_disconnect(headers);
             let mut transport = self.transport.try_new_operation()?;
             trace!("Making outgoing DISCONNECT request: {request:?}");
-            transport.send(request)?;
+            transport.send(request).await?;
             trace!("Successfully made DISCONNECT request");
             transport.receive_response(opcode).await?
         };
@@ -264,7 +264,7 @@ impl ObexClient {
         let response = {
             let mut transport = self.transport.try_new_operation()?;
             trace!("Making outgoing SETPATH request: {request:?}");
-            transport.send(request)?;
+            transport.send(request).await?;
             trace!("Successfully made SETPATH request");
             transport.receive_response(opcode).await?
         };

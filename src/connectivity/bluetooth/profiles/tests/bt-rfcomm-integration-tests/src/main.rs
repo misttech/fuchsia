@@ -2,18 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bt_rfcomm::profile::{rfcomm_connect_parameters, server_channel_from_protocol};
 use bt_rfcomm::ServerChannel;
+use bt_rfcomm::profile::{rfcomm_connect_parameters, server_channel_from_protocol};
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fidl_fuchsia_bluetooth_bredr as bredr;
 use fuchsia_async::{DurationExt, TimeoutExt};
-use fuchsia_bluetooth::profile::{l2cap_connect_parameters, ProtocolDescriptor, Psm};
+use fuchsia_bluetooth::profile::{ProtocolDescriptor, Psm, l2cap_connect_parameters};
 use fuchsia_bluetooth::types::{Channel, PeerId, Uuid};
 use fuchsia_component_test::{Capability, RealmInstance};
+use futures::SinkExt;
 use futures::stream::StreamExt;
 use mock_piconet_client::{BtProfileComponent, PiconetHarness, PiconetMember};
 use profile_client::{ProfileClient, ProfileEvent};
 use std::pin::pin;
 use zx::MonotonicDuration;
-use {fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr};
 
 /// RFCOMM component URL.
 /// The RFCOMM component is a unique component in that it functions as a proxy for the
@@ -44,10 +46,9 @@ type SppClient = ProfileClient;
 /// See SPP V12 Table 6.1.
 pub fn spp_service_definition() -> bredr::ServiceDefinition {
     bredr::ServiceDefinition {
-        service_class_uuids: Some(vec![Uuid::new16(
-            bredr::ServiceClassProfileIdentifier::SerialPort.into_primitive(),
-        )
-        .into()]),
+        service_class_uuids: Some(vec![
+            Uuid::new16(bredr::ServiceClassProfileIdentifier::SerialPort.into_primitive()).into(),
+        ]),
         protocol_descriptor_list: Some(vec![
             bredr::ProtocolDescriptor {
                 protocol: Some(bredr::ProtocolIdentifier::L2Cap),
@@ -190,16 +191,15 @@ async fn multiple_rfcomm_clients_can_register_advertisements() {
 
 /// Verifies that the `send` RFCOMM channel can be written to and that the `data` is received by the
 /// `receive` RFCOMM channel.
-async fn send_and_expect_data(send: &Channel, receive: &mut Channel, data: Vec<u8>) {
-    let n = data.len();
-    assert_eq!(send.write(&data[..]), Ok(n));
-
-    let actual_bytes = receive
+async fn send_and_expect_data(send: &mut Channel, receive: &mut Channel, data: Vec<u8>) {
+    let write_fut = send.send(data.clone());
+    let read_fut = receive
         .next()
-        .on_timeout(RFCOMM_CHANNEL_TIMEOUT.after_now(), || Some(Err(fidl::Status::TIMED_OUT)))
-        .await
-        .expect("not closed")
-        .expect("is ok");
+        .on_timeout(RFCOMM_CHANNEL_TIMEOUT.after_now(), || Some(Err(fidl::Status::TIMED_OUT)));
+
+    let (write_res, read_res) = futures::future::join(write_fut, read_fut).await;
+    assert!(write_res.is_ok());
+    let actual_bytes = read_res.expect("not closed").expect("is ok");
     assert_eq!(actual_bytes, data);
 }
 
@@ -264,9 +264,9 @@ async fn rfcomm_component_connecting_to_another_rfcomm_component() {
 
     // Data can be exchanged in both directions.
     let data1 = vec![0x05, 0x06, 0x07, 0x08, 0x09];
-    send_and_expect_data(&channel1, &mut channel2, data1).await;
+    send_and_expect_data(&mut channel1, &mut channel2, data1).await;
     let data2 = vec![0x98, 0x97, 0x96, 0x95];
-    send_and_expect_data(&channel2, &mut channel1, data2).await;
+    send_and_expect_data(&mut channel2, &mut channel1, data2).await;
 }
 
 fn a2dp_service_definition() -> bredr::ServiceDefinition {

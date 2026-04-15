@@ -9,9 +9,8 @@ use anyhow::{Result, format_err};
 use at_commands as at;
 use at_commands::{DeserializeBytes, SerDe};
 use fuchsia_bluetooth::types::{Channel, PeerId};
-use futures::Stream;
-use futures::io::AsyncWriteExt;
 use futures::stream::FusedStream;
+use futures::{SinkExt, Stream};
 use log::{debug, warn};
 use std::collections::VecDeque;
 use std::io::Cursor;
@@ -129,7 +128,7 @@ impl Connection {
                     err
                 )
             })?;
-            self.rfcomm.write_all(&bytes).await.map_err(|err| {
+            self.rfcomm.send(bytes).await.map_err(|err| {
                 format_err!(
                     "Could not write serialized AT commands to channel for peer {:}: {:?}",
                     self.peer_id,
@@ -164,7 +163,7 @@ mod test {
         let mut conn = Connection::new(PeerId(1), far);
 
         let response_bytes = "+BRSF:0\r".as_bytes();
-        exec.run_singlethreaded(near.write_all(&response_bytes)).expect("Sent AT");
+        exec.run_singlethreaded(near.send(response_bytes.to_vec())).expect("Sent AT");
 
         let response = exec
             .run_singlethreaded(conn.next())
@@ -184,7 +183,7 @@ mod test {
         let mut conn = Connection::new(PeerId(1), far);
 
         let response_bytes = "+CIND: (\"service\",(0,1))\r".as_bytes();
-        exec.run_singlethreaded(near.write_all(&response_bytes)).expect("Sent AT");
+        exec.run_singlethreaded(near.send(response_bytes.to_vec())).expect("Sent AT");
 
         let response = exec
             .run_singlethreaded(conn.next())
@@ -204,7 +203,7 @@ mod test {
         let mut conn = Connection::new(PeerId(1), far);
 
         let response_bytes = "+BRSF:1\r+BRSF:2\r".as_bytes();
-        exec.run_singlethreaded(near.write_all(&response_bytes)).expect("Sent AT");
+        exec.run_singlethreaded(near.send(response_bytes.to_vec())).expect("Sent AT");
 
         let response_1 = exec
             .run_singlethreaded(conn.next())
@@ -235,11 +234,11 @@ mod test {
         let response_bytes_1 = "+BRS".as_bytes();
         let response_bytes_2 = "F:0\r".as_bytes();
 
-        exec.run_singlethreaded(near.write_all(&response_bytes_1)).expect("Sent AT 1");
+        exec.run_singlethreaded(near.send(response_bytes_1.to_vec())).expect("Sent AT 1");
 
         exec.run_until_stalled(&mut conn.next()).expect_pending("Reading AT fragmanet");
 
-        exec.run_singlethreaded(near.write_all(&response_bytes_2)).expect("Sent AT 2");
+        exec.run_singlethreaded(near.send(response_bytes_2.to_vec())).expect("Sent AT 2");
 
         let response = exec
             .run_singlethreaded(&mut conn.next())
@@ -282,7 +281,7 @@ mod test {
         let mut conn = Connection::new(PeerId(1), far);
 
         let response_bytes = "+BRSF:0\r".as_bytes();
-        exec.run_singlethreaded(near.write_all(&response_bytes)).expect("Sent AT");
+        exec.run_singlethreaded(near.send(response_bytes.to_vec())).expect("Sent AT");
 
         // RFCOMM is open and response isn't yet consumed.
         assert!(!conn.is_terminated());

@@ -10,14 +10,14 @@ use fidl_fuchsia_bluetooth_bredr::{
     ProfileProxy, ProtocolDescriptor, ProtocolIdentifier, ServiceDefinition,
 };
 use fuchsia_bluetooth::types::{Channel, PeerId, Uuid};
-use futures::ready;
 use futures::stream::{FusedStream, Stream, StreamExt};
+use futures::{SinkExt, ready};
 use log::{info, trace, warn};
 use packet_encoding::Encodable;
 use profile_client::{ProfileClient, ProfileEvent};
 
-use crate::types::packets::MessageStreamPacket;
 use crate::types::Error;
+use crate::types::packets::MessageStreamPacket;
 
 /// The service UUID associated with the Fast Pair service.
 /// "df21fe2c-2515-4fdb-8886-f12c4d67927c"
@@ -78,15 +78,6 @@ impl MessageStream {
         self.rfcomm.is_some()
     }
 
-    pub fn send(&mut self, packet: MessageStreamPacket) -> Result<(), Error> {
-        let Some(rfcomm) = self.rfcomm.inner_mut() else {
-            return Err(Error::internal("No RFCOMM connection available"));
-        };
-        let mut buf = vec![0; packet.encoded_len()];
-        packet.encode(&mut buf[..]).expect("valid packet");
-        rfcomm.write(&buf).map(|_| ()).map_err(|e| Error::internal(&format!("{e:?}")))
-    }
-
     /// Processes an event from the `bredr.Profile` protocol.
     /// Returns a PeerId if the `event` is an incoming connection from a remote peer.
     fn handle_profile_event(&mut self, event: ProfileEvent) -> Option<PeerId> {
@@ -113,6 +104,44 @@ impl MessageStream {
         info!(data:?; "Received Message Stream request");
         // We don't support any Message Stream requests.
         // TODO(https://fxbug.dev/42062580): Parse and handle Message Stream requests.
+    }
+}
+
+impl futures::sink::Sink<MessageStreamPacket> for MessageStream {
+    type Error = Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        let Some(rfcomm) = this.rfcomm.inner_mut() else {
+            return Poll::Ready(Err(Error::internal("No RFCOMM connection available")));
+        };
+        rfcomm.poll_ready_unpin(cx).map_err(|e| Error::internal(&format!("{e:?}")))
+    }
+
+    fn start_send(self: Pin<&mut Self>, packet: MessageStreamPacket) -> Result<(), Self::Error> {
+        let this = self.get_mut();
+        let Some(rfcomm) = this.rfcomm.inner_mut() else {
+            return Err(Error::internal("No RFCOMM connection available"));
+        };
+        let mut buf = vec![0; packet.encoded_len()];
+        packet.encode(&mut buf[..]).expect("valid packet");
+        rfcomm.start_send_unpin(buf).map_err(|e| Error::internal(&format!("{e:?}")))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        let Some(rfcomm) = this.rfcomm.inner_mut() else {
+            return Poll::Ready(Err(Error::internal("No RFCOMM connection available")));
+        };
+        rfcomm.poll_flush_unpin(cx).map_err(|e| Error::internal(&format!("{e:?}")))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        let Some(rfcomm) = this.rfcomm.inner_mut() else {
+            return Poll::Ready(Err(Error::internal("No RFCOMM connection available")));
+        };
+        rfcomm.poll_close_unpin(cx).map_err(|e| Error::internal(&format!("{e:?}")))
     }
 }
 
@@ -221,16 +250,16 @@ mod tests {
         assert!(message_stream.rfcomm_connected());
 
         // Remote can write data - it's just logged.
-        let _ = remote.write(&[0, 1, 2, 3]).expect("can write data");
+        remote.send(vec![0, 1, 2, 3]).await.expect("can write data");
         assert_matches!(message_stream.select_next_some().now_or_never(), None);
 
         // Local can send Model ID and local address.
         let model_id_packet =
             MessageStreamPacket::new_model_id(ModelId::try_from(0x123456).expect("valid"));
-        message_stream.send(model_id_packet).expect("can send model id");
+        message_stream.send(model_id_packet).await.expect("can send model id");
         expect_data(&mut remote, vec![0x03, 0x01, 0x00, 0x03, 0x12, 0x34, 0x56]).await;
         let address_packet = MessageStreamPacket::new_address(Address::Public([1, 2, 3, 4, 5, 6]));
-        message_stream.send(address_packet).expect("can send address");
+        message_stream.send(address_packet).await.expect("can send address");
         expect_data(&mut remote, vec![0x03, 0x02, 0x00, 0x06, 0x6, 0x5, 0x4, 0x3, 0x2, 0x1]).await;
 
         // Remote disconnects RFCOMM - MessageStream itself should still be active.

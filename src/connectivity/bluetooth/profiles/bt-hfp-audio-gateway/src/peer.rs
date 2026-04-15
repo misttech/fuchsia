@@ -55,6 +55,12 @@ pub enum PeerRequest {
     Shutdown,
 }
 
+impl From<ProfileEvent> for PeerRequest {
+    fn from(event: ProfileEvent) -> Self {
+        PeerRequest::Profile(event)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionBehavior {
     pub autoconnect: bool,

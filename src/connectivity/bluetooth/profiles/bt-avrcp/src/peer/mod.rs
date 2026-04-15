@@ -4,6 +4,9 @@
 
 use bt_avctp::{AvcCommandResponse, AvcCommandType, AvcPeer, AvcResponseType, AvctpPeer};
 use derivative::Derivative;
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::profile::Psm;
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_inspect::Property;
@@ -18,10 +21,6 @@ use std::collections::{HashMap, HashSet};
 use std::mem::{Discriminant, discriminant};
 use std::num::NonZeroU16;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
-    fuchsia_async as fasync,
-};
 
 mod controller;
 mod handlers;
@@ -976,8 +975,8 @@ pub(crate) mod tests {
     use fuchsia_bluetooth::profile::avrcp::{
         AvrcpControllerFeatures, AvrcpProtocolVersion, AvrcpTargetFeatures,
     };
-    use futures::TryStreamExt;
     use futures::task::Poll;
+    use futures::{SinkExt, TryStreamExt};
     use std::pin::pin;
 
     use diagnostics_assertions::assert_data_tree;
@@ -1000,20 +999,19 @@ pub(crate) mod tests {
     }
 
     #[track_caller]
-    fn expect_channel_writable(channel: &Channel) {
+    fn expect_channel_writable(exec: &mut fasync::TestExecutor, channel: &mut Channel) {
         // Should be able to send data over the channel.
-        match channel.write(&[0; 1]) {
-            Ok(1) => {}
-            x => panic!("Expected data write but got {:?} instead", x),
-        }
+        let mut write_fut = channel.send(vec![0; 1]);
+        exec.run_until_stalled(&mut write_fut)
+            .expect("should be ready")
+            .expect("write should succeed");
     }
 
     #[track_caller]
-    fn expect_channel_closed(channel: &Channel) {
-        match channel.write(&[0; 1]) {
-            Err(zx::Status::PEER_CLOSED) => {}
-            x => panic!("Expected PEER_CLOSED but got {:?}", x),
-        }
+    fn expect_channel_closed(exec: &mut fasync::TestExecutor, channel: &mut Channel) {
+        let mut write_fut = channel.send(vec![0; 1]);
+        let result = exec.run_until_stalled(&mut write_fut).expect("should be ready");
+        assert!(result.is_err());
     }
 
     // Helper function to set incoming control connection.
@@ -1092,7 +1090,8 @@ pub(crate) mod tests {
 
         // Since peer does not support browsing, verify that outgoing
         // browsing connection was not initiated.
-        let mut next_request_fut = profile_requests.next();
+        let next_request_fut = profile_requests.next();
+        let mut next_request_fut = pin!(next_request_fut);
         assert!(exec.run_until_stalled(&mut next_request_fut).is_pending());
         assert!(!peer_handle.is_browse_connected());
     }
@@ -1149,7 +1148,8 @@ pub(crate) mod tests {
 
         // We should have requested a connection for browse.
         let (_remote2, channel2) = Channel::create();
-        let mut next_request_fut = profile_requests.next();
+        let next_request_fut = profile_requests.next();
+        let mut next_request_fut = pin!(next_request_fut);
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, connection, .. }))) => {
                 let channel = channel2.try_into().unwrap();
@@ -1210,7 +1210,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // Peer should have requested a connection.
-        let (remote, channel) = Channel::create();
+        let (mut remote, channel) = Channel::create();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, connection, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1230,7 +1230,7 @@ pub(crate) mod tests {
         assert!(peer_handle.is_control_connected());
 
         // Should be able to send data over the channel.
-        expect_channel_writable(&remote);
+        expect_channel_writable(&mut exec, &mut remote);
 
         // Advance time by some arbitrary amount before peer decides to reconnect.
         exec.set_fake_time(zx::MonotonicDuration::from_seconds(5).after_now());
@@ -1238,15 +1238,15 @@ pub(crate) mod tests {
 
         // Peer reconnects with a new l2cap connection. Keep the old one alive to validate that it's
         // closed.
-        let remote2 = set_incoming_control_connection(&peer_handle);
+        let mut remote2 = set_incoming_control_connection(&peer_handle);
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(peer_handle.is_control_connected());
 
         // Shouldn't be able to send data over the old channel.
-        expect_channel_closed(&remote);
+        expect_channel_closed(&mut exec, &mut remote);
 
         // Should be able to send data over the new channel.
-        expect_channel_writable(&remote2);
+        expect_channel_writable(&mut exec, &mut remote2);
     }
 
     /// Tests that when inbound and outbound control connections are
@@ -1279,7 +1279,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We expect to initiate an outbound connection through the profile server.
-        let (remote, channel) = Channel::create();
+        let (mut remote, channel) = Channel::create();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1293,7 +1293,7 @@ pub(crate) mod tests {
         assert!(peer_handle.is_control_connected());
 
         // Should be able to send data over the channel.
-        expect_channel_writable(&remote);
+        expect_channel_writable(&mut exec, &mut remote);
 
         // Advance time by LESS than the CONNECTION_THRESHOLD amount.
         let advance_time = CONNECTION_THRESHOLD.into_nanos() - 100;
@@ -1301,14 +1301,14 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // Simulate inbound connection.
-        let remote2 = set_incoming_control_connection(&peer_handle);
+        let mut remote2 = set_incoming_control_connection(&peer_handle);
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(!peer_handle.is_control_connected());
 
         // Both the inbound and outbound-initiated control channels should be
         // dropped. Sending data should not work.
-        expect_channel_closed(&remote);
-        expect_channel_closed(&remote2);
+        expect_channel_closed(&mut exec, &mut remote);
+        expect_channel_closed(&mut exec, &mut remote2);
 
         // We expect to attempt to reconnect.
         // Advance time by the maximum amount of time it would take to establish
@@ -1316,8 +1316,9 @@ pub(crate) mod tests {
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
-        let (remote3, channel3) = Channel::create();
-        let mut next_request_fut = profile_requests.next();
+        let (mut _remote3, channel3) = Channel::create();
+        let next_request_fut = profile_requests.next();
+        let mut next_request_fut = pin!(next_request_fut);
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
                 let channel = channel3.try_into().unwrap();
@@ -1331,7 +1332,7 @@ pub(crate) mod tests {
         assert!(peer_handle.is_control_connected());
 
         // New channel should be good to go.
-        expect_channel_writable(&remote3);
+        expect_channel_writable(&mut exec, &mut _remote3);
     }
 
     /// Tests that when connection fails, we don't infinitely retry.
@@ -1436,8 +1437,8 @@ pub(crate) mod tests {
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
-        // We shouldn't have requested retry.
-        let mut next_request_fut = profile_requests.next();
+        let next_request_fut = profile_requests.next();
+        let mut next_request_fut = pin!(next_request_fut);
         assert!(exec.run_until_stalled(&mut next_request_fut).is_pending());
     }
 
@@ -1491,7 +1492,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for browse.
-        let (remote2, channel2) = Channel::create();
+        let (mut remote2, channel2) = Channel::create();
         let mut next_request_fut = profile_requests.next();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
@@ -1506,7 +1507,7 @@ pub(crate) mod tests {
         assert!(peer_handle.is_browse_connected());
 
         // Should be able to send data over the channel.
-        expect_channel_writable(&remote2);
+        expect_channel_writable(&mut exec, &mut remote2);
 
         // Advance time by LESS than the CONNECTION_THRESHOLD amount.
         let advance_time = CONNECTION_THRESHOLD.into_nanos() - 200;
@@ -1514,7 +1515,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // Simulate inbound browse connection.
-        let remote3 = set_incoming_browse_connection(&peer_handle);
+        let mut remote3 = set_incoming_browse_connection(&peer_handle);
 
         // Browse channel should be disconnected, but control channel should remain connected.
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
@@ -1523,8 +1524,8 @@ pub(crate) mod tests {
 
         // Both the inbound and outbound-initiated browse channels should be
         // dropped. Sending data should not work.
-        expect_channel_closed(&remote2);
-        expect_channel_closed(&remote3);
+        expect_channel_closed(&mut exec, &mut remote2);
+        expect_channel_closed(&mut exec, &mut remote3);
 
         // We expect to attempt to reconnect.
         // Advance time by the maximum amount of time it would take to establish
@@ -1532,7 +1533,7 @@ pub(crate) mod tests {
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
-        let (remote4, channel4) = Channel::create();
+        let (mut remote4, channel4) = Channel::create();
         let mut next_request_fut = profile_requests.next();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
@@ -1547,7 +1548,7 @@ pub(crate) mod tests {
         assert!(peer_handle.is_browse_connected());
 
         // New channel should be good to go.
-        expect_channel_writable(&remote4);
+        expect_channel_writable(&mut exec, &mut remote4);
     }
 
     /// Tests that when new inbound control connection comes in, previous
@@ -1581,7 +1582,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for control.
-        let (remote, channel) = Channel::create();
+        let (mut remote, channel) = Channel::create();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
                 let channel = channel.try_into().unwrap();
@@ -1600,7 +1601,7 @@ pub(crate) mod tests {
         let _ = exec.wake_expired_timers();
 
         // We should have requested a connection for browse.
-        let (remote2, channel2) = Channel::create();
+        let (mut remote2, channel2) = Channel::create();
         let mut next_request_fut = profile_requests.next();
         match exec.run_until_stalled(&mut next_request_fut) {
             Poll::Ready(Some(Ok(ProfileRequest::Connect { responder, .. }))) => {
@@ -1615,8 +1616,8 @@ pub(crate) mod tests {
         assert!(peer_handle.is_browse_connected());
 
         // Should be able to send data over the channels.
-        expect_channel_writable(&remote);
-        expect_channel_writable(&remote2);
+        expect_channel_writable(&mut exec, &mut remote);
+        expect_channel_writable(&mut exec, &mut remote2);
 
         // Advance time by some arbitrary amount before peer decides to reconnect.
         exec.set_fake_time(zx::MonotonicDuration::from_seconds(5).after_now());
@@ -1624,7 +1625,7 @@ pub(crate) mod tests {
 
         // After some time, remote peer sends incoming a new l2cap connection
         // for control channel. Keep the old one alive to validate that it's closed.
-        let remote3 = set_incoming_control_connection(&peer_handle);
+        let mut remote3 = set_incoming_control_connection(&peer_handle);
 
         // Run to update watcher state. Control channel should be connected,
         // but browse channel that was previously set should have closed.
@@ -1633,9 +1634,9 @@ pub(crate) mod tests {
         assert!(!peer_handle.is_browse_connected());
 
         // Shouldn't be able to send data over the old channels.
-        expect_channel_closed(&remote);
-        expect_channel_closed(&remote2);
-        expect_channel_writable(&remote3);
+        expect_channel_closed(&mut exec, &mut remote);
+        expect_channel_closed(&mut exec, &mut remote2);
+        expect_channel_writable(&mut exec, &mut remote3);
     }
 
     /// Tests that when new inbound control connection comes in, previous
@@ -1680,7 +1681,7 @@ pub(crate) mod tests {
         assert!(!peer_handle.is_control_connected());
 
         // Simulate inbound control connection.
-        let remote1 = set_incoming_control_connection(&peer_handle);
+        let mut remote1 = set_incoming_control_connection(&peer_handle);
 
         // Advance time by the maximum amount of time it would take to establish
         // a connection.
@@ -1690,10 +1691,10 @@ pub(crate) mod tests {
         assert!(!peer_handle.is_browse_connected());
 
         // Should be able to send data over the channel.
-        expect_channel_writable(&remote1);
+        expect_channel_writable(&mut exec, &mut remote1);
 
         // Simulate inbound browse connection.
-        let remote2 = set_incoming_browse_connection(&peer_handle);
+        let mut remote2 = set_incoming_browse_connection(&peer_handle);
 
         // Advance time by the maximum amount of time it would take to establish
         // a connection.
@@ -1703,7 +1704,7 @@ pub(crate) mod tests {
         assert!(peer_handle.is_browse_connected());
 
         // Should be able to send data over the channel.
-        expect_channel_writable(&remote2);
+        expect_channel_writable(&mut exec, &mut remote2);
 
         // Set the descriptors to simulate service found for peer. Setting the
         // descriptor should wake up the state watcher. At this point, both control and
@@ -2103,7 +2104,7 @@ pub(crate) mod tests {
         let (peer_handle, _target_delegate, _profile_requests) = setup_remote_peer(id);
 
         // Simulate inbound control connection.
-        let remote_control = set_incoming_control_connection(&peer_handle);
+        let mut remote_control = set_incoming_control_connection(&peer_handle);
         exec.set_fake_time(MAX_CONNECTION_EST_TIME.after_now());
         let _ = exec.wake_expired_timers();
 
@@ -2127,10 +2128,10 @@ pub(crate) mod tests {
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Send erroneous data over the control channel.
-        match remote_control.write(&[0, 17, 14, 0, 72]) {
-            Ok(_) => {}
-            Err(e) => panic!("Expected data write but got {:?} instead", e),
-        }
+        let mut write_fut = remote_control.send(vec![0, 17, 14, 0, 72]);
+        exec.run_until_stalled(&mut write_fut)
+            .expect("should be ready")
+            .expect("write should succeed");
 
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
@@ -2157,7 +2158,8 @@ pub(crate) mod tests {
         assert!(local_browse.half_close().is_ok());
         // Set write to not work to trigger error on socket read.
         let local_browse = Channel::from_socket_infallible(local_browse, Channel::DEFAULT_MAX_TX);
-        let remote_browse = Channel::from_socket_infallible(remote_browse, Channel::DEFAULT_MAX_TX);
+        let mut remote_browse =
+            Channel::from_socket_infallible(remote_browse, Channel::DEFAULT_MAX_TX);
 
         let browse_channel = AvctpPeer::new(local_browse);
         peer_handle.set_browse_connection(browse_channel);
@@ -2179,7 +2181,11 @@ pub(crate) mod tests {
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Send data over the browse channel with socket that'll cause error on write.
-        let _ = remote_browse.write(&[1, 1]).expect_err("should have failed");
+        let mut write_fut = remote_browse.send(vec![1, 1]);
+        let _ = exec
+            .run_until_stalled(&mut write_fut)
+            .expect("should be ready")
+            .expect_err("should have failed");
 
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 

@@ -1117,7 +1117,7 @@ mod tests {
         ProfileMarker, ProfileRequest, ProfileRequestStream, ServiceClassProfileIdentifier,
     };
     use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
-    use futures::future::Either;
+    use futures::{SinkExt, StreamExt};
     use std::pin::pin;
 
     use crate::media_task::tests::{TestMediaTask, TestMediaTaskBuilder};
@@ -1216,7 +1216,15 @@ mod tests {
         (remote, requests, cobalt_receiver, peer)
     }
 
+    #[track_caller]
+    fn expect_send(exec: &mut fasync::TestExecutor, remote: &mut Channel, data: Vec<u8>) {
+        exec.run_until_stalled(&mut remote.send(data))
+            .expect("poll is ready")
+            .expect("write successful");
+    }
+
     fn expect_get_capabilities_and_respond(
+        exec: &mut fasync::TestExecutor,
         remote: &mut Channel,
         expected_seid: u8,
         response_capabilities: &[u8],
@@ -1238,10 +1246,11 @@ mod tests {
 
         get_capabilities_rsp.extend_from_slice(response_capabilities);
 
-        assert!(remote.write(&get_capabilities_rsp).is_ok());
+        expect_send(exec, remote, get_capabilities_rsp);
     }
 
     fn expect_get_all_capabilities_and_respond(
+        exec: &mut fasync::TestExecutor,
         remote: &mut Channel,
         expected_seid: u8,
         response_capabilities: &[u8],
@@ -1263,7 +1272,7 @@ mod tests {
 
         get_capabilities_rsp.extend_from_slice(response_capabilities);
 
-        assert!(remote.write(&get_capabilities_rsp).is_ok());
+        expect_send(exec, remote, get_capabilities_rsp);
     }
 
     #[fuchsia::test]
@@ -1333,7 +1342,7 @@ mod tests {
             0x01 << 2 | 0x1 << 1,              // SEID (1), In Use (0b1)
             0x00 << 4 | 0x1 << 3,              // Audio (0x00), Sink (0x01)
         ];
-        assert!(remote.write(response).is_ok());
+        expect_send(&mut exec, &mut remote, response.to_vec());
 
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
@@ -1345,7 +1354,7 @@ mod tests {
             // Media Codec (LOSC = 2 + 4), Media Type Audio (0x00), Codec type (0x04), Codec specific 0xF09F9296
             0x07, 0x06, 0x00, 0x04, 0xF0, 0x9F, 0x92, 0x96
         ];
-        expect_get_capabilities_and_respond(&mut remote, 0x3E, capabilities_rsp);
+        expect_get_capabilities_and_respond(&mut exec, &mut remote, 0x3E, capabilities_rsp);
 
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
@@ -1357,7 +1366,7 @@ mod tests {
             // Media Codec (LOSC = 2 + 2), Media Type Audio (0x00), Codec type (0x00), Codec specific 0xC0DE
             0x07, 0x04, 0x00, 0x00, 0xC0, 0xDE
         ];
-        expect_get_capabilities_and_respond(&mut remote, 0x01, capabilities_rsp);
+        expect_get_capabilities_and_respond(&mut exec, &mut remote, 0x01, capabilities_rsp);
 
         match exec.run_until_stalled(&mut collect_future) {
             Poll::Pending => panic!("collect capabilities should be complete"),
@@ -1463,7 +1472,7 @@ mod tests {
             0x01 << 2 | 0x1 << 1,              // SEID (1), In Use (0b1)
             0x00 << 4 | 0x1 << 3,              // Audio (0x00), Sink (0x01)
         ];
-        assert!(remote.write(response).is_ok());
+        expect_send(&mut exec, &mut remote, response.to_vec());
 
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
@@ -1477,7 +1486,7 @@ mod tests {
             // Delay Reporting (LOSC = 0)
             0x08, 0x00
         ];
-        expect_get_all_capabilities_and_respond(&mut remote, 0x3E, capabilities_rsp);
+        expect_get_all_capabilities_and_respond(&mut exec, &mut remote, 0x3E, capabilities_rsp);
 
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
@@ -1489,7 +1498,7 @@ mod tests {
             // Media Codec (LOSC = 2 + 2), Media Type Audio (0x00), Codec type (0x00), Codec specific 0xC0DE
             0x07, 0x04, 0x00, 0x00, 0xC0, 0xDE
         ];
-        expect_get_all_capabilities_and_respond(&mut remote, 0x01, capabilities_rsp);
+        expect_get_all_capabilities_and_respond(&mut exec, &mut remote, 0x01, capabilities_rsp);
 
         match exec.run_until_stalled(&mut collect_future) {
             Poll::Pending => panic!("collect capabilities should be complete"),
@@ -1593,7 +1602,7 @@ mod tests {
             0x01,                         // Discover
             0x31,                         // BAD_STATE
         ];
-        assert!(remote.write(response).is_ok());
+        expect_send(&mut exec, &mut remote, response.to_vec());
 
         // Should be done with an error.
         // Should finish!
@@ -1636,7 +1645,7 @@ mod tests {
             0x01 << 2 | 0x1 << 1,              // SEID (1), In Use (0b1)
             0x00 << 4 | 0x1 << 3,              // Audio (0x00), Sink (0x01)
         ];
-        assert!(remote.write(response).is_ok());
+        expect_send(&mut exec, &mut remote, response.to_vec());
 
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
@@ -1655,7 +1664,7 @@ mod tests {
             0x02,                         // Get Capabilities
             0x12,                         // BAD_ACP_SEID
         ];
-        assert!(remote.write(response).is_ok());
+        expect_send(&mut exec, &mut remote, response.to_vec());
 
         assert!(exec.run_until_stalled(&mut collect_future).is_pending());
 
@@ -1674,7 +1683,7 @@ mod tests {
             0x02,                         // Get Capabilities
             0x12,                         // BAD_ACP_SEID
         ];
-        assert!(remote.write(response).is_ok());
+        expect_send(&mut exec, &mut remote, response.to_vec());
 
         // Should be done without an error, but with no streams.
         match exec.run_until_stalled(&mut collect_future) {
@@ -1684,7 +1693,7 @@ mod tests {
         }
     }
 
-    fn receive_simple_accept(remote: &mut Channel, signal_id: u8) {
+    fn receive_simple_accept(exec: &mut fasync::TestExecutor, remote: &mut Channel, signal_id: u8) {
         let received = recv_remote(remote).expect("expected a packet");
         // Last half of header must be Single (0b00) and Command (0b00)
         assert_eq!(0x00, received[0] & 0xF);
@@ -1696,7 +1705,7 @@ mod tests {
             txlabel_raw | 0x0 << 2 | 0x2, // txlabel (same), Single (0b00), Response Accept (0b10)
             signal_id,
         ];
-        assert!(remote.write(response).is_ok());
+        expect_send(exec, remote, response.to_vec());
     }
 
     #[fuchsia::test]
@@ -1722,11 +1731,11 @@ mod tests {
             x => panic!("Expected pending, but got {x:?}"),
         };
 
-        receive_simple_accept(&mut remote, 0x03); // Set Configuration
+        receive_simple_accept(&mut exec, &mut remote, 0x03); // Set Configuration
 
         assert!(exec.run_until_stalled(&mut start_future).is_pending());
 
-        receive_simple_accept(&mut remote, 0x06); // Open
+        receive_simple_accept(&mut exec, &mut remote, 0x06); // Open
 
         match exec.run_until_stalled(&mut start_future) {
             Poll::Pending => {}
@@ -1754,7 +1763,7 @@ mod tests {
             Poll::Ready(Ok(_)) => panic!("Expected to be pending but finished!"),
         };
 
-        receive_simple_accept(&mut remote, 0x07); // Start
+        receive_simple_accept(&mut exec, &mut remote, 0x07); // Start
 
         // Should return the media stream (which should be connected)
         // Should be done without an error, but with no streams.
@@ -2077,9 +2086,9 @@ mod tests {
         let _ = exec
             .run_until_stalled(&mut start_future)
             .expect_pending("waiting for set config response");
-        receive_simple_accept(&mut remote, 0x03); // Set Configuration
+        receive_simple_accept(&mut exec, &mut remote, 0x03); // Set Configuration
         exec.run_until_stalled(&mut start_future).expect_pending("waiting for open response");
-        receive_simple_accept(&mut remote, 0x06); // Open
+        receive_simple_accept(&mut exec, &mut remote, 0x06); // Open
         exec.run_until_stalled(&mut start_future).expect_pending("waiting for media transport");
         assert!(!peer.is_streaming_now());
 
@@ -2103,7 +2112,7 @@ mod tests {
         // Before peer responds to start, the permit gets taken.
         let seized_permits = test_permits.seize();
         assert_eq!(seized_permits.len(), 1);
-        receive_simple_accept(&mut remote, 0x07); // Start
+        receive_simple_accept(&mut exec, &mut remote, 0x07); // Start
 
         // Streaming should not locally begin because there is no available permit. The Start
         // response is handled gracefully.
@@ -2111,7 +2120,7 @@ mod tests {
             .expect_pending("waiting to send outgoing suspend");
         assert!(!peer.is_streaming_now());
         // We should issue an outgoing suspend request to synchronize state with the remote peer.
-        receive_simple_accept(&mut remote, 0x09); // Suspend
+        receive_simple_accept(&mut exec, &mut remote, 0x09); // Suspend
 
         // The start future should resolve without Error, and A2DP should not have started
         // streaming.
@@ -2226,11 +2235,11 @@ mod tests {
             x => panic!("was expecting pending but got {x:?}"),
         };
 
-        receive_simple_accept(&mut remote, 0x03); // Set Configuration
+        receive_simple_accept(&mut exec, &mut remote, 0x03); // Set Configuration
 
         assert!(exec.run_until_stalled(&mut start_future).is_pending());
 
-        receive_simple_accept(&mut remote, 0x06); // Open
+        receive_simple_accept(&mut exec, &mut remote, 0x06); // Open
 
         match exec.run_until_stalled(&mut start_future) {
             Poll::Pending => {}

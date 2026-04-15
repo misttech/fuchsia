@@ -358,29 +358,7 @@ impl PeerTask {
     /// be shutdown, Ok(false) otherwise, and an Error if the request could not be handled.
     async fn peer_request(&mut self, request: PeerRequest) -> Result<bool, Error> {
         match request {
-            PeerRequest::Profile(ProfileEvent::PeerConnected { protocol, channel, id: _ }) => {
-                let protocol = protocol
-                    .iter()
-                    .map(|proto| ProtocolDescriptor::try_from(proto))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| Error::MissingParameter(e.to_string()))?;
-                self.on_connection_request(protocol, channel).await?;
-            }
-            PeerRequest::Profile(ProfileEvent::SearchResult { protocol, attributes, id: _ }) => {
-                let protocol = protocol.map_or(Ok(None), |p| {
-                    p.iter()
-                        .map(|proto| ProtocolDescriptor::try_from(proto))
-                        .collect::<Result<Vec<_>, _>>()
-                        .map(|p| Some(p))
-                        .map_err(|e| Error::MissingParameter(e.to_string()))
-                })?;
-                let attributes = attributes
-                    .iter()
-                    .map(|attr| Attribute::try_from(attr))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| Error::MissingParameter(e.to_string()))?;
-                self.on_search_result(protocol, attributes).await;
-            }
+            PeerRequest::Profile(p) => self.on_profile_event(p).await?,
             PeerRequest::Audio(audio_event) => {
                 self.on_audio_event(audio_event).await?;
             }
@@ -399,6 +377,35 @@ impl PeerTask {
             }
         }
         Ok(false)
+    }
+
+    async fn on_profile_event(&mut self, event: ProfileEvent) -> Result<(), Error> {
+        match event {
+            ProfileEvent::PeerConnected { protocol, channel, id: _ } => {
+                let protocol = protocol
+                    .iter()
+                    .map(|proto| ProtocolDescriptor::try_from(proto))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| Error::MissingParameter(e.to_string()))?;
+                self.on_connection_request(protocol, channel).await?;
+            }
+            ProfileEvent::SearchResult { protocol, attributes, id: _ } => {
+                let protocol = protocol.map_or(Ok(None), |p| {
+                    p.iter()
+                        .map(|proto| ProtocolDescriptor::try_from(proto))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map(|p| Some(p))
+                        .map_err(|e| Error::MissingParameter(e.to_string()))
+                })?;
+                let attributes = attributes
+                    .iter()
+                    .map(|attr| Attribute::try_from(attr))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| Error::MissingParameter(e.to_string()))?;
+                self.on_search_result(protocol, attributes).await;
+            }
+        }
+        Ok(())
     }
 
     /// Processes a `request` for information from an HFP procedure.
@@ -955,6 +962,7 @@ mod tests {
     use fidl_fuchsia_bluetooth_internal_a2dp as fidl_a2dp;
     use fuchsia_async as fasync;
     use fuchsia_bluetooth::types::Channel;
+    use futures::SinkExt;
     use futures::future::ready;
     use futures::stream::{FusedStream, Stream};
     use proptest::prelude::*;
@@ -1185,7 +1193,8 @@ mod tests {
         // Simulate remote peer (HF) sending AT command to start the SLC Init Procedure.
         let features = HfFeatures::empty();
         let command = format!("AT+BRSF={}\r", features.bits()).into_bytes();
-        let _ = remote.write(&command);
+        let mut write_fut = remote.send(command.to_vec());
+        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
         let _ = exec.run_until_stalled(&mut peer_task_fut);
         // We then expect an outgoing message to the peer.
         expect_message_received_by_peer(&mut exec, &mut remote);
@@ -1572,7 +1581,8 @@ mod tests {
         };
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![battery_level_cmd]).expect("serialization is ok");
-        let _ = remote.write(&buf[..]).expect("channel write is ok");
+        let mut write_fut = remote.send(buf.to_vec());
+        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
 
         // Run the main future - the task should receive the HF indicator and report it.
         let (battery_level, _run_fut) = run_while(&mut exec, run_fut, stream.next());
@@ -1685,7 +1695,7 @@ mod tests {
             selected_codec: Some(CodecId::MSBC),
             ..SlcState::default()
         };
-        let (connection, remote) = create_and_initialize_slc(state);
+        let (connection, mut remote) = create_and_initialize_slc(state);
         let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
             setup_peer_task(Some(connection));
 
@@ -1730,7 +1740,8 @@ mod tests {
         let dial_cmd = at::Command::AtdNumber { number: String::from("7654321") };
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![dial_cmd]).expect("serialization is ok");
-        let _ = remote.write(&buf[..]).expect("channel write is ok");
+        let mut write_fut = remote.send(buf.to_vec());
+        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
 
         let (watch_state_req, run_fut) = run_while(&mut exec, run_fut, &mut call_stream.next());
         let _watch_state_resp = match watch_state_req {
@@ -1763,7 +1774,7 @@ mod tests {
             protocol: protocol.clone(),
             attributes: vec![],
         };
-        exec.run_singlethreaded(sender.send(PeerRequest::Profile(event))).expect("Send to succeed");
+        exec.run_singlethreaded(sender.send(event.into())).expect("Send to succeed");
 
         // Get a connection request on the `profile` stream.
         let result = exec.run_until_stalled(&mut profile.next());
@@ -1840,11 +1851,9 @@ mod tests {
         let run_fut = peer.run(receiver);
         let mut run_fut = pin!(run_fut);
 
-        let event_fut = sender.send(PeerRequest::Profile(ProfileEvent::PeerConnected {
-            id: PeerId(0),
-            protocol: vec![],
-            channel: local,
-        }));
+        let event_fut = sender.send(
+            ProfileEvent::PeerConnected { id: PeerId(0), protocol: vec![], channel: local }.into(),
+        );
         exec.run_singlethreaded(event_fut).unwrap();
 
         // The peer task is pending with no further work to do at this time.
@@ -1875,11 +1884,9 @@ mod tests {
 
         // create a new connection for the SLC
         let (local, mut new_remote) = Channel::create();
-        let event_fut = sender.send(PeerRequest::Profile(ProfileEvent::PeerConnected {
-            id: PeerId(0),
-            protocol: vec![],
-            channel: local,
-        }));
+        let event_fut = sender.send(
+            ProfileEvent::PeerConnected { id: PeerId(0), protocol: vec![], channel: local }.into(),
+        );
         exec.run_singlethreaded(event_fut).unwrap();
 
         // The peer task is pending with no further work to do at this time.
@@ -2118,7 +2125,8 @@ mod tests {
         let codec_confirm_cmd = at::Command::Bcs { codec: CodecId::MSBC.into() };
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
-        let _ = remote.write(&buf[..]).expect("channel write is ok");
+        let mut write_fut = remote.send(buf.to_vec());
+        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
 
         let (_token_requests, run_fut) =
             run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
@@ -2206,7 +2214,8 @@ mod tests {
         let codec_confirm_cmd = at::Command::Bcs { codec: CodecId::MSBC.into() };
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
-        let _ = remote.write(&buf[..]).expect("channel write is ok");
+        let mut write_fut = remote.send(buf.to_vec());
+        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
 
         let (_token_requests, run_fut) =
             run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
@@ -2240,7 +2249,8 @@ mod tests {
         let codec_confirm_cmd = at::Command::Bcs { codec: CodecId::CVSD.into() };
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
-        let _ = remote.write(&buf[..]).expect("channel write is ok");
+        let mut write_fut = remote.send(buf.to_vec());
+        exec.run_until_stalled(&mut write_fut).expect("ready").expect("ok");
 
         let (_token_requests, run_fut) =
             run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
@@ -2293,7 +2303,7 @@ mod tests {
     fn audio_control_connection_is_added_when_connected() {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
-        let (connection, _old_remote) = create_and_initialize_slc(SlcState::default());
+        let (connection, mut _old_remote) = create_and_initialize_slc(SlcState::default());
         let (peer, _sender, _receiver, _profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 

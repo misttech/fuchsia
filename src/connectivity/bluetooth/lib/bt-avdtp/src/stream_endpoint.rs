@@ -7,12 +7,12 @@ use fuchsia_async::{DurationExt, Task, TimeoutExt};
 use fuchsia_bluetooth::types::{A2dpDirection, Channel};
 use fuchsia_sync::{Mutex, RwLock};
 use futures::stream::{FusedStream, Stream};
-use futures::{FutureExt, io};
+use futures::{FutureExt, Sink};
 use log::warn;
-use std::fmt;
 use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
+use std::{fmt, io};
 use zx::{MonotonicDuration, Status};
 
 use crate::types::{
@@ -509,63 +509,39 @@ impl FusedStream for MediaStream {
     }
 }
 
-impl io::AsyncWrite for MediaStream {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, io::Error>> {
-        let arc_chan = match self.try_upgrade() {
-            Err(e) => return Poll::Ready(Err(e)),
-            Ok(c) => c,
-        };
-        let lock = match arc_chan.try_write() {
-            None => {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "couldn't lock",
-                )));
-            }
-            Some(lock) => lock,
-        };
-        let mut pin_chan = Pin::new(lock);
-        pin_chan.as_mut().poll_write(cx, buf)
+impl Sink<Vec<u8>> for MediaStream {
+    type Error = io::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let arc_chan = self.try_upgrade()?;
+        let mut lock = arc_chan
+            .try_write()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock"))?;
+        Pin::new(&mut *lock).poll_ready(cx).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        let arc_chan = match self.try_upgrade() {
-            Err(e) => return Poll::Ready(Err(e)),
-            Ok(c) => c,
-        };
-        let lock = match arc_chan.try_write() {
-            None => {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "couldn't lock",
-                )));
-            }
-            Some(lock) => lock,
-        };
-        let mut pin_chan = Pin::new(lock);
-        pin_chan.as_mut().poll_flush(cx)
+    fn start_send(self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
+        let arc_chan = self.try_upgrade()?;
+        let mut lock = arc_chan
+            .try_write()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock"))?;
+        Pin::new(&mut *lock).start_send(item).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        let arc_chan = match self.try_upgrade() {
-            Err(e) => return Poll::Ready(Err(e)),
-            Ok(c) => c,
-        };
-        let lock = match arc_chan.try_write() {
-            None => {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "couldn't lock",
-                )));
-            }
-            Some(lock) => lock,
-        };
-        let mut pin_chan = Pin::new(lock);
-        pin_chan.as_mut().poll_close(cx)
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let arc_chan = self.try_upgrade()?;
+        let mut lock = arc_chan
+            .try_write()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock"))?;
+        Pin::new(&mut *lock).poll_flush(cx).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let arc_chan = self.try_upgrade()?;
+        let mut lock = arc_chan
+            .try_write()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock"))?;
+        Pin::new(&mut *lock).poll_close(cx).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }
 
@@ -578,12 +554,11 @@ mod tests {
     use assert_matches::assert_matches;
     use async_utils::PollExt;
     use fidl::endpoints::create_request_stream;
-    use futures::io::{AsyncReadExt, AsyncWriteExt};
+    use fidl_fuchsia_bluetooth as fidl_bt;
+    use fidl_fuchsia_bluetooth_bredr as bredr;
+    use fuchsia_async as fasync;
+    use futures::SinkExt;
     use futures::stream::StreamExt;
-    use {
-        fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
-        fuchsia_async as fasync,
-    };
 
     const REMOTE_ID_VAL: u8 = 1;
     const REMOTE_ID: StreamEndpointId = StreamEndpointId(REMOTE_ID_VAL);
@@ -775,12 +750,10 @@ mod tests {
         // Trying to receive a channel in the wrong state closes the channel
         assert_matches!(s.receive_channel(transport), Err(Error::InvalidState));
 
-        let buf: &mut [u8] = &mut [0; 1];
-
-        let mut read_fut = remote.read(buf);
+        let mut read_fut = remote.next();
         let res = exec.run_until_stalled(&mut read_fut).expect("should be ready");
-        // When the peer is closed, Ok(0) is returned as per the AsyncRead contract.
-        assert_matches!(res, Ok(0));
+        // When the peer is closed, None is returned.
+        assert_matches!(res, None);
 
         assert_matches!(s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]), Ok(()));
 
@@ -792,9 +765,11 @@ mod tests {
     }
 
     fn setup_peer_for_release(exec: &mut fasync::TestExecutor) -> (Peer, Channel, SimpleResponder) {
-        let (peer, signaling) = setup_peer();
+        let (peer, mut signaling) = setup_peer();
         // Send a close from the other side to produce an event we can respond to.
-        let _ = signaling.write(&[0x40, 0x08, 0x04]).expect("signaling write");
+        exec.run_until_stalled(&mut signaling.send(vec![0x40, 0x08, 0x04]))
+            .expect("signaling write")
+            .expect("write successful");
         let mut req_stream = peer.take_request_stream();
         let mut req_fut = req_stream.next();
         let complete = exec.run_until_stalled(&mut req_fut);
@@ -859,12 +834,12 @@ mod tests {
         assert_matches!(media_stream.max_tx_size(), Ok(Channel::DEFAULT_MAX_TX));
 
         // Writing to the media stream should send it through the transport channel.
-        let hearts = &[0xF0, 0x9F, 0x92, 0x96, 0xF0, 0x9F, 0x92, 0x96];
-        let mut write_fut = media_stream.write(hearts);
+        let hearts = vec![0xF0, 0x9F, 0x92, 0x96, 0xF0, 0x9F, 0x92, 0x96];
+        let mut write_fut = media_stream.send(hearts.clone());
 
-        assert_matches!(exec.run_until_stalled(&mut write_fut), Poll::Ready(Ok(8)));
+        assert_matches!(exec.run_until_stalled(&mut write_fut), Poll::Ready(Ok(())));
 
-        expect_remote_recv(hearts, &mut remote_transport);
+        expect_remote_recv(&hearts, &mut remote_transport);
 
         // Closing the media stream should close the channel.
         let mut close_fut = media_stream.close();
@@ -874,15 +849,14 @@ mod tests {
 
         drop(s);
 
-        // Reading from the remote end should return 0.
-        let mut result = vec![0];
-        let mut read_fut = remote_transport.read(&mut result[..]);
+        // Reading from the remote end should return None.
+        let mut read_fut = remote_transport.next();
         let res = exec.run_until_stalled(&mut read_fut).expect("should be ready");
-        // When the peer is closed, Ok(0) is returned as per the AsyncRead contract.
-        assert_matches!(res, Ok(0));
+        // When the peer is closed, None is returned.
+        assert_matches!(res, None);
 
         // After the stream is gone, any write should return an Err
-        let mut write_fut = media_stream.write(&[0xDE, 0xAD]);
+        let mut write_fut = media_stream.send(vec![0xDE, 0xAD]);
         assert_matches!(exec.run_until_stalled(&mut write_fut), Poll::Ready(Err(_)));
 
         // After the stream is gone, the stream should be fused done.
@@ -916,7 +890,9 @@ mod tests {
         assert_eq!(0x0A, received[1]);
         let txlabel = received[0] & 0xF0;
         // Send a response
-        assert!(signaling.write(&[txlabel | 0x02, 0x0A]).is_ok());
+        exec.run_until_stalled(&mut signaling.send(vec![txlabel | 0x02, 0x0A]))
+            .expect("signaling write")
+            .expect("write successful");
 
         let _ = exec.run_singlethreaded(&mut remote_transport.closed());
 

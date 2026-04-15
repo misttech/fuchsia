@@ -416,17 +416,19 @@ pub(crate) mod tests {
     use async_utils::PollExt;
     use bt_obex::operation::{RequestPacket, ResponsePacket};
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
+    use fidl_fuchsia_bluetooth_bredr as bredr;
     use fidl_fuchsia_bluetooth_map::{
         AccessorMarker, AccessorRequest, AccessorSetNotificationRegistrationRequest,
         NotificationRegistrationMarker, NotificationRegistrationRequest,
         NotificationRegistrationRequestStream,
     };
+    use fuchsia_async as fasync;
     use fuchsia_bluetooth::profile::DataElement;
+    use futures::SinkExt;
     use futures::channel::mpsc::Receiver;
     use objects::Builder;
     use packet_encoding::Encodable;
     use std::pin::pin;
-    use {fidl_fuchsia_bluetooth_bredr as bredr, fuchsia_async as fasync};
 
     // Version = 1.0, Flags = 0, Max packet = 0xffff.
     const CONNECTION_RESPONSE_DATA: [u8; 4] = [0x10, 0x00, 0xff, 0xff];
@@ -435,14 +437,17 @@ pub(crate) mod tests {
 
     /// Sends the `packet` over the provided `channel`.
     #[track_caller]
-    pub(crate) fn send_packet<T>(channel: &mut Channel, packet: T)
+    pub(crate) fn send_packet<T>(exec: &mut fasync::TestExecutor, channel: &mut Channel, packet: T)
     where
         T: Encodable,
         <T as Encodable>::Error: std::fmt::Debug,
     {
         let mut buf = vec![0; packet.encoded_len()];
         packet.encode(&mut buf[..]).expect("can encode packet");
-        let _ = channel.write(&buf[..]).expect("write to channel success");
+        let write_fut = channel.send(buf.to_vec());
+        exec.run_until_stalled(&mut pin!(write_fut))
+            .expect("write to channel success")
+            .expect("write successful");
     }
 
     // Starts the MNS session and returns the high-level AccessorProxy
@@ -513,7 +518,7 @@ pub(crate) mod tests {
                 HeaderSet::from_headers(vec![Header::Target(MNS_TARGET_UUID.as_bytes().to_vec())])
                     .unwrap(),
             );
-            send_packet(&mut remote, connect_packet);
+            send_packet(exec, &mut remote, connect_packet);
 
             exec.run_until_stalled(&mut run_fut).expect("should be ready").expect("no error");
 
@@ -571,7 +576,7 @@ pub(crate) mod tests {
             run_mns_session(&mut exec);
 
         // Mimic incoming event report from remote MNS client.
-        send_packet(&mut remote, new_msg_event_report_packet(TEST_MAS_ID_1, 1234));
+        send_packet(&mut exec, &mut remote, new_msg_event_report_packet(TEST_MAS_ID_1, 1234));
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Should have sent notifications.
@@ -596,10 +601,10 @@ pub(crate) mod tests {
         assert!(responder.send().is_ok());
 
         // 2 more messages from remote peer.
-        send_packet(&mut remote, new_msg_event_report_packet(TEST_MAS_ID_1, 2345));
+        send_packet(&mut exec, &mut remote, new_msg_event_report_packet(TEST_MAS_ID_1, 2345));
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
-        send_packet(&mut remote, new_msg_event_report_packet(TEST_MAS_ID_2, 1234));
+        send_packet(&mut exec, &mut remote, new_msg_event_report_packet(TEST_MAS_ID_2, 1234));
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Server end should have received 2 requests for new event report.
@@ -663,7 +668,11 @@ pub(crate) mod tests {
             run_mns_session(&mut exec);
 
         // Mimic a OBEX DISCONNECT request from remote MNS client.
-        send_packet(&mut remote, RequestPacket::new(OpCode::Disconnect, vec![], HeaderSet::new()));
+        send_packet(
+            &mut exec,
+            &mut remote,
+            RequestPacket::new(OpCode::Disconnect, vec![], HeaderSet::new()),
+        );
 
         let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 

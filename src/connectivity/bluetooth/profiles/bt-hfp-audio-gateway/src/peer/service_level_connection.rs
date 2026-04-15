@@ -14,7 +14,7 @@ use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::mpsc::{self, Receiver, Sender};
 use futures::stream::{FusedStream, Stream, StreamExt};
-use futures::{AsyncWrite, AsyncWriteExt, FutureExt};
+use futures::{FutureExt, Sink, SinkExt};
 use log::{debug, info, warn};
 use std::collections::{HashMap, VecDeque};
 use std::io::Cursor;
@@ -136,20 +136,18 @@ impl<'a> fmt::Debug for SlcInitializationDebug<'a> {
 ///   - Provides a way to drain and asynchronously send the queued data to the remote.
 ///   - Provides a stream implementation to read bytes received from the remote and send
 ///     any queued bytes.
-struct DataController<T: Stream + AsyncWrite> {
+struct DataController<T: Stream + Sink<Vec<u8>, Error = zx::Status>> {
     /// The underlying channel representing the connection with the remote.
     channel: T,
     /// Bytes that are buffered to be sent to the remote.
     buffer: Vec<u8>,
-    /// Cursor on the first buffer waiting indicating the next byte to be written.
-    buffer_cursor: usize,
     /// Flag indicating whether the `channel` needs to be flushed or not.
     needs_flush: bool,
 }
 
-impl<T: Stream + AsyncWrite + Unpin> DataController<T> {
+impl<T: Stream + Sink<Vec<u8>, Error = zx::Status> + Unpin> DataController<T> {
     fn new(channel: T) -> Self {
-        Self { channel, buffer: Vec::new(), buffer_cursor: 0, needs_flush: false }
+        Self { channel, buffer: Vec::new(), needs_flush: false }
     }
 
     /// Adds the provided `bytes` to the send queue.
@@ -159,49 +157,52 @@ impl<T: Stream + AsyncWrite + Unpin> DataController<T> {
 
     /// Write all queued data to the `channel` - returns Error if writing fails.
     async fn send_queued(&mut self) -> Result<(), zx::Status> {
-        let bytes = std::mem::take(&mut self.buffer);
-        let result = self.channel.write_all(&bytes).await;
-        if let Ok(_) = result {
-            debug!("Sent {:?}", String::from_utf8_lossy(&bytes));
+        if !self.buffer.is_empty() {
+            let bytes = std::mem::take(&mut self.buffer);
+            let result = self.channel.send(bytes.clone()).await;
+            if let Ok(_) = result {
+                debug!("Sent {:?}", String::from_utf8_lossy(&bytes));
+            }
+            self.needs_flush = false;
+            return result;
         }
-        self.buffer_cursor = 0;
-        self.needs_flush = false;
-        Ok(result?)
+
+        if self.needs_flush {
+            let result = self.channel.flush().await;
+            if result.is_ok() {
+                self.needs_flush = false;
+            }
+            return result;
+        }
+
+        Ok(())
     }
 
     /// Attempts to send any queued data to the `channel`.
     /// Returns Error if writing to or flushing the channel fails, OK otherwise.
     fn try_send_queued(&mut self, cx: &mut Context<'_>) -> Result<(), zx::Status> {
-        while !self.buffer.is_empty() {
-            let cursor = self.buffer_cursor;
-            match Pin::new(&mut self.channel).poll_write(cx, &self.buffer[cursor..]) {
-                Poll::Pending => {
-                    // Unable to write, try again later.
-                    return Ok(());
+        if !self.buffer.is_empty() {
+            match self.channel.poll_ready_unpin(cx) {
+                Poll::Ready(Ok(())) => {
+                    let bytes = std::mem::take(&mut self.buffer);
+                    self.channel.start_send_unpin(bytes)?;
+                    self.needs_flush = true;
                 }
                 Poll::Ready(Err(e)) => {
                     warn!("Error writing bytes to channel: {:?}", e);
-                    return Err(e.into());
+                    return Err(e);
                 }
-                Poll::Ready(Ok(written)) => {
-                    self.buffer_cursor = cursor + written;
-
-                    // If we've finished writing the entire buffer, we are ready to flush.
-                    if self.buffer_cursor >= self.buffer.len() {
-                        // Reset the pointer to the front of the buffer as we've finished writing.
-                        self.buffer = Vec::new();
-                        self.buffer_cursor = 0;
-                        self.needs_flush = true;
-                    }
+                Poll::Pending => {
+                    // Unable to write, try again later. We still attempt to flush later.
                 }
             }
         }
 
         // Attempt to flush
         if self.needs_flush {
-            match Pin::new(&mut self.channel).poll_flush(cx) {
+            match self.channel.poll_flush_unpin(cx) {
                 Poll::Ready(Ok(())) => self.needs_flush = false,
-                Poll::Ready(Err(e)) => return Err(e.into()),
+                Poll::Ready(Err(e)) => return Err(e),
                 Poll::Pending => (),
             }
         }
@@ -211,7 +212,10 @@ impl<T: Stream + AsyncWrite + Unpin> DataController<T> {
 
 impl<T> Stream for DataController<T>
 where
-    T: AsyncWrite + Stream<Item = Result<Vec<u8>, zx::Status>> + FusedStream + Unpin,
+    T: Sink<Vec<u8>, Error = zx::Status>
+        + Stream<Item = Result<Vec<u8>, zx::Status>>
+        + FusedStream
+        + Unpin,
 {
     type Item = T::Item;
 
@@ -220,6 +224,7 @@ where
             panic!("Cannot poll a terminated stream");
         }
 
+        // TODO(https://fxbug.dev/501056189): Remove eager send in Stream.
         // Before reading on the channel, try to send any buffered messages.
         if let Err(e) = self.try_send_queued(cx) {
             return Poll::Ready(Some(Err(e)));
@@ -232,7 +237,10 @@ where
 
 impl<T> FusedStream for DataController<T>
 where
-    T: AsyncWrite + Stream<Item = Result<Vec<u8>, zx::Status>> + FusedStream + Unpin,
+    T: Sink<Vec<u8>, Error = zx::Status>
+        + Stream<Item = Result<Vec<u8>, zx::Status>>
+        + FusedStream
+        + Unpin,
 {
     fn is_terminated(&self) -> bool {
         self.channel.is_terminated()
@@ -891,7 +899,7 @@ pub(crate) mod tests {
     async fn slc_stream_produces_items() {
         let (mut slc, mut remote) = create_and_connect_slc();
 
-        remote.write_all(b"AT+BRSF=0\r").await.unwrap();
+        remote.send(b"AT+BRSF=0\r".to_vec()).await.unwrap();
 
         let actual_request = match slc.next().await {
             Some(Ok(r)) => r,
@@ -915,7 +923,7 @@ pub(crate) mod tests {
     #[fuchsia::test]
     fn slc_handles_multipart_commands() {
         let mut exec = fasync::TestExecutor::new();
-        let (mut slc, remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc();
         // Bypass the SLCI procedure by setting the channel to initialized.
         slc.set_initialized();
         expect_slc_ready(&mut exec, &mut slc, std::mem::discriminant(&SlcRequest::Initialized));
@@ -923,10 +931,12 @@ pub(crate) mod tests {
         let set_speaker_gain_part_one = b"AT+VG";
         let set_speaker_gain_part_two = b"S=1\r";
 
-        let _ = remote.write(set_speaker_gain_part_one).expect("Sending part one.");
+        let mut fut = remote.send(set_speaker_gain_part_one.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
         expect_slc_pending(&mut exec, &mut slc);
 
-        let _ = remote.write(set_speaker_gain_part_two).expect("Sending part two.");
+        let mut fut = remote.send(set_speaker_gain_part_two.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
         let slc_volume_request = SlcRequest::SpeakerVolumeSynchronization {
             level: Gain::try_from(0 as u8).unwrap(),
             response: Box::new(|| AgUpdate::Ok),
@@ -937,14 +947,15 @@ pub(crate) mod tests {
     #[fuchsia::test]
     fn slc_handles_multiple_commands() {
         let mut exec = fasync::TestExecutor::new();
-        let (mut slc, remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc();
         // Bypass the SLCI procedure by setting the channel to initialized.
         slc.set_initialized();
         expect_slc_ready(&mut exec, &mut slc, std::mem::discriminant(&SlcRequest::Initialized));
 
         let set_speaker_gain_send_dtmf = b"AT+VGS=1\rAT+VTS=#\r";
 
-        let _ = remote.write(set_speaker_gain_send_dtmf).expect("Sending.");
+        let mut fut = remote.send(set_speaker_gain_send_dtmf.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
         let slc_volume_request = SlcRequest::SpeakerVolumeSynchronization {
             level: Gain::try_from(0 as u8).unwrap(),
@@ -962,11 +973,12 @@ pub(crate) mod tests {
     #[ignore]
     fn unexpected_command_before_initialization_closes_channel() {
         let mut exec = fasync::TestExecutor::new();
-        let (mut slc, remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc();
 
         // Peer sends an unexpected AT command.
         let unexpected = format!("AT+CIND=?\r").into_bytes();
-        let _ = remote.write(&unexpected);
+        let mut fut = remote.send(unexpected.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
         // No requests should be received on the stream.
         expect_slc_pending(&mut exec, &mut slc);
@@ -980,13 +992,13 @@ pub(crate) mod tests {
     /// and any outstanding procedures should be terminated.
     #[fasync::run_until_stalled(test)]
     async fn new_connection_when_outstanding_procedure_terminates_procedure() {
-        let (mut slc, remote) = create_and_connect_slc();
+        let (mut slc, mut remote) = create_and_connect_slc();
         // Peer sends us HF features - we expect a request for the AG features on the
         // SLC stream.
         let slci_marker = ProcedureMarker::SlcInitialization;
         let features = HfFeatures::THREE_WAY_CALLING;
         let command = format!("AT+BRSF={}\r", features.bits()).into_bytes();
-        let _ = remote.write(&command);
+        remote.send(command.to_vec()).await.expect("Sending command");
         match slc.next().await {
             Some(Ok(SlcRequest::GetAgFeatures { .. })) => {}
             x => panic!("Expected a GetAgFeatures request but got: {:?}", x),
@@ -1017,7 +1029,8 @@ pub(crate) mod tests {
         // SLC stream.
         let features = HfFeatures::THREE_WAY_CALLING;
         let command1 = format!("AT+BRSF={}\r", features.bits()).into_bytes();
-        let _ = remote.write(&command1);
+        let mut fut = remote.send(command1.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
         let response_fn1 = {
             match exec.run_until_stalled(&mut slc.next()) {
@@ -1038,14 +1051,16 @@ pub(crate) mod tests {
         // Peer sends us an HF supported indicators request - since the SLC can handle the request,
         // we expect no item in the SLC stream. The response should directly be sent to the peer.
         let command2 = format!("AT+CIND=?\r").into_bytes();
-        let _ = remote.write(&command2);
+        let mut fut = remote.send(command2.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
         expect_slc_pending(&mut exec, &mut slc);
         expect_peer_ready(&mut exec, &mut remote, None);
 
         // Peer requests the indicator status. Since this status is not managed by the SLC, we
         // expect a stream item to get the information.
         let command3 = format!("AT+CIND?\r").into_bytes();
-        let _ = remote.write(&command3);
+        let mut fut = remote.send(command3.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
         let response_fn2 = {
             match exec.run_until_stalled(&mut slc.next()) {
                 Poll::Ready(Some(Ok(SlcRequest::GetAgIndicatorStatus { response }))) => response,
@@ -1063,7 +1078,8 @@ pub(crate) mod tests {
         // handle the request, we expect no item in the SLC stream, and the response should directly
         // be sent to the peer.
         let command4 = format!("AT+CMER=3,0,0,1\r").into_bytes();
-        let _ = remote.write(&command4);
+        let mut fut = remote.send(command4.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
         // That's the end of the SLCI process, We should emit to the peer that we are initialized.
         let slc_next_poll = exec.run_until_stalled(&mut slc.next());
@@ -1157,7 +1173,8 @@ pub(crate) mod tests {
         // SLC stream and the SLCI procedure should begin.
         let features = HfFeatures::THREE_WAY_CALLING;
         let command1 = format!("AT+BRSF={}\r", features.bits()).into_bytes();
-        let _ = remote.write(&command1);
+        let mut fut = remote.send(command1.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
 
         // Simulate local response with AG Features - expect these to be sent to the peer.
         let ag_features_update = {
@@ -1183,11 +1200,13 @@ pub(crate) mod tests {
 
         // Peer continues the SLCI procedure.
         let command2 = format!("AT+CIND=?\r").into_bytes();
-        let _ = remote.write(&command2);
+        let mut fut = remote.send(command2.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
         expect_slc_pending(&mut exec, &mut slc);
         expect_peer_ready(&mut exec, &mut remote, None);
         let command3 = format!("AT+CIND?\r").into_bytes();
-        let _ = remote.write(&command3);
+        let mut fut = remote.send(command3.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
         let ag_indicators = {
             match exec.run_until_stalled(&mut slc.next()) {
                 Poll::Ready(Some(Ok(SlcRequest::GetAgIndicatorStatus { response }))) => {
@@ -1204,7 +1223,8 @@ pub(crate) mod tests {
 
         // Peer requests to enable the Indicator Status update in the AG.
         let command4 = format!("AT+CMER=3,0,0,1\r").into_bytes();
-        let _ = remote.write(&command4);
+        let mut fut = remote.send(command4.to_vec());
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
         // At this point, the mandatory portion of the SLCI procedure is complete. There are no optional
         // steps since we responded with an empty set of AgFeatures.
         expect_slc_ready(&mut exec, &mut slc, std::mem::discriminant(&SlcRequest::Initialized));
@@ -1232,16 +1252,16 @@ pub(crate) mod tests {
 
     #[fasync::run_until_stalled(test)]
     async fn rfcomm_connection_stream_produces_items() {
-        let (local, remote) = Channel::create();
+        let (local, mut remote) = Channel::create();
         let mut connection = DataController::new(local);
         assert!(!connection.is_terminated());
 
         let data1 = vec![0x01, 0x02, 0x03, 0x04];
-        let _ = remote.write(&data1);
+        remote.send(data1.to_vec()).await.expect("Sending data 1");
         assert_matches!(connection.next().await, Some(Ok(buf)) if buf == data1);
 
         let data2 = vec![0x01];
-        let _ = remote.write(&data2);
+        remote.send(data2.to_vec()).await.expect("Sending data 2");
         assert_matches!(connection.next().await, Some(Ok(buf)) if buf == data2);
 
         drop(remote);
@@ -1289,12 +1309,12 @@ pub(crate) mod tests {
         let (remote, local) = zx::Socket::create_datagram();
         assert!(local.half_close().is_ok());
         let local = Channel::from_socket_infallible(local, Channel::DEFAULT_MAX_TX);
-        let remote = Channel::from_socket_infallible(remote, Channel::DEFAULT_MAX_TX);
+        let mut remote = Channel::from_socket_infallible(remote, Channel::DEFAULT_MAX_TX);
         let mut connection = DataController::new(local);
 
         // Remote writing to us should fail.
         let bytes = vec![0x00, 0x03];
-        assert_matches!(remote.write(&bytes), Err(zx::Status::BAD_STATE));
+        assert_matches!(remote.send(bytes.to_vec()).await, Err(_));
         // A local read should also fail - the error should be propagated to the stream.
         assert_matches!(connection.next().await, Some(Err(zx::Status::BAD_STATE)));
     }

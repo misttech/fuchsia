@@ -5,21 +5,21 @@
 use anyhow::{Context, format_err};
 use bt_avctp::{AvcPeer, AvcResponseType};
 use fidl::endpoints::{create_endpoints, create_proxy, create_request_stream};
+use fidl_fuchsia_bluetooth as fidl_bt;
 use fidl_fuchsia_bluetooth_avrcp::{
     AbsoluteVolumeHandlerMarker, AbsoluteVolumeHandlerRequest, AbsoluteVolumeHandlerRequestStream,
     ControllerMarker, PeerManagerMarker, TargetHandlerMarker,
 };
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_bluetooth_bredr_test as bredr_test;
 use fixture::fixture;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::profile::{Psm, l2cap_connect_parameters};
 use fuchsia_bluetooth::types::{Channel, Uuid};
 use fuchsia_component_test::Capability;
 use futures::stream::StreamExt;
-use futures::{TryFutureExt, join};
+use futures::{SinkExt, TryFutureExt, join};
 use mock_piconet_client::{BtProfileComponent, PiconetHarness, PiconetMember};
-use {
-    fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
-    fidl_fuchsia_bluetooth_bredr_test as bredr_test, fuchsia_async as fasync,
-};
 
 /// AVRCP component URL.
 const AVRCP_URL: &str = "fuchsia-pkg://fuchsia.com/bt-avrcp-integration-tests#meta/bt-avrcp.cm";
@@ -239,8 +239,8 @@ async fn remote_initiates_connection_to_avrcp(mut tf: AvrcpIntegrationTest) {
         .unwrap();
 
     // Sending a random non-AVRCP data packet should be OK.
-    let write_result = channel.write(&[0x00, 0x00, 0x00]);
-    assert_eq!(write_result, Ok(3));
+    let write_result = channel.send(vec![0x00, 0x00, 0x00]).await;
+    assert!(write_result.is_ok());
 
     // We expect a general reject response, since the sent packet is malformed.
     let expected_read_result_packet = &[

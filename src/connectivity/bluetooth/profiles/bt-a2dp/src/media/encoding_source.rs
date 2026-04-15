@@ -8,18 +8,19 @@ use bt_a2dp::media_task::*;
 use bt_avdtp::MediaStream;
 use fidl_fuchsia_bluetooth_bredr::AudioOffloadExtProxy;
 use fidl_fuchsia_media::{AudioChannelId, AudioPcmMode, PcmFormat};
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::inspect::DataStreamInspect;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::{AttachError, Inspect};
+use fuchsia_trace as trace;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Shared, WeakShared};
 use futures::stream::BoxStream;
-use futures::{AsyncWriteExt, FutureExt, TryFutureExt, TryStreamExt};
+use futures::{FutureExt, SinkExt, TryFutureExt, TryStreamExt};
 use log::{info, trace, warn};
 use std::sync::Arc;
 use std::time::Duration;
-use {fuchsia_async as fasync, fuchsia_trace as trace};
 
 use crate::encoding::EncodedStream;
 use crate::media::AudioSourceType;
@@ -334,7 +335,7 @@ impl RunningTask {
 
             for packet in packets {
                 trace::duration_begin!("bt-a2dp", "Media:PacketSent");
-                if let Err(e) = media_stream.write(&packet).await {
+                if let Err(e) = media_stream.send(packet.to_vec()).await {
                     info!("Failed sending packet to peer: {}", e);
                     trace::duration_end!("bt-a2dp", "Media:PacketSent");
                     return Ok(());

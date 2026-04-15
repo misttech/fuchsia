@@ -7,16 +7,18 @@ use bt_rfcomm::ServerChannel;
 use bt_rfcomm::profile::build_rfcomm_protocol;
 use fidl::prelude::*;
 use fidl_fuchsia_bluetooth::ErrorCode;
+use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_bluetooth_rfcomm_test::RfcommTestRequest;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::detachable_map::DetachableMap;
 use fuchsia_bluetooth::types::{Channel, PeerId};
+use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::FutureExt;
 use futures::lock::Mutex;
 use log::{debug, info, trace, warn};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use {fidl_fuchsia_bluetooth_bredr as bredr, fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 use crate::rfcomm::inspect::RfcommServerInspect;
 use crate::rfcomm::session::Session;
@@ -298,8 +300,8 @@ mod tests {
     use fidl_fuchsia_bluetooth_bredr::ConnectionReceiverMarker;
     use fuchsia_async as fasync;
     use fuchsia_inspect_derive::WithInspect;
-    use futures::StreamExt;
     use futures::task::Poll;
+    use futures::{SinkExt, StreamExt};
     use std::pin::pin;
 
     use crate::rfcomm::test_util::{expect_frame_received_by_peer, send_peer_frame};
@@ -347,7 +349,7 @@ mod tests {
         let (mut exec, mut rfcomm) = setup_rfcomm_manager();
 
         let id = PeerId(123);
-        let (remote, channel) = Channel::create();
+        let (mut remote, channel) = Channel::create();
         assert!(rfcomm.new_l2cap_connection(id, channel).is_ok());
 
         // The Session should still be active.
@@ -355,10 +357,10 @@ mod tests {
 
         // Simulate peer sending RFCOMM data to the session - should be OK.
         let buf = [0x00, 0x00, 0x00];
-        match remote.write(&buf[..]) {
-            Ok(x) => assert_eq!(x, 3),
-            x => panic!("Expected write ready but got {:?}", x),
-        }
+        let mut write_fut = remote.send(buf.to_vec());
+        exec.run_until_stalled(&mut write_fut)
+            .expect("should be ready")
+            .expect("write should succeed");
 
         // Remote peer disconnects - drive the background processing task to detect disconnection.
         drop(remote);
@@ -398,14 +400,14 @@ mod tests {
 
         // Remote peer requests to start up session multiplexer.
         let sabm = Frame::make_sabm_command(Role::Unassigned, DLCI::MUX_CONTROL_DLCI);
-        send_peer_frame(&remote, sabm);
+        send_peer_frame(&mut exec, &mut remote, sabm);
         // Expect to send a positive response to the peer.
         expect_frame_received_by_peer(&mut exec, &mut remote);
 
         // Remote peer requests to open an RFCOMM channel.
         let user_dlci = first_channel.to_dlci(Role::Responder).unwrap();
         let user_sabm = Frame::make_sabm_command(Role::Initiator, user_dlci);
-        send_peer_frame(&remote, user_sabm);
+        send_peer_frame(&mut exec, &mut remote, user_sabm);
         // Expect to send a positive response to the peer.
         expect_frame_received_by_peer(&mut exec, &mut remote);
 
@@ -432,7 +434,7 @@ mod tests {
         assert!(clients.deliver_channel(PeerId(1), random_server_channel, local).await.is_err());
 
         // Registering a new client should be OK.
-        let (c, s) = create_proxy_and_stream::<bredr::ConnectionReceiverMarker>();
+        let (c, s) = create_proxy_and_stream::<ConnectionReceiverMarker>();
         let server_channel = clients.new_client(c).await.unwrap();
         expected_space -= 1;
         assert_eq!(clients.available_space().await, expected_space);
@@ -461,7 +463,7 @@ mod tests {
         });
 
         // New client is ok.
-        let (c1, _s1) = create_proxy_and_stream::<bredr::ConnectionReceiverMarker>();
+        let (c1, _s1) = create_proxy_and_stream::<ConnectionReceiverMarker>();
         let ch_number1 = clients.new_client(c1).await.expect("valid client");
         let ch_number_raw1 = u8::from(ch_number1) as u64;
         assert_data_tree!(inspect, root: {
@@ -471,7 +473,7 @@ mod tests {
         });
 
         // Multiple clients is ok.
-        let (c2, _s2) = create_proxy_and_stream::<bredr::ConnectionReceiverMarker>();
+        let (c2, _s2) = create_proxy_and_stream::<ConnectionReceiverMarker>();
         let ch_number2 = clients.new_client(c2).await.expect("valid client");
         let ch_number_raw2 = u8::from(ch_number2) as u64;
         assert_data_tree!(inspect, root: {
@@ -538,7 +540,7 @@ mod tests {
         expect_frame_received_by_peer(&mut exec, &mut remote);
         // Simulate peer responding positively.
         let ua = Frame::make_ua_response(Role::Unassigned, DLCI::MUX_CONTROL_DLCI);
-        send_peer_frame(&remote, ua);
+        send_peer_frame(&mut exec, &mut remote, ua);
 
         // Expect to send a frame to peer - parameter negotiation.
         expect_frame_received_by_peer(&mut exec, &mut remote);
@@ -554,13 +556,13 @@ mod tests {
             command_response: CommandResponse::Response,
         };
         let pn_response = Frame::make_mux_command(Role::Responder, data);
-        send_peer_frame(&remote, pn_response);
+        send_peer_frame(&mut exec, &mut remote, pn_response);
 
         // Expect to send a frame to peer - SABM for channel opening.
         expect_frame_received_by_peer(&mut exec, &mut remote);
         // Simulate peer responding positively.
         let ua = Frame::make_ua_response(Role::Responder, expected_dlci);
-        send_peer_frame(&remote, ua);
+        send_peer_frame(&mut exec, &mut remote, ua);
 
         // The channel should be established and relayed to the client that requested it.
         let channel_held_by_client = match exec.run_until_stalled(&mut connect_request_fut) {

@@ -2,24 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
-use bt_rfcomm::profile::server_channel_from_protocol;
+use anyhow::{Error, format_err};
 use bt_rfcomm::ServerChannel;
+use bt_rfcomm::profile::server_channel_from_protocol;
 use derivative::Derivative;
+use fidl_fuchsia_bluetooth as fidl_bt;
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_bluetooth_rfcomm_test as rfcomm;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::profile::ProtocolDescriptor;
 use fuchsia_bluetooth::types::{Channel, PeerId, Uuid};
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
-use futures::{select, StreamExt};
+use futures::{SinkExt, StreamExt, select};
 use log::{info, warn};
 use profile_client::{ProfileClient, ProfileEvent};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
-    fidl_fuchsia_bluetooth_rfcomm_test as rfcomm, fuchsia_async as fasync,
-};
 
 /// The default buffer size for the mpsc channels used to relay user data packets to be sent to the
 /// remote peer.
@@ -29,10 +29,9 @@ const USER_DATA_BUFFER_SIZE: usize = 50;
 /// Valid SPP Service Definition - see SPP v1.2 Table 6.1.
 fn spp_service_definition() -> bredr::ServiceDefinition {
     bredr::ServiceDefinition {
-        service_class_uuids: Some(vec![Uuid::new16(
-            bredr::ServiceClassProfileIdentifier::SerialPort.into_primitive(),
-        )
-        .into()]),
+        service_class_uuids: Some(vec![
+            Uuid::new16(bredr::ServiceClassProfileIdentifier::SerialPort.into_primitive()).into(),
+        ]),
         protocol_descriptor_list: Some(vec![
             bredr::ProtocolDescriptor {
                 protocol: Some(bredr::ProtocolIdentifier::L2Cap),
@@ -118,8 +117,8 @@ impl RfcommSession {
                 bytes_to_peer = write_requests.next() => {
                     match bytes_to_peer {
                         Some(bytes) => {
-                            match channel.write(&bytes) {
-                                Ok(_) => info!("Sent user data over RFCOMM channel ({:?}).", server_channel),
+                            match channel.send(bytes).await {
+                                Ok(()) => info!("Sent user data over RFCOMM channel ({:?}).", server_channel),
                                 Err(e) => info!("Couldn't send user data for channel ({:?}): {:?}", server_channel, e),
                             }
                         }
@@ -507,7 +506,7 @@ mod tests {
 
         // Peer sends us data. It should be received gracefully and logged (nothing to test).
         let buf = vec![0x99, 0x11, 0x44];
-        assert_eq!(peer_channel.write(&buf), Ok(3));
+        assert_matches!(peer_channel.send(buf).await, Ok(()));
 
         // Test client can request to send an RLS update - should be received by RFCOMM Test server.
         assert_matches!(rfcomm_mgr.send_rls(remote_id, random_channel_number), Ok(_));

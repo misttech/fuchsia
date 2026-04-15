@@ -8,6 +8,7 @@ group("testing") {
     "bt-affordances:bt-affordances-server",
     "bt-test-harness",
     "mock-a2dp-controller",
+    "mock-channel",
     "mock-piconet-server",
     "test-battery-manager",
     "test-call-manager",

@@ -13,13 +13,14 @@ use crate::header::{
     ConnectionIdentifier, Header, HeaderIdentifier, HeaderSet, SingleResponseMode,
 };
 use crate::operation::{OpCode, RequestPacket, ResponseCode, ResponsePacket, SetPathFlags};
-use crate::transport::max_packet_size_from_transport;
 pub use crate::transport::TransportType;
+use crate::transport::max_packet_size_from_transport;
+use futures::SinkExt;
 
 /// Defines an interface for handling OBEX requests. All profiles & services should implement this
 /// interface.
 mod handler;
-pub use handler::{new_operation_error, ObexOperationError, ObexServerHandler};
+pub use handler::{ObexOperationError, ObexServerHandler, new_operation_error};
 
 /// Implements the OBEX GET operation.
 mod get;
@@ -218,10 +219,10 @@ impl ObexServer {
 
     /// Encodes and sends the OBEX `data` to the remote peer.
     /// Returns Error if the send operation could not be completed.
-    fn send(&self, data: impl Encodable<Error = PacketError>) -> Result<(), Error> {
+    async fn send(&mut self, data: impl Encodable<Error = PacketError>) -> Result<(), Error> {
         let mut buf = vec![0; data.encoded_len()];
         data.encode(&mut buf[..])?;
-        let _ = self.channel.write(&buf)?;
+        self.channel.send(buf).await?;
         Ok(())
     }
 
@@ -387,7 +388,7 @@ impl ObexServer {
                     Ok(bytes) => {
                         let responses = self.receive_packet(bytes).await?;
                         for response in responses {
-                            self.send(response)?;
+                            self.send(response).await?;
                         }
 
                         // The OBEX Client requested to close the OBEX connection.
@@ -466,7 +467,7 @@ mod tests {
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
 
         let connect_request = RequestPacket::new_connect(500, HeaderSet::new());
-        send_packet(&mut remote, connect_request);
+        send_packet(&mut exec, &mut remote, connect_request);
 
         // Expect the ObexServer to receive the request, parse it, ask the application, and reply.
         // Simulate application accepting the request.
@@ -495,7 +496,7 @@ mod tests {
 
         let request_headers = HeaderSet::from_header(Header::Target(vec![5, 6]));
         let connect_request = RequestPacket::new_connect(500, request_headers);
-        send_packet(&mut remote, connect_request);
+        send_packet(&mut exec, &mut remote, connect_request);
 
         // Expect the ObexServer to receive the request, parse it, ask the application, and reply.
         // Simulate application accepting the request.
@@ -523,7 +524,7 @@ mod tests {
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
 
         let connect_request = RequestPacket::new_connect(255, HeaderSet::new());
-        send_packet(&mut remote, connect_request);
+        send_packet(&mut exec, &mut remote, connect_request);
 
         // The ObexServer should receive the request and hand it to the profile - profile rejects.
         test_app.set_response(Err((ResponseCode::Forbidden, HeaderSet::new())));
@@ -542,14 +543,16 @@ mod tests {
     #[fuchsia::test]
     fn invalid_connect_request_is_error() {
         let mut exec = fasync::TestExecutor::new();
-        let (obex_server, _test_app, remote) = new_obex_server(/*srm=*/ false);
+        let (obex_server, _test_app, mut remote) = new_obex_server(/*srm=*/ false);
 
         let server_fut = obex_server.run();
         let mut server_fut = pin!(server_fut);
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server still active");
 
         // Invalid CONNECT request. Missing the 2 byte max packet size field.
-        let _ = remote.write(&[0x80, 0x00, 0x05, 0x00, 0x00]).expect("can send data");
+        let bytes = [0x80, 0x00, 0x05, 0x00, 0x00];
+        let mut fut = remote.send(bytes.to_vec());
+        exec.run_until_stalled(&mut fut).expect("can send data").expect("write success");
 
         let result = exec.run_until_stalled(&mut server_fut).expect("terminate due to error");
         assert_matches!(result, Err(Error::Packet(_)));
@@ -565,7 +568,7 @@ mod tests {
 
         let headers = HeaderSet::from_header(Header::Description("done".into()));
         let disconnect_request = RequestPacket::new_disconnect(headers);
-        send_packet(&mut remote, disconnect_request);
+        send_packet(&mut exec, &mut remote, disconnect_request);
 
         // Expect the ObexServer to receive the request, parse it, get response headers from the
         // application, and reply. Because this is a Disconnect request, the server run loop
@@ -598,7 +601,7 @@ mod tests {
         let headers = HeaderSet::from_header(Header::name("folder1"));
         let setpath_request =
             RequestPacket::new_set_path(SetPathFlags::all(), headers).expect("valid request");
-        send_packet(&mut remote, setpath_request);
+        send_packet(&mut exec, &mut remote, setpath_request);
 
         // The ObexServer should receive the request and hand it to the profile - profile accepts.
         test_app.set_response(Ok(HeaderSet::new()));
@@ -625,7 +628,7 @@ mod tests {
 
         let setpath_request = RequestPacket::new_set_path(SetPathFlags::BACKUP, HeaderSet::new())
             .expect("valid request");
-        send_packet(&mut remote, setpath_request);
+        send_packet(&mut exec, &mut remote, setpath_request);
 
         // The ObexServer should receive the request and hand it to the profile - profile rejects.
         test_app.set_response(Err((ResponseCode::Forbidden, HeaderSet::new())));
@@ -650,7 +653,7 @@ mod tests {
 
         let setpath_request = RequestPacket::new_set_path(SetPathFlags::BACKUP, HeaderSet::new())
             .expect("valid request");
-        send_packet(&mut remote, setpath_request);
+        send_packet(&mut exec, &mut remote, setpath_request);
         let result = exec
             .run_until_stalled(&mut server_fut)
             .expect("server terminated from invalid setpath");
@@ -671,7 +674,7 @@ mod tests {
         // and ask the application for the response.
         let get_request1 =
             RequestPacket::new_get(HeaderSet::from_header(Header::name("random object")));
-        send_packet(&mut remote, get_request1);
+        send_packet(&mut exec, &mut remote, get_request1);
         // Simulate the application responding with the size of the object.
         test_app.set_response(Ok(HeaderSet::from_header(Header::Length(0x10))));
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
@@ -685,7 +688,7 @@ mod tests {
 
         // Remote sends a GET_FINAL request indicating that it is ready to receive the data payload.
         let get_request2 = RequestPacket::new_get_final(HeaderSet::new());
-        send_packet(&mut remote, get_request2);
+        send_packet(&mut exec, &mut remote, get_request2);
 
         // The ObexServer should receive the request and hand it to the profile. Set the profile
         // handler to return a static buffer.
@@ -716,7 +719,7 @@ mod tests {
         // Send an example GET_FINAL request with a header describing the name of the object.
         let headers = HeaderSet::from_header(Header::name("random object123"));
         let get_request = RequestPacket::new_get_final(headers);
-        send_packet(&mut remote, get_request);
+        send_packet(&mut exec, &mut remote, get_request);
 
         // The ObexServer receives request and hands to application. By default, it rejects the
         // request.
@@ -747,7 +750,7 @@ mod tests {
         ])
         .unwrap();
         let get_request1 = RequestPacket::new_get(headers1);
-        send_packet(&mut remote, get_request1);
+        send_packet(&mut exec, &mut remote, get_request1);
         test_app.set_response(Ok(HeaderSet::from_header(Header::Length(0x20))));
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
         // Expect the response packet to the peer to negotiate SRM and contain the application
@@ -766,7 +769,7 @@ mod tests {
 
         // Second (final) request to get the payload.
         let get_request2 = RequestPacket::new_get_final(HeaderSet::new());
-        send_packet(&mut remote, get_request2);
+        send_packet(&mut exec, &mut remote, get_request2);
         // The ObexServer should receive the request and hand it to the profile. Set the profile
         // handler to return a static buffer that must be split across multiple payloads.
         let application_response_buf = (0..50).collect::<Vec<u8>>();
@@ -812,7 +815,7 @@ mod tests {
         ])
         .unwrap();
         let put_request = RequestPacket::new_put_final(headers);
-        send_packet(&mut remote, put_request);
+        send_packet(&mut exec, &mut remote, put_request);
 
         // The ObexServer should receive the request and hand it to the profile. Profile accepts.
         test_app.set_put_response(Ok(()));
@@ -845,7 +848,7 @@ mod tests {
         ])
         .unwrap();
         let put_request1 = RequestPacket::new_put(headers1);
-        send_packet(&mut remote, put_request1);
+        send_packet(&mut exec, &mut remote, put_request1);
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
         // Expect the Obex Server to positively respond, and enable SRM. Subsequent requests won't
         // receive a response.
@@ -862,7 +865,7 @@ mod tests {
         // Next request sends over some data. Don't expect any response on the remote.
         let headers2 = HeaderSet::from_header(Header::Body(vec![1, 2, 3, 4, 5]));
         let put_request2 = RequestPacket::new_put(headers2);
-        send_packet(&mut remote, put_request2);
+        send_packet(&mut exec, &mut remote, put_request2);
         let _ = exec.run_until_stalled(&mut server_fut).expect_pending("server active");
         expect_stream_pending(&mut exec, &mut remote);
 
@@ -870,7 +873,7 @@ mod tests {
         // packet.
         let headers3 = HeaderSet::from_header(Header::EndOfBody(vec![6, 7, 8, 9, 10]));
         let put_request3 = RequestPacket::new_put_final(headers3);
-        send_packet(&mut remote, put_request3);
+        send_packet(&mut exec, &mut remote, put_request3);
 
         // The entire request is complete and the Obex Server should hand it to the application.
         // Verify profile received correct data.
@@ -898,7 +901,7 @@ mod tests {
 
         let headers = HeaderSet::from_header(Header::name("foo.txt"));
         let put_request = RequestPacket::new_put_final(headers);
-        send_packet(&mut remote, put_request);
+        send_packet(&mut exec, &mut remote, put_request);
 
         // The ObexServer should receive the request and hand it to the profile. Profile accepts.
         test_app.set_put_response(Ok(()));

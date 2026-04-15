@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use async_utils::PollExt;
+use core::task::Poll;
 use fuchsia_async as fasync;
-use futures::{FutureExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt};
 use std::result;
-use std::task::Poll;
 use zx::{self as zx, Status};
 
 use super::*;
@@ -15,7 +15,7 @@ use crate::avctp::MessageType as AvctpMessageType;
 #[test]
 fn closes_channel_when_dropped() {
     let mut _exec = fasync::TestExecutor::new();
-    let (peer_chan, control) = Channel::create();
+    let (mut peer_chan, control) = Channel::create();
 
     {
         let peer = Peer::new(control);
@@ -23,9 +23,9 @@ fn closes_channel_when_dropped() {
     }
 
     // Writing to the sock from the other end should fail.
-    let write_res = peer_chan.write(&[0; 1]);
+    let write_res = peer_chan.send(vec![0; 1]).now_or_never().expect("poll is ready");
     assert!(write_res.is_err());
-    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap());
+    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap().into());
 }
 
 #[test]
@@ -147,7 +147,9 @@ fn send_stop_avc_passthrough_command() {
         0x00, // passthrough payload
     ];
 
-    assert!(channel.write(write_buf).is_ok()); // Response accept packet
+    exec.run_until_stalled(&mut channel.send(write_buf.to_vec()))
+        .expect("signaling write")
+        .expect("write successful");
     let poll_ret = exec.run_until_stalled(&mut cmd_fut);
     let command_response = match poll_ret {
         Poll::Ready(Ok(response)) => response,
@@ -174,7 +176,9 @@ fn receive_register_notification_command() {
         0x0D, // Event ID
         0x00, 0x00, 0x00, 0x00, // Playback interval
     ];
-    assert!(channel.write(notif_command_packet).is_ok());
+    exec.run_until_stalled(&mut channel.send(notif_command_packet.to_vec()))
+        .expect("signaling write")
+        .expect("write successful");
     let command = next_request(&mut stream, &mut exec);
     assert!(command.avctp_header().is_type(&AvctpMessageType::Command));
     assert!(command.avctp_header().is_single());
@@ -219,7 +223,9 @@ fn receive_unit_info() {
         0x30, // opcode: unit info
         0xff, 0xff, 0xff, 0xff, 0xff, // pad
     ];
-    assert!(channel.write(command_packet).is_ok());
+    exec.run_until_stalled(&mut channel.send(command_packet.to_vec()))
+        .expect("write to channel success")
+        .expect("write successful");
 
     let mut fut = stream.next();
     let complete = exec.run_until_stalled(&mut fut); // wake and pump.
@@ -254,7 +260,9 @@ fn receive_subunit_info() {
         0x07, // extension code
         0xff, 0xff, 0xff, 0xff, // pad
     ];
-    assert!(channel.write(command_packet).is_ok());
+    exec.run_until_stalled(&mut channel.send(command_packet.to_vec()))
+        .expect("write to channel success")
+        .expect("write successful");
 
     let mut fut = stream.next();
     let complete = exec.run_until_stalled(&mut fut); // wake and pump.

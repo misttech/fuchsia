@@ -8,19 +8,19 @@ use bt_a2dp::media_task::*;
 use bt_avdtp::{self as avdtp, MediaStream};
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_bluetooth_bredr::AudioOffloadExtProxy;
+use fidl_fuchsia_media as media;
+use fidl_fuchsia_media_sessions2 as sessions2;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::inspect::DataStreamInspect;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::{AttachError, Inspect};
+use fuchsia_trace as trace;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Fuse, Future, Shared};
 use futures::{FutureExt, StreamExt, TryFutureExt, select};
 use log::{debug, info, trace, warn};
 use thiserror::Error;
-use {
-    fidl_fuchsia_media as media, fidl_fuchsia_media_sessions2 as sessions2,
-    fuchsia_async as fasync, fuchsia_trace as trace,
-};
 
 use crate::avrcp_relay::AvrcpRelay;
 use crate::media::player;
@@ -416,15 +416,16 @@ mod tests {
         StreamSinkRequest,
     };
     use fidl_fuchsia_media_sessions2::{PublisherMarker, PublisherRequest};
+    use fidl_fuchsia_metrics as cobalt;
     use fuchsia_bluetooth::types::Channel;
+    use fuchsia_inspect as inspect;
     use fuchsia_inspect_derive::WithInspect;
     use fuchsia_sync::{Mutex, RwLock};
+    use futures::SinkExt;
     use futures::channel::mpsc;
-    use futures::io::AsyncWriteExt;
     use futures::task::Poll;
     use std::pin::pin;
     use std::sync::Arc;
-    use {fidl_fuchsia_metrics as cobalt, fuchsia_inspect as inspect};
 
     fn fake_cobalt_sender() -> (bt_metrics::MetricsLogger, cobalt::MetricEventLoggerRequestStream) {
         let (c, s) = fidl::endpoints::create_proxy_and_stream::<cobalt::MetricEventLoggerMarker>();
@@ -475,7 +476,7 @@ mod tests {
         assert!(exec.run_until_stalled(&mut finished_fut).is_pending());
 
         // If we send some data through the media stream...
-        let _ = exec.run_singlethreaded(&mut remote.write_all(&[0xF0, 0x9F, 0x92, 0x96]));
+        let _ = exec.run_singlethreaded(&mut remote.send(vec![0xF0, 0x9F, 0x92, 0x96]));
 
         // Should try to start the player
         match exec.run_until_stalled(&mut audio_factory_requests.next()) {

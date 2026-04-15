@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use async_utils::PollExt;
+use core::task::Poll;
 use fuchsia_async as fasync;
-use futures::{FutureExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt};
 use std::result;
-use std::task::Poll;
 use zx::{self as zx, Status};
 
 use super::*;
@@ -58,7 +58,7 @@ fn next_request(stream: &mut CommandStream, exec: &mut fasync::TestExecutor) -> 
 #[test]
 fn closes_socket_when_dropped() {
     let mut _exec = fasync::TestExecutor::new();
-    let (peer_chan, control) = Channel::create();
+    let (mut peer_chan, control) = Channel::create();
 
     {
         let peer = Peer::new(control);
@@ -66,15 +66,15 @@ fn closes_socket_when_dropped() {
     }
 
     // Writing to the sock from the other end should fail.
-    let write_res = peer_chan.write(&[0; 1]);
+    let write_res = peer_chan.send(vec![0; 1]).now_or_never().expect("poll is ready");
     assert!(write_res.is_err());
-    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap());
+    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap().into());
 }
 
 #[test]
 fn socket_open_when_stream_open() {
-    let mut _exec = fasync::TestExecutor::new();
-    let (peer_chan, control) = Channel::create();
+    let mut exec = fasync::TestExecutor::new();
+    let (mut peer_chan, control) = Channel::create();
 
     {
         let mut _stream;
@@ -84,14 +84,16 @@ fn socket_open_when_stream_open() {
         }
 
         // Writing to the sock from the other end should pass.
-        let write_res = peer_chan.write(&[0; 1]);
-        assert!(write_res.is_ok());
+        exec.run_until_stalled(&mut peer_chan.send(vec![0; 1]))
+            .expect("signaling write")
+            .expect("write successful");
     }
 
     // Writing to the sock from the other end should fail.
-    let write_res = peer_chan.write(&[0; 1]);
+    let write_res =
+        exec.run_until_stalled(&mut peer_chan.send(vec![0; 1])).expect("signaling write");
     assert!(write_res.is_err());
-    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap());
+    assert_eq!(Status::PEER_CLOSED, write_res.err().unwrap().into());
 }
 
 #[test]
@@ -135,16 +137,14 @@ fn send_command_receive_response() {
     let mut response_fut = command_stream.next();
     let stream_ret: Poll<Option<Result<Packet>>> = exec.run_until_stalled(&mut response_fut);
     assert!(stream_ret.is_pending());
-    assert!(
-        socket
-            .write(&[
-                0x02, // TxLabel 0, Single 0, Response 1, Ipid 0,
-                0x11, // AV PROFILE
-                0x0e, // AV PROFILE
-                66, 77, 88, 99 // Random Payload
-            ])
-            .is_ok()
-    ); // Response accept packet
+    exec.run_until_stalled(&mut socket.send(vec![
+        0x02, // TxLabel 0, Single 0, Response 1, Ipid 0,
+        0x11, // AV PROFILE
+        0x0e, // AV PROFILE
+        66, 77, 88, 99, // Random Payload
+    ]))
+    .expect("signaling write")
+    .expect("write successful"); // Response accept packet
 
     let stream_ret: Poll<Option<Result<Packet>>> = exec.run_until_stalled(&mut response_fut);
     assert!(stream_ret.is_ready());
@@ -177,7 +177,9 @@ fn receive_command_send_response() {
         0x0D, // Event ID
         0x00, 0x00, 0x00, 0x00, // Playback interval
     ];
-    assert!(socket.write(notif_command_packet).is_ok());
+    exec.run_until_stalled(&mut socket.send(notif_command_packet.to_vec()))
+        .expect("signaling write")
+        .expect("write successful");
     let command = next_request(&mut stream, &mut exec);
     assert!(command.header().is_type(&MessageType::Command));
     assert!(command.header().is_single());
@@ -223,14 +225,16 @@ fn receive_command_send_response() {
 
 #[test]
 fn receive_command_too_short_is_dropped() {
-    let (mut exec, mut stream, _peer, socket) = setup_stream_test();
+    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test();
     let notif_command_packet = &[
         // No payload. Only a command
         0x00, // TxLabel 0, Single 0, Command 0, Ipid 0,
         0x11, // AV PROFILE
         0x0e, // AV PROFILE
     ];
-    assert!(socket.write(notif_command_packet).is_ok());
+    exec.run_until_stalled(&mut socket.send(notif_command_packet.to_vec()))
+        .expect("signaling write")
+        .expect("write successful");
 
     let mut fut = stream.next();
     let complete = exec.run_until_stalled(&mut fut);
@@ -239,9 +243,11 @@ fn receive_command_too_short_is_dropped() {
 
 #[test]
 fn receive_invalid_is_dropped() {
-    let (mut exec, mut stream, _peer, socket) = setup_stream_test();
+    let (mut exec, mut stream, _peer, mut socket) = setup_stream_test();
     let notif_command_packet = &[0];
-    assert!(socket.write(notif_command_packet).is_ok());
+    exec.run_until_stalled(&mut socket.send(notif_command_packet.to_vec()))
+        .expect("signaling write")
+        .expect("write successful");
 
     let mut fut = stream.next();
     let complete = exec.run_until_stalled(&mut fut);
@@ -257,7 +263,9 @@ fn invalid_profile_id_response() {
         0x11, 0x00, // random profile ID
         3, 72, 0, // random payload
     ];
-    assert!(socket.write(notif_command_packet).is_ok());
+    exec.run_until_stalled(&mut socket.send(notif_command_packet.to_vec()))
+        .expect("write to channel success")
+        .expect("write successful");
 
     let mut fut = stream.next();
     let complete = exec.run_until_stalled(&mut fut); // wake and pump.

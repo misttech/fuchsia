@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use futures::SinkExt;
 use log::trace;
 
 use crate::client::SrmOperation;
@@ -115,7 +116,7 @@ impl<'a> PutOperation<'a> {
             (OpCode::Put, RequestPacket::new_put(headers), ResponseCode::Continue)
         };
         trace!("Making outgoing PUT request: {request:?}");
-        self.transport.send(request)?;
+        self.transport.send(request).await?;
         trace!("Successfully made PUT request");
         if !is_started {
             self.set_started()?;
@@ -186,7 +187,7 @@ impl<'a> PutOperation<'a> {
         }
         let request = RequestPacket::new_abort(headers);
         trace!(request:?; "Making outgoing {opcode:?} request");
-        self.transport.send(request)?;
+        self.transport.send(request).await?;
         trace!("Successfully made {opcode:?} request");
         let response = self.transport.receive_response(opcode).await?;
         response.expect_code(opcode, ResponseCode::Ok).map(Into::into)

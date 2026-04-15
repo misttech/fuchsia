@@ -5,8 +5,10 @@
 use anyhow::format_err;
 use at_commands::{self as at, SerDe};
 use bitflags::bitflags;
+use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_bluetooth_hfp::HfpMarker;
 use fidl_fuchsia_bluetooth_internal_a2dp::ControllerMarker;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_media::{AudioDeviceEnumeratorMarker, AudioDeviceEnumeratorRequest};
 use fixture::fixture;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
@@ -17,12 +19,11 @@ use fuchsia_component_test::{
 };
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
-use futures::TryFutureExt;
+use futures::{SinkExt, TryFutureExt};
 use mock_piconet_client::{BtProfileComponent, PiconetHarness, PiconetMember};
 use realmbuilder_mock_helpers::{mock_component, mock_dev};
 use test_call_manager::TestCallManager;
 use zx::MonotonicDuration;
-use {fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_io as fio};
 
 /// HFP-AG component URL.
 const HFP_AG_URL: &str =
@@ -381,19 +382,19 @@ async fn expect_data(channel: &mut Channel, expected: Vec<at::Response>) {
 
 /// Serializes and sends the provided AT `command` using the `channel` and then
 /// expects the `expected` response.
-fn send_command_and_expect_response(
+async fn send_command_and_expect_response(
     channel: &mut Channel,
     command: at::Command,
     expected: Vec<at::Response>,
-) -> impl futures::Future<Output = ()> + '_ {
+) {
     // Serialize and send.
     let mut bytes = Vec::new();
     let commands = vec![command];
     at::Command::serialize(&mut bytes, &commands).expect("serialization should succeed");
-    let _ = channel.write(&bytes);
+    let _ = channel.send(bytes).await;
 
     // Expect the `expected` data as a response.
-    expect_data(channel, expected)
+    expect_data(channel, expected).await
 }
 
 // TODO(https://fxbug.dev/42151045) Stop using raw bytes.

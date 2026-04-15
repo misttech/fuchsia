@@ -7,9 +7,11 @@ use fidl_fuchsia_bluetooth as fidl_bt;
 use fidl_fuchsia_bluetooth_bredr as bredr;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
+use futures::sink::Sink;
 use futures::stream::{FusedStream, Stream};
-use futures::{Future, TryFutureExt, io};
-use log::warn;
+use futures::{Future, TryFutureExt, io, ready};
+use log::{error, warn};
+use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -99,9 +101,11 @@ pub struct Channel {
     l2cap_parameters_ext: Option<bredr::L2capParametersExtProxy>,
     audio_offload_ext: Option<bredr::AudioOffloadExtProxy>,
     terminated: bool,
+    send_buffer: VecDeque<Vec<u8>>,
 }
 
 impl Channel {
+    const MAX_QUEUED_PACKETS: usize = 32;
     /// Attempt to make a Channel from a zircon socket and a Maximum TX size received out of band.
     /// Returns Err(status) if there is an error.
     pub fn from_socket(socket: zx::Socket, max_tx_size: usize) -> Result<Self, zx::Status> {
@@ -119,6 +123,7 @@ impl Channel {
             l2cap_parameters_ext: None,
             audio_offload_ext: None,
             terminated: false,
+            send_buffer: VecDeque::with_capacity(Self::MAX_QUEUED_PACKETS),
         }
     }
 
@@ -224,7 +229,9 @@ impl Channel {
     }
 
     /// Write to the channel.  This will return zx::Status::SHOULD_WAIT if the
-    /// the channel is too full.  Use the poll_write for asynchronous writing.
+    /// the channel is too full.
+    /// Prefer using the channel via Sink for asynchronous operations.
+    // TODO(b/499061686): remove to prefer async write.
     pub fn write(&self, bytes: &[u8]) -> Result<usize, zx::Status> {
         self.socket.as_ref().write(bytes)
     }
@@ -253,6 +260,7 @@ impl TryFrom<fidl_fuchsia_bluetooth_bredr::Channel> for Channel {
             l2cap_parameters_ext: fidl.ext_l2cap.map(|e| e.into_proxy()),
             audio_offload_ext: fidl.ext_audio_offload.map(|c| c.into_proxy()),
             terminated: false,
+            send_buffer: VecDeque::with_capacity(Self::MAX_QUEUED_PACKETS),
         })
     }
 }
@@ -338,6 +346,7 @@ impl FusedStream for Channel {
     }
 }
 
+// TODO(b/4144101870): remove once starnix side is migrated to use Stream instead of AsyncRead.
 impl io::AsyncRead for Channel {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -348,6 +357,7 @@ impl io::AsyncRead for Channel {
     }
 }
 
+// TODO(b/4144101870): remove once starnix side is migrated to use Sink instead of AsyncWrite.
 impl io::AsyncWrite for Channel {
     fn poll_write(
         mut self: Pin<&mut Self>,
@@ -366,29 +376,81 @@ impl io::AsyncWrite for Channel {
     }
 }
 
+impl Sink<Vec<u8>> for Channel {
+    type Error = zx::Status;
+
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // Try to flush to make progress, but ignore pending results.
+        let _ = Sink::poll_flush(self.as_mut(), cx)?;
+
+        if self.send_buffer.len() >= Channel::MAX_QUEUED_PACKETS {
+            return Poll::Pending;
+        }
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
+        self.get_mut().send_buffer.push_back(item);
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let this = self.get_mut();
+        use futures::io::AsyncWrite;
+        while let Some(item) = this.send_buffer.front() {
+            let res = Pin::new(&mut this.socket).poll_write(cx, item).map_err(zx::Status::from);
+            match res {
+                Poll::Ready(Ok(size)) => {
+                    if size == item.len() {
+                        let _ = this.send_buffer.pop_front();
+                    } else {
+                        error!(
+                            "Partial write in Channel::Sink::poll_flush: wrote {} bytes of {} byte packet.",
+                            size,
+                            item.len()
+                        );
+                        let item = this.send_buffer.front_mut().unwrap();
+                        *item = item.split_off(size);
+                    }
+                }
+                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+        Pin::new(&mut this.socket).poll_flush(cx).map_err(zx::Status::from)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        ready!(Sink::poll_flush(self.as_mut(), cx))?;
+        let this = self.get_mut();
+        use futures::io::AsyncWrite as _;
+        Pin::new(&mut this.socket).poll_close(cx).map_err(zx::Status::from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use fidl::endpoints::create_request_stream;
-    use futures::{AsyncReadExt, FutureExt, StreamExt};
+    use futures::{AsyncReadExt, SinkExt, StreamExt};
     use std::pin::pin;
 
     #[test]
     fn test_channel_create_and_write() {
-        let _exec = fasync::TestExecutor::new();
-        let (mut recv, send) = Channel::create();
-
-        let mut buf: [u8; 8] = [0; 8];
-        let read_fut = AsyncReadExt::read(&mut recv, &mut buf);
+        let mut exec = fasync::TestExecutor::new();
+        let (mut recv, mut send) = Channel::create();
 
         let heart: &[u8] = &[0xF0, 0x9F, 0x92, 0x96];
-        assert_eq!(heart.len(), send.write(heart).expect("should write successfully"));
+        let mut send_fut = send.send(heart.to_vec());
+        assert!(exec.run_until_stalled(&mut send_fut).is_ready());
 
-        match read_fut.now_or_never() {
-            Some(Ok(4)) => {}
-            x => panic!("Expected Ok(4) from the read, got {x:?}"),
+        let mut recv_fut = recv.next();
+        match exec.run_until_stalled(&mut recv_fut) {
+            Poll::Ready(Some(Ok(bytes))) => {
+                assert_eq!(heart, &bytes);
+            }
+            x => panic!("Expected Some(Ok(bytes)) from the stream, got {x:?}"),
         };
-        assert_eq!(heart, &buf[0..4]);
     }
 
     #[test]
@@ -638,6 +700,7 @@ mod tests {
         assert!(channel.audio_offload().is_some());
     }
 
+    // TODO(b/4144101870): remove once starnix side is migrated to use Stream instead of AsyncRead.
     #[test]
     fn channel_async_read() {
         let mut exec = fasync::TestExecutor::new();
@@ -683,6 +746,27 @@ mod tests {
         let mut leftover_buf = [0; 1];
         let mut leftover_fut = recv.read(&mut leftover_buf);
         assert!(exec.run_until_stalled(&mut leftover_fut).is_pending());
+    }
+
+    #[test]
+    fn channel_sink() {
+        let mut exec = fasync::TestExecutor::new();
+        let (mut recv, mut send) = Channel::create();
+
+        let data = vec![0x01, 0x02, 0x03, 0x04];
+        let mut send_fut = send.send(data.clone());
+
+        // The send should complete immediately as the socket has space.
+        match exec.run_until_stalled(&mut send_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Expected Ready(Ok(())), got {:?}", x),
+        }
+
+        let mut recv_fut = recv.next();
+        match exec.run_until_stalled(&mut recv_fut) {
+            Poll::Ready(Some(Ok(bytes))) => assert_eq!(data, bytes),
+            x => panic!("Expected successful read, got {x:?}"),
+        }
     }
 
     #[test]
