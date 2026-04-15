@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <lib/fit/result.h>
+#include <lib/fpromise/sequencer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/syscalls.h>
 
@@ -100,6 +101,7 @@ void ScreenCapture::Configure(
   stream_rotation_ = args.rotation().has_value() ? args.rotation().value()
                                                  : fuchsia_ui_composition::Rotation::kCw0Degrees;
 
+  fpromise::sequencer seq;
   std::vector<fpromise::promise<>> promises;
   promises.reserve(*args.buffer_count());
   // For each buffer in the collection, add the image to our importers.
@@ -135,7 +137,9 @@ void ScreenCapture::Configure(
               available_buffers_.push_back(i);
               return fpromise::ok();
             });
-    promises.push_back(std::move(join_promise));
+    // We use a sequencer to ensure that each buffer is processed sequentially. This is required so
+    // that if there is a failure importing an image, we don't end up in an inconsistent state.
+    promises.push_back(join_promise.wrap_with(seq));
   }
   auto join_promise =
       fpromise::join_promise_vector(std::move(promises))

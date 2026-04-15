@@ -14,7 +14,6 @@
 #include <cstdint>
 #include <thread>
 
-#include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/allocation/id.h"
@@ -27,7 +26,6 @@
 #include "src/ui/scenic/lib/screen_capture/screen_capture.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/tests/utils/promise.h"
-#include "zircon/system/ulib/fbl/include/fbl/algorithm.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
@@ -49,7 +47,21 @@ using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
 using fuchsia::ui::composition::Orientation;
 using fuchsia_ui_composition::ImageFlip;
-using integration_tests::RunPromise;
+
+static bool RunPromise(async::TestLoop& loop, fpromise::promise<> promise) {
+  bool done = false;
+  return integration_tests::RunPromise(
+      loop.dispatcher(),
+      [&loop, &done] {
+        while (!done) {
+          loop.RunUntilIdle();
+        }
+      },
+      promise.then([&done](fpromise::result<>& result) {
+        done = true;
+        return result;
+      }));
+}
 
 // TODO(https://fxbug.dev/42129956): Move common functions to testing::WithParamInterface instead of
 // function calls.
@@ -113,8 +125,8 @@ glm::ivec4 GetPixel(const uint8_t* vmo_host, uint32_t width, uint32_t x, uint32_
 // requires a lot of boilerplate code. The |collection_info| and |collection_ptr| need to be
 // kept alive in the test body, so they are passed in as parameters.
 allocation::GlobalBufferCollectionId SetupBufferCollection(
-    const uint32_t& num_buffers, const uint32_t& image_width, const uint32_t& image_height,
-    allocation::BufferCollectionUsage usage, Renderer* renderer,
+    async::TestLoop& loop, const uint32_t& num_buffers, const uint32_t& image_width,
+    const uint32_t& image_height, allocation::BufferCollectionUsage usage, Renderer* renderer,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fuchsia::sysmem2::BufferCollectionInfo* collection_info,
     fuchsia::sysmem2::BufferCollectionSyncPtr& collection_ptr,
@@ -125,9 +137,9 @@ allocation::GlobalBufferCollectionId SetupBufferCollection(
   EXPECT_TRUE(dup_token.is_valid());
   EXPECT_TRUE(local_token.is_valid());
 
-  auto result = renderer->ImportBufferCollection(collection_id, sysmem_allocator,
-                                                 std::move(dup_token), usage, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise = renderer->ImportBufferCollection(collection_id, sysmem_allocator,
+                                                  std::move(dup_token), usage, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise)));
 
   // Create a client-side handle to the buffer collection and set the client constraints.
   auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
@@ -188,16 +200,26 @@ std::vector<EngineLayerImage> MakeImages(const std::vector<ImageMetadata>& image
 }  // anonymous namespace
 
 // Make sure a valid token can be used to import a buffer collection.
-void ImportCollectionTest(Renderer* renderer,
+void ImportCollectionTest(async::TestLoop& loop, Renderer* renderer,
                           fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
-  auto [_, local_token] = SysmemTokens::Create(sysmem_allocator);
+  auto [token_client, token_server] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+  fidl::Arena arena;
+  auto result = sysmem_allocator->AllocateSharedCollection(
+      fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
+          .token_request(std::move(token_server))
+          .Build());
+  EXPECT_TRUE(result.ok());
+
+  auto sync_result = fidl::WireCall(token_client)->Sync();
+  EXPECT_TRUE(sync_result.ok());
 
   // First id should be valid.
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
-  auto result =
-      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(local_token),
+  auto promise =
+      renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(token_client),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise)));
 }
 
 // Multiple clients may need to reference the same buffer collection in the renderer
@@ -210,7 +232,7 @@ void ImportCollectionTest(Renderer* renderer,
 void SameTokenTwiceTest(async::TestLoop& loop, Renderer* renderer,
                         fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                         bool use_vulkan) {
-  auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
+  auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
 
   // Create a client token to represent a single client.
   fidl::Arena arena;
@@ -223,19 +245,22 @@ void SameTokenTwiceTest(async::TestLoop& loop, Renderer* renderer,
                           .Build());
   EXPECT_TRUE(result.ok());
 
+  auto sync_result = fidl::WireCall(local_token)->Sync();
+  EXPECT_TRUE(sync_result.ok());
+
   // First id should be valid.
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
-  auto import_success =
+  auto promise1 =
       renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(local_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(import_success);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
   // Second id should be valid.
   auto bcid2 = allocation::GenerateUniqueBufferCollectionId();
-  import_success =
+  auto promise2 =
       renderer->ImportBufferCollection(bcid2, sysmem_allocator, std::move(dup_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(import_success);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
 
   // Set the client constraints.
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
@@ -249,22 +274,23 @@ void SameTokenTwiceTest(async::TestLoop& loop, Renderer* renderer,
                                           additional_format_modifiers);
 
   // Now check that both server ids are allocated.
-  bool res_1 = RunPromise(
-      loop, renderer->ImportBufferImage({.collection_id = bcid,
-                                         .identifier = allocation::GenerateUniqueImageId(),
-                                         .vmo_index = 0,
-                                         .width = 1,
-                                         .height = 1},
-                                        BufferCollectionUsage::kRenderTarget));
-  bool res_2 = RunPromise(
-      loop, renderer->ImportBufferImage({.collection_id = bcid2,
-                                         .identifier = allocation::GenerateUniqueImageId(),
-                                         .vmo_index = 0,
-                                         .width = 1,
-                                         .height = 1},
-                                        BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(res_1);
-  EXPECT_TRUE(res_2);
+  auto import_promise1 =
+      renderer->ImportBufferImage({.collection_id = bcid,
+                                   .identifier = allocation::GenerateUniqueImageId(),
+                                   .vmo_index = 0,
+                                   .width = 1,
+                                   .height = 1},
+                                  BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(import_promise1)));
+
+  auto import_promise2 =
+      renderer->ImportBufferImage({.collection_id = bcid2,
+                                   .identifier = allocation::GenerateUniqueImageId(),
+                                   .vmo_index = 0,
+                                   .width = 1,
+                                   .height = 1},
+                                  BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(import_promise2)));
 }
 
 void BadImageInputTest(async::TestLoop& loop, Renderer* renderer,
@@ -274,10 +300,10 @@ void BadImageInputTest(async::TestLoop& loop, Renderer* renderer,
   auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
 
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
-  auto result =
+  auto promise1 =
       renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(dup_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
   if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -292,30 +318,31 @@ void BadImageInputTest(async::TestLoop& loop, Renderer* renderer,
 
   // Using an invalid buffer collection id.
   auto image_id = allocation::GenerateUniqueImageId();
-  EXPECT_FALSE(
-      RunPromise(loop, renderer->ImportBufferImage({.collection_id = allocation::kInvalidId,
-                                                    .identifier = image_id,
-                                                    .vmo_index = kNumImages,
-                                                    .width = 1,
-                                                    .height = 1},
-                                                   BufferCollectionUsage::kRenderTarget)));
+  auto promise3 = renderer->ImportBufferImage({.collection_id = allocation::kInvalidId,
+                                               .identifier = image_id,
+                                               .vmo_index = kNumImages,
+                                               .width = 1,
+                                               .height = 1},
+                                              BufferCollectionUsage::kRenderTarget);
+  EXPECT_FALSE(RunPromise(loop, std::move(promise3)));
 
   // Using an invalid image identifier.
-  EXPECT_FALSE(
-      RunPromise(loop, renderer->ImportBufferImage({.collection_id = bcid,
-                                                    .identifier = allocation::kInvalidImageId,
-                                                    .vmo_index = kNumImages,
-                                                    .width = 1,
-                                                    .height = 1},
-                                                   BufferCollectionUsage::kRenderTarget)));
+  auto promise4 = renderer->ImportBufferImage({.collection_id = bcid,
+                                               .identifier = allocation::kInvalidImageId,
+                                               .vmo_index = kNumImages,
+                                               .width = 1,
+                                               .height = 1},
+                                              BufferCollectionUsage::kRenderTarget);
+  EXPECT_FALSE(RunPromise(loop, std::move(promise4)));
 
   // VMO index is out of bounds.
-  EXPECT_FALSE(RunPromise(loop, renderer->ImportBufferImage({.collection_id = bcid,
-                                                             .identifier = image_id,
-                                                             .vmo_index = kNumImages,
-                                                             .width = 1,
-                                                             .height = 1},
-                                                            BufferCollectionUsage::kRenderTarget)));
+  auto promise5 = renderer->ImportBufferImage({.collection_id = bcid,
+                                               .identifier = image_id,
+                                               .vmo_index = kNumImages,
+                                               .width = 1,
+                                               .height = 1},
+                                              BufferCollectionUsage::kRenderTarget);
+  EXPECT_FALSE(RunPromise(loop, std::move(promise5)));
 }
 
 // Test the ImportBufferImage() function. First call ImportBufferImage() without setting the client
@@ -327,18 +354,17 @@ void ImportImageTest(async::TestLoop& loop, Renderer* renderer,
   auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
 
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
-  auto result =
+  auto promise1 =
       renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(dup_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
   // The buffer collection should not be valid here.
   auto image_id = allocation::GenerateUniqueImageId();
-  EXPECT_FALSE(RunPromise(
-      loop,
-      renderer->ImportBufferImage(
-          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-          BufferCollectionUsage::kRenderTarget)));
+  auto promise2 = renderer->ImportBufferImage(
+      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+      BufferCollectionUsage::kRenderTarget);
+  EXPECT_FALSE(RunPromise(loop, std::move(promise2)));
 
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
   if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -351,12 +377,10 @@ void ImportImageTest(async::TestLoop& loop, Renderer* renderer,
                                           additional_format_modifiers);
 
   // The buffer collection *should* be valid here.
-  auto res = RunPromise(
-      loop,
-      renderer->ImportBufferImage(
-          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-          BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(res);
+  auto promise3 = renderer->ImportBufferImage(
+      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+      BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 }
 
 // Simple release test that calls ReleaseBufferCollection() directly without
@@ -368,18 +392,17 @@ void DeregistrationTest(async::TestLoop& loop, Renderer* renderer,
   auto [dup_token, local_token] = SysmemTokens::Create(sysmem_allocator);
 
   auto bcid = allocation::GenerateUniqueBufferCollectionId();
-  auto result =
+  auto promise1 =
       renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(dup_token),
                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
   // The buffer collection should not be valid here.
   auto image_id = allocation::GenerateUniqueImageId();
-  EXPECT_FALSE(RunPromise(
-      loop,
-      renderer->ImportBufferImage(
-          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-          BufferCollectionUsage::kRenderTarget)));
+  auto promise2 = renderer->ImportBufferImage(
+      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+      BufferCollectionUsage::kRenderTarget);
+  EXPECT_FALSE(RunPromise(loop, std::move(promise2)));
 
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
   if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -392,23 +415,19 @@ void DeregistrationTest(async::TestLoop& loop, Renderer* renderer,
                                           additional_format_modifiers);
 
   // The buffer collection *should* be valid here.
-  auto import_result = RunPromise(
-      loop,
-      renderer->ImportBufferImage(
-          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-          BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_result);
+  auto promise3 = renderer->ImportBufferImage(
+      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+      BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Now release the collection.
   renderer->ReleaseBufferCollection(bcid, BufferCollectionUsage::kRenderTarget);
 
   // After deregistration, calling ImportBufferImage() should return false.
-  import_result = RunPromise(
-      loop,
-      renderer->ImportBufferImage(
-          {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
-          BufferCollectionUsage::kRenderTarget));
-  EXPECT_FALSE(import_result);
+  auto promise4 = renderer->ImportBufferImage(
+      {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+      BufferCollectionUsage::kRenderTarget);
+  EXPECT_FALSE(RunPromise(loop, std::move(promise4)));
 }
 
 // Test that calls ReleaseBufferCollection() before ReleaseBufferImage() and makes sure that
@@ -421,15 +440,15 @@ void RenderImageAfterBufferCollectionReleasedTest(
 
   auto texture_collection_id = allocation::GenerateUniqueBufferCollectionId();
   auto target_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  auto result = renderer->ImportBufferCollection(texture_collection_id, sysmem_allocator,
-                                                 std::move(texture_tokens.dup_token),
-                                                 BufferCollectionUsage::kClientImage, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise1 = renderer->ImportBufferCollection(
+      texture_collection_id, sysmem_allocator, std::move(texture_tokens.dup_token),
+      BufferCollectionUsage::kClientImage, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
-  result = renderer->ImportBufferCollection(target_collection_id, sysmem_allocator,
-                                            std::move(target_tokens.dup_token),
-                                            BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise2 = renderer->ImportBufferCollection(
+      target_collection_id, sysmem_allocator, std::move(target_tokens.dup_token),
+      BufferCollectionUsage::kRenderTarget, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
 
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
   if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -455,9 +474,8 @@ void RenderImageAfterBufferCollectionReleasedTest(
                                  .vmo_index = 0,
                                  .width = kWidth,
                                  .height = kHeight};
-  auto import_result = RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_result);
+  auto promise3 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Import image.
   ImageMetadata image = {.collection_id = texture_collection_id,
@@ -465,9 +483,8 @@ void RenderImageAfterBufferCollectionReleasedTest(
                          .vmo_index = 0,
                          .width = kWidth,
                          .height = kHeight};
-  import_result =
-      RunPromise(loop, renderer->ImportBufferImage(image, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_result);
+  auto promise4 = renderer->ImportBufferImage(image, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise4)));
 
   // Now release the collection.
   renderer->ReleaseBufferCollection(texture_collection_id, BufferCollectionUsage::kClientImage);
@@ -491,15 +508,15 @@ void RenderAfterImageReleasedTest(async::TestLoop& loop, Renderer* renderer,
 
   auto texture_collection_id = allocation::GenerateUniqueBufferCollectionId();
   auto target_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  auto result = renderer->ImportBufferCollection(texture_collection_id, sysmem_allocator,
-                                                 std::move(texture_tokens.dup_token),
-                                                 BufferCollectionUsage::kClientImage, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise1 = renderer->ImportBufferCollection(
+      texture_collection_id, sysmem_allocator, std::move(texture_tokens.dup_token),
+      BufferCollectionUsage::kClientImage, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
-  result = renderer->ImportBufferCollection(target_collection_id, sysmem_allocator,
-                                            std::move(target_tokens.dup_token),
-                                            BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise2 = renderer->ImportBufferCollection(
+      target_collection_id, sysmem_allocator, std::move(target_tokens.dup_token),
+      BufferCollectionUsage::kRenderTarget, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
 
   std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
   if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -525,9 +542,8 @@ void RenderAfterImageReleasedTest(async::TestLoop& loop, Renderer* renderer,
                                  .vmo_index = 0,
                                  .width = kWidth,
                                  .height = kHeight};
-  auto import_result = RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_result);
+  auto promise3 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Import image.
   ImageMetadata image = {.collection_id = texture_collection_id,
@@ -535,9 +551,8 @@ void RenderAfterImageReleasedTest(async::TestLoop& loop, Renderer* renderer,
                          .vmo_index = 0,
                          .width = kWidth,
                          .height = kHeight};
-  import_result =
-      RunPromise(loop, renderer->ImportBufferImage(image, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_result);
+  auto promise4 = renderer->ImportBufferImage(image, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise4)));
 
   // Now release the collection.
   renderer->ReleaseBufferImage(image.identifier);
@@ -565,9 +580,10 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
     auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
     auto bcid = allocation::GenerateUniqueBufferCollectionId();
     auto image_id = allocation::GenerateUniqueImageId();
-    ASSERT_TRUE(RunPromise(loop, renderer->ImportBufferCollection(
-                                     bcid, sysmem_allocator, std::move(local_token),
-                                     BufferCollectionUsage::kRenderTarget, std::nullopt)));
+    auto promise1 =
+        renderer->ImportBufferCollection(bcid, sysmem_allocator, std::move(dup_token),
+                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
+    ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
 
     std::vector<fuchsia::images2::PixelFormatModifier> additional_format_modifiers;
     if (escher::VulkanIsSupported() && escher::test::GlobalEscherUsesVirtualGpu()) {
@@ -587,15 +603,10 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
     }
 
     // The buffer collection *should* be valid here.
-    auto import_result =
-        RunPromise(loop, renderer->ImportBufferImage({.collection_id = bcid,
-                                                      .identifier = image_id,
-                                                      .vmo_index = 0,
-                                                      .width = 1,
-                                                      .height = 1},
-                                                     BufferCollectionUsage::kRenderTarget));
-    EXPECT_TRUE(import_result);
-    loop.RunUntilIdle();
+    auto promise2 = renderer->ImportBufferImage(
+        {.collection_id = bcid, .identifier = image_id, .vmo_index = 0, .width = 1, .height = 1},
+        BufferCollectionUsage::kRenderTarget);
+    EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
   };
 
   // Run a bunch of threads, alternating between threads that import texture collections
@@ -616,21 +627,20 @@ void MultithreadingTest(Renderer* renderer, bool use_vulkan) {
   async::TestLoop loop;
   for (const auto& bcid : bcid_set) {
     // The buffer collection *should* be valid here.
-    auto result = RunPromise(
-        loop, renderer->ImportBufferImage({.collection_id = bcid,
-                                           .identifier = allocation::GenerateUniqueImageId(),
-                                           .vmo_index = 0,
-                                           .width = 1,
-                                           .height = 1},
-                                          BufferCollectionUsage::kRenderTarget));
-    EXPECT_TRUE(result);
+    auto promise = renderer->ImportBufferImage({.collection_id = bcid,
+                                                .identifier = allocation::GenerateUniqueImageId(),
+                                                .vmo_index = 0,
+                                                .width = 1,
+                                                .height = 1},
+                                               BufferCollectionUsage::kRenderTarget);
+    EXPECT_TRUE(RunPromise(loop, std::move(promise)));
   }
 }
 
 // This test checks to make sure that the Render() function properly signals
 // a zx::event which can be used by an async::Wait object to asynchronously
 // call a custom function.
-void AsyncEventSignalTest(async::TestLoop* loop, Renderer* renderer,
+void AsyncEventSignalTest(async::TestLoop& loop, Renderer* renderer,
                           fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                           bool use_vulkan) {
   // Setup the render target collection.
@@ -638,8 +648,8 @@ void AsyncEventSignalTest(async::TestLoop* loop, Renderer* renderer,
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, kWidth, kHeight, BufferCollectionUsage::kRenderTarget, renderer,
-                            sysmem_allocator, &client_target_info, target_ptr);
+      SetupBufferCollection(loop, 1, kWidth, kHeight, BufferCollectionUsage::kRenderTarget,
+                            renderer, sysmem_allocator, &client_target_info, target_ptr);
 
   // Now that the renderer and client have set their contraints, we can import the render target.
   // Create the render_target image metadata.
@@ -648,9 +658,8 @@ void AsyncEventSignalTest(async::TestLoop* loop, Renderer* renderer,
                                  .vmo_index = 0,
                                  .width = kWidth,
                                  .height = kHeight};
-  auto target_import = RunPromise(
-      *loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(target_import);
+  auto promise = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise)));
 
   // Create the release fence that will be passed along to the Render()
   // function and be used to signal when we should release the collection.
@@ -661,11 +670,10 @@ void AsyncEventSignalTest(async::TestLoop* loop, Renderer* renderer,
   // Set up the async::Wait object to wait until the release_fence signals
   // ZX_EVENT_SIGNALED. We make use of a test loop to access an async dispatcher.
   bool signaled = false;
-  auto dispatcher = loop->dispatcher();
   auto wait = std::make_unique<async::Wait>(release_fence.get(), ZX_EVENT_SIGNALED);
   wait->set_handler([&signaled](async_dispatcher_t*, async::Wait*, zx_status_t /*status*/,
                                 const zx_packet_signal_t* /*signal*/) mutable { signaled = true; });
-  wait->Begin(dispatcher);
+  wait->Begin(loop.dispatcher());
 
   // The call to Render() will signal the release fence, triggering the wait object to
   // call its handler function.
@@ -679,7 +687,7 @@ void AsyncEventSignalTest(async::TestLoop* loop, Renderer* renderer,
   }
 
   // Close the test loop and test that our handler was called.
-  loop->RunUntilIdle();
+  loop.RunUntilIdle();
   EXPECT_TRUE(signaled);
 }
 
@@ -687,7 +695,7 @@ TEST_F(NullRendererTest, ImportCollectionTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  ImportCollectionTest(&renderer, sysmem_allocator);
+  ImportCollectionTest(loop, &renderer, sysmem_allocator);
 }
 
 TEST_F(NullRendererTest, SameTokenTwiceTest) {
@@ -742,14 +750,14 @@ TEST_F(NullRendererTest, AsyncEventSignalTest) {
   async::TestLoop loop;
   NullRenderer renderer;
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  AsyncEventSignalTest(&loop, &renderer, sysmem_allocator, /*use_vulkan*/ false);
+  AsyncEventSignalTest(loop, &renderer, sysmem_allocator, /*use_vulkan*/ false);
 }
 
 VK_TEST_F(VulkanRendererTest, ImportCollectionTest) {
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  ImportCollectionTest(renderer.get(), sysmem_allocator);
+  ImportCollectionTest(loop, renderer.get(), sysmem_allocator);
 }
 
 VK_TEST_F(VulkanRendererTest, SameTokenTwiceTest) {
@@ -808,7 +816,7 @@ VK_TEST_F(VulkanRendererTest, AsyncEventSignalTest) {
   async::TestLoop loop;
   auto [escher, renderer] = CreateEscherAndPrewarmedRenderer();
   auto sysmem_allocator = CreateSysmemAllocatorClient(loop.dispatcher());
-  AsyncEventSignalTest(&loop, renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
+  AsyncEventSignalTest(loop, renderer.get(), sysmem_allocator, /*use_vulkan*/ true);
 }
 
 // This test actually renders a rectangle using the VKRenderer. We create a single rectangle,
@@ -847,14 +855,14 @@ VK_TEST_F(VulkanRendererTest, RenderTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
                             sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
                             sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 16;
@@ -878,13 +886,12 @@ VK_TEST_F(VulkanRendererTest, RenderTest) {
                                       .width = static_cast<uint32_t>(kTextureWidth),
                                       .height = static_cast<uint32_t>(kTextureHeight)};
 
-  auto import_res = RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
+  auto promise1 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
-  import_res = RunPromise(
-      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_res);
+  auto promise2 =
+      renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
 
   // Create a renderable where the upper-left hand corner should be at position (6,3) with a
   // width/height of (4,2).
@@ -996,7 +1003,7 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, kWidth, kHeight, BufferCollectionUsage::kRenderTarget,
+      SetupBufferCollection(loop, 1, kWidth, kHeight, BufferCollectionUsage::kRenderTarget,
                             renderer.get(), sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
@@ -1005,17 +1012,15 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
                                  .vmo_index = 0,
                                  .width = kWidth,
                                  .height = kHeight};
-
-  auto import_res = RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
+  auto promise1 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
   // Setup renderable texture collection.
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
-  auto collection_id =
-      SetupBufferCollection(1, kWidth, kHeight, BufferCollectionUsage::kClientImage, renderer.get(),
-                            sysmem_allocator, &client_collection_info, collection_ptr);
+  auto collection_id = SetupBufferCollection(
+      loop, 1, kWidth, kHeight, BufferCollectionUsage::kClientImage, renderer.get(),
+      sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Create the image meta data for the renderable.
   ImageMetadata renderable_texture = {.collection_id = collection_id,
@@ -1023,9 +1028,9 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
                                       .vmo_index = 0,
                                       .width = static_cast<uint32_t>(kWidth),
                                       .height = static_cast<uint32_t>(kHeight)};
-  import_res = RunPromise(
-      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_res);
+  auto promise2 =
+      renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
 
   ImageRect renderable(
       glm::vec2(0, 0), glm::vec2(kWidth, kHeight),
@@ -1145,14 +1150,14 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
                             sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(2, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
+      SetupBufferCollection(loop, 2, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
                             sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 32;
@@ -1186,16 +1191,14 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
                                       .width = static_cast<uint32_t>(kTextureWidth),
                                       .height = static_cast<uint32_t>(kTextureHeight)};
 
-  auto import_res = RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
-  import_res = RunPromise(loop, renderer->ImportBufferImage(render_target_flipped,
-                                                            BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
-
-  import_res = RunPromise(
-      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_res);
+  auto promise1 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
+  auto promise2 =
+      renderer->ImportBufferImage(render_target_flipped, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
+  auto promise3 =
+      renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create a renderable where the upper-left hand corner should be at position (5,3)
   // with a width/height of (6,2).
@@ -1417,14 +1420,15 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kClientImage, &renderer,
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kClientImage, &renderer,
                             sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
-  auto target_id = SetupBufferCollection(2, 60, 40, BufferCollectionUsage::kRenderTarget, &renderer,
-                                         sysmem_allocator, &client_target_info, target_ptr);
+  auto target_id =
+      SetupBufferCollection(loop, 2, 60, 40, BufferCollectionUsage::kRenderTarget, &renderer,
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 32;
   const uint32_t kTargetHeight = 16;
@@ -1458,16 +1462,14 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
                                       .height = static_cast<uint32_t>(kTextureHeight),
                                       .flip = ImageFlip::kLeftRight};
 
-  auto import_res = RunPromise(
-      loop, renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
-  import_res = RunPromise(loop, renderer.ImportBufferImage(render_target_flipped,
-                                                           BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
-
-  import_res = RunPromise(
-      loop, renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_res);
+  auto promise1 = renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
+  auto promise2 =
+      renderer.ImportBufferImage(render_target_flipped, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
+  auto promise3 =
+      renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create a renderable where the upper-left hand corner should be at position (5,3)
   // with a width/height of (6,2).
@@ -1600,14 +1602,15 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kClientImage, &renderer,
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kClientImage, &renderer,
                             sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
-  auto target_id = SetupBufferCollection(2, 60, 40, BufferCollectionUsage::kRenderTarget, &renderer,
-                                         sysmem_allocator, &client_target_info, target_ptr);
+  auto target_id =
+      SetupBufferCollection(loop, 2, 60, 40, BufferCollectionUsage::kRenderTarget, &renderer,
+                            sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 32;
   const uint32_t kTargetHeight = 16;
@@ -1641,16 +1644,14 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
                                       .height = static_cast<uint32_t>(h),
                                       .flip = ImageFlip::kUpDown};
 
-  auto import_res = RunPromise(
-      loop, renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
-  import_res = RunPromise(loop, renderer.ImportBufferImage(render_target_flipped,
-                                                           BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
-
-  import_res = RunPromise(
-      loop, renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_res);
+  auto promise1 = renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
+  auto promise2 =
+      renderer.ImportBufferImage(render_target_flipped, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
+  auto promise3 =
+      renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create a renderable where the upper-left hand corner should be at position (0, 0)
   // with a width/height of (2,6).
@@ -1743,7 +1744,7 @@ VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
                             sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
@@ -1760,8 +1761,8 @@ VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
                                          .multiply_color = {1.f, 0.4f, 0.f, 1.f},
                                          .blend_mode = BlendMode::kPremultipliedAlpha()};
 
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
+  auto promise = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -1817,7 +1818,7 @@ VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
                             sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
@@ -1834,8 +1835,8 @@ VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
                                          .multiply_color = {1, 0, 0, 1},
                                          .blend_mode = BlendMode::kPremultipliedAlpha()};
 
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
+  auto promise = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -1902,7 +1903,7 @@ VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
                             sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
@@ -1924,8 +1925,8 @@ VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
                                            .multiply_color = {0, 0, 1, 1},
                                            .blend_mode = BlendMode::kPremultipliedAlpha()};
 
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
+  auto promise = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -1983,7 +1984,7 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
-      SetupBufferCollection(1, 100, 100, BufferCollectionUsage::kClientImage, renderer.get(),
+      SetupBufferCollection(loop, 1, 100, 100, BufferCollectionUsage::kClientImage, renderer.get(),
                             sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
@@ -1992,7 +1993,7 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, 200, 100, BufferCollectionUsage::kRenderTarget, renderer.get(),
+      SetupBufferCollection(loop, 1, 200, 100, BufferCollectionUsage::kRenderTarget, renderer.get(),
                             sysmem_allocator, &client_target_info, target_ptr);
 
   // Create the render_target image metadata.
@@ -2029,10 +2030,11 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
                    memcpy(vmo_host, writeValues, sizeof(writeValues));
                  });
 
-  ASSERT_TRUE(RunPromise(loop, renderer->ImportBufferImage(renderable_image_data_2,
-                                                           BufferCollectionUsage::kClientImage)));
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
+  auto promise1 =
+      renderer->ImportBufferImage(renderable_image_data_2, BufferCollectionUsage::kClientImage);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
+  auto promise2 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
 
   // Create the two renderables.
   ImageRect renderable(glm::vec2(0, 0), glm::vec2(kRenderableWidth, kRenderableHeight));
@@ -2094,14 +2096,14 @@ VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
-      SetupBufferCollection(2, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
+      SetupBufferCollection(loop, 2, 60, 40, BufferCollectionUsage::kClientImage, renderer.get(),
                             sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
                             sysmem_allocator, &client_target_info, target_ptr);
 
   const uint32_t kTargetWidth = 16;
@@ -2130,12 +2132,14 @@ VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
                                        .blend_mode = BlendMode::kPremultipliedAlpha()};
 
   // Import all the images.
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage)));
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage)));
+  auto promise1 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
+  auto promise2 =
+      renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
+  auto promise3 =
+      renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -2230,14 +2234,14 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
   fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
   auto collection_id =
-      SetupBufferCollection(1, 1, 1, BufferCollectionUsage::kClientImage, renderer.get(),
+      SetupBufferCollection(loop, 1, 1, 1, BufferCollectionUsage::kClientImage, renderer.get(),
                             sysmem_allocator, &client_collection_info, collection_ptr);
 
   // Setup the render target collection.
   fuchsia::sysmem2::BufferCollectionInfo client_target_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   auto target_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kRenderTarget, renderer.get(),
                             sysmem_allocator, &client_target_info, target_ptr);
 
   const BlendMode blend_mode = GetParam();
@@ -2282,12 +2286,14 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
                                        .blend_mode = blend_mode};
 
   // Import all the images.
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget)));
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage)));
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage)));
+  auto promise1 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
+  auto promise2 =
+      renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
+  auto promise3 =
+      renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
@@ -2381,10 +2387,10 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
 
   // Register the Image token with the renderer.
   auto image_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  auto result = renderer->ImportBufferCollection(image_collection_id, sysmem_allocator,
-                                                 std::move(image_tokens.dup_token),
-                                                 BufferCollectionUsage::kClientImage, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise1 = renderer->ImportBufferCollection(
+      image_collection_id, sysmem_allocator, std::move(image_tokens.dup_token),
+      BufferCollectionUsage::kClientImage, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
   const uint32_t kTargetWidth = 32;
   const uint32_t kTargetHeight = 32;
@@ -2420,19 +2426,18 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
                                   .vmo_index = 0,
                                   .width = kTargetWidth,
                                   .height = kTargetHeight};
-  auto import_res = RunPromise(
-      loop, renderer->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_res);
+  auto promise2 = renderer->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
 
   // Create a pair of tokens for the render target allocation.
   auto render_target_tokens = SysmemTokens::Create(sysmem_allocator);
 
   // Register the render target tokens with the renderer.
   auto render_target_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  result = renderer->ImportBufferCollection(render_target_collection_id, sysmem_allocator,
-                                            std::move(render_target_tokens.dup_token),
-                                            BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise3 = renderer->ImportBufferCollection(
+      render_target_collection_id, sysmem_allocator, std::move(render_target_tokens.dup_token),
+      BufferCollectionUsage::kRenderTarget, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create a client-side handle to the render target's buffer collection and set the client
   // constraints.
@@ -2463,9 +2468,9 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
                                           .vmo_index = 0,
                                           .width = kTargetWidth,
                                           .height = kTargetHeight};
-  import_res = RunPromise(loop, renderer->ImportBufferImage(render_target_metadata,
-                                                            BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
+  auto promise4 =
+      renderer->ImportBufferImage(render_target_metadata, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise4)));
 
   // Create a renderable where the upper-left hand corner should be at position (0,0) with a
   // width/height of (32,32).
@@ -2544,10 +2549,10 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
 
   // Register the Image token with the renderer.
   auto image_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  auto result = renderer->ImportBufferCollection(image_collection_id, sysmem_allocator,
-                                                 std::move(image_tokens.dup_token),
-                                                 BufferCollectionUsage::kClientImage, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise1 = renderer->ImportBufferCollection(
+      image_collection_id, sysmem_allocator, std::move(image_tokens.dup_token),
+      BufferCollectionUsage::kClientImage, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
 
   const uint32_t kTargetWidth = 32;
   const uint32_t kTargetHeight = 32;
@@ -2596,19 +2601,18 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
                                   .vmo_index = 0,
                                   .width = kTargetWidth,
                                   .height = kTargetHeight};
-  auto import_res = RunPromise(
-      loop, renderer->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage));
-  EXPECT_TRUE(import_res);
+  auto promise2 = renderer->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
 
   // Create a pair of tokens for the render target allocation.
   auto render_target_tokens = SysmemTokens::Create(sysmem_allocator);
 
   // Register the render target tokens with the renderer.
   auto render_target_collection_id = allocation::GenerateUniqueBufferCollectionId();
-  result = renderer->ImportBufferCollection(render_target_collection_id, sysmem_allocator,
-                                            std::move(render_target_tokens.dup_token),
-                                            BufferCollectionUsage::kRenderTarget, std::nullopt);
-  EXPECT_TRUE(result);
+  auto promise3 = renderer->ImportBufferCollection(
+      render_target_collection_id, sysmem_allocator, std::move(render_target_tokens.dup_token),
+      BufferCollectionUsage::kRenderTarget, std::nullopt);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create a client-side handle to the render target's buffer collection and set the client
   // constraints.
@@ -2639,9 +2643,9 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
                                           .vmo_index = 0,
                                           .width = kTargetWidth,
                                           .height = kTargetHeight};
-  import_res = RunPromise(loop, renderer->ImportBufferImage(render_target_metadata,
-                                                            BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(import_res);
+  auto promise4 =
+      renderer->ImportBufferImage(render_target_metadata, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(loop, std::move(promise4)));
 
   // Create a renderable where the upper-left hand corner should be at position (0,0) with a
   // width/height of (32,32).
@@ -2664,9 +2668,10 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
   // Setup the render target collection.
   allocation::GlobalBufferCollectionId target_id = allocation::GenerateUniqueBufferCollectionId();
   auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator);
-  ASSERT_TRUE(RunPromise(
-      loop, renderer->ImportBufferCollection(target_id, sysmem_allocator, std::move(dup_token),
-                                             BufferCollectionUsage::kRenderTarget, std::nullopt)));
+  auto promise1 =
+      renderer->ImportBufferCollection(target_id, sysmem_allocator, std::move(dup_token),
+                                       BufferCollectionUsage::kRenderTarget, std::nullopt);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
   fuchsia::sysmem2::BufferCollectionSyncPtr target_ptr;
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
@@ -2694,7 +2699,7 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
   fuchsia::sysmem2::BufferCollectionInfo readback_info;
   fuchsia::sysmem2::BufferCollectionSyncPtr readback_ptr;
   auto readback_id =
-      SetupBufferCollection(1, 60, 40, BufferCollectionUsage::kReadback, renderer.get(),
+      SetupBufferCollection(loop, 1, 60, 40, BufferCollectionUsage::kReadback, renderer.get(),
                             sysmem_allocator, &readback_info, readback_ptr, target_id);
   EXPECT_EQ(target_id, readback_id);
 
@@ -2706,12 +2711,10 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
                                  .vmo_index = 0,
                                  .width = kTargetWidth,
                                  .height = kTargetHeight};
-  bool success = RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget));
-  ASSERT_TRUE(success);
-  success = RunPromise(
-      loop, renderer->ImportBufferImage(render_target, BufferCollectionUsage::kReadback));
-  ASSERT_TRUE(success);
+  auto promise2 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
+  auto promise3 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kReadback);
+  ASSERT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create the image metadata for the solid color renderable.
   ImageMetadata renderable_image_data = {.identifier = allocation::kInvalidImageId,
@@ -2778,10 +2781,10 @@ VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
   const uint32_t kTargetWidth = 1024;
   const uint32_t kTargetHeight = 600;
   const allocation::BufferCollectionUsage usage = GetParam();
-  ASSERT_TRUE(RunPromise(
-      loop, renderer.ImportBufferCollection(
-                render_target_collection_id, sysmem_allocator, std::move(dup_token), usage,
-                std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}))));
+  auto promise = renderer.ImportBufferCollection(
+      render_target_collection_id, sysmem_allocator, std::move(dup_token), usage,
+      std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}));
+  ASSERT_TRUE(RunPromise(loop, std::move(promise)));
 
   // Create a client-side handle to the render target's buffer collection and set the client
   // constraints.

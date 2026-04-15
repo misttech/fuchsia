@@ -27,6 +27,7 @@
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 #include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/matrix_transform_2d.hpp>
@@ -136,6 +137,14 @@ class DisplayTest : public gtest::RealLoopFixture {
     return zx::error(ZX_ERR_TIMED_OUT);
   }
 
+  // Run promise on this test case's executor.
+  // Return true if result is_ok().
+  bool RunPromise(fpromise::promise<> promise) {
+    return integration_tests::RunPromise(
+        *executor_, [this](bool& done) { RunLoopUntil([&done] { return done; }); },
+        std::move(promise));
+  }
+
   std::optional<component_testing::RealmRoot> realm_root_;
   std::unique_ptr<async::Executor> executor_;
   std::unique_ptr<display::DisplayManager> display_manager_;
@@ -179,11 +188,7 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   auto import_promise = renderer.ImportBufferCollection(
       collection_id, sysmem_allocator_, std::move(dup_token),
       allocation::BufferCollectionUsage::kClientImage, std::nullopt);
-  bool import_success = false;
-  executor_->schedule_task(import_promise.then(
-      [&import_success](const fpromise::result<>& res) { import_success = res.is_ok(); }));
-  RunLoopUntilIdle();
-  EXPECT_TRUE(import_success);
+  EXPECT_TRUE(RunPromise(std::move(import_promise)));
 
   allocation::ImageMetadata metadata = {.collection_id = collection_id,
                                         .identifier = image_id,
@@ -193,14 +198,9 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
 
   // Importing an image should fail at this point because we've only set the renderer constraints.
   {
-    bool import_image_success = true;
-    executor_->schedule_task(
-        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage)
-            .then([&import_image_success](const fpromise::result<>& res) {
-              import_image_success = res.is_ok();
-            }));
-    RunLoopUntilIdle();
-    EXPECT_FALSE(import_image_success);
+    auto import_image_promise =
+        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
+    EXPECT_FALSE(RunPromise(std::move(import_image_promise)));
   }
 
   // Set the display constraints on the display coordinator.
@@ -221,14 +221,9 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
 
   // Importing should fail again, because we've only set 2 of the 3 constraints.
   {
-    bool import_image_success = true;
-    executor_->schedule_task(
-        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage)
-            .then([&import_image_success](const fpromise::result<>& res) {
-              import_image_success = res.is_ok();
-            }));
-    RunLoopUntilIdle();
-    EXPECT_FALSE(import_image_success);
+    auto import_image_promise =
+        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
+    EXPECT_FALSE(RunPromise(std::move(import_image_promise)));
   }
 
   // Create a client-side handle to the buffer collection and set the client constraints.
@@ -257,14 +252,9 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
   // Now that the renderer, client, and the display have set their constraints, we import one last
   // time and this time it should return true.
   {
-    bool import_image_success = false;
-    executor_->schedule_task(
-        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage)
-            .then([&import_image_success](const fpromise::result<>& res) {
-              import_image_success = res.is_ok();
-            }));
-    RunLoopUntilIdle();
-    EXPECT_TRUE(import_image_success);
+    auto import_image_promise =
+        renderer.ImportBufferImage(metadata, allocation::BufferCollectionUsage::kClientImage);
+    EXPECT_TRUE(RunPromise(std::move(import_image_promise)));
   }
 
   // We should now be able to also import an image to the display coordinator, using the

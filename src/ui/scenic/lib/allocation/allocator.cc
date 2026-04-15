@@ -186,6 +186,7 @@ void Allocator::RegisterBufferCollection(
               .token_server_koid(
                   fsl::GetRelatedKoid(parsed_args->buffer_collection_token.channel().get()))
               .Build())
+      // TODO(https://fxbug.dev/502763366): Scenic assumes immortality of Allocator.
       .ThenExactlyOnce([this, parsed_args = std::move(*parsed_args),
                         completer = std::move(completer)](auto& result) mutable {
         if (!result.ok() || !result->has_is_known() || !result->is_known()) {
@@ -227,14 +228,16 @@ void Allocator::DuplicateBufferCollectionToken(ParsedArgs parsed_args, Completer
                                                                  async_get_default_dispatcher()};
   fidl::Arena arena;
   std::vector<zx_rights_t> rights_attenuation_masks(importers.size() - 1, ZX_RIGHT_SAME_RIGHTS);
-  auto thenable = token->DuplicateSync(
-      fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
-          .rights_attenuation_masks(
-              fidl::VectorView<zx_rights_t>::FromExternal(rights_attenuation_masks))
-          .Build());
-  std::move(thenable).ThenExactlyOnce(
-      [this, token = std::move(token), parsed_args = std::move(parsed_args),
-       importers = std::move(importers), completer = std::move(completer)](auto& result) mutable {
+  token
+      ->DuplicateSync(
+          fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
+              .rights_attenuation_masks(
+                  fidl::VectorView<zx_rights_t>::FromExternal(rights_attenuation_masks))
+              .Build())
+      // TODO(https://fxbug.dev/502763366): Scenic assumes immortality of Allocator.
+      .ThenExactlyOnce([this, token = std::move(token), parsed_args = std::move(parsed_args),
+                        importers = std::move(importers),
+                        completer = std::move(completer)](auto& result) mutable {
         if (!result.ok()) {
           FX_LOGS(ERROR) << "RegisterBufferCollection called with a buffer collection token where "
                             "Duplicate() failed";

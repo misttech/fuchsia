@@ -37,8 +37,8 @@ class VkRenderer final : public Renderer {
   fpromise::promise<> ImportBufferCollection(
       GlobalBufferCollectionId collection_id,
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
-      std::optional<fuchsia::math::SizeU> size) override;
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> buffer_collection_token,
+      BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) override;
 
   // |BufferCollectionImporter|
   // Only called from the main thread.

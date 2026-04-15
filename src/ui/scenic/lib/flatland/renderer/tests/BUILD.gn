@@ -99,6 +99,7 @@ cc_test_executable("display_unittests") {
     "//src/ui/scenic/lib/flatland/renderer",
     "//src/ui/scenic/lib/flatland/testing:build_display_realm",
     "//src/ui/scenic/lib/utils",
+    "//src/ui/scenic/tests:promise",
     "//third_party/googletest:gtest",
   ]
 

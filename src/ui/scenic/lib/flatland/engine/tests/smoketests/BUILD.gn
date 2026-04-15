@@ -43,6 +43,7 @@ source_set("smoketest_lib") {
     "//src/ui/scenic/lib/flatland/engine",
     "//src/ui/scenic/lib/flatland/testing:build_display_realm",
     "//src/ui/scenic/lib/scheduling:frame_scheduler",
+    "//src/ui/scenic/tests:promise",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/zircon-internal",
   ]

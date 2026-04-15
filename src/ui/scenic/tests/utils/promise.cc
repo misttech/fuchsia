@@ -19,4 +19,16 @@ bool RunPromise(async_dispatcher_t* dispatcher, fit::function<void()> run,
   return success;
 }
 
+bool RunPromise(async::Executor& executor, fit::function<void(bool&)> run_until,
+                fpromise::promise<> promise) {
+  bool done = false;
+  bool success = false;
+  executor.schedule_task(promise.then([&done, &success](fpromise::result<>& result) {
+    done = true;
+    success = result.is_ok();
+  }));
+  run_until(done);
+  return success;
+}
+
 }  // namespace integration_tests

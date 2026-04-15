@@ -8,6 +8,7 @@
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/default.h>
+#include <lib/fpromise/bridge.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
@@ -20,11 +21,9 @@
 #include "src/ui/lib/escher/renderer/batch_gpu_uploader.h"
 #include "src/ui/lib/escher/renderer/render_funcs.h"
 #include "src/ui/lib/escher/renderer/sampler_cache.h"
-#include "src/ui/lib/escher/resources/resource_recycler.h"
 #include "src/ui/lib/escher/third_party/granite/vk/command_buffer.h"
 #include "src/ui/lib/escher/util/fuchsia_utils.h"
 #include "src/ui/lib/escher/util/image_utils.h"
-#include "src/ui/lib/escher/util/trace_macros.h"
 #include "src/ui/scenic/lib/flatland/image_formats.h"
 #include "src/ui/scenic/lib/utils/shader_warmup.h"
 
@@ -182,9 +181,9 @@ std::atomic<uint64_t> next_buffer_collection_id = 1;
 
 uint64_t GetNextBufferCollectionId() { return next_buffer_collection_id++; }
 
-std::string GetNextBufferCollectionIdString(const char* prefix) {
+std::string GetNextBufferCollectionIdString(const std::string& prefix) {
   // Would use std::ostringstream here, except it bloats binary size by ~50kB, causing CQ to fail.
-  return std::string(prefix) + "-" + std::to_string(GetNextBufferCollectionId());
+  return prefix + "-" + std::to_string(GetNextBufferCollectionId());
 }
 
 std::string GetImageName(const BufferCollectionUsage usage) {
@@ -214,25 +213,6 @@ vk::ImageUsageFlags GetImageUsageFlags(const BufferCollectionUsage usage) {
       FX_NOTREACHED();
       return static_cast<vk::ImageUsageFlags>(0);
   }
-}
-
-// Creates a duplicate of |token|. Returns a std::nullopt if it fails.
-fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> Duplicate(
-    fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken> token) {
-  fidl::Arena arena;
-  zx_rights_t rights_attenuation_masks = ZX_RIGHT_SAME_RIGHTS;
-  auto result = fidl::WireCall(token)->DuplicateSync(
-      fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
-          .rights_attenuation_masks(
-              fidl::VectorView<zx_rights_t>::FromExternal(&rights_attenuation_masks, 1))
-          .Build());
-  if (!result.ok() || !result->has_tokens()) {
-    FX_LOGS(ERROR) << "Could not duplicate token: " << result.status_string();
-    return {};
-  }
-
-  FX_DCHECK(result->tokens().size() == 1);
-  return std::move(result->tokens()[0]);
 }
 
 fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>
@@ -415,62 +395,94 @@ std::optional<vk::BufferCollectionFUCHSIA> VkRenderer::GetAllocatedVulkanBufferC
 fpromise::promise<> VkRenderer::ImportBufferCollection(
     GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
-    std::optional<fuchsia::math::SizeU> size) {
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> buffer_collection_token,
+    BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  TRACE_DURATION("gfx", "flatland::VkRenderer::ImportBufferCollection");
   FX_DCHECK(collection_id != allocation::kInvalidId);
-  FX_DCHECK(token.is_valid());
+  FX_DCHECK(buffer_collection_token.is_valid());
+  const trace_flow_id_t flow_id = TRACE_NONCE();
+  TRACE_DURATION("gfx", "flatland::VkRenderer::ImportBufferCollection[begin]");
+  TRACE_FLOW_BEGIN("gfx", "flatland::VkRenderer::ImportBufferCollection", flow_id);
 
-  // TODO(https://fxbug.dev/42128380): See if this can become asynchronous.
-  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> vulkan_token = Duplicate(token);
-  if (!vulkan_token.is_valid()) {
-    return fpromise::make_error_promise();
-  }
-
-  fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection =
-      CreateBufferCollectionPtrWithEmptyConstraints(sysmem_allocator, std::move(token));
-  if (!buffer_collection) {
-    return fpromise::make_error_promise();
-  }
-  // Use a name with a priority that's greater than the vulkan implementation, but less than
-  // what any client would use.
+  fpromise::bridge<void, void> bridge;
   fidl::Arena arena;
-  fidl::OneWayStatus result = buffer_collection->SetName(
-      fuchsia_sysmem2::wire::NodeSetNameRequest::Builder(arena)
-          .priority(10u)
-          .name(GetNextBufferCollectionIdString(GetImageName(usage).c_str()))
-          .Build());
-  if (!result.ok()) {
-    return fpromise::make_error_promise();
-  }
+  std::array<zx_rights_t, 1> rights_attenuation_masks{ZX_RIGHT_SAME_RIGHTS};
+  fidl::WireClient<fuchsia_sysmem2::BufferCollectionToken> token{std::move(buffer_collection_token),
+                                                                 async_get_default_dispatcher()};
+  token
+      ->DuplicateSync(
+          fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
+              .rights_attenuation_masks(
+                  fidl::VectorView<zx_rights_t>::FromExternal(rights_attenuation_masks))
+              .Build())
+      // TODO(https://fxbug.dev/502763366): Scenic assumes immortality of VkRenderer.
+      .ThenExactlyOnce([this, completer = std::move(bridge.completer), token = std::move(token),
+                        collection_id, &sysmem_allocator, usage, size,
+                        flow_id](auto& result) mutable {
+        TRACE_DURATION("gfx", "flatland::VkRenderer::ImportBufferCollection[end]");
+        TRACE_FLOW_END("gfx", "flatland::VkRenderer::ImportBufferCollection", flow_id);
+        if (!result.ok() || !result->has_tokens()) {
+          FX_LOGS(ERROR) << "ImportBufferCollection failed to duplicate token: "
+                         << result.status_string();
+          completer.complete_error();
+          return;
+        }
+        FX_DCHECK(result->tokens().size() == 1);
+        auto vulkan_token = std::move(result->tokens()[0]);
 
-  vk::BufferCollectionFUCHSIA vk_collection;
-  if (const auto collection =
-          SetConstraintsAndCreateVulkanBufferCollection(std::move(vulkan_token), usage, size)) {
-    vk_collection = std::move(*collection);
-  } else {
-    return fpromise::make_error_promise();
-  }
+        fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection =
+            CreateBufferCollectionPtrWithEmptyConstraints(sysmem_allocator,
+                                                          *token.UnbindMaybeGetEndpoint());
+        if (!buffer_collection) {
+          FX_LOGS(ERROR) << "ImportBufferCollection failed to create buffer collection.";
+          completer.complete_error();
+          return;
+        }
 
-  // TODO(https://fxbug.dev/42120738): Convert this to a lock-free structure.
-  std::scoped_lock lock(lock_);
+        // Use a name with a priority that's greater than the vulkan implementation, but less
+        // than what any client would use.
+        fidl::Arena arena;
+        fidl::OneWayStatus status = buffer_collection->SetName(
+            fuchsia_sysmem2::wire::NodeSetNameRequest::Builder(arena)
+                .priority(10u)
+                .name(GetNextBufferCollectionIdString(GetImageName(usage)))
+                .Build());
+        if (!status.ok()) {
+          FX_LOGS(ERROR) << "ImportBufferCollection failed to set buffer collection name.";
+          completer.complete_error();
+          return;
+        }
 
-  std::unordered_map<GlobalBufferCollectionId, CollectionData>& collections =
-      GetBufferCollectionsFor(usage);
-  const auto [_, emplace_success] = collections.emplace(
-      std::make_pair(collection_id, CollectionData{.collection = std::move(buffer_collection),
-                                                   .vk_collection = std::move(vk_collection)}));
-  if (!emplace_success) {
-    FX_LOGS(WARNING) << "Could not store buffer collection, because an entry already existed for "
-                     << collection_id;
-    auto vk_device = escher_->vk_device();
-    auto vk_loader = escher_->device()->dispatch_loader();
-    vk_device.destroyBufferCollectionFUCHSIA(vk_collection, nullptr, vk_loader);
-    return fpromise::make_error_promise();
-  }
+        auto vk_collection =
+            SetConstraintsAndCreateVulkanBufferCollection(std::move(vulkan_token), usage, size);
+        if (!vk_collection) {
+          FX_LOGS(ERROR) << "ImportBufferCollection failed to create vulkan buffer collection.";
+          completer.complete_error();
+          return;
+        }
 
-  return fpromise::make_ok_promise();
+        // TODO(https://fxbug.dev/42120738): Convert this to a lock-free structure.
+        std::scoped_lock lock(lock_);
+
+        std::unordered_map<GlobalBufferCollectionId, CollectionData>& collections =
+            GetBufferCollectionsFor(usage);
+        const auto [_, emplace_success] = collections.emplace(
+            collection_id, CollectionData{.collection = std::move(buffer_collection),
+                                          .vk_collection = *vk_collection});
+        if (!emplace_success) {
+          FX_LOGS(WARNING) << "ImportBufferCollection failed to store buffer collection, "
+                              "because an entry already existed for "
+                           << collection_id;
+          auto vk_device = escher_->vk_device();
+          auto vk_loader = escher_->device()->dispatch_loader();
+          vk_device.destroyBufferCollectionFUCHSIA(*vk_collection, nullptr, vk_loader);
+          completer.complete_error();
+          return;
+        }
+
+        completer.complete_ok();
+      });
+  return bridge.consumer.promise();
 }
 
 void VkRenderer::ReleaseBufferCollection(GlobalBufferCollectionId collection_id,

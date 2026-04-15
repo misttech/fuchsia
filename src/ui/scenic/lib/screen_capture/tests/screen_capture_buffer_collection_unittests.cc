@@ -4,8 +4,8 @@
 
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
-#include <lib/async-testing/test_loop.h>
-#include <lib/async/cpp/executor.h>
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/default.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstddef>
@@ -25,7 +25,6 @@ namespace screen_capture::test {
 
 using allocation::BufferCollectionUsage;
 using fuchsia::images2::PixelFormat;
-using integration_tests::RunPromise;
 
 class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
  public:
@@ -46,15 +45,10 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
     auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
 
     // Import into ScreenCaptureBufferCollectionImporter.
-    async::Executor executor(loop_.dispatcher());
-    bool success = false;
-    executor.schedule_task(
-        importer_
-            ->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
-                                     BufferCollectionUsage::kRenderTarget, std::nullopt)
-            .then([&success](const fpromise::result<>& result) { success = result.is_ok(); }));
-    loop_.RunUntilIdle();
-    EXPECT_TRUE(success);
+    auto promise =
+        importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
+                                          BufferCollectionUsage::kRenderTarget, std::nullopt);
+    EXPECT_TRUE(RunPromise(std::move(promise)));
 
     fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
     fidl::Arena arena;
@@ -82,7 +76,24 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
   }
 
  protected:
-  async::TestLoop loop_;
+  // Run promise on this test case's loop.
+  // Return true if result is_ok().
+  bool RunPromise(fpromise::promise<> promise) {
+    bool done = false;
+    return integration_tests::RunPromise(
+        loop_.dispatcher(),
+        [this, &done] {
+          while (!done) {
+            loop_.RunUntilIdle();
+          }
+        },
+        promise.then([&done](fpromise::result<>& result) {
+          done = true;
+          return result;
+        }));
+  }
+
+  async::Loop loop_{&kAsyncLoopConfigAttachToCurrentThread};
   std::shared_ptr<flatland::VkRenderer> renderer_;
   std::shared_ptr<ScreenCaptureBufferCollectionImporter> importer_;
 };
@@ -106,9 +117,10 @@ VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportAndReleaseBufferCollection) {
 
   // Import into ScreenCaptureBufferCollectionImporter.
   auto collection_id = allocation::GenerateUniqueBufferCollectionId();
-  EXPECT_TRUE(RunPromise(loop_, importer_->ImportBufferCollection(
-                                    collection_id, sysmem_allocator, std::move(dup_token),
-                                    BufferCollectionUsage::kRenderTarget, std::nullopt)));
+  auto promise =
+      importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
+                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Cleanup.
   importer_->ReleaseBufferCollection(collection_id, BufferCollectionUsage::kRenderTarget);
@@ -135,9 +147,8 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, ImportBufferImage) {
   metadata.identifier = display::ImageId(1);
 
   // Verify image has been imported correctly.
-  bool success = RunPromise(
-      loop_, importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget));
-  EXPECT_TRUE(success);
+  auto promise = importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Cleanup.
   importer_->ReleaseBufferCollection(collection_id, BufferCollectionUsage::kRenderTarget);
@@ -181,12 +192,12 @@ VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportBufferCollection_ErrorCases) 
                 token1.NewRequest().TakeChannel()))
             .Build());
     EXPECT_TRUE(result.ok());
+    auto promise = importer_->ImportBufferCollection(
+        collection_id, sysmem_allocator,
+        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token1.Unbind().TakeChannel()),
+        BufferCollectionUsage::kRenderTarget, std::nullopt);
+    EXPECT_TRUE(RunPromise(std::move(promise)));
   }
-  EXPECT_TRUE(RunPromise(loop_, importer_->ImportBufferCollection(
-                                    collection_id, sysmem_allocator,
-                                    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                                        token1.Unbind().TakeChannel()),
-                                    BufferCollectionUsage::kRenderTarget, std::nullopt)));
 
   // Buffer collection id dup.
   {
@@ -198,11 +209,11 @@ VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportBufferCollection_ErrorCases) 
                 token2.NewRequest().TakeChannel()))
             .Build());
     EXPECT_TRUE(result.ok());
-    EXPECT_FALSE(RunPromise(loop_, importer_->ImportBufferCollection(
-                                       collection_id, sysmem_allocator,
-                                       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                                           token2.Unbind().TakeChannel()),
-                                       BufferCollectionUsage::kRenderTarget, std::nullopt)));
+    auto promise = importer_->ImportBufferCollection(
+        collection_id, sysmem_allocator,
+        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token2.Unbind().TakeChannel()),
+        BufferCollectionUsage::kRenderTarget, std::nullopt);
+    EXPECT_FALSE(RunPromise(std::move(promise)));
   }
 }
 
@@ -220,25 +231,20 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, ImportBufferImage_ErrorCases) {
   fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(std::move(constraints), collection_id);
 
-  zx_status_t status;
-  bool result;
-
   // Buffer collection id mismatch.
   {
     allocation::ImageMetadata metadata;
     metadata.collection_id = allocation::GenerateUniqueBufferCollectionId();
-    result = RunPromise(
-        loop_, importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget));
-    EXPECT_FALSE(result);
+    auto promise = importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget);
+    EXPECT_FALSE(RunPromise(std::move(promise)));
   }
 
   // Buffer collection id invalid.
   {
     allocation::ImageMetadata metadata;
     metadata.collection_id = 0;
-    result = RunPromise(
-        loop_, importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget));
-    EXPECT_FALSE(result);
+    auto promise = importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget);
+    EXPECT_FALSE(RunPromise(std::move(promise)));
   }
 
   // Buffer collection has 0 width and height.
@@ -247,9 +253,8 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, ImportBufferImage_ErrorCases) {
     metadata.collection_id = collection_id;
     metadata.width = 0;
     metadata.height = 0;
-    result = RunPromise(
-        loop_, importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget));
-    EXPECT_FALSE(result);
+    auto promise = importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget);
+    EXPECT_FALSE(RunPromise(std::move(promise)));
   }
 
   // Buffer count is does not correspond with vmo_index
@@ -259,9 +264,8 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, ImportBufferImage_ErrorCases) {
     metadata.width = 32;
     metadata.height = 32;
     metadata.vmo_index = 3;
-    result = RunPromise(
-        loop_, importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget));
-    EXPECT_FALSE(result);
+    auto promise = importer_->ImportBufferImage(metadata, BufferCollectionUsage::kRenderTarget);
+    EXPECT_FALSE(RunPromise(std::move(promise)));
   }
 
   // Cleanup.
@@ -300,9 +304,10 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCollectionBufferCount_Buffe
   // Create Sysmem tokens.
   auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
   // Import into ScreenCaptureBufferCollectionImporter.
-  EXPECT_TRUE(RunPromise(loop_, importer_->ImportBufferCollection(
-                                    collection_id, sysmem_allocator, std::move(dup_token),
-                                    BufferCollectionUsage::kRenderTarget, std::nullopt)));
+  auto promise =
+      importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(dup_token),
+                                        BufferCollectionUsage::kRenderTarget, std::nullopt);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
   fidl::Arena arena;

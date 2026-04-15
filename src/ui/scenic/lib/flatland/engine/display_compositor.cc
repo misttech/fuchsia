@@ -1217,6 +1217,7 @@ DisplayCompositor::AllocateDisplayRenderTargets(
       ->ImportBufferCollection(collection_id, sysmem_allocator_, std::move(renderer_token),
                                BufferCollectionUsage::kRenderTarget,
                                std::optional<fuchsia::math::SizeU>(size))
+      // TODO(https://fxbug.dev/502763366): Scenic assumes immortality of DisplayCompositor.
       .and_then([this, use_protected_memory, num_render_targets, size, pixel_format,
                  compositor_token = std::move(compositor_token),
                  display_token = std::move(display_token), collection_id,

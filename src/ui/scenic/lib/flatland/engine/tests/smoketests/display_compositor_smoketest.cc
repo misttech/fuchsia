@@ -24,6 +24,7 @@
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 #include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 
 using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
@@ -135,10 +136,9 @@ class DisplayCompositorSmokeTest : public DisplayCompositorTestBase {
         collection_id, sysmem_allocator_, std::move(dup_token), BufferCollectionUsage::kClientImage,
         std::nullopt);
 
-    bool import_success = false;
-    executor_->schedule_task(import_promise.then(
-        [&import_success](const fpromise::result<>& res) { import_success = res.is_ok(); }));
-    RunLoopUntilIdle();
+    bool import_success = integration_tests::RunPromise(
+        *executor_, [this](bool& done) { RunLoopUntil([&done] { return done; }); },
+        std::move(import_promise));
     EXPECT_TRUE(import_success);
 
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();

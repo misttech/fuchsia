@@ -129,20 +129,22 @@ fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints
   FX_DCHECK(status == ZX_OK);
 
   fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result register_result;
-  flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &register_result);
+  status = flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &register_result);
+  FX_DCHECK(status == ZX_OK);
   FX_DCHECK(!register_result.is_err());
 
   // Wait for allocation.
   fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
   status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-  FX_DCHECK(ZX_OK == status);
+  FX_DCHECK(status == ZX_OK);
   FX_DCHECK(!wait_result.is_framework_err());
   FX_DCHECK(!wait_result.is_err());
   FX_DCHECK(wait_result.is_response());
   auto buffer_collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
   FX_DCHECK(constraints_min_buffer_count == buffer_collection_info.buffers().size());
 
-  EXPECT_EQ(ZX_OK, buffer_collection->Release());
+  status = buffer_collection->Release();
+  EXPECT_EQ(status, ZX_OK);
   return buffer_collection_info;
 }
 

@@ -73,6 +73,7 @@ source_set("pixeltest_lib") {
     "//src/ui/scenic/lib/flatland/engine:engine_host_accessible_framebuffers",
     "//src/ui/scenic/lib/flatland/testing:build_display_realm",
     "//src/ui/scenic/lib/scheduling:frame_scheduler",
+    "//src/ui/scenic/tests:promise",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/image-format",

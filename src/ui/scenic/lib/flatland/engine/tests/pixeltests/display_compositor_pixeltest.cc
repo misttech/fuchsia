@@ -40,6 +40,7 @@
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 #include "src/ui/scenic/lib/flatland/testing/build_display_realm.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/tests/utils/promise.h"
 
 using ::testing::_;
 using ::testing::Return;
@@ -372,6 +373,14 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
   std::unique_ptr<display::DisplayManager> display_manager_;
   display::Display::VsyncCallbackId vsync_callback_id_{};
 
+  // Run promise on this test case's executor.
+  // Return true if result is_ok().
+  bool RunPromise(fpromise::promise<> promise) {
+    return integration_tests::RunPromise(
+        *executor_, [this](bool& done) { RunLoopUntil([&done] { return done; }); },
+        std::move(promise));
+  }
+
   static std::pair<std::unique_ptr<escher::Escher>, std::shared_ptr<flatland::VkRenderer>>
   NewVkRenderer() {
     auto env = escher::test::EscherEnvironment::GetGlobalTestEnvironment();
@@ -559,12 +568,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     auto import_promise = display_compositor->ImportBufferCollection(
         collection_id, sysmem_allocator_, std::move(dup_token), BufferCollectionUsage::kClientImage,
         std::nullopt);
-
-    bool import_success = false;
-    executor_->schedule_task(import_promise.then(
-        [&import_success](const fpromise::result<>& res) { import_success = res.is_ok(); }));
-    RunLoopUntilIdle();
-    EXPECT_TRUE(import_success);
+    EXPECT_TRUE(RunPromise(std::move(import_promise)));
 
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
     fuchsia::sysmem2::BufferCollectionSyncPtr texture_collection =
@@ -937,9 +941,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
-                                                          /*out_buffer_collection*/ nullptr));
-  RunLoopUntilIdle();
+  auto promise = display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                                /*out_buffer_collection*/ nullptr);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -1068,9 +1072,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
-                                                          /*out_buffer_collection*/ nullptr));
-  RunLoopUntilIdle();
+  auto promise = display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                                /*out_buffer_collection*/ nullptr);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -1179,9 +1183,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
-                                                          /*out_buffer_collection*/ nullptr));
-  RunLoopUntilIdle();
+  auto promise = display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                                /*out_buffer_collection*/ nullptr);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -1302,9 +1306,9 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
-                                                          /*out_buffer_collection*/ nullptr));
-  RunLoopUntilIdle();
+  auto promise = display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 0,
+                                                /*out_buffer_collection*/ nullptr);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -1475,9 +1479,9 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(
-      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info));
-  RunLoopUntilIdle();
+  auto promise =
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Now we can finally render.
   RenderData render_data;
@@ -1647,9 +1651,9 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(
-      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info));
-  RunLoopUntilIdle();
+  auto promise =
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Now we can finally render.
   const uint32_t kNumOverlappingColumns = 25;
@@ -1875,9 +1879,9 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(
-      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info));
-  RunLoopUntilIdle();
+  auto promise =
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -2133,9 +2137,9 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(
-      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info));
-  RunLoopUntilIdle();
+  auto promise =
+      display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Setup the uberstruct data.
   auto uberstruct = session.CreateUberStructWithCurrentTopology(root_handle);
@@ -2335,10 +2339,10 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
       .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
-  executor_->schedule_task(
+  auto promise =
       display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2,
-                                     /*out_buffer_collection*/ &unused_render_target_info));
-  RunLoopUntilIdle();
+                                     /*out_buffer_collection*/ &unused_render_target_info);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // We shouldn't even need UberStructs at all.  We're going to render several blue and green frames
   // so generate one reusable display list for each of them.
@@ -2501,9 +2505,9 @@ VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
       .formats = {kDisplayPixelFormat},
       .max_layer_count = display->max_layer_count()};
   // Create display VMOs for the boards where color layers are not supported.
-  executor_->schedule_task(display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2,
-                                                          &unused_render_target_info));
-  RunLoopUntilIdle();
+  auto promise = display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2,
+                                                &unused_render_target_info);
+  EXPECT_TRUE(RunPromise(std::move(promise)));
 
   // Render an empty frame.
   auto render_frame_result = display_compositor->RenderFrame(
