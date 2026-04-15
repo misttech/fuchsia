@@ -6388,15 +6388,18 @@ void brcmf_free_vif(struct brcmf_cfg80211_vif* vif) {
 }
 
 void brcmf_free_net_device_vif(struct net_device* ndev) {
-  struct brcmf_cfg80211_vif* vif = ndev_to_vif(ndev);
-
-  if (vif) {
-    brcmf_free_vif(vif);
+  struct brcmf_if* ifp = ndev_to_if(ndev);
+  if (ifp && ifp->vif) {
+    brcmf_free_vif(ifp->vif);
+    ifp->vif = nullptr;
   }
 }
 
 // Returns true if client is connected (also includes CONNECTING, ROAMING, and DISCONNECTING).
 static bool brcmf_is_client_connected(brcmf_if* ifp) {
+  if (!ifp || !ifp->vif) {
+    return false;
+  }
   return (brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTED, &ifp->vif->sme_state) ||
           brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTING, &ifp->vif->sme_state) ||
           brcmf_test_bit(brcmf_vif_status_bit_t::ROAMING, &ifp->vif->sme_state) ||
@@ -6404,6 +6407,9 @@ static bool brcmf_is_client_connected(brcmf_if* ifp) {
 }
 
 static const char* brcmf_get_client_connect_state_string(brcmf_if* ifp) {
+  if (!ifp || !ifp->vif) {
+    return "Not connected";
+  }
   if (brcmf_test_bit(brcmf_vif_status_bit_t::CONNECTED, &ifp->vif->sme_state)) {
     return "Connected";
   }
@@ -6438,6 +6444,11 @@ zx_status_t brcmf_notify_channel_switch(struct brcmf_if* ifp, const struct brcmf
 
   if (e != nullptr) {
     BRCMF_DBG_EVENT(ifp, e, "%d", [](uint32_t reason) { return reason; });
+  }
+
+  if (!ifp->vif) {
+    BRCMF_ERR("Null virtual interface during channel switch");
+    return ZX_ERR_BAD_STATE;
   }
 
   cfg = ifp->drvr->config;
