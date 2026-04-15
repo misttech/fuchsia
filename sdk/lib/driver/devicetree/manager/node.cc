@@ -13,6 +13,7 @@
 #include <zircon/errors.h>
 #include <zircon/status.h>
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
@@ -43,8 +44,8 @@ Node::Node(Node *parent, const std::string_view name, devicetree::Properties pro
 
   fdf_name_ = name_;
   // '@' and ',' are not a valid character in Node names as per driver framework.
-  std::replace(fdf_name_.begin(), fdf_name_.end(), '@', '-');
-  std::replace(fdf_name_.begin(), fdf_name_.end(), ',', '-');
+  std::ranges::replace(fdf_name_, '@', '-');
+  std::ranges::replace(fdf_name_, ',', '-');
 
   pbus_node_.did() = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_DEVICETREE;
   pbus_node_.vid() = bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC;
