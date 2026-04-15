@@ -45,11 +45,6 @@ class BazelSourcePathMapper:
       used, as happens often with Bazel. Hence this class also implements a small
       in-memory cache, since the same source paths often are used multiple
       times.
-
-    - The source-collecting aspect grabs license() declarations which use `LICENSE`
-      as the default `license_text` value. Some third-party/rust/vendor/ crates
-      use different license file names (e.g. `LICENCE` instead of `LICENSE`)
-      and this is not correctly handled by the source-collecting aspect.
     """
 
     def __init__(self, bazel_paths: BazelPaths) -> None:
@@ -78,17 +73,6 @@ class BazelSourcePathMapper:
             return True
         return False
 
-    @staticmethod
-    def _is_incorrect_license_file_path(path: str) -> bool:
-        # Ignore the LICENSE files from third_party/rust_crates/vendor because
-        # these paths are used by default by Bazel license() rules, but do not
-        # match the actual license file for a few crates. For example
-        # third_party/rust_crates/ansi_term-0.12.1/LICENSE does not exist,
-        # but there is a file named `LICENCE` (with a 'C') in the same directory.
-        return "third_party/rust_crates/vendor" in path and path.endswith(
-            "/LICENSE"
-        )
-
     def resolve_path(self, bazel_source_path: str) -> str:
         """Map a Bazel source file path to a path relative to the Fuchsia checkout.
 
@@ -112,11 +96,6 @@ class BazelSourcePathMapper:
 
     def resolve_path_no_cache(self, path: str) -> str:
         """Resolve a source file path to a Fuchsia-relative path. No caching."""
-        if self._is_incorrect_license_file_path(path):
-            # This file path does not exist, and should be ignored to avoid creating
-            # Ninja no-op failures.
-            return ""
-
         if not path.startswith("/"):
             # A relative path, assume it is relative to the execroot.
             if path.startswith("bazel-out/"):
