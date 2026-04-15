@@ -237,8 +237,21 @@ func updateCheckNow(
 			return fmt.Errorf("error setting up server: %w", err)
 		}
 		defer server.Shutdown(ctx)
-		if err := c.RegisterPackageRepository(ctx, ffxTool, server, repoName, createRewriteRule, nil); err != nil {
-			return fmt.Errorf("error registering repository with target: %w", err)
+		// Some initial attempts to register the repository may fail and hang
+		// forever. It's not very clear the cause, but the ServePackageRepository
+		// (packages.Server.newServer) uses a mux under the hood and it may take
+		// some time for the mux to be properly initialized.
+		// So the registration is retried up to 3 times with a short timeout for
+		// each attempt.
+		for i := 0; i < 3; i++ {
+			childCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			if err := c.RegisterPackageRepository(childCtx, ffxTool, server, repoName, createRewriteRule, nil); err == nil {
+				break
+			}
+			if i == 2 {
+				return fmt.Errorf("error registering repository with target: %w", err)
+			}
 		}
 
 		ch := c.DisconnectionListener()
