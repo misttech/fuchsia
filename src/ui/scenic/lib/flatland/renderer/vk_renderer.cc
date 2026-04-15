@@ -8,11 +8,11 @@
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/default.h>
-#include <lib/fpromise/bridge.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
 
+#include "src/lib/fidl/contrib/fpromise/client.h"
 #include "src/ui/lib/escher/escher.h"
 #include "src/ui/lib/escher/flatland/rectangle_compositor.h"
 #include "src/ui/lib/escher/forward_declarations.h"
@@ -402,21 +402,19 @@ fpromise::promise<> VkRenderer::ImportBufferCollection(
   TRACE_DURATION("gfx", "flatland::VkRenderer::ImportBufferCollection[begin]");
   TRACE_FLOW_BEGIN("gfx", "flatland::VkRenderer::ImportBufferCollection", flow_id);
 
-  fpromise::bridge<void, void> bridge;
   fidl::Arena arena;
   std::array<zx_rights_t, 1> rights_attenuation_masks{ZX_RIGHT_SAME_RIGHTS};
   fidl::WireClient<fuchsia_sysmem2::BufferCollectionToken> token{std::move(buffer_collection_token),
                                                                  async_get_default_dispatcher()};
-  token
-      ->DuplicateSync(
+  return fidl_fpromise::as_promise<void, void>(
+      token->DuplicateSync(
           fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateSyncRequest::Builder(arena)
               .rights_attenuation_masks(
                   fidl::VectorView<zx_rights_t>::FromExternal(rights_attenuation_masks))
-              .Build())
+              .Build()),
       // TODO(https://fxbug.dev/502763366): Scenic assumes immortality of VkRenderer.
-      .ThenExactlyOnce([this, completer = std::move(bridge.completer), token = std::move(token),
-                        collection_id, &sysmem_allocator, usage, size,
-                        flow_id](auto& result) mutable {
+      [this, token = std::move(token), collection_id, &sysmem_allocator, usage, size, flow_id](
+          auto& result, auto completer) mutable {
         TRACE_DURATION("gfx", "flatland::VkRenderer::ImportBufferCollection[end]");
         TRACE_FLOW_END("gfx", "flatland::VkRenderer::ImportBufferCollection", flow_id);
         if (!result.ok() || !result->has_tokens()) {
@@ -480,7 +478,6 @@ fpromise::promise<> VkRenderer::ImportBufferCollection(
 
         completer.complete_ok();
       });
-  return bridge.consumer.promise();
 }
 
 void VkRenderer::ReleaseBufferCollection(GlobalBufferCollectionId collection_id,
