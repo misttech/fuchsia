@@ -4,13 +4,16 @@
 
 use anyhow::{Result, anyhow};
 use argh::{ArgsInfo, FromArgs};
+use async_fs as afs;
 use async_trait::async_trait;
+use buf_read_ext::BufReadExt as _;
 use crossterm::tty::IsTty;
 use errors::ffx_bail;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fidl::endpoints::Proxy;
 use fidl_codec_fdomain::library as lib;
+use fuchsia_async as fasync;
 use futures::AsyncReadExt;
 use futures::channel::oneshot::channel as oneshot;
 use futures::future::{Either, FutureExt, select};
@@ -18,12 +21,11 @@ use futures::io::AllowStdIo;
 use playground::interpreter::Interpreter;
 use playground::value::Value;
 use std::fs::File;
-use std::io::{self, BufRead as _, BufReader, stdin};
+use std::io::{self, BufReader, stdin};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use target_holders::RemoteControlProxyHolder;
 use vfs::directory::helper::DirectlyMutable;
-use {async_fs as afs, fuchsia_async as fasync};
 
 mod analytics;
 mod cf_fs;
@@ -101,7 +103,9 @@ pub async fn exec_playground(
         Err(e) => ffx_bail!("Could not open {}: {e}", all_fidl_json.display()),
     };
 
-    for line in BufReader::new(file).lines() {
+    let mut reader = BufReader::new(file);
+    let mut lines = reader.lending_lines();
+    while let Some(line) = lines.next() {
         let line = match line {
             Ok(line) => line,
             Err(e) => ffx_bail!("Error reading {}, {e}", all_fidl_json.display()),

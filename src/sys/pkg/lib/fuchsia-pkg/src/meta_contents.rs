@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::errors::MetaContentsError;
+use buf_read_ext::BufReadExt;
 use fuchsia_merkle::Hash;
 use std::collections::HashMap;
 use std::io;
@@ -126,9 +127,9 @@ impl MetaContents {
     /// ```
     pub fn deserialize(mut reader: impl io::BufRead) -> Result<Self, MetaContentsError> {
         let mut contents = HashMap::new();
-        let mut buf = String::new();
-        while reader.read_line(&mut buf)? > 0 {
-            let line = buf.trim_end();
+        let mut lines = reader.lending_lines();
+        while let Some(line) = lines.next() {
+            let line = line?;
             let i = line.rfind('=').ok_or_else(|| MetaContentsError::EntryHasNoEqualsSign {
                 entry: line.to_string(),
             })?;
@@ -147,8 +148,6 @@ impl MetaContents {
                     });
                 }
             }
-
-            buf.clear();
         }
         contents.shrink_to_fit();
         Self::from_map(contents)

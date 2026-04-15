@@ -34,6 +34,7 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/playground",
     "//src/lib/analytics/rust:lib",
+    "//src/lib/buf-read-ext",
     "//src/lib/fdomain/local",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl_codec/rust:fidl_codec_fdomain",

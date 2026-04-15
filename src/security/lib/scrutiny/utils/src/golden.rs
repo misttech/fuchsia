@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
+use buf_read_ext::BufReadExt as _;
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Cursor, Read};
+use std::io::{BufReader, Cursor, Read};
 use std::path::{Path, PathBuf};
 
 /// Compares either match or they have a set of mismatch errors.
@@ -87,13 +88,14 @@ impl GoldenFile {
     /// indicates that the system image may or may not contain /bin/goat,
     /// /bin/goats, or /bin/goat_teleporter, but it says nothing about whether
     /// /bin/goats/Buttermilk is allowed.
-    fn parse<P: AsRef<Path>, R: Read>(path: P, reader: BufReader<R>) -> Result<Self> {
+    fn parse<P: AsRef<Path>, R: Read>(path: P, mut reader: BufReader<R>) -> Result<Self> {
         let mut required: HashSet<String> = HashSet::new();
         let mut optional: HashSet<String> = HashSet::new();
         let mut required_prefix: HashSet<String> = HashSet::new();
         let mut optional_prefix: HashSet<String> = HashSet::new();
 
-        for line in reader.lines() {
+        let mut lines = reader.lending_lines();
+        while let Some(line) = lines.next() {
             let line = line?;
             match line.chars().next() {
                 // Skip comment lines.
@@ -111,7 +113,7 @@ impl GoldenFile {
                 }
                 // Normal entry
                 Some(_) => {
-                    let name = line.clone();
+                    let name = line.to_string();
                     if name.ends_with("*") {
                         required_prefix.insert(name.strip_suffix("*").unwrap().to_string());
                     } else {
@@ -176,11 +178,7 @@ impl GoldenFile {
             ));
         }
 
-        if errors.is_empty() {
-            CompareResult::Matches
-        } else {
-            CompareResult::Mismatch { errors }
-        }
+        if errors.is_empty() { CompareResult::Matches } else { CompareResult::Mismatch { errors } }
     }
 }
 

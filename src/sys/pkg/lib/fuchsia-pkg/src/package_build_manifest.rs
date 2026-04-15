@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::errors::PackageBuildManifestError;
+use buf_read_ext::BufReadExt as _;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet, btree_map};
 use std::fs;
@@ -191,11 +192,10 @@ impl PackageBuildManifest {
         let mut external_contents = BTreeMap::new();
         let mut far_contents = BTreeMap::new();
 
-        let mut buf = String::new();
-        while reader.read_line(&mut buf)? != 0 {
-            let line = buf.trim();
+        let mut lines = reader.lending_lines();
+        while let Some(line) = lines.next() {
+            let line = line?.trim();
             if line.is_empty() {
-                buf.clear();
                 continue;
             }
 
@@ -203,7 +203,6 @@ impl PackageBuildManifest {
             let pos = if let Some(pos) = line.find('=') {
                 pos
             } else {
-                buf.clear();
                 continue;
             };
 
@@ -230,8 +229,6 @@ impl PackageBuildManifest {
                     }
                 }
             }
-
-            buf.clear();
         }
 
         Self::from_external_and_far_contents(external_contents, far_contents)

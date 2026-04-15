@@ -6,6 +6,7 @@ use crate::error::*;
 use crate::parser::{self, ParsingError, RequireEscaped, VerboseError};
 use crate::validate::*;
 use anyhow::format_err;
+use buf_read_ext::BufReadExt as _;
 use fidl_fuchsia_diagnostics__common::{
     self as fdiagnostics, ComponentSelector, LogInterestSelector, PropertySelector, Selector,
     SelectorArgument, StringSelector, SubtreeSelector, TreeNames, TreeSelector,
@@ -18,7 +19,7 @@ use moniker::{
 };
 use std::borrow::{Borrow, Cow};
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::iter::once;
 use std::path::Path;
 use std::sync::Arc;
@@ -217,13 +218,14 @@ where
 {
     let selector_file = fs::File::open(selector_file)?;
     let mut result = Vec::new();
-    let reader = BufReader::new(selector_file);
-    for line in reader.lines() {
+    let mut reader = BufReader::new(selector_file);
+    let mut lines = reader.lending_lines();
+    while let Some(line) = lines.next() {
         let line = line?;
         if line.is_empty() {
             continue;
         }
-        if let Some(selector) = parser::selector_or_comment::<E>(&line)? {
+        if let Some(selector) = parser::selector_or_comment::<E>(line)? {
             result.push(selector.into());
         }
     }

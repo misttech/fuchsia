@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use crate::errors::PathHashMappingError;
+use buf_read_ext::BufReadExt as _;
 use fuchsia_hash::Hash;
 use fuchsia_pkg::PackagePath;
-use std::io::{self, BufRead as _};
+use std::io;
 use std::marker::PhantomData;
 use std::str::FromStr as _;
 
@@ -31,13 +32,13 @@ pub struct PathHashMapping<T> {
 impl<T> PathHashMapping<T> {
     /// Reads the line-oriented "package-path=hash" static_packages or cache_packages file.
     /// Validates the package paths and hashes.
-    pub fn deserialize(reader: impl io::Read) -> Result<Self, PathHashMappingError> {
-        let reader = io::BufReader::new(reader);
+    pub fn deserialize(mut reader: impl io::BufRead) -> Result<Self, PathHashMappingError> {
         let mut contents = vec![];
-        for line in reader.lines() {
+        let mut lines = reader.lending_lines();
+        while let Some(line) = lines.next() {
             let line = line?;
             let i = line.rfind('=').ok_or_else(|| PathHashMappingError::EntryHasNoEqualsSign {
-                entry: line.clone(),
+                entry: line.to_owned(),
             })?;
             let hash = Hash::from_str(&line[i + 1..])?;
             let path = line[..i].parse()?;

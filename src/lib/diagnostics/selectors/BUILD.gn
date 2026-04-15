@@ -13,6 +13,7 @@ rustc_library("selectors") {
   deps = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_common",
     "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust_common",
+    "//src/lib/buf-read-ext",
     "//src/sys/lib/moniker",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bitflags",

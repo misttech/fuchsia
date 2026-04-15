@@ -8,12 +8,13 @@ use crate::args::{
 };
 use crate::{BLOBS_JSON_NAME, PACKAGE_MANIFEST_NAME, to_writer_json_pretty, write_depfile};
 use anyhow::{Context as _, Result, anyhow};
+use buf_read_ext::BufReadExt as _;
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_archive as far;
 use fuchsia_pkg::{PackageBuilder, PackageManifest, SubpackageInfo};
 use std::collections::{BTreeSet, HashMap};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -305,8 +306,10 @@ async fn extract_far_to_dir(
 async fn extract_mapping_from_contents(path: &PathBuf) -> Result<HashMap<String, String>> {
     let mut map = HashMap::new();
     let contents_file = File::open(path).context("failed to open meta/contents")?;
-    for res in BufReader::new(contents_file).lines() {
-        let line = res.context("failed to read line from meta/contents")?;
+    let mut reader = BufReader::new(contents_file);
+    let mut lines = reader.lending_lines();
+    while let Some(line) = lines.next() {
+        let line = line.context("failed to read line from meta/contents")?;
         let m: Vec<_> = line.split("=").collect();
         if m.len() != 2 {
             return Err(anyhow!("meta/contents contains invalid entry: {line}"));

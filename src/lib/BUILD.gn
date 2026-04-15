@@ -10,6 +10,7 @@ group("tests") {
     "android:tests",
     "async-utils:tests",
     "backoff:tests",
+    "buf-read-ext:tests",
     "callback:tests",
     "chunked-compression:tests",
     "cobalt:tests",

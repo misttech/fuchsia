@@ -18,6 +18,7 @@ if (is_host) {
       "//src/security/lib/scrutiny/*",
     ]
     deps = [
+      "//src/lib/buf-read-ext",
       "//src/lib/fuchsia-url",
       "//src/storage/lib/delivery_blob",
       "//src/sys/pkg/lib/far/rust:fuchsia-archive",

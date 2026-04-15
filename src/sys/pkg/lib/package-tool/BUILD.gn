@@ -15,6 +15,7 @@ if (is_host) {
 
     deps = [
       "//src/lib/assembly/product_bundle",
+      "//src/lib/buf-read-ext",
       "//src/lib/fuchsia-async",
       "//src/lib/fuchsia-lockfile:lib",
       "//src/lib/tempfile-ext",
