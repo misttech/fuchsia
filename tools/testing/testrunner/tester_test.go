@@ -553,7 +553,7 @@ func TestFFXTester(t *testing.T) {
 		defer func() {
 			mergeProfiles = oldMergeProfiles
 		}()
-		mergeProfiles = func(_ context.Context, _ string, _ []string, _, _, _ string, _ int, _ []string, _ string) error {
+		mergeProfiles = func(_ context.Context, _ string, _ []string, _, _, _ string, _ int, _ []string, _ string, _ []string) error {
 			return fmt.Errorf("failed to merge")
 		}
 		sinkDirA := t.TempDir()

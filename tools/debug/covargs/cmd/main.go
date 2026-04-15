@@ -196,7 +196,7 @@ func mergeProfiles(ctx context.Context, tempDir string, profiles map[string]stri
 		}
 
 		mergedProfileFile := filepath.Join(tempDir, fmt.Sprintf("merged%s.profdata", version))
-		if err := covargs.MergeSameVersionProfiles(ctx, tempDir, profileList, mergedProfileFile, llvmProfData, version, numThreads, debuginfodServers, debuginfodCache); err != nil {
+		if err := covargs.MergeSameVersionProfiles(ctx, tempDir, profileList, mergedProfileFile, llvmProfData, version, numThreads, debuginfodServers, debuginfodCache, buildIDDirPaths); err != nil {
 			return "", err
 		}
 
@@ -606,6 +606,10 @@ func exportCoverageData(ctx context.Context, mergedProfileFile string, covFile s
 }
 
 func process(ctx context.Context) error {
+	if len(debuginfodServers) > 0 && len(buildIDDirPaths) > 0 {
+		return fmt.Errorf("cannot specify both -debuginfod-server and -build-id-dir at the same time")
+	}
+
 	llvmProfDataVersions := make(map[string]string)
 	for _, profdata := range llvmProfdata {
 		version, tool := covargs.SplitVersion(profdata)

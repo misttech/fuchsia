@@ -42,63 +42,6 @@ var (
 func TestCoverage(t *testing.T) {
 	testOutDir := t.TempDir()
 	rawProfile := runCoverageTest(t, testOutDir)
-	// Prepare llvm-profdata arguments.
-	args := []string{
-		"show",
-		"-binary-ids",
-		rawProfile,
-	}
-	// Read the raw profile using llvm-profdata show command to ensure that it's valid.
-	showCmd := exec.Command(*llvmProfData, args...)
-	showCmdOutput, err := showCmd.CombinedOutput()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			t.Fatalf("cannot read raw profile %s: %s", rawProfile, string(showCmdOutput))
-		} else {
-			t.Fatalf("cannot execute %q: %s", showCmd, err)
-		}
-	}
-
-	// Prepare llvm-profdata arguments.
-	indexedProfile := filepath.Join(testOutDir, "coverage.profdata")
-	args = []string{
-		"merge",
-		rawProfile,
-		"-o",
-		indexedProfile,
-	}
-	// Generate an indexed profile using llvm-profdata merge command.
-	mergeCmd := exec.Command(*llvmProfData, args...)
-	if mergeCmdOutput, err := mergeCmd.CombinedOutput(); err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			t.Fatalf("cannot create an indexed profile: %s", string(mergeCmdOutput))
-		} else {
-			t.Fatalf("cannot execute %q: %s", mergeCmd, err)
-		}
-	}
-
-	// Prepare llvm-cov arguments.
-	args = []string{
-		"export",
-		"-summary-only",
-		"-format=text",
-		"-instr-profile", indexedProfile,
-		*coverageTestBinary,
-	}
-	// Generate a coverage report via using llvm-cov export command.
-	exportCmd := exec.Command(*llvmCov, args...)
-	generatedCoverageOutput, err := exportCmd.CombinedOutput()
-	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			t.Fatalf("cannot export coverage: %s", string(generatedCoverageOutput))
-		} else {
-			t.Fatalf("cannot execute %q: %s", exportCmd, err)
-		}
-	}
-	var generatedCoverageExport llvm.Export
-	if err := json.Unmarshal(generatedCoverageOutput, &generatedCoverageExport); err != nil {
-		t.Fatalf("cannot unmarshal generated coverage: %s", err)
-	}
 
 	// Read golden coverage.
 	goldenCoverage, err := os.ReadFile(*goldenCoverageFile)
@@ -110,74 +53,112 @@ func TestCoverage(t *testing.T) {
 		t.Fatalf("cannot unmarshal golden coverage: %s", err)
 	}
 
-	// Compare the generated coverage with a golden coverage.
-	diff := cmp.Diff(goldenCoverageExport.Data, generatedCoverageExport.Data)
-	if diff != "" {
-		t.Fatalf("unexpected coverage (-golden-coverage +generated-coverage): %s", diff)
+	//Verify raw profiles and extract the build ID.
+	args := []string{
+		"show",
+		"-binary-ids",
+		rawProfile,
 	}
-
-	summaryFile := filepath.Join(testOutDir, "summary.json")
-	if _, err := os.Stat(summaryFile); err != nil {
-		t.Fatalf("failed to find summary.json: %s", err)
-	}
-
-	splittedOutput := strings.Split((string(showCmdOutput)), "\n")
-	if len(splittedOutput) < 2 {
-		t.Fatalf("invalid build id in profile %q: %s", rawProfile, err)
-	}
-	embeddedBuildId := splittedOutput[len(splittedOutput)-2]
-	// Check if embedded build id consists of hex characters.
-	if _, err = hex.DecodeString(embeddedBuildId); err != nil {
-		t.Fatalf("invalid build id in profile %q: %s", rawProfile, err)
-	}
-
-	// Create a debug file in the format of xx/yyyyyyyy.debug for covargs.
-	debugFile := filepath.Join(testOutDir, embeddedBuildId[:2], embeddedBuildId[2:]+".debug")
-	if err := osmisc.CopyFile(*coverageTestBinary, debugFile); err != nil {
-		t.Fatalf("failed to create a debug file: %s", err)
-	}
-
-	// Prepare covargs arguments.
-	args = []string{
-		"-build-id-dir", testOutDir,
-		"-llvm-cov", *llvmCov,
-		"-llvm-profdata", *llvmProfData,
-		"-output-dir", testOutDir,
-		"-coverage-report=false",
-		"-report-dir", testOutDir,
-		"-save-temps", testOutDir,
-		"-summary", summaryFile,
-	}
-
-	// Invoke covargs.
-	covargsCmd := exec.Command(*covargs, args...)
-	if covargsOutput, err := covargsCmd.CombinedOutput(); err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			t.Fatalf("failed to run covargs: %s", string(covargsOutput))
-		} else {
-			t.Fatalf("cannot execute %q: %s", covargsCmd, err)
-		}
-	}
-
-	// Read generated coverage.
-	coverageFile := filepath.Join(testOutDir, "coverage.json")
-	generatedCoverage, err := os.ReadFile(coverageFile)
+	showCmd := exec.Command(*llvmProfData, args...)
+	showCmdOutput, err := showCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("cannot read coverage.json: %s", err)
-	}
-	if err := json.Unmarshal(generatedCoverage, &generatedCoverageExport); err != nil {
-		t.Fatalf("cannot unmarshal generated coverage: %s", err)
+		t.Fatalf("cannot read raw profile %s: %s", rawProfile, string(showCmdOutput))
 	}
 
-	if len(goldenCoverageExport.Data) != 1 || len(generatedCoverageExport.Data) != 1 {
-		t.Fatalf("failed to export data")
+	splittedOutput := strings.Split(strings.TrimSpace(string(showCmdOutput)), "\n")
+	if len(splittedOutput) < 2 {
+		t.Fatalf("invalid build id in profile %q: %s", rawProfile, string(showCmdOutput))
+	}
+	embeddedBuildId := splittedOutput[len(splittedOutput)-1]
+	if _, err = hex.DecodeString(embeddedBuildId); err != nil {
+		t.Fatalf("invalid build id in profile %q: %s", rawProfile, embeddedBuildId)
 	}
 
-	// Compare the covargs generated coverage summary section with a golden coverage.
-	diff = cmp.Diff(goldenCoverageExport.Data[0].Totals, generatedCoverageExport.Data[0].Totals)
-	if diff != "" {
-		t.Fatalf("unexpected coverage (-golden-coverage +generated-coverage): %s", diff)
-	}
+	// Subtest 1: Verify coverage using raw LLVM commands.
+	t.Run("LLVM", func(t *testing.T) {
+		indexedProfile := filepath.Join(testOutDir, "llvm.profdata")
+		args = []string{
+			"merge",
+			rawProfile,
+			"-o",
+			indexedProfile,
+			"--binary-file", *coverageTestBinary,
+		}
+		if output, err := exec.Command(*llvmProfData, args...).CombinedOutput(); err != nil {
+			t.Fatalf("llvm-profdata merge failed: %s", string(output))
+		}
+
+		args = []string{
+			"export",
+			"-summary-only",
+			"-format=text",
+			"-instr-profile", indexedProfile,
+			*coverageTestBinary,
+		}
+		exportOutput, err := exec.Command(*llvmCov, args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("llvm-cov export failed: %s", string(exportOutput))
+		}
+
+		var generatedCoverage llvm.Export
+		if err := json.Unmarshal(exportOutput, &generatedCoverage); err != nil {
+			t.Fatalf("failed to unmarshal coverage: %s", err)
+		}
+
+		if diff := cmp.Diff(goldenCoverageExport.Data, generatedCoverage.Data); diff != "" {
+			t.Fatalf("unexpected coverage (-golden +generated): %s", diff)
+		}
+	})
+
+	// Subtest 2: Verify coverage using covargs.
+	t.Run("Covargs", func(t *testing.T) {
+		buildIdDir := filepath.Join(testOutDir, ".build-id")
+		debugFile := filepath.Join(buildIdDir, embeddedBuildId[:2], embeddedBuildId[2:]+".debug")
+		if err := osmisc.CopyFile(*coverageTestBinary, debugFile); err != nil {
+			t.Fatalf("failed to create a debug file: %s", err)
+		}
+
+		summaryFile := filepath.Join(testOutDir, "summary.json")
+		if _, err := os.Stat(summaryFile); err != nil {
+			t.Fatalf("failed to find summary.json: %s", err)
+		}
+
+		args = []string{
+			"-build-id-dir", buildIdDir,
+			"-llvm-cov", *llvmCov,
+			"-llvm-profdata", *llvmProfData,
+			"-output-dir", testOutDir,
+			"-coverage-report=false",
+			"-report-dir", testOutDir,
+			"-save-temps", testOutDir,
+			"-summary", summaryFile,
+		}
+
+		covargsCmd := exec.Command(*covargs, args...)
+		if output, err := covargsCmd.CombinedOutput(); err != nil {
+			t.Fatalf("covargs failed: %s", string(output))
+		}
+
+		coverageFile := filepath.Join(testOutDir, "coverage.json")
+		generatedCoverageJson, err := os.ReadFile(coverageFile)
+		if err != nil {
+			t.Fatalf("cannot read coverage.json: %s", err)
+		}
+
+		var generatedCoverage llvm.Export
+		if err := json.Unmarshal(generatedCoverageJson, &generatedCoverage); err != nil {
+			t.Fatalf("cannot unmarshal covargs output: %s", err)
+		}
+
+		if len(goldenCoverageExport.Data) != 1 || len(generatedCoverage.Data) != 1 {
+			t.Fatalf("unexpected data length")
+		}
+
+		diff := cmp.Diff(goldenCoverageExport.Data[0].Totals, generatedCoverage.Data[0].Totals)
+		if diff != "" {
+			t.Fatalf("unexpected coverage summary (-golden +generated): %s", diff)
+		}
+	})
 }
 
 func runCoverageTest(t *testing.T, testOutDir string) string {

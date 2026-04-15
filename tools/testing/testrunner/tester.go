@@ -1276,7 +1276,7 @@ func (t *FFXTester) moveProfileToOutputDir(ctx context.Context, sinkDir, sinkFil
 	if _, err := os.Stat(destProfile); err == nil && t.llvmProfdata != "" {
 		// Merge profiles.
 		logger.Debugf(ctx, "merging profile %s to %s", profile, destProfile)
-		if err := mergeProfiles(ctx, sinkDir, []string{destProfile, profile}, destProfile, t.llvmProfdata, t.llvmVersion, 0, t.debuginfodServers, t.debuginfodCache); err != nil {
+		if err := mergeProfiles(ctx, sinkDir, []string{destProfile, profile}, destProfile, t.llvmProfdata, t.llvmVersion, 0, t.debuginfodServers, t.debuginfodCache, nil); err != nil {
 			logger.Debugf(ctx, "failed to merge profiles: %s", err)
 			// TODO(https://fxbug.dev/368375861): Return err once missing build id issue is resolved.
 			// TODO(https://fxbug.dev/374146495): Remove following code once issue is fixed.

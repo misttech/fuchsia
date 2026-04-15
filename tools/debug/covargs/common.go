@@ -25,7 +25,7 @@ func SplitVersion(arg string) (version, value string) {
 	return version, s[0]
 }
 
-func MergeSameVersionProfiles(ctx context.Context, tempDir string, profiles []string, outputFile, llvmProfData, version string, numThreads int, debuginfodServers []string, debuginfodCache string) error {
+func MergeSameVersionProfiles(ctx context.Context, tempDir string, profiles []string, outputFile, llvmProfData, version string, numThreads int, debuginfodServers []string, debuginfodCache string, buildIDDirs []string) error {
 	// Make the llvm-profdata response file.
 	profdataFile, err := os.Create(filepath.Join(tempDir, fmt.Sprintf("llvm-profdata%s.rsp", version)))
 	if err != nil {
@@ -50,6 +50,12 @@ func MergeSameVersionProfiles(ctx context.Context, tempDir string, profiles []st
 		useDebugInfod = true
 		// TODO(https://fxbug.dev/368375861): Switch to --failure-mode=any by default when missing build id issue is resolved.
 		args = append(args, "--debuginfod", "--correlate=binary", "--failure-mode=all")
+	} else if len(buildIDDirs) > 0 {
+		for _, dir := range buildIDDirs {
+			// llvm-profdata expects the provided directory to contain a .build-id subdirectory.
+			args = append(args, "--debug-file-directory", filepath.Dir(dir))
+		}
+		args = append(args, "--correlate=binary", "--failure-mode=any")
 	} else {
 		args = append(args, "--failure-mode=any")
 	}

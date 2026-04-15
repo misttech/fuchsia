@@ -60,6 +60,8 @@ cc_test_executable("clang_coverage_test_bin") {
   cflags = [
     "-fprofile-instr-generate",
     "-fcoverage-mapping",
+    "-mllvm",
+    "-profile-correlate=binary",
   ]
   deps = [ "//zircon/system/ulib/zx" ]
   ldflags = cflags
@@ -129,6 +131,10 @@ action("copy_clang_coverage_test_binary_on_target") {
   ]
 }
 
+config("rust_binary_correlation") {
+  rustflags = [ "-Cllvm-args=-profile-correlate=binary" ]
+}
+
 # Rust coverage test is compiled with coverage enabled.
 # It generates an llvm raw profile (.profraw file) upon execution.
 rustc_binary("rust_coverage_test_bin") {
@@ -136,7 +142,10 @@ rustc_binary("rust_coverage_test_bin") {
   testonly = true
   source_root = "rust_coverage_test.rs"
   sources = [ "rust_coverage_test.rs" ]
-  configs += [ "//build/config/rust:coverage" ]
+  configs += [
+    "//build/config/rust:coverage",
+    ":rust_binary_correlation",
+  ]
 }
 
 rust_coverage_test_rspfile_on_host =
