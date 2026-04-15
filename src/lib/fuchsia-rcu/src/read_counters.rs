@@ -75,12 +75,6 @@ pub(crate) struct RcuReadCounters {
 impl RcuReadCounters {
     /// Creates a new `RcuReadCounters`.
     pub(crate) const fn new() -> Self {
-        debug_assert!(
-            zx_system_get_num_cpus() <= MAX_CPUS as u32,
-            "Number of CPUs ({}) exceeds MAX_CPUS ({})",
-            num_cpus,
-            MAX_CPUS
-        );
         Self { per_cpu_counts: [const { PerCpuState::new() }; MAX_CPUS as usize] }
     }
 
@@ -133,6 +127,13 @@ impl RcuReadCounters {
     /// necessary. However, it will never have false negatives.
     pub(crate) fn has_active(&self, index: usize) -> bool {
         let num_cpus = unsafe { zx_system_get_num_cpus() };
+
+        debug_assert!(
+            num_cpus <= MAX_CPUS as u32,
+            "Number of CPUs ({}) exceeds MAX_CPUS ({})",
+            num_cpus,
+            MAX_CPUS
+        );
 
         let mut sum = 0usize;
 
