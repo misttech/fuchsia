@@ -440,7 +440,7 @@ pub mod testutil {
     /// Task for polling the DHCP client.
     pub struct DhcpClientTask {
         client: fnet_dhcp::ClientProxy,
-        task: fasync::Task<()>,
+        task: futures::future::Shared<fasync::Task<()>>,
     }
 
     impl DhcpClientTask {
@@ -521,8 +521,14 @@ pub mod testutil {
                     apply_new_routers(id, &route_set, &mut final_routers, Vec::new())
                         .await
                         .expect("removing all routers should succeed");
-                }),
+                })
+                .shared(),
             }
+        }
+
+        /// Returns a future that resolves when the running DHCP client has shut down.
+        pub fn wait_shutdown(&self) -> impl Future<Output = ()> + 'static {
+            self.task.clone()
         }
 
         /// Shuts down the running DHCP client and waits for the poll task to complete.

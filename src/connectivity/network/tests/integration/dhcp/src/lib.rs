@@ -366,11 +366,8 @@ async fn removing_acquired_address_stops_dhcp<SERVER: Netstack, CLIENT: Netstack
         &dhcp_objects[1];
     let client_iface = &client_ifaces[0];
     let client = client_iface.control();
-    let (remove_address, timeout) = if remove_dhcp_address {
-        (expected_acquired, ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT)
-    } else {
-        (STATIC_ADDRESS.into_ext(), ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT)
-    };
+    let remove_address =
+        if remove_dhcp_address { expected_acquired } else { STATIC_ADDRESS.into_ext() };
     assert!(
         client
             .remove_address(&remove_address)
@@ -378,59 +375,93 @@ async fn removing_acquired_address_stops_dhcp<SERVER: Netstack, CLIENT: Netstack
             .expect("send address removal request")
             .expect("remove DHCP acquired address"),
     );
-    assert!(client.disable().await.expect("send disable request").expect("disable interface"));
-    let socket = client_realm
-        .packet_socket(fidl_fuchsia_posix_socket_packet::Kind::Network)
-        .await
-        .expect("get packet socket");
-    let sockaddr = libc::sockaddr_ll {
-        sll_family: u16::try_from(libc::AF_PACKET).unwrap(),
-        sll_protocol: ETH_P_ALL_BE, // Only ETH_P_ALL receives RX.
-        sll_ifindex: i32::try_from(client_iface.id()).unwrap(),
-        sll_hatype: 0,
-        sll_pkttype: 0,
-        sll_halen: 0,
-        sll_addr: [0; 8],
-    };
-    socket.bind(&sockaddr.into_sockaddr()).expect("bind packet socket to client interface");
-    assert!(client.enable().await.expect("send enable request").expect("enable interface"));
-    let socket = DatagramSocket::new_from_socket(socket).unwrap();
-    let fut = async {
-        let mut buf = [0; DEFAULT_MTU as usize];
-        loop {
-            let (n, sockaddr) = socket.recv_from(&mut buf).await.expect("recvfrom packet socket");
-            let data = &buf[..n];
-
-            let sockaddr = sockaddr.try_to_sockaddr_ll().unwrap();
-            if sockaddr.sll_protocol != ETH_P_IP_BE {
-                // Ignore non-IPv4 packets.
-                continue;
-            }
-
-            let (mut ipv4_body, src_ip, dst_ip, proto, _ttl) =
-                packet_formats::testutil::parse_ip_packet::<net_types::ip::Ipv4>(data)
-                    .expect("error parsing IPv4 packet");
-            if proto != packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp) {
-                // Ignore non-UDP packets.
-                continue;
-            }
-
-            let udp_v4_packet = packet_formats::udp::UdpPacket::parse(
-                &mut ipv4_body,
-                packet_formats::udp::UdpParseArgs::new(src_ip, dst_ip),
-            )
-            .expect("error parsing UDP datagram");
-
-            // Look for packets that are sent across the DHCP-specific ports.
-            let src_port = udp_v4_packet.src_port().expect("missing src port").get();
-            let dst_port = udp_v4_packet.dst_port().get();
-            if src_port == DHCPV4_CLIENT_PORT || dst_port == DHCPV4_SERVER_PORT {
-                break;
-            }
+    match CLIENT::DhcpClient::DHCP_CLIENT_VERSION {
+        DhcpClientVersion::OutOfStack => {
+            let dhcp_stopped_fut = async {
+                client_iface.wait_dhcp_out_of_stack_stopped().await;
+                assert!(remove_dhcp_address, "DHCP should not have stopped");
+            };
+            let timeout = if remove_dhcp_address {
+                ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT
+            } else {
+                ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT
+            };
+            dhcp_stopped_fut
+                .on_timeout(timeout.after_now(), || {
+                    assert!(!remove_dhcp_address, "DHCP should have stopped");
+                })
+                .await;
         }
-        Some(())
+        DhcpClientVersion::InStack => {
+            assert!(
+                client.disable().await.expect("send disable request").expect("disable interface")
+            );
+            let socket = client_realm
+                .packet_socket(fidl_fuchsia_posix_socket_packet::Kind::Network)
+                .await
+                .expect("get packet socket");
+            let sockaddr = libc::sockaddr_ll {
+                sll_family: u16::try_from(libc::AF_PACKET).unwrap(),
+                sll_protocol: ETH_P_ALL_BE, // Only ETH_P_ALL receives RX.
+                sll_ifindex: i32::try_from(client_iface.id()).unwrap(),
+                sll_hatype: 0,
+                sll_pkttype: 0,
+                sll_halen: 0,
+                sll_addr: [0; 8],
+            };
+            socket.bind(&sockaddr.into_sockaddr()).expect("bind packet socket to client interface");
+            assert!(client.enable().await.expect("send enable request").expect("enable interface"));
+            let socket = DatagramSocket::new_from_socket(socket).unwrap();
+            let dhcp_running_fut = async {
+                let mut buf = [0; DEFAULT_MTU as usize];
+                loop {
+                    let (n, sockaddr) =
+                        socket.recv_from(&mut buf).await.expect("recvfrom packet socket");
+                    let data = &buf[..n];
+
+                    let sockaddr = sockaddr.try_to_sockaddr_ll().unwrap();
+                    if sockaddr.sll_protocol != ETH_P_IP_BE {
+                        // Ignore non-IPv4 packets.
+                        continue;
+                    }
+
+                    let (mut ipv4_body, src_ip, dst_ip, proto, _ttl) =
+                        packet_formats::testutil::parse_ip_packet::<net_types::ip::Ipv4>(data)
+                            .expect("error parsing IPv4 packet");
+                    if proto
+                        != packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp)
+                    {
+                        // Ignore non-UDP packets.
+                        continue;
+                    }
+
+                    let udp_v4_packet = packet_formats::udp::UdpPacket::parse(
+                        &mut ipv4_body,
+                        packet_formats::udp::UdpParseArgs::new(src_ip, dst_ip),
+                    )
+                    .expect("error parsing UDP datagram");
+
+                    // Look for packets that are sent across the DHCP-specific ports.
+                    let src_port = udp_v4_packet.src_port().expect("missing src port").get();
+                    let dst_port = udp_v4_packet.dst_port().get();
+                    if src_port == DHCPV4_CLIENT_PORT || dst_port == DHCPV4_SERVER_PORT {
+                        break;
+                    }
+                }
+                assert!(!remove_dhcp_address, "DHCP should not be running");
+            };
+            let timeout = if remove_dhcp_address {
+                ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT
+            } else {
+                ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT
+            };
+            dhcp_running_fut
+                .on_timeout(timeout.after_now(), || {
+                    assert!(remove_dhcp_address, "DHCP should be running");
+                })
+                .await;
+        }
     };
-    assert_eq!(fut.on_timeout(timeout.after_now(), || None).await.is_none(), remove_dhcp_address);
 
     // Stop the DHCP client server. It will try to respond to the RENEW request
     // which will fail if it races with interface removal during teardown.

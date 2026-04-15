@@ -1917,6 +1917,19 @@ impl<'a> TestInterface<'a> {
         }
     }
 
+    /// Resolves when the out-of-stack DHCP client, if any, has shut down.
+    pub async fn wait_dhcp_out_of_stack_stopped(&self) {
+        let Self { endpoint: _, realm: _, id: _, control: _, device_control: _, dhcp_client_task } =
+            self;
+        let fut = {
+            let guard = dhcp_client_task.lock().await;
+            guard.as_ref().map(|task| task.wait_shutdown())
+        };
+        if let Some(fut) = fut {
+            fut.await;
+        }
+    }
+
     /// Adds an address, and waits for its assignment state.
     pub async fn add_address_and_wait_until(
         &self,
