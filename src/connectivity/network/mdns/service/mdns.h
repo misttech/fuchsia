@@ -495,7 +495,11 @@ class Mdns : public MdnsAgent::Owner {
 
   void RemoveAgent(std::shared_ptr<MdnsAgent> agent) override;
 
-  void FlushSentItems() override;
+  void MaybeSendMessages() override;
+
+  uint64_t DeferMessages() override;
+
+  void UndeferMessages(uint64_t sequence_number) override;
 
   void AddLocalServiceInstance(const ServiceInstance& instance, bool from_proxy) override;
 
@@ -555,6 +559,8 @@ class Mdns : public MdnsAgent::Owner {
   std::shared_ptr<ResourceRenewer> resource_renewer_;
   bool prohibit_agent_removal_ = false;
   bool defer_flush_ = false;
+  uint32_t deferral_count_ = 0;
+  uint64_t deferral_sequence_number_ = 1;
 
 #ifdef NDEBUG
 #define DPROHIBIT_AGENT_REMOVAL() ((void)0)

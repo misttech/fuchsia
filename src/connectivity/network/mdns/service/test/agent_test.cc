@@ -28,7 +28,7 @@ bool DefaultCacheFlush(DnsType type) {
 }
 
 void AgentTest::PostTaskForTime(MdnsAgent* agent, fit::closure task, zx::time target_time) {
-  EXPECT_EQ(agent_, agent);
+  EXPECT_TRUE(agent_ == agent || agent_b_ == agent);
   post_task_for_time_calls_.push(
       PostTaskForTimeCall{.task_ = std::move(task), .target_time_ = target_time});
 }
@@ -141,11 +141,20 @@ void AgentTest::ExpectExpiration(DnsResource resource) {
 }
 
 void AgentTest::RemoveAgent(std::shared_ptr<MdnsAgent> agent) {
-  EXPECT_EQ(agent_, agent.get());
+  EXPECT_TRUE(agent_ == agent.get() || agent_b_ == agent.get());
   remove_agent_called_ = true;
 }
 
-void AgentTest::FlushSentItems() { flush_sent_items_called_ = true; }
+void AgentTest::MaybeSendMessages() { maybe_send_messages_called_ = true; }
+
+uint64_t AgentTest::DeferMessages() {
+  defer_messages_called_ = true;
+  return 1;
+}
+
+void AgentTest::UndeferMessages(uint64_t sequence_number) {
+  undefer_messages_called_ = sequence_number;
+}
 
 void AgentTest::AddLocalServiceInstance(const ServiceInstance& instance, bool from_proxy) {
   add_local_service_instance_called_ = true;

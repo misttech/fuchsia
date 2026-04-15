@@ -83,7 +83,7 @@ void InstanceResponder::ReceiveQuestion(const DnsQuestion& question,
       if (MdnsNames::MatchServiceName(name, instance_.service_name_, &subtype)) {
         LogSenderAddress(sender_address);
         MaybeGetAndSendPublication(publication_cause, subtype, Constrain(reply_address),
-                                   question.type_);
+                                   question.type_, DeferMessages());
       } else if (question.name_ == MdnsNames::kAnyServiceFullName) {
         SendAnyServiceResponse(Constrain(reply_address));
       }
@@ -207,7 +207,8 @@ void InstanceResponder::SendAnyServiceResponse(const ReplyAddress& reply_address
 void InstanceResponder::MaybeGetAndSendPublication(PublicationCause publication_cause,
                                                    const DnsLabel& subtype,
                                                    const ReplyAddress& reply_address,
-                                                   DnsType question_type) {
+                                                   DnsType question_type,
+                                                   uint64_t deferral_sequence_number) {
   if (publisher_ == nullptr) {
     return;
   }
@@ -237,6 +238,11 @@ void InstanceResponder::MaybeGetAndSendPublication(PublicationCause publication_
             GetAndSendPublication(publication_cause, subtype, reply_address, question_type);
           },
           throttle_state + kMinMulticastInterval);
+
+      // We won't be sending resources right away, so we shouldn't hold up any outgoing
+      // messages. This does nothing if we didn't defer previously.
+      UndeferMessages(deferral_sequence_number);
+
       return;
     }
 
@@ -244,13 +250,15 @@ void InstanceResponder::MaybeGetAndSendPublication(PublicationCause publication_
     // immediately.
   }
 
-  GetAndSendPublication(publication_cause, subtype, reply_address, question_type);
+  GetAndSendPublication(publication_cause, subtype, reply_address, question_type,
+                        deferral_sequence_number);
 }
 
 void InstanceResponder::GetAndSendPublication(PublicationCause publication_cause,
                                               const DnsLabel& subtype,
                                               const ReplyAddress& reply_address,
-                                              DnsType question_type) {
+                                              DnsType question_type,
+                                              uint64_t deferral_sequence_number) {
   if (publisher_ == nullptr) {
     return;
   }
@@ -259,14 +267,10 @@ void InstanceResponder::GetAndSendPublication(PublicationCause publication_cause
 
   publisher_->GetPublication(
       publication_cause, subtype, sender_addresses_,
-      [this, query, subtype, reply_address,
-       question_type](std::unique_ptr<Mdns::Publication> publication) {
+      [this, query, subtype, reply_address, question_type,
+       deferral_sequence_number](std::unique_ptr<Mdns::Publication> publication) {
         if (publication) {
           SendPublication(*publication, subtype, reply_address, question_type);
-          // Make sure messages get sent immediately if this callback happens asynchronously
-          // with respect to |ReceiveQuestion| or posted task execution.
-          FlushSentItems();
-
           // A V4 multicast reply address indicates V4 and V6 multicast.
           if (query && reply_address.is_multicast_placeholder()) {
             throttle_state_by_subtype_[subtype] = now();
@@ -275,6 +279,11 @@ void InstanceResponder::GetAndSendPublication(PublicationCause publication_cause
             PostTaskForTime([this, subtype]() { IdleCheck(subtype); }, now() + kIdleCheckInterval);
           }
         }
+
+        // If we've deferred sending messages, undefer now. If we didn't defer or the
+        // deferral is stale, this |UndeferMessages| call will attempt to send
+        // messages.
+        UndeferMessages(deferral_sequence_number);
       });
 
   sender_addresses_.clear();

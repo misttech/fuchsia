@@ -20,6 +20,7 @@ const inet::IpPort kZeroPort = inet::IpPort::From_uint16_t(0);
 const DnsName kServiceName = DnsName("_test._tcp");
 const DnsName kOtherServiceName = DnsName("_other._tcp");
 const DnsLabel kInstanceName = DnsLabel("test.instance");
+const DnsLabel kInstanceNameB = DnsLabel("test.instance.b");
 const DnsName kHostName = DnsName("test2host");
 const DnsName kHostFullName = DnsName("test2host.local");
 const DnsName kLocalHostNameLong = DnsName("testhostnamethatislong");
@@ -71,29 +72,35 @@ class InstanceResponderTest : public AgentTest, public Mdns::Publisher {
   // Expects a sequence of announcements made after startup.
   void ExpectAnnouncements(Media media = Media::kBoth, IpVersions ip_versions = IpVersions::kBoth,
                            const DnsName& host_full_name = kLocalHostFullName,
+                           const DnsLabel& instance_name = kInstanceName,
                            const std::vector<inet::IpAddress>& addresses = {},
                            inet::IpPort port = kPort);
 
   // Expects a single announcement (a 'GetPublication' call and subsequent publication).
   void ExpectAnnouncement(Media media = Media::kBoth, IpVersions ip_versions = IpVersions::kBoth,
                           const DnsName& host_full_name = kLocalHostFullName,
+                          const DnsLabel& instance_name = kInstanceName,
                           const std::vector<inet::IpAddress>& addresses = {},
                           inet::IpPort port = kPort);
 
   // Expects a single multicast publication.
   void ExpectPublication(Media media = Media::kBoth, IpVersions ip_versions = IpVersions::kBoth,
                          const DnsName& host_full_name = kLocalHostFullName,
+                         const DnsLabel& instance_name = kInstanceName,
                          const std::vector<inet::IpAddress>& addresses = {},
                          inet::IpPort port = kPort);
 
   // Expects a single publication to the given reply address and subtype.
   void ExpectPublication(ReplyAddress reply_address, const DnsLabel& subtype = DnsLabel(),
                          const DnsName& host_full_name = kLocalHostFullName,
+                         const DnsLabel& instance_name = kInstanceName,
                          const std::vector<inet::IpAddress>& addresses = {},
                          inet::IpPort port = kPort,
                          MdnsResourceSection ptr_section = MdnsResourceSection::kAnswer,
                          MdnsResourceSection srv_section = MdnsResourceSection::kAdditional,
                          MdnsResourceSection txt_section = MdnsResourceSection::kAdditional);
+
+  void ExpectAggregatedPublications();
 
   ReplyAddress MulticastReply(Media media, IpVersions ip_versions);
 
@@ -143,25 +150,27 @@ void InstanceResponderTest::ExpectNoOther() {
 
 void InstanceResponderTest::ExpectAnnouncements(Media media, IpVersions ip_versions,
                                                 const DnsName& host_full_name,
+                                                const DnsLabel& instance_name,
                                                 const std::vector<inet::IpAddress>& addresses,
                                                 inet::IpPort port) {
-  ExpectAnnouncement(media, ip_versions, host_full_name, addresses, port);
+  ExpectAnnouncement(media, ip_versions, host_full_name, instance_name, addresses, port);
   ExpectPostTaskForTimeAndInvoke(zx::sec(1), zx::sec(1));
-  ExpectAnnouncement(media, ip_versions, host_full_name, addresses, port);
+  ExpectAnnouncement(media, ip_versions, host_full_name, instance_name, addresses, port);
   ExpectPostTaskForTimeAndInvoke(zx::sec(2), zx::sec(2));
-  ExpectAnnouncement(media, ip_versions, host_full_name, addresses, port);
+  ExpectAnnouncement(media, ip_versions, host_full_name, instance_name, addresses, port);
   ExpectPostTaskForTimeAndInvoke(zx::sec(4), zx::sec(4));
-  ExpectAnnouncement(media, ip_versions, host_full_name, addresses, port);
+  ExpectAnnouncement(media, ip_versions, host_full_name, instance_name, addresses, port);
   ExpectNoOther();
 }
 
 void InstanceResponderTest::ExpectAnnouncement(Media media, IpVersions ip_versions,
                                                const DnsName& host_full_name,
+                                               const DnsLabel& instance_name,
                                                const std::vector<inet::IpAddress>& addresses,
                                                inet::IpPort port) {
   ExpectGetPublicationCall(PublicationCause::kAnnouncement, DnsLabel(),
                            {})(Mdns::Publication::Create(port));
-  ExpectPublication(media, ip_versions, host_full_name, addresses, port);
+  ExpectPublication(media, ip_versions, host_full_name, instance_name, addresses, port);
 }
 
 ReplyAddress InstanceResponderTest::MulticastReply(Media media, IpVersions ip_versions) {
@@ -170,14 +179,16 @@ ReplyAddress InstanceResponderTest::MulticastReply(Media media, IpVersions ip_ve
 
 void InstanceResponderTest::ExpectPublication(Media media, IpVersions ip_versions,
                                               const DnsName& host_full_name,
+                                              const DnsLabel& instance_name,
                                               const std::vector<inet::IpAddress>& addresses,
                                               inet::IpPort port) {
-  ExpectPublication(MulticastReply(media, ip_versions), DnsLabel(), host_full_name, addresses,
-                    port);
+  ExpectPublication(MulticastReply(media, ip_versions), DnsLabel(), host_full_name, instance_name,
+                    addresses, port);
 }
 
 void InstanceResponderTest::ExpectPublication(ReplyAddress reply_address, const DnsLabel& subtype,
                                               const DnsName& host_full_name,
+                                              const DnsLabel& instance_name,
                                               const std::vector<inet::IpAddress>& addresses,
                                               inet::IpPort port, MdnsResourceSection ptr_section,
                                               MdnsResourceSection srv_section,
@@ -186,22 +197,28 @@ void InstanceResponderTest::ExpectPublication(ReplyAddress reply_address, const 
 
   auto resource = ExpectResource(message.get(), ptr_section, service_full_name(), DnsType::kPtr,
                                  DnsClass::kIn, false);
-  EXPECT_EQ(instance_full_name(), resource->ptr_.pointer_domain_name_);
+  EXPECT_EQ(MdnsNames::InstanceFullName(instance_name, kServiceName),
+            resource->ptr_.pointer_domain_name_);
 
   if (subtype != DnsLabel()) {
     resource = ExpectResource(message.get(), ptr_section,
                               DnsName(subtype).append(DnsLabel("_sub")).append(service_full_name()),
                               DnsType::kPtr, DnsClass::kIn, false);
-    EXPECT_EQ(instance_full_name(), resource->ptr_.pointer_domain_name_);
+    EXPECT_EQ(MdnsNames::InstanceFullName(instance_name, kServiceName),
+              resource->ptr_.pointer_domain_name_);
   }
 
-  resource = ExpectResource(message.get(), srv_section, instance_full_name(), DnsType::kSrv);
+  resource =
+      ExpectResource(message.get(), srv_section,
+                     MdnsNames::InstanceFullName(instance_name, kServiceName), DnsType::kSrv);
   EXPECT_EQ(0, resource->srv_.priority_);
   EXPECT_EQ(0, resource->srv_.weight_);
   EXPECT_EQ(port, resource->srv_.port_);
   EXPECT_EQ(host_full_name, resource->srv_.target_);
 
-  resource = ExpectResource(message.get(), txt_section, instance_full_name(), DnsType::kTxt);
+  resource =
+      ExpectResource(message.get(), txt_section,
+                     MdnsNames::InstanceFullName(instance_name, kServiceName), DnsType::kTxt);
   EXPECT_TRUE(resource->txt_.strings_.empty());
 
   if (addresses.empty()) {
@@ -209,6 +226,48 @@ void InstanceResponderTest::ExpectPublication(ReplyAddress reply_address, const 
   } else {
     ExpectAddresses(message.get(), MdnsResourceSection::kAdditional, host_full_name, addresses);
   }
+
+  ExpectNoOtherQuestionOrResource(message.get());
+}
+
+void InstanceResponderTest::ExpectAggregatedPublications() {
+  auto message = ExpectOutboundMessage(MulticastReply(Media::kBoth, IpVersions::kBoth));
+
+  auto resource = ExpectResource(message.get(), MdnsResourceSection::kAnswer, service_full_name(),
+                                 DnsType::kPtr, DnsClass::kIn, false);
+  EXPECT_EQ(MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+            resource->ptr_.pointer_domain_name_);
+  resource = ExpectResource(message.get(), MdnsResourceSection::kAnswer, service_full_name(),
+                            DnsType::kPtr, DnsClass::kIn, false);
+  EXPECT_EQ(MdnsNames::InstanceFullName(kInstanceNameB, kServiceName),
+            resource->ptr_.pointer_domain_name_);
+
+  resource =
+      ExpectResource(message.get(), MdnsResourceSection::kAdditional,
+                     MdnsNames::InstanceFullName(kInstanceName, kServiceName), DnsType::kSrv);
+  EXPECT_EQ(0, resource->srv_.priority_);
+  EXPECT_EQ(0, resource->srv_.weight_);
+  EXPECT_EQ(kPort, resource->srv_.port_);
+  EXPECT_EQ(kLocalHostFullName, resource->srv_.target_);
+  resource =
+      ExpectResource(message.get(), MdnsResourceSection::kAdditional,
+                     MdnsNames::InstanceFullName(kInstanceNameB, kServiceName), DnsType::kSrv);
+  EXPECT_EQ(0, resource->srv_.priority_);
+  EXPECT_EQ(0, resource->srv_.weight_);
+  EXPECT_EQ(kPort, resource->srv_.port_);
+  EXPECT_EQ(kLocalHostFullName, resource->srv_.target_);
+
+  resource =
+      ExpectResource(message.get(), MdnsResourceSection::kAdditional,
+                     MdnsNames::InstanceFullName(kInstanceName, kServiceName), DnsType::kTxt);
+  EXPECT_TRUE(resource->txt_.strings_.empty());
+  resource =
+      ExpectResource(message.get(), MdnsResourceSection::kAdditional,
+                     MdnsNames::InstanceFullName(kInstanceNameB, kServiceName), DnsType::kTxt);
+  EXPECT_TRUE(resource->txt_.strings_.empty());
+
+  ExpectResource(message.get(), MdnsResourceSection::kAdditional, kLocalHostFullName, DnsType::kA);
+  ExpectResource(message.get(), MdnsResourceSection::kAdditional, kLocalHostFullName, DnsType::kA);
 
   ExpectNoOtherQuestionOrResource(message.get());
 }
@@ -601,7 +660,7 @@ TEST_F(InstanceResponderTest, HostAndAddresses) {
 
   // Normal startup.
   under_test.Start(kLocalHostFullName);
-  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kHostFullName, kAddresses);
+  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kHostFullName, kInstanceName, kAddresses);
 
   ReplyAddress sender_address(
       inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
@@ -612,7 +671,7 @@ TEST_F(InstanceResponderTest, HostAndAddresses) {
                              sender_address);
   ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
                            {sender_address.socket_address()})(Mdns::Publication::Create(kPort));
-  ExpectPublication(Media::kBoth, IpVersions::kBoth, kHostFullName, kAddresses);
+  ExpectPublication(Media::kBoth, IpVersions::kBoth, kHostFullName, kInstanceName, kAddresses);
   ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup
   ExpectNoOther();
 }
@@ -656,7 +715,7 @@ TEST_F(InstanceResponderTest, LocalServiceInstanceNotificationsProxy) {
 
   // Normal startup.
   under_test.Start(kLocalHostFullName);
-  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kHostFullName, kAddresses);
+  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kHostFullName, kInstanceName, kAddresses);
 
   ReplyAddress sender_address(
       inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
@@ -667,7 +726,7 @@ TEST_F(InstanceResponderTest, LocalServiceInstanceNotificationsProxy) {
                              sender_address);
   ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
                            {sender_address.socket_address()})(Mdns::Publication::Create(kPort));
-  ExpectPublication(Media::kBoth, IpVersions::kBoth, kHostFullName, kAddresses);
+  ExpectPublication(Media::kBoth, IpVersions::kBoth, kHostFullName, kInstanceName, kAddresses);
   ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup
   ExpectNoOther();
 
@@ -685,7 +744,8 @@ TEST_F(InstanceResponderTest, LocalServiceInstanceNotificationsZeroPort) {
   // Normal startup. We use a long host name, because there was a bug that only happened when the
   // host full name was greater than sizeof(std::string), which is 24 bytes.
   under_test.Start(kLocalHostFullNameLong);
-  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kLocalHostFullNameLong, {}, kZeroPort);
+  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kLocalHostFullNameLong, kInstanceName, {},
+                      kZeroPort);
 
   ReplyAddress sender_address(
       inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
@@ -696,7 +756,8 @@ TEST_F(InstanceResponderTest, LocalServiceInstanceNotificationsZeroPort) {
                              sender_address);
   ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
                            {sender_address.socket_address()})(Mdns::Publication::Create(kZeroPort));
-  ExpectPublication(Media::kBoth, IpVersions::kBoth, kLocalHostFullNameLong, {}, kZeroPort);
+  ExpectPublication(Media::kBoth, IpVersions::kBoth, kLocalHostFullNameLong, kInstanceName, {},
+                    kZeroPort);
   ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup
   ExpectNoOther();
 
@@ -735,8 +796,8 @@ TEST_F(InstanceResponderTest, SrvQuestion) {
   ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
                            {sender_address.socket_address()})(Mdns::Publication::Create(kPort));
   ExpectPublication(MulticastReply(Media::kBoth, IpVersions::kBoth), DnsLabel(), kLocalHostFullName,
-                    {}, kPort, MdnsResourceSection::kAdditional, MdnsResourceSection::kAnswer,
-                    MdnsResourceSection::kAdditional);
+                    kInstanceName, {}, kPort, MdnsResourceSection::kAdditional,
+                    MdnsResourceSection::kAnswer, MdnsResourceSection::kAdditional);
   ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup
   ExpectNoOther();
 }
@@ -761,8 +822,8 @@ TEST_F(InstanceResponderTest, TxtQuestion) {
   ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
                            {sender_address.socket_address()})(Mdns::Publication::Create(kPort));
   ExpectPublication(MulticastReply(Media::kBoth, IpVersions::kBoth), DnsLabel(), kLocalHostFullName,
-                    {}, kPort, MdnsResourceSection::kAdditional, MdnsResourceSection::kAdditional,
-                    MdnsResourceSection::kAnswer);
+                    kInstanceName, {}, kPort, MdnsResourceSection::kAdditional,
+                    MdnsResourceSection::kAdditional, MdnsResourceSection::kAnswer);
   ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup
   ExpectNoOther();
 }
@@ -787,8 +848,8 @@ TEST_F(InstanceResponderTest, AnyForInstanceQuestion) {
   ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
                            {sender_address.socket_address()})(Mdns::Publication::Create(kPort));
   ExpectPublication(MulticastReply(Media::kBoth, IpVersions::kBoth), DnsLabel(), kLocalHostFullName,
-                    {}, kPort, MdnsResourceSection::kAdditional, MdnsResourceSection::kAnswer,
-                    MdnsResourceSection::kAnswer);
+                    kInstanceName, {}, kPort, MdnsResourceSection::kAdditional,
+                    MdnsResourceSection::kAnswer, MdnsResourceSection::kAnswer);
   ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup
   ExpectNoOther();
 }
@@ -813,9 +874,54 @@ TEST_F(InstanceResponderTest, AnyForServiceTypeQuestion) {
   ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
                            {sender_address.socket_address()})(Mdns::Publication::Create(kPort));
   ExpectPublication(MulticastReply(Media::kBoth, IpVersions::kBoth), DnsLabel(), kLocalHostFullName,
-                    {}, kPort, MdnsResourceSection::kAnswer, MdnsResourceSection::kAdditional,
-                    MdnsResourceSection::kAdditional);
+                    kInstanceName, {}, kPort, MdnsResourceSection::kAnswer,
+                    MdnsResourceSection::kAdditional, MdnsResourceSection::kAdditional);
   ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup
+  ExpectNoOther();
+}
+
+// Tests that multicast sends are rate-limited.
+TEST_F(InstanceResponderTest, Aggregation) {
+  InstanceResponder under_test_a(this, DnsName(), {}, kServiceName, kInstanceName, Media::kBoth,
+                                 IpVersions::kBoth, this);
+  InstanceResponder under_test_b(this, DnsName(), {}, kServiceName, kInstanceNameB, Media::kBoth,
+                                 IpVersions::kBoth, this);
+  SetAgent(under_test_a);
+  SetAgentB(under_test_b);
+
+  // Normal startup.
+  under_test_a.Start(kLocalHostFullName);
+  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kLocalHostFullName, kInstanceName);
+  under_test_b.Start(kLocalHostFullName);
+  ExpectAnnouncements(Media::kBoth, IpVersions::kBoth, kLocalHostFullName, kInstanceNameB);
+
+  ReplyAddress sender_address0(
+      inet::SocketAddress(192, 168, 1, 1, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), kInterfaceId, Media::kWired, IpVersions::kBoth);
+  ReplyAddress sender_address1(
+      inet::SocketAddress(192, 168, 1, 2, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), kInterfaceId, Media::kWired, IpVersions::kBoth);
+
+  // PTR question.
+  under_test_a.ReceiveQuestion(DnsQuestion(service_full_name(), DnsType::kPtr),
+                               ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth),
+                               sender_address0);
+  ExpectDeferMessagesCall();
+  under_test_b.ReceiveQuestion(DnsQuestion(service_full_name(), DnsType::kPtr),
+                               ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth),
+                               sender_address0);
+  ExpectDeferMessagesCall();
+  ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
+                           {sender_address0.socket_address()})(Mdns::Publication::Create(kPort));
+  ExpectUndeferMessagesCall(1);
+  ExpectGetPublicationCall(PublicationCause::kQueryMulticastResponse, DnsLabel(),
+                           {sender_address0.socket_address()})(Mdns::Publication::Create(kPort));
+  ExpectUndeferMessagesCall(1);
+  MaybeSendMessages();
+
+  ExpectAggregatedPublications();
+  ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup for kInstanceName
+  ExpectPostTaskForTime(zx::sec(60), zx::sec(60));  // idle cleanup for kInstanceName
   ExpectNoOther();
 }
 

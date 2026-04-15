@@ -29,6 +29,11 @@
 #include "src/connectivity/network/mdns/service/inspect.h"
 
 namespace mdns {
+namespace {
+
+constexpr zx::duration kMaxMessageDelay = zx::msec(500);
+
+}
 
 Mdns::Mdns(Transceiver& transceiver)
     : dispatcher_(async_get_default_dispatcher()), transceiver_(transceiver) {}
@@ -98,7 +103,7 @@ void Mdns::Start(fuchsia::net::interfaces::WatcherPtr interfaces_watcher,
 #endif  // MDNS_TRACE
 
         // We'll send messages when we're done processing this inbound message, so don't respond
-        // to |FlushSentItems| in the interim.
+        // to |MaybeSendMessages| in the interim.
         defer_flush_ = true;
 
         for (const auto& question : message->questions_) {
@@ -590,11 +595,55 @@ void Mdns::RemoveAgent(std::shared_ptr<MdnsAgent> agent) {
   SendMessages();
 }
 
-void Mdns::FlushSentItems() {
+uint64_t Mdns::DeferMessages() {
+  if (deferral_count_++ == 0) {
+    // An agent has requested the message transmission be deferred so that resources or
+    // questions that will be added soon can be aggregated. Ideally, all deferrals will
+    // be cleared via calls to |UndeferMessages|. This delayed task sends messages after
+    // 500ms should that fail to happen. See
+    // http://https://datatracker.ietf.org/doc/html/rfc6762#section-6.4.
+    async::PostDelayedTask(
+        dispatcher_,
+        [this, seq = deferral_sequence_number_]() {
+          if (seq != deferral_sequence_number_ || deferral_count_ == 0) {
+            return;
+          }
+
+          deferral_count_ = 0;
+          deferral_sequence_number_ += 1;
+          MaybeSendMessages();
+        },
+        kMaxMessageDelay);
+  }
+
+  return deferral_sequence_number_;
+}
+
+void Mdns::UndeferMessages(uint64_t sequence_number) {
+  if (sequence_number == deferral_sequence_number_ && deferral_count_ != 0) {
+    // All deferrals for this sequence number have been undeferred.
+    if (--deferral_count_ == 0) {
+      deferral_sequence_number_ += 1;
+    }
+  }
+
+  // Note that |MaybeSendMessages| won't send messages if |deferral_count_| is non-zero.
+
+  MaybeSendMessages();
+}
+
+void Mdns::MaybeSendMessages() {
   if (defer_flush_) {
     // |SendMessages| will be called soon, so we don't want to call it now. This allows agents
-    // to call |FlushSentItems| synchronous with inbound message processing and posted task
+    // to call |MaybeSendMessages| synchronous with inbound message processing and posted task
     // execution without unnecessarily fragmenting outgoing messages.
+    return;
+  }
+
+  if (deferral_count_ != 0) {
+    // Some agent has called |DeferMessages|, because it expects to have more resources
+    // or questions to add very soon. Worst case, messages will be sent after a delay of
+    // |kMaxMessageDelay|.
     return;
   }
 
@@ -729,7 +778,7 @@ void Mdns::PostTask() {
         zx::time now = this->now();
 
         // We'll send messages when we're done running ready tasks, so don't respond to
-        // |FlushSentItems| in the interim.
+        // |MaybeSendMessages| in the interim.
         defer_flush_ = true;
 
         while (!task_queue_.empty() && task_queue_.top().time_ <= now) {

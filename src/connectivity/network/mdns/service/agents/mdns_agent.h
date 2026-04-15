@@ -26,8 +26,9 @@ namespace mdns {
 //
 // Agents may call any of the protected 'Send' methods (|SendQuestion|, |SendResource| and
 // |SendAddresses|) at any time. The owner accumulates the questions and resources and sends
-// them in messages. Typically, agents don't have to worry about sending messages. Messages
-// are sent for accumulated questions and resources:
+// them in messages. Typically, agents don't have to worry about sending messages. Unless
+// messages sending is deferred (see below), messages are sent for accumulated questions and
+// resources:
 //
 // 1) after |Start| is called on any agent,
 // 2) after an inbound message is processed and all agents have gotten their |EndOfMessage| calls,
@@ -35,8 +36,16 @@ namespace mdns {
 // 4) after the completion of any task posted using |PostTaskForTime|.
 //
 // If an agent wants a message sent asynchronously with respect to agent start, inbound message
-// arrival, agent removal and posted tasks, the agent should call |FlushSentItems|. Calling
-// |FlushSentItems| synchronously with those operations isn't harmful.
+// arrival, agent removal and posted tasks, the agent should call |MaybeSendMessages|. Calling
+// |MaybeSendMessages| synchronously with those operations isn't harmful.
+//
+// Message deferral is available to agents that want to delay sending messages so that they
+// can send questions or resources at a later time while still benefitting from the aggregation
+// of multiple questions and resources into the fewest possible messages. For example, the
+// |InstanceResponder| agent responds to some PTR questions by consulting with the client on
+// how to respond. The client's reply typically happens quickly, but is not synchronous with
+// the |ReceiveQuestion| call on the agent. |InstanceResponder| deals with this by deferring
+// message transmission until the client's reply is received.
 //
 class MdnsAgent : public std::enable_shared_from_this<MdnsAgent> {
  public:
@@ -79,7 +88,21 @@ class MdnsAgent : public std::enable_shared_from_this<MdnsAgent> {
     virtual void RemoveAgent(std::shared_ptr<MdnsAgent> agent) = 0;
 
     // Flushes sent questions and resources by sending the appropriate messages.
-    virtual void FlushSentItems() = 0;
+    virtual void MaybeSendMessages() = 0;
+
+    // Defers sending messages until |UndeferMessages| is called. Returns a sequence
+    // number that must be passed to |UndeferMessages| to undefer the messages.
+    // Deferral ends regardless 500 ms after it has begun. The sequence number that is
+    // returned is initially 1 and increments each time the deferral count drops to
+    // zero or deferral times out. This method will never return 0.
+    virtual uint64_t DeferMessages() = 0;
+
+    // Ends message deferral initiated by |DeferMessages|. |sequence_number| should be
+    // the value returned by the corresponding |DeferMessages| call. If |sequence_number|
+    // doesn't match the current sequence number, the call is equivalent to calling
+    // |MaybeSendMessages|. |DeferMessages| never returns 0, so calling this method with
+    // a |sequence_number| of 0 is equivalent to calling |MaybeSendMessages|.
+    virtual void UndeferMessages(uint64_t sequence_number) = 0;
 
     // Notifies all agents of the addition of a local service instance.|from_proxy| indicates
     // whether the instance is published by the local host (false) or a local proxy host (true).
@@ -201,7 +224,15 @@ class MdnsAgent : public std::enable_shared_from_this<MdnsAgent> {
   // needed when questions or resources need to be sent asynchronously with respect to |Start|,
   // |ReceiveQuestion|, |ReceiveResource|, |EndOfMessage|, |Quit| or a task posted using
   // |PostTaskForTime|. See the discussion at the top of the file.
-  void FlushSentItems() { owner_->FlushSentItems(); }
+  void MaybeSendMessages() { owner_->MaybeSendMessages(); }
+
+  // Defers sending messages until |UndeferMessages| is called. Returns a sequence
+  // number that must be passed to |UndeferMessages| to undefer the messages.
+  // Deferral ends regardless 500 ms after it has begun.
+  uint64_t DeferMessages() { return owner_->DeferMessages(); }
+
+  // Ends message deferral initiated by |DeferMessages|.
+  void UndeferMessages(uint64_t sequence_number) { owner_->UndeferMessages(sequence_number); }
 
   // Notifies all agents of the addition of a local service instance.
   void AddLocalServiceInstance(const ServiceInstance& instance, bool from_proxy) {

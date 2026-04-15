@@ -946,4 +946,43 @@ TEST_F(MdnsUnitTests, PublishProxyHostAlreadyPublishedLocally) {
   RunLoopUntilIdle();
 }
 
+// Tests that |DeferMessages| and |UndeferMessages| work.
+TEST_F(MdnsUnitTests, DeferAndUndeferMessages) {
+  // Start.
+  SetHasInterfaces(true);
+  Start(false, {kServiceName});
+
+  RunLoopUntilIdle();
+  ExpectSendMessageNotCalled();
+
+  auto& agent_owner = static_cast<MdnsAgent::Owner&>(under_test());
+
+  agent_owner.SendAddresses(MdnsResourceSection::kAnswer,
+                            ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+
+  // Maybe send messages with one deferral. This should not produce any messages.
+  auto seq = agent_owner.DeferMessages();
+  agent_owner.MaybeSendMessages();
+  ExpectSendMessageNotCalled();
+
+  // Maybe send messages with two deferral. This should not produce any messages.
+  EXPECT_EQ(seq, agent_owner.DeferMessages());
+  agent_owner.MaybeSendMessages();
+  ExpectSendMessageNotCalled();
+
+  // Maybe send messages with one deferral. This should not produce any messages.
+  agent_owner.UndeferMessages(seq);
+  agent_owner.MaybeSendMessages();
+  ExpectSendMessageNotCalled();
+
+  // Maybe send messages with no deferrals. This should produce a messages.
+  agent_owner.UndeferMessages(seq);
+  agent_owner.MaybeSendMessages();
+  ExpectSendMessageCalled(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+
+  // Clean up.
+  under_test().Stop();
+  RunLoopUntilIdle();
+}
+
 }  // namespace mdns::test

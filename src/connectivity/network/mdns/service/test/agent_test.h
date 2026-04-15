@@ -30,6 +30,7 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
   // Sets the agent under test. This must be called before the test gets underway, and the agent
   // must survive until the end of the test.
   void SetAgent(const MdnsAgent& agent) { agent_ = &agent; }
+  void SetAgentB(const MdnsAgent& agent) { agent_b_ = &agent; }
 
   // Sets the host addresses returned by LocalHostAddresses.
   void SetLocalHostAddresses(std::vector<HostAddress> local_host_addresses) {
@@ -87,13 +88,13 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
     remove_agent_called_ = false;
   }
 
-  // Expects that the agent has not called |FlushSentItems|.
-  void ExpectNoFlushSentItemsCall() { EXPECT_FALSE(flush_sent_items_called_); }
+  // Expects that the agent has not called |MaybeSendMessages|.
+  void ExpectNoMaybeSendMessagesCall() { EXPECT_FALSE(maybe_send_messages_called_); }
 
-  // Expects that the agent has called |FlushSentItems|.
-  void ExpectFlushSentItemsCall() {
-    EXPECT_TRUE(flush_sent_items_called_);
-    flush_sent_items_called_ = false;
+  // Expects that the agent has called |MaybeSendMessages|.
+  void ExpectMaybeSendMessagesCall() {
+    EXPECT_TRUE(maybe_send_messages_called_);
+    maybe_send_messages_called_ = false;
   }
 
   // Expects that the agent has not called |AddLocalServiceInstance|.
@@ -166,6 +167,16 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
   // Expects that |message| contains no questions or resources.
   void ExpectNoOtherQuestionOrResource(DnsMessage* message);
 
+  void ExpectDeferMessagesCall() {
+    EXPECT_TRUE(defer_messages_called_);
+    defer_messages_called_ = false;
+  }
+
+  void ExpectUndeferMessagesCall(uint64_t seq) {
+    EXPECT_EQ(seq, undefer_messages_called_);
+    undefer_messages_called_ = 0;
+  }
+
  private:
   struct PostTaskForTimeCall {
     fit::closure task_;
@@ -202,6 +213,8 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
  protected:
   zx::time now() override { return now_; }
 
+  void MaybeSendMessages() override;
+
  private:
   void PostTaskForTime(MdnsAgent* agent, fit::closure task, zx::time target_time) override;
 
@@ -220,7 +233,9 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
 
   void RemoveAgent(std::shared_ptr<MdnsAgent> agent) override;
 
-  void FlushSentItems() override;
+  uint64_t DeferMessages() override;
+
+  void UndeferMessages(uint64_t sequence_number) override;
 
   void AddLocalServiceInstance(const ServiceInstance& instance, bool from_proxy) override;
 
@@ -229,6 +244,7 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
   std::vector<HostAddress> LocalHostAddresses() override { return local_host_addresses_; }
 
   const MdnsAgent* agent_;
+  const MdnsAgent* agent_b_;
   std::vector<HostAddress> local_host_addresses_;
   std::shared_ptr<DnsResource> address_placeholder_ =
       std::make_shared<DnsResource>(kLocalHostFullName, DnsType::kA);
@@ -242,13 +258,15 @@ class AgentTest : public ::testing::Test, public MdnsAgent::Owner {
   std::vector<QueryCall> query_calls_;
   std::vector<DnsResource> expirations_;
   bool remove_agent_called_ = false;
-  bool flush_sent_items_called_ = false;
+  bool maybe_send_messages_called_ = false;
   bool add_local_service_instance_called_ = false;
   ServiceInstance add_local_service_instance_instance_;
   bool add_local_service_instance_from_proxy_;
   bool change_local_service_instance_called_ = false;
   ServiceInstance change_local_service_instance_instance_;
   bool change_local_service_instance_from_proxy_;
+  bool defer_messages_called_ = false;
+  uint64_t undefer_messages_called_ = 0;
 };
 
 }  // namespace test

@@ -76,12 +76,14 @@ class InstanceResponder : public MdnsAgent {
   // Calls |GetAndSendPublication| with |query| set to true after first determining if the send
   // should be throttled.
   void MaybeGetAndSendPublication(PublicationCause publication_cause, const DnsLabel& subtype,
-                                  const ReplyAddress& reply_address, DnsType question_type);
+                                  const ReplyAddress& reply_address, DnsType question_type,
+                                  uint64_t deferral_sequence_number = 0);
 
   // Gets an |Mdns::Publication| from |mdns_responder_| and, if not null, sends
   // it. An empty |subtype| indicates no subtype.
   void GetAndSendPublication(PublicationCause publication_cause, const DnsLabel& subtype,
-                             const ReplyAddress& reply_address, DnsType question_type);
+                             const ReplyAddress& reply_address, DnsType question_type,
+                             uint64_t deferral_sequence_number = 0);
 
   // Sends a publication. An empty |subtype| indicates no subtype.
   void SendPublication(const Mdns::Publication& publication, const DnsLabel& subtype,
