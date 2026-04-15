@@ -8166,4 +8166,36 @@ VMO_VMAR_TEST(PagerWriteback, SuspendDirtyTest) {
   ASSERT_FALSE(pager.GetPageDirtyRequest(vmo, 0, &offset, &length));
 }
 
+// Regression test for https://fxbug.dev/502272571
+TEST(PagerWriteback, QueryDirtyRangesInvalidBuffer) {
+  NEEDS_NEXT_SKIP(zx_pager_query_dirty_ranges);
+
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::vmo vmo;
+  uint64_t vmo_size = zx_system_get_page_size() * 10ul;
+  ASSERT_OK(zx_pager_create_vmo(pager.get(), ZX_VMO_TRAP_DIRTY, port.get(), 0, vmo_size,
+                                vmo.reset_and_get_address()));
+
+  // Supply a page and dirty it so that EnumerateDirtyRanges finds something.
+  zx::vmo aux_vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &aux_vmo));
+  ASSERT_OK(zx_pager_supply_pages(pager.get(), vmo.get(), 0, zx_system_get_page_size(),
+                                  aux_vmo.get(), 0));
+  ASSERT_OK(zx_pager_op_range(pager.get(), ZX_PAGER_OP_DIRTY, vmo.get(), 0,
+                              zx_system_get_page_size(), 0));
+
+  size_t actual, avail;
+  // Use an invalid buffer pointer and ensure that the syscall fails in some way, and does not cause
+  // a kernel panic.
+  zx_status_t status = zx_pager_query_dirty_ranges(pager.get(), vmo.get(), 0, vmo_size,
+                                                   reinterpret_cast<void*>(0xffffffff00000000),
+                                                   zx_system_get_page_size(), &actual, &avail);
+  EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace pager_tests

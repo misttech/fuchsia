@@ -221,7 +221,9 @@ zx_status_t PagerDispatcher::QueryDirtyRanges(fbl::RefPtr<VmObject> vmo, uint64_
         // Stash fault information if a fault is encountered. Return early from enumeration with
         // ZX_ERR_SHOULD_WAIT so that the page fault can be resolved.
         if (copy_result.status != ZX_OK) {
-          DEBUG_ASSERT(copy_result.fault_info.has_value());
+          if (!copy_result.fault_info.has_value()) {
+            return copy_result.status;
+          }
           info.captured_fault_info = true;
           info.pf_va = copy_result.fault_info->pf_va;
           info.pf_flags = copy_result.fault_info->pf_flags;
