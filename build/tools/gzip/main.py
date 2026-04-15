@@ -19,7 +19,7 @@ parser.add_argument(
 def main() -> None:
     args = parser.parse_args()
     with open(args.input, "rb") as F:
-        with gzip.open(args.output, "wb") as G:
+        with gzip.GzipFile(args.output, "wb", mtime=0) as G:
             G.write(F.read())
 
 
