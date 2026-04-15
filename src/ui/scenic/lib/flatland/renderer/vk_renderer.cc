@@ -316,11 +316,9 @@ VkRenderer::~VkRenderer() {
   for (auto& [_, collection] : render_target_collections_) {
     vk_device.destroyBufferCollectionFUCHSIA(collection.vk_collection, nullptr, vk_loader);
   }
-  render_target_collections_.clear();
   for (auto& [_, collection] : readback_collections_) {
     vk_device.destroyBufferCollectionFUCHSIA(collection.vk_collection, nullptr, vk_loader);
   }
-  readback_collections_.clear();
 }
 
 std::optional<vk::BufferCollectionFUCHSIA>
@@ -1135,7 +1133,6 @@ VkRenderer::GetBufferCollectionsFor(const BufferCollectionUsage usage) {
       return texture_collections_;
     default:
       FX_NOTREACHED();
-      return texture_collections_;
   }
 }
 
