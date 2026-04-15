@@ -35,8 +35,13 @@ the Bazel targets to GN:
 
 3.  **Add verification:**
 
-    Add `//path/to/dir:verify_bazel2gn` to the `deps` of
-    `//build:bazel2gn_verifications` in `//build/BUILD.gn`.
+    - For targets under `//sdk/fidl`, add
+      `//sdk/fidl/fuchsia.some.fidl:verify_bazel2gn` to the
+      `fidl_bazel2gn_verification_targets` list in
+      `//sdk/fidl/bazel2gn_verification_targets.gni`.
+    - For other targets, add
+      `//path/to/dir:verify_bazel2gn` to the `bazel2gn_verification_targets`
+      list in `//build/bazel2gn_verification_targets.gni`.
 
 4.  **Verify:**
 
