@@ -146,6 +146,16 @@ def ensure_file_descriptor_limit(limit: int) -> None:
         pass
 
 
+def _check_rbe_env_vars(environ: dict[str, str]) -> None:
+    """Warns if environment variables starting with 'RBE_' are set."""
+    rbe_vars = sorted([k for k in environ if k.startswith("RBE_")])
+    if rbe_vars:
+        print(
+            f"Warning: The following environment variables starting with 'RBE_' "
+            f"are set and may override RBE tool configurations: {', '.join(rbe_vars)}"
+        )
+
+
 def str_to_bool(value: str) -> bool:
     if isinstance(value, bool):
         return value
@@ -853,7 +863,9 @@ _MAIN_ARG_PARSER = _main_arg_parser()
 def main(argv: list[str]) -> int:
     args, unknown = _MAIN_ARG_PARSER.parse_known_args(argv)
 
-    context = FuchsiaBuildContext.from_args(args, dict(os.environ))
+    environ = dict(os.environ)
+    _check_rbe_env_vars(environ)
+    context = FuchsiaBuildContext.from_args(args, environ)
 
     try:
         exec_info = args.func(context, unknown)

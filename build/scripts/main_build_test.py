@@ -3,6 +3,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import contextlib
+import io
 import pathlib
 import unittest
 from contextlib import contextmanager
@@ -394,6 +396,24 @@ class StrToBoolTest(unittest.TestCase):
         self.assertFalse(main_build.str_to_bool("no"))
         with self.assertRaises(Exception):
             main_build.str_to_bool("maybe")
+
+
+class CheckRbeEnvVarsTest(unittest.TestCase):
+    def test_no_rbe_vars(self) -> None:
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            main_build._check_rbe_env_vars({"PATH": "/bin"})
+        self.assertEqual(f.getvalue(), "")
+
+    def test_rbe_vars_warning(self) -> None:
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            main_build._check_rbe_env_vars(
+                {"RBE_FOO": "1", "RBE_BAR": "2", "PATH": "/bin"}
+            )
+        output = f.getvalue()
+        self.assertIn("Warning", output)
+        self.assertIn("RBE_BAR, RBE_FOO", output)
 
 
 class ChooseConcurrencyTest(unittest.TestCase):
