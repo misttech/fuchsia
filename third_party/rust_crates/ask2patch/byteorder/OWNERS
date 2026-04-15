@@ -7,7 +7,6 @@ include /src/connectivity/bluetooth/OWNERS
 include /src/connectivity/lib/packet-formats/OWNERS
 include /src/connectivity/lowpan/lib/spinel_pack/OWNERS
 include /src/connectivity/network/dhcpv6/OWNERS
-include /src/connectivity/ppp/OWNERS
 include /src/connectivity/wlan/OWNERS
 include /src/developer/ffx/OWNERS
 include /src/developer/ffx/lib/emulator_instance/OWNERS
@@ -18,7 +17,6 @@ include /src/firmware/OWNERS
 include /src/fonts/OWNERS
 include /src/lib/diagnostics/OWNERS
 include /src/lib/diagnostics/inspect/format/rust/OWNERS
-include /src/lib/flyweights/OWNERS
 include /src/lib/windowed-stats/OWNERS
 include /src/media/OWNERS
 include /src/media/audio/OWNERS
