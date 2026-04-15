@@ -2,23 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/ui/scenic/lib/scheduling/duration_predictor.h"
+#include "src/ui/scenic/lib/scheduling/pessimistic_duration_predictor.h"
 
 #include <lib/syslog/cpp/macros.h>
 
 namespace scheduling {
 
-DurationPredictor::DurationPredictor(size_t window_size, zx::duration initial_prediction)
+PessimisticDurationPredictor::PessimisticDurationPredictor(size_t window_size,
+                                                           zx::duration initial_prediction)
     : kWindowSize(window_size), window_(kWindowSize, initial_prediction) {
   FX_DCHECK(kWindowSize > 0);
   current_maximum_duration_index_ = kWindowSize - 1;
 }
 
-zx::duration DurationPredictor::GetPrediction() const {
+zx::duration PessimisticDurationPredictor::GetPrediction() const {
   return window_[current_maximum_duration_index_];
 }
 
-void DurationPredictor::InsertNewMeasurement(zx::duration duration) {
+void PessimisticDurationPredictor::InsertNewMeasurement(zx::duration duration) {
   // Move window forward.
   window_.push_front(duration);
   window_.pop_back();

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/ui/scenic/lib/scheduling/duration_predictor.h"
+#include "src/ui/scenic/lib/scheduling/pessimistic_duration_predictor.h"
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 
@@ -12,14 +12,14 @@ namespace test {
 TEST(DurationPredictor, FirstPredictionIsInitialPrediction) {
   const size_t kWindowSize = 4;
   const zx::duration kInitialPrediction = zx::usec(500);
-  DurationPredictor predictor(kWindowSize, kInitialPrediction);
+  PessimisticDurationPredictor predictor(kWindowSize, kInitialPrediction);
   EXPECT_EQ(predictor.GetPrediction(), kInitialPrediction);
 }
 
 TEST(DurationPredictor, PredictionAfterWindowFlushIsMeasurement) {
   const size_t kWindowSize = 4;
   const zx::duration kInitialPrediction = zx::msec(1);
-  DurationPredictor predictor(kWindowSize, kInitialPrediction);
+  PessimisticDurationPredictor predictor(kWindowSize, kInitialPrediction);
 
   const zx::duration measurement = zx::msec(5);
   EXPECT_GT(measurement, kInitialPrediction);
@@ -33,7 +33,7 @@ TEST(DurationPredictor, PredictionAfterWindowFlushIsMeasurement) {
 
 TEST(DurationPredictor, PredictionIsLargestInWindowAsMeasurementsIncrease) {
   size_t window_size = 10;
-  DurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
+  PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
   for (size_t i = 1; i <= window_size; ++i) {
     predictor.InsertNewMeasurement(zx::msec(i));
@@ -43,7 +43,7 @@ TEST(DurationPredictor, PredictionIsLargestInWindowAsMeasurementsIncrease) {
 
 TEST(DurationPredictor, PredictionIsLargestInWindowAsMeasurementsDecrease) {
   size_t window_size = 10;
-  DurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
+  PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
   for (size_t i = window_size; i > 0; --i) {
     predictor.InsertNewMeasurement(zx::msec(i));
@@ -53,7 +53,7 @@ TEST(DurationPredictor, PredictionIsLargestInWindowAsMeasurementsDecrease) {
 
 TEST(DurationPredictor, PredictionIsLargestInWindow) {
   size_t window_size = 10;
-  DurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
+  PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
   const std::vector<zx::duration> measurements{
       zx::msec(12), zx::msec(4),  zx::msec(5), zx::msec(2), zx::msec(8),
@@ -66,7 +66,7 @@ TEST(DurationPredictor, PredictionIsLargestInWindow) {
 
 TEST(DurationPredictor, MaxIsResetWhenLargestIsOutOfWindow) {
   size_t window_size = 4;
-  DurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
+  PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
   const std::vector<zx::duration> measurements{
       zx::msec(12), zx::msec(4),  zx::msec(5), zx::msec(2), zx::msec(8),
@@ -79,7 +79,7 @@ TEST(DurationPredictor, MaxIsResetWhenLargestIsOutOfWindow) {
 
 TEST(DurationPredictor, WindowSizeOfOneWorks) {
   size_t window_size = 1;
-  DurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
+  PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
   for (size_t i = 0; i < 5; ++i) {
     predictor.InsertNewMeasurement(zx::msec(i));

@@ -7,8 +7,6 @@
 
 #include <lib/zx/time.h>
 
-#include "src/ui/scenic/lib/scheduling/duration_predictor.h"
-
 namespace scheduling {
 
 struct PredictedTimes {

@@ -8,6 +8,7 @@
 #include <lib/zx/time.h>
 
 #include "src/ui/scenic/lib/scheduling/frame_predictor.h"
+#include "src/ui/scenic/lib/scheduling/pessimistic_duration_predictor.h"
 
 namespace scheduling {
 
@@ -48,11 +49,11 @@ class WindowedFramePredictor : public FramePredictor {
 
   // Render time prediction.
   const size_t kRenderPredictionWindowSize = 3;
-  DurationPredictor render_duration_predictor_;
+  PessimisticDurationPredictor render_duration_predictor_;
 
   // Update time prediction.
   const size_t kUpdatePredictionWindowSize = 1;
-  DurationPredictor update_duration_predictor_;
+  PessimisticDurationPredictor update_duration_predictor_;
 };
 
 }  // namespace scheduling
