@@ -255,12 +255,9 @@ mod test {
             guard.block_until(Some(&root_thread_handle), zx::MonotonicInstant::INFINITE).unwrap();
         });
 
-        // Wait for the correct owner to appear. If for some reason futex PI breaks, it's likely
-        // that this test will time out rather than panicking outright. It would be nice to have
-        // a clear assertion here, but there's no existing API we can use to atomically wait for a
-        // waiter on the futex *and* see what owner they set. If we find ourselves writing a lot of
-        // tests like this we might consider setting up a fake vdso.
-        while event.futex.get_owner() != Some(root_thread_koid) {
+        // Wait for the correct owner to appear.
+        // TODO(b/502692311): Replace this polling loop if it starts timing out.
+        while event.get_owner() != Some(root_thread_koid) {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
 

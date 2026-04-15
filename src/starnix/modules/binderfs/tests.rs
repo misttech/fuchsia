@@ -4545,8 +4545,12 @@ pub mod tests {
                 )
                 .expect("A sends to B");
 
-            // Assert that Zircon sees the correct owner for the priority-inheriting wait.
-            assert_eq!(event.get_owner(), Some(proc_a.thread.thread.koid().unwrap()));
+            // Wait for Zircon to see the correct owner for the priority-inheriting wait.
+            // TODO(b/502692311): Replace this polling loop if it starts timing out.
+            let proc_a_thread_koid = proc_a.thread.thread.koid().unwrap();
+            while event.get_owner() != Some(proc_a_thread_koid) {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
 
             let read_buffer_addr =
                 map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
