@@ -245,30 +245,20 @@ pub(crate) fn dedupe_kernel_args(
         })
         .collect();
     for (k, v) in items {
-        if !map.contains_key(k) {
-            map.insert(k, v);
-        }
+        map.entry(k).or_insert(v);
     }
 
     // Now add any args from the Flag Data that are not in the map already.
-    let flag_items: Vec<_> = data
-        .kernel_args
-        .iter()
-        .filter_map(|a| {
-            if let Some(key) = a.split("=").next() {
-                Some((key, a))
-            } else {
-                log::info!(
-                    "Invalid kernel arg entry: {a}. Kernel args are of the form name=value."
-                );
-                None
-            }
-        })
-        .filter(|(k, _)| !map.contains_key(k))
-        .collect();
-
-    for (k, v) in flag_items {
-        map.insert(k, v);
+    let kernel_args = data.kernel_args.iter().filter_map(|a| {
+        if let Some(key) = a.split("=").next() {
+            Some((key, a))
+        } else {
+            log::info!("Invalid kernel arg entry: {a}. Kernel args are of the form name=value.");
+            None
+        }
+    });
+    for (k, v) in kernel_args {
+        map.entry(k).or_insert(v);
     }
 
     let mut updated = FlagData {
