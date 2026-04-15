@@ -5,13 +5,14 @@
 """Control flow utilities: retries, timeouts, complex try-catch, etc"""
 
 import asyncio
-import inspect
 import logging
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
-from typing import Any
+from typing import Any, TypeVar
 
 from mobly import signals
+
+T = TypeVar("T")
 
 from honeydew.utils.deadline import Deadline
 
@@ -42,11 +43,11 @@ class RetriableError(Exception):
 
 
 async def retry_until_deadline(
-    task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
+    task: Callable[[], Coroutine[Any, Any, T]],
     deadline: Deadline,
     retry_delay: timedelta = timedelta(seconds=1),
     backoff: bool = False,
-) -> Any:
+) -> T:
     """Retries the given |task| until the deadline is due.
 
     If the |task| returns without error, halts. Otherwise,
@@ -66,10 +67,7 @@ async def retry_until_deadline(
 
     while True:
         try:
-            if inspect.iscoroutinefunction(task):
-                return await task()
-            else:
-                return task()
+            return await task()
         except (
             RetryAbortingError,
             TypeError,
@@ -99,11 +97,11 @@ async def retry_until_deadline(
 
 
 async def retry(
-    task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
+    task: Callable[[], Coroutine[Any, Any, T]],
     max_tries: int | None = None,
     retry_delay: timedelta = timedelta(seconds=1),
     backoff: bool = False,
-) -> Any:
+) -> T:
     """Retries the given |task| for up to |max_tries| times."""
     assert max_tries is None or max_tries > 0
 
@@ -121,10 +119,7 @@ async def retry(
     task_name: str = _pretty_func_name(task)
     while True:
         try:
-            if inspect.iscoroutinefunction(task):
-                return await task()
-            else:
-                return task()
+            return await task()
         except (
             RetryAbortingError,
             TypeError,
@@ -163,11 +158,11 @@ async def retry(
 
 
 async def retry_for_duration(
-    task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
+    task: Callable[[], Coroutine[Any, Any, T]],
     duration: timedelta,
     retry_delay: timedelta = timedelta(seconds=1),
     backoff: bool = False,
-) -> Any:
+) -> T:
     """Calls |retry_until_deadline| with a deadline based on |duration|"""
     return await retry_until_deadline(
         task, Deadline.from_timeout(duration), retry_delay, backoff
@@ -175,7 +170,7 @@ async def retry_for_duration(
 
 
 async def repeat_until_deadline(
-    task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
+    task: Callable[[], Coroutine[Any, Any, T]],
     deadline: Deadline,
     repeat_delay: timedelta = timedelta(seconds=1),
 ) -> None:
@@ -190,17 +185,14 @@ async def repeat_until_deadline(
         _LOGGER.debug(
             "Repeating %s for the %s time", _pretty_func_name(task), count
         )
-        if inspect.iscoroutinefunction(task):
-            await task()
-        else:
-            task()
+        await task()
         if deadline.is_due_before(repeat_delay):
             break
         await sleep_for_duration(repeat_delay)
 
 
 async def repeat_for_duration(
-    task: (Callable[[], Any] | Callable[[], Coroutine[Any, Any, Any]]),
+    task: Callable[[], Coroutine[Any, Any, T]],
     duration: timedelta,
     repeat_delay: timedelta = timedelta(seconds=1),
 ) -> None:
@@ -248,7 +240,7 @@ async def sleep_for_duration(duration: timedelta) -> None:
     await sleep_until_deadline(Deadline.from_timeout(duration))
 
 
-def _pretty_func_name(func: Callable[..., Any]) -> str:
+def _pretty_func_name(func: Callable[..., T]) -> str:
     if hasattr(func, "__qualname__"):
         return func.__qualname__
     else:

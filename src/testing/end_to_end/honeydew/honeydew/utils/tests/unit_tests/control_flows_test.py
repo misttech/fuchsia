@@ -28,7 +28,7 @@ class RetryTest(unittest.TestCase):
     async def test_retry_succeeds_on_first_try(
         self, mock_sleep: mock.Mock
     ) -> None:
-        mock_task = mock.Mock(return_value=1)
+        mock_task = mock.AsyncMock(return_value=1)
         await retry(
             task=mock_task,
             max_tries=3,
@@ -55,7 +55,7 @@ class RetryTest(unittest.TestCase):
         mock_sleep_for_duration: mock.Mock,
         expected_exception: type[Exception],
     ) -> None:
-        mock_task = mock.Mock(side_effect=expected_exception("expected"))
+        mock_task = mock.AsyncMock(side_effect=expected_exception("expected"))
         with self.assertRaisesRegex(
             expected_exception=expected_exception,
             expected_regex="expected",
@@ -73,7 +73,7 @@ class RetryTest(unittest.TestCase):
     async def test_retry_succeeds_on_retry(
         self, mock_sleep_for_duration: mock.Mock
     ) -> None:
-        mock_task = mock.Mock(
+        mock_task = mock.AsyncMock(
             side_effect=2 * [RuntimeError("Triggers a retry")] + [True]
         )
         await retry(
@@ -98,7 +98,7 @@ class RetryTest(unittest.TestCase):
             mock_datetime.now.return_value += delta
 
         mock_sleep.side_effect = advance_now
-        mock_task = mock.Mock(side_effect=RuntimeError("Triggers a retry"))
+        mock_task = mock.AsyncMock(side_effect=RuntimeError("Triggers a retry"))
         with self.assertRaisesRegex(
             expected_exception=RuntimeError,
             expected_regex="Triggers a retry",
@@ -128,7 +128,7 @@ class RetryTest(unittest.TestCase):
             mock_datetime.now.return_value += delta
 
         mock_sleep.side_effect = advance_now
-        mock_task = mock.Mock(side_effect=RuntimeError("Triggers a retry"))
+        mock_task = mock.AsyncMock(side_effect=RuntimeError("Triggers a retry"))
         with self.assertRaisesRegex(
             expected_exception=RuntimeError,
             expected_regex="Triggers a retry",
@@ -162,7 +162,7 @@ class RetryTest(unittest.TestCase):
             mock_datetime.now.return_value += delta
 
         mock_sleep.side_effect = advance_now
-        mock_task = mock.Mock(side_effect=RuntimeError("Triggers a retry"))
+        mock_task = mock.AsyncMock(side_effect=RuntimeError("Triggers a retry"))
         with self.assertRaisesRegex(
             expected_exception=RuntimeError,
             expected_regex="Triggers a retry",
@@ -189,7 +189,7 @@ class RetryTest(unittest.TestCase):
         self, mock_sleep: mock.Mock
     ) -> None:
         deadline = Deadline.from_timeout(timedelta(seconds=100))
-        mock_task = mock.Mock(return_value=1)
+        mock_task = mock.AsyncMock(return_value=1)
         await retry_until_deadline(
             task=mock_task,
             deadline=deadline,
@@ -213,7 +213,7 @@ class RetryTest(unittest.TestCase):
         mock_sleep: mock.Mock,
         expected_exception: type[Exception],
     ) -> None:
-        mock_task = mock.Mock(side_effect=expected_exception("expected"))
+        mock_task = mock.AsyncMock(side_effect=expected_exception("expected"))
         mock_sleep.side_effect = AssertionError("sleep should not be called")
         with self.assertRaisesRegex(
             expected_exception=expected_exception,
@@ -232,7 +232,7 @@ class RetryTest(unittest.TestCase):
     async def test_retry_until_deadline_succeeds_on_retry(
         self, mock_sleep: mock.Mock
     ) -> None:
-        mock_task = mock.Mock(
+        mock_task = mock.AsyncMock(
             side_effect=2 * [RuntimeError("Triggers a retry")] + [True]
         )
         await retry_until_deadline(
@@ -258,7 +258,7 @@ class RetryTest(unittest.TestCase):
 
         mock_sleep.side_effect = advance_now
 
-        mock_task = mock.Mock(
+        mock_task = mock.AsyncMock(
             side_effect=[RuntimeError("Triggers a retry"), True]
         )
         deadline = Deadline.from_timeout(timedelta(seconds=100))
@@ -290,7 +290,7 @@ class RetryTest(unittest.TestCase):
 
         mock_sleep.side_effect = advance_now
 
-        mock_task = mock.Mock(
+        mock_task = mock.AsyncMock(
             side_effect=4 * [RuntimeError("Triggers a retry")] + [True]
         )
         deadline = Deadline.from_timeout(timedelta(seconds=100))
@@ -325,7 +325,7 @@ class RetryTest(unittest.TestCase):
 
         mock_sleep.side_effect = advance_now
 
-        mock_task = mock.Mock(
+        mock_task = mock.AsyncMock(
             side_effect=4 * [RuntimeError("Triggers a retry")] + [True]
         )
         deadline = Deadline.from_timeout(
@@ -357,7 +357,7 @@ class RetryTest(unittest.TestCase):
     async def test_retry_until_deadline_never_succeeds(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_task = mock.Mock(side_effect=RuntimeError("Triggers a retry"))
+        mock_task = mock.AsyncMock(side_effect=RuntimeError("Triggers a retry"))
         mock_datetime.now.return_value = datetime(
             2024, 7, 10, tzinfo=timezone.utc
         )
@@ -390,7 +390,7 @@ class RepeatTest(unittest.TestCase):
     async def test_repeat_until_deadline(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_task = mock.Mock()
+        mock_task = mock.AsyncMock()
         mock_datetime.now.return_value = datetime(
             2024, 7, 10, tzinfo=timezone.utc
         )
@@ -414,7 +414,7 @@ class RepeatTest(unittest.TestCase):
     async def test_repeat_until_deadline_when_already_due(
         self, mock_sleep: mock.Mock
     ) -> None:
-        mock_task = mock.Mock()
+        mock_task = mock.AsyncMock()
         deadline = Deadline.from_timeout(timedelta(seconds=0))
 
         await repeat_until_deadline(
@@ -431,7 +431,7 @@ class RepeatTest(unittest.TestCase):
     async def test_repeat_until_deadline_raises_exception(
         self, mock_datetime: mock.Mock, mock_sleep: mock.Mock
     ) -> None:
-        mock_task = mock.Mock(
+        mock_task = mock.AsyncMock(
             side_effect=4 * [None] + [RuntimeError("Expected")]
         )
         mock_datetime.now.return_value = datetime(
