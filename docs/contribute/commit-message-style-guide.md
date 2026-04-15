@@ -108,19 +108,14 @@ Test: fx test fidl_go_conformance at If0a047a4db804a183e984676217b31e17b4af0ea
 Change-Id: Id71eb879e4d7dfabe228cc7b4e2fedb7f52db7b7
 ```
 
-## Add tests and multiply line {#add-tests}
+## Add test information {#add-tests}
 
-The `Test:` line is necessary to indicate what type of test to run to make sure
-your change is working. You can add multiple different tests in this line, for
-example, `fx test setui_service_tests, setui_client_interface_test`. You can
-also add explanations of what tests you added below. If you did not add or
-modify tests, you can specify `None:`, with an explanation of why it doesn't
-need to be tested, for example, `None: documentation change only`.
+### Deflake using `Multiply`
 
 If you added new tests, you can get deflake runs automatically by adding the
 `Multiply:` line with the test to run multiple times.
 
-The following example shows `Test:` and `Multiply:` in the
+The following example shows `Multiply:` in the
 [commit message](https://fuchsia-review.googlesource.com/c/fuchsia/+/537303):
 
 ```none {:.devsite-disable-click-to-copy}
@@ -130,8 +125,6 @@ This CL marks some internal items with pub(crate), pub(super) or leaves
 as private. Related CL: fxr/535942
 
 Bug: 72941
-Test: fx test -o setui_service_tests setui_client_interface_test
-sample-setui-config-test setting-service-config-test
 Multiply: setui_service_tests
 Multiply: setui_client_interface_test
 
@@ -140,21 +133,7 @@ Change-Id: I67e061edee1e81a6875bf26b752ba5687c4ced71
 
 Note: To specify that more than one test should be retried to deflake, you can add multiple
 comma separated test names on a single line, or add multiple `Multiply:` lines as shown
-in the above example.
-
-If the testing instructions are complex, create an issue and provide a link to
-that issue in the change description. If the change doesn't intend to change
-behavior, indicate that fact in the commit message.
-
-In some cases, certain behavior changes cannot be tested because Fuchsia lacks
-some particular piece of infrastructure. If so, create an issue in the tracker
-about the necessary infrastructure support and provide the bug number in the
-change description, in addition to describing how the change is tested manually,
-for example:
-
-```none
-Test: Manually tested that [...]. Automated testing needs US-XXXX.
-```
+in the above example. This is optional.
 
 Developers are responsible for high-quality automated testing of their code.
 Reviewers are responsible for pushing back on changes that do not include
@@ -166,6 +145,21 @@ project.
 For more commit message options, see the
 [Commit message options](/docs/development/source_code/commit_message_options.md)
 guide.
+
+### Describe testing procedures
+
+If the testing instructions are complex, create an issue and provide a link to
+that issue in the change description. If the change doesn't intend to change
+behavior, indicate that fact in the commit message.
+
+In some cases, certain behavior changes cannot be tested because Fuchsia lacks
+some particular piece of infrastructure. If so, create an issue in the tracker
+about the necessary infrastructure support and provide the bug number in the
+change description, in addition to describing how the change is tested manually.
+
+Sometimes, people will specify the `Test:` tag to indicate tests run on the change.
+This line is only an indicator to human reviewers and has no effect on the behavior
+of presubmit tests.
 
 ## Add a buffer line before Change-Id {#add-buffer}
 
