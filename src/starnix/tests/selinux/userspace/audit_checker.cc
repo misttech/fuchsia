@@ -479,21 +479,21 @@ void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
       // Items don't match, but the observed audit log matches an expectation that appears later.
       // Emit all the intervening expected logs with a prefix indicating they're missing.
       for (; !expected_it->contains(*actual_it); expected_it++) {
-        audit_diff += "\n+" + expected_it->ToString();
+        audit_diff += "\n-" + expected_it->ToString();
       }
     } else {
       // Item doesn't appear in the expected audit logs at all.
-      audit_diff += "\n-" + actual_it->ToString();
+      audit_diff += "\n+" + actual_it->ToString();
       actual_it++;
     }
   }
 
   for (; expected_it != expected_logs.end(); expected_it++) {
-    audit_diff += "\n+" + expected_it->ToString();
+    audit_diff += "\n-" + expected_it->ToString();
     matched_expected = false;
   }
   for (; actual_it != actual_logs.end(); actual_it++) {
-    audit_diff += "\n-" + actual_it->ToString();
+    audit_diff += "\n+" + actual_it->ToString();
     matched_expected = false;
   }
 
@@ -508,5 +508,6 @@ void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   }
 
   ADD_FAILURE() << "Audit logs mismatch. Expected " << expected_logs.size() << ", got "
-                << actual_logs.size() << ". Diff: " << audit_diff;
+                << actual_logs.size() << "." << std::endl
+                << "Diff of observed from expected audit logs: " << audit_diff;
 }
