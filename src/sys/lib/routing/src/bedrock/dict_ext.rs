@@ -107,16 +107,13 @@ impl DictExt for Dict {
         loop {
             match segments.next() {
                 Some(next_name) => {
-                    let sub_dict = current_dict
-                        .get(current_name)
-                        .ok()
-                        .flatten()
-                        .and_then(|value| value.to_dictionary())?;
+                    let sub_dict =
+                        current_dict.get(current_name).and_then(|value| value.to_dictionary())?;
                     current_dict = sub_dict;
 
                     current_name = next_name;
                 }
-                None => return current_dict.get(current_name).ok().flatten(),
+                None => return current_dict.get(current_name),
             }
         }
     }
@@ -225,15 +222,14 @@ impl DictExt for Dict {
 
         if segments.next().is_none() {
             // No nested lookup necessary.
-            let Some(router) =
-                self.get(root).ok().flatten().and_then(|cap| Router::<T>::try_from(cap).ok())
+            let Some(router) = self.get(root).and_then(|cap| Router::<T>::try_from(cap).ok())
             else {
                 return Router::<T>::new(ErrorRouter { not_found_error: not_found_error.into() });
             };
             return router;
         }
 
-        let Some(cap) = self.get(root).ok().flatten() else {
+        let Some(cap) = self.get(root) else {
             return Router::<T>::new(ErrorRouter { not_found_error: not_found_error.into() });
         };
         let router = match cap {
@@ -264,8 +260,8 @@ impl DictExt for Dict {
                 Some(next_name) => {
                     let sub_dict = {
                         match current_dict.get(current_name) {
-                            Ok(Some(Capability::Dictionary(dict))) => dict,
-                            Ok(Some(Capability::DictionaryRouter(preexisting_router))) => {
+                            Some(Capability::Dictionary(dict)) => dict,
+                            Some(Capability::DictionaryRouter(preexisting_router)) => {
                                 let mut path = vec![next_name];
                                 while let Some(name) = segments.next() {
                                     path.push(name);
@@ -283,7 +279,7 @@ impl DictExt for Dict {
 
                                 return Ok(());
                             }
-                            Ok(None) => {
+                            None => {
                                 let dict = Dict::new();
                                 current_dict.insert(
                                     current_name.into(),
@@ -312,11 +308,8 @@ impl DictExt for Dict {
         loop {
             match segments.next() {
                 Some(next_name) => {
-                    let sub_dict = current_dict
-                        .get(current_name)
-                        .ok()
-                        .flatten()
-                        .and_then(|value| value.to_dictionary());
+                    let sub_dict =
+                        current_dict.get(current_name).and_then(|value| value.to_dictionary());
                     if sub_dict.is_none() {
                         // The capability doesn't exist, there's nothing to remove.
                         return None;
@@ -343,9 +336,7 @@ impl DictExt for Dict {
         let num_segments = path.iter_segments().count();
         for (next_idx, next_name) in path.iter_segments().enumerate() {
             // Get the capability.
-            let capability = current_dict
-                .get(next_name)
-                .map_err(|_| RoutingError::BedrockNotCloneable { moniker: moniker.clone() })?;
+            let capability = current_dict.get(next_name);
 
             // The capability doesn't exist.
             let Some(capability) = capability else {
@@ -532,7 +523,7 @@ impl Routable<Dict> for AdditiveDictionaryRouter {
             }
             other_response => return other_response,
         };
-        let _ = dictionary.insert_capability(&self.path, self.capability.try_clone().unwrap());
+        let _ = dictionary.insert_capability(&self.path, self.capability.clone());
         Ok(RouterResponse::Capability(dictionary))
     }
 }

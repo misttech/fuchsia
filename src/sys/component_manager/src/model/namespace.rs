@@ -134,7 +134,7 @@ fn program_input_dict_to_namespace(
     for (key, value) in program_input_dict.enumerate() {
         let new_prefix = NamespacePath::new(format!("{prefix}/{key}")).unwrap();
         match value {
-            Ok(Capability::Dictionary(d)) => {
+            Capability::Dictionary(d) => {
                 if dont_flatten_past.contains(&new_prefix) {
                     namespace.add_entry(Capability::Dictionary(d), &new_prefix)?;
                 } else {
@@ -146,19 +146,18 @@ fn program_input_dict_to_namespace(
                     )?;
                 }
             }
-            Ok(cap @ Capability::DirConnector(_)) => {
+            cap @ Capability::DirConnector(_) => {
                 namespace.add_entry(cap, &new_prefix)?;
             }
-            Ok(cap @ Capability::DirConnectorRouter(_)) => {
+            cap @ Capability::DirConnectorRouter(_) => {
                 namespace.add_entry(cap, &new_prefix)?;
             }
-            Ok(cap @ Capability::DictionaryRouter(_)) => {
+            cap @ Capability::DictionaryRouter(_) => {
                 namespace.add_entry(cap, &new_prefix)?;
             }
-            Ok(cap) => {
+            cap => {
                 namespace.add_object(cap, &Path::new(format!("{prefix}/{key}")).unwrap())?;
             }
-            Err(_) => {}
         }
     }
 

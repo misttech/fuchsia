@@ -102,7 +102,7 @@ impl ProgramInput {
 
     /// All of the capabilities that appear in a program's namespace.
     pub fn namespace(&self) -> Dict {
-        let cap = self.inner.get(&*NAMESPACE).expect("capabilities must be cloneable").unwrap();
+        let cap = self.inner.get(&*NAMESPACE).unwrap();
         let Capability::Dictionary(dict) = cap else {
             unreachable!("namespace entry must be a dict: {cap:?}");
         };
@@ -111,8 +111,7 @@ impl ProgramInput {
 
     /// All of the capabilities that appear in a program's set of numbered handles.
     pub fn numbered_handles(&self) -> Dict {
-        let cap =
-            self.inner.get(&*NUMBERED_HANDLES).expect("capabilities must be cloneable").unwrap();
+        let cap = self.inner.get(&*NUMBERED_HANDLES).unwrap();
         let Capability::Dictionary(dict) = cap else {
             unreachable!("numbered_handles entry must be a dict: {cap:?}");
         };
@@ -121,7 +120,7 @@ impl ProgramInput {
 
     /// A router for the runner that a component has used (if any).
     pub fn runner(&self) -> Option<Router<Connector>> {
-        let cap = self.inner.get(&*RUNNER).expect("capabilities must be cloneable");
+        let cap = self.inner.get(&*RUNNER);
         match cap {
             None => None,
             Some(Capability::ConnectorRouter(r)) => Some(r),
@@ -135,7 +134,7 @@ impl ProgramInput {
 
     /// All of the config capabilities that a program will use.
     pub fn config(&self) -> Dict {
-        let cap = self.inner.get(&*CONFIG).expect("capabilities must be cloneable").unwrap();
+        let cap = self.inner.get(&*CONFIG).unwrap();
         let Capability::Dictionary(dict) = cap else {
             unreachable!("config entry must be a dict: {cap:?}");
         };
@@ -336,7 +335,7 @@ impl ComponentSandbox {
             (&capability_sourced_capabilities_dict, &self.capability_sourced_capabilities_dict),
             (&declared_dictionaries, &self.declared_dictionaries),
         ] {
-            copy_to.append(copy_from).expect("sandbox capability is not cloneable");
+            copy_to.append(copy_from).expect("conflicting entry found");
         }
         if let Some(timeout) = component_input.environment().stop_timeout() {
             self.component_input.environment().set_stop_timeout(timeout as i64);
@@ -585,10 +584,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     .capabilities()
             }
             cm_rust::offer::OfferTarget::Capability(name) => {
-                let dict = match declared_dictionaries
-                    .get(name)
-                    .expect("dictionaries must be cloneable")
-                {
+                let dict = match declared_dictionaries.get(name) {
                     Some(dict) => dict,
                     None => {
                         let dict = Dict::new();

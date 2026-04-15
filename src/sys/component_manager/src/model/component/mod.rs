@@ -1452,7 +1452,7 @@ probably not intended: {}",
         let resolver_capability_res =
             resolvers_dict.get(&Name::new(component_address.scheme()).unwrap());
         let resolver_router = match resolver_capability_res {
-            Ok(Some(Capability::ConnectorRouter(resolver_router))) => resolver_router,
+            Some(Capability::ConnectorRouter(resolver_router)) => resolver_router,
             _ => {
                 return Err(ResolverError::SchemeNotRegistered);
             }

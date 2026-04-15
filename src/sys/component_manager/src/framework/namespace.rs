@@ -8,6 +8,9 @@ use crate::sandbox_util::take_handle_as_stream;
 use ::routing::component_instance::ComponentInstanceInterface;
 use cm_types::Path;
 use fidl::endpoints;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fuchsia_async as fasync;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use futures::future::BoxFuture;
 use futures::prelude::*;
@@ -17,10 +20,6 @@ use sandbox::{Dict, WeakInstanceToken};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_sandbox as fsandbox,
-    fuchsia_async as fasync,
-};
 
 pub fn serve(
     server_end: zx::Channel,
@@ -120,7 +119,6 @@ async fn create(
             return Err(ERR);
         };
         for (key, capability) in dict.enumerate() {
-            let capability = capability.map_err(|_| fcomponent::NamespaceError::Conversion)?;
             let path = Path::new(format!("{}/{}", path, key))
                 .map_err(|_| fcomponent::NamespaceError::BadEntry)?;
             namespace_builder.add_object(capability, &path).map_err(error_to_fidl)?;
@@ -148,7 +146,6 @@ async fn create2(
         };
 
         for (key, capability) in dictionary.enumerate() {
-            let capability = capability.map_err(|_| fcomponent::NamespaceError::Conversion)?;
             let path = Path::new(format!("{}/{}", path, key))
                 .map_err(|_| fcomponent::NamespaceError::BadEntry)?;
             namespace_builder.add_object(capability, &path).map_err(error_to_fidl)?;
@@ -186,11 +183,12 @@ mod tests {
     use ::routing::component_instance::ComponentInstanceInterface;
     use assert_matches::assert_matches;
     use fidl::endpoints::{ProtocolMarker, ServerEnd};
+    use fidl_fidl_examples_routing_echo as fecho;
+    use fuchsia_async as fasync;
     use fuchsia_component::client;
     use futures::TryStreamExt;
     use sandbox::{Capability, Connector, Dict};
     use std::sync::{Arc, Weak};
-    use {fidl_fidl_examples_routing_echo as fecho, fuchsia_async as fasync};
 
     #[cfg(fuchsia_api_level_less_than = "HEAD")]
     use fidl_fuchsia_component_sandbox as fsandbox;

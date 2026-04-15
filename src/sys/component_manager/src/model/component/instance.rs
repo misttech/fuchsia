@@ -519,11 +519,8 @@ impl ResolvedInstanceState {
         });
         let mut capability_requested_receivers = HashMap::new();
         for use_event_stream_decl in use_event_stream_decls {
-            let Some(Capability::DictionaryRouter(offered_router)) = component_input
-                .capabilities()
-                .get(&use_event_stream_decl.source_name)
-                .ok()
-                .flatten()
+            let Some(Capability::DictionaryRouter(offered_router)) =
+                component_input.capabilities().get(&use_event_stream_decl.source_name)
             else {
                 continue;
             };
@@ -541,7 +538,7 @@ impl ResolvedInstanceState {
                 continue;
             };
             let capability_name = match dictionary.get("event_stream_name") {
-                Ok(Some(Capability::Data(Data::String(name)))) => name,
+                Some(Capability::Data(Data::String(name))) => name,
                 other_value => {
                     panic!("missing or unexpected value for event_stream_name: {:?}", other_value)
                 }
@@ -819,12 +816,6 @@ impl ResolvedInstanceState {
         let create_exposed_dict = async || {
             let dict = Dict::new();
             for (key, value) in self.sandbox.component_output.capabilities().enumerate() {
-                let Ok(value) = value else {
-                    // This capability is not cloneable. Skip it.
-                    warn!(moniker:% = self.moniker(), key:%;
-                          "Exposed dict contains non-cloneable. Eliding it from exposed dir.");
-                    continue;
-                };
                 let _ = dict.insert(key, value);
             }
             dict
@@ -1144,10 +1135,6 @@ impl ResolvedInstanceState {
 
     fn get_child_component_output_dictionary_routers(&self) -> HashMap<ChildName, Router<Dict>> {
         self.children.iter().map(|(name, child)| (name.clone(), child.component_output())).collect()
-    }
-
-    pub fn moniker(&self) -> &Moniker {
-        &self.weak_component.moniker
     }
 }
 

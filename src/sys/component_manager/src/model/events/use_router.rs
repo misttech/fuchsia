@@ -8,6 +8,8 @@ use crate::model::events::{forward_capability_requested_events, names_from_filte
 use async_trait::async_trait;
 use cm_types::Name;
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_inspect::InspectSinkMarker;
 use fuchsia_inspect::Inspector;
 use futures::channel::mpsc;
@@ -31,7 +33,6 @@ use std::sync::Arc;
 use std::task::Poll;
 use vfs::ExecutionScope;
 use zx::sys::{ZX_CHANNEL_MAX_MSG_BYTES, ZX_CHANNEL_MAX_MSG_HANDLES};
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_internal as finternal};
 
 /// Event stream routes return dictionaries of data, detailing which event streams the client may
 /// connect to and the scopes of those streams that was discovered during routing. An
@@ -172,7 +173,7 @@ impl EventStreamUseReceiver {
             let route_metadata: finternal::EventStreamRouteMetadata =
                 dictionary.get_metadata().expect("missing route metadata");
             let capability_name = match dictionary.get("event_stream_name") {
-                Ok(Some(Capability::Data(Data::String(name)))) => name,
+                Some(Capability::Data(Data::String(name))) => name,
                 other_value => {
                     panic!("missing or unexpected value for event_stream_name: {:?}", other_value)
                 }

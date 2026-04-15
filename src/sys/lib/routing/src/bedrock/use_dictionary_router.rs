@@ -60,16 +60,12 @@ impl UseDictionaryRouter {
         other_dict.register_update_notifier(Box::new(move |entry_update| {
             match entry_update {
                 EntryUpdate::Add(key, capability) => {
-                    if let Some(preexisting_value) = self_clone.get(key).ok().flatten() {
+                    if let Some(preexisting_value) = self_clone.get(key) {
                         // There's a conflict! Let's let the preexisting value take precedence, and
                         // note the issue.
-                        initial_conflicts.push((
-                            key.into(),
-                            capability.try_clone().unwrap(),
-                            preexisting_value,
-                        ));
+                        initial_conflicts.push((key.into(), capability.clone(), preexisting_value));
                     } else {
-                        let _ = self_clone.insert(key.into(), capability.try_clone().unwrap());
+                        let _ = self_clone.insert(key.into(), capability.clone());
                     }
                 }
                 EntryUpdate::Remove(key) => {

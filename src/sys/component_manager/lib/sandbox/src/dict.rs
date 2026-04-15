@@ -167,9 +167,7 @@ impl Dict {
 
     /// Returns a clone of the capability associated with `key`. If there is no entry for `key`,
     /// `None` is returned.
-    ///
-    /// If the value could not be cloned, returns an error.
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Result<Option<Capability>, ()>
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<Capability>
     where
         Key: Borrow<Q> + Ord,
         Q: Ord,
@@ -179,20 +177,14 @@ impl Dict {
 
     /// Returns a clone of the capability associated with `key`, or populates it with `default` if
     /// it is not present.
-    ///
-    /// If the value could not be cloned, returns an error.
-    pub fn get_or_insert(
-        &self,
-        key: &Key,
-        default: impl FnOnce() -> Capability,
-    ) -> Result<Capability, ()> {
+    pub fn get_or_insert(&self, key: &Key, default: impl FnOnce() -> Capability) -> Capability {
         let DictInner { entries, update_notifiers, .. } = &mut *self.lock();
-        match entries.get(key)? {
-            Some(v) => Ok(v),
+        match entries.get(key) {
+            Some(v) => v,
             None => {
                 let v = (default)();
-                entries.insert(key.clone(), v.try_clone()?, update_notifiers).unwrap();
-                Ok(v)
+                entries.insert(key.clone(), v.clone(), update_notifiers).unwrap();
+                v
             }
         }
     }
@@ -205,13 +197,11 @@ impl Dict {
     }
 
     /// Returns an iterator over a clone of the entries, sorted by key.
-    ///
-    /// If a capability is not cloneable, an error returned for the value.
-    pub fn enumerate(&self) -> impl Iterator<Item = (Key, Result<Capability, ()>)> + use<> {
+    pub fn enumerate(&self) -> impl Iterator<Item = (Key, Capability)> + use<> {
         self.lock()
             .entries
             .iter()
-            .map(|(k, v)| (k.clone(), v.try_clone()))
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect::<Vec<_>>()
             .into_iter()
     }
@@ -302,19 +292,19 @@ impl Default for HybridMap {
 }
 
 impl HybridMap {
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Result<Option<Capability>, ()>
+    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<Capability>
     where
         Key: Borrow<Q> + Ord,
         Q: Ord,
     {
         match self {
             Self::Vec(vec) => match Self::sorted_vec_index_of(vec, key) {
-                Ok(index) => Ok(Some(vec[index].1.try_clone()?)),
-                Err(_) => Ok(None),
+                Ok(index) => Some(vec[index].1.clone()),
+                Err(_) => None,
             },
             Self::Map(map) => match map.get(key) {
-                Some(capability) => Ok(Some(capability.try_clone()?)),
-                None => Ok(None),
+                Some(capability) => Some(capability.clone()),
+                None => None,
             },
         }
     }
@@ -401,10 +391,7 @@ impl HybridMap {
         }
 
         // If any clone would fail, throw an error early and don't modify the dict
-        let to_insert: Result<Vec<_>, _> =
-            other.iter().map(|(k, v)| v.try_clone().map(|v| (k.clone(), v))).collect();
-        let to_insert = to_insert?;
-        for (k, _) in &to_insert {
+        for (k, _) in other.iter() {
             let contains_key = match self {
                 Self::Vec(vec) => matches!(Self::sorted_vec_index_of(vec, k), Ok(_)),
                 Self::Map(map) => map.contains_key(k),
@@ -422,8 +409,9 @@ impl HybridMap {
             // size now.
             vec.reserve(other.len());
         }
-        for (k, v) in to_insert {
-            self.insert(k, v, update_notifiers).expect("append: insert should have succeeded");
+        for (k, v) in other.iter() {
+            self.insert(k.clone(), v.clone(), update_notifiers)
+                .expect("append: insert should have succeeded");
         }
         Ok(())
     }
@@ -433,14 +421,14 @@ impl HybridMap {
             Self::Vec(vec) => {
                 let mut new_vec = Vec::with_capacity(vec.len());
                 for (key, value) in vec.iter() {
-                    new_vec.push((key.clone(), value.try_clone()?));
+                    new_vec.push((key.clone(), value.clone()));
                 }
                 Ok(HybridMap::Vec(new_vec))
             }
             Self::Map(map) => {
                 let mut new_map = BTreeMap::new();
                 for (key, value) in map.iter() {
-                    new_map.insert(key.clone(), value.try_clone()?);
+                    new_map.insert(key.clone(), value.clone());
                 }
                 Ok(HybridMap::Map(new_map))
             }

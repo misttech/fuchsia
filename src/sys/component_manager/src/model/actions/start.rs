@@ -331,14 +331,13 @@ fn dict_deep_copy(dict: &Dict) -> Dict {
     let out = Dict::new();
     for (key, cap) in dict.enumerate() {
         match cap {
-            Ok(Capability::Dictionary(d)) => {
+            Capability::Dictionary(d) => {
                 let d = dict_deep_copy(&d);
                 let _ = out.insert(key, Capability::Dictionary(d));
             }
-            Ok(cap) => {
+            cap => {
                 let _ = out.insert(key, cap);
             }
-            Err(_) => {}
         }
     }
     out
@@ -348,7 +347,7 @@ fn dict_merge(dict1: &Dict, dict2: Dict) {
     for (key, value) in dict2.drain() {
         match value {
             Capability::Dictionary(inner_dict2) => {
-                if let Ok(Some(Capability::Dictionary(inner_dict1))) = dict1.get(&key) {
+                if let Some(Capability::Dictionary(inner_dict1)) = dict1.get(&key) {
                     dict_merge(&inner_dict1, inner_dict2);
                 } else {
                     let _ = dict1.insert(key, Capability::Dictionary(inner_dict2));

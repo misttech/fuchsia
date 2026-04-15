@@ -86,7 +86,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
     ) -> Result<RouterResponse<T>, RouterError> {
         let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
         #[cfg(not(target_os = "fuchsia"))]
-        if let Ok(Some(Capability::Data(sandbox::Data::Uint64(num)))) =
+        if let Some(Capability::Data(sandbox::Data::Uint64(num))) =
             request.metadata.get(&cm_types::Name::new(SKIP_POLICY_CHECKS).unwrap())
         {
             if num > 0 {

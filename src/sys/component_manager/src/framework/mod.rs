@@ -8,6 +8,12 @@ use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
 use async_trait::async_trait;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use moniker::Moniker;
@@ -15,11 +21,6 @@ use router_error::RouterError;
 use routing::capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
 use sandbox::{Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_internal as finternal,
-    fidl_fuchsia_component_runtime as fruntime, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
-};
 
 pub mod binder;
 pub mod capabilities;
@@ -126,11 +127,9 @@ impl Routable<Dict> for FrameworkRouter {
             let extra_framework_capabilities =
                 component.context.extra_framework_capabilities.lock();
             for (name, capability) in extra_framework_capabilities.iter() {
-                if let Ok(capability) = capability.try_clone() {
-                    // Internal capabilities added for a test should preempt existing ones that have
-                    // the same name.
-                    let _ = framework_dictionary.insert(name.clone(), capability);
-                }
+                // Internal capabilities added for a test should preempt existing ones that have
+                // the same name.
+                let _ = framework_dictionary.insert(name.clone(), capability.clone());
             }
         }
         Ok(RouterResponse::Capability(framework_dictionary))

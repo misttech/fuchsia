@@ -55,7 +55,7 @@ impl<T: StructuredDict> StructuredDictMap<T> {
     }
 
     pub fn get(&self, key: &BorrowedName) -> Option<T> {
-        self.inner.get(key).expect("structured map entry must be cloneable").map(|cap| {
+        self.inner.get(key).map(|cap| {
             let Capability::Dictionary(dict) = cap else {
                 unreachable!("structured map entry must be a dict: {cap:?}");
             };
@@ -78,9 +78,8 @@ impl<T: StructuredDict> StructuredDictMap<T> {
 
     pub fn enumerate(&self) -> impl Iterator<Item = (Name, T)> {
         self.inner.enumerate().map(|(key, capability_res)| match capability_res {
-            Ok(Capability::Dictionary(dict)) => (key, T::from_dict(dict)),
-            Ok(cap) => unreachable!("structured map entry must be a dict: {cap:?}"),
-            Err(_) => panic!("structured map entry must be cloneable"),
+            Capability::Dictionary(dict) => (key, T::from_dict(dict)),
+            cap => unreachable!("structured map entry must be a dict: {cap:?}"),
         })
     }
 }
@@ -226,7 +225,7 @@ impl ComponentEnvironment {
 
     /// Returns the stop timeout (in milliseconds) for this environment.
     pub fn stop_timeout(&self) -> Option<i64> {
-        let Ok(Some(Capability::Data(Data::Int64(timeout)))) = self.0.get(&*STOP_TIMEOUT) else {
+        let Some(Capability::Data(Data::Int64(timeout))) = self.0.get(&*STOP_TIMEOUT) else {
             return None;
         };
         Some(timeout)
@@ -239,7 +238,7 @@ impl ComponentEnvironment {
 
     /// Returns the name for this environment.
     pub fn name(&self) -> Option<Name> {
-        let Ok(Some(Capability::Data(Data::String(name)))) = self.0.get(&*NAME) else {
+        let Some(Capability::Data(Data::String(name))) = self.0.get(&*NAME) else {
             return None;
         };
         Some(Name::new(name).unwrap())
@@ -320,7 +319,7 @@ impl From<ComponentOutput> for Dict {
 }
 
 fn shallow_copy(src: &Dict, dest: &Dict, key: &Name) -> Result<(), ()> {
-    if let Some(d) = src.get(key).expect("must be cloneable") {
+    if let Some(d) = src.get(key) {
         let Capability::Dictionary(d) = d else {
             unreachable!("{key} entry must be a dict: {d:?}");
         };
@@ -330,9 +329,7 @@ fn shallow_copy(src: &Dict, dest: &Dict, key: &Name) -> Result<(), ()> {
 }
 
 fn get_or_insert(this: &Dict, key: &Name) -> Dict {
-    let cap = this
-        .get_or_insert(&key, || Capability::Dictionary(Dict::new()))
-        .expect("capabilities must be cloneable");
+    let cap = this.get_or_insert(&key, || Capability::Dictionary(Dict::new()));
     let Capability::Dictionary(dict) = cap else {
         unreachable!("{key} entry must be a dict: {cap:?}");
     };
@@ -379,17 +376,17 @@ mod tests {
         assert!(map.insert(name1.clone(), dict1).is_ok());
         let d = map.get(&name1).unwrap();
         let key = DictKey::new("a").unwrap();
-        assert_matches!(d.get(&key), Ok(Some(_)));
+        assert_matches!(d.get(&key), Some(_));
 
         assert!(map.insert(name2.clone(), dict2).is_ok());
         let d = map.remove(&name2).unwrap();
         assert_matches!(map.remove(&name2), None);
         let key = DictKey::new("b").unwrap();
-        assert_matches!(d.get(&key), Ok(Some(_)));
+        assert_matches!(d.get(&key), Some(_));
 
         assert!(map.insert(name2.clone(), dict2_alt).is_ok());
         let d = map.get(&name2).unwrap();
         let key = DictKey::new("c").unwrap();
-        assert_matches!(d.get(&key), Ok(Some(_)));
+        assert_matches!(d.get(&key), Some(_));
     }
 }

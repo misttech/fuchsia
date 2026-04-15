@@ -145,7 +145,6 @@ async fn open_protocol(
     let capability = instance_output
         .framework()
         .get(&Name::new(fupdate::ComponentOtaHealthCheckMarker::PROTOCOL_NAME).unwrap())
-        .map_err(|_| RouterError::Internal)?
         .ok_or_else(|| {
             RoutingError::expose_from_self_not_found(
                 &moniker,

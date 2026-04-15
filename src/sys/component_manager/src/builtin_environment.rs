@@ -1277,13 +1277,8 @@ impl BuiltinEnvironment {
             let source_routes = event_types_to_expose
                 .iter()
                 .map(|event_type| {
-                    let capability = self
-                        .root_component_input
-                        .capabilities()
-                        .get(event_type.as_str())
-                        .ok()
-                        .flatten()
-                        .expect(
+                    let capability =
+                        self.root_component_input.capabilities().get(event_type.as_str()).expect(
                             "root component input sandbox should always have all event \
                             stream types",
                         );

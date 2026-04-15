@@ -584,8 +584,7 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             .get(capability_name)
             .expect(
                 "component is missing capability in sandbox, does the expose to framework exist?",
-            )
-            .unwrap();
+            );
         let router = match router_capability {
             Capability::ConnectorRouter(r) => r,
             _ => panic!("unexpected capability type"),

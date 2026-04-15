@@ -18,6 +18,8 @@ use cm_config::RuntimeConfig;
 use cm_rust::{CapabilityDecl, ComponentDecl, ConfigValuesData, EventStreamDecl, RunnerDecl};
 use cm_types::{Name, Url};
 use fidl::endpoints;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_io as fio;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use hooks::{EventType, HooksRegistration};
@@ -26,7 +28,6 @@ use sandbox::{Capability, Message, Request, RouterResponse};
 use std::collections::HashSet;
 use std::sync::Arc;
 use zx::{self as zx, Koid};
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio};
 
 #[cfg(feature = "src_model_tests")]
 use {
@@ -552,13 +553,7 @@ pub async fn new_event_stream(
     };
     let source_routers = events
         .into_iter()
-        .map(|e| {
-            root_component_input
-                .capabilities()
-                .get(&Name::new(e.as_str()).unwrap())
-                .unwrap()
-                .unwrap()
-        })
+        .map(|e| root_component_input.capabilities().get(&Name::new(e.as_str()).unwrap()).unwrap())
         .map(|cap| match cap {
             Capability::DictionaryRouter(router) => router,
             other_capability => panic!("unexpected capability: {:?}", other_capability),

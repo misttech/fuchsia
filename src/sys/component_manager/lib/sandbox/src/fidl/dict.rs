@@ -130,21 +130,8 @@ impl RemotableCapability for Dict {
             };
             match update {
                 EntryUpdate::Add(key, value) => {
-                    let value = match value.try_clone() {
-                        Ok(value) => value,
-                        Err(_err) => {
-                            if let Some(error_sender) = error_sender.lock().take() {
-                                let _ = error_sender.send(ConversionError::NotSupported);
-                            } else {
-                                warn!(
-                                    "unable to add uncloneable capability type from dictionary to \
-                                    directory"
-                                );
-                            }
-                            return UpdateNotifierRetention::Retain;
-                        }
-                    };
                     let dir_entry = match value
+                        .clone()
                         .try_into_directory_entry(scope.clone(), token.clone())
                     {
                         Ok(dir_entry) => dir_entry,
@@ -603,24 +590,6 @@ mod tests {
             store.dictionary_get(1, "not_found".into(), 3).await.unwrap(),
             Err(fsandbox::CapabilityStoreError::ItemNotFound)
         );
-
-        // Can't duplicate a channel handle.
-        let (ch, _) = fidl::Channel::create();
-        let handle = Handle::new(ch.into_handle());
-        store
-            .import(3, handle.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
-            .await
-            .unwrap()
-            .unwrap();
-        store
-            .dictionary_insert(1, &fsandbox::DictionaryItem { key: "h".into(), value: 3 })
-            .await
-            .unwrap()
-            .unwrap();
-        assert_matches!(
-            store.dictionary_get(1, "h".into(), 3).await.unwrap(),
-            Err(fsandbox::CapabilityStoreError::NotDuplicatable)
-        );
     }
 
     #[test_case(TestType::Small)]
@@ -670,50 +639,6 @@ mod tests {
             let dict = dict.lock();
             assert!(dict.entries.iter().all(|(_, value)| matches!(value, Capability::Data(_))));
         }
-    }
-
-    #[fuchsia::test]
-    async fn copy_error() {
-        let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
-        let _server = fasync::Task::spawn(async move {
-            let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
-        });
-
-        assert_matches!(
-            store.dictionary_copy(1, 2).await.unwrap(),
-            Err(fsandbox::CapabilityStoreError::IdNotFound)
-        );
-
-        store.dictionary_create(1).await.unwrap().unwrap();
-        store.import(2, Data::Int64(1).into()).await.unwrap().unwrap();
-        assert_matches!(
-            store.dictionary_copy(1, 2).await.unwrap(),
-            Err(fsandbox::CapabilityStoreError::IdAlreadyExists)
-        );
-
-        assert_matches!(
-            store.dictionary_copy(2, 3).await.unwrap(),
-            Err(fsandbox::CapabilityStoreError::WrongType)
-        );
-
-        // Can't duplicate a channel handle.
-        let (ch, _) = fidl::Channel::create();
-        let handle = Handle::new(ch.into_handle());
-        store
-            .import(3, handle.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
-            .await
-            .unwrap()
-            .unwrap();
-        store
-            .dictionary_insert(1, &fsandbox::DictionaryItem { key: "h".into(), value: 3 })
-            .await
-            .unwrap()
-            .unwrap();
-        assert_matches!(
-            store.dictionary_copy(1, 3).await.unwrap(),
-            Err(fsandbox::CapabilityStoreError::NotDuplicatable)
-        );
     }
 
     #[test_case(TestType::Small)]
@@ -828,10 +753,10 @@ mod tests {
             };
             let limit = 4 + ofs;
             let (mut items, end_id) = iterator.get_next(start_id, limit).await.unwrap().unwrap();
-            assert_eq!(end_id, 102 + ofs as u64);
+            assert_eq!(end_id, 103 + ofs as u64);
             let (last, end_id) = iterator.get_next(end_id, limit).await.unwrap().unwrap();
             assert!(last.is_empty());
-            assert_eq!(end_id, 102 + ofs as u64);
+            assert_eq!(end_id, 103 + ofs as u64);
 
             assert_matches!(
                 items.remove(0),
@@ -861,9 +786,9 @@ mod tests {
                 items.remove(0),
                 fsandbox::DictionaryOptionalItem {
                     key,
-                    value: None
+                    value: Some(value)
                 }
-                if key == "Cap3"
+                if key == "Cap3" && value.id == 102
             );
             match test_type {
                 TestType::Small => {}

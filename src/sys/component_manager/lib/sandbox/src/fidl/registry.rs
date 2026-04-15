@@ -70,9 +70,7 @@ pub(crate) fn insert_token(capability: Capability) -> EventPair {
 /// Get a capability from the global registry and returns it, if it exists.
 pub(crate) fn get(koid: Koid) -> Option<Capability> {
     let registry = REGISTRY.lock();
-    registry.get(koid).map(|entry| {
-        entry.capability.try_clone().expect("capabilities in the registry must be cloneable")
-    })
+    registry.get(koid).map(|entry| entry.capability.clone())
 }
 
 pub struct Entry {
@@ -132,7 +130,7 @@ mod tests {
 
         // Get a capability with the same koid. It should be a Data.
         let entry = registry.get(koid).unwrap();
-        let got_unit = entry.capability.try_clone().unwrap();
+        let got_unit = entry.capability.clone();
         assert_matches!(got_unit, Capability::Data(_));
 
         // Remove a capability with the same koid. It should be a Data.

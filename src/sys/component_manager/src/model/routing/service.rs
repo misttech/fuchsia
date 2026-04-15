@@ -734,7 +734,7 @@ impl AnonymizedAggregateServiceDir {
                 }
             };
             let to_parent = resolved.sandbox.component_output.capabilities();
-            if let Ok(Some(_)) = to_parent.get(&self.route.service_name) {
+            if let Some(_) = to_parent.get(&self.route.service_name) {
                 // Proceed.
             } else {
                 // This component doesn't expose the capability we're matching on, nothing

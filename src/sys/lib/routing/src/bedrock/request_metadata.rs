@@ -10,12 +10,11 @@ use crate::subdir::SubDir;
 use cm_rust::{Availability, CapabilityTypeName};
 use cm_types::RelativePath;
 use fidl::{persist, unpersist};
+use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use moniker::Moniker;
 use sandbox::{Capability, Data, Dict, DictKey};
-use {
-    fidl_fuchsia_component_internal as finternal, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio,
-};
 
 /// A type which has accessors for route request metadata of type T.
 pub trait Metadata<T> {
@@ -49,7 +48,7 @@ impl Metadata<CapabilityTypeName> for Dict {
     fn get_metadata(&self) -> Option<CapabilityTypeName> {
         let key = DictKey::new(<Self as Metadata<CapabilityTypeName>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         match capability {
             Capability::Data(Data::String(capability_type_name)) => {
                 CapabilityTypeName::from_str(&capability_type_name).ok()
@@ -79,7 +78,7 @@ impl Metadata<Availability> for Dict {
     fn get_metadata(&self) -> Option<Availability> {
         let key = DictKey::new(<Self as Metadata<Availability>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         match capability {
             Capability::Data(Data::String(availability)) => match &*availability {
                 "Optional" => Some(Availability::Optional),
@@ -113,7 +112,7 @@ impl Metadata<Rights> for Dict {
     fn get_metadata(&self) -> Option<Rights> {
         let key = DictKey::new(<Self as Metadata<Rights>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         let rights = match capability {
             Capability::Data(Data::Uint64(rights)) => fio::Operations::from_bits(rights)?,
             _ => None?,
@@ -142,7 +141,7 @@ impl Metadata<finternal::EventStreamRouteMetadata> for Dict {
     fn get_metadata(&self) -> Option<finternal::EventStreamRouteMetadata> {
         let key = DictKey::new(<Self as Metadata<Rights>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         match capability {
             Capability::Data(Data::Bytes(bytes)) => Some(unpersist(&bytes).ok()?),
             _ => None,
@@ -174,7 +173,7 @@ impl Metadata<IntermediateRights> for Dict {
     fn get_metadata(&self) -> Option<IntermediateRights> {
         let key = DictKey::new(<Self as Metadata<IntermediateRights>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         let rights = match capability {
             Capability::Data(Data::Uint64(rights)) => fio::Operations::from_bits(rights)?,
             _ => None?,
@@ -208,7 +207,7 @@ impl Metadata<InheritRights> for Dict {
     fn get_metadata(&self) -> Option<InheritRights> {
         let key = DictKey::new(<Self as Metadata<InheritRights>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         let inherit = match capability {
             Capability::Data(Data::Uint64(inherit)) => inherit != 0,
             _ => None?,
@@ -237,7 +236,7 @@ impl Metadata<SubDir> for Dict {
     fn get_metadata(&self) -> Option<SubDir> {
         let key = DictKey::new(<Self as Metadata<SubDir>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         match capability {
             Capability::Data(Data::String(subdir)) => SubDir::new(subdir).ok(),
             _ => None,
@@ -272,7 +271,7 @@ impl Metadata<IsolatedStoragePath> for Dict {
     fn get_metadata(&self) -> Option<IsolatedStoragePath> {
         let key = DictKey::new(<Self as Metadata<IsolatedStoragePath>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         match capability {
             Capability::Data(Data::String(isolated_storage_path)) => {
                 Some(IsolatedStoragePath(PathBuf::from(isolated_storage_path.to_string())))
@@ -312,7 +311,7 @@ impl Metadata<StorageSubdir> for Dict {
     fn get_metadata(&self) -> Option<StorageSubdir> {
         let key = DictKey::new(<Self as Metadata<StorageSubdir>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         match capability {
             Capability::Data(Data::String(subdir)) => {
                 Some(StorageSubdir(RelativePath::new(subdir).unwrap()))
@@ -345,7 +344,7 @@ impl Metadata<StorageSourceMoniker> for Dict {
     fn get_metadata(&self) -> Option<StorageSourceMoniker> {
         let key = DictKey::new(<Self as Metadata<StorageSourceMoniker>>::KEY)
             .expect("dict key creation failed unexpectedly");
-        let capability = self.get(&key).ok()??;
+        let capability = self.get(&key)?;
         match capability {
             Capability::Data(Data::String(moniker)) => {
                 Some(StorageSourceMoniker(Moniker::parse_str(&moniker).unwrap()))

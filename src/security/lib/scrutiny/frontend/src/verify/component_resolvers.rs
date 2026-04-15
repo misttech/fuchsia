@@ -68,7 +68,7 @@ impl ComponentResolversVisitor {
 
     fn check_instance(&mut self, instance: &Arc<ComponentInstanceForAnalyzer>) -> Result<()> {
         let scheme_name = cm_types::Name::new(&self.request.scheme).expect("invalid scheme");
-        if let Ok(Some(Capability::ConnectorRouter(resolver_router))) = instance
+        if let Some(Capability::ConnectorRouter(resolver_router)) = instance
             .component_sandbox()
             .now_or_never()
             .expect("now or never did not return a result")

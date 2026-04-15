@@ -135,10 +135,10 @@ impl RemotedRuntimeCapabilities {
         let capability = guard
             .get(&koid)
             .ok_or(fruntime::CapabilitiesError::HandleDoesNotReferenceCapability)?;
-        let capability = capability
-            .try_clone()
-            .expect("all of the supported capability types never fail to clone");
-        capability.try_into().map_err(|_| fruntime::CapabilitiesError::InvalidCapabilityType)
+        capability
+            .clone()
+            .try_into()
+            .map_err(|_| fruntime::CapabilitiesError::InvalidCapabilityType)
     }
 }
 
@@ -313,8 +313,6 @@ impl Capabilities {
                             Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
                         let cap = dictionary
                             .get(&key)
-                            .ok()
-                            .flatten()
                             .ok_or(fruntime::CapabilitiesError::NoSuchCapability)?;
                         let type_ = capability_as_type(&cap)
                             .map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;

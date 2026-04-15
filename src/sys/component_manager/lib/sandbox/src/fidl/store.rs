@@ -42,10 +42,8 @@ pub async fn serve_capability_store(
         match request {
             fsandbox::CapabilityStoreRequest::Duplicate { id, dest_id, responder } => {
                 let result = (|| {
-                    let cap = store.get(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
-                    let cap = cap
-                        .try_clone()
-                        .map_err(|_| fsandbox::CapabilityStoreError::NotDuplicatable)?;
+                    let cap =
+                        store.get(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?.clone();
                     insert_capability(&mut store, dest_id, cap)
                 })();
                 responder.send(result)?;
@@ -171,12 +169,11 @@ pub async fn serve_capability_store(
                     let key =
                         Key::new(key).map_err(|_| fsandbox::CapabilityStoreError::InvalidKey)?;
                     let cap = match this.get(&key) {
-                        Ok(Some(cap)) => Ok(cap),
-                        Ok(None) => {
+                        Some(cap) => Ok(cap),
+                        None => {
                             this.not_found(key.as_str());
                             Err(fsandbox::CapabilityStoreError::ItemNotFound)
                         }
-                        Err(()) => Err(fsandbox::CapabilityStoreError::NotDuplicatable),
                     }?;
                     insert_capability(&mut store, dest_id, cap)
                 })();
@@ -239,7 +236,7 @@ pub async fn serve_capability_store(
             } => {
                 let result = (|| {
                     let this = get_dictionary(&store, id)?;
-                    let items = this.enumerate();
+                    let items = this.enumerate().map(|(k, v)| (k, Ok(v)));
                     let stream = server_end.into_stream();
                     let mut this = this.lock();
                     this.tasks().spawn(serve_dictionary_enumerate_iterator(
@@ -622,12 +619,7 @@ mod tests {
 
         let cap1 = Capability::Data(Data::Int64(42));
         store
-            .import(
-                1,
-                cap1.try_clone()
-                    .unwrap()
-                    .into_fsandbox_capability(WeakInstanceToken::new_invalid()),
-            )
+            .import(1, cap1.clone().into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
             .unwrap()
             .unwrap();
@@ -658,12 +650,7 @@ mod tests {
 
         let cap1 = Capability::Data(Data::Int64(42));
         store
-            .import(
-                1,
-                cap1.try_clone()
-                    .unwrap()
-                    .into_fsandbox_capability(WeakInstanceToken::new_invalid()),
-            )
+            .import(1, cap1.clone().into_fsandbox_capability(WeakInstanceToken::new_invalid()))
             .await
             .unwrap()
             .unwrap();
@@ -770,52 +757,6 @@ mod tests {
         assert_matches!(
             cap1,
             fsandbox::Capability::Handle(h) if h.as_handle_ref().koid().unwrap() == handle_koid
-        );
-    }
-
-    #[fuchsia::test]
-    async fn duplicate_error() {
-        let (store, stream) =
-            endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
-        let _server = fasync::Task::spawn(async move {
-            let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
-        });
-
-        assert_matches!(
-            store.duplicate(1, 2).await.unwrap(),
-            Err(fsandbox::CapabilityStoreError::IdNotFound)
-        );
-
-        let cap1 = Capability::Data(Data::Int64(42));
-        let cap2 = Capability::Data(Data::Int64(84));
-        store
-            .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
-            .await
-            .unwrap()
-            .unwrap();
-        store
-            .import(2, cap2.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_matches!(
-            store.duplicate(1, 2).await.unwrap(),
-            Err(fsandbox::CapabilityStoreError::IdAlreadyExists)
-        );
-
-        // Channels do not support duplication.
-        let (ch, _) = fidl::Channel::create();
-        let handle = ch.into_handle();
-        let cap1 = Capability::Handle(Handle::new(handle));
-        store
-            .import(3, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_matches!(
-            store.duplicate(3, 4).await.unwrap(),
-            Err(fsandbox::CapabilityStoreError::NotDuplicatable)
         );
     }
 

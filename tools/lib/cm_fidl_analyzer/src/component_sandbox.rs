@@ -161,7 +161,7 @@ pub fn build_root_component_input(
         };
         root_component_input
             .capabilities()
-            .insert_capability(&name, router_capability.try_clone().unwrap())
+            .insert_capability(&name, router_capability.clone())
             .expect("failed to insert builtin capability into dictionary");
         if capability_type == CapabilityTypeName::Runner {
             root_component_input

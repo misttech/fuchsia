@@ -302,8 +302,6 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                                 .component_output
                                 .capabilities()
                                 .get(&self.service_name)
-                                .ok()
-                                .flatten()
                                 .is_some()
                             {
                                 instances.push(AggregateInstance::Child(child_name));
@@ -386,8 +384,6 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                     .component_output
                     .capabilities()
                     .get(&self.service_name)
-                    .ok()
-                    .flatten()
                     .ok_or_else(|| {
                         RoutingError::expose_from_child_expose_not_found(
                             child_name,

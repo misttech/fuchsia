@@ -80,7 +80,7 @@ impl Explain for RemoteError {
     }
 }
 
-#[derive(FromEnum, Debug)]
+#[derive(FromEnum, Debug, Clone)]
 pub enum Capability {
     Connector(crate::Connector),
     DirConnector(crate::DirConnector),
@@ -99,21 +99,6 @@ impl Capability {
         match self {
             Self::Dictionary(d) => Some(d),
             _ => None,
-        }
-    }
-
-    pub fn try_clone(&self) -> Result<Self, ()> {
-        match self {
-            Self::Connector(s) => Ok(Self::Connector(s.clone())),
-            Self::DirConnector(s) => Ok(Self::DirConnector(s.clone())),
-            Self::ConnectorRouter(s) => Ok(Self::ConnectorRouter(s.clone())),
-            Self::DictionaryRouter(s) => Ok(Self::DictionaryRouter(s.clone())),
-            Self::DirConnectorRouter(s) => Ok(Self::DirConnectorRouter(s.clone())),
-            Self::DataRouter(s) => Ok(Self::DataRouter(s.clone())),
-            Self::Dictionary(s) => Ok(Self::Dictionary(s.clone())),
-            Self::Data(s) => Ok(Self::Data(s.clone())),
-            Self::Handle(s) => Ok(Self::Handle(s.try_clone()?)),
-            Self::Instance(s) => Ok(Self::Instance(s.clone())),
         }
     }
 

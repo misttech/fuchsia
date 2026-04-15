@@ -28,7 +28,7 @@ impl Request {
                 match v {
                     // Since Dictionaries are shallow copied, throw an error if
                     // there is a nested Dictionary.
-                    Ok(Capability::Dictionary(_)) => Some(Err::<Self, _>(RouterError::InvalidArgs)),
+                    Capability::Dictionary(_) => Some(Err::<Self, _>(RouterError::InvalidArgs)),
                     _ => None,
                 }
             })

@@ -10,6 +10,9 @@ use async_trait::async_trait;
 use clonable_error::ClonableError;
 use errors::RebootError;
 use fidl::endpoints::{self};
+use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_sync::Mutex;
 use log::warn;
@@ -20,10 +23,6 @@ use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
 use vfs::{ExecutionScope, ToObjectRequest};
-use {
-    fidl_fuchsia_hardware_power_statecontrol as fstatecontrol, fidl_fuchsia_io as fio,
-    fuchsia_async as fasync,
-};
 
 /// A special instance identified with component manager, at the top of the tree.
 #[derive(Debug)]
@@ -115,7 +114,7 @@ impl ComponentManagerInstance {
                     .component_output
                     .clone();
                 match component_output.capabilities().get(&self.source_name) {
-                    Ok(Some(sandbox::Capability::ConnectorRouter(router))) => {
+                    Some(sandbox::Capability::ConnectorRouter(router)) => {
                         Ok(router.route(request, debug, target).await?)
                     }
                     _ => Err(RouterError::NotFound(Arc::new(

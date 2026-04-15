@@ -1456,7 +1456,7 @@ mod tests {
             .component_input
             .environment();
         let runner_router_capability =
-            environment.runners().get(&child_runner_registration.target_name).unwrap().unwrap();
+            environment.runners().get(&child_runner_registration.target_name).unwrap();
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
@@ -1471,7 +1471,6 @@ mod tests {
         let resolver_router_capability = environment
             .resolvers()
             .get(&Name::new(&child_resolver_registration.scheme).unwrap())
-            .unwrap()
             .unwrap();
         let Capability::ConnectorRouter(resolver_router) = resolver_router_capability else {
             panic!("unexpected capability for resolver");
@@ -1485,7 +1484,7 @@ mod tests {
         assert_eq!(source.source_moniker(), Moniker::root().into());
 
         let runner_router_capability =
-            environment.runners().get(&child_runner_registration.target_name).unwrap().unwrap();
+            environment.runners().get(&child_runner_registration.target_name).unwrap();
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
@@ -1497,8 +1496,7 @@ mod tests {
         };
         assert_eq!(source.source_moniker(), Moniker::root().into());
 
-        let runner_router_capability =
-            environment.runners().get(&builtin_runner_name).unwrap().unwrap();
+        let runner_router_capability = environment.runners().get(&builtin_runner_name).unwrap();
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
@@ -1511,8 +1509,7 @@ mod tests {
         assert_eq!(source.source_moniker(), ExtendedMoniker::ComponentManager);
 
         let scheme_name = Name::new(&*BOOT_SCHEME).unwrap();
-        let resolver_router_capability =
-            environment.resolvers().get(&scheme_name).unwrap().unwrap();
+        let resolver_router_capability = environment.resolvers().get(&scheme_name).unwrap();
         let Capability::ConnectorRouter(resolver_router) = resolver_router_capability else {
             panic!("unexpected capability for resolver");
         };

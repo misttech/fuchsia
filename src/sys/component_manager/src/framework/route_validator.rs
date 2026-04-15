@@ -265,10 +265,7 @@ fn validate_dictionary(
 ) -> BoxFuture<'static, Vec<fsys::RouteReport>> {
     async move {
         let mut reports = vec![];
-        for (name, maybe_capability) in dictionary.enumerate() {
-            let Ok(capability) = maybe_capability else {
-                continue;
-            };
+        for (name, capability) in dictionary.enumerate() {
             let mut capability_path = path.clone();
             assert!(capability_path.push(name));
             let mut report = fsys::RouteReport {
