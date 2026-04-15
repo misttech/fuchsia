@@ -66,6 +66,7 @@ pub enum TelemetryEvent {
     },
     SmeTimeout,
     ChipPowerUpFailure,
+    ChipPowerDownFailure,
     ResetTxPowerScenario,
     SetTxPowerScenario {
         scenario: fidl_internal::TxPowerScenario,
@@ -226,6 +227,11 @@ pub fn serve_telemetry(
                         }
                         ChipPowerUpFailure => {
                             power_logger.handle_chip_power_up_failure().await;
+                            connect_disconnect.handle_client_connections_failed_to_start().await;
+                        }
+                        ChipPowerDownFailure => {
+                            power_logger.chip_power_down_failure().await;
+                            connect_disconnect.handle_client_connections_failed_to_stop().await;
                         }
                         BatteryChargeStatus(charge_status) => {
                             scan_logger.handle_battery_charge_status(charge_status).await;

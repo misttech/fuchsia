@@ -43,6 +43,8 @@ enum ConnectionState {
     Connected(ConnectedState),
     Disconnected(DisconnectedState),
     ConnectFailed(ConnectFailedState),
+    FailedToStart(FailedToStartState),
+    FailedToStop(FailedToStopState),
 }
 
 // Update the ConnectDisconnectTimeSeries BitSetMap when making changes to this enum.
@@ -54,6 +56,8 @@ impl IdEnum for ConnectionState {
             Self::Disconnected(_) => 1,
             Self::ConnectFailed(_) => 2,
             Self::Connected(_) => 3,
+            Self::FailedToStart(_) => 4,
+            Self::FailedToStop(_) => 5,
         }
     }
 }
@@ -69,6 +73,12 @@ struct DisconnectedState {}
 
 #[derive(Debug, Default)]
 struct ConnectFailedState {}
+
+#[derive(Debug, Default)]
+struct FailedToStartState {}
+
+#[derive(Debug, Default)]
+struct FailedToStopState {}
 
 #[derive(Derivative, Unit)]
 #[derivative(PartialEq, Eq, Hash)]
@@ -438,6 +448,14 @@ impl ConnectDisconnectLogger {
             self.update_connection_state(ConnectionState::Idle(IdleState {}));
         }
     }
+
+    pub async fn handle_client_connections_failed_to_start(&self) {
+        self.update_connection_state(ConnectionState::FailedToStart(FailedToStartState {}));
+    }
+
+    pub async fn handle_client_connections_failed_to_stop(&self) {
+        self.update_connection_state(ConnectionState::FailedToStop(FailedToStopState {}));
+    }
 }
 
 struct InspectMetadataNode {
@@ -490,7 +508,14 @@ impl ConnectDisconnectTimeSeries {
                 LastSample::or(0),
             ),
             // Update the ConnectionState IdEnum trait when making changes to this list.
-            BitSetMap::from_ordered(["idle", "disconnected", "connect_failed", "connected"]),
+            BitSetMap::from_ordered([
+                "idle",
+                "disconnected",
+                "connect_failed",
+                "connected",
+                "start_failure",
+                "stop_failure",
+            ]),
         );
         let connected_networks = client.inspect_time_matrix_with_metadata(
             "connected_networks",
@@ -670,6 +695,8 @@ mod tests {
                                     "1": "disconnected",
                                     "2": "connect_failed",
                                     "3": "connected",
+                                    "4": "start_failure",
+                                    "5": "stop_failure",
                                 },
                             },
                         },
@@ -1453,6 +1480,63 @@ mod tests {
         );
 
         assert_matches!(*logger.connection_state.lock(), ConnectionState::Idle(_));
+    }
+
+    #[fuchsia::test]
+    fn test_wlan_connectivity_states_failed_to_start() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        let mut test_fut = pin!(logger.handle_client_connections_failed_to_start());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let mut time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
+        assert_eq!(
+            &time_matrix_calls.drain::<u64>("wlan_connectivity_states")[..],
+            &[
+                TimeMatrixCall::Fold(Timed::now(1 << 0)), // Initialization
+                TimeMatrixCall::Fold(Timed::now(1 << 4)), // FailedToStart ID is 4 -> bit 1 << 4
+            ]
+        );
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::FailedToStart(_));
+    }
+
+    #[fuchsia::test]
+    fn test_wlan_connectivity_states_failed_to_stop() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        let mut test_fut = pin!(logger.handle_client_connections_failed_to_stop());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let mut time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
+        assert_eq!(
+            &time_matrix_calls.drain::<u64>("wlan_connectivity_states")[..],
+            &[
+                TimeMatrixCall::Fold(Timed::now(1 << 0)), // Initialization
+                TimeMatrixCall::Fold(Timed::now(1 << 5)), // FailedToStop ID is 5 -> bit 1 << 5
+            ]
+        );
+
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::FailedToStop(_));
     }
 
     fn fake_disconnect_info() -> DisconnectInfo {
