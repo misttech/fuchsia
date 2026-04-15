@@ -10,9 +10,8 @@ use fidl_fuchsia_ui_input3::{
     KeyboardSynchronousProxy,
 };
 use fidl_fuchsia_ui_pointer::{
-    MouseEvent as FidlMouseEvent, MousePointerSample, TouchEvent as FidlTouchEvent,
-    TouchPointerSample, TouchResponse as FidlTouchResponse, TouchResponseType,
-    {self as fuipointer},
+    MouseEvent as FidlMouseEvent, TouchEvent as FidlTouchEvent, TouchPointerSample,
+    TouchResponse as FidlTouchResponse, TouchResponseType, {self as fuipointer},
 };
 use fidl_fuchsia_ui_policy as fuipolicy;
 use fidl_fuchsia_ui_views as fuiviews;
@@ -32,9 +31,9 @@ use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
     new_touch_buttons_bitvec, parse_fidl_media_button_event, parse_fidl_touch_button_event,
 };
 use starnix_modules_input_event_conversion::key_fuchsia_to_linux::parse_fidl_keyboard_event_to_linux_input_event;
+use starnix_modules_input_event_conversion::mouse_fuchsia_to_linux::parse_fidl_mouse_events;
 use starnix_modules_input_event_conversion::touch_fuchsia_to_linux::FuchsiaTouchEventToLinuxTouchEventConverter;
 use starnix_sync::Mutex;
-use starnix_types::time::timeval_from_time;
 use starnix_uapi::uapi;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
@@ -711,66 +710,30 @@ impl InputEventsRelay {
     fn process_mouse_event(
         self: &Self,
         default_mouse_device: &mut DeviceState,
-        mouse_events: Vec<FidlMouseEvent>,
+        mut mouse_events: Vec<FidlMouseEvent>,
     ) {
         let num_received_events: u64 = mouse_events.len().try_into().unwrap();
-        let mut num_ignored_events: u64 = 0;
-        let mut num_converted_events: u64 = 0;
-        let mut num_unexpected_events: u64 = 0;
-        let mut new_events: VecDeque<uapi::input_event> = VecDeque::new();
-        let mut last_event_time_ns = zx::MonotonicInstant::get();
         #[allow(clippy::collection_is_never_read)]
         let mut tracked_leases = vec![];
-        for mut event in mouse_events {
+        for event in &mut mouse_events {
             if let Some(lease) = event.wake_lease.take() {
                 if let Some(status) = &default_mouse_device.inspect_status {
                     tracked_leases.push(TrackedWakeLease::new(lease, status.clone()));
                 }
             }
-            match event {
-                FidlMouseEvent {
-                    timestamp: Some(time),
-                    pointer_sample: Some(MousePointerSample { scroll_v: Some(ticks), .. }),
-                    ..
-                } => {
-                    last_event_time_ns = zx::MonotonicInstant::from_nanos(time);
-                    // Ensure this is a mouse wheel event with delta, otherwise ignore.
-                    if ticks != 0 {
-                        new_events.push_back(uapi::input_event {
-                            time: timeval_from_time(last_event_time_ns),
-                            type_: uapi::EV_REL as u16,
-                            code: uapi::REL_WHEEL as u16,
-                            value: ticks as i32,
-                        });
-                        num_converted_events += 1;
-                    } else {
-                        num_ignored_events += 1;
-                    }
-                }
-                _ => {
-                    num_unexpected_events += 1;
-                }
-            }
         }
-        if new_events.len() > 0 {
-            new_events.push_back(uapi::input_event {
-                // See https://www.kernel.org/doc/Documentation/input/event-codes.rst.
-                time: timeval_from_time(last_event_time_ns),
-                type_: uapi::EV_SYN as u16,
-                code: uapi::SYN_REPORT as u16,
-                value: 0,
-            });
-        }
+
+        let batch = parse_fidl_mouse_events(mouse_events);
 
         if let Some(dev_inspect_status) = &default_mouse_device.inspect_status {
             dev_inspect_status.count_total_received_events(num_received_events);
-            dev_inspect_status.count_total_ignored_events(num_ignored_events);
-            dev_inspect_status.count_total_unexpected_events(num_unexpected_events);
-            dev_inspect_status.count_total_converted_events(num_converted_events);
-            if !new_events.is_empty() {
+            dev_inspect_status.count_total_ignored_events(batch.count_ignored_events);
+            dev_inspect_status.count_total_unexpected_events(batch.count_unexpected_events);
+            dev_inspect_status.count_total_converted_events(batch.count_converted_events);
+            if !batch.events.is_empty() {
                 dev_inspect_status.count_total_generated_events(
-                    new_events.len().try_into().unwrap(),
-                    last_event_time_ns.into_nanos().try_into().unwrap(),
+                    batch.events.len().try_into().unwrap(),
+                    batch.last_event_time_ns.try_into().unwrap(),
                 );
             }
         } else {
@@ -785,22 +748,22 @@ impl InputEventsRelay {
             match &file.inspect_status {
                 Some(file_inspect_status) => {
                     file_inspect_status.count_received_events(num_received_events);
-                    file_inspect_status.count_ignored_events(num_ignored_events);
-                    file_inspect_status.count_unexpected_events(num_unexpected_events);
-                    file_inspect_status.count_converted_events(num_converted_events);
+                    file_inspect_status.count_ignored_events(batch.count_ignored_events);
+                    file_inspect_status.count_unexpected_events(batch.count_unexpected_events);
+                    file_inspect_status.count_converted_events(batch.count_converted_events);
                 }
                 None => {
                     log_warn!("unable to record inspect within the input file")
                 }
             }
-            if !new_events.is_empty() {
+            if !batch.events.is_empty() {
                 if let Some(file_inspect_status) = &file.inspect_status {
                     file_inspect_status.count_generated_events(
-                        new_events.len().try_into().unwrap(),
-                        last_event_time_ns.into_nanos().try_into().unwrap(),
+                        batch.events.len().try_into().unwrap(),
+                        batch.last_event_time_ns.try_into().unwrap(),
                     );
                 }
-                file.add_events(new_events.clone().into_iter().collect());
+                file.add_events(batch.events.clone().into_iter().collect());
             }
             true
         });
@@ -1158,8 +1121,8 @@ mod test {
     };
     use fidl_fuchsia_ui_input3 as fuiinput;
     use fuipointer::{
-        EventPhase, MouseEvent, TouchEvent, TouchInteractionId, TouchPointerSample, TouchResponse,
-        TouchSourceRequest, TouchSourceRequestStream,
+        EventPhase, MouseEvent, MousePointerSample, TouchEvent, TouchInteractionId,
+        TouchPointerSample, TouchResponse, TouchSourceRequest, TouchSourceRequestStream,
     };
     use starnix_core::task::CurrentTask;
     #[allow(deprecated, reason = "pre-existing usage")]

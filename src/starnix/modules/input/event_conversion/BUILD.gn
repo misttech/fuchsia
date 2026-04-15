@@ -18,6 +18,7 @@ rustc_library("event_conversion") {
     "key_linux_to_fuchsia.rs",
     "keymap.rs",
     "lib.rs",
+    "mouse_fuchsia_to_linux.rs",
     "touch_fuchsia_to_linux.rs",
     "touch_linux_to_fuchsia.rs",
   ]
