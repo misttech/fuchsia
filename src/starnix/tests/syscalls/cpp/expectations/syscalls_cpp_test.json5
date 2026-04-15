@@ -168,14 +168,6 @@
                 // TODO(https://fxbug.dev/322875215): Requires correct superblock MS_RDONLY support.
                 "MountTest.RemountReadOnlyToReadWriteIgnored",
                 "MountTest/ProcMountinfoSuperblockFlagsTest.FlagReporting/MS_RDONLY",
-
-                // TODO(https://fxbug.dev/502513010): Correctly report mount & superblock flags in
-                // proc-mountinfo.
-                "MountTest/ProcMountinfoPerMountFlagsTest.FlagReporting/MS_NODIRATIME",
-                "MountTest/ProcMountinfoPerMountFlagsTest.FlagReporting/MS_NODEV",
-                "MountTest/ProcMountinfoPerMountFlagsTest.FlagReporting/MS_NOSUID",
-                "MountTest/ProcMountinfoPerMountFlagsTest.FlagReporting/MS_NOEXEC",
-                "MountTest/ProcMountinfoPerMountFlagsTest.FlagReporting/MS_RDONLY",
             ],
         },
     ],

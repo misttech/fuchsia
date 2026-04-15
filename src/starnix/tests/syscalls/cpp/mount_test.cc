@@ -682,7 +682,7 @@ TEST_F(ProcMountsTest, Basic) {
   EXPECT_THAT(read_mounts(), IsSupersetOf({
                                  "data/system / remote_bundle ro,nosuid,nodev,relatime 0 0",
                                  "none /dev devtmpfs rw,nosuid,relatime 0 0",
-                                 ". /tmp tmpfs rw 0 0",
+                                 ". /tmp tmpfs rw,relatime 0 0",
                              }));
 }
 
@@ -701,7 +701,7 @@ TEST_F(ProcMountsTest, MountAdded) {
   ASSERT_THAT(mount("testtmp", temp_dir->path().c_str(), "tmpfs", 0, nullptr), SyscallSucceeds());
 
   auto expected_mounts = before_mounts;
-  std::string mount = "testtmp " + temp_dir->path() + " tmpfs rw 0 0";
+  std::string mount = "testtmp " + temp_dir->path() + " tmpfs rw,relatime 0 0";
   expected_mounts.push_back(mount);
   EXPECT_THAT(read_mounts(), UnorderedElementsAreArray(expected_mounts));
 
@@ -940,5 +940,74 @@ INSTANTIATE_TEST_SUITE_P(MountTest, ProcMountinfoSuperblockFlagsTest,
                          [](const ::testing::TestParamInfo<ProcMountinfoTestParams> &info) {
                            return MountFlagName(info.param.flag);
                          });
+
+TEST_F(MountTest, RelatimeIsDefault) {
+  test_helper::ScopedTempDir atime_default;
+  auto dir = atime_default.path();
+
+  // Mount with no explicit access-time flags (flags = 0).
+  auto mount = ASSERT_RESULT_SUCCESS_AND_RETURN(
+      test_helper::ScopedMount::Mount("none", dir, "tmpfs", 0, nullptr));
+
+  // Use the helper to read mount info for this path.
+  auto info = test_helper::ReadMountInfoLine(dir);
+  ASSERT_TRUE(info.has_value());
+
+  // Check that "relatime" is in the mount options.
+  EXPECT_TRUE(cpp23::contains(info->mount_options, "relatime")) << info->mount_options;
+
+  // Also verify that conflicting flags like "noatime" or "strictatime" are NOT present.
+  EXPECT_FALSE(cpp23::contains(info->mount_options, "noatime"));
+  EXPECT_FALSE(cpp23::contains(info->mount_options, "strictatime"));
+}
+
+TEST_F(MountTest, BindMountInheritsAtimeFlags) {
+  // Create a base mount with an explicit non-default exclusive flag MS_STRICTATIME, plus the
+  // MS_NODIRATIME modifier flag.
+  test_helper::ScopedTempDir base;
+  auto base_dir = base.path();
+  ASSERT_THAT(mount("tmpfs", base_dir.c_str(), "tmpfs", MS_STRICTATIME | MS_NODIRATIME, nullptr),
+              SyscallSucceeds());
+
+  // Create a bind mount from that base.
+  test_helper::ScopedTempDir bind;
+  auto bind_dir = bind.path();
+  ASSERT_THAT(mount(base_dir.c_str(), bind_dir.c_str(), nullptr, MS_BIND, nullptr),
+              SyscallSucceeds());
+
+  // Verify that both the base and the bind mount report "nodiratime", and neither "relatime" nor
+  // "noatime" (which implies strict atime).
+  auto base_info = test_helper::ReadMountInfoLine(base_dir);
+  ASSERT_TRUE(base_info.has_value());
+  EXPECT_TRUE(cpp23::contains(base_info->mount_options, "nodiratime"));
+  EXPECT_FALSE(cpp23::contains(base_info->mount_options, "noatime"));
+  EXPECT_FALSE(cpp23::contains(base_info->mount_options, "relatime"));
+
+  auto bind_info = test_helper::ReadMountInfoLine(bind_dir);
+  ASSERT_TRUE(bind_info.has_value());
+  EXPECT_TRUE(cpp23::contains(bind_info->mount_options, "nodiratime"));
+  EXPECT_FALSE(cpp23::contains(bind_info->mount_options, "noatime"));
+  EXPECT_FALSE(cpp23::contains(bind_info->mount_options, "relatime"));
+
+  // Bind remounting with only MS_NODIRATIME should also implicitly switch to MS_RELATIME.
+  ASSERT_THAT(
+      mount(nullptr, bind_dir.c_str(), nullptr, MS_BIND | MS_REMOUNT | MS_NODIRATIME, nullptr),
+      SyscallSucceeds());
+  bind_info = test_helper::ReadMountInfoLine(bind_dir);
+  ASSERT_TRUE(bind_info.has_value());
+  EXPECT_TRUE(cpp23::contains(bind_info->mount_options, "nodiratime"));
+  EXPECT_TRUE(cpp23::contains(bind_info->mount_options, "relatime"));
+  EXPECT_FALSE(cpp23::contains(bind_info->mount_options, "noatime"));
+
+  // Bind remounting with only MS_STRICTATIME should now clear both MS_RELATIME and MS_NODIRATIME.
+  ASSERT_THAT(
+      mount(nullptr, bind_dir.c_str(), nullptr, MS_BIND | MS_REMOUNT | MS_STRICTATIME, nullptr),
+      SyscallSucceeds());
+  bind_info = test_helper::ReadMountInfoLine(bind_dir);
+  ASSERT_TRUE(bind_info.has_value());
+  EXPECT_FALSE(cpp23::contains(bind_info->mount_options, "nodiratime"));
+  EXPECT_FALSE(cpp23::contains(bind_info->mount_options, "relatime"));
+  EXPECT_FALSE(cpp23::contains(bind_info->mount_options, "noatime"));
+}
 
 }  // namespace

@@ -4080,6 +4080,7 @@ mod tests {
                 f_blocks: 0x100000000,
                 f_bavail: 0x100000000,
                 f_bfree: 0x100000000,
+                f_flags: starnix_uapi::MS_RELATIME as i64,
                 ..default_statfs(starnix_uapi::TMPFS_MAGIC)
             };
             assert!(

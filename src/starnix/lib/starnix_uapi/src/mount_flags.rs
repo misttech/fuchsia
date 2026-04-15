@@ -62,6 +62,28 @@ atomic_bitflags! {
         // Flags affecting the behaviour of a single operation on a mountpoint.
         const STRICTATIME = MountFlags::STRICTATIME.bits();
         const REC = MountFlags::REC.bits();
+
+        /// Flags used to control how file access times are managed. Note that STRICTATIME is only
+        /// used by callers to specify that all other bits should be cleared; it is never stored.
+        const ATIME_MODE_FLAGS = Self::NOATIME.bits() | Self::RELATIME.bits() |Self::STRICTATIME.bits();
+        const ATIME_FLAGS = Self::ATIME_MODE_FLAGS.bits() | Self::NODIRATIME.bits();
+    }
+}
+
+impl MountpointFlags {
+    /// Ensures that `self` has an access-time flag set, copying the flag value from `existing` if
+    /// no flag is currently set.
+    /// This is used both to apply the kernel default `MS_RELATIME` if no other access-time flag is
+    /// passed to `mount()`, and to preserve existing access-time flags when re-mounting, unless the
+    /// `MS_STRICTATIME` flag is explicitly passed.
+    pub fn default_atime_from(&mut self, existing: MountpointFlags) {
+        if !self.intersects(Self::ATIME_FLAGS) {
+            // If no `ATIME_FLAGS` are set at all, preserve the `existing` flags.
+            *self |= existing & Self::ATIME_FLAGS;
+        } else if !self.intersects(Self::ATIME_MODE_FLAGS) {
+            // If the caller did not set any `ATIME_MODE_FLAGS` then default to the `RELATIME` mode.
+            *self |= Self::RELATIME;
+        }
     }
 }
 

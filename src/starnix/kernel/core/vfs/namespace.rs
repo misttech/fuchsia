@@ -284,9 +284,13 @@ pub enum WhatToMount {
 }
 
 impl Mount {
-    pub fn new(what: WhatToMount, flags: MountpointFlags) -> MountHandle {
+    pub fn new(what: WhatToMount, mut flags: MountpointFlags) -> MountHandle {
         match what {
-            WhatToMount::Fs(fs) => Self::new_with_root(fs.root().clone(), flags),
+            WhatToMount::Fs(fs) => {
+                // If `flags` does not explicitly specify an access-time flag then default to `RELATIME`.
+                flags.default_atime_from(MountpointFlags::RELATIME);
+                Self::new_with_root(fs.root().clone(), flags)
+            }
             WhatToMount::Bind(node) => {
                 let mount = node.mount.as_ref().expect("can't bind mount from an anonymous node");
                 mount.clone_mount(&node.entry, flags.into())
@@ -465,19 +469,14 @@ impl Mount {
     /// Updates the `Mount` with the per-mount flags specified in `flags`, while preserving the
     /// existing access-time flag if no access-time flag is set in `flags`.
     pub fn update_flags(self: &MountHandle, mut flags: MountpointFlags) {
-        let atime_flags = MountpointFlags::NOATIME
-            | MountpointFlags::NODIRATIME
-            | MountpointFlags::RELATIME
-            | MountpointFlags::STRICTATIME;
         let _lock = self.flags_lock.lock();
-        if !flags.intersects(atime_flags) {
-            // Since Linux 3.17, if none of MS_NOATIME, MS_NODIRATIME,
-            // MS_RELATIME, or MS_STRICTATIME is specified in mountflags, then
-            // the remount operation preserves the existing values of these
-            // flags (rather than defaulting to MS_RELATIME).
-            flags |= self.flags.load(Ordering::Relaxed) & atime_flags;
-        }
-        self.flags.store(flags & MountpointFlags::STORED_ON_MOUNT, Ordering::Relaxed);
+        // Since Linux 3.17, if none of MS_NOATIME, MS_NODIRATIME,
+        // MS_RELATIME, or MS_STRICTATIME is specified in mountflags, then
+        // the remount operation preserves the existing values of these
+        // flags (rather than defaulting to MS_RELATIME).
+        flags.default_atime_from(self.flags.load(Ordering::Relaxed));
+        flags &= MountpointFlags::STORED_ON_MOUNT;
+        self.flags.store(flags, Ordering::Relaxed);
     }
 
     /// The number of active clients of this mount.
