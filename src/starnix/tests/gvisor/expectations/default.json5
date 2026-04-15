@@ -786,8 +786,9 @@
 
                 // TODO(https://fxbug.dev/468074994): Support network namespaces.
                 "NetlinkRouteTest.ChangeNetnsAndOtherAttrsTogether",
-                "NetlinkRouteTest.LinkedToNetns",
+                "NetlinkRouteTest.LinIndexOrder",
                 "NetlinkRouteTest.LinkMulticastGroupNamespaced",
+                "NetlinkRouteTest.LinkedToNetns",
                 "NetworkNamespaceTest.CloneNewNetWithCloneNewUserDoesNotNeedCapSysAdmin",
 
                 // socket_netlink_uevent
