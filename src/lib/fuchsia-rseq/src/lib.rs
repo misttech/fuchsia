@@ -2,9 +2,109 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::Mutex;
 use std::mem;
 use std::ptr::NonNull;
+use std::sync::LazyLock;
 use zx_types::zx_rseq_t;
+
+/// The maximum number of threads supported by the RSEQ allocator.
+///
+/// We map the VMO linearly up front to keep the mappings contiguous in virtual memory.
+/// This limit guarantees we don't exceed a reasonable amount of virtual memory.
+const MAX_THREADS: u64 = 100_000;
+
+/// The distance in bytes between thread RSEQ slots.
+///
+/// We use a 256-byte stride to limit the density of slots per OS memory page (4096 bytes).
+/// This ensures a maximum of 16 threads reside on the same physical page, sidestepping a Thundering
+/// Herd race condition in the Zircon kernel (`PageMap::MakeAccessor`) where concurrent
+/// memory pinning trips a strict per-page reference cap of 31.
+///
+/// See https://fxbug.dev/502706191
+const SLOT_STRIDE: u64 = 256;
+static_assertions::const_assert!(SLOT_STRIDE as usize >= mem::size_of::<zx_rseq_t>());
+
+/// Represents a unique memory location within the global RSEQ VMO assigned to a thread.
+#[derive(Debug, Default, Clone, Copy)]
+struct ThreadSlot {
+    /// The offset in bytes from the start of the global RSEQ VMO mapping.
+    offset: u64,
+}
+
+/// A synchronized allocator that manages unique thread slots in a single shared VMO.
+struct Allocator {
+    /// The backing virtual memory object mapped for RSEQ slots.
+    vmo: zx::Vmo,
+    /// The memory address where the `vmo` starts in the current process's virtual address space.
+    mapped_addr: usize,
+    /// A list of returned slots that are available for reuse by registering threads.
+    free_list: Vec<ThreadSlot>,
+    /// The next monotonically increasing slot index to be allocated.
+    next_slot_index: u64,
+}
+
+/// Rounds up a given size to the next multiple of the operating system page size.
+fn round_up_to_page_size(size: usize) -> usize {
+    let page_size = zx::system_get_page_size() as usize;
+    ((size + page_size - 1) / page_size) * page_size
+}
+
+impl Allocator {
+    /// Creates a new `Allocator` mapping space for up to `MAX_THREADS` structures.
+    fn new() -> Self {
+        let needed_size = (MAX_THREADS as usize) * (SLOT_STRIDE as usize);
+        let map_size = round_up_to_page_size(needed_size);
+        let vmo = zx::Vmo::create(map_size as u64).expect("failed to create RSEQ VMO");
+        let flags = zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE;
+        let mapped_addr = fuchsia_runtime::vmar_root_self()
+            .map(0, &vmo, 0, map_size, flags)
+            .expect("failed to map RSEQ VMO");
+
+        Self { vmo, mapped_addr, free_list: Vec::new(), next_slot_index: 0 }
+    }
+
+    /// Allocates a unique `ThreadSlot` from the free list or the unmapped pool.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the globally managed pool exceeds `MAX_THREADS` (100,000 threads).
+    fn allocate(&mut self) -> ThreadSlot {
+        if let Some(slot) = self.free_list.pop() {
+            return slot;
+        }
+
+        assert!(self.next_slot_index < MAX_THREADS, "RSEQ max thread count exceeded");
+        let index = self.next_slot_index;
+        self.next_slot_index += 1;
+        let offset = index * SLOT_STRIDE;
+
+        ThreadSlot { offset }
+    }
+
+    /// Returns an active thread slot's memory address back to the free list.
+    fn free(&mut self, abi: *mut zx_rseq_t) {
+        self.free_list.push(self.slot(abi));
+    }
+
+    /// Retrieves the raw VMO handle needed by the kernel to register threads.
+    fn vmo_handle(&self) -> zx::sys::zx_handle_t {
+        self.vmo.raw_handle()
+    }
+
+    /// Returns the `ThreadSlot` for the given pointer to `zx_rseq_t`.
+    fn slot(&self, abi: *mut zx_rseq_t) -> ThreadSlot {
+        let offset = (abi as usize - self.mapped_addr) as u64;
+        ThreadSlot { offset }
+    }
+
+    /// Returns a pointer to the `zx_rseq_t` for the given slot.
+    fn abi(&self, slot: &ThreadSlot) -> *mut zx_rseq_t {
+        (self.mapped_addr + slot.offset as usize) as *mut zx_rseq_t
+    }
+}
+
+static ALLOCATOR: LazyLock<Mutex<Allocator>> = LazyLock::new(|| Mutex::new(Allocator::new()));
 
 thread_local! {
     /// The `zx_rseq_t` structure for the current thread, if any.
@@ -147,54 +247,52 @@ impl Drop for RseqScope {
 ///
 /// # Panics
 ///
-/// Panics if the thread is already registered.
-pub fn rseq_register_thread() -> Result<(), zx::Status> {
-    let vmo = zx::Vmo::create(mem::size_of::<zx_rseq_t>() as u64).expect("failed to create VMO");
-    let flags = zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE;
-    let status = unsafe {
-        zx::sys::zx_thread_set_rseq(vmo.raw_handle(), 0, mem::size_of::<zx_rseq_t>() as u64)
+/// Panics if the thread is already registered, if the maximum number of supported
+/// threads (`MAX_THREADS`) has been exhausted, or if setting the thread RSEQ via syscall fails.
+pub fn rseq_register_thread() {
+    RSEQ.with(|rseq| {
+        assert!(rseq.get().is_null(), "thread already registered");
+    });
+
+    let (vmo_handle, slot, abi) = {
+        let mut allocator = ALLOCATOR.lock();
+
+        let vmo_handle = allocator.vmo_handle();
+        let slot = allocator.allocate();
+        let abi = allocator.abi(&slot);
+
+        (vmo_handle, slot, abi)
     };
 
-    zx::Status::ok(status)?;
+    let status = unsafe {
+        zx::sys::zx_thread_set_rseq(vmo_handle, slot.offset, mem::size_of::<zx_rseq_t>() as u64)
+    };
 
-    // Currently, we use an entire page per thread for the `zx_rseq_t` structure.
-    // This is wasteful, especially for processes that have many threads. In the future, we should
-    // either use the VMO that backs thread-local storage, or we should use a single VMO for all
-    // threads and use an allocator to manage the space within that VMO.
-    let addr = fuchsia_runtime::vmar_root_self().map(
-        0,
-        &vmo,
-        0,
-        mem::size_of::<zx_rseq_t>() as usize,
-        flags,
-    )?;
+    zx::Status::ok(status).expect("failed to register thread for RSEQ");
 
-    let abi = addr as *mut zx_rseq_t;
     RSEQ.with(|rseq| {
-        let previous = rseq.replace(abi);
-        assert!(previous.is_null());
+        rseq.set(abi);
     });
-    Ok(())
 }
 
 /// Unregister the current thread from the restartable sequence.
 ///
 /// # Panics
 ///
-/// Panics if the thread is not registered.
-pub fn rseq_unregister_thread() -> Result<(), zx::Status> {
+/// Panics if the thread is not registered, or if unsetting the thread RSEQ via syscall fails.
+pub fn rseq_unregister_thread() {
     let abi = RSEQ.with(|rseq| rseq.take());
-    assert!(!abi.is_null());
+    assert!(!abi.is_null(), "thread not registered");
 
     let status = unsafe { zx::sys::zx_thread_set_rseq(0, 0, 0) };
-    zx::Status::ok(status)?;
+    zx::Status::ok(status).expect("failed to unregister thread from RSEQ");
 
-    let addr = abi as usize;
-    // SAFETY: this mapping was created by us, no other references to it exist.
+    // Zero out the struct to let Zircon's zero-page scanner reclaim the page.
     unsafe {
-        fuchsia_runtime::vmar_root_self().unmap(addr, mem::size_of::<zx_rseq_t>() as usize)?;
+        std::ptr::write_volatile(abi, mem::zeroed());
     }
-    Ok(())
+
+    ALLOCATOR.lock().free(abi);
 }
 
 #[cfg(test)]
@@ -260,20 +358,73 @@ mod tests {
         "ret",
     );
 
+    struct TestRegistrationGuard;
+
+    impl TestRegistrationGuard {
+        fn new() -> Self {
+            rseq_register_thread();
+            Self
+        }
+    }
+
+    impl Drop for TestRegistrationGuard {
+        fn drop(&mut self) {
+            RSEQ.with(|rseq| {
+                if !rseq.get().is_null() {
+                    rseq_unregister_thread();
+                }
+            });
+        }
+    }
+
+    #[test]
+    #[should_panic = "thread already registered"]
+    fn test_double_registration_panics() {
+        let _guard = TestRegistrationGuard::new();
+        rseq_register_thread();
+    }
+
+    #[test]
+    #[should_panic = "thread not registered"]
+    fn test_unregistered_unregister_panics() {
+        rseq_unregister_thread();
+    }
+
     #[test]
     fn test_current_cpu() {
-        rseq_register_thread().expect("register thread failed");
+        let _guard = TestRegistrationGuard::new();
         unsafe {
             let rseq = Rseq::get();
             let cpu_id = rseq.current_cpu();
             assert_ne!(cpu_id, zx_types::ZX_INFO_INVALID_CPU);
         }
-        rseq_unregister_thread().expect("unregister thread failed");
+    }
+
+    #[test]
+    fn test_activate_field_propagation() {
+        let _guard = TestRegistrationGuard::new();
+        let rseq = unsafe { Rseq::get() };
+        let cs = unsafe { RseqCriticalSection::new(10, 20, 30) };
+
+        let scope = unsafe { rseq.activate(cs) };
+        let abi = rseq.as_ptr();
+        unsafe {
+            assert_eq!((*abi).start_ip, 10);
+            assert_eq!((*abi).abort_ip, 30);
+            assert_eq!((*abi).post_commit_offset, 20);
+        }
+
+        drop(scope);
+        unsafe {
+            assert_eq!((*abi).start_ip, 0);
+            assert_eq!((*abi).abort_ip, 0);
+            assert_eq!((*abi).post_commit_offset, 0);
+        }
     }
 
     #[test]
     fn test_rseq_per_cpu_counter() {
-        rseq_register_thread().expect("register thread failed");
+        let _guard = TestRegistrationGuard::new();
 
         let rseq = unsafe { Rseq::get() };
         let cpu_count = zx::system_get_num_cpus();
@@ -292,7 +443,26 @@ mod tests {
 
         let sum = counters.iter().sum::<u64>();
         assert_eq!(sum, 1, "Sum of counters should be 1");
+    }
 
-        rseq_unregister_thread().expect("unregister thread failed");
+    #[test]
+    fn test_rseq_packing_and_reuse() {
+        for _ in 0..10 {
+            let _guard = TestRegistrationGuard::new();
+        }
+
+        let threads: Vec<_> = (0..200)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    let _guard = TestRegistrationGuard::new();
+                    let cpu_id = unsafe { Rseq::get().current_cpu() };
+                    assert_ne!(cpu_id, zx_types::ZX_INFO_INVALID_CPU);
+                })
+            })
+            .collect();
+
+        for t in threads {
+            t.join().unwrap();
+        }
     }
 }

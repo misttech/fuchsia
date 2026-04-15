@@ -19,6 +19,8 @@ rustc_library("fuchsia-rseq") {
     "//sdk/rust/zx",
     "//sdk/rust/zx-types",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:static_assertions",
   ]
 
   sources = [ "src/lib.rs" ]
@@ -27,4 +29,9 @@ rustc_library("fuchsia-rseq") {
 fuchsia_unittest_package("fuchsia-rseq-tests") {
   deps = [ ":fuchsia-rseq_test" ]
   manifest = "meta/fuchsia_rseq_tests.cml"
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
