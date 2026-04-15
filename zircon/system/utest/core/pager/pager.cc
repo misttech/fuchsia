@@ -4348,4 +4348,20 @@ TEST(Pager, PinPagerVmoWithLoanedPages) {
   EXPECT_OK(pmt.unpin());
 }
 
+// Regression test for https://fxbug.dev/502265328
+TEST(Pager, CreateVmoUnboundedInvalidStreamSize) {
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::vmo vmo;
+  // The initial stream size of an unbounded vmo must be within the vmo size, and attempting to set
+  // an overly large one shouldn't trigger a kernel panic.
+  zx_status_t status = zx_pager_create_vmo(pager.get(), ZX_VMO_UNBOUNDED, port.get(), 0x1234,
+                                           0xFFFFFFFFFFFFFFFF, vmo.reset_and_get_address());
+  EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace pager_tests
