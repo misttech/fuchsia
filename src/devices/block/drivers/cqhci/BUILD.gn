@@ -84,6 +84,7 @@ fuchsia_rust_driver("driver") {
     "//src/storage/lib/block_client/rust",
     "//third_party/rust_crates:test-case",
   ]
+  configs += [ "//build/config/rust:bootfs" ]
 }
 
 fuchsia_unittest_package("cqhci-test") {
