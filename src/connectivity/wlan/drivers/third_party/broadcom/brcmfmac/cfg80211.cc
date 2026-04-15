@@ -4509,7 +4509,7 @@ void brcmf_if_stop_req(net_device* ndev,
 done:
   BRCMF_IFDBG(
       WLANIF, ndev, "Sending AP stop confirm to SME. result_code: %s",
-      result_code == fuchsia_wlan_fullmac_wire::StopResult ::kSuccess            ? "success"
+      result_code == fuchsia_wlan_fullmac_wire::StopResult::kSuccess             ? "success"
       : result_code == fuchsia_wlan_fullmac_wire::StopResult::kBssAlreadyStopped ? "already stopped"
       : result_code == fuchsia_wlan_fullmac_wire::StopResult::kInternalError     ? "internal error"
                                                                                  : "unknown");
@@ -6378,7 +6378,12 @@ zx_status_t brcmf_alloc_vif(struct brcmf_cfg80211_info* cfg,
 }
 
 void brcmf_free_vif(struct brcmf_cfg80211_vif* vif) {
-  list_delete(&vif->list);
+  if (!vif) {
+    return;
+  }
+  if (list_in_list(&vif->list)) {
+    list_delete(&vif->list);
+  }
   free(vif);
 }
 
