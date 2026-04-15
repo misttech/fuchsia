@@ -24,15 +24,6 @@ struct ValueTypeOrVoid<T, std::void_t<typename T::value_type>> {
   using type = typename T::value_type;
 };
 
-template <typename T, typename V = void>
-struct ErrorTypeOrVoid {
-  using type = V;
-};
-template <typename T>
-struct ErrorTypeOrVoid<T, std::void_t<typename T::error_type>> {
-  using type = typename T::error_type;
-};
-
 }  // namespace internal
 
 // |as_promise| converts a FIDL asynchronous call in the new C++ bindings
@@ -85,28 +76,22 @@ auto as_promise(::fidl::internal::NaturalThenable<FidlMethod>&& thenable) {
   return bridge.consumer.promise();
 }
 
-template <typename FidlMethod, typename EncodedRequestMessage>
-auto as_promise(::fidl::internal::WireThenableImpl<FidlMethod, EncodedRequestMessage>&& thenable) {
-  using ResultType = typename ::fidl::internal::WireResultUnwrap<FidlMethod>::Type;
-  using E = typename internal::ErrorTypeOrVoid<ResultType>::type;
-  using V = typename internal::ValueTypeOrVoid<ResultType, ResultType>::type;
+// This is alternate overload for use with WireClients.
+//
+// Notably, this takes a callback to directly handle the WireUnownedResult, as its lifetime does not
+// extend beyond the scope of WireThenableImpl.
+//
+// Additionally, the caller may specify the success and error types of the resulting promise via
+// the type arguments V and E.
+template <typename V, typename E, typename FidlMethod, typename EncodedRequestMessage>
+auto as_promise(::fidl::internal::WireThenableImpl<FidlMethod, EncodedRequestMessage>&& thenable,
+                ::fit::callback<void(::fidl::internal::WireUnownedResultType<FidlMethod>&,
+                                     ::fpromise::completer<V, E>)>
+                    callback) {
   ::fpromise::bridge<V, E> bridge;
   std::move(thenable).ThenExactlyOnce(
-      [completer = std::move(bridge.completer)](auto&& result) mutable {
-        if (result.ok()) {
-          if constexpr (std::is_same_v<V, void>) {
-            completer.complete_ok();
-          } else {
-            completer.complete_ok(std::move(result.value()));
-          }
-        } else {
-          if constexpr (std::is_same_v<E, void>) {
-            completer.complete_error();
-          } else {
-            completer.complete_error(std::move(result.error_value()));
-          }
-        }
-      });
+      [callback = std::move(callback), completer = std::move(bridge.completer)](
+          auto&& result) mutable { callback(result, std::move(completer)); });
   return bridge.consumer.promise();
 }
 
