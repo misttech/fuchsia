@@ -112,6 +112,10 @@ inline int brcmf_proto_hdrpull_frame(struct brcmf_pub* drvr,
   } else {
     ifp = &tmp;
   }
+  if (drvr->proto == nullptr) {
+    BRCMF_WARN("brcmf_proto doesn't exist.");
+    return ZX_ERR_NOT_FOUND;
+  }
   return drvr->proto->hdrpull_frame(drvr, frame, ifp);
 }
 

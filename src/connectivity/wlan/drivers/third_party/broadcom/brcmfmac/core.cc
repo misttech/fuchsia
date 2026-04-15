@@ -354,7 +354,7 @@ static zx_status_t brcmf_rx_hdrpull(struct brcmf_pub* drvr, wlan::drivers::compo
                                     struct brcmf_if** ifp) {
   zx_status_t ret = brcmf_proto_hdrpull_frame(drvr, frame, ifp);
   if (ret != ZX_OK || *ifp == nullptr || (*ifp)->ndev == nullptr) {
-    if (ret != ZX_ERR_BUFFER_TOO_SMALL && *ifp) {
+    if (ret != ZX_ERR_BUFFER_TOO_SMALL && *ifp && (*ifp)->ndev != nullptr) {
       (*ifp)->ndev->stats.rx_errors++;
     }
     return ZX_ERR_IO;
