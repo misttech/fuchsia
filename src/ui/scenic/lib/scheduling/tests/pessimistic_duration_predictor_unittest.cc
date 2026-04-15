@@ -9,14 +9,14 @@
 namespace scheduling {
 namespace test {
 
-TEST(DurationPredictor, FirstPredictionIsInitialPrediction) {
+TEST(PessimisticDurationPredictor, FirstPredictionIsInitialPrediction) {
   const size_t kWindowSize = 4;
   const zx::duration kInitialPrediction = zx::usec(500);
   PessimisticDurationPredictor predictor(kWindowSize, kInitialPrediction);
   EXPECT_EQ(predictor.GetPrediction(), kInitialPrediction);
 }
 
-TEST(DurationPredictor, PredictionAfterWindowFlushIsMeasurement) {
+TEST(PessimisticDurationPredictor, PredictionAfterWindowFlushIsMeasurement) {
   const size_t kWindowSize = 4;
   const zx::duration kInitialPrediction = zx::msec(1);
   PessimisticDurationPredictor predictor(kWindowSize, kInitialPrediction);
@@ -31,8 +31,8 @@ TEST(DurationPredictor, PredictionAfterWindowFlushIsMeasurement) {
   EXPECT_EQ(predictor.GetPrediction(), measurement);
 }
 
-TEST(DurationPredictor, PredictionIsLargestInWindowAsMeasurementsIncrease) {
-  size_t window_size = 10;
+TEST(PessimisticDurationPredictor, PredictionAsMeasurementsIncrease) {
+  size_t window_size = 8;
   PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
   for (size_t i = 1; i <= window_size; ++i) {
@@ -41,8 +41,8 @@ TEST(DurationPredictor, PredictionIsLargestInWindowAsMeasurementsIncrease) {
   }
 }
 
-TEST(DurationPredictor, PredictionIsLargestInWindowAsMeasurementsDecrease) {
-  size_t window_size = 10;
+TEST(PessimisticDurationPredictor, PredictionAsMeasurementsDecrease) {
+  size_t window_size = 8;
   PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
   for (size_t i = window_size; i > 0; --i) {
@@ -51,8 +51,8 @@ TEST(DurationPredictor, PredictionIsLargestInWindowAsMeasurementsDecrease) {
   }
 }
 
-TEST(DurationPredictor, PredictionIsLargestInWindow) {
-  size_t window_size = 10;
+TEST(PessimisticDurationPredictor, PredictionIsLargestInWindow) {
+  size_t window_size = 8;
   PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
   const std::vector<zx::duration> measurements{
@@ -64,7 +64,7 @@ TEST(DurationPredictor, PredictionIsLargestInWindow) {
   EXPECT_EQ(predictor.GetPrediction(), zx::msec(15));
 }
 
-TEST(DurationPredictor, MaxIsResetWhenLargestIsOutOfWindow) {
+TEST(PessimisticDurationPredictor, MaxIsResetWhenLargestIsOutOfWindow) {
   size_t window_size = 4;
   PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
@@ -77,7 +77,7 @@ TEST(DurationPredictor, MaxIsResetWhenLargestIsOutOfWindow) {
   EXPECT_EQ(predictor.GetPrediction(), zx::msec(13));
 }
 
-TEST(DurationPredictor, WindowSizeOfOneWorks) {
+TEST(PessimisticDurationPredictor, WindowSizeOfOneWorks) {
   size_t window_size = 1;
   PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
 
@@ -85,6 +85,33 @@ TEST(DurationPredictor, WindowSizeOfOneWorks) {
     predictor.InsertNewMeasurement(zx::msec(i));
   }
   EXPECT_EQ(predictor.GetPrediction(), zx::msec(4));
+}
+
+TEST(PessimisticDurationPredictor, MaxWindowSizeWorks) {
+  size_t window_size = 8;
+  PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(0));
+
+  for (size_t i = 1; i <= 20; ++i) {
+    predictor.InsertNewMeasurement(zx::msec(i));
+  }
+  // The window contains elements from i=13 to 20. The max should be 20.
+  EXPECT_EQ(predictor.GetPrediction(), zx::msec(20));
+}
+
+TEST(PessimisticDurationPredictor, PushIdenticalElementsCorrectlyMaintained) {
+  size_t window_size = 4;
+  PessimisticDurationPredictor predictor(window_size, /* initial prediction */ zx::usec(100));
+
+  predictor.InsertNewMeasurement(zx::usec(50));
+  predictor.InsertNewMeasurement(zx::usec(50));
+  predictor.InsertNewMeasurement(zx::usec(50));
+
+  // The initial prediction (100) is still in the window!
+  EXPECT_EQ(predictor.GetPrediction(), zx::usec(100));
+
+  predictor.InsertNewMeasurement(zx::usec(50));
+  // Now initial prediction is pushed out, max should be 50.
+  EXPECT_EQ(predictor.GetPrediction(), zx::usec(50));
 }
 
 }  // namespace test

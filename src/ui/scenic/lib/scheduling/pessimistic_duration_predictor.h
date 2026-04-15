@@ -7,7 +7,7 @@
 
 #include <lib/zx/time.h>
 
-#include <deque>
+#include <array>
 
 #include "src/ui/scenic/lib/scheduling/duration_predictor.h"
 
@@ -24,6 +24,9 @@ namespace scheduling {
 // work Scenic is doing.
 class PessimisticDurationPredictor : public DurationPredictor {
  public:
+  // Static maximum limit allowed for statically allocated capacity ring buffer.
+  static constexpr size_t kMaxWindowSize = 8;
+
   PessimisticDurationPredictor(size_t window_size, zx::duration initial_prediction);
   ~PessimisticDurationPredictor() override = default;
 
@@ -32,8 +35,8 @@ class PessimisticDurationPredictor : public DurationPredictor {
   void InsertNewMeasurement(zx::duration duration) override;
 
  private:
-  const size_t kWindowSize;
-  std::deque<zx::duration> window_;  // Ring buffer.
+  size_t window_size_;
+  std::array<zx::duration, kMaxWindowSize> window_;
 
   size_t current_maximum_duration_index_ = 0;
 };
