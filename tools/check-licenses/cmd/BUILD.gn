@@ -37,11 +37,12 @@ if (is_host) {
   go_library("main") {
     sources = [
       "config.go",
-      "driver.go",
+      "generate.go",
       "main.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
+      "//third_party/golibs:github.com/google/subcommands",
       "//tools/check-licenses/directory",
       "//tools/check-licenses/file",
       "//tools/check-licenses/metrics",

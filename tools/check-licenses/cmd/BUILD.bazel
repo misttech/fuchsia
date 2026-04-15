@@ -9,13 +9,14 @@ go_library(
     name = "main",
     srcs = [
         "config.go",
-        "driver.go",
+        "generate.go",
         "main.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/cmd",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
+        "//third_party/golibs:github.com/google/subcommands",
         "//tools/check-licenses/directory",
         "//tools/check-licenses/file",
         "//tools/check-licenses/metrics",
