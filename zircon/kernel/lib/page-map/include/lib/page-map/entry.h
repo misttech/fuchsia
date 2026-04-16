@@ -72,6 +72,11 @@ class Entry : public fbl::WAVLTreeContainable<object_cache::UniquePtr<Entry>> {
     return (accessor_count_ == 0);
   }
 
+  // Return this entry's accessor count.
+  //
+  // May only be called while holding the PageMap::get_lock().
+  uint64_t accessor_count() const { return accessor_count_; }
+
   // Release an Accessor's reference to this instance.  Intended to be called by Accessor's dtor.
   void Release();
 

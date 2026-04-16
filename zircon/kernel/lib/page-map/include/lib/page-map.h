@@ -120,6 +120,12 @@ class PageMap {
   using Map = fbl::WAVLTree<internal::Entry::Key, object_cache::UniquePtr<internal::Entry>>;
   Map map_ TA_GUARDED(get_lock());
 
+  // Semaphore that restricts the number of "unfindable" entries to avoid pin count failures (see
+  // usage in MakeAccessor and Release for more).
+  //
+  // TODO(https://fxbug.dev/498989748): Once the pin count limit is gone this can be removed.
+  Semaphore unfindable_entry_count_{VM_PAGE_OBJECT_MAX_PIN_COUNT - 1};
+
   // The allocator from which Entry's are created.
   object_cache::ObjectCache<internal::Entry> allocator_{/* reserve_slabs */ 1};
 };
@@ -167,6 +173,21 @@ inline zx::result<Accessor<Object>> PageMap::MakeAccessor(fbl::RefPtr<VmObjectPa
       return zx::ok(WrapEntry<Object>(*iter, object_offset_in_page));
     }
   }
+
+  // Before calling MakeEntry acquire the semaphore to restrict the number of concurrent MakeEntry
+  // calls. This ensures that even in the worst case we will not attempt to pin a single page so
+  // many times that we get an error. Although the semaphore applies to all allocations across all
+  // pages of all vmos, and not just to a single page or even a single vmo, more than 31 threads are
+  // unlikely to have meaningful parallelism as they will be serialized through both the PMM and the
+  // kernel aspace locks respectively.
+  // TODO(https://fxbug.dev/498989748): Once the pin count limit is gone this can be removed.
+  zx_status_t status = unfindable_entry_count_.Wait();
+  if (status != ZX_OK) {
+    return zx::error{status};
+  }
+  // Make sure we post the semaphore on all exits. This must be done after any new_entry is
+  // destroyed to ensure the pin count is reduced prior to potentially letting another thread pin.
+  auto post = fit::defer([&]() { unfindable_entry_count_.Post(); });
 
   // No entry found, make one.  Take care to do so without holding the lock.  If we later find that
   // someone "beat us to it" then make sure we destroy our newly created entry without holding the

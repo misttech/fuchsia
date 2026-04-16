@@ -5,6 +5,7 @@
 #include <lib/fit/defer.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/event.h>
+#include <lib/zx/pager.h>
 #include <lib/zx/process.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
@@ -381,6 +382,44 @@ TEST(RseqTest, NoLostUpdates) {
   }
 
   EXPECT_EQ(total_sum, (uintptr_t)kNumThreads * kNumIterations, "Lost updates detected!");
+}
+
+// Regression test for https://fxbug.dev/502706191 that attempts to flood the pin count by
+// performing many concurrent zx_thread_set_rseq.
+TEST(RseqTest, ManyConcurrent) {
+  NEEDS_NEXT_SKIP(zx_thread_set_rseq);
+
+  zx::vmo vmo;
+  // Although the pin count is per page we need to queue up requests on multiple pages to reliably
+  // cause enough contention such that at least one of the pages will receive sufficient concurrent
+  // pin attempts.
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 16, 0, &vmo));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  const size_t num_threads = zx_system_get_page_size() * 16 / sizeof(zx_rseq_t);
+
+  std::atomic<size_t> started = 0;
+
+  std::vector<std::thread> threads;
+  threads.reserve(num_threads);
+  for (size_t i = 0; i < num_threads; i++) {
+    threads.emplace_back([&, offset = i] {
+      if (started.fetch_add(1) == num_threads - 1) {
+        event.signal(0, ZX_USER_SIGNAL_0);
+      }
+      EXPECT_OK(event.wait_one(ZX_USER_SIGNAL_1, zx::time::infinite(), nullptr));
+      EXPECT_OK(zx_thread_set_rseq(vmo.get(), offset * sizeof(zx_rseq_t), sizeof(zx_rseq_t)));
+    });
+  }
+
+  EXPECT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
+  EXPECT_OK(event.signal(0, ZX_USER_SIGNAL_1));
+
+  for (auto& t : threads) {
+    t.join();
+  }
 }
 
 }  // namespace

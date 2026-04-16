@@ -48,12 +48,42 @@ zx::result<object_cache::UniquePtr<internal::Entry>> PageMap::MakeEntry(
 }
 
 void PageMap::Release(internal::Entry& entry) {
+  // If we're releasing the last reference we need to destroy the entry.  However, we must limit the
+  // number of "unfindable" entries in order to not exceed the max pin count (see
+  // unfindable_entry_count_ declaration for more).
+  //
+  // To ensure that the mutex-guarded critical section remains fast, we employ a two phase approach.
+  // We lookup the entry and if the count is greater than one, we simply decrement and return.
+  // However, if this was the last reference (i.e. count is one) we must back out, consume an
+  // unfindable_entry_count_, and try again.  If this second attempt succeeds in releasing the last
+  // reference, we remove the entry from the map and destroy it before posting the semaphore.
+
+  // Last reference?
+  {
+    Guard<CriticalMutex> guard{get_lock()};
+    if (entry.accessor_count() > 1) {
+      entry.DecrementAccessorCount();
+      // This wasn't the last reference.  We're done.
+      return;
+    }
+  }
+
+  // We're likely releasing the last reference.  Acquire the semaphore before we make the entry
+  // unfindable.
+  zx_status_t status = unfindable_entry_count_.Wait();
+  ASSERT(status == ZX_OK);
+
+  // Make sure we post the semaphore on all exits.  This must be done after any removed entry has
+  // been destroyed to ensure the pin count is reduced prior to potentially letting another thread
+  // pin.
+  auto post = fit::defer([&]() { unfindable_entry_count_.Post(); });
+
   Map::PtrType entry_destroyer;
   {
     Guard<CriticalMutex> guard{get_lock()};
     if (entry.DecrementAccessorCount()) {
-      // This was the last one.  Remove it from the container so we can destroy it without holding
-      // the container's lock.
+      // This was indeed the last one.  Remove it from the container so we can destroy it without
+      // holding the container's lock.
       entry_destroyer = map_.erase(entry);
     }
   }
