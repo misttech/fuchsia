@@ -322,3 +322,49 @@ int udpsend4_prog(struct bpf_sock_addr* sockaddr) {
   // Fail sendmsg() with EFAIL.
   return 0;
 }
+
+SECTION("maps")
+struct bpf_map_def sk_storage_map = {
+    .type = BPF_MAP_TYPE_SK_STORAGE,
+    .key_size = sizeof(int),
+    .value_size = sizeof(__u32),
+    .max_entries = 0,
+    .map_flags = BPF_F_NO_PREALLOC,
+};
+
+int sock_create_sk_storage_prog(struct bpf_sock* sock) {
+  __u32 value = 1;
+  __u32* storage = bpf_sk_storage_get(&sk_storage_map, sock, &value, BPF_SK_STORAGE_GET_F_CREATE);
+  if (!storage) {
+    return 0;
+  }
+  return 1;
+}
+
+int setsockopt_sk_storage_prog(struct bpf_sockopt* sockopt) {
+  if (sockopt->optname != TEST_SOCK_OPT) {
+    return 1;
+  }
+
+  __u32* storage = bpf_sk_storage_get(&sk_storage_map, sockopt->sk, 0, 0);
+  if (!storage) {
+    return 1;
+  }
+
+  // set `optlen=-1` to bypass the kernels implementation of the syscall.
+  sockopt->optlen = -1;
+
+  *storage += 2;
+  return 1;
+}
+
+int connect_sk_storage_prog(struct bpf_sock_addr* sockaddr) {
+  __u32* storage = bpf_sk_storage_get(&sk_storage_map, sockaddr->sk, 0, 0);
+  if (!storage) {
+    return 1;
+  }
+
+  *storage += 4;
+
+  return 1;
+}

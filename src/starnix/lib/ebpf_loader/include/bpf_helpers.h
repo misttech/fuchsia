@@ -25,6 +25,8 @@ static __u64 (*const bpf_get_current_uid_gid)() = (void *)BPF_FUNC_get_current_u
 static __u64 (*const bpf_get_current_pid_tgid)() = (void *)BPF_FUNC_get_current_pid_tgid;
 static int (*const bpf_set_retval)(int retval) = (void *)BPF_FUNC_set_retval;
 static int (*const bpf_get_retval)() = (void *)BPF_FUNC_get_retval;
+static void *(*const bpf_sk_storage_get)(void *map, void *sk, void *value,
+                                         __u64 flags) = (void *)BPF_FUNC_sk_storage_get;
 
 struct bpf_map_def {
   enum bpf_map_type type;
@@ -35,5 +37,7 @@ struct bpf_map_def {
 };
 
 #define BPF_HDR_START_NET 1
+#define BPF_SK_STORAGE_GET_F_CREATE 1
+#define BPF_F_NO_PREALLOC 1
 
 #define SECTION(name) __attribute__((section(name), used))

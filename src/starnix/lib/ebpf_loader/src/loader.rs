@@ -101,7 +101,7 @@ struct bpf_map_def {
     flags: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct MapDefinition {
     // The name is missing for array maps that are defined in the bss section.
     pub name: Option<BString>,

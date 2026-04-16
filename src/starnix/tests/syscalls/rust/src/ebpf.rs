@@ -6,7 +6,7 @@
 mod tests {
     use ebpf_loader::{MapDefinition, ProgramDefinition};
     use libc;
-    use linux_uapi::bpf_attr;
+    use linux_uapi::{bpf_attr, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE};
     use serial_test::serial;
     use std::fs::File;
     use std::net::UdpSocket;
@@ -319,12 +319,31 @@ mod tests {
     const TEST_SOCK_OPT: libc::c_int = 12345;
     // LINT.ThenChange(//src/starnix/tests/syscalls/rust/data/ebpf/ebpf_test_progs.c)
 
-    #[derive(Debug)]
+    #[derive(Default, Debug)]
     struct MapSet {
         maps: Vec<(MapDefinition, OwnedFd)>,
     }
 
     impl MapSet {
+        fn new() -> Self {
+            Self { maps: vec![] }
+        }
+
+        fn find_or_insert(&mut self, new_def: MapDefinition) -> BorrowedFd<'_> {
+            let index = match self.maps.iter().position(|(def, _fd)| def.name == new_def.name) {
+                Some(index) => {
+                    assert_eq!(self.maps[index].0, new_def);
+                    index
+                }
+                None => {
+                    let fd = bpf_map_create(&new_def).expect("Failed to create map");
+                    self.maps.push((new_def, fd));
+                    self.maps.len() - 1
+                }
+            };
+            self.maps[index].1.as_fd()
+        }
+
         fn find(&self, name: &str, expected_type: linux_uapi::bpf_map_type) -> BorrowedFd<'_> {
             let (def, fd) = self
                 .maps
@@ -381,7 +400,6 @@ mod tests {
 
     struct LoadedProgram {
         prog_fd: OwnedFd,
-        maps: MapSet,
         attach_type: linux_uapi::bpf_attach_type,
     }
 
@@ -390,38 +408,36 @@ mod tests {
             name: &str,
             prog_type: linux_uapi::bpf_prog_type,
             attach_type: linux_uapi::bpf_attach_type,
+            maps: &mut MapSet,
         ) -> Self {
             let ProgramDefinition { mut code, maps: map_defs } =
                 ebpf_loader::load_ebpf_program("data/ebpf/ebpf_test_progs.o", ".text", name)
                     .expect("Failed to load program");
 
             let map_fds: Vec<_> = map_defs
-                .iter()
-                .map(|map_def| bpf_map_create(map_def).expect("Failed to create map"))
+                .into_iter()
+                .map(|map_def| maps.find_or_insert(map_def).as_raw_fd())
                 .collect();
 
             // Replace map indices with FDs.
             for inst in code.iter_mut() {
                 if inst.code() == ebpf::BPF_LDDW && inst.src_reg() == ebpf::BPF_PSEUDO_MAP_IDX {
                     let map_index = inst.imm() as usize;
-                    let map_fd = map_fds[map_index].as_raw_fd();
                     inst.set_src_reg(ebpf::BPF_PSEUDO_MAP_FD);
-                    inst.set_imm(map_fd);
+                    inst.set_imm(map_fds[map_index]);
                 }
                 if inst.code() == ebpf::BPF_LDDW && inst.src_reg() == ebpf::BPF_PSEUDO_MAP_IDX_VALUE
                 {
                     let map_index = inst.imm() as usize;
-                    let map_fd = map_fds[map_index].as_raw_fd();
                     inst.set_src_reg(ebpf::BPF_PSEUDO_MAP_VALUE);
-                    inst.set_imm(map_fd);
+                    inst.set_imm(map_fds[map_index]);
                 }
             }
 
             let prog_fd =
                 bpf_prog_load(code, prog_type, attach_type).expect("Failed to load program");
 
-            let maps = map_defs.into_iter().zip(map_fds.into_iter()).collect();
-            Self { prog_fd, maps: MapSet { maps }, attach_type }
+            Self { prog_fd, attach_type }
         }
 
         fn attach(&self) -> AttachedProgram {
@@ -449,20 +465,22 @@ mod tests {
     fn ebpf_egress() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "skb_test_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SKB,
             linux_uapi::bpf_attach_type_BPF_CGROUP_INET_EGRESS,
+            &mut maps,
         );
 
         // Check that the ring buffer is not signalled initially.
-        let signaled = pollfd(program.maps.ringbuf(), libc::POLLIN, Duration::ZERO)
+        let signaled = pollfd(maps.ringbuf(), libc::POLLIN, Duration::ZERO)
             .expect("Failed to poll ringbuffer FD");
         assert!(signaled == None);
 
         let socket = UdpSocket::bind("127.0.0.1:0").expect("Failed to create UPD socket");
         let cookie = get_socket_cookie(socket.as_fd()).expect("Failed to get SO_COOKIE");
-        program.maps.set_target_cookie(cookie);
+        maps.set_target_cookie(cookie);
 
         let _attached = program.attach();
 
@@ -470,7 +488,7 @@ mod tests {
         socket.send_to(&[1, 2, 3], "127.0.0.1:12345").expect("Failed to send UDP packet");
 
         // The ring buffer FD should be signalled by the program.
-        let signaled = pollfd(program.maps.ringbuf(), libc::POLLIN, Duration::MAX)
+        let signaled = pollfd(maps.ringbuf(), libc::POLLIN, Duration::MAX)
             .expect("Failed to poll ringbuffer FD");
         assert!(signaled == Some(libc::POLLIN));
     }
@@ -480,10 +498,12 @@ mod tests {
     fn ebpf_ingress() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "skb_test_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SKB,
             linux_uapi::bpf_attach_type_BPF_CGROUP_INET_INGRESS,
+            &mut maps,
         );
 
         // Setup a listening socket.
@@ -491,7 +511,7 @@ mod tests {
         let recv_addr = recv_socket.local_addr().expect("Failed to get local socket addr");
 
         let cookie = get_socket_cookie(recv_socket.as_fd()).expect("Failed to get SO_COOKIE");
-        program.maps.set_target_cookie(cookie);
+        maps.set_target_cookie(cookie);
 
         let _attached = program.attach();
 
@@ -500,7 +520,7 @@ mod tests {
         send_socket.send_to(&[1, 2, 3], recv_addr).expect("Failed to send UDP packet");
 
         // The ring buffer FD should be signalled by the program.
-        let signaled = pollfd(program.maps.ringbuf(), libc::POLLIN, Duration::MAX)
+        let signaled = pollfd(maps.ringbuf(), libc::POLLIN, Duration::MAX)
             .expect("Failed to poll ringbuffer FD");
         assert!(signaled == Some(libc::POLLIN));
     }
@@ -510,21 +530,23 @@ mod tests {
     fn ebpf_sock_create() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "sock_create_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK,
             linux_uapi::bpf_attach_type_BPF_CGROUP_INET_SOCK_CREATE,
+            &mut maps,
         );
         let _attached = program.attach();
 
         // Verify that the counter is incremented when a new socket is created.
-        let last_count = program.maps.get_count();
-        let initial_variable = program.maps.get_global_variables();
+        let last_count = maps.get_count();
+        let initial_variable = maps.get_global_variables();
 
         let _socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to create UDP socket");
 
-        let new_count = program.maps.get_count();
-        let end_variable = program.maps.get_global_variables();
+        let new_count = maps.get_count();
+        let end_variable = maps.get_global_variables();
 
         assert!(new_count - last_count >= 1);
         assert!(end_variable.global_counter1 - initial_variable.global_counter1 >= 1);
@@ -542,25 +564,27 @@ mod tests {
     fn sock_release_prog() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "sock_release_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK,
             linux_uapi::bpf_attach_type_BPF_CGROUP_INET_SOCK_RELEASE,
+            &mut maps,
         );
 
         let socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to create UDP socket");
         let cookie = get_socket_cookie(socket.as_fd()).expect("Failed to get SO_COOKIE");
-        program.maps.set_target_cookie(cookie);
+        maps.set_target_cookie(cookie);
 
         let _attached = program.attach();
 
         // Verify that the counter is incremented when a new socket is released.
-        let last_count = program.maps.get_count();
+        let last_count = maps.get_count();
         std::mem::drop(socket);
-        let new_count = program.maps.get_count();
+        let new_count = maps.get_count();
         assert_eq!(new_count, last_count + 1);
 
-        let test_result = program.maps.get_test_result();
+        let test_result = maps.get_test_result();
 
         // SAFETY: These libc functions are safe to call.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
@@ -576,10 +600,12 @@ mod tests {
     fn ebpf_setsockopt() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "setsockopt_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCKOPT,
             linux_uapi::bpf_attach_type_BPF_CGROUP_SETSOCKOPT,
+            &mut maps,
         );
         let _attached = program.attach();
 
@@ -594,7 +620,7 @@ mod tests {
 
         // Since the `optval` is larger than one page the program will get
         // only the first page.
-        let test_result = program.maps.get_test_result();
+        let test_result = maps.get_test_result();
         assert_eq!(test_result.optlen, 10000);
         assert_eq!(test_result.optval_size, getpagesize() as u64);
 
@@ -640,10 +666,12 @@ mod tests {
     fn ebpf_getsockopt() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "getsockopt_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCKOPT,
             linux_uapi::bpf_attach_type_BPF_CGROUP_GETSOCKOPT,
+            &mut maps,
         );
         let _attached = program.attach();
 
@@ -659,7 +687,7 @@ mod tests {
 
         // Verify that `bpf_sockopt.retval` is set correctly and
         // `bpf_get_retval()` returns the same value.
-        let test_result = program.maps.get_test_result();
+        let test_result = maps.get_test_result();
         assert_eq!(test_result.retval, -libc::ENOPROTOOPT);
         assert_eq!(test_result.get_retval, -libc::ENOPROTOOPT);
 
@@ -705,15 +733,17 @@ mod tests {
     fn ebpf_udp_recv() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "udprecv6_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
             linux_uapi::bpf_attach_type_BPF_CGROUP_UDP6_RECVMSG,
+            &mut maps,
         );
 
         let recv_socket = UdpSocket::bind("[::]:0").expect("Failed to create UPD socket");
         let cookie = get_socket_cookie(recv_socket.as_fd()).expect("Failed to get SO_COOKIE");
-        program.maps.set_target_cookie(cookie);
+        maps.set_target_cookie(cookie);
 
         let _attached = program.attach();
 
@@ -726,13 +756,13 @@ mod tests {
             .expect("Failed to send UDP packet");
 
         // The program shouldn't be called until `recv()`.
-        assert_eq!(program.maps.get_count(), 0);
+        assert_eq!(maps.get_count(), 0);
 
         let mut buf = [0; 10];
         recv_socket.recv(&mut buf).expect("Failed to receive a UDP packet");
 
-        assert_eq!(program.maps.get_count(), 1);
-        let test_result = program.maps.get_test_result();
+        assert_eq!(maps.get_count(), 1);
+        let test_result = maps.get_test_result();
         let src_port = send_socket.local_addr().expect("Failed to get local ip").port();
         assert_eq!(test_result.sockaddr_port, src_port.to_be() as u32);
         assert_eq!(test_result.sockaddr_family, linux_uapi::AF_INET6);
@@ -747,10 +777,12 @@ mod tests {
     fn ebpf_udp_send() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "udpsend4_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
             linux_uapi::bpf_attach_type_BPF_CGROUP_UDP4_SENDMSG,
+            &mut maps,
         );
 
         let _attached = program.attach();
@@ -766,15 +798,15 @@ mod tests {
 
         // sendto() should be blocked once we set target socket cookie.
         let cookie = get_socket_cookie(send_socket.as_fd()).expect("Failed to get SO_COOKIE");
-        program.maps.set_target_cookie(cookie);
+        maps.set_target_cookie(cookie);
 
         let err = send_socket
             .send_to(&[1, 2, 3], ("127.0.0.1", 65535))
             .expect_err("sendto expected to fail");
         assert_eq!(err.raw_os_error(), Some(libc::EPERM));
 
-        assert_eq!(program.maps.get_count(), 1);
-        let test_result = program.maps.get_test_result();
+        assert_eq!(maps.get_count(), 1);
+        let test_result = maps.get_test_result();
         assert_eq!(test_result.sockaddr_port, dst_port.to_be() as u32);
         assert_eq!(test_result.sockaddr_family, linux_uapi::AF_INET);
         assert_eq!(test_result.sockaddr_ip[0], 0x0100007F);
@@ -785,10 +817,12 @@ mod tests {
     fn ebpf_udp_send_connected() {
         root_required!();
 
+        let mut maps = MapSet::new();
         let program = LoadedProgram::new(
             "udpsend4_prog",
             linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
             linux_uapi::bpf_attach_type_BPF_CGROUP_UDP4_SENDMSG,
+            &mut maps,
         );
 
         let _attached = program.attach();
@@ -800,10 +834,57 @@ mod tests {
         send_socket.connect(("127.0.0.1", dst_port)).expect("Failed to connect");
 
         let cookie = get_socket_cookie(send_socket.as_fd()).expect("Failed to get SO_COOKIE");
-        program.maps.set_target_cookie(cookie);
+        maps.set_target_cookie(cookie);
 
         // `send()` should still succeed - the program is invoked only for
         // `sendmsg()` and `sendto()`.
         send_socket.send(&[1, 2, 3]).expect("Failed to send UDP packet");
+    }
+
+    #[test]
+    #[serial]
+    fn ebpf_sk_storage() {
+        root_required!();
+
+        let mut maps = MapSet::new();
+        let sock_create_program = LoadedProgram::new(
+            "sock_create_sk_storage_prog",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK,
+            linux_uapi::bpf_attach_type_BPF_CGROUP_INET_SOCK_CREATE,
+            &mut maps,
+        );
+        let _attached = sock_create_program.attach();
+
+        let setsockopt_program = LoadedProgram::new(
+            "setsockopt_sk_storage_prog",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCKOPT,
+            linux_uapi::bpf_attach_type_BPF_CGROUP_SETSOCKOPT,
+            &mut maps,
+        );
+        let _attached = setsockopt_program.attach();
+
+        let connect_program = LoadedProgram::new(
+            "connect_sk_storage_prog",
+            linux_uapi::bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
+            linux_uapi::bpf_attach_type_BPF_CGROUP_INET4_CONNECT,
+            &mut maps,
+        );
+        let _attached = connect_program.attach();
+
+        let socket = UdpSocket::bind("127.0.0.1:0").expect("Failed to create UDP socket");
+
+        // Trigger setsockopt.
+        assert!(setsockopt(socket.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, &[0; 4]).is_ok());
+
+        // Trigger connect.
+        socket.connect("127.0.0.1:12345").expect("udp connect failed");
+
+        let sk_storage_map_fd = maps.find("sk_storage_map", bpf_map_type_BPF_MAP_TYPE_SK_STORAGE);
+        let value: i32 = bpf_map_lookup_elem(sk_storage_map_fd, socket.as_raw_fd())
+            .expect("Failed to test_result");
+
+        // The final value should be 1 + 2 + 4 = 7.
+        const EXPECTED_VALUE: i32 = 7;
+        assert_eq!(value, EXPECTED_VALUE);
     }
 }

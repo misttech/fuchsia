@@ -20,9 +20,22 @@ use crate::bpf::attachments::EbpfAttachments;
 use crate::bpf::map::{BpfMapHandle, BpfMapId, WeakBpfMapHandle};
 use crate::bpf::program::{ProgramHandle, ProgramId, WeakProgramHandle};
 use starnix_sync::{EbpfStateLock, LockBefore, Locked, OrderedMutex};
+use starnix_uapi::{bpf_map_type, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE};
 use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::sync::Arc;
+use zerocopy::IntoBytes as _;
+
+struct WeakMapWithType {
+    map_type: bpf_map_type,
+    weak_map: WeakBpfMapHandle,
+}
+
+impl WeakMapWithType {
+    fn new(map: &BpfMapHandle) -> Self {
+        Self { map_type: map.schema.map_type, weak_map: Arc::downgrade(map) }
+    }
+}
 
 /// Stores global eBPF state.
 #[derive(Default)]
@@ -30,7 +43,7 @@ pub struct EbpfState {
     pub attachments: EbpfAttachments,
 
     programs: OrderedMutex<BTreeMap<ProgramId, WeakProgramHandle>, EbpfStateLock>,
-    maps: OrderedMutex<BTreeMap<BpfMapId, WeakBpfMapHandle>, EbpfStateLock>,
+    maps: OrderedMutex<BTreeMap<BpfMapId, WeakMapWithType>, EbpfStateLock>,
 }
 
 impl EbpfState {
@@ -74,7 +87,7 @@ impl EbpfState {
     where
         L: LockBefore<EbpfStateLock>,
     {
-        self.maps.lock(locked).insert(map.id(), Arc::downgrade(map));
+        self.maps.lock(locked).insert(map.id(), WeakMapWithType::new(map));
     }
 
     fn unregister_map<L>(&self, locked: &mut Locked<L>, id: BpfMapId)
@@ -99,6 +112,21 @@ impl EbpfState {
     where
         L: LockBefore<EbpfStateLock>,
     {
-        self.maps.lock(locked).get(&id).map(|p| p.upgrade()).flatten()
+        self.maps.lock(locked).get(&id).map(|entry| entry.weak_map.upgrade()).flatten()
+    }
+
+    /// Removed socket with the specified `cookie` from all `sk_storage` maps.
+    // TODO(https://fxbug.dev/496639039): Move sk_storage cleanup to Netstack.
+    pub fn remove_sk_storage_entries<L>(&self, locked: &mut Locked<L>, cookie: u64)
+    where
+        L: LockBefore<EbpfStateLock>,
+    {
+        self.maps.lock(locked).iter().for_each(|(_, entry)| {
+            if entry.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE
+                && let Some(map) = entry.weak_map.upgrade()
+            {
+                let _ = map.delete(cookie.as_bytes());
+            }
+        });
     }
 }

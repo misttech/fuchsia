@@ -7,21 +7,23 @@ use crate::maps::{Map, MapValueRef, RingBuffer, RingBufferWakeupPolicy};
 use ebpf::{BpfValue, EbpfBufferPtr, EbpfHelperImpl, EbpfProgramContext, FromBpfValue, HelperSet};
 use inspect_stubs::track_stub;
 use linux_uapi::{
-    bpf_func_id_BPF_FUNC_get_current_pid_tgid, bpf_func_id_BPF_FUNC_get_current_uid_gid,
-    bpf_func_id_BPF_FUNC_get_retval, bpf_func_id_BPF_FUNC_get_smp_processor_id,
-    bpf_func_id_BPF_FUNC_get_socket_cookie, bpf_func_id_BPF_FUNC_get_socket_uid,
-    bpf_func_id_BPF_FUNC_ktime_get_boot_ns, bpf_func_id_BPF_FUNC_ktime_get_coarse_ns,
-    bpf_func_id_BPF_FUNC_ktime_get_ns, bpf_func_id_BPF_FUNC_map_delete_elem,
-    bpf_func_id_BPF_FUNC_map_lookup_elem, bpf_func_id_BPF_FUNC_map_update_elem,
-    bpf_func_id_BPF_FUNC_probe_read_str, bpf_func_id_BPF_FUNC_probe_read_user,
-    bpf_func_id_BPF_FUNC_probe_read_user_str, bpf_func_id_BPF_FUNC_ringbuf_discard,
-    bpf_func_id_BPF_FUNC_ringbuf_reserve, bpf_func_id_BPF_FUNC_ringbuf_submit,
-    bpf_func_id_BPF_FUNC_set_retval, bpf_func_id_BPF_FUNC_sk_fullsock,
-    bpf_func_id_BPF_FUNC_sk_storage_get, bpf_func_id_BPF_FUNC_skb_load_bytes,
-    bpf_func_id_BPF_FUNC_skb_load_bytes_relative, bpf_func_id_BPF_FUNC_trace_printk, gid_t, pid_t,
-    uid_t,
+    BPF_SK_STORAGE_GET_F_CREATE, bpf_func_id_BPF_FUNC_get_current_pid_tgid,
+    bpf_func_id_BPF_FUNC_get_current_uid_gid, bpf_func_id_BPF_FUNC_get_retval,
+    bpf_func_id_BPF_FUNC_get_smp_processor_id, bpf_func_id_BPF_FUNC_get_socket_cookie,
+    bpf_func_id_BPF_FUNC_get_socket_uid, bpf_func_id_BPF_FUNC_ktime_get_boot_ns,
+    bpf_func_id_BPF_FUNC_ktime_get_coarse_ns, bpf_func_id_BPF_FUNC_ktime_get_ns,
+    bpf_func_id_BPF_FUNC_map_delete_elem, bpf_func_id_BPF_FUNC_map_lookup_elem,
+    bpf_func_id_BPF_FUNC_map_update_elem, bpf_func_id_BPF_FUNC_probe_read_str,
+    bpf_func_id_BPF_FUNC_probe_read_user, bpf_func_id_BPF_FUNC_probe_read_user_str,
+    bpf_func_id_BPF_FUNC_ringbuf_discard, bpf_func_id_BPF_FUNC_ringbuf_reserve,
+    bpf_func_id_BPF_FUNC_ringbuf_submit, bpf_func_id_BPF_FUNC_set_retval,
+    bpf_func_id_BPF_FUNC_sk_fullsock, bpf_func_id_BPF_FUNC_sk_storage_get,
+    bpf_func_id_BPF_FUNC_skb_load_bytes, bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
+    bpf_func_id_BPF_FUNC_trace_printk, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, gid_t, pid_t, uid_t,
 };
+use smallvec::SmallVec;
 use std::slice;
+use zerocopy::IntoBytes as _;
 
 pub trait MapsContext<'a> {
     fn on_map_access(&mut self, map: &Map);
@@ -56,6 +58,12 @@ fn bpf_map_lookup_elem<'a, C: MapsProgramContext>(
 ) -> BpfValue {
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
+
+    // TODO(https://fxbug.dev/496639039): This should be checked by the verifier.
+    if map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
+        return BpfValue::default();
+    }
+
     // SAFETY: safety is ensured by the verifier.
     let key = unsafe { EbpfBufferPtr::new(key.as_ptr::<u8>(), map.schema.key_size as usize) };
     let key: MapKey = key.load();
@@ -88,6 +96,11 @@ fn bpf_map_update_elem<C: MapsProgramContext>(
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
 
+    // TODO(https://fxbug.dev/496639039): This should be checked by the verifier.
+    if map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
+        return BpfValue::default();
+    }
+
     // SAFETY: safety is ensured by the verifier.
     let key = unsafe { EbpfBufferPtr::new(key.as_ptr::<u8>(), map.schema.key_size as usize) };
     let key: MapKey = key.load();
@@ -111,6 +124,12 @@ fn bpf_map_delete_elem<C: MapsProgramContext>(
 ) -> BpfValue {
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
+
+    // TODO(https://fxbug.dev/496639039): This should be checked by the verifier.
+    if map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
+        return BpfValue::default();
+    }
+
     // SAFETY: safety is ensured by the verifier.
     let key = unsafe { EbpfBufferPtr::new(key.as_ptr::<u8>(), map.schema.key_size as usize) };
     let key: MapKey = key.load();
@@ -474,10 +493,10 @@ fn bpf_skb_load_bytes_relative<'a, C: SkbLoadBytesProgramContext>(
 
 fn bpf_sk_storage_get<'a, C: SkStorageProgramContext + MapsProgramContext>(
     context: &mut C::RunContext<'a>,
-    _map: BpfValue,
+    map: BpfValue,
     sk: BpfValue,
-    _value: BpfValue,
-    _flags: BpfValue,
+    value: BpfValue,
+    flags: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
     if sk.is_zero() {
@@ -489,9 +508,45 @@ fn bpf_sk_storage_get<'a, C: SkStorageProgramContext + MapsProgramContext>(
     let bpf_sock = unsafe { C::BpfSockRef::from_bpf_value(context, sk) };
 
     // Use socket cookie to identify the socket in the map.
-    let _socket_id = bpf_sock.get_socket_cookie();
+    let Some(socket_id) = bpf_sock.get_socket_cookie() else {
+        return BpfValue::default();
+    };
 
-    // TODO(https://fxbug.dev/496639039): Implement sk_storage maps.
+    let key = socket_id.as_bytes();
+
+    // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
+    let map: &Map = unsafe { &*map.as_ptr::<Map>() };
+
+    if map.schema.map_type != bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
+        return BpfValue::default();
+    }
+
+    C::on_map_access(context, map);
+
+    if let Some(value_ref) = map.lookup(key) {
+        let result: BpfValue = value_ref.ptr().raw_ptr().into();
+        return result;
+    }
+
+    if flags.as_u32() & BPF_SK_STORAGE_GET_F_CREATE != 0 {
+        let mut vec;
+        let init_val = if value.as_u64() == 0 {
+            vec = SmallVec::<[u8; 128]>::new();
+            vec.resize(map.schema.value_size as usize, 0);
+            (&mut vec[..]).into()
+        } else {
+            // SAFETY: The verifier ensures that `value` points to a valid buffer.
+            unsafe { EbpfBufferPtr::new(value.as_ptr::<u8>(), map.schema.value_size as usize) }
+        };
+
+        let r = map.update(key, init_val, 0);
+        if r.is_ok() {
+            if let Some(value_ref) = map.lookup(key) {
+                let result: BpfValue = value_ref.ptr().raw_ptr().into();
+                return result;
+            }
+        }
+    }
 
     BpfValue::default()
 }

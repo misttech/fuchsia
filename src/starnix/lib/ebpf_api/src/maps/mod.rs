@@ -339,6 +339,8 @@ impl<'a> MapValueRef<'a> {
     }
 }
 
+const SK_STORAGE_MAX_ENTRIES: u32 = 8192;
+
 fn create_map_impl(
     schema: &MapSchema,
     vmo: impl Into<VmoOrName>,
@@ -351,6 +353,24 @@ fn create_map_impl(
         bpf_map_type_BPF_MAP_TYPE_HASH => Ok(Box::pin(hashmap::HashMap::new(schema, vmo)?)),
         bpf_map_type_BPF_MAP_TYPE_RINGBUF => Ok(ring_buffer::RingBuffer::new(schema, vmo)?),
         bpf_map_type_BPF_MAP_TYPE_LPM_TRIE => Ok(Box::pin(lpm_trie::LpmTrie::new(schema, vmo)?)),
+        bpf_map_type_BPF_MAP_TYPE_SK_STORAGE => {
+            if schema.key_size != 4
+                || schema.max_entries != 0
+                || schema.flags != MapFlags::NoPrealloc
+            {
+                return Err(MapError::InvalidParam);
+            }
+
+            // SK_STORAGE maps are implemented as hashmaps with socket cookie used as a key.
+            let schema = MapSchema {
+                map_type: bpf_map_type_BPF_MAP_TYPE_HASH,
+                key_size: 8,
+                max_entries: SK_STORAGE_MAX_ENTRIES,
+                value_size: schema.value_size,
+                flags: MapFlags::NoPrealloc,
+            };
+            Ok(Box::pin(hashmap::HashMap::new(&schema, vmo)?))
+        }
 
         // These types are in use, but not yet implemented. Incorrectly use Array or Hash for
         // these
@@ -369,10 +389,6 @@ fn create_map_impl(
         bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_PERCPU_ARRAY");
             Ok(Box::pin(array::Array::new(schema, vmo)?))
-        }
-        bpf_map_type_BPF_MAP_TYPE_SK_STORAGE => {
-            track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_SK_STORAGE");
-            Ok(Box::pin(array::Array::new(&MapSchema { max_entries: 1, ..*schema }, vmo)?))
         }
         bpf_map_type_BPF_MAP_TYPE_LRU_HASH => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_LRU_HASH");
@@ -724,6 +740,7 @@ mod test {
             let (key_size, value_size, max_entries, flags) = match map_type {
                 bpf_map_type_BPF_MAP_TYPE_RINGBUF => (0, 0, 4096, MapFlags::empty()),
                 bpf_map_type_BPF_MAP_TYPE_LPM_TRIE => (8, 4, 4096, MapFlags::NoPrealloc),
+                bpf_map_type_BPF_MAP_TYPE_SK_STORAGE => (4, 4, 0, MapFlags::NoPrealloc),
                 _ => (4, 4, 1, MapFlags::empty()),
             };
             let schema = MapSchema { map_type, key_size, value_size, max_entries, flags };

@@ -676,7 +676,14 @@ impl SocketOps for ZxioBackedSocket {
                 );
         }
 
+        let cookie = self.get_socket_cookie();
+
         let _ = self.zxio.close();
+
+        // TODO(https://fxbug.dev/496639039): Move sk_storage cleanup to Netstack.
+        if let Ok(cookie) = cookie {
+            current_task.kernel().ebpf_state.remove_sk_storage_entries(locked, cookie);
+        }
     }
 
     fn getsockname(

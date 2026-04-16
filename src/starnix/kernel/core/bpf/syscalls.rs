@@ -7,11 +7,12 @@
 
 use crate::bpf::attachments::{BpfAttachAttr, bpf_prog_attach, bpf_prog_detach};
 use crate::bpf::fs::{BpfFsDir, BpfHandle, get_bpf_object, resolve_pinned_bpf_object};
-use crate::bpf::map::{self, BpfMap};
+use crate::bpf::map::{self, BpfMap, BpfMapHandle};
 use crate::bpf::program::{Program, ProgramInfo};
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::security;
 use crate::task::CurrentTask;
+use crate::vfs::socket::{Socket, ZxioBackedSocket};
 use crate::vfs::{
     Anon, FdFlags, FdNumber, FileObject, LookupContext, NamespaceNode, OutputBuffer,
     UserBuffersOutputBuffer,
@@ -43,8 +44,8 @@ use starnix_uapi::{
     bpf_cmd_BPF_PROG_GET_FD_BY_ID, bpf_cmd_BPF_PROG_GET_NEXT_ID, bpf_cmd_BPF_PROG_LOAD,
     bpf_cmd_BPF_PROG_QUERY, bpf_cmd_BPF_PROG_RUN, bpf_cmd_BPF_RAW_TRACEPOINT_OPEN,
     bpf_cmd_BPF_TASK_FD_QUERY, bpf_cmd_BPF_TOKEN_CREATE, bpf_map_info,
-    bpf_map_type_BPF_MAP_TYPE_DEVMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH, bpf_prog_info, errno,
-    error,
+    bpf_map_type_BPF_MAP_TYPE_DEVMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH,
+    bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, bpf_prog_info, errno, error,
 };
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -123,10 +124,24 @@ pub struct BpfTypeFormat {
 fn read_map_key(
     current_task: &CurrentTask,
     addr: UserAddress,
-    key_size: u32,
+    map: &BpfMapHandle,
 ) -> Result<MapKey, Errno> {
-    let key_size = key_size as usize;
-    current_task.read_objects_to_smallvec(UserRef::<u8>::new(addr), key_size as usize)
+    let key_size = map.schema.key_size as usize;
+    let mut key = current_task.read_objects_to_smallvec(UserRef::<u8>::new(addr), key_size)?;
+
+    // With sk_storage maps the key is interpreted as a socket file descriptor.
+    if map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
+        let fd = FdNumber::from_raw(
+            i32::read_from_bytes(&key[..]).expect("invalid key size in sk_storage map"),
+        );
+        let file = current_task.get_file(fd)?;
+        let socket = Socket::get_from_file(&file)?;
+        let socket = socket.downcast_socket::<ZxioBackedSocket>().ok_or_else(|| errno!(EINVAL))?;
+        let cookie = socket.get_socket_cookie()?;
+        key = MapKey::from_slice(cookie.as_bytes());
+    }
+
+    Ok(key)
 }
 
 fn validate_bpf_name(name: &[u8]) -> Result<&str, Errno> {
@@ -207,8 +222,7 @@ pub fn sys_bpf(
                 return error!(EPERM);
             }
 
-            let key =
-                read_map_key(current_task, UserAddress::from(elem_attr.key), map.schema.key_size)?;
+            let key = read_map_key(current_task, UserAddress::from(elem_attr.key), map)?;
 
             // SAFETY: this union object was created with FromBytes so it's safe to access any
             // variant because all variants must be valid with all bit patterns.
@@ -240,8 +254,7 @@ pub fn sys_bpf(
             }
 
             let flags = elem_attr.flags;
-            let key =
-                read_map_key(current_task, UserAddress::from(elem_attr.key), map.schema.key_size)?;
+            let key = read_map_key(current_task, UserAddress::from(elem_attr.key), map)?;
 
             // SAFETY: this union object was created with FromBytes so it's safe to access any
             // variant because all variants must be valid with all bit patterns.
@@ -272,8 +285,7 @@ pub fn sys_bpf(
                 return error!(EPERM);
             }
 
-            let key =
-                read_map_key(current_task, UserAddress::from(elem_attr.key), map.schema.key_size)?;
+            let key = read_map_key(current_task, UserAddress::from(elem_attr.key), map)?;
 
             let _suspend_lock =
                 current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock(locked);
@@ -297,11 +309,7 @@ pub fn sys_bpf(
             }
 
             let key = if elem_attr.key != 0 {
-                Some(read_map_key(
-                    current_task,
-                    UserAddress::from(elem_attr.key),
-                    map.schema.key_size,
-                )?)
+                Some(read_map_key(current_task, UserAddress::from(elem_attr.key), map)?)
             } else {
                 None
             };
