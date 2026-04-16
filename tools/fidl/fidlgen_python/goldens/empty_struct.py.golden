@@ -178,6 +178,7 @@ class EmptyProtocolSendRequest:
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -189,6 +190,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class EmptyProtocolServer(ServerBase, ABC):
@@ -217,8 +219,6 @@ class EmptyProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -270,8 +270,6 @@ class EmptyProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -302,14 +300,20 @@ class EmptyProtocolClient(FidlClient):
         msg = EmptyProtocolSendAndReceiveRequest(
             e,
         )
-        return self._send_two_way_fidl_request(
-            534401212734647530,
-            "test.emptystruct",
-            msg,
-            normalize_identifier(
-                "test.emptystruct/EmptyProtocolSendAndReceiveResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, EmptyProtocolSendAndReceiveResponse
+            ],
+            self._send_two_way_fidl_request(
+                534401212734647530,
+                "test.emptystruct",
+                msg,
+                normalize_identifier(
+                    "test.emptystruct/EmptyProtocolSendAndReceiveResponse"
+                ),
             ),
         )
+        return ret
 
 
 class EmptyProtocolEventHandler(EventHandlerBase, ABC):
@@ -330,8 +334,6 @@ class EmptyProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )

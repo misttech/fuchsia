@@ -19,6 +19,7 @@ import fidl_test_middle
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -30,6 +31,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class TopServer(ServerBase, ABC):
@@ -50,8 +52,6 @@ class TopServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -76,8 +76,6 @@ class TopClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -88,12 +86,18 @@ class TopClient(FidlClient):
         typing.Any, typing.Any, fidl_test_middle.MiddleGetFooResponse
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            4619180266423108403,
-            "test.foreigntypeinresponseusedthroughcompose",
-            msg,
-            normalize_identifier("test.middle/MiddleGetFooResponse"),
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, fidl_test_middle.MiddleGetFooResponse
+            ],
+            self._send_two_way_fidl_request(
+                4619180266423108403,
+                "test.foreigntypeinresponseusedthroughcompose",
+                msg,
+                normalize_identifier("test.middle/MiddleGetFooResponse"),
+            ),
         )
+        return ret
 
 
 class TopEventHandler(EventHandlerBase, ABC):
@@ -105,8 +109,6 @@ class TopEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )

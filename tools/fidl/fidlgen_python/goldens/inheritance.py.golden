@@ -80,6 +80,7 @@ class SuperFooResponse:
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -91,6 +92,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class SubServer(ServerBase, ABC):
@@ -111,8 +113,6 @@ class SubServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -138,8 +138,6 @@ class SubClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -152,12 +150,16 @@ class SubClient(FidlClient):
         msg = SuperFooRequest(
             s,
         )
-        return self._send_two_way_fidl_request(
-            7540745593380780216,
-            "test.inheritance",
-            msg,
-            normalize_identifier("test.inheritance/SuperFooResponse"),
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, SuperFooResponse],
+            self._send_two_way_fidl_request(
+                7540745593380780216,
+                "test.inheritance",
+                msg,
+                normalize_identifier("test.inheritance/SuperFooResponse"),
+            ),
         )
+        return ret
 
 
 class SubEventHandler(EventHandlerBase, ABC):
@@ -169,8 +171,6 @@ class SubEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -180,6 +180,7 @@ SubMarker = FidlProtocolMarker("(nondiscoverable) test.inheritance/sub")
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -191,6 +192,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class SuperServer(ServerBase, ABC):
@@ -211,8 +213,6 @@ class SuperServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -238,8 +238,6 @@ class SuperClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -252,12 +250,16 @@ class SuperClient(FidlClient):
         msg = SuperFooRequest(
             s,
         )
-        return self._send_two_way_fidl_request(
-            7540745593380780216,
-            "test.inheritance",
-            msg,
-            normalize_identifier("test.inheritance/SuperFooResponse"),
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, SuperFooResponse],
+            self._send_two_way_fidl_request(
+                7540745593380780216,
+                "test.inheritance",
+                msg,
+                normalize_identifier("test.inheritance/SuperFooResponse"),
+            ),
         )
+        return ret
 
 
 class SuperEventHandler(EventHandlerBase, ABC):
@@ -269,8 +271,6 @@ class SuperEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )

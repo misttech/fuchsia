@@ -419,6 +419,7 @@ class SimpleUnion:
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -430,6 +431,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class SimpleProtocolServer(ServerBase, ABC):
@@ -450,8 +452,6 @@ class SimpleProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -477,8 +477,6 @@ class SimpleProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -495,12 +493,18 @@ class SimpleProtocolClient(FidlClient):
             a,
             b,
         )
-        return self._send_two_way_fidl_request(
-            9142761280038437494,
-            "test.nullable",
-            msg,
-            normalize_identifier("test.nullable/SimpleProtocolAddResponse"),
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, SimpleProtocolAddResponse
+            ],
+            self._send_two_way_fidl_request(
+                9142761280038437494,
+                "test.nullable",
+                msg,
+                normalize_identifier("test.nullable/SimpleProtocolAddResponse"),
+            ),
         )
+        return ret
 
 
 class SimpleProtocolEventHandler(EventHandlerBase, ABC):
@@ -512,8 +516,6 @@ class SimpleProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )

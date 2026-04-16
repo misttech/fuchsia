@@ -6,6 +6,7 @@
 
 {{ define "ProtocolDeclaration" -}}
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier
@@ -13,6 +14,8 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc # type: ignore[unused-ignore,unused-import]
+import typing
+
 
 class {{ .PythonServerName }}(ServerBase, ABC):
     {{- if .DocComments }}
@@ -43,7 +46,6 @@ class {{ .PythonServerName }}(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
         return fidl._construct.construct_response_object(response_ident, response_obj)
 
 {{ range .PythonMethods }}
@@ -118,7 +120,6 @@ class {{ .PythonClientName }}(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
         return fidl._construct.construct_response_object(response_ident, response_obj)
 
 {{ range .PythonMethods -}}
@@ -156,13 +157,21 @@ class {{ .PythonClientName }}(FidlClient):
         {{- end }}
         {{ if .HasResponse -}}
         {{- if .PythonResponsePayload -}}
-        return self._send_two_way_fidl_request(
-            {{ .Ordinal }}, "{{ $.Library }}", msg, normalize_identifier("{{ .PythonResponsePayload.PythonType.Identifier }}"),
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, {{ .PythonResponsePayload.PythonType.PythonName }}],
+            self._send_two_way_fidl_request(
+                {{ .Ordinal }}, "{{ $.Library }}", msg, normalize_identifier("{{ .PythonResponsePayload.PythonType.Identifier }}"),
+            ),
         )
+        return ret
         {{- else -}}
-        return self._send_two_way_fidl_request(
-            {{ .Ordinal }}, "{{ $.Library }}", msg, "",
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, None],
+            self._send_two_way_fidl_request(
+                {{ .Ordinal }}, "{{ $.Library }}", msg, "",
+            ),
         )
+        return ret
         {{- end -}}
         {{- else }}
         self._send_one_way_fidl_request(
@@ -202,7 +211,6 @@ class {{ .PythonEventHandlerName }}(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
         return fidl._construct.construct_response_object(response_ident, response_obj)
 
 {{ range .PythonMethods -}}

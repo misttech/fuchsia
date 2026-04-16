@@ -318,6 +318,7 @@ class StrictFoo:
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -329,6 +330,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class ProtocolServer(ServerBase, ABC):
@@ -357,8 +359,6 @@ class ProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -404,8 +404,6 @@ class ProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -420,14 +418,22 @@ class ProtocolClient(FidlClient):
         msg = ProtocolRequestStrictResponseFlexibleRequest(
             s,
         )
-        return self._send_two_way_fidl_request(
-            700529454616207123,
-            "test.requestflexibleenvelope",
-            msg,
-            normalize_identifier(
-                "test.requestflexibleenvelope/ProtocolRequestStrictResponseFlexibleResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                ProtocolRequestStrictResponseFlexibleResponse,
+            ],
+            self._send_two_way_fidl_request(
+                700529454616207123,
+                "test.requestflexibleenvelope",
+                msg,
+                normalize_identifier(
+                    "test.requestflexibleenvelope/ProtocolRequestStrictResponseFlexibleResponse"
+                ),
             ),
         )
+        return ret
 
     def request_flexible_response_strict(
         self,
@@ -439,14 +445,22 @@ class ProtocolClient(FidlClient):
         msg = ProtocolRequestFlexibleResponseStrictRequest(
             s,
         )
-        return self._send_two_way_fidl_request(
-            5191655763393883319,
-            "test.requestflexibleenvelope",
-            msg,
-            normalize_identifier(
-                "test.requestflexibleenvelope/ProtocolRequestFlexibleResponseStrictResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                ProtocolRequestFlexibleResponseStrictResponse,
+            ],
+            self._send_two_way_fidl_request(
+                5191655763393883319,
+                "test.requestflexibleenvelope",
+                msg,
+                normalize_identifier(
+                    "test.requestflexibleenvelope/ProtocolRequestFlexibleResponseStrictResponse"
+                ),
             ),
         )
+        return ret
 
 
 class ProtocolEventHandler(EventHandlerBase, ABC):
@@ -458,8 +472,6 @@ class ProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )

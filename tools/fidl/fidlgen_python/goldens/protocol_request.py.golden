@@ -152,6 +152,7 @@ class ParentTakeChildRequestRequest:
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -163,6 +164,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class ChildServer(ServerBase, ABC):
@@ -174,8 +176,6 @@ class ChildServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -189,8 +189,6 @@ class ChildClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -205,8 +203,6 @@ class ChildEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -216,6 +212,7 @@ ChildMarker = FidlProtocolMarker("(nondiscoverable) test.protocolrequest/Child")
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -227,6 +224,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class ParentServer(ServerBase, ABC):
@@ -271,8 +269,6 @@ class ParentServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -336,8 +332,6 @@ class ParentClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -348,12 +342,20 @@ class ParentClient(FidlClient):
         typing.Any, typing.Any, ParentGetChildResponse
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            881818649151440699,
-            "test.protocolrequest",
-            msg,
-            normalize_identifier("test.protocolrequest/ParentGetChildResponse"),
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, ParentGetChildResponse
+            ],
+            self._send_two_way_fidl_request(
+                881818649151440699,
+                "test.protocolrequest",
+                msg,
+                normalize_identifier(
+                    "test.protocolrequest/ParentGetChildResponse"
+                ),
+            ),
         )
+        return ret
 
     def get_child_request(
         self,
@@ -361,14 +363,20 @@ class ParentClient(FidlClient):
         typing.Any, typing.Any, ParentGetChildRequestResponse
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            1096855814967598201,
-            "test.protocolrequest",
-            msg,
-            normalize_identifier(
-                "test.protocolrequest/ParentGetChildRequestResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, ParentGetChildRequestResponse
+            ],
+            self._send_two_way_fidl_request(
+                1096855814967598201,
+                "test.protocolrequest",
+                msg,
+                normalize_identifier(
+                    "test.protocolrequest/ParentGetChildRequestResponse"
+                ),
             ),
         )
+        return ret
 
     def take_child(
         self,
@@ -412,8 +420,6 @@ class ParentEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )

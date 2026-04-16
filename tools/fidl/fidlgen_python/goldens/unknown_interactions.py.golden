@@ -4278,6 +4278,7 @@ class UnknownInteractionsProtocolStrictTwoWayUnionErrResult:
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -4289,6 +4290,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
@@ -4381,8 +4383,6 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -4612,8 +4612,6 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -4646,12 +4644,16 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
-        return self._send_two_way_fidl_request(
-            364341676962177080,
-            "test.unknowninteractions",
-            msg,
-            "",
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, None],
+            self._send_two_way_fidl_request(
+                364341676962177080,
+                "test.unknowninteractions",
+                msg,
+                "",
+            ),
         )
+        return ret
 
     def strict_two_way_fields(
         self,
@@ -4661,14 +4663,22 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
         UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            1821674633227946298,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse,
+            ],
+            self._send_two_way_fidl_request(
+                1821674633227946298,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_union(
         self,
@@ -4678,14 +4688,22 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
         UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            5870221221557233361,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
+            ],
+            self._send_two_way_fidl_request(
+                5870221221557233361,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_table(
         self,
@@ -4695,14 +4713,22 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
         UnknownInteractionsAjarProtocolStrictTwoWayTableResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            8038805778859962068,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsAjarProtocolStrictTwoWayTableResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsAjarProtocolStrictTwoWayTableResponse,
+            ],
+            self._send_two_way_fidl_request(
+                8038805778859962068,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsAjarProtocolStrictTwoWayTableResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_err(
         self,
@@ -4712,14 +4738,22 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
         UnknownInteractionsAjarProtocolStrictTwoWayErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            6577335136969723910,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsAjarProtocol_StrictTwoWayErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsAjarProtocolStrictTwoWayErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                6577335136969723910,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsAjarProtocol_StrictTwoWayErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_fields_err(
         self,
@@ -4729,14 +4763,22 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
         UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            595881957484758745,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                595881957484758745,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsAjarProtocol_StrictTwoWayFieldsErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_union_err(
         self,
@@ -4746,14 +4788,22 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
         UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            3224530777258896533,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                3224530777258896533,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsAjarProtocol_StrictTwoWayUnionErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_table_err(
         self,
@@ -4763,14 +4813,22 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
         UnknownInteractionsAjarProtocolStrictTwoWayTableErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            3515589146717969463,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsAjarProtocolStrictTwoWayTableErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                3515589146717969463,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsAjarProtocol_StrictTwoWayTableErr_Result"
+                ),
             ),
         )
+        return ret
 
 
 class UnknownInteractionsAjarProtocolEventHandler(EventHandlerBase, ABC):
@@ -4847,8 +4905,6 @@ class UnknownInteractionsAjarProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -4914,6 +4970,7 @@ UnknownInteractionsAjarProtocolMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -4925,6 +4982,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
@@ -5009,8 +5067,6 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -5191,8 +5247,6 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -5213,12 +5267,16 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
-        return self._send_two_way_fidl_request(
-            6834828562275693047,
-            "test.unknowninteractions",
-            msg,
-            "",
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, None],
+            self._send_two_way_fidl_request(
+                6834828562275693047,
+                "test.unknowninteractions",
+                msg,
+                "",
+            ),
         )
+        return ret
 
     def strict_two_way_fields(
         self,
@@ -5228,14 +5286,22 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
         UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            1379139029283639891,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse,
+            ],
+            self._send_two_way_fidl_request(
+                1379139029283639891,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_union(
         self,
@@ -5245,14 +5311,22 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
         UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            7544414847426850727,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
+            ],
+            self._send_two_way_fidl_request(
+                7544414847426850727,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_table(
         self,
@@ -5262,14 +5336,22 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
         UnknownInteractionsClosedProtocolStrictTwoWayTableResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            7947328131967870853,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsClosedProtocolStrictTwoWayTableResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsClosedProtocolStrictTwoWayTableResponse,
+            ],
+            self._send_two_way_fidl_request(
+                7947328131967870853,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsClosedProtocolStrictTwoWayTableResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_err(
         self,
@@ -5279,14 +5361,22 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
         UnknownInteractionsClosedProtocolStrictTwoWayErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            5738532966428790074,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsClosedProtocol_StrictTwoWayErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsClosedProtocolStrictTwoWayErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                5738532966428790074,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsClosedProtocol_StrictTwoWayErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_fields_err(
         self,
@@ -5296,14 +5386,22 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
         UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            802395819586836733,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                802395819586836733,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsClosedProtocol_StrictTwoWayFieldsErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_union_err(
         self,
@@ -5313,14 +5411,22 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
         UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            925029359463709824,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                925029359463709824,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsClosedProtocol_StrictTwoWayUnionErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_table_err(
         self,
@@ -5330,14 +5436,22 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
         UnknownInteractionsClosedProtocolStrictTwoWayTableErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            1260407702860823440,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsClosedProtocolStrictTwoWayTableErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                1260407702860823440,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsClosedProtocol_StrictTwoWayTableErr_Result"
+                ),
             ),
         )
+        return ret
 
 
 class UnknownInteractionsClosedProtocolEventHandler(EventHandlerBase, ABC):
@@ -5382,8 +5496,6 @@ class UnknownInteractionsClosedProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -5422,6 +5534,7 @@ UnknownInteractionsClosedProtocolMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -5433,6 +5546,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class UnknownInteractionsProtocolServer(ServerBase, ABC):
@@ -5589,8 +5703,6 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -5952,8 +6064,6 @@ class UnknownInteractionsProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -5986,12 +6096,16 @@ class UnknownInteractionsProtocolClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
-        return self._send_two_way_fidl_request(
-            8308184097687583042,
-            "test.unknowninteractions",
-            msg,
-            "",
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, None],
+            self._send_two_way_fidl_request(
+                8308184097687583042,
+                "test.unknowninteractions",
+                msg,
+                "",
+            ),
         )
+        return ret
 
     def strict_two_way_fields(
         self,
@@ -6001,14 +6115,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolStrictTwoWayFieldsResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            3697260130745060067,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocolStrictTwoWayFieldsResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolStrictTwoWayFieldsResponse,
+            ],
+            self._send_two_way_fidl_request(
+                3697260130745060067,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocolStrictTwoWayFieldsResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_union(
         self,
@@ -6018,14 +6140,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolStrictTwoWayUnionResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            2455165891480464557,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocolStrictTwoWayUnionResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolStrictTwoWayUnionResponse,
+            ],
+            self._send_two_way_fidl_request(
+                2455165891480464557,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocolStrictTwoWayUnionResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_table(
         self,
@@ -6035,14 +6165,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolStrictTwoWayTableResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            8389853739594228663,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocolStrictTwoWayTableResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolStrictTwoWayTableResponse,
+            ],
+            self._send_two_way_fidl_request(
+                8389853739594228663,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocolStrictTwoWayTableResponse"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_err(
         self,
@@ -6050,14 +6188,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         typing.Any, typing.Any, UnknownInteractionsProtocolStrictTwoWayErrResult
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            7862264614495172967,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_StrictTwoWayErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolStrictTwoWayErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                7862264614495172967,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_StrictTwoWayErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_fields_err(
         self,
@@ -6067,14 +6213,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolStrictTwoWayFieldsErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            2414673307948662059,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolStrictTwoWayFieldsErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                2414673307948662059,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_StrictTwoWayFieldsErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_union_err(
         self,
@@ -6084,14 +6238,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolStrictTwoWayUnionErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            4988571416540160202,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_StrictTwoWayUnionErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolStrictTwoWayUnionErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                4988571416540160202,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_StrictTwoWayUnionErr_Result"
+                ),
             ),
         )
+        return ret
 
     def strict_two_way_table_err(
         self,
@@ -6101,14 +6263,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolStrictTwoWayTableErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            5487292735562672344,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_StrictTwoWayTableErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolStrictTwoWayTableErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                5487292735562672344,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_StrictTwoWayTableErr_Result"
+                ),
             ),
         )
+        return ret
 
     def flexible_two_way(
         self,
@@ -6116,14 +6286,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         typing.Any, typing.Any, UnknownInteractionsProtocolFlexibleTwoWayResult
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            334879577560091516,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWay_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolFlexibleTwoWayResult,
+            ],
+            self._send_two_way_fidl_request(
+                334879577560091516,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWay_Result"
+                ),
             ),
         )
+        return ret
 
     def flexible_two_way_fields(
         self,
@@ -6133,14 +6311,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolFlexibleTwoWayFieldsResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            4257018954691721778,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayFields_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolFlexibleTwoWayFieldsResult,
+            ],
+            self._send_two_way_fidl_request(
+                4257018954691721778,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayFields_Result"
+                ),
             ),
         )
+        return ret
 
     def flexible_two_way_union(
         self,
@@ -6150,14 +6336,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolFlexibleTwoWayUnionResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            4913460516188409782,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayUnion_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolFlexibleTwoWayUnionResult,
+            ],
+            self._send_two_way_fidl_request(
+                4913460516188409782,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayUnion_Result"
+                ),
             ),
         )
+        return ret
 
     def flexible_two_way_table(
         self,
@@ -6167,14 +6361,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolFlexibleTwoWayTableResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            9171907422498283911,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayTable_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolFlexibleTwoWayTableResult,
+            ],
+            self._send_two_way_fidl_request(
+                9171907422498283911,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayTable_Result"
+                ),
             ),
         )
+        return ret
 
     def flexible_two_way_err(
         self,
@@ -6184,14 +6386,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolFlexibleTwoWayErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            6999736795697216519,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolFlexibleTwoWayErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                6999736795697216519,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayErr_Result"
+                ),
             ),
         )
+        return ret
 
     def flexible_two_way_fields_err(
         self,
@@ -6201,14 +6411,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            1093132337162001157,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                1093132337162001157,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayFieldsErr_Result"
+                ),
             ),
         )
+        return ret
 
     def flexible_two_way_union_err(
         self,
@@ -6218,14 +6436,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolFlexibleTwoWayUnionErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            2410151523245950935,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolFlexibleTwoWayUnionErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                2410151523245950935,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayUnionErr_Result"
+                ),
             ),
         )
+        return ret
 
     def flexible_two_way_table_err(
         self,
@@ -6235,14 +6461,22 @@ class UnknownInteractionsProtocolClient(FidlClient):
         UnknownInteractionsProtocolFlexibleTwoWayTableErrResult,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            7893309626427980786,
-            "test.unknowninteractions",
-            msg,
-            normalize_identifier(
-                "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                UnknownInteractionsProtocolFlexibleTwoWayTableErrResult,
+            ],
+            self._send_two_way_fidl_request(
+                7893309626427980786,
+                "test.unknowninteractions",
+                msg,
+                normalize_identifier(
+                    "test.unknowninteractions/UnknownInteractionsProtocol_FlexibleTwoWayTableErr_Result"
+                ),
             ),
         )
+        return ret
 
 
 class UnknownInteractionsProtocolEventHandler(EventHandlerBase, ABC):
@@ -6319,8 +6553,6 @@ class UnknownInteractionsProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )

@@ -1636,6 +1636,7 @@ ErrorEnum = enum.IntEnum(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -1647,6 +1648,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class AnotherDiscoverableProtocolServer(ServerBase, ABC):
@@ -1658,8 +1660,6 @@ class AnotherDiscoverableProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -1673,8 +1673,6 @@ class AnotherDiscoverableProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -1689,8 +1687,6 @@ class AnotherDiscoverableProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -1702,6 +1698,7 @@ AnotherDiscoverableProtocolMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -1713,6 +1710,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class ChannelProtocolServer(ServerBase, ABC):
@@ -1757,8 +1755,6 @@ class ChannelProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -1832,8 +1828,6 @@ class ChannelProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -1868,14 +1862,20 @@ class ChannelProtocolClient(FidlClient):
             a,
             b,
         )
-        return self._send_two_way_fidl_request(
-            8903004957800778182,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/ChannelProtocolMethodBResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, ChannelProtocolMethodBResponse
+            ],
+            self._send_two_way_fidl_request(
+                8903004957800778182,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/ChannelProtocolMethodBResponse"
+                ),
             ),
         )
+        return ret
 
     def take_handle(
         self,
@@ -1885,12 +1885,16 @@ class ChannelProtocolClient(FidlClient):
         msg = ChannelProtocolTakeHandleRequest(
             h,
         )
-        return self._send_two_way_fidl_request(
-            591935489944717925,
-            "test.protocols",
-            msg,
-            "",
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, None],
+            self._send_two_way_fidl_request(
+                591935489944717925,
+                "test.protocols",
+                msg,
+                "",
+            ),
         )
+        return ret
 
     def mutate_socket(
         self,
@@ -1902,14 +1906,20 @@ class ChannelProtocolClient(FidlClient):
         msg = ChannelProtocolMutateSocketRequest(
             a,
         )
-        return self._send_two_way_fidl_request(
-            7411742788430590287,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/ChannelProtocolMutateSocketResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, ChannelProtocolMutateSocketResponse
+            ],
+            self._send_two_way_fidl_request(
+                7411742788430590287,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/ChannelProtocolMutateSocketResponse"
+                ),
             ),
         )
+        return ret
 
 
 class ChannelProtocolEventHandler(EventHandlerBase, ABC):
@@ -1930,8 +1940,6 @@ class ChannelProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -1950,6 +1958,7 @@ ChannelProtocolMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -1961,6 +1970,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class DiscoverableProtocolServer(ServerBase, ABC):
@@ -1981,8 +1991,6 @@ class DiscoverableProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2007,8 +2015,6 @@ class DiscoverableProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2035,8 +2041,6 @@ class DiscoverableProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2048,6 +2052,7 @@ DiscoverableProtocolMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -2059,6 +2064,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class HandleRightsProtocolServer(ServerBase, ABC):
@@ -2087,8 +2093,6 @@ class HandleRightsProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2142,8 +2146,6 @@ class HandleRightsProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2174,14 +2176,22 @@ class HandleRightsProtocolClient(FidlClient):
         msg = HandleRightsProtocolResponseMethodRequest(
             h,
         )
-        return self._send_two_way_fidl_request(
-            5956276128041940295,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/HandleRightsProtocolResponseMethodResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                HandleRightsProtocolResponseMethodResponse,
+            ],
+            self._send_two_way_fidl_request(
+                5956276128041940295,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/HandleRightsProtocolResponseMethodResponse"
+                ),
             ),
         )
+        return ret
 
 
 class HandleRightsProtocolEventHandler(EventHandlerBase, ABC):
@@ -2202,8 +2212,6 @@ class HandleRightsProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2222,6 +2230,7 @@ HandleRightsProtocolMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -2233,6 +2242,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class ManyParametersServer(ServerBase, ABC):
@@ -2253,8 +2263,6 @@ class ManyParametersServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2280,8 +2288,6 @@ class ManyParametersClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2340,8 +2346,6 @@ class ManyParametersEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2353,6 +2357,7 @@ ManyParametersMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -2364,6 +2369,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class MethodWithUnionServer(ServerBase, ABC):
@@ -2384,8 +2390,6 @@ class MethodWithUnionServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2411,8 +2415,6 @@ class MethodWithUnionClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2427,14 +2429,20 @@ class MethodWithUnionClient(FidlClient):
         msg = MethodWithUnionUnionMethodRequest(
             u,
         )
-        return self._send_two_way_fidl_request(
-            4124874338266649112,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/MethodWithUnionUnionMethodResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, MethodWithUnionUnionMethodResponse
+            ],
+            self._send_two_way_fidl_request(
+                4124874338266649112,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/MethodWithUnionUnionMethodResponse"
+                ),
             ),
         )
+        return ret
 
 
 class MethodWithUnionEventHandler(EventHandlerBase, ABC):
@@ -2446,8 +2454,6 @@ class MethodWithUnionEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2459,6 +2465,7 @@ MethodWithUnionMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -2470,6 +2477,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class PlatformServerServer(ServerBase, ABC):
@@ -2481,8 +2489,6 @@ class PlatformServerServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2496,8 +2502,6 @@ class PlatformServerClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2512,8 +2516,6 @@ class PlatformServerEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2523,6 +2525,7 @@ PlatformServerMarker = FidlProtocolMarker("test.protocols.PlatformServer")
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -2534,6 +2537,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class WithAndWithoutRequestResponseServer(ServerBase, ABC):
@@ -2594,8 +2598,6 @@ class WithAndWithoutRequestResponseServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2710,8 +2712,6 @@ class WithAndWithoutRequestResponseClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2732,12 +2732,16 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
-        return self._send_two_way_fidl_request(
-            1631193469798418024,
-            "test.protocols",
-            msg,
-            "",
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, None],
+            self._send_two_way_fidl_request(
+                1631193469798418024,
+                "test.protocols",
+                msg,
+                "",
+            ),
         )
+        return ret
 
     def no_request_with_response(
         self,
@@ -2747,14 +2751,22 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         WithAndWithoutRequestResponseNoRequestWithResponseResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            9037369643591427517,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithAndWithoutRequestResponseNoRequestWithResponseResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                WithAndWithoutRequestResponseNoRequestWithResponseResponse,
+            ],
+            self._send_two_way_fidl_request(
+                9037369643591427517,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithAndWithoutRequestResponseNoRequestWithResponseResponse"
+                ),
             ),
         )
+        return ret
 
     def with_request_no_response(
         self,
@@ -2780,12 +2792,16 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         msg = WithAndWithoutRequestResponseWithRequestEmptyResponseRequest(
             arg,
         )
-        return self._send_two_way_fidl_request(
-            2877322062572412767,
-            "test.protocols",
-            msg,
-            "",
+        ret = typing.cast(
+            collections.abc.Coroutine[typing.Any, typing.Any, None],
+            self._send_two_way_fidl_request(
+                2877322062572412767,
+                "test.protocols",
+                msg,
+                "",
+            ),
         )
+        return ret
 
     def with_request_with_response(
         self,
@@ -2799,14 +2815,22 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         msg = WithAndWithoutRequestResponseWithRequestWithResponseRequest(
             arg,
         )
-        return self._send_two_way_fidl_request(
-            6417226585456833969,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithAndWithoutRequestResponseWithRequestWithResponseResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                WithAndWithoutRequestResponseWithRequestWithResponseResponse,
+            ],
+            self._send_two_way_fidl_request(
+                6417226585456833969,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithAndWithoutRequestResponseWithRequestWithResponseResponse"
+                ),
             ),
         )
+        return ret
 
 
 class WithAndWithoutRequestResponseEventHandler(EventHandlerBase, ABC):
@@ -2835,8 +2859,6 @@ class WithAndWithoutRequestResponseEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2861,6 +2883,7 @@ WithAndWithoutRequestResponseMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -2872,6 +2895,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class WithErrorSyntaxServer(ServerBase, ABC):
@@ -2916,8 +2940,6 @@ class WithErrorSyntaxServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2993,8 +3015,6 @@ class WithErrorSyntaxClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -3005,14 +3025,20 @@ class WithErrorSyntaxClient(FidlClient):
         typing.Any, typing.Any, WithErrorSyntaxResponseAsStructResult
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            268248568430741139,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithErrorSyntax_ResponseAsStruct_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, WithErrorSyntaxResponseAsStructResult
+            ],
+            self._send_two_way_fidl_request(
+                268248568430741139,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithErrorSyntax_ResponseAsStruct_Result"
+                ),
             ),
         )
+        return ret
 
     def error_as_primitive(
         self,
@@ -3020,14 +3046,20 @@ class WithErrorSyntaxClient(FidlClient):
         typing.Any, typing.Any, WithErrorSyntaxErrorAsPrimitiveResult
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            6930994461233198567,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithErrorSyntax_ErrorAsPrimitive_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, WithErrorSyntaxErrorAsPrimitiveResult
+            ],
+            self._send_two_way_fidl_request(
+                6930994461233198567,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithErrorSyntax_ErrorAsPrimitive_Result"
+                ),
             ),
         )
+        return ret
 
     def error_as_enum(
         self,
@@ -3035,14 +3067,20 @@ class WithErrorSyntaxClient(FidlClient):
         typing.Any, typing.Any, WithErrorSyntaxErrorAsEnumResult
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            5491891352371277635,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithErrorSyntax_ErrorAsEnum_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, WithErrorSyntaxErrorAsEnumResult
+            ],
+            self._send_two_way_fidl_request(
+                5491891352371277635,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithErrorSyntax_ErrorAsEnum_Result"
+                ),
             ),
         )
+        return ret
 
     def handle_in_result(
         self,
@@ -3050,14 +3088,20 @@ class WithErrorSyntaxClient(FidlClient):
         typing.Any, typing.Any, WithErrorSyntaxHandleInResultResult
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            1371676333068455103,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithErrorSyntax_HandleInResult_Result"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, WithErrorSyntaxHandleInResultResult
+            ],
+            self._send_two_way_fidl_request(
+                1371676333068455103,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithErrorSyntax_HandleInResult_Result"
+                ),
             ),
         )
+        return ret
 
 
 class WithErrorSyntaxEventHandler(EventHandlerBase, ABC):
@@ -3069,8 +3113,6 @@ class WithErrorSyntaxEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -3082,6 +3124,7 @@ WithErrorSyntaxMarker = FidlProtocolMarker(
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -3093,6 +3136,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class WithProtocolEndsServer(ServerBase, ABC):
@@ -3129,8 +3173,6 @@ class WithProtocolEndsServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -3184,8 +3226,6 @@ class WithProtocolEndsClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -3200,14 +3240,20 @@ class WithProtocolEndsClient(FidlClient):
         msg = WithProtocolEndsClientEndsRequest(
             in_,
         )
-        return self._send_two_way_fidl_request(
-            5870448041025163330,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithProtocolEndsClientEndsResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, WithProtocolEndsClientEndsResponse
+            ],
+            self._send_two_way_fidl_request(
+                5870448041025163330,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithProtocolEndsClientEndsResponse"
+                ),
             ),
         )
+        return ret
 
     def server_ends(
         self,
@@ -3219,14 +3265,20 @@ class WithProtocolEndsClient(FidlClient):
         msg = WithProtocolEndsServerEndsRequest(
             in_,
         )
-        return self._send_two_way_fidl_request(
-            8115535094437022259,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithProtocolEndsServerEndsResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any, typing.Any, WithProtocolEndsServerEndsResponse
+            ],
+            self._send_two_way_fidl_request(
+                8115535094437022259,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithProtocolEndsServerEndsResponse"
+                ),
             ),
         )
+        return ret
 
     def struct_containing_ends(
         self,
@@ -3238,14 +3290,22 @@ class WithProtocolEndsClient(FidlClient):
         msg = WithProtocolEndsStructContainingEndsRequest(
             in_,
         )
-        return self._send_two_way_fidl_request(
-            4076866772260025813,
-            "test.protocols",
-            msg,
-            normalize_identifier(
-                "test.protocols/WithProtocolEndsStructContainingEndsResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                WithProtocolEndsStructContainingEndsResponse,
+            ],
+            self._send_two_way_fidl_request(
+                4076866772260025813,
+                "test.protocols",
+                msg,
+                normalize_identifier(
+                    "test.protocols/WithProtocolEndsStructContainingEndsResponse"
+                ),
             ),
         )
+        return ret
 
 
 class WithProtocolEndsEventHandler(EventHandlerBase, ABC):
@@ -3257,8 +3317,6 @@ class WithProtocolEndsEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )

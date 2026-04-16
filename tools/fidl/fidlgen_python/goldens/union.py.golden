@@ -2046,6 +2046,7 @@ class UnionWithAttributes:
 
 
 from fidl._client import EventHandlerBase, FidlClient
+import fidl._construct
 from fidl._server import ServerBase
 from fidl._fidl_common import (
     DomainError,
@@ -2057,6 +2058,7 @@ from fidl._fidl_common import (
 
 from abc import abstractmethod, ABC
 import collections.abc  # type: ignore[unused-ignore,unused-import]
+import typing
 
 
 class TestProtocolServer(ServerBase, ABC):
@@ -2085,8 +2087,6 @@ class TestProtocolServer(ServerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2134,8 +2134,6 @@ class TestProtocolClient(FidlClient):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
@@ -2148,14 +2146,22 @@ class TestProtocolClient(FidlClient):
         TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            6628358876445129155,
-            "test.union",
-            msg,
-            normalize_identifier(
-                "test.union/TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse,
+            ],
+            self._send_two_way_fidl_request(
+                6628358876445129155,
+                "test.union",
+                msg,
+                normalize_identifier(
+                    "test.union/TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse"
+                ),
             ),
         )
+        return ret
 
     def flexible_union_hence_response_must_be_heap_allocated(
         self,
@@ -2165,14 +2171,22 @@ class TestProtocolClient(FidlClient):
         TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse,
     ]:
         msg = None
-        return self._send_two_way_fidl_request(
-            7588545459451501794,
-            "test.union",
-            msg,
-            normalize_identifier(
-                "test.union/TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse"
+        ret = typing.cast(
+            collections.abc.Coroutine[
+                typing.Any,
+                typing.Any,
+                TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse,
+            ],
+            self._send_two_way_fidl_request(
+                7588545459451501794,
+                "test.union",
+                msg,
+                normalize_identifier(
+                    "test.union/TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse"
+                ),
             ),
         )
+        return ret
 
 
 class TestProtocolEventHandler(EventHandlerBase, ABC):
@@ -2184,8 +2198,6 @@ class TestProtocolEventHandler(EventHandlerBase, ABC):
     def construct_response_object(
         response_ident: str, response_obj: typing.Any
     ) -> typing.Any:
-        import fidl._construct
-
         return fidl._construct.construct_response_object(
             response_ident, response_obj
         )
