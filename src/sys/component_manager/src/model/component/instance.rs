@@ -560,8 +560,10 @@ impl ResolvedInstanceState {
             let (sender, receiver) = futures::channel::mpsc::unbounded();
             let receiver = Arc::new(futures::lock::Mutex::new(receiver));
 
-            let native_scope =
-                route_metadata.scope.as_ref().map(|s| s.clone().fidl_into_native().into_vec());
+            let native_scope = route_metadata.scope.as_ref().map(|s| {
+                let native_box: Box<[cm_rust::EventScope]> = s.clone().fidl_into_native();
+                native_box.into_vec()
+            });
 
             let parsed_scope_moniker = route_metadata
                 .scope_moniker

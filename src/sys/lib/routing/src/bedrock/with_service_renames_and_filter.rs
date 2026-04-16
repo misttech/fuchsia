@@ -151,7 +151,12 @@ impl WithServiceRenamesAndFilter for Router<DirConnector> {
             // router, because we won't do anything.
             return self.into();
         }
-        Router::new(ServiceRenameRouter { router: self, renames, offer_service_decl }).into()
+        Router::new(ServiceRenameRouter {
+            router: self,
+            renames,
+            offer_service_decl: *offer_service_decl,
+        })
+        .into()
     }
 }
 

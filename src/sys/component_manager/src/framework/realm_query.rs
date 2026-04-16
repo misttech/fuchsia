@@ -757,7 +757,7 @@ mod tests {
         assert_eq!(uses.len(), num_items);
 
         for use_ in uses {
-            let use_ = use_.fidl_into_native();
+            let use_: cm_rust::UseDecl = use_.fidl_into_native();
             assert!(use_.source_name().as_str().starts_with("use_"));
             assert!(use_.path().unwrap().to_string().starts_with("/svc/capability_"));
         }
@@ -765,7 +765,7 @@ mod tests {
         assert_eq!(exposes.len(), num_items);
 
         for expose in exposes {
-            let expose = expose.fidl_into_native();
+            let expose: cm_rust::ExposeDecl = expose.fidl_into_native();
             assert!(expose.source_name().as_str().starts_with("expose_"));
         }
     }

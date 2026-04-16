@@ -2192,7 +2192,7 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
             test.look_up_instance(&["leaf"].try_into().unwrap()).await.expect("leaf instance");
         let source = debug_route_sandbox_path(
             &leaf_component,
-            &UseDecl::Config(UseConfigurationDecl {
+            &UseDecl::Config(Box::new(UseConfigurationDecl {
                 source: UseSource::Parent,
                 source_name: "bar".parse().unwrap(),
                 target_name: "bar".parse().unwrap(),
@@ -2200,7 +2200,7 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
                 type_: ConfigValueType::Int32,
                 default: None,
                 source_dictionary: "dict".parse().unwrap(),
-            }),
+            })),
         )
         .await
         .expect("failed to route config");
@@ -2270,7 +2270,7 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
             .expect("leaf instance");
         let source = debug_route_sandbox_path(
             &leaf_component,
-            &UseDecl::Config(UseConfigurationDecl {
+            &UseDecl::Config(Box::new(UseConfigurationDecl {
                 source: UseSource::Parent,
                 source_name: "baz".parse().unwrap(),
                 target_name: "baz".parse().unwrap(),
@@ -2278,7 +2278,7 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
                 type_: ConfigValueType::Int32,
                 default: None,
                 source_dictionary: Default::default(),
-            }),
+            })),
         )
         .await
         .expect("failed to route config");

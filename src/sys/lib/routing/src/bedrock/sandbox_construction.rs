@@ -928,7 +928,7 @@ fn new_aggregate_capability_source(
     let offer_service_decls = offers
         .iter()
         .map(|o| match o {
-            cm_rust::offer::OfferDecl::Service(o) => o,
+            cm_rust::offer::OfferDecl::Service(o) => o.as_ref(),
             _ => panic!(
                 "cannot aggregate non-service capabilities, manifest validation should prevent this"
             ),
@@ -1350,7 +1350,7 @@ fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
                     .availability(use_event_stream_decl.availability)
                     .event_stream_route_metadata(route_metadata)
                     .target(component)
-                    .error_info(RouteRequestErrorInfo::from(use_event_stream_decl))
+                    .error_info(RouteRequestErrorInfo::from(use_event_stream_decl.as_ref()))
                     .error_reporter(error_reporter.clone())
                     .build();
             let filter = use_event_stream_decl.filter.clone();

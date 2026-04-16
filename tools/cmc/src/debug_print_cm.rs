@@ -12,7 +12,7 @@ use std::path::PathBuf;
 pub(crate) fn debug_print_cm(file: &PathBuf) -> Result<(), Error> {
     let bytes = read(file).map_err(Error::Io)?;
     let fidl_repr = unpersist::<fdecl::Component>(&bytes).map_err(Error::FidlEncoding)?;
-    let cm_repr = fidl_repr.fidl_into_native();
+    let cm_repr: cm_rust::ComponentDecl = fidl_repr.fidl_into_native();
     println!("{:#?}", cm_repr);
     Ok(())
 }

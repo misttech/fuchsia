@@ -351,7 +351,7 @@ mod tests {
                 new_component_with_capabilities(
                     vec![],
                     vec![
-                        OfferDecl::Directory(root_offer_good_dir),
+                        OfferDecl::Directory(Box::new(root_offer_good_dir)),
                         OfferDecl::Protocol(root_offer_protocol),
                     ],
                     vec![CapabilityDecl::Directory(root_good_dir_decl)],

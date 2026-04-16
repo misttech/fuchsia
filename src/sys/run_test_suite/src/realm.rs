@@ -117,13 +117,10 @@ fn validate_and_get_offers(
                 continue;
             }
 
-            if let cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
-                target_name,
-                source,
-                scope,
-                ..
-            }) = &offer
-            {
+            if let cm_rust::offer::OfferDecl::EventStream(decl) = &offer {
+                let cm_rust::offer::OfferEventStreamDecl { target_name, source, scope, .. } =
+                    &**decl;
+
                 if *target_name == CAPABILITY_REQUESTED_EVENT
                     && source == &cm_rust::offer::OfferSource::Parent
                     && scope
@@ -223,7 +220,8 @@ mod test {
         assert_eq!(realm.test_collection, "echo_test_coll");
         assert_eq!(realm.realm_str, "/test_realm/echo_test_coll");
 
-        let offers = realm.offers.into_iter().map(|o| o.fidl_into_native()).collect::<Vec<_>>();
+        let offers: Vec<cm_rust::OfferDecl> =
+            realm.offers.into_iter().map(|o| o.fidl_into_native()).collect::<Vec<_>>();
         assert_eq!(offers.len(), 3, "{:?}", offers);
         offers.iter().for_each(|o| {
             assert_eq!(
@@ -247,7 +245,7 @@ mod test {
 
         let offers = realm.offers.into_iter().map(|o| o.fidl_into_native()).collect::<Vec<_>>();
         assert_eq!(offers.len(), 2, "{:?}", offers);
-        offers.iter().for_each(|o| {
+        offers.iter().for_each(|o: &cm_rust::OfferDecl| {
             assert_eq!(
                 o.target(),
                 &cm_rust::offer::OfferTarget::Collection("hermetic_test_coll".parse().unwrap())

@@ -127,6 +127,24 @@ impl NativeIntoFidl<String> for Url {
     }
 }
 
+impl<F, N> FidlIntoNative<Box<N>> for F
+where
+    F: FidlIntoNative<N>,
+{
+    fn fidl_into_native(self) -> Box<N> {
+        Box::new(self.fidl_into_native())
+    }
+}
+
+impl<N, F> NativeIntoFidl<F> for Box<N>
+where
+    N: NativeIntoFidl<F>,
+{
+    fn native_into_fidl(self) -> F {
+        (*self).native_into_fidl()
+    }
+}
+
 /// Generates `FidlIntoNative` and `NativeIntoFidl` implementations that leaves the input unchanged.
 macro_rules! fidl_translations_identical {
     ($into_type:ty) => {
@@ -350,10 +368,10 @@ pub enum UseDecl {
     Protocol(UseProtocolDecl),
     Directory(UseDirectoryDecl),
     Storage(UseStorageDecl),
-    EventStream(UseEventStreamDecl),
+    EventStream(Box<UseEventStreamDecl>),
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
     Runner(UseRunnerDecl),
-    Config(UseConfigurationDecl),
+    Config(Box<UseConfigurationDecl>),
     #[cfg(fuchsia_api_level_at_least = "29")]
     Dictionary(UseDictionaryDecl),
 }
@@ -3096,20 +3114,20 @@ mod tests {
                             target_path: "/temp".parse().unwrap(),
                             availability: Availability::Optional,
                         }),
-                        UseDecl::EventStream(UseEventStreamDecl {
+                        UseDecl::EventStream(Box::new(UseEventStreamDecl {
                             source: UseSource::Child("netstack".parse().unwrap()),
                             scope: Some(Box::from([EventScope::Child(ChildRef{ name: "a".parse().unwrap(), collection: None}), EventScope::Collection("b".parse().unwrap())])),
                             source_name: "stopped".parse().unwrap(),
                             target_path: "/svc/test".parse().unwrap(),
                             filter: None,
                             availability: Availability::Optional,
-                        }),
+                        })),
                         UseDecl::Runner(UseRunnerDecl {
                             source: UseSource::Environment,
                             source_name: "elf".parse().unwrap(),
                             source_dictionary: ".".parse().unwrap(),
                         }),
-                        UseDecl::Config(UseConfigurationDecl {
+                        UseDecl::Config(Box::new(UseConfigurationDecl {
                             source: UseSource::Parent,
                             source_name: "fuchsia.config.MyConfig".parse().unwrap(),
                             target_name: "my_config".parse().unwrap(),
@@ -3117,7 +3135,7 @@ mod tests {
                             type_: ConfigValueType::Bool,
                             default: None,
                             source_dictionary: ".".parse().unwrap(),
-                        }),
+                        })),
                         #[cfg(fuchsia_api_level_at_least = "29")]
                         UseDecl::Dictionary(UseDictionaryDecl {
                             dependency_type: DependencyType::Strong,
@@ -3196,7 +3214,7 @@ mod tests {
                             dependency_type: DependencyType::Weak,
                             availability: Availability::Required,
                         }),
-                        OfferDecl::Directory(OfferDirectoryDecl {
+                        OfferDecl::Directory(Box::new(OfferDirectoryDecl {
                             source: OfferSource::Parent,
                             source_name: "dir".parse().unwrap(),
                             source_dictionary: "in/dict".parse().unwrap(),
@@ -3206,7 +3224,7 @@ mod tests {
                             subdir: ".".parse().unwrap(),
                             dependency_type: DependencyType::Strong,
                             availability: Availability::Optional,
-                        }),
+                        })),
                         OfferDecl::Storage(OfferStorageDecl {
                             source_name: "cache".parse().unwrap(),
                             source: OfferSource::Self_,
@@ -3228,7 +3246,7 @@ mod tests {
                             target: offer_target_static_child("echo"),
                             target_name: "pkg".parse().unwrap(),
                         }),
-                        OfferDecl::Service(OfferServiceDecl {
+                        OfferDecl::Service(Box::new(OfferServiceDecl {
                             source: OfferSource::Parent,
                             source_name: "netstack1".parse().unwrap(),
                             source_dictionary: "in/dict".parse().unwrap(),
@@ -3238,8 +3256,8 @@ mod tests {
                             target_name: "mynetstack1".parse().unwrap(),
                             availability: Availability::Required,
                             dependency_type: Default::default(),
-                        }),
-                        OfferDecl::Service(OfferServiceDecl {
+                        })),
+                        OfferDecl::Service(Box::new(OfferServiceDecl {
                             source: OfferSource::Parent,
                             source_name: "netstack2".parse().unwrap(),
                             source_dictionary: ".".parse().unwrap(),
@@ -3249,8 +3267,8 @@ mod tests {
                             target_name: "mynetstack2".parse().unwrap(),
                             availability: Availability::Optional,
                             dependency_type: Default::default(),
-                        }),
-                        OfferDecl::Service(OfferServiceDecl {
+                        })),
+                        OfferDecl::Service(Box::new(OfferServiceDecl {
                             source: OfferSource::Parent,
                             source_name: "netstack3".parse().unwrap(),
                             source_dictionary: ".".parse().unwrap(),
@@ -3260,7 +3278,7 @@ mod tests {
                             target_name: "mynetstack3".parse().unwrap(),
                             availability: Availability::Required,
                             dependency_type: Default::default(),
-                        }),
+                        })),
                         OfferDecl::Dictionary(OfferDictionaryDecl {
                             source: OfferSource::Parent,
                             source_name: "bundle".parse().unwrap(),
@@ -3699,109 +3717,90 @@ mod tests {
         let source_name = "source";
         let target = fdecl::Ref::Parent(fdecl::ParentRef {});
         let target_name = "target";
-        assert_eq!(
-            *fdecl::ExposeService {
-                source: Some(source.clone()),
-                source_name: Some(source_name.into()),
-                target: Some(target.clone()),
-                target_name: Some(target_name.into()),
-                availability: None,
-                ..Default::default()
-            }
-            .fidl_into_native()
-            .availability(),
-            Availability::Required
-        );
-        assert_eq!(
-            *fdecl::ExposeProtocol {
-                source: Some(source.clone()),
-                source_name: Some(source_name.into()),
-                target: Some(target.clone()),
-                target_name: Some(target_name.into()),
-                ..Default::default()
-            }
-            .fidl_into_native()
-            .availability(),
-            Availability::Required
-        );
-        assert_eq!(
-            *fdecl::ExposeDirectory {
-                source: Some(source.clone()),
-                source_name: Some(source_name.into()),
-                target: Some(target.clone()),
-                target_name: Some(target_name.into()),
-                ..Default::default()
-            }
-            .fidl_into_native()
-            .availability(),
-            Availability::Required
-        );
-        assert_eq!(
-            *fdecl::ExposeRunner {
-                source: Some(source.clone()),
-                source_name: Some(source_name.into()),
-                target: Some(target.clone()),
-                target_name: Some(target_name.into()),
-                ..Default::default()
-            }
-            .fidl_into_native()
-            .availability(),
-            Availability::Required
-        );
-        assert_eq!(
-            *fdecl::ExposeResolver {
-                source: Some(source.clone()),
-                source_name: Some(source_name.into()),
-                target: Some(target.clone()),
-                target_name: Some(target_name.into()),
-                ..Default::default()
-            }
-            .fidl_into_native()
-            .availability(),
-            Availability::Required
-        );
-        assert_eq!(
-            *fdecl::ExposeDictionary {
-                source: Some(source.clone()),
-                source_name: Some(source_name.into()),
-                target: Some(target.clone()),
-                target_name: Some(target_name.into()),
-                ..Default::default()
-            }
-            .fidl_into_native()
-            .availability(),
-            Availability::Required
-        );
+        let expose_service: ExposeServiceDecl = fdecl::ExposeService {
+            source: Some(source.clone()),
+            source_name: Some(source_name.into()),
+            target: Some(target.clone()),
+            target_name: Some(target_name.into()),
+            availability: None,
+            ..Default::default()
+        }
+        .fidl_into_native();
+        assert_eq!(*expose_service.availability(), Availability::Required);
+
+        let expose_protocol: ExposeProtocolDecl = fdecl::ExposeProtocol {
+            source: Some(source.clone()),
+            source_name: Some(source_name.into()),
+            target: Some(target.clone()),
+            target_name: Some(target_name.into()),
+            ..Default::default()
+        }
+        .fidl_into_native();
+        assert_eq!(*expose_protocol.availability(), Availability::Required);
+
+        let expose_directory: ExposeDirectoryDecl = fdecl::ExposeDirectory {
+            source: Some(source.clone()),
+            source_name: Some(source_name.into()),
+            target: Some(target.clone()),
+            target_name: Some(target_name.into()),
+            ..Default::default()
+        }
+        .fidl_into_native();
+        assert_eq!(*expose_directory.availability(), Availability::Required);
+
+        let expose_runner: ExposeRunnerDecl = fdecl::ExposeRunner {
+            source: Some(source.clone()),
+            source_name: Some(source_name.into()),
+            target: Some(target.clone()),
+            target_name: Some(target_name.into()),
+            ..Default::default()
+        }
+        .fidl_into_native();
+        assert_eq!(*expose_runner.availability(), Availability::Required);
+
+        let expose_resolver: ExposeResolverDecl = fdecl::ExposeResolver {
+            source: Some(source.clone()),
+            source_name: Some(source_name.into()),
+            target: Some(target.clone()),
+            target_name: Some(target_name.into()),
+            ..Default::default()
+        }
+        .fidl_into_native();
+        assert_eq!(*expose_resolver.availability(), Availability::Required);
+
+        let expose_dictionary: ExposeDictionaryDecl = fdecl::ExposeDictionary {
+            source: Some(source.clone()),
+            source_name: Some(source_name.into()),
+            target: Some(target.clone()),
+            target_name: Some(target_name.into()),
+            ..Default::default()
+        }
+        .fidl_into_native();
+        assert_eq!(*expose_dictionary.availability(), Availability::Required);
     }
 
     #[test]
     fn default_delivery_type() {
-        assert_eq!(
-            fdecl::Protocol {
-                name: Some("foo".to_string()),
-                source_path: Some("/foo".to_string()),
-                delivery: None,
-                ..Default::default()
-            }
-            .fidl_into_native()
-            .delivery,
-            DeliveryType::Immediate
-        )
+        let protocol: ProtocolDecl = fdecl::Protocol {
+            name: Some("foo".to_string()),
+            source_path: Some("/foo".to_string()),
+            delivery: None,
+            ..Default::default()
+        }
+        .fidl_into_native();
+        assert_eq!(protocol.delivery, DeliveryType::Immediate)
     }
 
     #[test]
     fn on_readable_delivery_type() {
-        assert_eq!(
-            fdecl::Protocol {
-                name: Some("foo".to_string()),
-                source_path: Some("/foo".to_string()),
-                delivery: Some(fdecl::DeliveryType::OnReadable),
-                ..Default::default()
-            }
-            .fidl_into_native()
-            .delivery,
-            DeliveryType::OnReadable
-        )
+        let protocol: ProtocolDecl = fdecl::Protocol {
+            name: Some("foo".to_string()),
+            source_path: Some("/foo".to_string()),
+            delivery: Some(fdecl::DeliveryType::OnReadable),
+            ..Default::default()
+        }
+        .fidl_into_native();
+        assert_eq!(protocol.delivery, DeliveryType::OnReadable)
     }
 
     #[test]

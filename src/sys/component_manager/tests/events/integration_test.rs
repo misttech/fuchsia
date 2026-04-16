@@ -185,7 +185,7 @@ async fn receive_protocol_through_capability_requested() {
     let builder = RealmBuilder::new().await.unwrap();
     let mut events_receiver = set_up_capability_requested_realm(
         &builder,
-        cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+        cm_rust::offer::OfferDecl::EventStream(Box::new(cm_rust::offer::OfferEventStreamDecl {
             source: cm_rust::offer::OfferSource::Parent,
             scope: None,
             source_name: Name::new("capability_requested").unwrap(),
@@ -195,15 +195,15 @@ async fn receive_protocol_through_capability_requested() {
             }),
             target_name: Name::new("capability_requested").unwrap(),
             availability: cm_rust::Availability::Required,
-        }),
-        cm_rust::UseDecl::EventStream(cm_rust::UseEventStreamDecl {
+        })),
+        cm_rust::UseDecl::EventStream(Box::new(cm_rust::UseEventStreamDecl {
             source_name: Name::new("capability_requested").unwrap(),
             source: cm_rust::UseSource::Parent,
             scope: None,
             target_path: Path::new("/svc/fuchsia.component.EventStream").unwrap(),
             filter: Some(filter),
             availability: cm_rust::Availability::Required,
-        }),
+        })),
     )
     .await;
     builder
@@ -260,7 +260,7 @@ async fn receive_protocol_through_outgoing_dir_when_outside_filter() {
     let builder = RealmBuilder::new().await.unwrap();
     let mut events_receiver = set_up_capability_requested_realm(
         &builder,
-        cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+        cm_rust::offer::OfferDecl::EventStream(Box::new(cm_rust::offer::OfferEventStreamDecl {
             source: cm_rust::offer::OfferSource::Parent,
             scope: None,
             source_name: Name::new("capability_requested").unwrap(),
@@ -270,15 +270,15 @@ async fn receive_protocol_through_outgoing_dir_when_outside_filter() {
             }),
             target_name: Name::new("capability_requested").unwrap(),
             availability: cm_rust::Availability::Required,
-        }),
-        cm_rust::UseDecl::EventStream(cm_rust::UseEventStreamDecl {
+        })),
+        cm_rust::UseDecl::EventStream(Box::new(cm_rust::UseEventStreamDecl {
             source_name: Name::new("capability_requested").unwrap(),
             source: cm_rust::UseSource::Parent,
             scope: None,
             target_path: Path::new("/svc/fuchsia.component.EventStream").unwrap(),
             filter: Some(filter),
             availability: cm_rust::Availability::Required,
-        }),
+        })),
     )
     .await;
     builder
@@ -336,7 +336,7 @@ async fn smaller_scope_impacts_moniker() {
 
     let mut events_receiver = set_up_capability_requested_realm(
         &builder,
-        cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+        cm_rust::offer::OfferDecl::EventStream(Box::new(cm_rust::offer::OfferEventStreamDecl {
             source: cm_rust::offer::OfferSource::Parent,
             scope: Some(Box::new([cm_rust::EventScope::Child(cm_rust::ChildRef {
                 name: LongName::new("protocol_consumer_parent").unwrap(),
@@ -349,15 +349,15 @@ async fn smaller_scope_impacts_moniker() {
             }),
             target_name: Name::new("capability_requested").unwrap(),
             availability: cm_rust::Availability::Required,
-        }),
-        cm_rust::UseDecl::EventStream(cm_rust::UseEventStreamDecl {
+        })),
+        cm_rust::UseDecl::EventStream(Box::new(cm_rust::UseEventStreamDecl {
             source_name: Name::new("capability_requested").unwrap(),
             source: cm_rust::UseSource::Parent,
             scope: None,
             target_path: Path::new("/svc/fuchsia.component.EventStream").unwrap(),
             filter: Some(filter),
             availability: cm_rust::Availability::Required,
-        }),
+        })),
     )
     .await;
     builder
@@ -432,7 +432,7 @@ async fn out_of_scope_is_not_delivered() {
 
     let mut events_receiver = set_up_capability_requested_realm(
         &builder,
-        cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+        cm_rust::offer::OfferDecl::EventStream(Box::new(cm_rust::offer::OfferEventStreamDecl {
             source: cm_rust::offer::OfferSource::Parent,
             scope: Some(Box::new([cm_rust::EventScope::Child(cm_rust::ChildRef {
                 name: LongName::new("event_receiver").unwrap(),
@@ -445,15 +445,15 @@ async fn out_of_scope_is_not_delivered() {
             }),
             target_name: Name::new("capability_requested").unwrap(),
             availability: cm_rust::Availability::Required,
-        }),
-        cm_rust::UseDecl::EventStream(cm_rust::UseEventStreamDecl {
+        })),
+        cm_rust::UseDecl::EventStream(Box::new(cm_rust::UseEventStreamDecl {
             source_name: Name::new("capability_requested").unwrap(),
             source: cm_rust::UseSource::Parent,
             scope: None,
             target_path: Path::new("/svc/fuchsia.component.EventStream").unwrap(),
             filter: Some(filter),
             availability: cm_rust::Availability::Required,
-        }),
+        })),
     )
     .await;
     builder

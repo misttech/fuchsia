@@ -111,7 +111,7 @@ impl V2ComponentModelDataCollector {
                     );
                     match result {
                         Ok(decl) => {
-                            let decl = decl.fidl_into_native();
+                            let decl: cm_rust::ComponentDecl = decl.fidl_into_native();
                             let config = if let Some(schema) = &decl.config {
                                 if let Some(cvf_bytes) = cvf_bytes.as_ref() {
                                     let values_data =

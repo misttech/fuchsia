@@ -846,29 +846,31 @@ impl UseBuilder {
                 availability: self.availability,
             }),
             CapabilityTypeName::EventStream => {
-                cm_rust::UseDecl::EventStream(cm_rust::UseEventStreamDecl {
+                cm_rust::UseDecl::EventStream(Box::new(cm_rust::UseEventStreamDecl {
                     source: self.source,
                     source_name: self.source_name.expect("name not set"),
                     target_path: self.target_path.expect("path not set"),
                     availability: self.availability,
                     scope: self.scope,
                     filter: self.filter,
-                })
+                }))
             }
             CapabilityTypeName::Runner => cm_rust::UseDecl::Runner(cm_rust::UseRunnerDecl {
                 source: self.source,
                 source_name: self.source_name.expect("name not set"),
                 source_dictionary: self.source_dictionary,
             }),
-            CapabilityTypeName::Config => cm_rust::UseDecl::Config(cm_rust::UseConfigurationDecl {
-                source: self.source,
-                source_name: self.source_name.expect("name not set"),
-                target_name: self.target_name.expect("target name not set"),
-                availability: self.availability,
-                type_: self.config_type.expect("config_type not set"),
-                default: None,
-                source_dictionary: self.source_dictionary,
-            }),
+            CapabilityTypeName::Config => {
+                cm_rust::UseDecl::Config(Box::new(cm_rust::UseConfigurationDecl {
+                    source: self.source,
+                    source_name: self.source_name.expect("name not set"),
+                    target_name: self.target_name.expect("target name not set"),
+                    availability: self.availability,
+                    type_: self.config_type.expect("config_type not set"),
+                    default: None,
+                    source_dictionary: self.source_dictionary,
+                }))
+            }
             CapabilityTypeName::Dictionary => {
                 cm_rust::UseDecl::Dictionary(cm_rust::UseDictionaryDecl {
                     source: self.source,
@@ -1324,7 +1326,7 @@ impl OfferBuilder {
                 })
             }
             CapabilityTypeName::Service => {
-                cm_rust::offer::OfferDecl::Service(cm_rust::offer::OfferServiceDecl {
+                cm_rust::offer::OfferDecl::Service(Box::new(cm_rust::offer::OfferServiceDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     source_dictionary: self.source_dictionary,
@@ -1334,10 +1336,10 @@ impl OfferBuilder {
                     renamed_instances: self.renamed_instances.map(Into::into),
                     availability: self.availability,
                     dependency_type: Default::default(),
-                })
+                }))
             }
             CapabilityTypeName::Directory => {
-                cm_rust::offer::OfferDecl::Directory(cm_rust::offer::OfferDirectoryDecl {
+                cm_rust::offer::OfferDecl::Directory(Box::new(cm_rust::offer::OfferDirectoryDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     source_dictionary: self.source_dictionary,
@@ -1347,7 +1349,7 @@ impl OfferBuilder {
                     subdir: self.subdir,
                     dependency_type: self.dependency_type,
                     availability: self.availability,
-                })
+                }))
             }
             CapabilityTypeName::Storage => {
                 cm_rust::offer::OfferDecl::Storage(cm_rust::offer::OfferStorageDecl {
@@ -1358,16 +1360,16 @@ impl OfferBuilder {
                     availability: self.availability,
                 })
             }
-            CapabilityTypeName::EventStream => {
-                cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+            CapabilityTypeName::EventStream => cm_rust::offer::OfferDecl::EventStream(Box::new(
+                cm_rust::offer::OfferEventStreamDecl {
                     source: self.source.expect("source not set"),
                     source_name: self.source_name.expect("name not set"),
                     target: self.target.expect("target is not set"),
                     target_name: self.target_name.expect("name not set"),
                     availability: self.availability,
                     scope: self.scope,
-                })
-            }
+                },
+            )),
             CapabilityTypeName::Runner => {
                 cm_rust::offer::OfferDecl::Runner(cm_rust::offer::OfferRunnerDecl {
                     source: self.source.expect("source not set"),

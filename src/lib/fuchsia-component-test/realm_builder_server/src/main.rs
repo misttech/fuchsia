@@ -5,10 +5,10 @@
 use anyhow::Context;
 use cm_rust::offer::{OfferDecl, OfferDeclCommon, OfferSource};
 use cm_rust::{
-    Availability, CapabilityDecl, CapabilityTypeName, DependencyType, DirectoryDecl, ExposeDecl,
-    ExposeDeclCommon, ExposeDirectoryDecl, ExposeProtocolDecl, ExposeSource, ExposeTarget,
-    FidlIntoNative, NativeIntoFidl, ProtocolDecl, SourceName, UseDecl, UseProtocolDecl, UseSource,
-    append_box, push_box,
+    Availability, CapabilityDecl, CapabilityTypeName, ConfigValueSpec, DependencyType,
+    DirectoryDecl, ExposeDecl, ExposeDeclCommon, ExposeDirectoryDecl, ExposeProtocolDecl,
+    ExposeSource, ExposeTarget, FidlIntoNative, NativeIntoFidl, ProtocolDecl, SourceName, UseDecl,
+    UseProtocolDecl, UseSource, append_box, push_box,
 };
 use cm_types::{LongName, Path, RelativePath};
 use directed_graph::DirectedGraph;
@@ -981,7 +981,7 @@ impl Realm {
         let config = decl.config.ok_or(RealmBuilderError::NoConfigSchema(name.clone()))?;
         cm_fidl_validator::validate_value_spec(&value_spec)
             .map_err(|e| RealmBuilderError::ConfigValueInvalid(key.clone(), anyhow::anyhow!(e)))?;
-        let value_spec = value_spec.fidl_into_native();
+        let value_spec: ConfigValueSpec = value_spec.fidl_into_native();
         for (index, field) in config.fields.iter().enumerate() {
             if field.key == key {
                 config_encoder::ConfigField::resolve(value_spec.value.clone(), &field).map_err(
@@ -2256,7 +2256,7 @@ fn create_offer_decl(
             let target_name = try_into_target_name(&directory.name, &directory.as_)?;
             let dependency_type = into_dependency_type(&directory.type_);
             let availability = get_offer_availability(&directory.availability);
-            cm_rust::offer::OfferDecl::Directory(cm_rust::offer::OfferDirectoryDecl {
+            cm_rust::offer::OfferDecl::Directory(Box::new(cm_rust::offer::OfferDirectoryDecl {
                 source,
                 source_name,
                 source_dictionary,
@@ -2266,7 +2266,7 @@ fn create_offer_decl(
                 subdir: try_into_subdir(&directory.subdir)?,
                 dependency_type,
                 availability,
-            })
+            }))
         }
         ftest::Capability::Storage(storage) => {
             let source_name = try_into_source_name(&storage.name)?;
@@ -2284,7 +2284,7 @@ fn create_offer_decl(
             let source_name = try_into_source_name(&service.name)?;
             let target_name = try_into_target_name(&service.name, &service.as_)?;
             let availability = get_offer_availability(&service.availability);
-            cm_rust::offer::OfferDecl::Service(cm_rust::offer::OfferServiceDecl {
+            cm_rust::offer::OfferDecl::Service(Box::new(cm_rust::offer::OfferServiceDecl {
                 source,
                 source_name,
                 source_dictionary,
@@ -2295,19 +2295,19 @@ fn create_offer_decl(
                 availability,
                 #[cfg(fuchsia_api_level_at_least = "HEAD")]
                 dependency_type: Default::default(),
-            })
+            }))
         }
         ftest::Capability::EventStream(event_stream) => {
             let source_name = try_into_source_name(&event_stream.name)?;
             let target_name = try_into_target_name(&event_stream.name, &event_stream.as_)?;
-            cm_rust::offer::OfferDecl::EventStream(cm_rust::offer::OfferEventStreamDecl {
+            cm_rust::offer::OfferDecl::EventStream(Box::new(cm_rust::offer::OfferEventStreamDecl {
                 source,
                 source_name,
                 target,
                 target_name,
                 scope: event_stream.scope.as_ref().cloned().map(FidlIntoNative::fidl_into_native),
                 availability: cm_rust::Availability::Required,
-            })
+            }))
         }
         ftest::Capability::Config(config) => {
             let availability = match source {
@@ -2615,14 +2615,14 @@ fn create_use_decl(
             let source_name = try_into_target_name(&event.name, &event.as_)?;
             let filter = event.filter.as_ref().cloned().map(FidlIntoNative::fidl_into_native);
             let target_path = try_into_capability_path(&event.path)?;
-            Some(cm_rust::UseDecl::EventStream(cm_rust::UseEventStreamDecl {
+            Some(cm_rust::UseDecl::EventStream(Box::new(cm_rust::UseEventStreamDecl {
                 source,
                 source_name,
                 target_path,
                 filter,
                 scope: event.scope.as_ref().cloned().map(FidlIntoNative::fidl_into_native),
                 availability: cm_rust::Availability::Required,
-            }))
+            })))
         }
         #[cfg(fuchsia_api_level_at_least = "HEAD")]
         ftest::Capability::Runner(runner) => {
@@ -3840,7 +3840,7 @@ mod tests {
             fuchsia_fs::PERM_READABLE,
         )
         .expect("failed to open manifest");
-        let mut realm_with_child_decl =
+        let mut realm_with_child_decl: cm_rust::ComponentDecl =
             fuchsia_fs::file::read_fidl::<fcdecl::Component>(&realm_with_child_decl_file)
                 .await
                 .expect("failed to read manifest")
@@ -5026,7 +5026,7 @@ mod tests {
             .await
             .expect("failed to call add_child")
             .expect("add_child returned an error");
-        let mut a_decl = realm_and_builder_task
+        let mut a_decl: cm_rust::ComponentDecl = realm_and_builder_task
             .realm_proxy
             .get_component_decl("a")
             .await

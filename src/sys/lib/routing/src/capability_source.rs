@@ -8,11 +8,10 @@ use cm_rust::{
     EventStreamDecl, ExposeConfigurationDecl, ExposeDecl, ExposeDeclCommon, ExposeDictionaryDecl,
     ExposeDirectoryDecl, ExposeProtocolDecl, ExposeResolverDecl, ExposeRunnerDecl,
     ExposeServiceDecl, ExposeSource, FidlIntoNative, NameMapping, NativeIntoFidl,
-    OfferConfigurationDecl, OfferDecl, OfferDeclCommon, OfferDictionaryDecl, OfferDirectoryDecl,
-    OfferEventStreamDecl, OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl,
-    OfferSource, OfferStorageDecl, ProtocolDecl, RegistrationSource, ResolverDecl, RunnerDecl,
-    ServiceDecl, StorageDecl, UseDecl, UseDeclCommon, UseDirectoryDecl, UseProtocolDecl,
-    UseServiceDecl, UseSource, UseStorageDecl,
+    OfferConfigurationDecl, OfferDecl, OfferDeclCommon, OfferDictionaryDecl, OfferProtocolDecl,
+    OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource, OfferStorageDecl,
+    ProtocolDecl, RegistrationSource, ResolverDecl, RunnerDecl, ServiceDecl, StorageDecl, UseDecl,
+    UseDeclCommon, UseDirectoryDecl, UseProtocolDecl, UseServiceDecl, UseSource, UseStorageDecl,
 };
 use cm_rust_derive::FidlDecl;
 use cm_types::{Name, Path, RelativePath};
@@ -771,9 +770,7 @@ impl ComponentCapability {
                 UseDecl::Directory(UseDirectoryDecl { source_name, .. }) => Some(source_name),
                 UseDecl::Storage(UseStorageDecl { source_name, .. }) => Some(source_name),
                 UseDecl::Service(UseServiceDecl { source_name, .. }) => Some(source_name),
-                UseDecl::Config(cm_rust::UseConfigurationDecl { source_name, .. }) => {
-                    Some(source_name)
-                }
+                UseDecl::Config(config) => Some(&config.source_name),
                 _ => None,
             },
             ComponentCapability::Environment(env_cap) => match env_cap {
@@ -802,15 +799,13 @@ impl ComponentCapability {
             },
             ComponentCapability::Offer(offer) => match offer {
                 OfferDecl::Protocol(OfferProtocolDecl { source_name, .. }) => Some(source_name),
-                OfferDecl::Directory(OfferDirectoryDecl { source_name, .. }) => Some(source_name),
+                OfferDecl::Directory(directory) => Some(&directory.source_name),
                 OfferDecl::Runner(OfferRunnerDecl { source_name, .. }) => Some(source_name),
                 OfferDecl::Storage(OfferStorageDecl { source_name, .. }) => Some(source_name),
                 OfferDecl::Resolver(OfferResolverDecl { source_name, .. }) => Some(source_name),
-                OfferDecl::Service(OfferServiceDecl { source_name, .. }) => Some(source_name),
+                OfferDecl::Service(service) => Some(&service.source_name),
                 OfferDecl::Config(OfferConfigurationDecl { source_name, .. }) => Some(source_name),
-                OfferDecl::EventStream(OfferEventStreamDecl { source_name, .. }) => {
-                    Some(source_name)
-                }
+                OfferDecl::EventStream(event_stream) => Some(&event_stream.source_name),
                 OfferDecl::Dictionary(OfferDictionaryDecl { source_name, .. }) => Some(source_name),
             },
         }

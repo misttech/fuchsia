@@ -30,13 +30,13 @@ use serde::{Deserialize, Serialize};
 #[derive(FidlDecl, FromEnum, Debug, Clone, PartialEq, Eq)]
 #[fidl_decl(fidl_union = "fdecl::Offer")]
 pub enum OfferDecl {
-    Service(OfferServiceDecl),
+    Service(Box<OfferServiceDecl>),
     Protocol(OfferProtocolDecl),
-    Directory(OfferDirectoryDecl),
+    Directory(Box<OfferDirectoryDecl>),
     Storage(OfferStorageDecl),
     Runner(OfferRunnerDecl),
     Resolver(OfferResolverDecl),
-    EventStream(OfferEventStreamDecl),
+    EventStream(Box<OfferEventStreamDecl>),
     Dictionary(OfferDictionaryDecl),
     Config(OfferConfigurationDecl),
 }

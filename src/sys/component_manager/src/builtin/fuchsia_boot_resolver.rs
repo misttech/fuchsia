@@ -7,6 +7,10 @@ use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use directed_graph::DirectedGraph;
 use fidl::endpoints::{ClientEnd, Proxy};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::boot::{AbsoluteComponentUrl, AbsolutePackageUrl, ComponentUrl, PackageUrl};
 use futures::TryStreamExt;
 use futures::future::FutureExt;
@@ -15,10 +19,6 @@ use std::path::Path;
 use std::sync::Arc;
 use system_image::{Bootfs, PathHashMapping};
 use version_history::AbiRevision;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_io as fio, fidl_fuchsia_pkg as fpkg,
-};
 
 pub const SCHEME: &str = "fuchsia-boot";
 
@@ -664,6 +664,8 @@ mod tests {
     use cm_rust::{FidlIntoNative, NativeIntoFidl};
     use fidl::endpoints::create_proxy;
     use fidl::persist;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_data as fdata;
     use fuchsia_async::Task;
     use fuchsia_fs::directory::open_in_namespace;
     use routing::bedrock::structured_dict::ComponentInput;
@@ -674,7 +676,6 @@ mod tests {
     use vfs::file::vmo::read_only;
     use vfs::path::Path as VfsPath;
     use vfs::{ToObjectRequest, pseudo_directory};
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata};
 
     fn serve_vfs_dir(root: Arc<impl Directory>) -> (Task<()>, fio::DirectoryProxy) {
         let fs_scope = ExecutionScope::new();
@@ -743,7 +744,7 @@ mod tests {
         let decl = fuchsia_fs::file::read_fidl::<fdecl::Component>(&file_proxy)
             .await
             .expect("could not read cm");
-        let decl = decl.fidl_into_native();
+        let decl: cm_rust::ComponentDecl = decl.fidl_into_native();
 
         assert_eq!(decl.program, expected_program);
 
@@ -1049,7 +1050,7 @@ mod tests {
         let decl = fuchsia_fs::file::read_fidl::<fdecl::Component>(&file_proxy)
             .await
             .expect("could not read cm");
-        let decl = decl.fidl_into_native();
+        let decl: cm_rust::ComponentDecl = decl.fidl_into_native();
 
         assert_eq!(decl.program.unwrap(), test_program_decl);
     }

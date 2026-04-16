@@ -111,7 +111,7 @@ async fn set_up_realm_builder_and_get_proxy(
     builder.replace_component_decl(&provider, provider_manifest).await.unwrap();
 
     let mut realm_decl = builder.get_realm_decl().await.unwrap();
-    push_box(&mut realm_decl.offers, cm_rust::offer::OfferDecl::Directory(offer_decl));
+    push_box(&mut realm_decl.offers, cm_rust::offer::OfferDecl::Directory(Box::new(offer_decl)));
     builder.replace_realm_decl(realm_decl).await.unwrap();
 
     let mut consumer_manifest = builder.get_component_decl(&consumer).await.unwrap();

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::common::load_manifest;
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use argh::FromArgs;
 use cm_rust::NativeIntoFidl;
 use fidl::persist;
@@ -39,7 +39,7 @@ impl GenerateValueManifest {
         for use_ in &component.uses {
             if let cm_rust::UseDecl::Config(config) = use_ {
                 if config.target_name == bounded_name {
-                    return Some(config.clone());
+                    return Some(*config.clone());
                 }
             }
         }

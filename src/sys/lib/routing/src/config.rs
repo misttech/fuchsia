@@ -18,7 +18,7 @@ pub fn get_use_config_from_key<'a>(
     decl: &'a cm_rust::ComponentDecl,
 ) -> Option<&'a cm_rust::UseConfigurationDecl> {
     decl.uses.iter().find_map(|use_| match use_ {
-        cm_rust::UseDecl::Config(c) => (c.target_name == key).then_some(c),
+        cm_rust::UseDecl::Config(c) => (c.target_name == key).then_some(&**c),
         _ => None,
     })
 }

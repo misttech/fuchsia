@@ -5,8 +5,9 @@
 use crate::realm::{get_resolved_declaration, resolve_declaration};
 use cm_rust::NativeIntoFidl;
 use config_value_file::field::config_value_from_json_value;
+use flex_fuchsia_component_decl as fdecl;
+use flex_fuchsia_sys2 as fsys;
 use moniker::Moniker;
-use {flex_fuchsia_component_decl as fdecl, flex_fuchsia_sys2 as fsys};
 
 pub async fn resolve_raw_config_overrides(
     realm_query: &fsys::RealmQueryProxy,
@@ -94,7 +95,7 @@ pub(crate) async fn resolve_config_decls(
         .flatten()
         .map(UseConfigurationOrConfigField::ConfigField);
     Ok(IntoIterator::into_iter(manifest.uses)
-        .filter_map(|u| if let cm_rust::UseDecl::Config(c) = u { Some(c) } else { None })
+        .filter_map(|u| if let cm_rust::UseDecl::Config(c) = u { Some(*c) } else { None })
         .map(UseConfigurationOrConfigField::UseConfiguration)
         .chain(config_decls)
         .collect())
