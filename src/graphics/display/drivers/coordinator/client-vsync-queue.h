@@ -8,8 +8,8 @@
 #include <lib/zx/time.h>
 #include <zircon/assert.h>
 
+#include <concepts>
 #include <cstdint>
-#include <type_traits>
 
 #include <fbl/ring_buffer.h>
 
@@ -93,7 +93,8 @@ class ClientVsyncQueue {
   // `send_message` receives messages in the same order that they were given to
   // `Push()`.
   template <typename Callable>
-  void DrainUntilThrottled(Callable send_message);
+  void DrainUntilThrottled(Callable send_message)
+    requires(std::invocable<Callable, const ClientVsyncQueue::Message&, display::VsyncAckCookie>);
 
  private:
   // False if `Acknowledge()` cannot succeed.
@@ -128,11 +129,9 @@ class ClientVsyncQueue {
 };
 
 template <typename Callable>
-void ClientVsyncQueue::DrainUntilThrottled(Callable send_message) {
-  static_assert(
-      std::is_invocable_v<Callable, const Message&, display::VsyncAckCookie>,
-      "Prototype: void send_message(const Message& message, display::VsyncAckCookie ack_cookie)");
-
+void ClientVsyncQueue::DrainUntilThrottled(Callable send_message)
+  requires(std::invocable<Callable, const ClientVsyncQueue::Message&, display::VsyncAckCookie>)
+{
   while (!queued_messages_.empty()) {
     if (IsThrottling()) [[unlikely]] {
       break;

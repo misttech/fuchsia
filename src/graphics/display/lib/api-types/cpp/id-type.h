@@ -6,6 +6,7 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_API_TYPES_CPP_ID_TYPE_H_
 
 #include <compare>
+#include <concepts>
 #include <format>
 #include <functional>
 #include <type_traits>
@@ -62,8 +63,8 @@ class IdType {
 
   constexpr explicit IdType(const ValueType& int_value) noexcept : value_(int_value) {}
 
-  template <typename _ = std::enable_if<!std::is_same_v<FidlType, ValueType>>>
   constexpr explicit IdType(const FidlType& fidl_value) noexcept
+    requires(!std::same_as<FidlType, ValueType>)
       : value_(IdTraits::FromFidl(fidl_value)) {}
 
   constexpr IdType(const IdType&) noexcept = default;
