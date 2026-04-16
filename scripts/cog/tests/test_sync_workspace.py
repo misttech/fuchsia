@@ -1172,6 +1172,7 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
             mock_ws.workspace_root = fs.repo_dir
             mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
+            mock_ws.is_checkout_uptodate.return_value = False
             mock_ws.config = {
                 "repo": {
                     "ignored": [],

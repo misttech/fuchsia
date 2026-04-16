@@ -482,11 +482,16 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "get_cartfs_commit", return_value="hash123"),
                 patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
                 patch.object(ws, "_create_symlinks") as mock_symlinks,
+                patch.object(ws, "_fetch_prebuilts") as mock_fetch,
+                patch.object(ws, "_reinit_integration_repo") as mock_reinit,
+                patch.object(
+                    ws, "_checkout_integration_roll", return_value="int_hash"
+                ) as mock_checkout,
             ):
                 ws.checkout_cartfs_to_cog_revisions()
 
-                mock_sync.assert_not_called()
-                mock_symlinks.assert_not_called()
+                mock_sync.assert_called_once_with("hash123")
+                mock_symlinks.assert_called_once()
 
     def test_checkout_cartfs_to_cog_revisions_up_to_date_with_cog_integration(
         self,
@@ -522,11 +527,13 @@ class TestWorkspace(unittest.TestCase):
                 ),
                 patch.object(ws, "_sync_fuchsia_repo") as mock_sync,
                 patch.object(ws, "_create_symlinks") as mock_symlinks,
+                patch.object(ws, "_fetch_prebuilts") as mock_fetch,
+                patch.object(ws, "_reinit_integration_repo") as mock_reinit,
             ):
                 ws.checkout_cartfs_to_cog_revisions()
 
-                mock_sync.assert_not_called()
-                mock_symlinks.assert_not_called()
+                mock_sync.assert_called_once_with("fuchsia_hash")
+                mock_symlinks.assert_called_once()
 
     def test_checkout_cartfs_to_cog_revisions_not_up_to_date_no_cog_integration(
         self,
@@ -776,6 +783,134 @@ class TestWorkspace(unittest.TestCase):
 
                 # Should call _fetch_prebuilts
                 mock_fetch.assert_called_once()
+
+    def test_is_checkout_uptodate_standalone_true(self) -> None:
+        """Test that returns True when standalone checkout is up to date."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
+                cartfs_instance=MagicMock(),
+            )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
+            ws.__dict__["config"] = {
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": None,
+                },
+            }
+            with (
+                patch.object(ws, "get_cog_commit", return_value="hash123"),
+                patch.object(ws, "get_cartfs_commit", return_value="hash123"),
+            ):
+                self.assertTrue(ws.is_checkout_uptodate())
+
+    def test_is_checkout_uptodate_standalone_false(self) -> None:
+        """Test that returns False when standalone checkout is not up to date."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
+                cartfs_instance=MagicMock(),
+            )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
+            ws.__dict__["config"] = {
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": None,
+                },
+            }
+            with (
+                patch.object(ws, "get_cog_commit", return_value="hash123"),
+                patch.object(
+                    ws, "get_cartfs_commit", return_value="different-hash"
+                ),
+            ):
+                self.assertFalse(ws.is_checkout_uptodate())
+
+    def test_is_checkout_uptodate_superproject_true(self) -> None:
+        """Test that returns True when superproject checkout is up to date."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
+                cartfs_instance=MagicMock(),
+            )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
+            ws.__dict__["config"] = {
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": "integration",
+                },
+            }
+
+            def mock_get_commit(repo: str) -> str:
+                return "fuchsia_hash" if repo == "fuchsia" else "int_hash"
+
+            with (
+                patch.object(ws, "get_cog_commit", side_effect=mock_get_commit),
+                patch.object(
+                    ws, "get_cartfs_commit", side_effect=mock_get_commit
+                ),
+            ):
+                self.assertTrue(ws.is_checkout_uptodate())
+
+    def test_is_checkout_uptodate_superproject_false_fuchsia_differs(
+        self,
+    ) -> None:
+        """Test that returns False when fuchsia commit differs in superproject."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
+                cartfs_instance=MagicMock(),
+            )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
+            ws.__dict__["config"] = {
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": "integration",
+                },
+            }
+            with (
+                patch.object(ws, "get_cog_commit", return_value="fuchsia_hash"),
+                patch.object(ws, "get_cartfs_commit", return_value="diff_hash"),
+            ):
+                self.assertFalse(ws.is_checkout_uptodate())
+
+    def test_is_checkout_uptodate_superproject_false_integration_differs(
+        self,
+    ) -> None:
+        """Test that returns False when integration commit differs in superproject."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
+                / "fuchsia",
+                cartfs_instance=MagicMock(),
+            )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
+            ws.__dict__["config"] = {
+                "repo": {
+                    "fuchsia": "fuchsia",
+                    "integration": "integration",
+                },
+            }
+
+            def mock_get_cog_commit(repo: str) -> str:
+                return "fuchsia_hash" if repo == "fuchsia" else "int_hash"
+
+            def mock_get_cartfs_commit(repo: str) -> str:
+                return "fuchsia_hash" if repo == "fuchsia" else "diff_int_hash"
+
+            with (
+                patch.object(
+                    ws, "get_cog_commit", side_effect=mock_get_cog_commit
+                ),
+                patch.object(
+                    ws, "get_cartfs_commit", side_effect=mock_get_cartfs_commit
+                ),
+            ):
+                self.assertFalse(ws.is_checkout_uptodate())
 
 
 if __name__ == "__main__":

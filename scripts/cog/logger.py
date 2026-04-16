@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import contextlib
 import functools
 import logging
 import sys
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 _logger: Optional[logging.Logger] = None
 _enable_status_updates: bool = False
@@ -86,6 +87,22 @@ def get_log_level() -> int:
     if _logger is None:
         return logging.WARNING
     return _logger.level
+
+
+@contextlib.contextmanager
+def set_level(level: int) -> Iterator[None]:
+    """Context manager to temporarily set the log level."""
+    global _logger
+    if _logger is None:
+        init_logger(logging.WARNING, colors=False)
+
+    assert _logger
+    old_level = _logger.level
+    _logger.setLevel(level)
+    try:
+        yield
+    finally:
+        _logger.setLevel(old_level)
 
 
 def log(level: int, *args: Any, **kwargs: Any) -> None:

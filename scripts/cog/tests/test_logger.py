@@ -28,6 +28,25 @@ class TestLogger(unittest.TestCase):
         logger.emit_status("third message")
         mock_print.assert_called_once_with("STATUS_UPDATE:third message")
 
+    def test_set_level(self) -> None:
+        import logging
+
+        logger.init_logger(level=logging.WARNING)
+        self.assertEqual(logger.get_log_level(), logging.WARNING)
+
+        with logger.set_level(logging.DEBUG):
+            self.assertEqual(logger.get_log_level(), logging.DEBUG)
+
+        self.assertEqual(logger.get_log_level(), logging.WARNING)
+
+        # Test with min
+        with logger.set_level(min(logger.get_log_level(), logging.INFO)):
+            self.assertEqual(logger.get_log_level(), logging.INFO)
+
+        logger.init_logger(level=logging.DEBUG)
+        with logger.set_level(min(logger.get_log_level(), logging.INFO)):
+            self.assertEqual(logger.get_log_level(), logging.DEBUG)
+
 
 if __name__ == "__main__":
     unittest.main()

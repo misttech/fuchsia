@@ -298,7 +298,13 @@ class WorkspaceSyncService:
 
     def sync_cog_to_cartfs(self) -> SyncResult:
         """Syncs changes from Cog to CartFS."""
-        self.workspace.checkout_cartfs_to_cog_revisions()
+        if not self.workspace.is_checkout_uptodate():
+            logger.log_warn(
+                "CartFS checkout is not up to date, updating CartFS checkout..."
+            )
+            with logger.set_level(min(logger.get_log_level(), logging.INFO)):
+                self.workspace.checkout_cartfs_to_cog_revisions()
+                logger.log_info("CartFS checkout updated, resuming sync...")
         cog_affected_files = self.affected_files(WorkspaceType.COG)
         cartfs_affected_files = self.affected_files(WorkspaceType.CARTFS)
         all_affected_files = cog_affected_files | cartfs_affected_files

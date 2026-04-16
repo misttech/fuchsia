@@ -375,6 +375,31 @@ class Workspace:
             else None
         )
 
+    def is_checkout_uptodate(self) -> bool:
+        cog_fuchsia_commit = self.get_cog_commit(self.config["repo"]["fuchsia"])
+        cartfs_fuchsia_commit = self.get_cartfs_commit("fuchsia")
+        logger.log_debug(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
+        logger.log_debug(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
+
+        if cog_fuchsia_commit != cartfs_fuchsia_commit:
+            return False
+
+        # Standalone fuchsia Cog checkouts don't have a Cog integration repo.
+        if not self.config["repo"]["integration"]:
+            return True
+
+        cog_integration_commit = self.get_cog_commit(
+            self.config["repo"]["integration"]
+        )
+        cartfs_integration_commit = self.get_cartfs_commit("integration")
+        logger.log_debug(f"Cog integration commit: {cog_integration_commit}")
+        logger.log_debug(
+            f"CartFS integration commit: {cartfs_integration_commit}"
+        )
+
+        # Also check if the integration repo is up to date for Cog superproject checkouts.
+        return cog_integration_commit == cartfs_integration_commit
+
     def checkout_cartfs_to_cog_revisions(self) -> None:
         """Checkouts the CartFS fuchsia and integration repos to match the revisions in Cog."""
         if not self._is_jiri_bootstrapped():
@@ -383,37 +408,9 @@ class Workspace:
         cog_integration_repo = self.config["repo"]["integration"]
 
         cog_fuchsia_commit = self.get_cog_commit(self.config["repo"]["fuchsia"])
-        cartfs_fuchsia_commit = self.get_cartfs_commit("fuchsia")
-        logger.log_debug(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
-        logger.log_debug(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
-
-        # If this is a standalone fuchsia cog checkout and the CartFS fuchsia
-        # checkout is up to date, skip CartFS initialization.
-        if (
-            not cog_integration_repo
-            and cog_fuchsia_commit == cartfs_fuchsia_commit
-        ):
-            logger.log_info(
-                "Fuchsia repo is up to date, skipping cartfs initialization."
-            )
-            return
-
         cog_integration_commit = cog_integration_repo and self.get_cog_commit(
             cog_integration_repo
         )
-        cartfs_integration_commit = self.get_cartfs_commit("integration")
-
-        # If this is a superproject checkout with both fuchsia and integration
-        # repos and both CartFS checkouts are up to date, skip CartFS initialization.
-        if (
-            cog_integration_repo
-            and cog_integration_commit == cartfs_integration_commit
-            and cog_fuchsia_commit == cartfs_fuchsia_commit
-        ):
-            logger.log_info(
-                "Fuchsia and integration repos are up to date, skipping cartfs initialization."
-            )
-            return
 
         # Update CartFS integration and fuchsia checkouts.
         if cog_integration_repo:
@@ -422,14 +419,15 @@ class Workspace:
             self._reinit_integration_repo()
 
             # Try to find the integration commit that rolled `cog_fuchsia_commit`.
+            logger.log_debug(
+                f"Current CartFS integration commit: {self.get_cartfs_commit('integration')}"
+            )
             cog_integration_commit = self._checkout_integration_roll(
                 cog_fuchsia_commit
             )
-
-        logger.log_debug(f"Cog integration commit: {cog_integration_commit}")
-        logger.log_debug(
-            f"CartFS integration commit: {cartfs_integration_commit}"
-        )
+            logger.log_debug(
+                f"New CartFS integration commit: {cog_integration_commit}"
+            )
 
         logger.emit_status(
             "Updating CartFS fuchsia and integration checkouts..."
