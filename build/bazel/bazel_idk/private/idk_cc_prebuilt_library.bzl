@@ -123,23 +123,26 @@ def _idk_cc_prebuilt_library_impl(
     if api_file_path and no_headers:
         fail("Targets without public headers do not require/support modification acknowledgement.")
 
+    # Do not allow `name` to start with "lib". For static libraries, `name` is
+    # the output name and "lib" is added automatically. Apply the same
+    # restriction to all library types for consistency and simplicity.
+    if name.startswith("lib"):
+        fail("`name` must not start with 'lib'%s." % (
+            " because 'lib' will automatically be added to the library file name" if prebuilt_library_type == "static" else ""
+        ))
+
     if prebuilt_library_type == "static":
         # The output name is always the name of the library target, `name`.
 
         if output_name != "":
             fail("`output_name` is not supported for static libraries.")
-
-        # `name`, which will be the output name, should not start with `lib` for
-        # consistency and simplicity.
-        if name.startswith("lib"):
-            fail("'lib' will automatically be added to the library file name.")
     else:
         if output_name == "":
             fail("`output_name` is required for shared libraries.")
 
         # `output_name` should not start with `lib` for consistency and simplicity.
         if output_name.startswith("lib"):
-            fail("'lib' will automatically be added to the library file name.")
+            fail("`output_name` must not start with 'lib' because 'lib' will automatically be added to the library file name.")
 
     if prebuilt_library_type == "static":
         # TODO(https://fxbug.dev/447151364): Implement the "subtle" logic for
@@ -416,13 +419,12 @@ _idk_cc_prebuilt_library = macro(
     doc = """Defines a C++ prebuilt library that can be exported to an IDK.
 
 Defines a prebuilt library of `prebuilt_library_type` named `name` and an IDK
-atom named "{name}_idk".
+atom named "{name}_idk". `name` must not begin with "lib".
 
 The values of all deps args must be iterable. That means they cannot contain
 `select()` statements. Instead, use `fuchsia_deps` for public dependencies
 that only apply to Fuchsia.
-
-for static libraries, `name` must not begin with "lib".""",
+""",
     implementation = _idk_cc_prebuilt_library_impl,
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
     # `cc_library()` wrapper is a symbolic macro.
