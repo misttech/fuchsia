@@ -172,21 +172,27 @@ impl Context {
                         .pre_clear
                         .clone()
                         .map(|pre_clear| generic::PreClear { color: pre_clear.color }),
-                    pre_copy: ext.pre_copy.clone().map(|pre_copy| generic::PreCopy {
-                        image: image,
-                        copy_region: generic::CopyRegion {
-                            src_offset: pre_copy.copy_region.src_offset,
-                            dst_offset: pre_copy.copy_region.dst_offset,
-                            extent: pre_copy.copy_region.extent,
-                        },
+                    pre_copy: ext.pre_copy.clone().map(|pre_copy| {
+                        let ImageInner::Forma(src_image) = pre_copy.image.inner;
+                        generic::PreCopy {
+                            image: src_image,
+                            copy_region: generic::CopyRegion {
+                                src_offset: pre_copy.copy_region.src_offset,
+                                dst_offset: pre_copy.copy_region.dst_offset,
+                                extent: pre_copy.copy_region.extent,
+                            },
+                        }
                     }),
-                    post_copy: ext.post_copy.clone().map(|post_copy| generic::PostCopy {
-                        image: image,
-                        copy_region: generic::CopyRegion {
-                            src_offset: post_copy.copy_region.src_offset,
-                            dst_offset: post_copy.copy_region.dst_offset,
-                            extent: post_copy.copy_region.extent,
-                        },
+                    post_copy: ext.post_copy.clone().map(|post_copy| {
+                        let ImageInner::Forma(dst_image) = post_copy.image.inner;
+                        generic::PostCopy {
+                            image: dst_image,
+                            copy_region: generic::CopyRegion {
+                                src_offset: post_copy.copy_region.src_offset,
+                                dst_offset: post_copy.copy_region.dst_offset,
+                                extent: post_copy.copy_region.extent,
+                            },
+                        }
                     }),
                 };
                 composition.with_inner_composition(|inner| {
