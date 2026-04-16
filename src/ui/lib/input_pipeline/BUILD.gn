@@ -78,6 +78,8 @@ _input_pipeline = {
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:pin-project-lite",
     "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:strum",
+    "//third_party/rust_crates:strum_macros",
   ]
 
   test_deps = [

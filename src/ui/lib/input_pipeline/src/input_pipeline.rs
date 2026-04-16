@@ -9,7 +9,9 @@ use crate::input_handler::Handler;
 use crate::{Dispatcher, Incoming, Transport, input_device, input_handler, metrics};
 use anyhow::{Context, Error, format_err};
 use fidl::endpoints;
+use fidl_fuchsia_io as fio;
 use focus_chain_provider::FocusChainProviderPublisher;
+use fuchsia_async as fasync;
 use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use fuchsia_inspect::NumericProperty;
@@ -25,7 +27,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, LazyLock};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use strum::EnumCount;
 
 /// Use a self incremental u32 unique id for device_id.
 ///
@@ -612,13 +614,8 @@ impl InputPipeline {
             }
 
             use input_device::InputEventType;
-            use std::collections::HashMap;
 
-            // Pre-compute handler lists for each event type.
-            let mut handlers_by_type: HashMap<
-                InputEventType,
-                Vec<Rc<dyn input_handler::BatchInputHandler>>,
-            > = HashMap::new();
+            let mut handlers_by_type: [Vec<Rc<dyn input_handler::BatchInputHandler>>; InputEventType::COUNT] = Default::default();
 
             // TODO: b/478262850 - We can use supported_input_devices to populate this list.
             let event_types = vec![
@@ -638,7 +635,7 @@ impl InputPipeline {
                     .filter(|h| h.interest().contains(&event_type))
                     .cloned()
                     .collect();
-                handlers_by_type.insert(event_type, handlers_for_type);
+                handlers_by_type[event_type as usize] = handlers_for_type;
             }
 
             while let Some(events) = receiver.next().await {
@@ -662,7 +659,7 @@ impl InputPipeline {
                     let mut events_in_group = event_group;
 
                     // Get pre-computed handlers for this event type.
-                    let handlers = handlers_by_type.get(&event_type).unwrap();
+                    let handlers = &handlers_by_type[event_type as usize];
 
                     for handler in handlers {
                         events_in_group =

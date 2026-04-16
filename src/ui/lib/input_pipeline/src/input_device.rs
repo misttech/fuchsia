@@ -8,19 +8,19 @@ use crate::{
 };
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use fidl_fuchsia_io as fio;
+use fidl_next_fuchsia_input_report as fidl_next_input_report;
 use fidl_next_fuchsia_input_report::{InputDevice, InputReport};
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{
     ExponentialHistogramParams, HistogramProperty as _, NumericProperty, Property,
 };
+use fuchsia_trace as ftrace;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::StreamExt;
 use metrics_registry::*;
 use std::path::PathBuf;
-use {
-    fidl_fuchsia_io as fio, fidl_next_fuchsia_input_report as fidl_next_input_report,
-    fuchsia_trace as ftrace,
-};
+use strum_macros::{Display, EnumCount};
 
 pub use input_device_constants::InputDeviceType;
 
@@ -238,31 +238,17 @@ pub enum InputDeviceEvent {
 }
 
 /// An [`InputEventType`] represents the type of an input event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, EnumCount, Display)]
+#[strum(serialize_all = "snake_case")]
 pub enum InputEventType {
-    Keyboard,
-    LightSensor,
-    ConsumerControls,
-    Mouse,
-    TouchScreen,
-    Touchpad,
+    Keyboard = 0,
+    LightSensor = 1,
+    ConsumerControls = 2,
+    Mouse = 3,
+    TouchScreen = 4,
+    Touchpad = 5,
     #[cfg(test)]
-    Fake,
-}
-
-impl std::fmt::Display for InputEventType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &*self {
-            InputEventType::Keyboard => write!(f, "keyboard"),
-            InputEventType::LightSensor => write!(f, "light_sensor"),
-            InputEventType::ConsumerControls => write!(f, "consumer_controls"),
-            InputEventType::Mouse => write!(f, "mouse"),
-            InputEventType::TouchScreen => write!(f, "touch_screen"),
-            InputEventType::Touchpad => write!(f, "touchpad"),
-            #[cfg(test)]
-            InputEventType::Fake => write!(f, "fake"),
-        }
-    }
+    Fake = 6,
 }
 
 impl From<&InputDeviceEvent> for InputEventType {
@@ -724,10 +710,11 @@ mod tests {
     use crate::testing_utilities::spawn_input_stream_handler;
     use assert_matches::assert_matches;
     use diagnostics_assertions::AnyProperty;
+    use fidl_fuchsia_input_report as fidl_input_report;
+    use fuchsia_async as fasync;
     use pretty_assertions::assert_eq;
     use std::convert::TryFrom as _;
     use test_case::test_case;
-    use {fidl_fuchsia_input_report as fidl_input_report, fuchsia_async as fasync};
 
     #[test]
     fn max_event_time() {
