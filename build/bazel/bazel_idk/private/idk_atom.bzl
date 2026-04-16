@@ -475,14 +475,14 @@ def _idk_atom_impl(
         type,
         category,
         stable,
-        testonly,
-        atom_build_deps,
         api_file_path,
         api_contents_map,
-        allowlist,
-        prebuilt_library_format,
+        atom_build_deps,
         additional_prebuild_info,
         configurable_info,
+        allowlist,
+        prebuilt_library_format,
+        testonly,
         **kwargs):
     if prebuilt_library_format:
         prebuild_info_format = json.decode(additional_prebuild_info["format"])
@@ -587,11 +587,6 @@ Atoms will be checked for category and API area violations when generating the I
             mandatory = True,
             configurable = False,
         ),
-        "atom_build_deps": attr.label_list(
-            doc = "See _create_idk_atom().",
-            mandatory = True,
-            configurable = False,
-        ),
         "api_file_path": attr.label(
             doc = "See _create_idk_atom().",
             allow_single_file = True,
@@ -601,6 +596,11 @@ Atoms will be checked for category and API area violations when generating the I
             doc = "See _create_idk_atom().",
             allow_files = True,
             default = {},
+            configurable = False,
+        ),
+        "atom_build_deps": attr.label_list(
+            doc = "See _create_idk_atom().",
+            mandatory = False,
             configurable = False,
         ),
         "additional_prebuild_info": attr.string_dict(

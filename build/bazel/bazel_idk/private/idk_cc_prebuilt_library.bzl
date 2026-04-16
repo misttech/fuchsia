@@ -409,8 +409,8 @@ def _idk_cc_prebuilt_library_impl(
         underlying_library = ":%s" % underlying_library_info_target_name,
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
-        prebuilt_library_format = prebuilt_library_type,
         allowlist = allowlist,
+        prebuilt_library_format = prebuilt_library_type,
         testonly = testonly,
         visibility = get_atom_visibility(visibility),
     )
