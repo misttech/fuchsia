@@ -41,8 +41,11 @@ impl Procedure for IndicatorsActivationProcedure {
             }
             (false, at::Command::Cmer { mode, ind, .. }) => {
                 self.terminated = true;
-                if mode == AgIndicatorsReporting::EVENT_REPORTING_MODE
-                    && state.ag_indicator_events_reporting.set_reporting_status(ind).is_ok()
+                let set_reporting_success = ind.map_or(true, |v| {
+                    state.ag_indicator_events_reporting.set_reporting_status(v).is_ok()
+                });
+                if mode == Some(AgIndicatorsReporting::EVENT_REPORTING_MODE)
+                    && set_reporting_success
                 {
                     AgUpdate::Ok.into()
                 } else {
@@ -118,5 +121,25 @@ mod tests {
             procedure.hf_update(update, &mut state),
             ProcedureRequest::Error(err) if matches!(*err, ProcedureError::UnexpectedHf(_))
         );
+    }
+
+    #[test]
+    fn cmer_with_none_ind_produces_ok_request() {
+        let mut procedure = IndicatorsActivationProcedure::new();
+        let mut state = SlcState::default();
+        assert!(!procedure.is_terminated());
+
+        let update = at::Command::Cmer {
+            mode: Some(AgIndicatorsReporting::EVENT_REPORTING_MODE),
+            keyp: None,
+            disp: None,
+            ind: None,
+        };
+        let expected_messages = vec![at::Response::Ok];
+        assert_matches!(
+            procedure.hf_update(update, &mut state),
+            ProcedureRequest::SendMessages(m) if m == expected_messages
+        );
+        assert!(procedure.is_terminated());
     }
 }

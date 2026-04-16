@@ -120,7 +120,12 @@ impl SlcInitProcedure {
 
     fn send_ag_indicator_status_update(&mut self) -> Vec<ProcedureOutput> {
         self.state = State::SentAgIndicatorStatusUpdate;
-        vec![at_cmd!(Cmer { mode: INDICATOR_REPORTING_MODE, keyp: 0, disp: 0, ind: 1 })]
+        vec![at_cmd!(Cmer {
+            mode: Some(INDICATOR_REPORTING_MODE),
+            keyp: Some(0),
+            disp: Some(0),
+            ind: Some(1)
+        })]
     }
 
     fn send_call_hold_and_multparty(&mut self) -> Vec<ProcedureOutput> {
@@ -437,8 +442,12 @@ mod tests {
                 ],
             })];
         let response3_ok = at_ok!();
-        let update3_from_ok =
-            vec![at_cmd!(Cmer { mode: INDICATOR_REPORTING_MODE, keyp: 0, disp: 0, ind: 1 })];
+        let update3_from_ok = vec![at_cmd!(Cmer {
+            mode: Some(INDICATOR_REPORTING_MODE),
+            keyp: Some(0),
+            disp: Some(0),
+            ind: Some(1)
+        })];
         assert_eq!(procedure.transition(&mut state, response3).unwrap(), update3);
         assert_eq!(procedure.transition(&mut state, response3_ok).unwrap(), update3_from_ok);
 
@@ -528,8 +537,12 @@ mod tests {
                 ],
             })];
         let response3_ok = at_ok!();
-        let expected_command3_from_ok =
-            vec![at_cmd!(Cmer { mode: INDICATOR_REPORTING_MODE, keyp: 0, disp: 0, ind: 1 })];
+        let expected_command3_from_ok = vec![at_cmd!(Cmer {
+            mode: Some(INDICATOR_REPORTING_MODE),
+            keyp: Some(0),
+            disp: Some(0),
+            ind: Some(1)
+        })];
         assert_eq!(procedure.transition(&mut state, response3).unwrap(), expected_command3);
         assert_eq!(
             procedure.transition(&mut state, response3_ok).unwrap(),
@@ -677,8 +690,12 @@ mod tests {
                 ],
             })];
         let response3_ok = at_ok!();
-        let update3_from_ok =
-            vec![at_cmd!(Cmer { mode: INDICATOR_REPORTING_MODE, keyp: 0, disp: 0, ind: 1 })];
+        let update3_from_ok = vec![at_cmd!(Cmer {
+            mode: Some(INDICATOR_REPORTING_MODE),
+            keyp: Some(0),
+            disp: Some(0),
+            ind: Some(1)
+        })];
         assert_eq!(procedure.transition(&mut state, response3).unwrap(), update3);
         assert_eq!(procedure.transition(&mut state, response3_ok).unwrap(), update3_from_ok);
 

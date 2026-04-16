@@ -252,8 +252,11 @@ impl SlcProcedureState for AgIndicatorStatusReceived {
         // Ensure that the requested `mode` and `ind` values are valid per HFP v1.8 Section 4.34.2.
         match update {
             at::Command::Cmer { mode, ind, .. } => {
-                if mode == AgIndicatorsReporting::EVENT_REPORTING_MODE
-                    && state.ag_indicator_events_reporting.set_reporting_status(ind).is_ok()
+                let set_reporting_success = ind.map_or(true, |v| {
+                    state.ag_indicator_events_reporting.set_reporting_status(v).is_ok()
+                });
+                if mode == Some(AgIndicatorsReporting::EVENT_REPORTING_MODE)
+                    && set_reporting_success
                 {
                     Box::new(AgIndicatorStatusEnableReceived { state: state.clone() })
                 } else {
@@ -552,7 +555,8 @@ mod tests {
             SlcInitProcedure::new_at_state(AgIndicatorStatusReceived { state: state.clone() });
 
         // `mode` = 4 is invalid.
-        let invalid_enable = at::Command::Cmer { mode: 4, keyp: 0, disp: 0, ind: 1 };
+        let invalid_enable =
+            at::Command::Cmer { mode: Some(4), keyp: Some(0), disp: Some(0), ind: Some(1) };
         assert_matches!(
             procedure.hf_update(invalid_enable, &mut state),
             ProcedureRequest::Error(err) if matches!(*err, Error::InvalidHfArgument(_))
@@ -571,10 +575,10 @@ mod tests {
 
         // `ind` = 9 is invalid.
         let invalid_enable = at::Command::Cmer {
-            mode: AgIndicatorsReporting::EVENT_REPORTING_MODE,
-            keyp: 0,
-            disp: 0,
-            ind: 9,
+            mode: Some(AgIndicatorsReporting::EVENT_REPORTING_MODE),
+            keyp: Some(0),
+            disp: Some(0),
+            ind: Some(9),
         };
         assert_matches!(
             procedure.hf_update(invalid_enable, &mut state),
@@ -627,7 +631,8 @@ mod tests {
         assert_matches!(slc_proc.ag_update(update5, &mut state), ProcedureRequest::SendMessages(_));
 
         // Lastly, the HF should request to enable the indicator status update on the AG.
-        let update6 = at::Command::Cmer { mode: 3, keyp: 0, disp: 0, ind: 1 };
+        let update6 =
+            at::Command::Cmer { mode: Some(3), keyp: Some(0), disp: Some(0), ind: Some(1) };
         assert_matches!(slc_proc.hf_update(update6, &mut state), ProcedureRequest::SendMessages(_));
 
         // Since both the AG and HF don't support 3-way calling and HF-indicators flags, we
@@ -671,7 +676,8 @@ mod tests {
         let update6 = AgUpdate::IndicatorStatus(AgIndicators::default());
         assert_matches!(slc_proc.ag_update(update6, &mut state), ProcedureRequest::SendMessages(_));
 
-        let update7 = at::Command::Cmer { mode: 3, keyp: 0, disp: 0, ind: 1 };
+        let update7 =
+            at::Command::Cmer { mode: Some(3), keyp: Some(0), disp: Some(0), ind: Some(1) };
         assert_matches!(slc_proc.hf_update(update7, &mut state), ProcedureRequest::SendMessages(_));
 
         // Optional - retrieve support for three-way-calling.
@@ -753,7 +759,8 @@ mod tests {
         let update6 = AgUpdate::IndicatorStatus(AgIndicators::default());
         assert_matches!(slc_proc.ag_update(update6, &mut state), ProcedureRequest::SendMessages(_));
 
-        let update7 = at::Command::Cmer { mode: 3, keyp: 0, disp: 0, ind: 1 };
+        let update7 =
+            at::Command::Cmer { mode: Some(3), keyp: Some(0), disp: Some(0), ind: Some(1) };
         assert_matches!(slc_proc.hf_update(update7, &mut state), ProcedureRequest::SendMessages(_));
 
         // Note: skipping three-way calling check, as hf doesn't support three-way calling.
@@ -812,7 +819,8 @@ mod tests {
         let mut state =
             SlcState { hf_features: HfFeatures::CODEC_NEGOTIATION, ..SlcState::default() };
         slc_proc = SlcInitProcedure::new_at_state(HfFeaturesReceived);
-        let unexpected_update2 = at::Command::Cmer { mode: 3, keyp: 0, disp: 0, ind: 1 };
+        let unexpected_update2 =
+            at::Command::Cmer { mode: Some(3), keyp: Some(0), disp: Some(0), ind: Some(1) };
         assert_matches!(
             slc_proc.hf_update(unexpected_update2, &mut state),
             ProcedureRequest::Error(_)

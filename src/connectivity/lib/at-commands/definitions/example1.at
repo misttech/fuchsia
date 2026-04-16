@@ -40,6 +40,9 @@ command { AT+TESTEXEXTFSIC=field1: String, field2: Integer,}
 # Option type argument
 command { AT+TESTIO=field1: Integer, field2: Option<Integer>}
 
+# Option type arguments for testing empty subparameters
+command { AT+TESTALLOPT=field1: Option<Integer>, field2: Option<Integer>, field3: Option<Integer>}
+
 # List type argument
 command { AT+TESTL=field: List<Integer>}
 

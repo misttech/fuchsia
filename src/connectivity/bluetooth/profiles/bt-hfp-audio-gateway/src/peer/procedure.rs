@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use at_commands as at;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect_contrib::nodes::NodeTimeExt;
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use log::warn;
 use thiserror::Error;
-use {at_commands as at, fuchsia_inspect as inspect};
 
 use crate::peer::service_level_connection::{Command, SlcState};
 use crate::peer::slc_request::SlcRequest;
@@ -525,11 +526,13 @@ mod tests {
 
     #[fuchsia::test]
     fn match_conditional_commands_based_on_slci() {
-        let command = at::Command::Cmer { mode: 3, keyp: 0, disp: 0, ind: 1 };
+        let command =
+            at::Command::Cmer { mode: Some(3), keyp: Some(0), disp: Some(0), ind: Some(1) };
         let marker = ProcedureMarker::match_command(&command, false).expect("command to match");
         assert_eq!(marker, ProcedureMarker::SlcInitialization);
 
-        let command = at::Command::Cmer { mode: 3, keyp: 0, disp: 0, ind: 1 };
+        let command =
+            at::Command::Cmer { mode: Some(3), keyp: Some(0), disp: Some(0), ind: Some(1) };
         let marker = ProcedureMarker::match_command(&command, true).expect("command to match");
         assert_eq!(marker, ProcedureMarker::Indicators);
     }

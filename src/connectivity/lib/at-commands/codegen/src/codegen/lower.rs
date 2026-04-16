@@ -263,7 +263,6 @@ fn codegen_encode_possibly_option<W: io::Write>(
     name: &str,
     arg_vec_name: &str,
     typ: &PossiblyOptionType,
-    in_list: bool,
 ) -> Result {
     match typ {
         PossiblyOptionType::PrimitiveType(typ) => {
@@ -276,26 +275,16 @@ fn codegen_encode_possibly_option<W: io::Write>(
             let primitive_name = format!("{}_primitive", name);
             write_indented!(sink, indent, "match {} {{\n", name)?;
             {
-                // If we're generating a list of possibly optional values, push an empty string,
-                // giving something like 1,,2.
-                if in_list {
-                    write_indented!(sink, indent, "None => {{\n",)?;
-                    let indent = indent + TABSTOP;
-                    {
-                        let indent = indent + TABSTOP;
-                        write_indented!(
-                            sink,
-                            indent + TABSTOP,
-                            "{}.push(lowlevel::Argument::PrimitiveArgument(String::new()));\n",
-                            arg_vec_name
-                        )?;
-                    }
-                    write_indented!(sink, indent, "}}\n")?;
-                // If not in a list, we're at the end of a sequence of arguments, so don't push a
-                // value, meaning there won't be a trailing comma.
-                } else {
-                    write_indented!(sink, indent, "None => {{}}\n",)?;
-                }
+                // Push an empty string to preserve position for both lists and top-level
+                // optional arguments, giving something like 1,,2.
+                write_indented!(sink, indent, "None => {{\n",)?;
+                write_indented!(
+                    sink,
+                    indent + TABSTOP,
+                    "{}.push(lowlevel::Argument::PrimitiveArgument(String::new()));\n",
+                    arg_vec_name
+                )?;
+                write_indented!(sink, indent, "}}\n")?;
                 write_indented!(sink, indent, "Some({}) => {{\n", unwrapped_name)?;
                 {
                     let indent = indent + TABSTOP;
@@ -374,14 +363,7 @@ fn codegen_encode_list<W: io::Write>(
     // Increment indent
     {
         let indent = indent + TABSTOP;
-        codegen_encode_possibly_option(
-            sink,
-            indent + TABSTOP,
-            &element_name,
-            arg_vec_name,
-            typ,
-            /* in_list */ true,
-        )?;
+        codegen_encode_possibly_option(sink, indent + TABSTOP, &element_name, arg_vec_name, typ)?;
     }
     write_indented!(sink, indent, "}}   \n")?;
 
@@ -397,14 +379,7 @@ fn codegen_argument_vec_encoding<W: io::Write>(
     for arg in arg_vec {
         match &arg.typ {
             Type::PossiblyOptionType(typ) => {
-                codegen_encode_possibly_option(
-                    sink,
-                    indent,
-                    &arg.name,
-                    arg_vec_name,
-                    typ,
-                    /* in_list */ false,
-                )?;
+                codegen_encode_possibly_option(sink, indent, &arg.name, arg_vec_name, typ)?;
             }
             Type::ListType(typ) => {
                 codegen_encode_list(sink, indent, &arg.name, typ, arg_vec_name)?;
@@ -476,6 +451,34 @@ fn codegen_arguments_encoding<W: io::Write>(
                     "let mut raw_arguments = Vec::<lowlevel::Argument>::new();\n"
                 )?;
                 codegen_argument_vec_encoding(sink, indent, arg_vec, "raw_arguments")?;
+
+                // Some commands contain empty subparameters and therefore contain placeholder
+                // empty arguments to preserve position.
+                // For standard commands (not containing lists), we should truncate trailing
+                // empty arguments to avoid sending unnecessary commas (e.g., AT+CMER=3).
+                // For list commands, these empty trailing arguments are preserved to maintain
+                // the exact representation of the list. This allows roundtrip conversions to be
+                // idempotent.
+                let has_list = arg_vec.iter().any(|arg| matches!(arg.typ, Type::ListType(_)));
+
+                if !has_list {
+                    write_indented!(
+                        sink,
+                        indent,
+                        "while let Some(arg) = raw_arguments.last() {{\n"
+                    )?;
+                    write_indented!(sink, indent + TABSTOP, "if arg.is_empty() {{\n")?;
+                    write_indented!(
+                        sink,
+                        indent + TABSTOP + TABSTOP,
+                        "let _ = raw_arguments.pop();\n"
+                    )?;
+                    write_indented!(sink, indent + TABSTOP, "}} else {{\n")?;
+                    write_indented!(sink, indent + TABSTOP + TABSTOP, "break;\n")?;
+                    write_indented!(sink, indent + TABSTOP, "}}\n")?;
+                    write_indented!(sink, indent, "}}\n")?;
+                }
+
                 write_indented!(
                     sink,
                     indent,

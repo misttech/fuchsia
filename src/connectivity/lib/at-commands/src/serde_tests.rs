@@ -218,3 +218,81 @@ fn deserialize_error_and_continue_with_more_bytes() {
         }
     )
 }
+
+#[test]
+fn deserialize_cmer_empty_subparameters() {
+    let bytes = b"AT+CMER=3,,,1\r";
+    let result = Command::deserialize(&mut Cursor::new(bytes), DeserializeBytes::new());
+    assert_eq!(
+        result,
+        DeserializeResult {
+            values: vec![Command::Cmer { mode: Some(3), keyp: None, disp: None, ind: Some(1) }],
+            error: None,
+            remaining_bytes: DeserializeBytes { bytes: b"\r".to_vec() }
+        }
+    );
+}
+
+#[test]
+fn deserialize_cmer_leading_comma() {
+    let bytes = b"AT+CMER=,3,1,1\r";
+    let result = Command::deserialize(&mut Cursor::new(bytes), DeserializeBytes::new());
+    assert_eq!(
+        result,
+        DeserializeResult {
+            values: vec![Command::Cmer { mode: None, keyp: Some(3), disp: Some(1), ind: Some(1) }],
+            error: None,
+            remaining_bytes: DeserializeBytes { bytes: b"\r".to_vec() }
+        }
+    );
+}
+
+#[test]
+fn deserialize_cmer_leading_comma_and_trailing_empty() {
+    let bytes = b"AT+CMER=,3,,,\r";
+    let result = Command::deserialize(&mut Cursor::new(bytes), DeserializeBytes::new());
+    assert_eq!(
+        result,
+        DeserializeResult {
+            values: vec![Command::Cmer { mode: None, keyp: Some(3), disp: None, ind: None }],
+            error: None,
+            remaining_bytes: DeserializeBytes { bytes: b"\r".to_vec() }
+        }
+    );
+}
+
+#[test]
+fn serialize_cmer_empty_subparameters() {
+    let commands = vec![Command::Cmer { mode: Some(3), keyp: None, disp: None, ind: Some(1) }];
+    let mut bytes = Vec::new();
+    let result = Command::serialize(&mut bytes, &commands);
+    result.expect("Failed to serialize.");
+    assert_eq!(bytes, b"AT+CMER=3,,,1\r");
+}
+
+#[test]
+fn serialize_cmer_trailing_none() {
+    let commands = vec![Command::Cmer { mode: Some(3), keyp: None, disp: None, ind: None }];
+    let mut bytes = Vec::new();
+    let result = Command::serialize(&mut bytes, &commands);
+    result.expect("Failed to serialize.");
+    assert_eq!(bytes, b"AT+CMER=3\r");
+}
+
+#[test]
+fn serialize_cmer_leading_comma() {
+    let commands = vec![Command::Cmer { mode: None, keyp: Some(3), disp: Some(1), ind: Some(1) }];
+    let mut bytes = Vec::new();
+    let result = Command::serialize(&mut bytes, &commands);
+    result.expect("Failed to serialize.");
+    assert_eq!(bytes, b"AT+CMER=,3,1,1\r");
+}
+
+#[test]
+fn serialize_cmer_leading_comma_and_trailing_none() {
+    let commands = vec![Command::Cmer { mode: None, keyp: Some(3), disp: None, ind: None }];
+    let mut bytes = Vec::new();
+    let result = Command::serialize(&mut bytes, &commands);
+    result.expect("Failed to serialize.");
+    assert_eq!(bytes, b"AT+CMER=,3\r");
+}

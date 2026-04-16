@@ -105,7 +105,7 @@ response { +CHLD: (commands: List<String>)}
 
 # Standard Event Reporting command
 # HFP 1.8 4.34.2
-command { AT+CMER=mode: Integer, keyp: Integer, disp: Integer, ind: Integer }
+command { AT+CMER=mode: Option<Integer>, keyp: Option<Integer>, disp: Option<Integer>, ind: Option<Integer> }
 
 # Standard Noise Cancelling command
 # HFP 1.8 4.34.2

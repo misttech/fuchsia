@@ -511,7 +511,8 @@ async fn test_hfp_full_slc_init_procedure(tf: HfpAgIntegrationTest) {
     .await;
 
     // Peer enables indicator reporting (ind = 1).
-    let peer_enable_ind_reporting_cmd = at::Command::Cmer { mode: 3, keyp: 0, disp: 0, ind: 1 };
+    let peer_enable_ind_reporting_cmd =
+        at::Command::Cmer { mode: Some(3), keyp: Some(0), disp: Some(0), ind: Some(1) };
     send_command_and_expect_response(
         &mut remote,
         peer_enable_ind_reporting_cmd,

@@ -483,6 +483,110 @@ fn exec_optional_absent() {
     )
 }
 
+// Extension execute command with multiple optional arguments all present
+#[test]
+fn exec_all_opt_present() {
+    test_roundtrips(
+        highlevel::Command::Testallopt { field1: Some(1), field2: Some(2), field3: Some(3) },
+        lowlevel::Command::Execute {
+            name: String::from("TESTALLOPT"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from("=")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("1")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("2")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("3")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_terminate("AT+TESTALLOPT=1,2,3"),
+    )
+}
+
+// Extension execute command with multiple optional arguments middle missing
+#[test]
+fn exec_all_opt_middle_missing() {
+    test_roundtrips(
+        highlevel::Command::Testallopt { field1: Some(1), field2: None, field3: Some(3) },
+        lowlevel::Command::Execute {
+            name: String::from("TESTALLOPT"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from("=")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("1")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("3")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_terminate("AT+TESTALLOPT=1,,3"),
+    )
+}
+
+// Extension execute command with multiple optional arguments leading missing
+#[test]
+fn exec_all_opt_leading_missing() {
+    test_roundtrips(
+        highlevel::Command::Testallopt { field1: None, field2: Some(2), field3: Some(3) },
+        lowlevel::Command::Execute {
+            name: String::from("TESTALLOPT"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from("=")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("2")),
+                    lowlevel::Argument::PrimitiveArgument(String::from("3")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_terminate("AT+TESTALLOPT=,2,3"),
+    )
+}
+
+// Extension execute command with multiple optional arguments trailing missing
+#[test]
+fn exec_all_opt_trailing_missing() {
+    test_roundtrips(
+        highlevel::Command::Testallopt { field1: Some(1), field2: None, field3: None },
+        lowlevel::Command::Execute {
+            name: String::from("TESTALLOPT"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from("=")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("1")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_terminate("AT+TESTALLOPT=1"),
+    )
+}
+
+// Extension execute command with multiple optional arguments all missing
+#[test]
+fn exec_all_opt_all_missing() {
+    test_roundtrips(
+        highlevel::Command::Testallopt { field1: None, field2: None, field3: None },
+        lowlevel::Command::Execute {
+            name: String::from("TESTALLOPT"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from("=")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![]),
+                terminator: None,
+            },
+        },
+        cr_terminate("AT+TESTALLOPT="),
+    )
+}
+
 // Paren delimited argument list
 #[test]
 fn paren_args() {
