@@ -14,13 +14,6 @@ use zx_types::zx_rseq_t;
 /// This limit guarantees we don't exceed a reasonable amount of virtual memory.
 const MAX_THREADS: u64 = 100_000;
 
-/// The distance in bytes between thread RSEQ slots.
-///
-/// We use a 64 byte stride to avoid contention over cache lines. On some processors, we might need
-/// to increase this value to 128.
-const SLOT_STRIDE: u64 = 64;
-static_assertions::const_assert!(SLOT_STRIDE as usize >= mem::size_of::<zx_rseq_t>());
-
 /// Represents a unique memory location within the global RSEQ VMO assigned to a thread.
 #[derive(Debug, Default, Clone, Copy)]
 struct ThreadSlot {
@@ -38,6 +31,8 @@ struct Allocator {
     free_list: Vec<ThreadSlot>,
     /// The next monotonically increasing slot index to be allocated.
     next_slot_index: u64,
+    /// The distance in bytes between thread RSEQ slots.
+    stride: u64,
 }
 
 /// Rounds up a given size to the next multiple of the operating system page size.
@@ -49,7 +44,11 @@ fn round_up_to_page_size(size: usize) -> usize {
 impl Allocator {
     /// Creates a new `Allocator` mapping space for up to `MAX_THREADS` structures.
     fn new() -> Self {
-        let needed_size = (MAX_THREADS as usize) * (SLOT_STRIDE as usize);
+        let stride = std::cmp::max(
+            zx::system_get_dcache_line_size() as u64,
+            mem::size_of::<zx_rseq_t>() as u64,
+        );
+        let needed_size = (MAX_THREADS as usize) * (stride as usize);
         let map_size = round_up_to_page_size(needed_size);
         let vmo = zx::Vmo::create(map_size as u64).expect("failed to create RSEQ VMO");
         let flags = zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE;
@@ -57,7 +56,7 @@ impl Allocator {
             .map(0, &vmo, 0, map_size, flags)
             .expect("failed to map RSEQ VMO");
 
-        Self { vmo, mapped_addr, free_list: Vec::new(), next_slot_index: 0 }
+        Self { vmo, mapped_addr, free_list: Vec::new(), next_slot_index: 0, stride }
     }
 
     /// Allocates a unique `ThreadSlot` from the free list or the unmapped pool.
@@ -73,7 +72,7 @@ impl Allocator {
         assert!(self.next_slot_index < MAX_THREADS, "RSEQ max thread count exceeded");
         let index = self.next_slot_index;
         self.next_slot_index += 1;
-        let offset = index * SLOT_STRIDE;
+        let offset = index * self.stride;
 
         ThreadSlot { offset }
     }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{sys, Status};
+use crate::{Status, sys};
 use bitflags::bitflags;
 
 /// Retrieve the system memory page size in bytes.
@@ -12,6 +12,15 @@ use bitflags::bitflags;
 /// syscall.
 pub fn system_get_page_size() -> u32 {
     unsafe { sys::zx_system_get_page_size() }
+}
+
+/// Retrieve the system cache line size in bytes.
+///
+/// Wraps the
+/// [zx_system_get_dcache_line_size](https://fuchsia.dev/fuchsia-src/reference/syscalls/system_get_dcache_line_size.md)
+/// syscall.
+pub fn system_get_dcache_line_size() -> u32 {
+    unsafe { sys::zx_system_get_dcache_line_size() }
 }
 
 /// Get the amount of physical memory on the system, in bytes.

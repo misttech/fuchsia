@@ -20,7 +20,6 @@ rustc_library("fuchsia-rseq") {
     "//sdk/rust/zx-types",
     "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
-    "//third_party/rust_crates:static_assertions",
   ]
 
   sources = [ "src/lib.rs" ]
