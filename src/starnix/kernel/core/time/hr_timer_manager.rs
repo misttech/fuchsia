@@ -781,27 +781,35 @@ impl HrTimerManager {
             log_warn!("watch_new_hrtimer_loop: exiting. This should only happen in tests.");
         }
 
-        let wake_channel = wake_channel_for_test.take().unwrap_or_else(|| {
-            connect_to_wake_alarms_async().expect("connection to wake alarms async proxy")
-        });
-        self.lock().debug_start_stage_counter = 1004;
+        let (device_channel, message_counter) = {
+            defer! {
+                // Ensure that the setup_done event is signaled even if we fail to initialize
+                // correctly. This prevents the caller from blocking forever.
+                setup_done
+                    .as_ref()
+                    .map(|e| signal_event(e, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED));
+            }
+            let wake_channel = wake_channel_for_test.take().unwrap_or_else(|| {
+                connect_to_wake_alarms_async().expect("connection to wake alarms async proxy")
+            });
+            self.lock().debug_start_stage_counter = 1004;
 
-        let counter_name = "wake-alarms";
-        let (device_channel, counter) = if let Some(message_counter) = message_counter_for_test {
-            // For tests only.
-            (wake_channel, message_counter)
-        } else {
-            create_proxy_for_wake_events_counter_zero(wake_channel, counter_name.to_string())
+            let counter_name = "wake-alarms";
+            let (device_channel, counter) = if let Some(message_counter) = message_counter_for_test
+            {
+                // For tests only.
+                (wake_channel, message_counter)
+            } else {
+                create_proxy_for_wake_events_counter_zero(wake_channel, counter_name.to_string())
+            };
+            self.lock().debug_start_stage_counter = 1003;
+            let message_counter = system_task
+                .kernel()
+                .suspend_resume_manager
+                .add_message_counter(counter_name, Some(counter));
+            self.inject_or_set_message_counter(message_counter.clone());
+            (device_channel, message_counter)
         };
-        self.lock().debug_start_stage_counter = 1003;
-        let message_counter = system_task
-            .kernel()
-            .suspend_resume_manager
-            .add_message_counter(counter_name, Some(counter));
-        self.inject_or_set_message_counter(message_counter.clone());
-        setup_done
-            .as_ref()
-            .map(|e| signal_event(e, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED));
 
         self.lock().debug_start_stage_counter = 1002;
         let device_async_proxy =
