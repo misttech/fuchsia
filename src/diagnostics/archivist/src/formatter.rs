@@ -9,6 +9,7 @@ use fidl_fuchsia_diagnostics::{
     DataType, Format, FormattedContent, MAXIMUM_ENTRIES_PER_BATCH, StreamMode,
 };
 
+use fuchsia_async as fasync;
 use futures::{Stream, StreamExt};
 use log::warn;
 use pin_project::pin_project;
@@ -20,6 +21,8 @@ use zx;
 
 static SERIALIZED_DATA_VMO_NAME: zx::Name = zx::Name::new_lossy("archivist-serialized-data");
 static PACKET_BUFFER_VMO_NAME: zx::Name = zx::Name::new_lossy("archivist-packet-buffer");
+
+const SNAPSHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub type FormattedStream =
     Pin<Box<dyn Stream<Item = Vec<Result<FormattedContent, AccessorError>>> + Send>>;
@@ -33,8 +36,9 @@ pub struct FormattedContentBatcher<C> {
 
 /// Make a new `FormattedContentBatcher` with a chunking strategy depending on stream mode.
 ///
-/// In snapshot mode, batched items will not be flushed to the client until the batch is complete
-/// or the underlying stream has terminated.
+/// In snapshot mode, batched items will not be flushed to the client until the batch is complete,
+/// the underlying stream has terminated, or `SNAPSHOT_TIMEOUT` has passed since the first
+/// item was discovered (in order to prevent client starvation).
 ///
 /// In subscribe or snapshot-then-subscribe mode, batched items will be flushed whenever the
 /// underlying stream is pending, ensuring clients always receive latest results.
@@ -56,7 +60,7 @@ where
             })
         }
         StreamMode::Snapshot => Box::pin(FormattedContentBatcher {
-            items: items.chunks(MAXIMUM_ENTRIES_PER_BATCH as _),
+            items: items.time_limited_chunks(MAXIMUM_ENTRIES_PER_BATCH as usize, SNAPSHOT_TIMEOUT),
             stats,
         }),
     }
@@ -90,6 +94,100 @@ where
             }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimerState {
+    Idle,
+    Running,
+}
+
+pub trait TimeLimitedChunksExt: Stream {
+    fn time_limited_chunks(
+        self,
+        capacity: usize,
+        timeout: std::time::Duration,
+    ) -> TimeLimitedChunks<Self>
+    where
+        Self: Sized,
+    {
+        TimeLimitedChunks::new(self, capacity, timeout)
+    }
+}
+
+impl<T: Stream> TimeLimitedChunksExt for T {}
+
+/// A stream adapter that yields chunks of items from the underlying stream.
+///
+/// Chunks are yielded when they reach the specified capacity or when the specified timeout
+/// expires since the first item in the chunk was received.
+#[pin_project]
+pub struct TimeLimitedChunks<S: Stream> {
+    #[pin]
+    stream: S,
+    capacity: usize,
+    timeout: std::time::Duration,
+    buffer: Vec<S::Item>,
+    #[pin]
+    timer: fasync::Timer,
+    state: TimerState,
+}
+
+impl<S: Stream> TimeLimitedChunks<S> {
+    pub fn new(stream: S, capacity: usize, timeout: std::time::Duration) -> Self {
+        Self {
+            stream,
+            capacity,
+            timeout,
+            buffer: Vec::with_capacity(capacity),
+            timer: fasync::Timer::new(std::time::Instant::now() + timeout),
+            state: TimerState::Idle,
+        }
+    }
+}
+
+impl<S: Stream> Stream for TimeLimitedChunks<S> {
+    type Item = Vec<S::Item>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut this = self.project();
+
+        loop {
+            match this.stream.as_mut().poll_next(cx) {
+                Poll::Ready(Some(item)) => {
+                    if this.buffer.is_empty() {
+                        let deadline = fasync::MonotonicInstant::after(
+                            zx::MonotonicDuration::from_nanos(this.timeout.as_nanos() as i64),
+                        );
+                        this.timer.as_mut().reset(deadline);
+                        *this.state = TimerState::Running;
+                    }
+                    this.buffer.push(item);
+                    if this.buffer.len() >= *this.capacity {
+                        *this.state = TimerState::Idle;
+                        return Poll::Ready(Some(std::mem::take(this.buffer)));
+                    }
+                }
+                Poll::Ready(None) => {
+                    if !this.buffer.is_empty() {
+                        *this.state = TimerState::Idle;
+                        return Poll::Ready(Some(std::mem::take(this.buffer)));
+                    }
+                    return Poll::Ready(None);
+                }
+                Poll::Pending => {
+                    if !this.buffer.is_empty() && *this.state == TimerState::Running {
+                        use std::future::Future;
+                        if this.timer.as_mut().poll(cx).is_ready() {
+                            *this.state = TimerState::Idle;
+                            return Poll::Ready(Some(std::mem::take(this.buffer)));
+                        }
+                    }
+                    return Poll::Pending;
+                }
+            }
         }
     }
 }
@@ -465,6 +563,48 @@ mod tests {
     use super::*;
     use crate::diagnostics::AccessorStats;
     use futures::stream::iter;
+
+    #[fuchsia::test]
+    async fn time_limited_chunks_yields_on_capacity() {
+        let stream = futures::stream::iter(vec![1, 2, 3, 4]);
+        let mut chunks =
+            Box::pin(TimeLimitedChunks::new(stream, 2, std::time::Duration::from_secs(10)));
+
+        assert_eq!(chunks.next().await, Some(vec![1, 2]));
+        assert_eq!(chunks.next().await, Some(vec![3, 4]));
+        assert_eq!(chunks.next().await, None);
+    }
+
+    #[fuchsia::test]
+    async fn time_limited_chunks_yields_on_stream_end() {
+        let stream = futures::stream::iter(vec![1, 2, 3]);
+        let mut chunks =
+            Box::pin(TimeLimitedChunks::new(stream, 2, std::time::Duration::from_secs(10)));
+
+        assert_eq!(chunks.next().await, Some(vec![1, 2]));
+        assert_eq!(chunks.next().await, Some(vec![3]));
+        assert_eq!(chunks.next().await, None);
+    }
+
+    #[fuchsia::test]
+    async fn time_limited_chunks_yields_on_timeout() {
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let mut chunks =
+            Box::pin(TimeLimitedChunks::new(rx, 2, std::time::Duration::from_millis(10)));
+
+        tx.unbounded_send(1).unwrap();
+
+        let start = std::time::Instant::now();
+        assert_eq!(chunks.next().await, Some(vec![1]));
+        assert!(start.elapsed() >= std::time::Duration::from_millis(10));
+
+        tx.unbounded_send(2).unwrap();
+        tx.unbounded_send(3).unwrap();
+        assert_eq!(chunks.next().await, Some(vec![2, 3]));
+
+        drop(tx);
+        assert_eq!(chunks.next().await, None);
+    }
 
     #[fuchsia::test]
     async fn two_items_joined_and_split() {
