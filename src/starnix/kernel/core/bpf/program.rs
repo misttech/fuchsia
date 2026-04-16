@@ -158,7 +158,7 @@ impl Program {
             return error!(EINVAL);
         }
 
-        let maps = self.maps.iter().map(|map| map.map.clone()).collect();
+        let maps = self.maps.iter().map(|map| map.get_inner()).collect();
         let program = link_program(&self.program, maps).map_err(map_ebpf_error)?;
 
         Ok(program)

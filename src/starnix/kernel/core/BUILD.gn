@@ -29,6 +29,7 @@ _starnix_core_sources = [
   "bpf/attachments.rs",
   "bpf/context.rs",
   "bpf/fs.rs",
+  "bpf/map.rs",
   "bpf/mod.rs",
   "bpf/program.rs",
   "bpf/syscalls.rs",

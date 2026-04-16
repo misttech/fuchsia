@@ -5,9 +5,9 @@
 // TODO(https://github.com/rust-lang/rust/issues/39371): remove
 #![allow(non_upper_case_globals)]
 
-use super::BpfMap;
 use crate::bpf::attachments::{BpfAttachAttr, bpf_prog_attach, bpf_prog_detach};
 use crate::bpf::fs::{BpfFsDir, BpfHandle, get_bpf_object, resolve_pinned_bpf_object};
+use crate::bpf::map::{self, BpfMap};
 use crate::bpf::program::{Program, ProgramInfo};
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::security;
@@ -17,7 +17,7 @@ use crate::vfs::{
     UserBuffersOutputBuffer,
 };
 use ebpf::{EbpfInstruction, MapFlags, MapSchema};
-use ebpf_api::{Map, MapError, MapKey};
+use ebpf_api::MapKey;
 use smallvec::smallvec;
 use starnix_logging::{log_error, log_trace, track_stub};
 use starnix_sync::{Locked, Unlocked};
@@ -129,18 +129,6 @@ fn read_map_key(
     current_task.read_objects_to_smallvec(UserRef::<u8>::new(addr), key_size as usize)
 }
 
-fn map_error_to_errno(e: MapError) -> Errno {
-    match e {
-        MapError::InvalidParam => errno!(EINVAL),
-        MapError::InvalidKey => errno!(ENOENT),
-        MapError::EntryExists => errno!(EEXIST),
-        MapError::NoMemory => errno!(ENOMEM),
-        MapError::SizeLimit => errno!(E2BIG),
-        MapError::MapTypeNotSupported | MapError::NotSupported => errno!(ENOSYS),
-        MapError::InvalidVmo | MapError::Internal => errno!(EIO),
-    }
-}
-
 fn validate_bpf_name(name: &[u8]) -> Result<&str, Errno> {
     let name = std::ffi::CStr::from_bytes_until_nul(name)
         .map_err(|_| errno!(EINVAL))?
@@ -196,9 +184,14 @@ pub fn sys_bpf(
                 flags,
             };
 
-            let map = Map::new(schema, validate_bpf_name(map_attr.map_name.as_bytes())?)
-                .map_err(map_error_to_errno)?;
-            let map = BpfMap::new(locked, current_task, map, security::bpf_map_alloc(current_task));
+            let name = validate_bpf_name(map_attr.map_name.as_bytes())?;
+            let map = BpfMap::new(
+                locked,
+                current_task,
+                schema,
+                name,
+                security::bpf_map_alloc(current_task),
+            )?;
             install_bpf_fd(locked, current_task, map)
         }
 
@@ -259,7 +252,8 @@ pub fn sys_bpf(
             let _suspend_lock =
                 current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock(locked);
 
-            map.update(&key[..], value.as_mut_bytes().into(), flags).map_err(map_error_to_errno)?;
+            map.update(&key[..], value.as_mut_bytes().into(), flags)
+                .map_err(map::map_error_to_errno)?;
             Ok(SUCCESS)
         }
 
@@ -284,7 +278,7 @@ pub fn sys_bpf(
             let _suspend_lock =
                 current_task.kernel().suspend_resume_manager.acquire_ebpf_suspend_lock(locked);
 
-            map.delete(&key).map_err(map_error_to_errno)?;
+            map.delete(&key).map_err(map::map_error_to_errno)?;
             Ok(SUCCESS)
         }
 
@@ -313,7 +307,7 @@ pub fn sys_bpf(
             };
 
             let next_key =
-                map.get_next_key(key.as_ref().map(|k| &k[..])).map_err(map_error_to_errno)?;
+                map.get_next_key(key.as_ref().map(|k| &k[..])).map_err(map::map_error_to_errno)?;
 
             // SAFETY: this union object was created with FromBytes so it's safe to access any
             // variant (right?)

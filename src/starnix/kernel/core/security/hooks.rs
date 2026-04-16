@@ -10,7 +10,7 @@ use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
     KernelState, PerfEventState, ResolvedElfState, common_cap, selinux_hooks, yama,
 };
-use crate::bpf::BpfMap;
+use crate::bpf::map::BpfMap;
 use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::perf::PerfEventFile;

@@ -9,7 +9,7 @@ use super::{
     BpfMapState, BpfProgState, build_permission_check, check_permission, check_self_permission,
     current_task_state,
 };
-use crate::bpf::BpfMap;
+use crate::bpf::map::BpfMap;
 use crate::bpf::program::Program;
 use crate::security::PermissionFlags;
 use crate::task::CurrentTask;
