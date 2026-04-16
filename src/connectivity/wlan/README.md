@@ -7,3 +7,5 @@ The WLAN stack is split into several layers:
         - [SME (Station Management Entity)](/src/connectivity/wlan/lib/sme/README.md) implements the 802.11 SME interfaces.
         - [MLME (MAC Sublayer Management Entity)](/src/connectivity/wlan/lib/mlme/README.md) implements the 802.11 MLME functions.
     - [Drivers](/src/connectivity/wlan/drivers/README.md) contains driver implementations for various hardware.
+
+These layers communicate via FIDL protocols defined in [FIDL.md](./FIDL.md).

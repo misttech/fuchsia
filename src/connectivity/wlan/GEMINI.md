@@ -32,20 +32,7 @@ To plumb a new feature through the stack, follow this flow (using Android Packet
 
 ### 1. FIDL Definitions
 
-Define the new types and methods in the appropriate FIDL libraries:
-
-- Shared types (e.g.,`ApfPacketFilterSupport`).
-  - `sdk/fidl/fuchsia.wlan.common`: Shared types for the entire stack.
-  - `sdk/fidl/fuchsia.wlan.ieee80211`: Shared types that match ieee802.11 types.
-  - `sdk/fidl/fuchsia.wlan.internal`: Shared types which are only used between sme, mlme, and driver layers.
-- `sdk/fidl/fuchsia.wlan.wlancfg`: Standard Fuchsia WLAN policy-compatible interface (if applicable).
-- `sdk/fidl/fuchsia.wlan.wlanix`: Android-compatible interface (if applicable).
-- `sdk/fidl/fuchsia.wlan.device.service`: Commands to bridge policy requests to interfaces, if the command doesn't directly go through SME.
-- `sdk/fidl/fuchsia.wlan.sme`: SME-level commands.
-- `sdk/fidl/fuchsia.wlan.mlme`: MLME-level commands (e.g., `InstallApfPacketFilter`).
-- `sdk/fidl/fuchsia.wlan.fullmac`: Vendor driver interface for FullMAC.
-- `sdk/fidl/fuchsia.wlan.phyimpl`: Vendor driver interface for PHY control.
-- `sdk/fidl/fuchsia.wlan.softmac`: Vendor driver interface for SoftMAC (if applicable).
+Define the new types and methods in the appropriate FIDL libraries. See the classification in [FIDL.md](./FIDL.md) to determine where your changes belong based on stability and layer boundaries.
 
 ### 2. Policy Layer (`wlanix` or `wlancfg`)
 
@@ -72,15 +59,7 @@ Define the new types and methods in the appropriate FIDL libraries:
 
 ## Key FIDL Protocols
 
-These FIDL definitions are all located in `//sdk/fidl` with the exception of `fuchsia.wlan.wlanix`, which is in the `wlanix` directory.
-
-- `fuchsia.wlan.policy`: Policy-level API for Fuchsia components.
-- `fuchsia.wlan.wlanix`: Android-compatible WiFi API used by Starnix.
-- `fuchsia.wlan.device`: PHY and interface lifecycle management.
-- `fuchsia.wlan.device.service`: Internal service for device monitoring and SME access. Implements `DeviceMonitor`.
-- `fuchsia.wlan.sme`: High-level stack control (Station Management Entity).
-- `fuchsia.wlan.mlme`: Common interface used by the SME for both SoftMAC and FullMAC.
-- `fuchsia.wlan.fullmac`: The driver interface for FullMAC devices, which receives commands translated from MLME.
+For a detailed list of key FIDL protocols and their stability guarantees, see [FIDL.md](./FIDL.md).
 
 ## Testing
 
