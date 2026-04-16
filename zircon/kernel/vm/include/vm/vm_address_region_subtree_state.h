@@ -287,7 +287,10 @@ class VmAddressRegionSubtreeState::Observer {
 
   // Computes the gap size between adjacent extents.
   static size_t Gap(vaddr_t left_last_byte, vaddr_t right_first_byte) {
-    DEBUG_ASSERT(left_last_byte < right_first_byte);
+    // Regions can temporarily overlap when performing certain mutations.
+    if (left_last_byte >= right_first_byte) {
+      return 0;
+    }
     return right_first_byte - left_last_byte - 1;
   }
 

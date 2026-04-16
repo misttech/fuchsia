@@ -238,10 +238,13 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
     // These locked actions on the vmar are done inside a lambda as otherwise the AssertHeld, which
     // does not end at the block scope, will continue and cause an error in calling
     // CommitHighMemoryPriority, which requires that the lock not be held.
-    [this, &vmar]() TA_REQ(lock()) {
+    zx_status_t status = [this, &vmar]() TA_REQ(lock()) {
       AssertHeld(vmar->lock_ref());
       AssertHeld(vmar->region_lock_ref());
-      vmar->Activate();
+      zx_status_t status = vmar->Activate();
+      if (status != ZX_OK) {
+        return status;
+      }
       // Propagate any memory priority settings. This should only fail if not alive, but we hold the
       // lock and just made it alive, so that cannot happen.
       if (VmMapping* downcast_mapping = vmar->as_vm_mapping_ptr(); downcast_mapping) {
@@ -252,10 +255,14 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
         VmAddressRegion* downcast_vmar = vmar->as_vm_address_region_ptr();
         DEBUG_ASSERT(downcast_vmar);
         AssertHeld(downcast_vmar->lock_ref());
-        zx_status_t status = downcast_vmar->SetMemoryPriorityLocked(memory_priority_);
+        status = downcast_vmar->SetMemoryPriorityLocked(memory_priority_);
         DEBUG_ASSERT_MSG(status == ZX_OK, "status: %d", status);
       }
+      return ZX_OK;
     }();
+    if (status != ZX_OK) {
+      return status;
+    }
 
     memory_priority = memory_priority_;
     *base_out = new_base;
@@ -376,7 +383,15 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
 
   AssertHeld(vmar->lock_ref());
   AssertHeld(vmar->region_lock_ref());
-  vmar->Activate();
+  status = vmar->Activate();
+  if (status != ZX_OK) {
+    // Activation can fail if an allocation needed to happen. Nothing can be done to rollback here
+    // so the only option is to propagate the ZX_ERR_NO_MEMORY up. If this is happening in response
+    // to a user request then they will most likely panic, as users have no ability to resolve
+    // ZX_ERR_NO_MEMORY.
+    ASSERT(status == ZX_ERR_NO_MEMORY);
+    return status;
+  }
 
   // Propagate any memory priority settings. This should only fail if not alive, but we hold the
   // lock and just made it alive, so that cannot happen.
@@ -640,10 +655,9 @@ void VmAddressRegion::DumpLocked(uint depth, bool verbose) const {
   }
 }
 
-void VmAddressRegion::Activate() {
+zx_status_t VmAddressRegion::Activate() {
   DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY);
 
-  state_ = LifeCycleState::ALIVE;
   AssertHeld(parent_->lock_ref());
   AssertHeld(parent_->region_lock_ref());
 
@@ -655,10 +669,16 @@ void VmAddressRegion::Activate() {
   auto candidate = parent_->subregions_.IncludeOrHigher(base_);
   if (candidate != parent_->subregions_.end()) {
     AssertHeld(candidate->lock_ref());
-    ASSERT(candidate->base_ >= base_ + size_);
+    ASSERT(candidate->base() >= base_ + size_);
   }
 
-  parent_->subregions_.InsertRegion(fbl::RefPtr<VmAddressRegionOrMapping>(this));
+  zx_status_t status =
+      parent_->subregions_.InsertRegion(fbl::RefPtr<VmAddressRegionOrMapping>(this));
+  if (status != ZX_OK) {
+    return status;
+  }
+  state_ = LifeCycleState::ALIVE;
+  return ZX_OK;
 }
 
 zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,

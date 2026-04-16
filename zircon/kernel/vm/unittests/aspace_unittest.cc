@@ -2364,7 +2364,8 @@ class TestRegionList : public fbl::RefCounted<TestRegionList> {
     fbl::AllocChecker ac;
     auto test_region = fbl::AdoptRef(new (&ac) TestRegion(base, size, *this));
     ASSERT(ac.check());
-    regions_.InsertRegion(ktl::move(test_region));
+    zx_status_t status = regions_.InsertRegion(ktl::move(test_region));
+    ASSERT(status == ZX_OK);
   }
 
   bool remove_region(vaddr_t base) {

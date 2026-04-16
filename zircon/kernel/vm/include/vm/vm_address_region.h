@@ -248,7 +248,8 @@ class VmAddressRegionOrMapping
 
   // Transition from NOT_READY to READY, and add references to self to related
   // structures.
-  virtual void Activate() TA_REQ(region_lock()) TA_REQ(lock()) = 0;
+  // On error no state is changed and no references are added.
+  virtual zx_status_t Activate() TA_REQ(region_lock()) TA_REQ(lock()) = 0;
 
   // current state of the VMAR.  If LifeCycleState::DEAD, then all other
   // fields are invalid.
@@ -297,8 +298,19 @@ class RegionList final {
   typename ChildList::iterator RightOf(T* region) { return ++regions_.make_iterator(*region); }
   typename ChildList::const_iterator Root() const { return regions_.root(); }
 
-  // Insert *region* to the region list.
-  void InsertRegion(fbl::RefPtr<T> region) { regions_.insert(region); }
+  // Insert *region* to the region list. On failure the region list is unmodified.
+  zx_status_t InsertRegion(fbl::RefPtr<T> region) {
+    regions_.insert(region);
+    return ZX_OK;
+  }
+
+  // Replaces the target region with a new region at the same address. Unlike insertion this cannot
+  // fail.
+  void ReplaceRegion(T* target, fbl::RefPtr<T> region) {
+    ASSERT(target->base() == region->base());
+    regions_.erase(*target);
+    regions_.insert(region);
+  }
 
   // Use a static template to allow for returning a const and non-const pointer depending on the
   // constness of self.
@@ -748,7 +760,7 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
 
   zx_status_t DestroyLocked() TA_REQ(lock()) TA_REQ(region_lock()) override;
 
-  void Activate() TA_REQ(region_lock()) TA_REQ(lock()) override;
+  zx_status_t Activate() TA_REQ(region_lock()) TA_REQ(lock()) override;
 
   // Helpers to share code between CreateSubVmar and CreateVmMapping
   zx_status_t CreateSubVmarInternal(size_t offset, size_t size, uint8_t align_pow2,
@@ -1072,8 +1084,22 @@ class VmMapping final : public VmAddressRegionOrMapping {
             Mergeable mergeable);
 
   zx_status_t DestroyLocked() TA_REQ(region_lock()) TA_REQ(lock()) override;
-  zx_status_t DestroyLockedObject(bool unmap) TA_REQ(region_lock()) TA_REQ(lock())
-      TA_REQ(object_->lock());
+
+  // Internal fully locked version of Destroy. Has controls to both skip the arch aspace unmapping
+  // as well as removal from the parent subregions list. These controls facilitate the fine grained
+  // control needed when splitting, merging and replacing mappings.
+  // If unmap is |No| then this method is defined to never fail. |remove_region| does not impact
+  // success or failure of the operation.
+  enum class DestroyUnmap : bool {
+    No,
+    Yes,
+  };
+  enum class DestroyRemoveFromParent : bool {
+    No,
+    Yes,
+  };
+  zx_status_t DestroyLockedObject(DestroyUnmap unmap, DestroyRemoveFromParent remove_region)
+      TA_REQ(region_lock()) TA_REQ(lock()) TA_REQ(object_->lock());
 
   // Internal helper for performing a page fault after the object_ lock is acquired. Additionally
   // object_ is passed in as the downcast specific type in object to allow the helper to assume
@@ -1156,9 +1182,25 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
   void CommitHighMemoryPriority() override TA_EXCL(lock());
 
-  void Activate() TA_REQ(region_lock()) TA_REQ(lock()) override;
+  zx_status_t Activate() TA_REQ(region_lock()) TA_REQ(lock()) override;
 
-  void ActivateLocked() TA_REQ(region_lock()) TA_REQ(lock()) TA_REQ(object_->lock());
+  // Fully locked version of Activate that can additionally control whether the region is installed
+  // into the parent subregion list or not. This control exists to facilitate the fine grained
+  // control needed for splitting, merging and replacing of mappings as when set to |No| this method
+  // is defined as never failing.
+  enum class ActivateInsertParentRegion : bool {
+    No,
+    Yes,
+  };
+  zx_status_t ActivateLocked(ActivateInsertParentRegion insert_region) TA_REQ(region_lock())
+      TA_REQ(lock()) TA_REQ(object_->lock());
+
+  // Wrapper for ActivateLocked that does not insert into the parent region, and therefore cannot
+  // fail.
+  void ActivateNoInsertLocked() TA_REQ(region_lock()) TA_REQ(lock()) TA_REQ(object_->lock()) {
+    [[maybe_unused]] zx_status_t status = ActivateLocked(ActivateInsertParentRegion::No);
+    ASSERT(status == ZX_OK);
+  }
 
   // Takes a range relative to the vmo object_ and converts it into a virtual address range relative
   // to aspace_. Returns true if a non zero sized intersection was found, false otherwise. If false

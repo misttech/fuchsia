@@ -167,7 +167,8 @@ void vm_init_preheap() {
     {
       Guard<CriticalMutex> region_guard(kernel_heap_vmar->region_lock());
       Guard<CriticalMutex> guard(kernel_heap_vmar->lock());
-      kernel_heap_vmar->Activate();
+      zx_status_t status = kernel_heap_vmar->Activate();
+      ASSERT(status == ZX_OK);
     }
   }
 }
