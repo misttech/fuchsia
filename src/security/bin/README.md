@@ -15,10 +15,6 @@ of Fuchsia.
 * [root\_ssl\_certificates](//src/security/bin/root_ssl_certificates): Fuchsia's
   TLS root CA certificates (a.k.a. truststore). It serves as a resource package
   for components that use TLS.
-* [tpm\_agent](//src/security/bin/tpm_agent): (WIP) Will be launched at `/bootstrap/tpm_agent`
-  on devices that have a TPM2.0 but not a CR50. It will serve the `fuchsia.tpm` FIDL interface.
-  This agent acts as a resource manager between the underlying driver implementation and
-  the rest of the system.
 * [tee\_manager](//src/security/bin/tee_manager): Fuchsia - TEE communication
   stack. Marshals trusted application invocations; handles secure storage RPCs.
 * [syscall\_checker](//src/security/bin/syscall_checker): Prints whether certain

@@ -14,10 +14,6 @@ security team before including them in a new project.
   the TPM Command Transmission interface. This is consumed by our port of
   `//third_party/tpm2-tss` to enable the TCG TPM2 Software Stack (TSS2) to work
   on Fuchsia.
-* [fuchsia-tpm-protocol](//src/security/lib/fuchsia-tpm-protocol): The
-  implementation of the `fuchsia.tpm` FIDL interfaces. This allows the
-  implementation to be shared by the `cr50_agent` and the `tpm_agent`. This
-  protocol allows for provisioning and deprovisioning of the TPM.
 * [keysafe](//src/security/lib/keysafe): Keysafe trusted application interface,
   which defines the list of supported commands and their parameters.
 * [kms-stateless](//src/security/lib/kms-stateless): A stateless (does not
