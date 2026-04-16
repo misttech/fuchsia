@@ -8,6 +8,8 @@ use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 
 pub mod format;
 pub mod rcs;
+#[cfg(not(target_os = "fuchsia"))]
+pub mod server;
 
 /// Parses a string into an absolute component URL.
 pub fn parse_component_url(url: &str) -> Result<AbsoluteComponentUrl> {

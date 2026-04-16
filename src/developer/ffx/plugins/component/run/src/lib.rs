@@ -11,6 +11,7 @@ use component_debug_fdomain::doctor::validate_routes;
 use ffx_component::rcs::{
     connect_to_lifecycle_controller_f, connect_to_realm_query_f, connect_to_route_validator_f,
 };
+use ffx_component::server::{DefaultPackageServerRunner, maybe_start_server};
 use ffx_component_run_args::RunComponentCommand;
 use ffx_config::EnvironmentContext;
 use ffx_core::macro_deps::errors::ffx_error;
@@ -30,6 +31,8 @@ async fn cmd_impl(
     mut writer: MachineWriter<LogEntry>,
     connector: target_connector::Connector<RemoteControlProxyHolder>,
 ) -> Result<(), anyhow::Error> {
+    let _guard = maybe_start_server(&DefaultPackageServerRunner, ctx.build_dir())?;
+
     let rcs_proxy_clone = rcs_proxy.clone();
     let lifecycle_controller_factory = move || {
         let rcs_proxy_clone = rcs_proxy_clone.clone();
