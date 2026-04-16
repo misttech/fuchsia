@@ -19,7 +19,7 @@ use ebpf::{
 };
 use ebpf_api::SECCOMP_CBPF_CONFIG;
 use linux_uapi::AUDIT_SECCOMP;
-use starnix_lifecycle::AtomicU64Counter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::decls::Syscall;
@@ -77,7 +77,7 @@ pub struct SeccompFilter {
     unique_id: u64,
 
     /// The next cookie (unique id for this syscall), as used by SECCOMP_RET_USER_NOTIF
-    cookie: AtomicU64Counter,
+    cookie: AtomicCounter<u64>,
 
     // Whether to log the results of this filter
     log: bool,
@@ -130,7 +130,7 @@ impl SeccompFilter {
         Ok(SeccompFilter {
             program,
             unique_id: maybe_unique_id,
-            cookie: AtomicU64Counter::new(0),
+            cookie: AtomicCounter::<u64>::new(0),
             log: should_log,
         })
     }

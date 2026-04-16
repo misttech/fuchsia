@@ -27,7 +27,7 @@ use starnix_core::vfs::{
     default_ioctl, default_seek, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args,
     fs_node_impl_dir_readonly,
 };
-use starnix_lifecycle::AtomicU64Counter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
 use starnix_sync::{
     AtomicMonotonicInstant, FileOpsCore, LockEqualOrBefore, Locked, Mutex, MutexGuard, RwLock,
@@ -364,7 +364,7 @@ impl FileSystemOps for FuseFs {
 #[derive(Debug, Default)]
 struct FuseConnections {
     connections: Mutex<Vec<Weak<FuseConnection>>>,
-    next_identifier: AtomicU64Counter,
+    next_identifier: AtomicCounter<u64>,
 }
 
 impl FuseConnections {

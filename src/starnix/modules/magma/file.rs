@@ -143,7 +143,7 @@ use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
     FdFlags, FdNumber, FileObject, FileOps, FsNode, MemoryRegularFile, fileops_impl_noop_sync,
 };
-use starnix_lifecycle::AtomicU64Counter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{impossible_error, log_error, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
@@ -258,7 +258,7 @@ pub struct MagmaFile {
     connections: Arc<Mutex<ConnectionMap>>,
     buffers: Arc<Mutex<HashMap<magma_buffer_id_t, Arc<MagmaBuffer>>>>,
     semaphores: Arc<Mutex<HashMap<magma_semaphore_t, Arc<MagmaSemaphore>>>>,
-    semaphore_id_generator: AtomicU64Counter,
+    semaphore_id_generator: AtomicCounter<u64>,
 }
 
 impl MagmaFile {
@@ -296,7 +296,7 @@ impl MagmaFile {
             connections: Arc::new(Mutex::new(HashMap::new())),
             buffers: Arc::new(Mutex::new(HashMap::new())),
             semaphores: Arc::new(Mutex::new(HashMap::new())),
-            semaphore_id_generator: AtomicU64Counter::new(1),
+            semaphore_id_generator: AtomicCounter::new(1),
         }))
     }
 

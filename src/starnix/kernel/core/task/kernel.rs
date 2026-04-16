@@ -45,7 +45,7 @@ use futures::FutureExt;
 use netlink::interfaces::InterfacesHandler;
 use netlink::{NETLINK_LOG_TAG, Netlink};
 use once_cell::sync::OnceCell;
-use starnix_lifecycle::{AtomicU32Counter, AtomicU64Counter};
+use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
     FileOpsCore, KernelSwapFiles, LockEqualOrBefore, Locked, Mutex, OrderedMutex, RwLock,
@@ -261,15 +261,15 @@ pub struct Kernel {
     pub suspend_resume_manager: SuspendResumeManagerHandle,
 
     /// Unique IDs for new mounts and mount namespaces.
-    pub next_mount_id: AtomicU64Counter,
-    pub next_peer_group_id: AtomicU64Counter,
-    pub next_namespace_id: AtomicU64Counter,
+    pub next_mount_id: AtomicCounter<u64>,
+    pub next_peer_group_id: AtomicCounter<u64>,
+    pub next_namespace_id: AtomicCounter<u64>,
 
     /// Unique IDs for file objects.
-    pub next_file_object_id: AtomicU64Counter,
+    pub next_file_object_id: AtomicCounter<u64>,
 
     /// Unique cookie used to link two inotify events, usually an IN_MOVE_FROM/IN_MOVE_TO pair.
-    pub next_inotify_cookie: AtomicU32Counter,
+    pub next_inotify_cookie: AtomicCounter<u32>,
 
     /// Controls which processes a process is allowed to ptrace.  See Documentation/security/Yama.txt
     pub ptrace_scope: AtomicU8,
@@ -465,10 +465,10 @@ impl Kernel {
             inspect_node,
             actions_logged: AtomicU16::new(0),
             suspend_resume_manager: Default::default(),
-            next_mount_id: AtomicU64Counter::new(1),
-            next_peer_group_id: AtomicU64Counter::new(1),
-            next_namespace_id: AtomicU64Counter::new(1),
-            next_inotify_cookie: AtomicU32Counter::new(1),
+            next_mount_id: AtomicCounter::<u64>::new(1),
+            next_peer_group_id: AtomicCounter::<u64>::new(1),
+            next_namespace_id: AtomicCounter::<u64>::new(1),
+            next_inotify_cookie: AtomicCounter::<u32>::new(1),
             next_file_object_id: Default::default(),
             system_limits,
             ptrace_scope: AtomicU8::new(0), // Disable YAMA checks by default.

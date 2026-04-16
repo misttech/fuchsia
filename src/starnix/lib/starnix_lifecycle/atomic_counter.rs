@@ -4,48 +4,61 @@
 
 //! Helper class to implement a counter that can be shared across threads.
 
-/// Macro to define an atomic counter for a given base type. This is necessary because rust atomic
-/// types are not parametrized on their base type.
-macro_rules! atomic_counter_definition {
-    ($ty:ty) => {
-        paste::paste! {
-        #[derive(Debug, Default)]
-        pub struct [< Atomic $ty:camel Counter >](std::sync::atomic::[< Atomic $ty:camel >]);
+use starnix_types::atomic::{AsAtomic, AtomicOperations};
+use std::sync::atomic::Ordering;
 
-        #[allow(dead_code)]
-        impl [< Atomic $ty:camel Counter >] {
-            pub const fn new(value: $ty) -> Self {
-                Self(std::sync::atomic::[< Atomic $ty:camel >]::new(value))
-            }
+/// A generic atomic counter.
+#[derive(Debug)]
+pub struct AtomicCounter<T: AsAtomic>(T::Atomic);
 
-            pub fn next(&self) -> $ty {
-                self.add(1)
-            }
+impl<T: AsAtomic> AtomicCounter<T> {
+    pub fn new(value: T) -> Self {
+        Self(T::Atomic::new(value))
+    }
 
-            pub fn add(&self, amount: $ty) -> $ty {
-                self.0.fetch_add(amount, std::sync::atomic::Ordering::Relaxed)
-            }
+    pub fn next(&self) -> T {
+        self.add(T::ONE)
+    }
 
-            pub fn get(&self) -> $ty {
-                self.0.load(std::sync::atomic::Ordering::Relaxed)
-            }
-            pub fn reset(&mut self, value: $ty) {
-                *self.0.get_mut() = value;
-            }
-        }
+    pub fn add(&self, amount: T) -> T {
+        self.0.fetch_add(amount, Ordering::Relaxed)
+    }
 
-        impl From<$ty> for [< Atomic $ty:camel Counter >] {
-            fn from(value: $ty) -> Self {
-                Self::new(value)
-            }
-        }
-        }
-    };
+    pub fn get(&self) -> T {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    pub fn reset(&mut self, value: T) {
+        self.0.store(value, Ordering::Relaxed);
+    }
 }
 
-atomic_counter_definition!(u64);
-atomic_counter_definition!(u32);
-atomic_counter_definition!(usize);
+impl AtomicCounter<u32> {
+    pub const fn new_const(value: u32) -> Self {
+        Self(std::sync::atomic::AtomicU32::new(value))
+    }
+}
+
+impl AtomicCounter<usize> {
+    pub const fn new_const(value: usize) -> Self {
+        Self(std::sync::atomic::AtomicUsize::new(value))
+    }
+}
+
+impl<T: AsAtomic> Default for AtomicCounter<T>
+where
+    T: Default,
+{
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
+impl<T: AsAtomic> From<T> for AtomicCounter<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -54,13 +67,13 @@ mod tests {
 
     #[::fuchsia::test]
     fn test_new() {
-        const COUNTER: AtomicU64Counter = AtomicU64Counter::new(0);
-        assert_eq!(COUNTER.get(), 0);
+        let counter: AtomicCounter<u64> = AtomicCounter::<u64>::new(0);
+        assert_eq!(counter.get(), 0);
     }
 
     #[::fuchsia::test]
     fn test_one_thread() {
-        let mut counter = AtomicU64Counter::default();
+        let mut counter = AtomicCounter::<u64>::default();
         assert_eq!(counter.get(), 0);
         assert_eq!(counter.add(5), 0);
         assert_eq!(counter.get(), 5);
@@ -77,7 +90,7 @@ mod tests {
         const THREADS_COUNT: u64 = 10;
         const INC_ITERATIONS: u64 = 1000;
         let mut thread_handles = Vec::new();
-        let counter = Arc::new(AtomicU64Counter::default());
+        let counter = Arc::new(AtomicCounter::<u64>::default());
 
         for _ in 0..THREADS_COUNT {
             thread_handles.push(std::thread::spawn({

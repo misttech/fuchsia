@@ -13,9 +13,16 @@
 use anyhow::anyhow;
 use fidl::HandleBased;
 use fidl::endpoints::{create_proxy, create_request_stream};
+use fidl_fuchsia_element as felement;
+use fidl_fuchsia_images2 as fimages2;
+use fidl_fuchsia_math as fmath;
+use fidl_fuchsia_sysmem2 as fsysmem2;
+use fidl_fuchsia_ui_composition as fuicomposition;
+use fidl_fuchsia_ui_views as fuiviews;
 use flatland_frame_scheduling_lib::{
     PresentationInfo, PresentedInfo, SchedulingLib, ThroughputScheduler,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::{
     connect_to_protocol, connect_to_protocol_at_dir_root, connect_to_protocol_sync,
 };
@@ -28,7 +35,7 @@ use futures::{FutureExt, StreamExt};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{Kernel, LockedAndTask};
-use starnix_lifecycle::AtomicU64Counter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_logging::log_error;
 use starnix_sync::Mutex;
 use starnix_uapi::errno;
@@ -36,11 +43,6 @@ use starnix_uapi::errors::Errno;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::thread;
-use {
-    fidl_fuchsia_element as felement, fidl_fuchsia_images2 as fimages2, fidl_fuchsia_math as fmath,
-    fidl_fuchsia_sysmem2 as fsysmem2, fidl_fuchsia_ui_composition as fuicomposition,
-    fidl_fuchsia_ui_views as fuiviews, fuchsia_async as fasync,
-};
 
 /// The offset at which the framebuffer will be placed.
 pub const TRANSLATION_X: i32 = 0;
@@ -80,7 +82,7 @@ pub struct FramebufferServer {
     scene_state: Arc<Mutex<SceneState>>,
 
     /// Keeps track of the Flatland viewport ID.
-    viewport_id: AtomicU64Counter,
+    viewport_id: AtomicCounter<u64>,
 
     /// Channel to send Present requests on.
     presentation_sender: PresentationSender,

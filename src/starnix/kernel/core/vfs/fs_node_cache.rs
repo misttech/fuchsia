@@ -4,7 +4,7 @@
 
 use crate::vfs::{FsNode, FsNodeHandle, WeakFsNodeHandle};
 use fuchsia_rcu::RcuReadScope;
-use starnix_lifecycle::AtomicU64Counter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_rcu::rcu_hash_map::{Entry, RcuHashMap};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::ino_t;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 pub struct FsNodeCache {
     /// The next node ID to allocate.
-    next_ino: Option<AtomicU64Counter>,
+    next_ino: Option<AtomicCounter<u64>>,
 
     /// The FsNodes that have been created for this file system.
     nodes: RcuHashMap<ino_t, WeakFsNodeHandle>,
@@ -28,7 +28,11 @@ impl Default for FsNodeCache {
 impl FsNodeCache {
     pub fn new(uses_external_node_ids: bool) -> Self {
         Self {
-            next_ino: if uses_external_node_ids { None } else { Some(AtomicU64Counter::new(1)) },
+            next_ino: if uses_external_node_ids {
+                None
+            } else {
+                Some(AtomicCounter::<u64>::new(1))
+            },
             nodes: RcuHashMap::default(),
         }
     }

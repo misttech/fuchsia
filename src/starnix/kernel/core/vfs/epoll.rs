@@ -578,7 +578,7 @@ mod tests {
     use crate::vfs::fs_registry::FsRegistry;
     use crate::vfs::pipe::{new_pipe, register_pipe_fs};
     use crate::vfs::socket::{SocketDomain, SocketType, UnixSocket};
-    use starnix_lifecycle::AtomicUsizeCounter;
+    use starnix_lifecycle::AtomicCounter;
     use starnix_sync::Unlocked;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use syncio::Zxio;
@@ -588,7 +588,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_epoll_read_ready() {
-        static WRITE_COUNT: AtomicUsizeCounter = AtomicUsizeCounter::new(0);
+        static WRITE_COUNT: AtomicCounter<usize> = AtomicCounter::<usize>::new_const(0);
         const EVENT_DATA: u64 = 42;
 
         spawn_kernel_and_run(async |locked, current_task| {

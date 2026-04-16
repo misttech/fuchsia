@@ -20,7 +20,7 @@ use starnix_core::vfs::{
     FileObject, FileOps, FsString, InputBuffer, NamespaceNode, OutputBuffer, SeekTarget,
     default_ioctl, default_seek, fileops_impl_noop_sync,
 };
-use starnix_lifecycle::AtomicU32Counter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
@@ -42,7 +42,7 @@ pub fn ashmem_device_init(locked: &mut Locked<Unlocked>, system_task: &CurrentTa
 
 #[derive(Clone)]
 pub struct AshmemDevice {
-    pub next_id: Arc<AtomicU32Counter>,
+    pub next_id: Arc<AtomicCounter<u32>>,
 }
 
 pub struct Ashmem {
@@ -60,7 +60,7 @@ struct AshmemState {
 
 impl AshmemDevice {
     pub fn new() -> AshmemDevice {
-        AshmemDevice { next_id: Arc::new(AtomicU32Counter::new(1)) }
+        AshmemDevice { next_id: Arc::new(AtomicCounter::new(1)) }
     }
 }
 

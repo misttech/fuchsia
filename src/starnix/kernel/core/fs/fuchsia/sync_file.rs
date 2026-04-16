@@ -14,7 +14,7 @@ use crate::vfs::{
     fileops_impl_noop_sync,
 };
 
-use starnix_lifecycle::AtomicUsizeCounter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{CATEGORY_STARNIX, impossible_error, log_warn, trace_duration};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
@@ -317,7 +317,7 @@ impl FileOps for SyncFile {
             return None;
         }
 
-        let count = Arc::<AtomicUsizeCounter>::new(0.into());
+        let count = Arc::<AtomicCounter<usize>>::new(0.into());
 
         let mut canceler = WaitCanceler::new_noop();
 

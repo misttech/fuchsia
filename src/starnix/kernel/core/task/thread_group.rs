@@ -22,7 +22,7 @@ use crate::task::{
 use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;
 use macro_rules_attribute::apply;
-use starnix_lifecycle::{AtomicU64Counter, DropNotifier};
+use starnix_lifecycle::{AtomicCounter, DropNotifier};
 use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
     LockBefore, Locked, Mutex, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits, Unlocked,
@@ -275,7 +275,7 @@ pub struct ThreadGroup {
     /// able to distinguish identical seccomp filters, which are treated differently
     /// for the purposes of SECCOMP_FILTER_FLAG_TSYNC.  Inherited across clone because
     /// seccomp filters are also inherited across clone.
-    pub next_seccomp_filter_id: AtomicU64Counter,
+    pub next_seccomp_filter_id: AtomicCounter<u64>,
 
     /// Tasks ptraced by this process
     pub ptracees: Mutex<BTreeMap<tid_t, TaskContainer>>,

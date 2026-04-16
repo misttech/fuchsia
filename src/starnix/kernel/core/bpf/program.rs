@@ -15,7 +15,7 @@ use ebpf::{
 };
 use ebpf_api::{AttachType, EbpfApiError, MapsContext, PinnedMap, ProgramType, StructId};
 use fidl_fuchsia_ebpf as febpf;
-use starnix_lifecycle::{AtomicU32Counter, ObjectReleaser, ReleaserAction};
+use starnix_lifecycle::{AtomicCounter, ObjectReleaser, ReleaserAction};
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{EbpfStateLock, LockBefore, Locked};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
@@ -44,7 +44,7 @@ impl TryFrom<&bpf_attr__bindgen_ty_4> for ProgramInfo {
 }
 pub type ProgramId = u32;
 
-static NEXT_PROGRAM_ID: AtomicU32Counter = AtomicU32Counter::new(1);
+static NEXT_PROGRAM_ID: AtomicCounter<u32> = AtomicCounter::<u32>::new_const(1);
 fn new_program_id() -> ProgramId {
     NEXT_PROGRAM_ID.next()
 }

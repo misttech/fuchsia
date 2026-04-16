@@ -9,7 +9,7 @@ use bitflags::bitflags;
 use futures::stream::AbortHandle;
 use slab::Slab;
 use smallvec::SmallVec;
-use starnix_lifecycle::{AtomicU64Counter, AtomicUsizeCounter};
+use starnix_lifecycle::AtomicCounter;
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, NotifyKind,
     PortEvent, PortWaitResult,
@@ -99,7 +99,7 @@ pub struct ZxioSignalHandler {
 // count, the event handler is called with the given events.
 pub struct ManyZxHandleSignalHandler {
     pub count: usize,
-    pub counter: Arc<AtomicUsizeCounter>,
+    pub counter: Arc<AtomicCounter<usize>>,
     pub expected_signals: zx::Signals,
     pub events: FdEvents,
 }
@@ -367,7 +367,7 @@ bitflags! {
 struct PortWaiter {
     port: PortEvent,
     callbacks: Mutex<HashMap<WaitKey, WaitCallback>>, // the key 0 is reserved for 'no handler'
-    next_key: AtomicU64Counter,
+    next_key: AtomicCounter<u64>,
     options: WaiterOptions,
 
     /// Collection of wait queues this Waiter is waiting on, so that when the Waiter is Dropped it
@@ -383,7 +383,7 @@ impl PortWaiter {
         Arc::new(PortWaiter {
             port: PortEvent::new(),
             callbacks: Default::default(),
-            next_key: AtomicU64Counter::new(1),
+            next_key: AtomicCounter::<u64>::new(1),
             options,
             wait_queues: Default::default(),
         })
@@ -1194,7 +1194,7 @@ mod tests {
                 .expect("wait_async");
             let test_string_clone = test_string.clone();
 
-            let write_count = AtomicUsizeCounter::default();
+            let write_count = AtomicCounter::<usize>::default();
             std::thread::scope(|s| {
                 let thread = s.spawn(|| {
                     let test_data = test_string_clone.as_bytes();

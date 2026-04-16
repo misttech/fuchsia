@@ -9,7 +9,7 @@ use linux_uapi::{
     AUDIT_LAST_USER_MSG2, AUDIT_SET, AUDIT_STATUS_BACKLOG_LIMIT, AUDIT_STATUS_ENABLED,
     AUDIT_STATUS_FAILURE, AUDIT_STATUS_LOST, AUDIT_STATUS_PID, AUDIT_USER,
 };
-use starnix_lifecycle::AtomicU64Counter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_logging::log_warn;
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::errors::Errno;
@@ -125,7 +125,7 @@ pub struct AuditLogger {
     /// The number of audit messages lost due to writing errors.
     lost_audit_messages: AtomicU32,
     /// Monotonic counter for audit serial numbers
-    serial_counter: AtomicU64Counter,
+    serial_counter: AtomicCounter<u64>,
     /// Audit message deque containing (audit type, audit string) up to `backlog_limit` messages.
     /// TODO: https://fxbug.dev/438677236 - confirm single queue behaviour is valid.
     audit_queue: Mutex<VecDeque<AuditMessage>>,

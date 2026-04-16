@@ -39,7 +39,7 @@ use starnix_core::vfs::{
     FdFlags, FdNumber, FileObject, FileObjectState, FileOps, FsStr, FsString, NamespaceNode,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_lifecycle::AtomicU64Counter;
+use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{
     CATEGORY_STARNIX, log_error, log_trace, log_warn, trace_duration, track_stub, with_zx_name,
 };
@@ -423,7 +423,7 @@ pub struct BinderDriver {
     pub procs: RwLock<BTreeMap<u64, OwnedRef<BinderProcess>>>,
 
     /// The identifier to use for the next created `BinderProcess`.
-    next_identifier: AtomicU64Counter,
+    next_identifier: AtomicCounter<u64>,
 }
 
 impl Releasable for BinderDriver {
