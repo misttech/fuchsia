@@ -24,7 +24,7 @@ import("//build/sdk/sdk_atom.gni")
 #
 #   type (required)
 #     Type of the data set in the SDK.
-#     Currently only "license" and "config" data types are supported.
+#     Currently only "config" data types are supported.
 #
 #   non_sdk_deps (optional)
 #     List of GN labels which this target needs built.
@@ -43,16 +43,12 @@ template("sdk_data") {
   #     > ${invoker.name}/
   #       > config.json
   #       > meta.json
-  #   > license/
-  #     > ${invoker.name}/
-  #       > LICENSE
-  #       > meta.json
   file_base = "data/${invoker.type}/${invoker.name}/"
   file_dest = ""
   if (invoker.type == "config") {
     file_dest = file_base + "config.json"
-  } else if (invoker.type == "license") {
-    file_dest = file_base + "LICENSE"
+  } else {
+    assert(false, "Unsupported data type: '${invoker.type}'")
   }
   meta_dest = file_base + "meta.json"
 
