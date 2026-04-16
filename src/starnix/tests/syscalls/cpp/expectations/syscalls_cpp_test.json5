@@ -57,6 +57,10 @@
         {
             type: "expect_failure",
             matchers: [
+                // TODO(https://fxbug.dev/503114676)
+                "AccessTest.NonRootAccessCheckUsesEmptyCaps",
+                "AccessTest.RootAccessCheckUsesPermittedCaps",
+
                 // TODO(https://fxbug.dev/351037863)
                 "AshmemTest.SetNameOverflow",
 

@@ -750,6 +750,61 @@ TEST_F(AccessTest, FsUidIgnoredUnlessEaccess) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+// access() for root users should use permitted capabilities instead of effective capabilities.
+TEST_F(AccessTest, RootAccessCheckUsesPermittedCaps) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_EQ(geteuid(), 0u);
+    if (!test_helper::HasCapabilityPermitted(CAP_DAC_OVERRIDE)) {
+      GTEST_SKIP() << "Missing CAP_DAC_OVERRIDE in permitted set, skipping.";
+    }
+    test_helper::UnsetCapabilityEffective(CAP_DAC_OVERRIDE);
+    ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
+    EXPECT_THAT(access(only_user_file_.c_str(), W_OK), SyscallSucceeds());
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+// faccessat() with AT_EACCESS for root users should check against the effective capability set.
+TEST_F(AccessTest, RootAccessCheckWithAtEaccessUsesEffectiveCaps) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_EQ(geteuid(), 0u);
+    if (!test_helper::HasCapabilityPermitted(CAP_DAC_OVERRIDE)) {
+      GTEST_SKIP() << "Missing CAP_DAC_OVERRIDE in permitted set, skipping.";
+    }
+    test_helper::UnsetCapabilityEffective(CAP_DAC_OVERRIDE);
+    ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
+    EXPECT_THAT(faccessat(AT_FDCWD, only_user_file_.c_str(), W_OK, AT_EACCESS),
+                SyscallFailsWithErrno(EACCES));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+// access() for non-root users should use an empty set of capabilities.
+TEST_F(AccessTest, NonRootAccessCheckUsesEmptyCaps) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(setresuid(kNonOwnerUid, 0, 0), SyscallSucceeds());
+    test_helper::SetCapabilityEffective(CAP_DAC_OVERRIDE);
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
+    EXPECT_THAT(access(only_user_file_.c_str(), R_OK), SyscallFailsWithErrno(EACCES));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+// faccessat() with AT_EACCESS for non-root users should check against the effective capability set.
+TEST_F(AccessTest, NonRootAccessCheckWithAtEaccessUsesEffectiveCaps) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(setresuid(0, kNonOwnerUid, 0), SyscallSucceeds());
+    test_helper::SetCapabilityEffective(CAP_DAC_OVERRIDE);
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
+    EXPECT_THAT(faccessat(AT_FDCWD, only_user_file_.c_str(), R_OK, AT_EACCESS), SyscallSucceeds());
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 std::optional<std::string> MountOverlayFs(const std::string &temp_dir) {
   EXPECT_FALSE(temp_dir.empty());
 
