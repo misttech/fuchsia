@@ -106,10 +106,6 @@ impl<'a, K, V> MergeLayerIterator<'a, K, V> {
         self.item().value
     }
 
-    pub fn sequence(&self) -> u64 {
-        self.item().sequence
-    }
-
     fn new(layer_index: u16, layer: &'a dyn Layer<K, V>) -> Self {
         MergeLayerIterator {
             layer: Some(layer),
@@ -126,7 +122,7 @@ impl<'a, K, V> MergeLayerIterator<'a, K, V> {
     fn item(&self) -> ItemRef<'_, K, V> {
         match &self.item {
             MergeItem::None => panic!("No item!"),
-            MergeItem::Item(item) => ItemRef::from(item),
+            MergeItem::Item(item) => item.as_item_ref(),
             MergeItem::Iter => self.get().unwrap(),
         }
     }
@@ -245,7 +241,7 @@ impl<'a, K, V> From<&'a CurrentItem<'_, '_, K, V>> for Option<ItemRef<'a, K, V>>
         match iter {
             CurrentItem::None => None,
             CurrentItem::Iterator(iterator) => Some(iterator.item()),
-            CurrentItem::Item(item) => Some(item.into()),
+            CurrentItem::Item(item) => Some(item.as_item_ref()),
         }
     }
 }

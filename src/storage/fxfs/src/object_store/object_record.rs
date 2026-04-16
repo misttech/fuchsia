@@ -10,8 +10,8 @@ pub use legacy::*;
 use crate::checksum::Checksums;
 use crate::log::error;
 use crate::lsm_tree::types::{
-    FuzzyHash, Item, ItemRef, LayerKey, MergeType, OrdLowerBound, OrdUpperBound, RangeKey,
-    SortByU64, Value,
+    FuzzyHash, Item, ItemRef, LayerKey, LegacyItem, MergeType, OrdLowerBound, OrdUpperBound,
+    RangeKey, SortByU64, Value,
 };
 use crate::object_store::extent_record::{
     ExtentKey, ExtentKeyPartitionIterator, ExtentKeyV32, ExtentValue, ExtentValueV38,
@@ -947,10 +947,18 @@ impl ObjectValue {
     }
 }
 
-pub type ObjectItem = ObjectItemV54;
+pub type ObjectItem = ObjectItemV55;
 
-pub type ObjectItemV54 = Item<ObjectKeyV54, ObjectValueV54>;
-pub type ObjectItemV50 = Item<ObjectKeyV43, ObjectValueV50>;
+pub type ObjectItemV54 = LegacyItem<ObjectKeyV54, ObjectValueV54>;
+pub type ObjectItemV55 = Item<ObjectKeyV54, ObjectValueV54>;
+
+impl From<ObjectItemV54> for ObjectItemV55 {
+    fn from(item: ObjectItemV54) -> Self {
+        Self { key: item.key, value: item.value }
+    }
+}
+
+pub type ObjectItemV50 = LegacyItem<ObjectKeyV43, ObjectValueV50>;
 
 impl ObjectItem {
     pub fn is_tombstone(&self) -> bool {

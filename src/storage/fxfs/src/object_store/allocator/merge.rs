@@ -37,14 +37,13 @@ pub fn merge(
                 emit: None,
                 left: Discard,
                 right: Replace(
-                    Item {
-                        key: AllocatorKey {
+                    Item::new(
+                        AllocatorKey {
                             device_range: left.key().device_range.start
                                 ..right.key().device_range.end,
                         },
-                        value: left.value().clone(),
-                        sequence: std::cmp::min(left.sequence(), right.sequence()),
-                    }
+                        left.value().clone(),
+                    )
                     .boxed(),
                 ),
             };
@@ -67,14 +66,13 @@ pub fn merge(
                         Discard
                     } else {
                         Replace(
-                            Item {
-                                key: AllocatorKey {
+                            Item::new(
+                                AllocatorKey {
                                     device_range: left.key().device_range.end
                                         ..right.key().device_range.end,
                                 },
-                                value: right.value().clone(),
-                                sequence: right.sequence(),
-                            }
+                                right.value().clone(),
+                            )
                             .boxed(),
                         )
                     },
@@ -97,14 +95,13 @@ pub fn merge(
                         Discard
                     } else {
                         Replace(
-                            Item {
-                                key: AllocatorKey {
+                            Item::new(
+                                AllocatorKey {
                                     device_range: right.key().device_range.end
                                         ..left.key().device_range.end,
                                 },
-                                value: left.value().clone(),
-                                sequence: left.sequence(),
-                            }
+                                left.value().clone(),
+                            )
                             .boxed(),
                         )
                     },
@@ -123,23 +120,21 @@ pub fn merge(
     debug_assert!(left.key().device_range.end >= right.key().device_range.start);
     MergeResult::Other {
         emit: Some(
-            Item {
-                key: AllocatorKey {
+            Item::new(
+                AllocatorKey {
                     device_range: left.key().device_range.start..right.key().device_range.start,
                 },
-                value: left.value().clone(),
-                sequence: left.sequence(),
-            }
+                left.value().clone(),
+            )
             .boxed(),
         ),
         left: Replace(
-            Item {
-                key: AllocatorKey {
+            Item::new(
+                AllocatorKey {
                     device_range: right.key().device_range.start..left.key().device_range.end,
                 },
-                value: left.value().clone(),
-                sequence: left.sequence(),
-            }
+                left.value().clone(),
+            )
             .boxed(),
         ),
         right: Keep,
@@ -172,7 +167,6 @@ mod tests {
     use crate::lsm_tree::cache::NullCache;
     use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
     use crate::lsm_tree::{LSMTree, Query};
-    use crate::object_handle::INVALID_OBJECT_ID;
     use crate::object_store::allocator::merge::{filter_tombstones, merge};
     use crate::object_store::allocator::{AllocatorKey, AllocatorValue};
     use std::ops::Range;
@@ -370,60 +364,6 @@ mod tests {
         let mut iter = merger.query(Query::FullScan).await.expect("seek failed");
         let ItemRef { key: k, value, .. } = iter.get().expect("get failed");
         assert_eq!((k, value), (&key, &AllocatorValue::Abs { count: 1, owner_object_id: 1 }));
-        iter.advance().await.expect("advance failed");
-        assert!(iter.get().is_none());
-    }
-
-    #[fuchsia::test]
-    async fn test_merge_preserves_sequences() {
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
-        // |1-1-1-1|
-        tree.insert(Item {
-            key: AllocatorKey { device_range: 0..100 },
-            value: AllocatorValue::Abs { count: 1, owner_object_id: INVALID_OBJECT_ID },
-            sequence: 1u64,
-        })
-        .expect("insert error");
-        tree.seal();
-        // |1|0|1-1|
-        tree.insert(Item {
-            key: AllocatorKey { device_range: 25..50 },
-            value: AllocatorValue::None,
-            sequence: 2u64,
-        })
-        .expect("insert error");
-        // |1|0|1|2|
-        tree.insert(Item {
-            key: AllocatorKey { device_range: 75..100 },
-            value: AllocatorValue::Abs { count: 2, owner_object_id: INVALID_OBJECT_ID },
-            sequence: 3u64,
-        })
-        .expect("insert error");
-        let layer_set = tree.layer_set();
-        let mut merger = layer_set.merger();
-        let mut iter = filter_tombstones(merger.query(Query::FullScan).await.expect("seek failed"))
-            .await
-            .expect("filter failed");
-        assert_eq!(iter.get().unwrap().key, &AllocatorKey { device_range: 0..25 });
-        assert_eq!(
-            iter.get().unwrap().value,
-            &AllocatorValue::Abs { count: 1, owner_object_id: INVALID_OBJECT_ID }
-        );
-        assert_eq!(iter.get().unwrap().sequence, 1u64);
-        iter.advance().await.expect("advance failed");
-        assert_eq!(iter.get().unwrap().key, &AllocatorKey { device_range: 50..75 });
-        assert_eq!(
-            iter.get().unwrap().value,
-            &AllocatorValue::Abs { count: 1, owner_object_id: INVALID_OBJECT_ID }
-        );
-        assert_eq!(iter.get().unwrap().sequence, 1u64);
-        iter.advance().await.expect("advance failed");
-        assert_eq!(iter.get().unwrap().key, &AllocatorKey { device_range: 75..100 });
-        assert_eq!(
-            iter.get().unwrap().value,
-            &AllocatorValue::Abs { count: 2, owner_object_id: INVALID_OBJECT_ID }
-        );
-        assert_eq!(iter.get().unwrap().sequence, 3u64);
         iter.advance().await.expect("advance failed");
         assert!(iter.get().is_none());
     }

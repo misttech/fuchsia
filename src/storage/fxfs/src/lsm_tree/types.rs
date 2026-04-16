@@ -120,12 +120,11 @@ pub trait Value: PartialEq + LayerValue {
 pub struct ItemRef<'a, K, V> {
     pub key: &'a K,
     pub value: &'a V,
-    pub sequence: u64,
 }
 
 impl<K: Clone, V: Clone> ItemRef<'_, K, V> {
     pub fn cloned(&self) -> Item<K, V> {
-        Item { key: self.key.clone(), value: self.value.clone(), sequence: self.sequence }
+        Item { key: self.key.clone(), value: self.value.clone() }
     }
 
     pub fn boxed(&self) -> BoxedItem<K, V> {
@@ -146,17 +145,17 @@ impl<'a, K, V> Copy for ItemRef<'a, K, V> {}
 pub struct Item<K, V> {
     pub key: K,
     pub value: V,
-    /// |sequence| is a monotonically increasing sequence number for the Item, which is set when the
-    /// Item is inserted into the tree.  In practice, this is the journal file offset at the time of
-    /// committing the transaction containing the Item.  Note that two or more Items may share the
-    /// same |sequence|.
+}
+
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LegacyItem<K, V> {
+    pub key: K,
+    pub value: V,
     pub sequence: u64,
 }
 
-pub type BoxedItem<K, V> = Box<Item<K, V>>;
-
-// Nb: type-fprint doesn't support generics yet.
-impl<K: TypeFingerprint, V: TypeFingerprint> TypeFingerprint for Item<K, V> {
+impl<K: TypeFingerprint, V: TypeFingerprint> TypeFingerprint for LegacyItem<K, V> {
     fn fingerprint() -> String {
         "struct {key:".to_owned()
             + &K::fingerprint()
@@ -166,13 +165,18 @@ impl<K: TypeFingerprint, V: TypeFingerprint> TypeFingerprint for Item<K, V> {
     }
 }
 
+pub type BoxedItem<K, V> = Box<Item<K, V>>;
+
+// Nb: type-fprint doesn't support generics yet.
+impl<K: TypeFingerprint, V: TypeFingerprint> TypeFingerprint for Item<K, V> {
+    fn fingerprint() -> String {
+        "struct {key:".to_owned() + &K::fingerprint() + ",value:" + &V::fingerprint() + "}"
+    }
+}
+
 impl<K, V> Item<K, V> {
     pub fn new(key: K, value: V) -> Item<K, V> {
-        Item { key, value, sequence: 0u64 }
-    }
-
-    pub fn new_with_sequence(key: K, value: V, sequence: u64) -> Item<K, V> {
-        Item { key, value, sequence }
+        Item { key, value }
     }
 
     pub fn as_item_ref(&self) -> ItemRef<'_, K, V> {
@@ -186,13 +190,7 @@ impl<K, V> Item<K, V> {
 
 impl<'a, K, V> From<&'a Item<K, V>> for ItemRef<'a, K, V> {
     fn from(item: &'a Item<K, V>) -> ItemRef<'a, K, V> {
-        ItemRef { key: &item.key, value: &item.value, sequence: item.sequence }
-    }
-}
-
-impl<'a, K, V> From<&'a BoxedItem<K, V>> for ItemRef<'a, K, V> {
-    fn from(item: &'a BoxedItem<K, V>) -> ItemRef<'a, K, V> {
-        ItemRef { key: &item.key, value: &item.value, sequence: item.sequence }
+        ItemRef { key: &item.key, value: &item.value }
     }
 }
 

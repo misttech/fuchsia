@@ -1080,7 +1080,6 @@ impl Allocator {
                 self.temporary_allocations.insert(AllocatorItem {
                     key: AllocatorKey { device_range: prefix.clone() },
                     value: AllocatorValue::Abs { owner_object_id: INVALID_OBJECT_ID, count: 1 },
-                    sequence: 0,
                 })?;
                 result.add_extent(prefix);
                 if result.extents.len() == extents_per_batch {
@@ -1489,7 +1488,6 @@ impl Allocator {
             self.temporary_allocations.insert(AllocatorItem {
                 key: AllocatorKey { device_range: result.clone() },
                 value: AllocatorValue::Abs { owner_object_id, count: 1 },
-                sequence: 0,
             })?;
         }
 
@@ -1532,7 +1530,6 @@ impl Allocator {
             self.temporary_allocations.insert(AllocatorItem {
                 key: AllocatorKey { device_range: device_range.clone() },
                 value: AllocatorValue::Abs { owner_object_id, count: 1 },
-                sequence: 0,
             })?;
         }
         let mutation =
@@ -1614,7 +1611,6 @@ impl Allocator {
             .insert(AllocatorItem {
                 key: AllocatorKey { device_range: dealloc_range.clone() },
                 value: AllocatorValue::Abs { owner_object_id, count: 1 },
-                sequence: 0,
             })
             .context("tracking deallocated")?;
 
@@ -1797,7 +1793,6 @@ impl JournalingObject for Allocator {
                 let item = AllocatorItem {
                     key: AllocatorKey { device_range: device_range.clone().into() },
                     value: AllocatorValue::Abs { count: 1, owner_object_id },
-                    sequence: context.checkpoint.file_offset,
                 };
                 let len = item.key.device_range.length().unwrap();
                 let lower_bound = item.key.lower_bound_for_merge_into();
@@ -1824,7 +1819,6 @@ impl JournalingObject for Allocator {
                 let item = AllocatorItem {
                     key: AllocatorKey { device_range: device_range.into() },
                     value: AllocatorValue::None,
-                    sequence: context.checkpoint.file_offset,
                 };
                 let len = item.key.device_range.length().unwrap();
 
@@ -2055,13 +2049,13 @@ impl<'a> Flusher<'a> {
             let iter = self.allocator.filter(merger.query(Query::FullScan).await?, true).await?;
             let iter = CoalescingIterator::new(iter).await?;
             let bytes_written = compact_with_iterator(
-                    iter,
-                    total_len,
-                    DirectWriter::new(&layer_object_handle, txn_options).await,
-                    layer_object_handle.block_size(),
-                    Some(self.fs.journal().get_compaction_yielder()),
-                )
-                .await?;
+                iter,
+                total_len,
+                DirectWriter::new(&layer_object_handle, txn_options).await,
+                layer_object_handle.block_size(),
+                Some(self.fs.journal().get_compaction_yielder()),
+            )
+            .await?;
 
             self.allocator.tree.report_compaction_metrics(
                 bytes_written,

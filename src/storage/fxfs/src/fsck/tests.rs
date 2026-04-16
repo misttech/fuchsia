@@ -4267,7 +4267,7 @@ async fn test_invalid_bloom_filter_for_allocator() {
             // `MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER`, and `fs.block_size()`. See the
             // `PersistentLayerWriter`'s implementation of`LayerWriter::write(..)` for details of
             // of how the items are written to the persistent layer.
-            let item_count = 600;
+            let item_count = 1000;
             let mut items: Vec<Item<AllocatorKey, AllocatorValue>> = vec![];
             for i in 0..item_count as u64 {
                 // The range per item needs to be disjoint to avoid them being merged.
@@ -4357,12 +4357,12 @@ async fn test_invalid_bloom_filter_for_volume() {
             // `MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER`, and `fs.block_size()`. See the
             // `PersistentLayerWriter`'s implementation of`LayerWriter::write(..)` for details of
             // of how the items are written to the persistent layer.
-            let item_count = 600;
+            let item_count = 1000;
             let mut items: Vec<Item<ObjectKey, ObjectValue>> = vec![];
             for i in 0..item_count as u64 {
                 // The range per item needs to be disjoint to avoid them being merged.
                 items.push(Item::new(
-                    ObjectKey::extent(0, 0, (2 * i * 100)..(2 * i + 1) * 100),
+                    ObjectKey::extent(100000, 0, (2 * i * 512)..(2 * i + 1) * 512),
                     ObjectValue::deleted_extent(),
                 ));
             }

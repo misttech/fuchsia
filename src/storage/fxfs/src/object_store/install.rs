@@ -156,7 +156,6 @@ impl ObjectStore {
                 metadata_object_id,
             ),
             value: ObjectValue::Some,
-            sequence: 0,
         })?;
         let locked = (layer_with_metadata as Arc<dyn Layer<_, _>>).into();
         inner_layer_set.layers.push(locked);
@@ -332,7 +331,6 @@ async fn create_metadata_ownership_layer(
             mode: ExtentMode::Raw,
             key_id: 0,
         }),
-        sequence: 0,
     })?;
 
     // Iterate over all the extent records in the layer set, and punch holes in the new file we
@@ -360,7 +358,6 @@ async fn create_metadata_ownership_layer(
                         *device_offset..*device_offset + len,
                     ),
                     value: ObjectValue::Extent(ExtentValue::None),
-                    sequence: 0,
                 };
                 size = size
                     .checked_sub(len)
@@ -383,13 +380,11 @@ async fn create_metadata_ownership_layer(
             kind: ObjectKind::File { refs: 1 },
             attributes: ObjectAttributes { allocated_size: size, ..Default::default() },
         },
-        sequence: 0,
     })?;
 
     layer.insert(Item {
         key: ObjectKey::attribute(object_id, 0, AttributeKey::Attribute),
         value: ObjectValue::Attribute { size, has_overwrite_extents: false },
-        sequence: 0,
     })?;
 
     Ok(layer)
@@ -411,7 +406,6 @@ async fn item_is_unique<H: HandleOwner>(
                     data: ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(_)),
                 },
             value: ObjectValue::Extent(_),
-            sequence: _,
         } = item
         {
             if *object_id != handle.object_id() || *attribute_id != handle.attribute_id() {

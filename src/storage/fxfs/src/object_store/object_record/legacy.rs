@@ -29,9 +29,7 @@ impl From<ObjectKeyDataV43> for ObjectKeyDataV54 {
     }
 }
 
-#[derive(
-    Clone, Debug, Eq, Ord, Hash, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint,
-)]
+#[derive(Eq, Ord, Hash, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ObjectKeyDataV43 {
     Object,
@@ -63,8 +61,6 @@ pub enum ObjectKeyDataV43 {
 }
 
 #[derive(
-    Clone,
-    Debug,
     Eq,
     Ord,
     Hash,
@@ -396,12 +392,12 @@ pub struct TimestampV32 {
     pub nanos: u32,
 }
 
-pub type ObjectItemV49 = Item<ObjectKeyV43, ObjectValueV49>;
-pub type ObjectItemV47 = Item<ObjectKeyV43, ObjectValueV47>;
-pub type ObjectItemV46 = Item<ObjectKeyV43, ObjectValueV46>;
-pub type ObjectItemV43 = Item<ObjectKeyV43, ObjectValueV41>;
-pub type ObjectItemV41 = Item<ObjectKeyV40, ObjectValueV41>;
-pub type ObjectItemV40 = Item<ObjectKeyV40, ObjectValueV40>;
+pub type ObjectItemV49 = LegacyItem<ObjectKeyV43, ObjectValueV49>;
+pub type ObjectItemV47 = LegacyItem<ObjectKeyV43, ObjectValueV47>;
+pub type ObjectItemV46 = LegacyItem<ObjectKeyV43, ObjectValueV46>;
+pub type ObjectItemV43 = LegacyItem<ObjectKeyV43, ObjectValueV41>;
+pub type ObjectItemV41 = LegacyItem<ObjectKeyV40, ObjectValueV41>;
+pub type ObjectItemV40 = LegacyItem<ObjectKeyV40, ObjectValueV40>;
 
 impl From<ObjectItemV50> for ObjectItemV54 {
     fn from(item: ObjectItemV50) -> Self {

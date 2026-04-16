@@ -13,11 +13,12 @@ use crate::object_store::allocator::{
 use crate::object_store::journal::super_block::{
     SuperBlockHeader, SuperBlockHeaderV32, SuperBlockRecord, SuperBlockRecordV40,
     SuperBlockRecordV41, SuperBlockRecordV43, SuperBlockRecordV46, SuperBlockRecordV47,
-    SuperBlockRecordV49, SuperBlockRecordV50, SuperBlockRecordV54,
+    SuperBlockRecordV49, SuperBlockRecordV50, SuperBlockRecordV54, SuperBlockRecordV55,
 };
 use crate::object_store::journal::{
     JournalRecord, JournalRecordV40, JournalRecordV41, JournalRecordV42, JournalRecordV43,
     JournalRecordV46, JournalRecordV47, JournalRecordV49, JournalRecordV50, JournalRecordV54,
+    JournalRecordV55,
 };
 use crate::object_store::object_record::{
     FsverityMetadata, FsverityMetadataV33, FsverityMetadataV50, ObjectKey, ObjectKeyV40,
@@ -26,7 +27,7 @@ use crate::object_store::object_record::{
 };
 use crate::object_store::transaction::{
     Mutation, MutationV40, MutationV41, MutationV43, MutationV46, MutationV47, MutationV49,
-    MutationV50, MutationV54,
+    MutationV50, MutationV54, MutationV55,
 };
 use crate::object_store::{
     EncryptedMutations, EncryptedMutationsV40, EncryptedMutationsV49, StoreInfo, StoreInfoV40,
@@ -44,7 +45,10 @@ use std::collections::BTreeMap;
 ///
 /// IMPORTANT: When changing this (major or minor), update the list of possible versions at
 /// https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/cobalt_config/fuchsia/local_storage/versions.txt.
-pub const LATEST_VERSION: Version = Version { major: 54, minor: 0 };
+pub const LATEST_VERSION: Version = Version { major: 55, minor: 0 };
+
+/// From this version of the filesystem, the sequence number is removed from the Item struct.
+pub const REMOVE_ITEM_SEQUENCE_VERSION: u32 = 55;
 
 /// The earliest supported version of the on-disk filesystem format.
 ///
@@ -129,6 +133,7 @@ versioned_types! {
         33.. => FsverityMetadataV33,
     }
     JournalRecord {
+        55.. => JournalRecordV55,
         54.. => JournalRecordV54,
         50.. => JournalRecordV50,
         49.. => JournalRecordV49,
@@ -140,6 +145,7 @@ versioned_types! {
         40.. => JournalRecordV40,
     }
     Mutation {
+        55.. => MutationV55,
         54.. => MutationV54,
         50.. => MutationV50,
         49.. => MutationV49,
@@ -178,6 +184,7 @@ versioned_types! {
         32.. => SuperBlockHeaderV32,
     }
     SuperBlockRecord {
+        55.. => SuperBlockRecordV55,
         54.. => SuperBlockRecordV54,
         50.. => SuperBlockRecordV50,
         49.. => SuperBlockRecordV49,

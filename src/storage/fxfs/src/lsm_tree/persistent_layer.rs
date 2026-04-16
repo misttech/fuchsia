@@ -69,7 +69,9 @@ use crate::lsm_tree::types::{
 use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
 use crate::object_store::caching_object_handle::{CHUNK_SIZE, CachedChunk, CachingObjectHandle};
 use crate::round::{round_down, round_up};
-use crate::serialized_types::{LATEST_VERSION, Version, Versioned, VersionedLatest};
+use crate::serialized_types::{
+    LATEST_VERSION, REMOVE_ITEM_SEQUENCE_VERSION, Version, Versioned, VersionedLatest,
+};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -316,18 +318,15 @@ impl<'iter, K: Key, V: LayerValue> Iterator<'iter, K, V> {
         let key = std::mem::take(&mut seek_iterator.key);
         let item = if let Some(key) = key {
             seek_iterator.value_deserialized = true;
-            Some(Item {
-                key,
-                value: V::deserialize_from_version(
-                    seek_iterator.buffer.by_ref(),
-                    seek_iterator.layer.version,
-                )
-                .context("Corrupt layer (value)")?,
-                sequence: seek_iterator
-                    .buffer
-                    .read_u64::<LittleEndian>()
-                    .context("Corrupt layer (seq)")?,
-            })
+            let value = V::deserialize_from_version(
+                seek_iterator.buffer.by_ref(),
+                seek_iterator.layer.version,
+            )
+            .context("Corrupt layer (value)")?;
+            if seek_iterator.layer.version.major < REMOVE_ITEM_SEQUENCE_VERSION {
+                seek_iterator.buffer.read_u64::<LittleEndian>().context("Corrupt layer (seq)")?;
+            }
+            Some(Item { key, value })
         } else {
             None
         };
@@ -342,19 +341,13 @@ impl<'iter, K: Key, V: LayerValue> LayerIterator<K, V> for Iterator<'iter, K, V>
         let key = std::mem::take(&mut self.inner.key);
         self.item = if let Some(key) = key {
             self.inner.value_deserialized = true;
-            Some(Item {
-                key,
-                value: V::deserialize_from_version(
-                    self.inner.buffer.by_ref(),
-                    self.inner.layer.version,
-                )
-                .context("Corrupt layer (value)")?,
-                sequence: self
-                    .inner
-                    .buffer
-                    .read_u64::<LittleEndian>()
-                    .context("Corrupt layer (seq)")?,
-            })
+            let value =
+                V::deserialize_from_version(self.inner.buffer.by_ref(), self.inner.layer.version)
+                    .context("Corrupt layer (value)")?;
+            if self.inner.layer.version.major < REMOVE_ITEM_SEQUENCE_VERSION {
+                self.inner.buffer.read_u64::<LittleEndian>().context("Corrupt layer (seq)")?;
+            }
+            Some(Item { key, value })
         } else {
             None
         };
@@ -753,12 +746,11 @@ pub struct PersistentLayerWriter<W: WriteBytes, K: Key, V: LayerValue> {
 
 impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
     /// Creates a new writer that will serialize items to the object accessible via |object_handle|
-    /// (which provides a write interface to the object).
     pub async fn new(writer: W, num_items: usize, block_size: u64) -> Result<Self, Error> {
         Self::new_with_version(writer, num_items, block_size, LATEST_VERSION).await
     }
 
-    async fn new_with_version(
+    pub(crate) async fn new_with_version(
         mut writer: W,
         num_items: usize,
         block_size: u64,
@@ -778,7 +770,7 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
         writer.write_bytes(&buf[..]).await?;
 
         let seed: u64 = rand::random();
-        Ok(PersistentLayerWriter {
+        Ok(Self {
             writer,
             block_size,
             buf: Vec::new(),
@@ -907,7 +899,7 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
         let len = self.buf.len();
         item.key.serialize_into(&mut self.buf)?;
         item.value.serialize_into(&mut self.buf)?;
-        self.buf.write_u64::<LittleEndian>(item.sequence)?;
+
         let mut added_offset = false;
         // Never record the first item. The offset is always the same.
         if self.buf_item_count > 0 {

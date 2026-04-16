@@ -2716,8 +2716,7 @@ impl JournalingObject for ObjectStore {
             lock_state @ _ => panic!("Unexpected lock state: {lock_state:?}"),
         }
         match mutation {
-            Mutation::ObjectStore(ObjectStoreMutation { mut item, op }) => {
-                item.sequence = context.checkpoint.file_offset;
+            Mutation::ObjectStore(ObjectStoreMutation { item, op }) => {
                 match op {
                     Operation::Insert => {
                         let mut unreserve_id = INVALID_OBJECT_ID;
@@ -2991,7 +2990,7 @@ mod tests {
         StoreOptions, StoreOwner,
     };
     use crate::errors::FxfsError;
-    use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem, SyncOptions};
+    use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem};
     use crate::fsck::{fsck, fsck_volume};
     use crate::lsm_tree::Query;
     use crate::lsm_tree::types::{ItemRef, LayerIterator};
@@ -3026,71 +3025,6 @@ mod tests {
     async fn test_filesystem() -> OpenFxFilesystem {
         let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
         FxFilesystem::new_empty(device).await.expect("new_empty failed")
-    }
-
-    #[fuchsia::test]
-    async fn test_item_sequences() {
-        let fs = test_filesystem().await;
-        let object1;
-        let object2;
-        let object3;
-        let mut transaction = fs
-            .clone()
-            .new_transaction(lock_keys![], Options::default())
-            .await
-            .expect("new_transaction failed");
-        let store = fs.root_store();
-        object1 = Arc::new(
-            ObjectStore::create_object(&store, &mut transaction, HandleOptions::default(), None)
-                .await
-                .expect("create_object failed"),
-        );
-        transaction.commit().await.expect("commit failed");
-        let mut transaction = fs
-            .clone()
-            .new_transaction(lock_keys![], Options::default())
-            .await
-            .expect("new_transaction failed");
-        object2 = Arc::new(
-            ObjectStore::create_object(&store, &mut transaction, HandleOptions::default(), None)
-                .await
-                .expect("create_object failed"),
-        );
-        transaction.commit().await.expect("commit failed");
-
-        fs.sync(SyncOptions::default()).await.expect("sync failed");
-
-        let mut transaction = fs
-            .clone()
-            .new_transaction(lock_keys![], Options::default())
-            .await
-            .expect("new_transaction failed");
-        object3 = Arc::new(
-            ObjectStore::create_object(&store, &mut transaction, HandleOptions::default(), None)
-                .await
-                .expect("create_object failed"),
-        );
-        transaction.commit().await.expect("commit failed");
-
-        let layer_set = store.tree.layer_set();
-        let mut merger = layer_set.merger();
-        let mut iter = merger.query(Query::FullScan).await.expect("seek failed");
-        let mut sequences = [0u64; 3];
-        while let Some(ItemRef { key: ObjectKey { object_id, .. }, sequence, .. }) = iter.get() {
-            if *object_id == object1.object_id() {
-                sequences[0] = sequence;
-            } else if *object_id == object2.object_id() {
-                sequences[1] = sequence;
-            } else if *object_id == object3.object_id() {
-                sequences[2] = sequence;
-            }
-            iter.advance().await.expect("advance failed");
-        }
-
-        assert!(sequences[0] <= sequences[1], "sequences: {:?}", sequences);
-        // The last item came after a sync, so should be strictly greater.
-        assert!(sequences[1] < sequences[2], "sequences: {:?}", sequences);
-        fs.close().await.expect("Close failed");
     }
 
     #[fuchsia::test]

@@ -180,9 +180,7 @@ impl Graveyard {
         let store_id = store.store_object_id();
         // TODO(https://fxbug.dev/355246066): This iteration can sometimes attempt to reap
         // attributes after they've been reaped as part of the parent object.
-        while let Some(GraveyardEntryInfo { object_id, attribute_id, sequence: _, value }) =
-            iter.get()
-        {
+        while let Some(GraveyardEntryInfo { object_id, attribute_id, value }) = iter.get() {
             store.graveyard_entries.fetch_add(1, Ordering::Relaxed);
             match value {
                 ObjectValue::Some => {
@@ -343,7 +341,6 @@ pub struct GraveyardIterator<'a, 'b> {
 pub struct GraveyardEntryInfo {
     object_id: u64,
     attribute_id: Option<u64>,
-    sequence: u64,
     value: ObjectValue,
 }
 
@@ -390,12 +387,10 @@ impl<'a, 'b> GraveyardIterator<'a, 'b> {
             Some(ItemRef {
                 key: ObjectKey { object_id: oid, data: ObjectKeyData::GraveyardEntry { object_id } },
                 value,
-                sequence,
                 ..
             }) if *oid == self.object_id => Some(GraveyardEntryInfo {
                 object_id: *object_id,
                 attribute_id: None,
-                sequence,
                 value: value.clone(),
             }),
             Some(ItemRef {
@@ -405,11 +400,10 @@ impl<'a, 'b> GraveyardIterator<'a, 'b> {
                         data: ObjectKeyData::GraveyardAttributeEntry { object_id, attribute_id },
                     },
                 value,
-                sequence,
+                ..
             }) if *oid == self.object_id => Some(GraveyardEntryInfo {
                 object_id: *object_id,
                 attribute_id: Some(*attribute_id),
-                sequence,
                 value: value.clone(),
             }),
             _ => None,
@@ -494,13 +488,13 @@ mod tests {
                 .expect("iter failed");
             assert_matches!(
                 iter.get().expect("missing entry"),
-                GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some, .. }
+                GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some }
                 if object_id == id1
             );
             iter.advance().await.expect("advance failed");
             assert_matches!(
                 iter.get().expect("missing entry"),
-                GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some, .. }
+                GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some }
                 if object_id == id2
             );
             iter.advance().await.expect("advance failed");
@@ -526,7 +520,7 @@ mod tests {
             .expect("iter failed");
         assert_matches!(
             iter.get().expect("missing entry"),
-            GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some, .. }
+            GraveyardEntryInfo { object_id, attribute_id: None, value: ObjectValue::Some }
             if object_id == id1
         );
         iter.advance().await.expect("advance failed");

@@ -1480,7 +1480,6 @@ mod tests {
                 assert_eq!(op1, op2);
                 assert_eq!(i1.key, i2.key);
                 assert_eq!(i1.value, i2.value);
-                assert_eq!(i1.sequence, i2.sequence);
             }
         }
 
@@ -1491,7 +1490,6 @@ mod tests {
             assert_eq!(op1, op2);
             assert_eq!(i1.key, i2.key);
             assert_eq!(i1.value, i2.value);
-            assert_eq!(i1.sequence, i2.sequence);
         }
 
         assert_eq!(

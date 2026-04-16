@@ -36,13 +36,7 @@ fn merge_extents(
     if let (ExtentValue::None, ExtentValue::None) = (left_value, right_value) {
         if (left.layer_index as i32 - right.layer_index as i32).abs() == 1 {
             // Two deletions in adjacent layers can be merged.
-            return merge_deleted_extents(
-                object_id,
-                attribute_id,
-                left_key,
-                right_key,
-                std::cmp::min(left.sequence(), right.sequence()),
-            );
+            return merge_deleted_extents(object_id, attribute_id, left_key, right_key);
         }
     }
 
@@ -72,7 +66,7 @@ fn merge_extents(
         debug_assert!(left_key.range.start < right_key.range.start);
         return MergeResult::Other {
             emit: Some(
-                Item::new_with_sequence(
+                Item::new(
                     ObjectKey::extent(
                         object_id,
                         attribute_id,
@@ -82,12 +76,11 @@ fn merge_extents(
                         left_key.range.end - left_key.range.start,
                         right_key.range.start - left_key.range.start,
                     )),
-                    std::cmp::min(left.sequence(), right.sequence()),
                 )
                 .boxed(),
             ),
             left: Replace(
-                Item::new_with_sequence(
+                Item::new(
                     ObjectKey::extent(
                         object_id,
                         attribute_id,
@@ -97,7 +90,6 @@ fn merge_extents(
                         right_key.range.start - left_key.range.start,
                         left_key.range.end - left_key.range.start,
                     )),
-                    std::cmp::min(left.sequence(), right.sequence()),
                 )
                 .boxed(),
             ),
@@ -113,13 +105,12 @@ fn merge_extents(
         emit: None,
         left: Keep,
         right: Replace(
-            Item::new_with_sequence(
+            Item::new(
                 ObjectKey::extent(object_id, attribute_id, left_key.range.end..right_key.range.end),
                 ObjectValue::Extent(right_value.offset_by(
                     left_key.range.end - right_key.range.start,
                     right_key.range.end - right_key.range.start,
                 )),
-                std::cmp::min(left.sequence(), right.sequence()),
             )
             .boxed(),
         ),
@@ -132,7 +123,6 @@ fn merge_deleted_extents(
     attribute_id: u64,
     left_key: &ExtentKey,
     right_key: &ExtentKey,
-    sequence: u64,
 ) -> MergeResult<ObjectKey, ObjectValue> {
     if left_key.range.end < right_key.range.start {
         // The extents are not adjacent or overlapping.
@@ -147,10 +137,9 @@ fn merge_deleted_extents(
     MergeResult::Other {
         emit: None,
         left: Discard,
-        right: Replace(Box::new(Item::new_with_sequence(
+        right: Replace(Box::new(Item::new(
             ObjectKey::extent(object_id, attribute_id, left_key.range.start..right_key.range.end),
             ObjectValue::deleted_extent(),
-            sequence,
         ))),
     }
 }
@@ -242,12 +231,8 @@ pub fn merge(
                     emit: None,
                     left: Discard,
                     right: Replace(
-                        Item {
-                            key: right.key().clone(),
-                            value: ObjectValue::BytesAndNodes { bytes, nodes },
-                            sequence: right.sequence(),
-                        }
-                        .boxed(),
+                        Item::new(right.key().clone(), ObjectValue::BytesAndNodes { bytes, nodes })
+                            .boxed(),
                     ),
                 },
             }
@@ -1112,70 +1097,6 @@ mod tests {
             &[tombstone, other_object],
         )
         .await;
-    }
-
-    #[fuchsia::test]
-    async fn test_merge_preserves_sequences() -> Result<(), Error> {
-        let object_id = 0;
-        let attr_id = 0;
-        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
-
-        tree.insert(Item {
-            key: ObjectKey::extent(object_id, attr_id, 0..1024),
-            value: ObjectValue::Extent(ExtentValue::new_raw(0u64, VOLUME_DATA_KEY_ID)),
-            sequence: 1u64,
-        })
-        .expect("insert error");
-        tree.seal();
-        tree.insert(Item {
-            key: ObjectKey::extent(object_id, attr_id, 0..512),
-            value: ObjectValue::deleted_extent(),
-            sequence: 2u64,
-        })
-        .expect("insert error");
-        tree.insert(Item {
-            key: ObjectKey::extent(object_id, attr_id, 1536..2048),
-            value: ObjectValue::Extent(ExtentValue::new_raw(1536, VOLUME_DATA_KEY_ID)),
-            sequence: 3u64,
-        })
-        .expect("insert error");
-        tree.insert(Item {
-            key: ObjectKey::extent(object_id, attr_id, 768..1024),
-            value: ObjectValue::Extent(ExtentValue::new_raw(12345, VOLUME_DATA_KEY_ID)),
-            sequence: 4u64,
-        })
-        .expect("insert error");
-
-        let layer_set = tree.layer_set();
-        let mut merger = layer_set.merger();
-        let mut iter = merger.query(Query::FullScan).await?;
-        assert_eq!(iter.get().unwrap().key, &ObjectKey::extent(object_id, attr_id, 0..512));
-        assert_eq!(iter.get().unwrap().value, &ObjectValue::deleted_extent());
-        assert_eq!(iter.get().unwrap().sequence, 2u64);
-        iter.advance().await?;
-        assert_eq!(iter.get().unwrap().key, &ObjectKey::extent(object_id, attr_id, 512..768));
-        assert_eq!(
-            iter.get().unwrap().value,
-            &ObjectValue::Extent(ExtentValue::new_raw(512, VOLUME_DATA_KEY_ID))
-        );
-        assert_eq!(iter.get().unwrap().sequence, 1u64);
-        iter.advance().await?;
-        assert_eq!(iter.get().unwrap().key, &ObjectKey::extent(object_id, attr_id, 768..1024));
-        assert_eq!(
-            iter.get().unwrap().value,
-            &ObjectValue::Extent(ExtentValue::new_raw(12345, VOLUME_DATA_KEY_ID))
-        );
-        assert_eq!(iter.get().unwrap().sequence, 4u64);
-        iter.advance().await?;
-        assert_eq!(iter.get().unwrap().key, &ObjectKey::extent(object_id, attr_id, 1536..2048));
-        assert_eq!(
-            iter.get().unwrap().value,
-            &ObjectValue::Extent(ExtentValue::new_raw(1536, VOLUME_DATA_KEY_ID))
-        );
-        assert_eq!(iter.get().unwrap().sequence, 3u64);
-        iter.advance().await?;
-        assert!(iter.get().is_none());
-        Ok(())
     }
 
     #[fuchsia::test]

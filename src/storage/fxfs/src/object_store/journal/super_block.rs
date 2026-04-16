@@ -37,7 +37,7 @@ use crate::object_store::journal::writer::JournalWriter;
 use crate::object_store::journal::{BLOCK_SIZE, JournalCheckpoint, JournalCheckpointV32};
 use crate::object_store::object_record::{
     ObjectItem, ObjectItemV40, ObjectItemV41, ObjectItemV43, ObjectItemV46, ObjectItemV47,
-    ObjectItemV49, ObjectItemV50, ObjectItemV54,
+    ObjectItemV49, ObjectItemV50, ObjectItemV55,
 };
 use crate::object_store::transaction::{AssocObj, Options};
 use crate::object_store::tree::MajorCompactable;
@@ -221,20 +221,30 @@ impl<'de> Deserialize<'de> for UuidWrapper {
     }
 }
 
-pub type SuperBlockRecord = SuperBlockRecordV54;
+pub type SuperBlockRecord = SuperBlockRecordV55;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
-pub enum SuperBlockRecordV54 {
+pub enum SuperBlockRecordV55 {
     // When reading the super-block we know the initial extent, but not subsequent extents, so these
     // records need to exist to allow us to completely read the super-block.
     Extent(Range<u64>),
 
     // Following the super-block header are ObjectItem records that are to be replayed into the root
     // parent object store.
-    ObjectItem(ObjectItemV54),
+    ObjectItem(ObjectItemV55),
 
     // Marks the end of the full super-block.
+    End,
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Migrate, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(SuperBlockRecordV55)]
+#[migrate_nodefault]
+pub enum SuperBlockRecordV54 {
+    Extent(Range<u64>),
+    ObjectItem(crate::object_store::object_record::ObjectItemV54),
     End,
 }
 
@@ -340,19 +350,20 @@ async fn read(
 
     loop {
         // TODO: Flatten a layer and move reader here?
-        let (mutation, sequence) = match reader.next_item().await? {
+        let mutation = match reader.next_item().await? {
             // RecordReader should filter out extent records.
             SuperBlockRecord::Extent(_) => bail!("Unexpected extent record"),
-            SuperBlockRecord::ObjectItem(item) => {
-                (Mutation::insert_object(item.key, item.value), item.sequence)
-            }
+            SuperBlockRecord::ObjectItem(item) => Mutation::insert_object(item.key, item.value),
             SuperBlockRecord::End => break,
         };
         root_parent.apply_mutation(
             mutation,
             &ApplyContext {
                 mode: ApplyMode::Replay,
-                checkpoint: JournalCheckpoint { file_offset: sequence, ..Default::default() },
+                // A file offset of 0 is safe here because this is only used for the root parent
+                // store, which is completely reconstructed from the superblock at each mount,
+                // making the checkpoint offset irrelevant.
+                checkpoint: JournalCheckpoint { file_offset: 0, ..Default::default() },
             },
             AssocObj::None,
         )?;
@@ -1234,7 +1245,7 @@ mod tests {
 
         // It's possible that multiple super-blocks were written, so cater for that.
 
-        // The sequence numbers should be one apart.
+        // The generations should be one apart.
         assert_eq!(
             (super_block_header_b_after.generation as i64
                 - super_block_header_a_after.generation as i64)

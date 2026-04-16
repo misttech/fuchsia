@@ -382,13 +382,11 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         let mut merger = layer_set.merger();
 
         Ok(match merger.query(Query::Point(search_key)).await?.get() {
-            Some(ItemRef { key, value, sequence })
-                if key == search_key && *value != V::DELETED_MARKER =>
-            {
+            Some(ItemRef { key, value }) if key == search_key && *value != V::DELETED_MARKER => {
                 if let Some(token) = token {
                     token.complete(Some(value));
                 }
-                Some(Item { key: key.clone(), value: value.clone(), sequence })
+                Some(Item { key: key.clone(), value: value.clone() })
             }
             _ => None,
         })

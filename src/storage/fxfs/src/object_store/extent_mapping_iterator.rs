@@ -201,12 +201,8 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> LayerIterator<ObjectKey, ObjectVa
     fn get(&self) -> Option<ItemRef<'_, ObjectKey, ObjectValue>> {
         self.inner_iterator.get().map(|inner_item| match &self.state {
             MappingState::Passthrough => inner_item,
-            MappingState::Remap { value } => {
-                ItemRef { key: inner_item.key, value, sequence: inner_item.sequence }
-            }
-            MappingState::Split { key, value, .. } => {
-                ItemRef { key, value, sequence: inner_item.sequence }
-            }
+            MappingState::Remap { value } => ItemRef { key: inner_item.key, value },
+            MappingState::Split { key, value, .. } => ItemRef { key, value },
         })
     }
 }
@@ -294,7 +290,7 @@ mod tests {
                 None
             } else {
                 let (key, value) = &self.objects[self.index];
-                Some(ItemRef { key, value, sequence: 0 })
+                Some(ItemRef { key, value })
             }
         }
     }

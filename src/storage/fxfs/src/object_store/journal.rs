@@ -46,7 +46,7 @@ use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData, ObjectValue};
 use crate::object_store::transaction::{
     AllocatorMutation, LockKey, Mutation, MutationV40, MutationV41, MutationV43, MutationV46,
-    MutationV47, MutationV49, MutationV50, MutationV54, ObjectStoreMutation, Options,
+    MutationV47, MutationV49, MutationV50, MutationV54, MutationV55, ObjectStoreMutation, Options,
     TRANSACTION_MAX_JOURNAL_USAGE, Transaction, TxnMutation, lock_keys,
 };
 use crate::object_store::{
@@ -116,17 +116,17 @@ pub struct JournalCheckpointV32 {
     pub version: Version,
 }
 
-pub type JournalRecord = JournalRecordV54;
+pub type JournalRecord = JournalRecordV55;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum JournalRecordV54 {
-    /// Indicates no more records in this block.
+pub enum JournalRecordV55 {
     EndBlock,
-    /// Mutation for a particular object.  object_id here is for the collection i.e. the store or
-    /// allocator.
-    Mutation { object_id: u64, mutation: MutationV54 },
+    Mutation {
+        object_id: u64,
+        mutation: MutationV55,
+    },
     /// Commits records in the transaction.
     Commit,
     /// Discard all mutations with offsets greater than or equal to the given offset.
@@ -148,6 +148,19 @@ pub enum JournalRecordV54 {
     /// extents, we only check the checksums for a block if it has been written to for the first
     /// time since the last flush, because otherwise we can't roll it back anyway so it doesn't
     /// matter. For copy-on-write extents, the bool is always true.
+    DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(JournalRecordV55)]
+#[migrate_nodefault]
+pub enum JournalRecordV54 {
+    EndBlock,
+    Mutation { object_id: u64, mutation: MutationV54 },
+    Commit,
+    Discard(u64),
+    DidFlushDevice(u64),
     DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
 }
 
