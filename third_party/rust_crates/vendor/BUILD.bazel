@@ -1945,14 +1945,14 @@ alias(
 )
 
 alias(
-    name = "pin-project-1.1.10",
-    actual = "//third_party/rust_crates/vendor/pin-project-1.1.10:pin_project",
+    name = "pin-project-1.1.11",
+    actual = "//third_party/rust_crates/vendor/pin-project-1.1.11:pin_project",
     tags = ["manual"],
 )
 
 alias(
     name = "pin-project",
-    actual = "//third_party/rust_crates/vendor/pin-project-1.1.10:pin_project",
+    actual = "//third_party/rust_crates/vendor/pin-project-1.1.11:pin_project",
     tags = ["manual"],
 )
 

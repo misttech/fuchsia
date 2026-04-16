@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "futures-test",
-    package_url = "https://github.com/rust-lang/futures-rs",
-    package_version = "0.3.31",
+    package_name = "pin-project",
+    package_url = "https://github.com/taiki-e/pin-project",
+    package_version = "1.1.11",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "futures_test",
+    name = "pin_project",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -52,21 +52,17 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = [
-        "default",
-        "std",
-    ],
     crate_root = "src/lib.rs",
-    edition = "2018",
+    edition = "2021",
     proc_macro_deps = [
-        "//third_party/rust_crates/vendor/futures-macro-0.3.31:futures_macro",
+        "//third_party/rust_crates/vendor/pin-project-internal-1.1.11:pin_project_internal",
     ],
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=futures-test",
+        "crate-name=pin-project",
         "manual",
         "noclippy",
         "norustfmt",
@@ -79,14 +75,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.3.31",
-    deps = [
-        "//third_party/rust_crates/vendor/futures-core-0.3.31:futures_core",
-        "//third_party/rust_crates/vendor/futures-executor-0.3.31:futures_executor",
-        "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
-        "//third_party/rust_crates/vendor/futures-sink-0.3.31:futures_sink",
-        "//third_party/rust_crates/vendor/futures-task-0.3.31:futures_task",
-        "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
-        "//third_party/rust_crates/vendor/pin-project-1.1.11:pin_project",
-    ],
+    version = "1.1.11",
 )
