@@ -17,9 +17,11 @@ use linux_uapi::{
     bpf_func_id_BPF_FUNC_probe_read_user, bpf_func_id_BPF_FUNC_probe_read_user_str,
     bpf_func_id_BPF_FUNC_ringbuf_discard, bpf_func_id_BPF_FUNC_ringbuf_reserve,
     bpf_func_id_BPF_FUNC_ringbuf_submit, bpf_func_id_BPF_FUNC_set_retval,
-    bpf_func_id_BPF_FUNC_sk_fullsock, bpf_func_id_BPF_FUNC_sk_storage_get,
-    bpf_func_id_BPF_FUNC_skb_load_bytes, bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
-    bpf_func_id_BPF_FUNC_trace_printk, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, gid_t, pid_t, uid_t,
+    bpf_func_id_BPF_FUNC_sk_fullsock, bpf_func_id_BPF_FUNC_sk_lookup_tcp,
+    bpf_func_id_BPF_FUNC_sk_lookup_udp, bpf_func_id_BPF_FUNC_sk_release,
+    bpf_func_id_BPF_FUNC_sk_storage_get, bpf_func_id_BPF_FUNC_skb_load_bytes,
+    bpf_func_id_BPF_FUNC_skb_load_bytes_relative, bpf_func_id_BPF_FUNC_trace_printk,
+    bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, gid_t, pid_t, uid_t,
 };
 use smallvec::SmallVec;
 use std::slice;
@@ -607,6 +609,42 @@ fn bpf_get_retval<C: ReturnValueProgramContext>(
     C::get_retval(context).into()
 }
 
+fn bpf_sk_lookup_tcp<C: EbpfProgramContext>(
+    _context: &mut C::RunContext<'_>,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+) -> BpfValue {
+    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_sk_lookup_tcp");
+    0.into()
+}
+
+fn bpf_sk_lookup_udp<C: EbpfProgramContext>(
+    _context: &mut C::RunContext<'_>,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+) -> BpfValue {
+    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_sk_lookup_udp");
+    0.into()
+}
+
+fn bpf_sk_release<C: EbpfProgramContext>(
+    _context: &mut C::RunContext<'_>,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+) -> BpfValue {
+    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_sk_release");
+    0.into()
+}
+
 fn get_common_helpers<C: MapsProgramContext>() -> impl Iterator<Item = (u32, EbpfHelperImpl<C>)> {
     [
         (bpf_func_id_BPF_FUNC_ktime_get_boot_ns, EbpfHelperImpl(bpf_ktime_get_boot_ns)),
@@ -649,6 +687,9 @@ pub trait CgroupSockProgramContext:
         [
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
             (bpf_func_id_BPF_FUNC_sk_storage_get, EbpfHelperImpl(bpf_sk_storage_get)),
+            (bpf_func_id_BPF_FUNC_sk_lookup_tcp, EbpfHelperImpl(bpf_sk_lookup_tcp)),
+            (bpf_func_id_BPF_FUNC_sk_lookup_udp, EbpfHelperImpl(bpf_sk_lookup_udp)),
+            (bpf_func_id_BPF_FUNC_sk_release, EbpfHelperImpl(bpf_sk_release)),
         ]
         .into_iter()
         .chain(get_common_helpers())
@@ -669,6 +710,9 @@ pub trait CgroupSockAddrProgramContext:
         [
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
             (bpf_func_id_BPF_FUNC_sk_storage_get, EbpfHelperImpl(bpf_sk_storage_get)),
+            (bpf_func_id_BPF_FUNC_sk_lookup_tcp, EbpfHelperImpl(bpf_sk_lookup_tcp)),
+            (bpf_func_id_BPF_FUNC_sk_lookup_udp, EbpfHelperImpl(bpf_sk_lookup_udp)),
+            (bpf_func_id_BPF_FUNC_sk_release, EbpfHelperImpl(bpf_sk_release)),
         ]
         .into_iter()
         .chain(get_common_helpers())
@@ -687,6 +731,9 @@ pub trait CgroupSockOptProgramContext:
             (bpf_func_id_BPF_FUNC_set_retval, EbpfHelperImpl(bpf_set_retval)),
             (bpf_func_id_BPF_FUNC_get_retval, EbpfHelperImpl(bpf_get_retval)),
             (bpf_func_id_BPF_FUNC_sk_storage_get, EbpfHelperImpl(bpf_sk_storage_get)),
+            (bpf_func_id_BPF_FUNC_sk_lookup_tcp, EbpfHelperImpl(bpf_sk_lookup_tcp)),
+            (bpf_func_id_BPF_FUNC_sk_lookup_udp, EbpfHelperImpl(bpf_sk_lookup_udp)),
+            (bpf_func_id_BPF_FUNC_sk_release, EbpfHelperImpl(bpf_sk_release)),
         ]
         .into_iter()
         .chain(get_common_helpers())
@@ -707,6 +754,7 @@ pub trait SocketFilterProgramContext:
         vec![
             (bpf_func_id_BPF_FUNC_get_socket_uid, EbpfHelperImpl(bpf_get_socket_uid)),
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
+            (bpf_func_id_BPF_FUNC_skb_load_bytes, EbpfHelperImpl(bpf_skb_load_bytes)),
             (
                 bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
                 EbpfHelperImpl(bpf_skb_load_bytes_relative),
@@ -737,6 +785,9 @@ pub trait CgroupSkbProgramContext:
                 EbpfHelperImpl(bpf_skb_load_bytes_relative),
             ),
             (bpf_func_id_BPF_FUNC_sk_storage_get, EbpfHelperImpl(bpf_sk_storage_get)),
+            (bpf_func_id_BPF_FUNC_sk_lookup_tcp, EbpfHelperImpl(bpf_sk_lookup_tcp)),
+            (bpf_func_id_BPF_FUNC_sk_lookup_udp, EbpfHelperImpl(bpf_sk_lookup_udp)),
+            (bpf_func_id_BPF_FUNC_sk_release, EbpfHelperImpl(bpf_sk_release)),
             (bpf_func_id_BPF_FUNC_sk_fullsock, EbpfHelperImpl(bpf_sk_fullsock)),
         ]
         .into_iter()

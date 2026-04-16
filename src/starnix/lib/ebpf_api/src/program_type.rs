@@ -48,8 +48,10 @@ use linux_uapi::{
     bpf_func_id_BPF_FUNC_redirect, bpf_func_id_BPF_FUNC_ringbuf_discard,
     bpf_func_id_BPF_FUNC_ringbuf_reserve, bpf_func_id_BPF_FUNC_ringbuf_submit,
     bpf_func_id_BPF_FUNC_set_retval, bpf_func_id_BPF_FUNC_sk_fullsock,
-    bpf_func_id_BPF_FUNC_sk_storage_get, bpf_func_id_BPF_FUNC_skb_adjust_room,
-    bpf_func_id_BPF_FUNC_skb_change_head, bpf_func_id_BPF_FUNC_skb_change_proto,
+    bpf_func_id_BPF_FUNC_sk_lookup_tcp, bpf_func_id_BPF_FUNC_sk_lookup_udp,
+    bpf_func_id_BPF_FUNC_sk_release, bpf_func_id_BPF_FUNC_sk_storage_get,
+    bpf_func_id_BPF_FUNC_skb_adjust_room, bpf_func_id_BPF_FUNC_skb_change_head,
+    bpf_func_id_BPF_FUNC_skb_change_proto, bpf_func_id_BPF_FUNC_skb_load_bytes,
     bpf_func_id_BPF_FUNC_skb_load_bytes_relative, bpf_func_id_BPF_FUNC_skb_pull_data,
     bpf_func_id_BPF_FUNC_skb_store_bytes, bpf_func_id_BPF_FUNC_trace_printk,
     bpf_prog_type_BPF_PROG_TYPE_CGROUP_DEVICE, bpf_prog_type_BPF_PROG_TYPE_CGROUP_SKB,
@@ -540,6 +542,33 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                 ]
                 .into(),
                 EbpfHelperDefinition {
+                    index: bpf_func_id_BPF_FUNC_skb_load_bytes,
+                    name: "skb_load_bytes",
+                    signature: FunctionSignature {
+                        args: vec![
+                            Type::StructParameter { id: SK_BUF_ID.clone() },
+                            Type::ScalarValueParameter,
+                            Type::MemoryParameter {
+                                size: MemoryParameterSize::Reference { index: 3 },
+                                input: false,
+                                output: true,
+                            },
+                            Type::ScalarValueParameter,
+                        ],
+                        return_value: Type::UNKNOWN_SCALAR,
+                        invalidate_array_bounds: false,
+                    },
+                },
+            ),
+            (
+                vec![
+                    ProgramType::CgroupSkb,
+                    ProgramType::SchedAct,
+                    ProgramType::SchedCls,
+                    ProgramType::SocketFilter,
+                ]
+                .into(),
+                EbpfHelperDefinition {
                     index: bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
                     name: "skb_load_bytes_relative",
                     signature: FunctionSignature {
@@ -665,6 +694,92 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     name: "get_retval",
                     signature: FunctionSignature {
                         args: vec![],
+                        return_value: Type::UNKNOWN_SCALAR,
+                        invalidate_array_bounds: false,
+                    },
+                },
+            ),
+            (
+                // Note that bpf_sk_lookup_tcp should also be available to CgroupAddr and Xdp
+                // programs, but those use different type for the first context parameter.
+                vec![
+                    ProgramType::CgroupSkb,
+                    ProgramType::SchedAct,
+                    ProgramType::SchedCls,
+                    ProgramType::SkSkb,
+                ]
+                .into(),
+                EbpfHelperDefinition {
+                    index: bpf_func_id_BPF_FUNC_sk_lookup_tcp,
+                    name: "sk_lookup_tcp",
+                    signature: FunctionSignature {
+                        args: vec![
+                            Type::StructParameter { id: SK_BUF_ID.clone() },
+                            Type::MemoryParameter {
+                                size: MemoryParameterSize::Reference { index: 2 },
+                                input: true,
+                                output: false,
+                            },
+                            Type::ScalarValueParameter,
+                            Type::ScalarValueParameter,
+                            Type::ScalarValueParameter,
+                        ],
+                        return_value: Type::NullOrParameter(Box::new(Type::ReleasableParameter {
+                            id: RELEASABLE_BPF_SOCK_PTR.clone(),
+                            inner: Box::new(BPF_SOCK_TYPE.clone()),
+                        })),
+                        invalidate_array_bounds: false,
+                    },
+                },
+            ),
+            (
+                // Note that bpf_sk_lookup_udp should also be available to CgroupAddr and Xdp
+                // programs, but those use different type for the first context parameter.
+                vec![
+                    ProgramType::CgroupSkb,
+                    ProgramType::SchedAct,
+                    ProgramType::SchedCls,
+                    ProgramType::SkSkb,
+                ]
+                .into(),
+                EbpfHelperDefinition {
+                    index: bpf_func_id_BPF_FUNC_sk_lookup_udp,
+                    name: "sk_lookup_udp",
+                    signature: FunctionSignature {
+                        args: vec![
+                            Type::StructParameter { id: SK_BUF_ID.clone() },
+                            Type::MemoryParameter {
+                                size: MemoryParameterSize::Reference { index: 2 },
+                                input: true,
+                                output: false,
+                            },
+                            Type::ScalarValueParameter,
+                            Type::ScalarValueParameter,
+                            Type::ScalarValueParameter,
+                        ],
+                        return_value: Type::NullOrParameter(Box::new(Type::ReleasableParameter {
+                            id: RELEASABLE_BPF_SOCK_PTR.clone(),
+                            inner: Box::new(BPF_SOCK_TYPE.clone()),
+                        })),
+                        invalidate_array_bounds: false,
+                    },
+                },
+            ),
+            (
+                vec![
+                    ProgramType::CgroupSkb,
+                    ProgramType::CgroupSockAddr,
+                    ProgramType::SchedAct,
+                    ProgramType::SchedCls,
+                    ProgramType::SkSkb,
+                    ProgramType::Xdp,
+                ]
+                .into(),
+                EbpfHelperDefinition {
+                    index: bpf_func_id_BPF_FUNC_sk_release,
+                    name: "sk_release",
+                    signature: FunctionSignature {
+                        args: vec![Type::ReleaseParameter { id: RELEASABLE_BPF_SOCK_PTR.clone() }],
                         return_value: Type::UNKNOWN_SCALAR,
                         invalidate_array_bounds: false,
                     },
@@ -820,6 +935,10 @@ fn ptr_to_mem_type<T: IntoBytes>(id: MemoryId) -> Type {
 }
 
 static RING_BUFFER_RESERVATION: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+
+// Id for the value returned from `bpf_sk_lookup_xxx` helpers. It has to be
+// released by calling `bpf_sk_release`.
+static RELEASABLE_BPF_SOCK_PTR: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
 
 pub static SK_BUF_ID: MemoryId = StructId::SkBuff.as_memory_id();
 
