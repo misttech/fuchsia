@@ -62,13 +62,11 @@ pub(super) fn evaluate_constraint(
     source: &SecurityContext,
     target: &SecurityContext,
 ) -> Result<bool, ConstraintError> {
-    let nodes = constraint_expr
-        .constraint_terms()
-        .iter()
-        .map(|term| ConstraintNode::try_from_constraint_term(term, source, target))
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut stack = Vec::new();
-    for node in nodes {
+    let terms = constraint_expr.constraint_terms();
+    // The stack depth is at most the number of terms.
+    let mut stack = Vec::with_capacity(terms.len());
+    for term in terms {
+        let node = ConstraintNode::try_from_constraint_term(term, source, target)?;
         match node {
             ConstraintNode::Leaf(expr) => stack.push(expr.evaluate()?),
             ConstraintNode::Branch(op) => match op {
