@@ -16,13 +16,9 @@ const MAX_THREADS: u64 = 100_000;
 
 /// The distance in bytes between thread RSEQ slots.
 ///
-/// We use a 256-byte stride to limit the density of slots per OS memory page (4096 bytes).
-/// This ensures a maximum of 16 threads reside on the same physical page, sidestepping a Thundering
-/// Herd race condition in the Zircon kernel (`PageMap::MakeAccessor`) where concurrent
-/// memory pinning trips a strict per-page reference cap of 31.
-///
-/// See https://fxbug.dev/502706191
-const SLOT_STRIDE: u64 = 256;
+/// We use a 64 byte stride to avoid contention over cache lines. On some processors, we might need
+/// to increase this value to 128.
+const SLOT_STRIDE: u64 = 64;
 static_assertions::const_assert!(SLOT_STRIDE as usize >= mem::size_of::<zx_rseq_t>());
 
 /// Represents a unique memory location within the global RSEQ VMO assigned to a thread.
