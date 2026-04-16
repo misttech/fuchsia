@@ -34,7 +34,6 @@ use log::{debug, error, warn};
 use moniker::{ChildName, Moniker};
 use routing::{DictExt, WithPorcelain};
 use runtime_capabilities::{Capability, DirConnector, Router, RouterResponse};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
@@ -481,11 +480,9 @@ impl StorageAdmin {
             |directory: &ffs_dir::DirEntry, _contents: Option<&Vec<ffs_dir::DirEntry>>| {
                 directory.kind == DirentType::Directory
             },
-            |directory: &ffs_dir::DirEntry| match Self::is_storage_dir(PathBuf::from(
-                directory.name.clone(),
-            )) {
-                (DirType::ComponentStorage, ..) | (DirType::Unknown, ..) => false,
-                (DirType::Component, ..) | (DirType::Children, ..) => true,
+            |directory: &ffs_dir::DirEntry| match Self::is_storage_dir(&directory.name) {
+                DirType::ComponentStorage | DirType::Unknown => false,
+                DirType::Component | DirType::Children => true,
             },
         );
 
@@ -495,12 +492,10 @@ impl StorageAdmin {
                 continue;
             }
 
-            let path = PathBuf::from(entry.name.clone());
-
             // For any contents which are directories, see if it is a storage directory
-            match Self::is_storage_dir(path) {
+            match Self::is_storage_dir(&entry.name) {
                 // Open the storage directory and then create a task to delete
-                (DirType::ComponentStorage, ..) => {
+                DirType::ComponentStorage => {
                     match ffs_dir::open_directory(
                         root_storage,
                         entry.name.as_str(),
@@ -518,7 +513,7 @@ impl StorageAdmin {
                         }
                     }
                 }
-                (DirType::Component, ..) | (DirType::Children, ..) | (DirType::Unknown, ..) => {
+                DirType::Component | DirType::Children | DirType::Unknown => {
                     // nothing to do for these types
                 }
             }
@@ -617,34 +612,24 @@ impl StorageAdmin {
     ///   "children".
     /// * The implementation has a logical error when it finds a
     ///   DirType::ComponentStoragePath, but continues to analyze subpaths.
-    fn is_storage_dir(path: PathBuf) -> (DirType, PathBuf, PathBuf) {
+    fn is_storage_dir(path_str: &str) -> DirType {
         let child_name = "children";
         let data_name = "data";
 
         // Set the initial state to "unknown", which is sort of true
         let mut prev_segment = DirType::Unknown;
-        let mut path_iter = path.iter();
-        let mut processed_path = PathBuf::new();
+        let path = std::path::Path::new(path_str);
 
-        while let Some(segment) = path_iter.next() {
-            processed_path.push(segment);
-
+        for segment in path.iter() {
             match prev_segment {
-                // Only for top-level directories do we consider this might be
-                // a hex-named, storage ID-based directory.
                 DirType::Unknown => {
-                    let segment = {
-                        if let Some(segment) = segment.to_str() {
-                            segment
-                        } else {
-                            // the conversion failed
-                            prev_segment = DirType::Unknown;
-                            break;
-                        }
+                    let Some(segment_str) = segment.to_str() else {
+                        // the conversion failed
+                        return DirType::Unknown;
                     };
 
-                    // check the string length is 64 and the characters are hex
-                    if segment.len() == 64 && segment.chars().all(|c| c.is_ascii_hexdigit()) {
+                    if segment_str.len() == 64 && segment_str.chars().all(|c| c.is_ascii_hexdigit())
+                    {
                         prev_segment = DirType::ComponentStorage;
                         break;
                     }
@@ -659,11 +644,9 @@ impl StorageAdmin {
                     if segment == child_name {
                         prev_segment = DirType::Children;
                     } else if segment == data_name {
-                        prev_segment = DirType::ComponentStorage;
-                        break;
+                        return DirType::ComponentStorage;
                     } else {
-                        prev_segment = DirType::Unknown;
-                        break;
+                        return DirType::Unknown;
                     }
                 }
                 // After a child segment, the next directory must be a parent
@@ -677,24 +660,11 @@ impl StorageAdmin {
                     error!(
                         "Function logic error: unexpected value \"ComponentStorage\" for DirType"
                     );
-                    return (DirType::Unknown, PathBuf::new(), PathBuf::new());
+                    return DirType::Unknown;
                 }
             }
         }
-
-        // If we arrive here we either
-        // * processed the whole apth
-        // * found a component storage directory
-        // * encountered an unexpected structure
-        // * weren't able to convert a path segment to unicode text
-        // Collect any remaining path segments and return them along with the variant of the last
-        // processed path segment
-        let unprocessed_path = {
-            let mut remaining = PathBuf::new();
-            path_iter.for_each(|path_part| remaining.push(path_part));
-            remaining
-        };
-        (prev_segment, processed_path, unprocessed_path)
+        prev_segment
     }
 
     async fn serve_storage_iterator(
@@ -709,7 +679,7 @@ impl StorageAdmin {
         // subtree that has access to the storage is found, rather than checking every single
         // instance's storage uses as done here.
         while let Some(component) = components_to_visit.pop() {
-            let (namespace, storage_uses, children) = {
+            let (namespace, storage_uses) = {
                 let component_state = match component.lock_resolved_state().await {
                     Ok(state) => state,
                     // A component will not have resolved state if it has already been destroyed. In
@@ -722,7 +692,9 @@ impl StorageAdmin {
                         continue;
                     }
                 };
+
                 let namespace = component_state.sandbox.program_input.namespace().clone();
+
                 let storage_uses: Vec<_> = component_state
                     .decl()
                     .uses
@@ -732,8 +704,9 @@ impl StorageAdmin {
                         _ => None,
                     })
                     .collect();
-                let children: Vec<_> = component_state.children().map(|(_, v)| v.clone()).collect();
-                (namespace, storage_uses, children)
+
+                components_to_visit.extend(component_state.children().map(|(_, v)| v.clone()));
+                (namespace, storage_uses)
             };
 
             for use_storage in storage_uses {
@@ -759,9 +732,6 @@ impl StorageAdmin {
                     storage_users.push(moniker);
                     break;
                 }
-            }
-            for child in children {
-                components_to_visit.push(child);
             }
         }
 
@@ -826,8 +796,9 @@ mod tests {
         let data_path = PathBuf::from(path);
         let path_remainder = PathBuf::from(remainder);
         let full_path = data_path.join(&path_remainder);
+        let str_path = full_path.to_str().unwrap();
 
-        assert_eq!(StorageAdmin::is_storage_dir(full_path), (r#type, data_path, path_remainder));
+        assert_eq!(StorageAdmin::is_storage_dir(str_path), r#type);
     }
 
     async fn create_file(directory: &fio::DirectoryProxy, file_name: &str, contents: &str) {

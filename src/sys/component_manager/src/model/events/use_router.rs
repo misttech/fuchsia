@@ -6,6 +6,7 @@ use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::events::hook_observer::HookObserver;
 use crate::model::events::{forward_capability_requested_events, names_from_filter};
 use async_trait::async_trait;
+use cm_rust::FidlIntoNative;
 use cm_types::Name;
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_component as fcomponent;
@@ -193,7 +194,6 @@ impl EventStreamUseReceiver {
                 };
                 let (_hook, capability_requested_receiver_lock) = resolved_state
                     .capability_requested_receivers
-                    .clone()
                     .get(&names)
                     .expect("missing capability requested receiver")
                     .clone();
@@ -209,13 +209,23 @@ impl EventStreamUseReceiver {
                     capability_requested_receiver_lock,
                 ));
             } else {
+                let native_scope =
+                    route_metadata.scope.as_ref().map(|s| s.clone().fidl_into_native().into_vec());
+
+                let parsed_scope_moniker = route_metadata
+                    .scope_moniker
+                    .as_ref()
+                    .map(|s| s.parse().expect("valid moniker"))
+                    .unwrap_or(ExtendedMoniker::ComponentManager);
+
                 let hook_observer = Arc::new(HookObserver {
                     event_type,
                     subscriber: target_component.moniker.clone(),
-                    route_metadata,
                     sender: mpsc_sender.clone(),
                     weak_scope: target_component.execution_scope.as_weak(),
                     filter: filter.clone(),
+                    native_scope,
+                    parsed_scope_moniker,
                 });
                 target_component.hooks.install(hook_observer.hooks());
                 hooks.push(hook_observer);

@@ -559,13 +559,24 @@ impl ResolvedInstanceState {
             };
             let (sender, receiver) = futures::channel::mpsc::unbounded();
             let receiver = Arc::new(futures::lock::Mutex::new(receiver));
+
+            let native_scope =
+                route_metadata.scope.as_ref().map(|s| s.clone().fidl_into_native().into_vec());
+
+            let parsed_scope_moniker = route_metadata
+                .scope_moniker
+                .as_ref()
+                .map(|s| s.parse().expect("valid moniker"))
+                .unwrap_or(ExtendedMoniker::ComponentManager);
+
             let capability_requested_hook = Arc::new(HookObserver {
                 event_type: EventType::CapabilityRequested,
                 subscriber: component.moniker.clone(),
-                route_metadata,
                 sender,
                 weak_scope: component.execution_scope.as_weak(),
                 filter: use_event_stream_decl.filter.clone(),
+                native_scope,
+                parsed_scope_moniker,
             });
             component.hooks.install(capability_requested_hook.hooks());
             capability_requested_receivers.insert(names, (capability_requested_hook, receiver));

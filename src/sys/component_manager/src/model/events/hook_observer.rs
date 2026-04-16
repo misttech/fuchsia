@@ -5,17 +5,17 @@
 use crate::model::events::names_from_filter;
 use ::routing::bedrock::sandbox_construction::EventStreamFilter;
 use async_trait::async_trait;
-use cm_rust::{EventScope, FidlIntoNative};
+use cm_rust::EventScope;
 use cm_types::Name;
 use errors::ModelError;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_component as fcomponent;
 use futures::channel::mpsc;
 use hooks::{Event, EventPayload, EventType, HasEventType, Hook, HooksRegistration, TransferEvent};
 use moniker::{ExtendedMoniker, Moniker};
 use std::sync::{Arc, Weak};
 use vfs::WeakExecutionScope;
 use zx::HandleBased;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_internal as finternal};
 
 /// A HookObserver will register itself to receive hooks (through which events are dispatched), and
 /// watch the stream of events. When it discovers an event that matches the scope described in the
@@ -24,10 +24,11 @@ use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_internal as fi
 pub struct HookObserver {
     pub event_type: EventType,
     pub subscriber: Moniker,
-    pub route_metadata: finternal::EventStreamRouteMetadata,
     pub sender: mpsc::UnboundedSender<fcomponent::Event>,
     pub weak_scope: WeakExecutionScope,
     pub filter: EventStreamFilter,
+    pub native_scope: Option<Vec<cm_rust::EventScope>>,
+    pub parsed_scope_moniker: ExtendedMoniker,
 }
 
 impl HookObserver {
@@ -62,8 +63,8 @@ impl HookObserver {
     fn is_in_scope(&self, event: &Event) -> bool {
         scope_down_moniker(
             &event.target_moniker,
-            &self.route_metadata.scope_moniker.as_ref().map(|s| s.to_string()),
-            &self.route_metadata.scope.clone().map(|s| s.fidl_into_native().to_vec()),
+            &self.parsed_scope_moniker,
+            self.native_scope.as_deref(),
         )
         .is_some()
     }
@@ -90,8 +91,8 @@ impl HookObserver {
     fn convert_event_to_fidl(&self, event: Event) -> Option<fcomponent::Event> {
         let smaller_moniker = scope_down_moniker(
             &event.target_moniker,
-            &self.route_metadata.scope_moniker.as_ref().map(|s| s.to_string()),
-            &self.route_metadata.scope.clone().map(|s| s.fidl_into_native().to_vec()),
+            &self.parsed_scope_moniker,
+            self.native_scope.as_deref(),
         )
         // TODO: Capability requested event scope checking is weird, and probably broken,
         // because we ignore the scope and only check the subscriber. Because of this, we can end
@@ -203,46 +204,41 @@ impl Hook for HookObserver {
 /// scope.
 fn scope_down_moniker(
     event_moniker: &ExtendedMoniker,
-    scope_moniker: &Option<String>,
-    scope: &Option<Vec<EventScope>>,
+    scope_moniker: &ExtendedMoniker,
+    scope: Option<&[EventScope]>,
 ) -> Option<String> {
-    let scope_moniker = scope_moniker
-        .as_ref()
-        .map(|s| s.parse().expect("component manager is the only thing that can set this field, so we can trust that any value stored here is valid"))
-        .unwrap_or(ExtendedMoniker::ComponentManager);
-    if scope.is_none() || scope_moniker == ExtendedMoniker::ComponentManager {
+    if scope.is_none() || *scope_moniker == ExtendedMoniker::ComponentManager {
         // If we have no scope, or we're scoped to the root, then we don't need to reduce anything
         return Some(event_moniker.to_string());
     }
-    let ExtendedMoniker::ComponentInstance(scope_moniker) = scope_moniker else {
+
+    let ExtendedMoniker::ComponentInstance(scope_moniker_instance) = scope_moniker else {
         unreachable!();
     };
-    let ExtendedMoniker::ComponentInstance(event_moniker) = event_moniker else {
+    let ExtendedMoniker::ComponentInstance(event_moniker_instance) = event_moniker else {
         panic!("component manager can't emit events");
     };
-    for scope in scope.as_ref().unwrap() {
-        let smaller_moniker = match scope {
+
+    for s in scope.unwrap() {
+        let smaller_moniker = match s {
             EventScope::Child(child_ref) => {
-                let child_scope_moniker = scope_moniker.child(child_ref.clone().into());
-                if event_moniker.has_prefix(&child_scope_moniker) {
-                    Some(event_moniker.strip_prefix(&child_scope_moniker).unwrap())
+                let child_scope_moniker = scope_moniker_instance.child(child_ref.clone().into());
+                if event_moniker_instance.has_prefix(&child_scope_moniker) {
+                    Some(event_moniker_instance.strip_prefix(&child_scope_moniker).unwrap())
                 } else {
                     None
                 }
             }
             EventScope::Collection(collection_name) => {
-                if event_moniker.path().len() > scope_moniker.path().len()
-                    && event_moniker.has_prefix(&scope_moniker)
-                    && event_moniker.path()[scope_moniker.path().len()].collection()
+                if event_moniker_instance.path().len() > scope_moniker_instance.path().len()
+                    && event_moniker_instance.has_prefix(&scope_moniker_instance)
+                    && event_moniker_instance.path()[scope_moniker_instance.path().len()]
+                        .collection()
                         == Some(collection_name)
                 {
-                    let child_names = event_moniker
-                        .path()
-                        .iter()
-                        .skip(scope_moniker.path().len() + 1)
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    Some(Moniker::new_from_borrowed(&child_names))
+                    let start_idx = scope_moniker_instance.path().len() + 1;
+                    let child_names_slice = &event_moniker_instance.path()[start_idx..];
+                    Some(Moniker::new_from_borrowed(child_names_slice))
                 } else {
                     None
                 }
@@ -410,17 +406,19 @@ pub mod tests {
                 Some("d"),
             ),
         ]
-        .iter()
+        .into_iter()
         .enumerate()
         {
+            let parsed_event_moniker: ExtendedMoniker = event_moniker.parse().unwrap();
+
+            let parsed_scope_moniker: ExtendedMoniker = scope_moniker
+                .map(|s| s.parse().unwrap())
+                .unwrap_or(ExtendedMoniker::ComponentManager);
+
             assert_eq!(
-                scope_down_moniker(
-                    &event_moniker.parse().unwrap(),
-                    &scope_moniker.map(|s: &'static str| s.to_string()),
-                    &scope,
-                ),
+                scope_down_moniker(&parsed_event_moniker, &parsed_scope_moniker, scope.as_deref(),),
                 expected_output.map(|s: &'static str| s.to_string()),
-                "test case {i} failed"
+                "test case {i} failed for event: {event_moniker}"
             );
         }
     }
