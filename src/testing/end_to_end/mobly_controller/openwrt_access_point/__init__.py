@@ -57,6 +57,7 @@ def destroy(objects: List["OpenWrtAP"]) -> None:
     for ap in objects:
         ap.stop_wifi()
         ap.reset_wifi_config()
+        ap.dhcp.reset_dhcp_config()
         ap.ssh.close()
 
 
@@ -91,6 +92,7 @@ class OpenWrtAP:
         self.ssh_settings = settings.from_config(c.get(dict, "ssh_config"))
         self.ssh = connection.SshConnection(self.ssh_settings)
         self.dhcp = DhcpController(self.ssh)
+        self.dhcp.reset_dhcp_config()
         self.reset_wifi_config()
 
     def _clear_all_bss(self) -> None:
