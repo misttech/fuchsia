@@ -1426,11 +1426,11 @@ group("pin-project-1.1.11") {
 }
 
 group("pin-project-lite") {
-  public_deps = [ ":pin-project-lite-v0_2_16" ]
+  public_deps = [ ":pin-project-lite-v0_2_17" ]
 }
 
-group("pin-project-lite-0.2.16") {
-  public_deps = [ ":pin-project-lite-v0_2_16" ]
+group("pin-project-lite-0.2.17") {
+  public_deps = [ ":pin-project-lite-v0_2_17" ]
 }
 
 group("pin-weak") {
@@ -2524,6 +2524,10 @@ group("which-4.0.2") {
 }
 
 group("winnow") {
+  public_deps = [ ":winnow-v0_7_13" ]
+}
+
+group("winnow-0.7.13") {
   public_deps = [ ":winnow-v0_7_13" ]
 }
 
@@ -3655,7 +3659,7 @@ rustc_library("async-lock-v3_4_2") {
   deps = []
   deps += [ ":event-listener-strategy-v0_5_4" ]
   deps += [ ":event-listener-v5_4_1" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
 
   rustenv = []
 
@@ -3732,7 +3736,7 @@ rustc_library("async-stream-v0_3_6") {
   deps = []
   deps += [ ":async-stream-impl-v0_3_6($host_toolchain)" ]
   deps += [ ":futures-core-v0_3_31" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
 
   rustenv = []
 
@@ -8059,7 +8063,7 @@ rustc_library("event-listener-v5_4_1") {
 
   deps = []
   deps += [ ":concurrent-queue-v2_5_0" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
   if (!(current_cpu == "wasm32")) {
     deps += [ ":parking-v2_2_1" ]
   }
@@ -8099,7 +8103,7 @@ rustc_library("event-listener-strategy-v0_5_4") {
 
   deps = []
   deps += [ ":event-listener-v5_4_1" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
 
   rustenv = []
 
@@ -8972,7 +8976,7 @@ rustc_library("futures-lite-v1_11_3") {
   deps += [ ":futures-core-v0_3_31" ]
   deps += [ ":futures-io-v0_3_31" ]
   deps += [ ":parking-v2_2_1" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":waker-fn-v1_2_0" ]
 
   rustenv = []
@@ -9018,7 +9022,7 @@ rustc_library("futures-lite-v2_6_1") {
   deps += [ ":futures-core-v0_3_31" ]
   deps += [ ":futures-io-v0_3_31" ]
   deps += [ ":parking-v2_2_1" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
 
   rustenv = []
 
@@ -9216,7 +9220,7 @@ rustc_library("futures-util-v0_3_31") {
   deps += [ ":futures-macro-v0_3_31($host_toolchain)" ]
   deps += [ ":futures-sink-v0_3_31" ]
   deps += [ ":futures-task-v0_3_31" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":pin-utils-v0_1_0" ]
   deps += [ ":slab-v0_4_11" ]
 
@@ -10139,7 +10143,7 @@ rustc_library("http-body-v0_4_4") {
   deps = []
   deps += [ ":bytes-v1_11_1" ]
   deps += [ ":http-v0_2_4" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
 
   rustenv = []
 
@@ -10279,7 +10283,7 @@ rustc_library("hyper-v0_14_19") {
   deps += [ ":httparse-v1_9_4" ]
   deps += [ ":httpdate-v1_0_3" ]
   deps += [ ":itoa-v1_0_17" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":tokio-v1_38_1" ]
   deps += [ ":tower-service-v0_3_3" ]
   deps += [ ":tracing-v0_1_41" ]
@@ -14346,19 +14350,19 @@ rustc_macro("pin-project-internal-v1_1_11") {
   applicable_licenses = [ ":pin-project-internal-v1_1_11.license" ]
 }
 
-license("pin-project-lite-v0_2_16.license") {
+license("pin-project-lite-v0_2_17.license") {
   public_package_name = "pin_project_lite"
   license_files = [
-    "//third_party/rust_crates/vendor/pin-project-lite-0.2.16/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/pin-project-lite-0.2.16/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/pin-project-lite-0.2.17/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pin-project-lite-0.2.17/LICENSE-MIT",
   ]
 }
 
-rustc_library("pin-project-lite-v0_2_16") {
+rustc_library("pin-project-lite-v0_2_17") {
   crate_name = "pin_project_lite"
   source_root =
-      "//third_party/rust_crates/vendor/pin-project-lite-0.2.16/src/lib.rs"
-  output_name = "pin_project_lite-7f22ce4180cdb804"
+      "//third_party/rust_crates/vendor/pin-project-lite-0.2.17/src/lib.rs"
+  output_name = "pin_project_lite-3e9f93f6ec785552"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -14370,13 +14374,13 @@ rustc_library("pin-project-lite-v0_2_16") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7f22ce4180cdb804",
-    "-Cextra-filename=-7f22ce4180cdb804",
+    "-Cmetadata=3e9f93f6ec785552",
+    "-Cextra-filename=-3e9f93f6ec785552",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pin-project-lite-v0_2_16.license" ]
+  applicable_licenses = [ ":pin-project-lite-v0_2_17.license" ]
 }
 
 license("pin-utils-v0_1_0.license") {
@@ -20662,7 +20666,7 @@ rustc_library("tokio-v1_38_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
   if (false) {
     deps += [ ":backtrace-v0_3_61" ]
   }
@@ -20768,7 +20772,7 @@ rustc_library("tokio-stream-v0_1_18") {
 
   deps = []
   deps += [ ":futures-core-v0_3_31" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":tokio-v1_38_1" ]
 
   rustenv = []
@@ -21030,7 +21034,7 @@ rustc_library("tracing-v0_1_41") {
   deps = []
   deps += [ ":tracing-core-v0_1_34" ]
   deps += [ ":log-v0_4_29" ]
-  deps += [ ":pin-project-lite-v0_2_16" ]
+  deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":tracing-attributes-v0_1_30($host_toolchain)" ]
 
   rustenv = []

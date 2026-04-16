@@ -78,6 +78,6 @@ rust_library(
     version = "0.5.4",
     deps = [
         "//third_party/rust_crates/vendor/event-listener-5.4.1:event_listener",
-        "//third_party/rust_crates/vendor/pin-project-lite-0.2.16:pin_project_lite",
+        "//third_party/rust_crates/vendor/pin-project-lite-0.2.17:pin_project_lite",
     ],
 )
