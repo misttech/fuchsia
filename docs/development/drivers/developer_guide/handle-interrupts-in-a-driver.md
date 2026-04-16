@@ -6,9 +6,11 @@ This document covers how to write and test a Fuchsia driver that can listen to
 [interrupts](/reference/kernel_objects/interrupts.md) in an efficient manner.
 Interrupts are a common tool for letting a driver know when a certain hardware
 (or virtual) event has occurred. In C++, interrupts are represented by the
-[`zx::interrupt` class](/zircon/system/ulib/zx/include/lib/zx/interrupt.h). You
-may see the words "interrupt" and "irq" used interchangeably. In this context,
-they both represent an interrupt.
+[`zx::interrupt` class](/zircon/system/ulib/zx/include/lib/zx/interrupt.h). In
+Rust, they are represented by the
+[`zx::Interrupt` type](/sdk/rust/zx/src/interrupt.rs). You may see the words
+"interrupt" and "irq" used interchangeably. In this context, they both represent
+an interrupt.
 
 ## Acquiring an interrupt
 
@@ -17,7 +19,8 @@ approach is to request an interrupt from a FIDL service instance. For example,
 if a driver wanted an interrupt object that represented GPIO events related to a
 specific GPIO pin then the driver can request one by sending a
 [`fuchsia.hardware.gpio.Gpio:GetInterrupt()` FIDL request](/sdk/fidl/fuchsia.hardware.gpio/gpio.fidl)
-to the [`fuchsia.hardware.gpio.Service` FIDL service](/sdk/fidl/fuchsia.hardware.gpio/gpio.fidl)
+to the
+[`fuchsia.hardware.gpio.Service` FIDL service](/sdk/fidl/fuchsia.hardware.gpio/gpio.fidl)
 instance within the driver's incoming namespace.
 
 ## Listening to an interrupt
@@ -26,7 +29,11 @@ Listening to an interrupt means executing code when the interrupt is triggered.
 In drivers, it is common for interrupts to be triggered more than once over the
 course of the interrupt's lifetime. The driver should be able to handle
 interrupts as quickly as possible and not cause data races with other driver
-code. Based on these requirements, it is recommended to use the
+code.
+
+### C++
+
+Based on these requirements, it is recommended to use the
 [`async::IrqMethod` class](/sdk/lib/async/include/lib/async/cpp/irq.h) to listen
 to an interrupt.
 
@@ -162,6 +169,72 @@ as a dependency to the driver:
      )
      ```
 
+### Rust
+
+In Rust, interrupts are typically handled by creating a
+[`fuchsia_async::OnInterrupt` struct](/src/lib/fuchsia-async/src/handle/zircon/on_interrupt.rs)
+from an interrupt handle and processing it in a spawned task. `OnInterrupt`
+implements
+[`futures::Stream`](https://docs.rs/futures/latest/futures/stream/trait.Stream.html)
+which can be listened to asynchronously.
+
+Here is an example of how a Rust driver can listen to an interrupt:
+
+```rust {:.devsite-disable-click-to-copy}
+use fdf_component::{Driver, DriverContext};
+use fuchsia_async::{OnInterrupt, Task};
+use futures::StreamExt;
+use zx::{Interrupt, RealInterruptKind};
+
+pub struct MyDriver {
+  /// Task that handles interrupts. Hold onto it so that when the driver is
+  /// dropped the task is cancelled.
+  interrupt_handler: Task<()>,
+}
+
+impl Driver for MyDriver {
+    async fn start(context: DriverContext) -> Result<Self, Status> {
+        let interrupt: Interrupt<RealInterruptKind> = todo!();
+        let interrupt_stream = OnInterrupt::new(interrupt);
+        let interrupt_handler = Task::spawn(async move {
+          while let Some(Ok(_time)) = interrupt_stream.next().await {
+            // Perform work in response to triggered interrupt.
+            if let Err(e) = Self::handle_interrupt() {
+                log::error!("Failed to handle interrupt: {e:?}");
+                // Don't return early as we still want to ack the interrupt.
+            }
+
+            // Acknowledge the interrupt. This "re-arms" the interrupt. If the
+            // interrupt is not acknowledged then it cannot be triggered again.
+            if let Err(e) = interrupt_stream.ack() {
+                log::error!("Failed to ack interrupt: {e:?}");
+            }
+          }
+        });
+
+        Ok(Self { interrupt_handler })
+    }
+
+    async fn handle_interrupt() -> Result<(), Status> {
+        todo!();
+    }
+}
+```
+
+`OnInterrupt` belongs to the `fuchsia_async` library so don't forget to add it
+as a dependency to the driver:
+
+   * {GN}
+
+     ```gn
+     fuchsia_component("my-driver") {
+       deps = [
+         "//src/lib/fuchsia-async",
+         "//third_party/rust_crates:futures",
+       ]
+     }
+     ```
+
 ## Testing an interrupt
 
 The driver's unit tests should test the driver's ability to respond to
@@ -174,14 +247,22 @@ interrupts.
 The test should create a virtual interrupt to provide to the driver. Virtual
 interrupts are interrupts that can be triggered "virtually" (i.e. the test's
 code can explicitly trigger the interrupt without waiting for an actual hardware
-event). A virtual interrupt can be created like so:
+event).
 
-```cpp
-zx::interrupt interrupt;
-ASSERT_EQ(
-  zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt),
-  ZX_OK);
-```
+*   {C++}
+
+    ```cpp
+    zx::interrupt interrupt;
+    ASSERT_EQ(
+      zx::interrupt::create(zx::resource(),0, ZX_INTERRUPT_VIRTUAL, &interrupt),
+      ZX_OK);
+    ```
+
+*   {Rust}
+
+    ```rust
+    let interrupt = zx::VirtualInterrupt::create_virtual()?;
+    ```
 
 The test should duplicate this interrupt and send the duplicate to the driver.
 How the test sends the duplicate to the driver is context-dependent. It
@@ -190,27 +271,52 @@ example, if a driver acquires a GPIO interrupt from a
 `fuchsia.hardware.gpio.Service` FIDL service instance then the test should fake
 that FIDL service instance. Here is how to duplicate an interrupt:
 
-```cpp
-zx::interrupt duplicate;
-ASSERT_EQ(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate), ZX_OK);
-```
+*   {C++}
+
+    ```cpp
+    zx::interrupt duplicate;
+    ASSERT_EQ(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate), ZX_OK);
+    ```
+
+*   {Rust}
+
+    ```rust
+    // Duplicate the virtual interrupt.
+    let interrupt: zx::VirtualInterrupt =
+      self.interrupt.duplicate_handle(Rights::SAME_RIGHTS)?;
+
+    // Convert the duplicated virtual interrupt into a real interrupt as the
+    // driver expects a real interrupt.
+    let interrupt = Interrupt::from(interrupt.into_handle());
+    ```
 
 ### Triggering an interrupt
 
 The test can trigger a virtual interrupt like so:
-```cpp
-ASSERT_EQ(
-  interrupt.trigger(
-    // Options.
-    0,
 
-    // Timestamp of when the interrupt was triggered.
-    zx::clock::get_boot()),
-  ZX_OK);
-```
+*   {C++}
 
-This will cause the driver's interrupt handler to execute its callback for
-interrupt triggers.
+    ```cpp
+    ASSERT_EQ(
+      interrupt.trigger(
+        // Options.
+        0,
+
+        // Timestamp of when the interrupt was triggered.
+        zx::clock::get_boot()),
+      ZX_OK);
+    ```
+
+*   {Rust}
+
+    ```rust
+    interrupt.trigger(
+      // Timestamp of when the interrupt was triggered.
+      zx::Instant::from_nanos(0)
+    )?;
+    ```
+
+This will signal to the driver that the interrupt was triggered.
 
 ### Verifying an interrupt was acknowledged
 
@@ -220,6 +326,8 @@ driver acknowledges an interrupt trigger, the interrupt returns to an
 change. The test will listen for this signal to know when the interrupt has been
 acknowledged. This signal is also sent when a virtual interrupt is first
 created.
+
+#### C++
 
 It is recommended to use
 [`async::WaitMethod` class](/sdk/lib/async/include/lib/async/cpp/wait.h) in
@@ -337,7 +445,7 @@ as a dependency to the driver's tests:
 
    * {GN}
 
-     ```gn {:.devsite-disable-click-to-copy}
+     ```gn
      test("my-driver-test-bin") {
        deps = [
          "//sdk/lib/async:async-cpp",
@@ -347,11 +455,49 @@ as a dependency to the driver's tests:
 
    * {Bazel}
 
-     ```bazel {:.devsite-disable-click-to-copy}
+     ```bazel
      fuchsia_cc_test(
          name = "my-driver-test",
          deps = [
              "@fuchsia_sdk//pkg/async-cpp",
+         ],
+     )
+     ```
+
+#### Rust
+
+In Rust, you can wait for the `VIRTUAL_INTERRUPT_UNTRIGGERED` signal
+asynchronously using `fuchsia_async::OnSignals`: `OnSignals` implements `Future`
+and so it can be awaited.
+
+```rust
+use fuchsia_async::OnSignals;
+use zx::Signals;
+
+// Wait for the interrupt to be acknowledged.
+OnSignals::new(&interrupt, Signals::VIRTUAL_INTERRUPT_UNTRIGGERED).await?;
+```
+
+To use this in a Rust driver test, you will need to add the `fuchsia-async`
+dependency to your `BUILD.gn` or `BUILD.bazel` file:
+
+   * {GN}
+
+     ```gn
+     fuchsia_unittest("my-driver-test") {
+       deps = [
+         "//src/lib/fuchsia-async",
+       ]
+     }
+     ```
+
+   * {Bazel}
+
+     ```bazel
+     fuchsia_component(
+         name = "my-driver-test",
+         deps = [
+             "@fuchsia_sdk//pkg/fuchsia-async",
          ],
      )
      ```
