@@ -579,6 +579,16 @@ class Workspace:
         update_process.wait()
         fetch_process.wait()
 
+        # Create update history file manually since update with --fetch-packages=false doesn't do it.
+        self._run(
+            [
+                ".jiri_root/bin/jiri",
+                "snapshot",
+                ".jiri_root/update_history/latest",
+            ],
+            cwd=cartfs_fuchsia_dir,
+        )
+
     def _reinit_integration_repo(self, revision: str | None = None) -> None:
         """Destroys and re-clones the `integration` checkout in CartFS, with a depth of 100 cls."""
         logger.emit_status(f"Reinitializing the integration repository...")
@@ -660,21 +670,37 @@ class Workspace:
             f"{self.get_cartfs_commit('fuchsia')} to {commit}"
         )
 
+        backup_dir = None
         if self.cartfs_fuchsia_dir.exists():
-            self._run(["git", "reset", "--hard"], self.cartfs_fuchsia_dir)
-            self._run(
-                [
-                    "git",
-                    "fetch",
-                    "origin",
-                    commit,
-                ],
-                self.cartfs_fuchsia_dir,
-            )
-            self._run(
-                ["git", "reset", "--hard", commit], self.cartfs_fuchsia_dir
-            )
-        else:
+            try:
+                subprocess.run(
+                    ["git", "reset", "--hard"],
+                    cwd=self.cartfs_fuchsia_dir,
+                    check=True,
+                    capture_output=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.log_warn(
+                    f"git reset failed in CartFS, likely corruption: {e}"
+                )
+                logger.log_warn(
+                    "Attempting recovery by deleting corrupted directory."
+                )
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                backup_dir = self.cartfs_fuchsia_dir.with_name(
+                    f"fuchsia.broken.{timestamp}"
+                )
+                logger.log_warn(f"Moving corrupted directory to {backup_dir}")
+                os.rename(self.cartfs_fuchsia_dir, backup_dir)
+
+                # Fix .git/HEAD in backup directory to allow git commands
+                backup_git_head = backup_dir / ".git" / "HEAD"
+                try:
+                    backup_git_head.write_text("ref: refs/heads/main")
+                except Exception as e:
+                    logger.log_warn(f"Failed to fix .git/HEAD in backup: {e}")
+
+        if not self.cartfs_fuchsia_dir.exists():
             # We fetch fuchsia repository from the last 4 days because git hook will
             # refer to commit from yesterday to generate integration_daily_commit_hash.
             integration_commit_timestamp = int(
@@ -690,16 +716,34 @@ class Workspace:
             four_days_ago = (
                 integration_commit_time - timedelta(days=4)
             ).strftime("%Y-%m-%d")
+            # We use a step-by-step approach (init, remote add, fetch, reset) instead of a single `git clone`
+            # because `git clone` was failing in the CartFS FUSE mount, likely due to I/O limitations
+            # during index-pack. Breaking it down allows us to bypass these filesystem issues.
+            # We use --shallow-since to keep a few days of history to ensure
+            # build integrity while keeping the operation fast.
+            self._run(["git", "init", "fuchsia"], cwd=self.cartfs_dir)
+            fuchsia_dir = self.cartfs_dir / "fuchsia"
             self._run(
                 [
                     "git",
-                    "clone",
+                    "remote",
+                    "add",
+                    "origin",
                     "https://fuchsia.googlesource.com/fuchsia",
-                    f"--revision={commit}",
+                ],
+                cwd=fuchsia_dir,
+            )
+            self._run(
+                [
+                    "git",
+                    "fetch",
+                    "origin",
+                    commit,
                     f"--shallow-since={four_days_ago}",
                 ],
-                cwd=self.cartfs_dir,
+                cwd=fuchsia_dir,
             )
+            self._run(["git", "reset", "--hard", "FETCH_HEAD"], cwd=fuchsia_dir)
             self._run(
                 [
                     "git",
@@ -707,8 +751,101 @@ class Workspace:
                     "origin",
                     "main:refs/remotes/origin/main",
                 ],
-                cwd=self.cartfs_fuchsia_dir,
+                cwd=fuchsia_dir,
             )
+        else:
+            self._run(
+                [
+                    "git",
+                    "fetch",
+                    "origin",
+                    commit,
+                ],
+                self.cartfs_fuchsia_dir,
+            )
+            self._run(
+                ["git", "reset", "--hard", commit], self.cartfs_fuchsia_dir
+            )
+
+        if backup_dir:
+            logger.log_warn(
+                "Restoring ignored files and directories from backup."
+            )
+            cartfs_rel_root = self.cartfs_dir.relative_to(
+                self.cartfs_mount_point
+            )
+
+            # 1. Snapshot hardcoded large directories
+            hardcoded_dirs = ["out", "prebuilt", ".cipd", ".fx", ".jiri_root"]
+            for dir_name in hardcoded_dirs:
+                from_rel = cartfs_rel_root / backup_dir.name / dir_name
+                to_rel = (
+                    cartfs_rel_root / self.cartfs_fuchsia_dir.name / dir_name
+                )
+                backup_path = backup_dir / dir_name
+                target_path = self.cartfs_fuchsia_dir / dir_name
+
+                if backup_path.exists():
+                    try:
+                        snapshotter.copy_cartfs_directory(from_rel, to_rel)
+                    except Exception as e:
+                        logger.log_error(
+                            f"Failed to restore {dir_name} via snapshot: {e}"
+                        )
+                        # Fallback to individual copy if it failed (e.g. ALREADY_EXISTS)
+                        if backup_path.is_dir():
+                            logger.log_warn(
+                                f"Falling back to individual file copy for {dir_name}"
+                            )
+                            self._merge_directories(backup_path, target_path)
+
+            # 2. Dynamically discover other ignored files
+            try:
+                ignored_output = subprocess.run(
+                    [
+                        "git",
+                        "ls-files",
+                        "--others",
+                        "--ignored",
+                        "--exclude-standard",
+                    ],
+                    cwd=backup_dir,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout
+
+                for line in ignored_output.splitlines():
+                    path_str = line.strip()
+                    if not path_str:
+                        continue
+
+                    # Skip if it belongs to hardcoded dirs
+                    if any(
+                        path_str.startswith(d + "/") for d in hardcoded_dirs
+                    ):
+                        continue
+
+                    # Skip __pycache__
+                    if "__pycache__" in path_str:
+                        continue
+
+                    backup_path = backup_dir / path_str
+                    target_path = self.cartfs_fuchsia_dir / path_str
+
+                    if backup_path.is_file():
+                        if not target_path.exists():
+                            try:
+                                target_path.parent.mkdir(
+                                    parents=True, exist_ok=True
+                                )
+                                shutil.copyfile(backup_path, target_path)
+                            except Exception as e:
+                                logger.log_error(
+                                    f"Failed to copy file {path_str}: {e}"
+                                )
+            except subprocess.CalledProcessError as e:
+                logger.log_error(f"Failed to list ignored files: {e}")
 
         # Couple of places in the build expect to find JIRI_HEAD for fuchsia
         # repository. In a normal checkout by jiri, the JIRI_HEAD is created
@@ -722,6 +859,30 @@ class Workspace:
 
         self._write_jiri_manifest()
         self._write_jiri_config()
+
+    def _merge_directories(self, src: Path, dst: Path) -> None:
+        """Recursively copies files from src to dst, not overwriting existing files."""
+        for item in src.iterdir():
+            s = src / item.name
+            d = dst / item.name
+            if s.is_symlink():
+                if not (d.exists() or d.is_symlink()):
+                    try:
+                        d.parent.mkdir(parents=True, exist_ok=True)
+                        os.symlink(os.readlink(s), d)
+                    except Exception as e:
+                        logger.log_error(
+                            f"Failed to copy symlink {s} to {d}: {e}"
+                        )
+            elif s.is_dir():
+                self._merge_directories(s, d)
+            else:
+                if not d.exists():
+                    try:
+                        d.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(s, d)
+                    except Exception as e:
+                        logger.log_error(f"Failed to copy {s} to {d}: {e}")
 
     def _create_symlinks(self) -> None:
         """Creates symlinks for the prebuilts."""
@@ -810,7 +971,7 @@ class Workspace:
                 logger.log_error(f"stderr: {e.stderr.decode('utf-8')}")
             if exit_on_error:
                 sys.exit(e.returncode)
-            return ""
+            raise e
 
     def _patch_file(self, filepath: str, content: str) -> None:
         """Patches the file in cartFS."""

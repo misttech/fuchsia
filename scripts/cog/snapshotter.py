@@ -102,3 +102,42 @@ def snapshot_workspace(
     # Delete the .fx/config/metrics file from the snapshot.
     metrics_file = to_path / "fuchsia" / ".fx" / "config" / "metrics"
     metrics_file.unlink(missing_ok=True)
+
+
+def copy_cartfs_directory(from_path_rel: Path, to_path_rel: Path) -> None:
+    """Copies a directory within CartFS using RPC.
+
+    Args:
+        from_path_rel: Relative path from CartFS mount point to source.
+        to_path_rel: Relative path from CartFS mount point to target.
+    """
+    cartfs_endpoint = "127.0.0.1:65001"
+    cartfs_rpc_copy_directory = "cartfs.Cartfs.CopyDirectory"
+
+    logger.log_info(
+        f"Copying from {from_path_rel} to {to_path_rel} via CartFS RPC"
+    )
+    try:
+        subprocess.run(
+            [
+                "grpc_cli",
+                "call",
+                cartfs_endpoint,
+                cartfs_rpc_copy_directory,
+                f'from_path: "{from_path_rel}"\nto_path: "{to_path_rel}"',
+                "--channel_creds_type=insecure",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        logger.log_error(
+            "Error: grpc_cli not found. Please ensure it is in your PATH."
+        )
+        raise
+    except subprocess.CalledProcessError as e:
+        logger.log_error(f"Error during CartFS directory copy: {e}")
+        logger.log_error(f"stdout: {e.stdout}")
+        logger.log_error(f"stderr: {e.stderr}")
+        raise

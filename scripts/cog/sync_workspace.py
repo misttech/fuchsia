@@ -69,12 +69,15 @@ class WorkspaceSyncService:
     def _config(self) -> dict[str, Any]:
         return self.workspace.config
 
-    def _git_citc(self, *command: str, cwd: Path | None = None) -> str:
+    def _git_citc(
+        self, *command: str, cwd: Path | None = None, exit_on_error: bool = True
+    ) -> str:
         assert self.git_citc_path is not None
         return self.workspace._run(
             [self.git_citc_path] + list(command),
             cwd=cwd or self.cog_root,
             capture_output=True,
+            exit_on_error=exit_on_error,
         )
 
     @property
@@ -113,10 +116,11 @@ class WorkspaceSyncService:
         if workspace_type == WorkspaceType.COG:
 
             def _get_affected_files(repo: str) -> set[str]:
+                base_commit = self._get_cog_commit(repo)
                 stdout_lines = self._git_citc(
                     "cli.diff",
                     "--patch=false",
-                    self._get_cog_commit(repo),
+                    base_commit,
                     "@",
                     cwd=self.cog_root / repo,
                 ).split("\n")

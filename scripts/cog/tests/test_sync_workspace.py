@@ -159,6 +159,7 @@ else:
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -279,6 +280,7 @@ else:
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -388,6 +390,7 @@ else:
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1192,6 +1195,7 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1248,6 +1252,7 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1304,6 +1309,7 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1369,6 +1375,7 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1426,6 +1433,7 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1485,6 +1493,7 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1541,6 +1550,7 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1593,6 +1603,7 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
@@ -1650,6 +1661,7 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
                 cmd: list[str],
                 cwd: str | Path | None = None,
                 capture_output: bool = False,
+                exit_on_error: bool = True,
             ) -> str:
                 import subprocess
 
