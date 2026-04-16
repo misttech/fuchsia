@@ -6,7 +6,7 @@
 import time
 
 import fidl_fuchsia_wlan_common as f_wlan_common
-import fidl_fuchsia_wlan_common_security as f_wlan_common_security
+import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
@@ -151,8 +151,8 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 await self.dut.wlan_core.connect(
                     ssid=test_ssid,
                     bss_desc=bss_desc_for_ssid[0],
-                    authentication=f_wlan_common_security.Authentication(
-                        f_wlan_common_security.Protocol.OPEN, None
+                    authentication=f_wlan_internal.Authentication(
+                        f_wlan_internal.Protocol.OPEN, None
                     ),
                 ),
                 "Failed to connect.",

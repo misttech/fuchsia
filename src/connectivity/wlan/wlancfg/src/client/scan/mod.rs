@@ -9,6 +9,10 @@ use crate::mode_management::iface_manager_api::{IfaceManagerApi, SmeForScan};
 use crate::telemetry::{ScanEventInspectData, ScanIssue, TelemetryEvent, TelemetrySender};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use fidl_fuchsia_location_sensor as fidl_location_sensor;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::{mpsc, oneshot};
@@ -21,10 +25,6 @@ use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::pin::pin;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_location_sensor as fidl_location_sensor, fidl_fuchsia_wlan_common as fidl_common,
-    fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 mod fidl_conversion;
 mod queue;
@@ -484,6 +484,8 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use fidl::endpoints::{ControlHandle, Responder, create_proxy};
+    use fidl_fuchsia_wlan_internal as fidl_internal;
+    use fuchsia_async as fasync;
     use futures::future;
     use futures::task::Poll;
     use std::pin::pin;
@@ -494,7 +496,6 @@ mod tests {
     use wlan_common::test_utils::fake_frames::fake_unknown_rsne;
     use wlan_common::test_utils::fake_stas::IesOverrides;
     use wlan_common::{fake_bss_description, random_fidl_bss_description};
-    use {fidl_fuchsia_wlan_common_security as fidl_security, fuchsia_async as fasync};
 
     fn active_sme_req(ssids: Vec<&str>, channels: Vec<u8>) -> fidl_sme::ScanRequest {
         fidl_sme::ScanRequest::Active(fidl_sme::ActiveScanRequest {
@@ -639,7 +640,7 @@ mod tests {
     fn create_scan_ap_data(observation: types::ScanObservation) -> MockScanData {
         let sme_result_1 = fidl_sme::ScanResult {
             compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
-                mutual_security_protocols: vec![fidl_security::Protocol::Wpa3Personal],
+                mutual_security_protocols: vec![fidl_internal::Protocol::Wpa3Personal],
             }),
             timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
             bss_description: random_fidl_bss_description!(
@@ -653,7 +654,7 @@ mod tests {
         };
         let sme_result_2 = fidl_sme::ScanResult {
             compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
-                mutual_security_protocols: vec![fidl_security::Protocol::Wpa2Personal],
+                mutual_security_protocols: vec![fidl_internal::Protocol::Wpa2Personal],
             }),
             timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
             bss_description: random_fidl_bss_description!(
@@ -1110,7 +1111,7 @@ mod tests {
         // Create some input data with duplicated BSSID and Network Identifiers
         let first_result = fidl_sme::ScanResult {
             compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
-                mutual_security_protocols: vec![fidl_security::Protocol::Wpa3Personal],
+                mutual_security_protocols: vec![fidl_internal::Protocol::Wpa3Personal],
             }),
             timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
             bss_description: random_fidl_bss_description!(
@@ -1124,7 +1125,7 @@ mod tests {
         };
         let second_result = fidl_sme::ScanResult {
             compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
-                mutual_security_protocols: vec![fidl_security::Protocol::Wpa3Personal],
+                mutual_security_protocols: vec![fidl_internal::Protocol::Wpa3Personal],
             }),
             timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
             bss_description: random_fidl_bss_description!(
@@ -1143,7 +1144,7 @@ mod tests {
             // same bssid as first_result
             fidl_sme::ScanResult {
                 compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
-                    mutual_security_protocols: vec![fidl_security::Protocol::Wpa3Personal],
+                    mutual_security_protocols: vec![fidl_internal::Protocol::Wpa3Personal],
                 }),
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
                 bss_description: random_fidl_bss_description!(

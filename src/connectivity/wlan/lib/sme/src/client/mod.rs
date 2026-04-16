@@ -20,6 +20,12 @@ use self::scan::{DiscoveryScan, ScanScheduler};
 use self::state::{ClientState, ConnectCommand};
 use crate::responder::Responder;
 use crate::{Config, MlmeRequest, MlmeSink, MlmeStream};
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fidl_fuchsia_wlan_stats as fidl_stats;
 use futures::channel::{mpsc, oneshot};
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use log::{error, info, warn};
@@ -34,11 +40,6 @@ use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor};
 use wlan_common::sink::UnboundedSink;
 use wlan_common::timer;
 use wlan_rsn::auth;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_mlme as fidl_mlme,
-    fidl_fuchsia_wlan_sme as fidl_sme, fidl_fuchsia_wlan_stats as fidl_stats,
-};
 
 // This is necessary to trick the private-in-public checker.
 // A private module is not allowed to include private types in its interface,
@@ -48,9 +49,10 @@ mod internal {
     use crate::MlmeSink;
     use crate::client::event::Event;
     use crate::client::{ConnectionAttemptId, inspect};
+    use fidl_fuchsia_wlan_common as fidl_common;
+    use fidl_fuchsia_wlan_mlme as fidl_mlme;
     use std::sync::Arc;
     use wlan_common::timer::Timer;
-    use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_mlme as fidl_mlme};
 
     pub struct Context {
         pub device_info: Arc<fidl_mlme::DeviceInfo>,
@@ -1037,6 +1039,9 @@ mod tests {
     use super::*;
     use crate::Config as SmeConfig;
     use assert_matches::assert_matches;
+    use fidl_fuchsia_wlan_common as fidl_common;
+    use fidl_fuchsia_wlan_mlme as fidl_mlme;
+    use fuchsia_inspect as finspect;
     use ieee80211::MacAddr;
     use std::collections::HashSet;
     use std::sync::LazyLock;
@@ -1054,11 +1059,6 @@ mod tests {
             fake_stas::{FakeProtectionCfg, IesOverrides},
         },
     };
-    use {
-        fidl_fuchsia_wlan_common as fidl_common,
-        fidl_fuchsia_wlan_common_security as fidl_security, fidl_fuchsia_wlan_mlme as fidl_mlme,
-        fuchsia_inspect as finspect,
-    };
 
     use super::test_utils::{create_on_wmm_status_resp, fake_wmm_param, fake_wmm_status_resp};
 
@@ -1067,51 +1067,51 @@ mod tests {
     static CLIENT_ADDR: LazyLock<MacAddr> =
         LazyLock::new(|| [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into());
 
-    fn authentication_open() -> fidl_security::Authentication {
-        fidl_security::Authentication { protocol: fidl_security::Protocol::Open, credentials: None }
+    fn authentication_open() -> fidl_internal::Authentication {
+        fidl_internal::Authentication { protocol: fidl_internal::Protocol::Open, credentials: None }
     }
 
-    fn authentication_wep40() -> fidl_security::Authentication {
-        fidl_security::Authentication {
-            protocol: fidl_security::Protocol::Wep,
-            credentials: Some(Box::new(fidl_security::Credentials::Wep(
-                fidl_security::WepCredentials { key: [1; WEP40_KEY_BYTES].into() },
+    fn authentication_wep40() -> fidl_internal::Authentication {
+        fidl_internal::Authentication {
+            protocol: fidl_internal::Protocol::Wep,
+            credentials: Some(Box::new(fidl_internal::Credentials::Wep(
+                fidl_internal::WepCredentials { key: [1; WEP40_KEY_BYTES].into() },
             ))),
         }
     }
 
-    fn authentication_wpa1_passphrase() -> fidl_security::Authentication {
-        fidl_security::Authentication {
-            protocol: fidl_security::Protocol::Wpa1,
-            credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                fidl_security::WpaCredentials::Passphrase(b"password".as_slice().into()),
+    fn authentication_wpa1_passphrase() -> fidl_internal::Authentication {
+        fidl_internal::Authentication {
+            protocol: fidl_internal::Protocol::Wpa1,
+            credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                fidl_internal::WpaCredentials::Passphrase(b"password".as_slice().into()),
             ))),
         }
     }
 
-    fn authentication_wpa2_personal_psk() -> fidl_security::Authentication {
-        fidl_security::Authentication {
-            protocol: fidl_security::Protocol::Wpa2Personal,
-            credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                fidl_security::WpaCredentials::Psk([1; PSK_SIZE_BYTES]),
+    fn authentication_wpa2_personal_psk() -> fidl_internal::Authentication {
+        fidl_internal::Authentication {
+            protocol: fidl_internal::Protocol::Wpa2Personal,
+            credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                fidl_internal::WpaCredentials::Psk([1; PSK_SIZE_BYTES]),
             ))),
         }
     }
 
-    fn authentication_wpa2_personal_passphrase() -> fidl_security::Authentication {
-        fidl_security::Authentication {
-            protocol: fidl_security::Protocol::Wpa2Personal,
-            credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                fidl_security::WpaCredentials::Passphrase(b"password".as_slice().into()),
+    fn authentication_wpa2_personal_passphrase() -> fidl_internal::Authentication {
+        fidl_internal::Authentication {
+            protocol: fidl_internal::Protocol::Wpa2Personal,
+            credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                fidl_internal::WpaCredentials::Passphrase(b"password".as_slice().into()),
             ))),
         }
     }
 
-    fn authentication_wpa3_personal_passphrase() -> fidl_security::Authentication {
-        fidl_security::Authentication {
-            protocol: fidl_security::Protocol::Wpa3Personal,
-            credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                fidl_security::WpaCredentials::Passphrase(b"password".as_slice().into()),
+    fn authentication_wpa3_personal_passphrase() -> fidl_internal::Authentication {
+        fidl_internal::Authentication {
+            protocol: fidl_internal::Protocol::Wpa3Personal,
+            credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                fidl_internal::WpaCredentials::Passphrase(b"password".as_slice().into()),
             ))),
         }
     }
@@ -1642,7 +1642,7 @@ mod tests {
     #[test_case(fake_bss_description!(Wpa2), authentication_open() => matches Err(_))]
     fn test_protection_from_authentication(
         bss: BssDescription,
-        authentication: fidl_security::Authentication,
+        authentication: fidl_internal::Authentication,
     ) -> Result<Protection, anyhow::Error> {
         let device = test_utils::fake_device_info(*CLIENT_ADDR);
         let security_support = fake_security_support();
@@ -2012,10 +2012,10 @@ mod tests {
         let mut connect_txn_stream = sme.on_connect_command(connect_req(
             Ssid::try_from("foo").unwrap(),
             bss_description.clone(),
-            fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Wpa2Personal,
-                credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                    fidl_security::WpaCredentials::Passphrase(b"nope".as_slice().into()),
+            fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Wpa2Personal,
+                credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                    fidl_internal::WpaCredentials::Passphrase(b"nope".as_slice().into()),
                 ))),
             },
         ));
@@ -2261,7 +2261,7 @@ mod tests {
     fn connect_req(
         ssid: Ssid,
         bss_description: fidl_common::BssDescription,
-        authentication: fidl_security::Authentication,
+        authentication: fidl_internal::Authentication,
     ) -> fidl_sme::ConnectRequest {
         fidl_sme::ConnectRequest {
             ssid: ssid.to_vec(),

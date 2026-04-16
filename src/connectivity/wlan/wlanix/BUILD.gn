@@ -64,8 +64,6 @@ rustc_binary("wlanix_bin") {
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.wlan.common.security:fuchsia.wlan.common.security_rust",
-    "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",
     "//src/connectivity/wlan/lib/power_manager:power_manager_testing",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",

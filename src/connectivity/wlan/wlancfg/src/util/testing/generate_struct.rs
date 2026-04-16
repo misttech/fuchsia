@@ -7,6 +7,10 @@ use crate::client::roaming::lib::{PolicyRoamRequest, RoamReason, RoamingConnecti
 use crate::client::types;
 use crate::config_management::{Credential, HistoricalListsByBssid};
 use crate::util::pseudo_energy::EwmaSignalData;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use rand::distr::{Alphanumeric, SampleString};
 use rand::{Rng as _, RngCore};
@@ -14,12 +18,7 @@ use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_common::random_fidl_bss_description;
 use wlan_common::scan::{Compatible, Incompatible};
-use wlan_common::security::{wep, wpa, SecurityAuthenticator, SecurityDescriptor};
-use {
-    fidl_fuchsia_wlan_common_security as fidl_security,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_policy as fidl_policy,
-    fidl_fuchsia_wlan_sme as fidl_sme,
-};
+use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor, wep, wpa};
 
 pub fn generate_ssid(ssid: &str) -> types::Ssid {
     types::Ssid::try_from(ssid).unwrap()
@@ -59,15 +58,15 @@ pub fn generate_random_sme_scan_result() -> fidl_sme::ScanResult {
     fidl_sme::ScanResult {
         compatibility: match rng.random_range(0..4) {
             0 => fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
-                mutual_security_protocols: vec![fidl_security::Protocol::Open],
+                mutual_security_protocols: vec![fidl_internal::Protocol::Open],
             }),
             1 => fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
-                mutual_security_protocols: vec![fidl_security::Protocol::Wpa2Personal],
+                mutual_security_protocols: vec![fidl_internal::Protocol::Wpa2Personal],
             }),
             2 => fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {
                 mutual_security_protocols: vec![
-                    fidl_security::Protocol::Wpa2Personal,
-                    fidl_security::Protocol::Wpa3Personal,
+                    fidl_internal::Protocol::Wpa2Personal,
+                    fidl_internal::Protocol::Wpa3Personal,
                 ],
             }),
             _ => fidl_sme::Compatibility::Incompatible(fidl_sme::Incompatible {

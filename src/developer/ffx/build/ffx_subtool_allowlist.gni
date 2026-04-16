@@ -108,7 +108,6 @@ ffx_subtool_fidl_allowlist = [
   # Used by Honeydew via "fuchsia.wlan.device.service".
   # Though this is not ffx, it uses the same mechanism for host tools.
   # TODO(https://fxbug.dev/326090508): Add these to the SDK or remove usage.
-  "//sdk/fidl/fuchsia.wlan.common.security:fuchsia.wlan.common.security",
   "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service",
   "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal",
   "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme",

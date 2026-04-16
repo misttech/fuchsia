@@ -15,8 +15,12 @@ use crate::client::{
 };
 use crate::{MlmeRequest, MlmeSink, mlme_event_name};
 use anyhow::{bail, format_err};
-use fidl_fuchsia_wlan_common_security::Authentication;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_internal::Authentication;
 use fidl_fuchsia_wlan_mlme::{self as fidl_mlme, MlmeEvent};
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::log::InspectBytes;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes, Ssid};
@@ -32,10 +36,6 @@ use wlan_common::timer::EventHandle;
 use wlan_rsn::auth;
 use wlan_rsn::rsna::{AuthRejectedReason, AuthStatus, SecAssocUpdate, UpdateSink};
 use wlan_statemachine::*;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 /// Timeout for the MLME connect op, which consists of Join, Auth, and Assoc steps.
 /// TODO(https://fxbug.dev/42182084): Consider having a single overall connect timeout that is
@@ -2286,7 +2286,10 @@ mod tests {
     use diagnostics_assertions::{
         AnyBytesProperty, AnyNumericProperty, AnyStringProperty, assert_data_tree,
     };
-    use fidl_fuchsia_wlan_common_security::{Credentials, Protocol};
+    use fidl_fuchsia_wlan_common as fidl_common;
+
+    use fidl_fuchsia_wlan_internal::{Credentials, Protocol};
+    use fidl_internal;
     use fuchsia_async::DurationExt;
     use fuchsia_inspect::Inspector;
     use futures::channel::mpsc;
@@ -2307,10 +2310,6 @@ mod tests {
     use wlan_rsn::NegotiatedProtection;
     use wlan_rsn::key::exchange::Key;
     use wlan_rsn::rsna::SecAssocStatus;
-    use {
-        fidl_fuchsia_wlan_common as fidl_common,
-        fidl_fuchsia_wlan_common_security as fidl_security, fidl_internal,
-    };
 
     use crate::MlmeStream;
     use crate::client::event::RsnaCompletionTimeout;
@@ -5845,7 +5844,7 @@ mod tests {
         let bss = fake_bss_description!(Wpa2, ssid: Ssid::try_from("wpa2").unwrap());
         let rsne = Rsne::wpa2_rsne();
         let credentials = Some(Box::new(Credentials::Wpa(
-            fidl_security::WpaCredentials::Passphrase("password".into()),
+            fidl_internal::WpaCredentials::Passphrase("password".into()),
         )));
         let cmd = ConnectCommand {
             bss: Box::new(bss),

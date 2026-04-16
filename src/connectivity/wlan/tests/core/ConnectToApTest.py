@@ -13,8 +13,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import
 logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_wlan_common as fidl_common
-import fidl_fuchsia_wlan_common_security as fidl_security
 import fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211
+import fidl_fuchsia_wlan_internal as fidl_security
 import fidl_fuchsia_wlan_sme as fidl_sme
 from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap

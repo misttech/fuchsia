@@ -171,7 +171,6 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.vulkan.loader:verify_bazel2gn",
   "//sdk/fidl/fuchsia.weave:verify_bazel2gn",
   "//sdk/fidl/fuchsia.web:verify_bazel2gn",
-  "//sdk/fidl/fuchsia.wlan.common.security:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.common:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.device.service:verify_bazel2gn",
   "//sdk/fidl/fuchsia.wlan.device:verify_bazel2gn",

@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from typing import Protocol, Sequence, runtime_checkable
 
-import fidl_fuchsia_wlan_common_security as f_security
+import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from antlion.controllers import iperf_client
 from antlion.controllers.android_device import AndroidDevice
@@ -408,19 +408,19 @@ class FuchsiaWlanDevice(SupportsWLAN):
                     return False
 
                 wpa_psk_protocols = {
-                    SecurityMode.WPA: f_security.Protocol.WPA1,
-                    SecurityMode.WPA2: f_security.Protocol.WPA2_PERSONAL,
-                    SecurityMode.WPA3: f_security.Protocol.WPA3_PERSONAL,
+                    SecurityMode.WPA: f_wlan_internal.Protocol.WPA1,
+                    SecurityMode.WPA2: f_wlan_internal.Protocol.WPA2_PERSONAL,
+                    SecurityMode.WPA3: f_wlan_internal.Protocol.WPA3_PERSONAL,
                 }
                 if target_security == SecurityMode.OPEN:
-                    protocol = f_security.Protocol.OPEN
+                    protocol = f_wlan_internal.Protocol.OPEN
                     credentials = None
                 elif target_security in wpa_psk_protocols:
                     if target_pwd is None:
                         raise ValueError("Password is required for WPA2")
                     protocol = wpa_psk_protocols[target_security]
-                    credentials = f_security.Credentials(
-                        wpa=f_security.WpaCredentials(
+                    credentials = f_wlan_internal.Credentials(
+                        wpa=f_wlan_internal.WpaCredentials(
                             passphrase=(list(target_pwd.encode("ascii")))
                         )
                     )
@@ -428,7 +428,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
                     raise ValueError(
                         f"Unhandled security mode {target_security}"
                     )
-                authentication = f_security.Authentication(
+                authentication = f_wlan_internal.Authentication(
                     protocol=protocol, credentials=credentials
                 )
 

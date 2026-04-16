@@ -1611,8 +1611,8 @@ mod tests {
         reason = "mass allow for https://fxbug.dev/381896734"
     )]
     use {
-        fidl_fuchsia_wlan_common_security as fidl_security,
-        fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync, rand,
+        fidl_fuchsia_wlan_internal as fidl_security, fidl_fuchsia_wlan_internal as fidl_internal,
+        fuchsia_async as fasync, rand,
     };
 
     pub struct TestValuesNoIface {

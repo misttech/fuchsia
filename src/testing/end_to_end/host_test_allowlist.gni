@@ -10,7 +10,6 @@ wlan_fidls_allowlist = [
   "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin",
   "//sdk/fidl/fuchsia.net.root:fuchsia.net.root",
   "//sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin",
-  "//sdk/fidl/fuchsia.wlan.common.security:fuchsia.wlan.common.security",
   "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service",
   "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal",
   "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme",

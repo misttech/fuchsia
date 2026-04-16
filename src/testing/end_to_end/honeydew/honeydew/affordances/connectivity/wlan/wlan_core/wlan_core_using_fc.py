@@ -8,9 +8,9 @@ import logging
 from collections.abc import Sequence
 
 import fidl_fuchsia_wlan_common as f_wlan_common
-import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
+import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fidl_fuchsia_wlan_sme as f_wlan_sme
 import fuchsia_async_extension
 from fidl._client import FidlClient
@@ -127,7 +127,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         self,
         ssid: str,
         bss_desc: f_wlan_common.BssDescription,
-        authentication: f_wlan_common_security.Authentication,
+        authentication: f_wlan_internal.Authentication,
     ) -> bool:
         """Trigger connection to a network.
 
@@ -616,7 +616,7 @@ class WlanCore(wlan_core.WlanCore):
         self,
         ssid: str,
         bss_desc: f_wlan_common.BssDescription,
-        authentication: f_wlan_common_security.Authentication,
+        authentication: f_wlan_internal.Authentication,
     ) -> bool:
         """Trigger connection to a network.
 

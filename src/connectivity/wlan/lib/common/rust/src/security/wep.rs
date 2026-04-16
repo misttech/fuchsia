@@ -13,7 +13,7 @@
 // TODO(https://fxbug.dev/42178070): Name items in this module in a way that makes it clear that they
 //                        implement an insecure security protocol.
 
-use fidl_fuchsia_wlan_common_security as fidl_security;
+use fidl_fuchsia_wlan_internal as fidl_internal;
 
 use thiserror::Error;
 
@@ -127,23 +127,23 @@ pub struct WepAuthenticator {
     pub key: WepKey,
 }
 
-impl From<WepAuthenticator> for fidl_security::Protocol {
+impl From<WepAuthenticator> for fidl_internal::Protocol {
     fn from(_: WepAuthenticator) -> Self {
-        fidl_security::Protocol::Wep
+        fidl_internal::Protocol::Wep
     }
 }
 
-impl From<WepAuthenticator> for fidl_security::WepCredentials {
+impl From<WepAuthenticator> for fidl_internal::WepCredentials {
     fn from(authenticator: WepAuthenticator) -> Self {
         let key = authenticator.key.into();
-        fidl_security::WepCredentials { key }
+        fidl_internal::WepCredentials { key }
     }
 }
 
-impl TryFrom<fidl_security::WepCredentials> for WepAuthenticator {
+impl TryFrom<fidl_internal::WepCredentials> for WepAuthenticator {
     type Error = SecurityError;
 
-    fn try_from(credentials: fidl_security::WepCredentials) -> Result<Self, Self::Error> {
+    fn try_from(credentials: fidl_internal::WepCredentials) -> Result<Self, Self::Error> {
         let key = WepKey::try_from_literal_bytes(credentials.key)?;
         Ok(WepAuthenticator { key })
     }

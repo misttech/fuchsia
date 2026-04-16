@@ -4,7 +4,6 @@
 @available(added=HEAD)
 library fuchsia.wlan.sme;
 
-using fuchsia.wlan.common.security;
 using fuchsia.wlan.common;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using fuchsia.wlan.internal;
@@ -77,7 +76,7 @@ type DisconnectSource = strict union {
 };
 
 type DisjointSecurityProtocol = struct {
-    protocol fuchsia.wlan.common.security.Protocol;
+    protocol fuchsia.wlan.internal.Protocol;
     role fuchsia.wlan.common.WlanMacRole;
 };
 
@@ -105,7 +104,7 @@ type Compatible = struct {
     // a remote BSS and a local scanning interface. In this context an empty set
     // is a logic error (implies incompatibility) and so this field must never
     // be empty.
-    mutual_security_protocols vector<fuchsia.wlan.common.security.Protocol>:16;
+    mutual_security_protocols vector<fuchsia.wlan.internal.Protocol>:16;
 };
 
 type Incompatible = struct {
@@ -245,7 +244,7 @@ type ConnectRequest = struct {
     /// Authentication method.
     ///
     /// Describes how SME authenticates when connecting to the target network.
-    authentication fuchsia.wlan.common.security.Authentication;
+    authentication fuchsia.wlan.internal.Authentication;
 
     /// Deprecated. SME makes internal decision on whether to perform a passive or active
     /// scan during connect. Setting this field will not affect anything for FullMAC, but

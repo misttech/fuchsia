@@ -33,7 +33,7 @@ pub mod credential;
 mod data;
 
 use derivative::Derivative;
-use fidl_fuchsia_wlan_common_security as fidl_security;
+use fidl_fuchsia_wlan_internal as fidl_internal;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
@@ -158,10 +158,10 @@ impl From<PersonalCredentials> for Credentials {
     }
 }
 
-impl<P, E> From<Authentication<P, E>> for fidl_security::WpaCredentials
+impl<P, E> From<Authentication<P, E>> for fidl_internal::WpaCredentials
 where
-    P: Into<fidl_security::WpaCredentials>,
-    E: Into<fidl_security::WpaCredentials>,
+    P: Into<fidl_internal::WpaCredentials>,
+    E: Into<fidl_internal::WpaCredentials>,
 {
     fn from(authentication: Authentication<P, E>) -> Self {
         match authentication {
@@ -244,12 +244,12 @@ impl From<Wpa3PersonalCredentials> for PersonalCredentials {
     }
 }
 
-impl From<PersonalCredentials> for fidl_security::WpaCredentials {
+impl From<PersonalCredentials> for fidl_internal::WpaCredentials {
     fn from(credentials: PersonalCredentials) -> Self {
         match credentials {
-            PersonalCredentials::Psk(psk) => fidl_security::WpaCredentials::Psk(psk.into()),
+            PersonalCredentials::Psk(psk) => fidl_internal::WpaCredentials::Psk(psk.into()),
             PersonalCredentials::Passphrase(passphrase) => {
-                fidl_security::WpaCredentials::Passphrase(passphrase.into())
+                fidl_internal::WpaCredentials::Passphrase(passphrase.into())
             }
         }
     }
@@ -282,7 +282,7 @@ impl From<Psk> for Wpa1Credentials {
     }
 }
 
-impl From<Wpa1Credentials> for fidl_security::WpaCredentials {
+impl From<Wpa1Credentials> for fidl_internal::WpaCredentials {
     fn from(credentials: Wpa1Credentials) -> Self {
         PersonalCredentials::from(credentials).into()
     }
@@ -304,13 +304,13 @@ impl TryFrom<PersonalCredentials> for Wpa1Credentials {
     }
 }
 
-impl TryFrom<fidl_security::WpaCredentials> for Wpa1Credentials {
+impl TryFrom<fidl_internal::WpaCredentials> for Wpa1Credentials {
     type Error = SecurityError;
 
-    fn try_from(credentials: fidl_security::WpaCredentials) -> Result<Self, Self::Error> {
+    fn try_from(credentials: fidl_internal::WpaCredentials) -> Result<Self, Self::Error> {
         match credentials {
-            fidl_security::WpaCredentials::Psk(psk) => Ok(Wpa1Credentials::Psk(Psk::from(psk))),
-            fidl_security::WpaCredentials::Passphrase(passphrase) => {
+            fidl_internal::WpaCredentials::Psk(psk) => Ok(Wpa1Credentials::Psk(Psk::from(psk))),
+            fidl_internal::WpaCredentials::Passphrase(passphrase) => {
                 let passphrase = Passphrase::try_from(passphrase)?;
                 Ok(Wpa1Credentials::Passphrase(passphrase))
             }
@@ -346,7 +346,7 @@ impl From<Psk> for Wpa2PersonalCredentials {
     }
 }
 
-impl From<Wpa2PersonalCredentials> for fidl_security::WpaCredentials {
+impl From<Wpa2PersonalCredentials> for fidl_internal::WpaCredentials {
     fn from(credentials: Wpa2PersonalCredentials) -> Self {
         PersonalCredentials::from(credentials).into()
     }
@@ -368,15 +368,15 @@ impl TryFrom<PersonalCredentials> for Wpa2PersonalCredentials {
     }
 }
 
-impl TryFrom<fidl_security::WpaCredentials> for Wpa2PersonalCredentials {
+impl TryFrom<fidl_internal::WpaCredentials> for Wpa2PersonalCredentials {
     type Error = SecurityError;
 
-    fn try_from(credentials: fidl_security::WpaCredentials) -> Result<Self, Self::Error> {
+    fn try_from(credentials: fidl_internal::WpaCredentials) -> Result<Self, Self::Error> {
         match credentials {
-            fidl_security::WpaCredentials::Psk(psk) => {
+            fidl_internal::WpaCredentials::Psk(psk) => {
                 Ok(Wpa2PersonalCredentials::Psk(Psk::from(psk)))
             }
-            fidl_security::WpaCredentials::Passphrase(passphrase) => {
+            fidl_internal::WpaCredentials::Passphrase(passphrase) => {
                 let passphrase = Passphrase::try_from(passphrase)?;
                 Ok(Wpa2PersonalCredentials::Passphrase(passphrase))
             }
@@ -404,7 +404,7 @@ impl From<Passphrase> for Wpa3PersonalCredentials {
     }
 }
 
-impl From<Wpa3PersonalCredentials> for fidl_security::WpaCredentials {
+impl From<Wpa3PersonalCredentials> for fidl_internal::WpaCredentials {
     fn from(credentials: Wpa3PersonalCredentials) -> Self {
         PersonalCredentials::from(credentials).into()
     }
@@ -423,13 +423,13 @@ impl TryFrom<PersonalCredentials> for Wpa3PersonalCredentials {
     }
 }
 
-impl TryFrom<fidl_security::WpaCredentials> for Wpa3PersonalCredentials {
+impl TryFrom<fidl_internal::WpaCredentials> for Wpa3PersonalCredentials {
     type Error = SecurityError;
 
-    fn try_from(credentials: fidl_security::WpaCredentials) -> Result<Self, Self::Error> {
+    fn try_from(credentials: fidl_internal::WpaCredentials) -> Result<Self, Self::Error> {
         match credentials {
-            fidl_security::WpaCredentials::Psk(_) => Err(SecurityError::Incompatible),
-            fidl_security::WpaCredentials::Passphrase(passphrase) => {
+            fidl_internal::WpaCredentials::Psk(_) => Err(SecurityError::Incompatible),
+            fidl_internal::WpaCredentials::Passphrase(passphrase) => {
                 let passphrase = Passphrase::try_from(passphrase)?;
                 Ok(Wpa3PersonalCredentials::Passphrase(passphrase))
             }
@@ -459,7 +459,7 @@ impl From<()> for EnterpriseCredentials {
     }
 }
 
-impl From<EnterpriseCredentials> for fidl_security::WpaCredentials {
+impl From<EnterpriseCredentials> for fidl_internal::WpaCredentials {
     fn from(_: EnterpriseCredentials) -> Self {
         // TODO(https://fxbug.dev/42174395): Implement conversions for WPA Enterprise.
         panic!("WPA Enterprise is unsupported")
@@ -629,20 +629,20 @@ where
     }
 }
 
-impl<C> From<Wpa<C>> for fidl_security::Protocol
+impl<C> From<Wpa<C>> for fidl_internal::Protocol
 where
     C: CredentialData,
 {
     fn from(wpa: Wpa<C>) -> Self {
         match wpa {
-            Wpa::Wpa1 { .. } => fidl_security::Protocol::Wpa1,
+            Wpa::Wpa1 { .. } => fidl_internal::Protocol::Wpa1,
             Wpa::Wpa2 { authentication, .. } => match authentication {
-                Authentication::Personal(_) => fidl_security::Protocol::Wpa2Personal,
-                Authentication::Enterprise(_) => fidl_security::Protocol::Wpa2Enterprise,
+                Authentication::Personal(_) => fidl_internal::Protocol::Wpa2Personal,
+                Authentication::Enterprise(_) => fidl_internal::Protocol::Wpa2Enterprise,
             },
             Wpa::Wpa3 { authentication, .. } => match authentication {
-                Authentication::Personal(_) => fidl_security::Protocol::Wpa3Personal,
-                Authentication::Enterprise(_) => fidl_security::Protocol::Wpa3Enterprise,
+                Authentication::Personal(_) => fidl_internal::Protocol::Wpa3Personal,
+                Authentication::Enterprise(_) => fidl_internal::Protocol::Wpa3Enterprise,
             },
         }
     }
@@ -754,7 +754,7 @@ impl WpaAuthenticator {
 
 #[cfg(test)]
 mod tests {
-    use fidl_fuchsia_wlan_common_security as fidl_security;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
 
     use test_case::test_case;
 
@@ -795,13 +795,13 @@ mod tests {
         fn passphrase() -> Self;
     }
 
-    impl WpaCredentialsTestCase for fidl_security::WpaCredentials {
+    impl WpaCredentialsTestCase for fidl_internal::WpaCredentials {
         fn psk() -> Self {
-            fidl_security::WpaCredentials::Psk(wpa_psk().0)
+            fidl_internal::WpaCredentials::Psk(wpa_psk().0)
         }
 
         fn passphrase() -> Self {
-            fidl_security::WpaCredentials::Passphrase(wpa_passphrase().into())
+            fidl_internal::WpaCredentials::Passphrase(wpa_passphrase().into())
         }
     }
 
@@ -848,7 +848,7 @@ mod tests {
         Ok(wpa::Wpa1Credentials::Passphrase(_))
     )]
     fn wpa1_credentials_from_credentials_fidl(
-        credentials: fidl_security::WpaCredentials,
+        credentials: fidl_internal::WpaCredentials,
     ) -> Result<wpa::Wpa1Credentials, SecurityError> {
         credentials.try_into()
     }
@@ -858,7 +858,7 @@ mod tests {
         Ok(wpa::Wpa2PersonalCredentials::Passphrase(_))
     )]
     fn wpa2_personal_credentials_from_credentials_fidl(
-        credentials: fidl_security::WpaCredentials,
+        credentials: fidl_internal::WpaCredentials,
     ) -> Result<wpa::Wpa2PersonalCredentials, SecurityError> {
         credentials.try_into()
     }
@@ -868,7 +868,7 @@ mod tests {
         Ok(wpa::Wpa3PersonalCredentials::Passphrase(_))
     )]
     fn wpa3_personal_credentials_from_credentials_fidl(
-        credentials: fidl_security::WpaCredentials,
+        credentials: fidl_internal::WpaCredentials,
     ) -> Result<wpa::Wpa3PersonalCredentials, SecurityError> {
         credentials.try_into()
     }

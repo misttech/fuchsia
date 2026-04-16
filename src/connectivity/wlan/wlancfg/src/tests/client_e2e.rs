@@ -48,9 +48,8 @@ use wlan_common::test_utils::ExpectWithin;
     reason = "mass allow for https://https://fxbug.devug.dev/381896734"
 )]
 use {
-    fidl_fuchsia_wlan_common as fidl_common,
-    fidl_fuchsia_wlan_common_security as fidl_common_security,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_policy as fidl_policy,
+    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
+    fidl_fuchsia_wlan_internal as fidl_common_security, fidl_fuchsia_wlan_policy as fidl_policy,
     fidl_fuchsia_wlan_sme as fidl_sme, hex,
 };
 

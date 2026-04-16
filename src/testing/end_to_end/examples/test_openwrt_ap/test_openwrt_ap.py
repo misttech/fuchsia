@@ -6,7 +6,7 @@
 import asyncio
 import logging
 
-import fidl_fuchsia_wlan_common_security as f_wlan_common_security
+import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fuchsia_base_test
 from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
 from mobly import asserts, signals, test_runner
@@ -91,10 +91,10 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                 raise signals.TestFailure(
                     "Password must be provided for WPA2 security"
                 )
-            authentication = f_wlan_common_security.Authentication(
-                f_wlan_common_security.Protocol.WPA2_PERSONAL,
-                f_wlan_common_security.Credentials(
-                    wpa=f_wlan_common_security.WpaCredentials(
+            authentication = f_wlan_internal.Authentication(
+                f_wlan_internal.Protocol.WPA2_PERSONAL,
+                f_wlan_internal.Credentials(
+                    wpa=f_wlan_internal.WpaCredentials(
                         passphrase=bss_settings.password.encode("utf-8")
                     )
                 ),
@@ -104,17 +104,17 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                 raise signals.TestFailure(
                     "Password must be provided for WPA3 security"
                 )
-            authentication = f_wlan_common_security.Authentication(
-                f_wlan_common_security.Protocol.WPA3_PERSONAL,
-                f_wlan_common_security.Credentials(
-                    wpa=f_wlan_common_security.WpaCredentials(
+            authentication = f_wlan_internal.Authentication(
+                f_wlan_internal.Protocol.WPA3_PERSONAL,
+                f_wlan_internal.Credentials(
+                    wpa=f_wlan_internal.WpaCredentials(
                         passphrase=bss_settings.password.encode("utf-8")
                     )
                 ),
             )
         else:
-            authentication = f_wlan_common_security.Authentication(
-                f_wlan_common_security.Protocol.OPEN, None
+            authentication = f_wlan_internal.Authentication(
+                f_wlan_internal.Protocol.OPEN, None
             )
 
         if bss_desc_for_ssid and len(bss_desc_for_ssid) > 0:

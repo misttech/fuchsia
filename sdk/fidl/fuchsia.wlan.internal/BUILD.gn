@@ -34,7 +34,10 @@ if (is_host) {
 }
 
 fidl("fuchsia.wlan.internal") {
-  sources = [ "wlan_internal.fidl" ]
+  sources = [
+    "security.fidl",
+    "wlan_internal.fidl",
+  ]
   enable_hlcpp = true
   visibility = [ "*" ]
 }

@@ -6,7 +6,9 @@ use crate::client::types as client_types;
 use crate::util::historical_list::{HistoricalList, Timestamped};
 use arbitrary::Arbitrary;
 #[cfg(test)]
-use fidl_fuchsia_wlan_common_security as fidl_security;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fuchsia_async as fasync;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
@@ -14,7 +16,6 @@ use wlan_common::security::wep::WepKey;
 use wlan_common::security::wpa::WpaDescriptor;
 use wlan_common::security::wpa::credential::{Passphrase, Psk};
 use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor};
-use {fidl_fuchsia_wlan_policy as fidl_policy, fuchsia_async as fasync};
 
 /// The max number of connection results we will store per BSS at a time. For now, this number is
 /// chosen arbitartily.
@@ -442,9 +443,9 @@ impl From<Credential> for fidl_policy::Credential {
 //                         in `ScannedCandidate` which can be more directly compared to SME
 //                         `ConnectRequest`s in tests.
 #[cfg(test)]
-impl PartialEq<Option<fidl_security::Credentials>> for Credential {
-    fn eq(&self, credentials: &Option<fidl_security::Credentials>) -> bool {
-        use fidl_security::{Credentials, WepCredentials, WpaCredentials};
+impl PartialEq<Option<fidl_internal::Credentials>> for Credential {
+    fn eq(&self, credentials: &Option<fidl_internal::Credentials>) -> bool {
+        use fidl_internal::{Credentials, WepCredentials, WpaCredentials};
 
         match credentials {
             None => matches!(self, Credential::None),
@@ -482,8 +483,8 @@ impl PartialEq<Option<fidl_security::Credentials>> for Credential {
 
 // TODO(https://fxbug.dev/42053561): Remove this operator implementation. See the similar conversion above.
 #[cfg(test)]
-impl PartialEq<Option<Box<fidl_security::Credentials>>> for Credential {
-    fn eq(&self, credentials: &Option<Box<fidl_security::Credentials>>) -> bool {
+impl PartialEq<Option<Box<fidl_internal::Credentials>>> for Credential {
+    fn eq(&self, credentials: &Option<Box<fidl_internal::Credentials>>) -> bool {
         self.eq(&credentials.as_ref().map(|credentials| *credentials.clone()))
     }
 }

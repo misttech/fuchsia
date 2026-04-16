@@ -12,9 +12,9 @@ from typing import TypeVar
 from unittest import mock
 
 import fidl_fuchsia_wlan_common as f_wlan_common
-import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
+import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fidl_fuchsia_wlan_sme as f_wlan_sme
 import fuchsia_controller_py
 from fuchsia_controller_py import Channel, Context, FcTransportStatus, ZxStatus
@@ -263,16 +263,16 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
         for msg, auth in [
             (
                 "open",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.OPEN, None
+                f_wlan_internal.Authentication(
+                    f_wlan_internal.Protocol.OPEN, None
                 ),
             ),
             (
                 "wep",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WEP,
-                    f_wlan_common_security.Credentials(
-                        wep=f_wlan_common_security.WepCredentials(
+                f_wlan_internal.Authentication(
+                    f_wlan_internal.Protocol.WEP,
+                    f_wlan_internal.Credentials(
+                        wep=f_wlan_internal.WepCredentials(
                             _TEST_PASSWORD.encode("ascii")
                         )
                     ),
@@ -280,10 +280,10 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "wpa1+passphrase",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WPA1,
-                    f_wlan_common_security.Credentials(
-                        wpa=f_wlan_common_security.WpaCredentials(
+                f_wlan_internal.Authentication(
+                    f_wlan_internal.Protocol.WPA1,
+                    f_wlan_internal.Credentials(
+                        wpa=f_wlan_internal.WpaCredentials(
                             passphrase=_TEST_PASSWORD.encode("ascii")
                         )
                     ),
@@ -291,19 +291,19 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "wpa1+psk",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WPA1,
-                    f_wlan_common_security.Credentials(
-                        wpa=f_wlan_common_security.WpaCredentials(psk=_TEST_PSK)
+                f_wlan_internal.Authentication(
+                    f_wlan_internal.Protocol.WPA1,
+                    f_wlan_internal.Credentials(
+                        wpa=f_wlan_internal.WpaCredentials(psk=_TEST_PSK)
                     ),
                 ),
             ),
             (
                 "wpa2+passphrase",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WPA2_PERSONAL,
-                    f_wlan_common_security.Credentials(
-                        wpa=f_wlan_common_security.WpaCredentials(
+                f_wlan_internal.Authentication(
+                    f_wlan_internal.Protocol.WPA2_PERSONAL,
+                    f_wlan_internal.Credentials(
+                        wpa=f_wlan_internal.WpaCredentials(
                             passphrase=_TEST_PASSWORD.encode("ascii")
                         )
                     ),
@@ -311,10 +311,10 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 "wpa2+psk",
-                f_wlan_common_security.Authentication(
-                    f_wlan_common_security.Protocol.WPA2_PERSONAL,
-                    f_wlan_common_security.Credentials(
-                        wpa=f_wlan_common_security.WpaCredentials(psk=_TEST_PSK)
+                f_wlan_internal.Authentication(
+                    f_wlan_internal.Protocol.WPA2_PERSONAL,
+                    f_wlan_internal.Credentials(
+                        wpa=f_wlan_internal.WpaCredentials(psk=_TEST_PSK)
                     ),
                 ),
             ),
@@ -328,7 +328,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     def connect(
                         req: f_wlan_sme.ConnectRequest,
                         txn: int,
-                        current_auth: f_wlan_common_security.Authentication = auth,
+                        current_auth: f_wlan_internal.Authentication = auth,
                     ) -> None:
                         expect = f_wlan_sme.ConnectRequest(
                             ssid=_TEST_SSID_BYTES,
@@ -384,8 +384,8 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                 await self.wlan_core_obj.connect(
                     _TEST_SSID,
                     _TEST_BSS_DESC_1,
-                    f_wlan_common_security.Authentication(
-                        f_wlan_common_security.Protocol.OPEN, None
+                    f_wlan_internal.Authentication(
+                        f_wlan_internal.Protocol.OPEN, None
                     ),
                 )
 
@@ -401,8 +401,8 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     await self.wlan_core_obj.connect(
                         _TEST_SSID,
                         _TEST_BSS_DESC_1,
-                        f_wlan_common_security.Authentication(
-                            f_wlan_common_security.Protocol.OPEN, None
+                        f_wlan_internal.Authentication(
+                            f_wlan_internal.Protocol.OPEN, None
                         ),
                     )
 
@@ -454,8 +454,8 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                         await self.wlan_core_obj.connect(
                             _TEST_SSID,
                             _TEST_BSS_DESC_1,
-                            f_wlan_common_security.Authentication(
-                                f_wlan_common_security.Protocol.OPEN, None
+                            f_wlan_internal.Authentication(
+                                f_wlan_internal.Protocol.OPEN, None
                             ),
                         )
 
@@ -471,8 +471,8 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                     ssid=_TEST_SSID_BYTES,
                     bss_description=_TEST_BSS_DESC_1,
                     multiple_bss_candidates=False,
-                    authentication=f_wlan_common_security.Authentication(
-                        f_wlan_common_security.Protocol.OPEN, None
+                    authentication=f_wlan_internal.Authentication(
+                        f_wlan_internal.Protocol.OPEN, None
                     ),
                     deprecated_scan_type=f_wlan_common.ScanType.ACTIVE,
                 )
@@ -507,8 +507,8 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                 await self.wlan_core_obj.connect(
                     _TEST_SSID,
                     _TEST_BSS_DESC_1,
-                    f_wlan_common_security.Authentication(
-                        f_wlan_common_security.Protocol.OPEN, None
+                    f_wlan_internal.Authentication(
+                        f_wlan_internal.Protocol.OPEN, None
                     ),
                 )
 
@@ -549,8 +549,8 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                             ssid=_TEST_SSID_BYTES,
                             bss_description=_TEST_BSS_DESC_1,
                             multiple_bss_candidates=False,
-                            authentication=f_wlan_common_security.Authentication(
-                                f_wlan_common_security.Protocol.OPEN, None
+                            authentication=f_wlan_internal.Authentication(
+                                f_wlan_internal.Protocol.OPEN, None
                             ),
                             deprecated_scan_type=f_wlan_common.ScanType.ACTIVE,
                         )
@@ -580,8 +580,8 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                         await self.wlan_core_obj.connect(
                             _TEST_SSID,
                             _TEST_BSS_DESC_1,
-                            f_wlan_common_security.Authentication(
-                                f_wlan_common_security.Protocol.OPEN, None
+                            f_wlan_internal.Authentication(
+                                f_wlan_internal.Protocol.OPEN, None
                             ),
                         )
 
@@ -799,7 +799,7 @@ class WlanCoreFCTests(unittest.IsolatedAsyncioTestCase):
                             compatible=(
                                 f_wlan_sme.Compatible(
                                     mutual_security_protocols=[
-                                        f_wlan_common_security.Protocol.WPA2_PERSONAL
+                                        f_wlan_internal.Protocol.WPA2_PERSONAL
                                     ]
                                 )
                             )

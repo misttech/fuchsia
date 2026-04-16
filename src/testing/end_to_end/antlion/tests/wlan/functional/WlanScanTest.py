@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
-import fidl_fuchsia_wlan_common_security as fidl_security
+import fidl_fuchsia_wlan_internal as f_wlan_internal
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import BandType
 from antlion.controllers.ap_lib.hostapd_security import (
@@ -169,20 +169,20 @@ class WlanScanTest(base_test.WifiBaseTest):
             )
 
         if t.security == Security.NONE:
-            protocol = fidl_security.Protocol.OPEN
+            protocol = f_wlan_internal.Protocol.OPEN
             credentials = None
         elif t.security == Security.WPA2:
             if password is None:
                 raise signals.TestError("Password is required for WPA2")
-            protocol = fidl_security.Protocol.WPA2_PERSONAL
-            credentials = fidl_security.Credentials(
-                wpa=fidl_security.WpaCredentials(
+            protocol = f_wlan_internal.Protocol.WPA2_PERSONAL
+            credentials = f_wlan_internal.Credentials(
+                wpa=f_wlan_internal.WpaCredentials(
                     passphrase=(list(password.encode("ascii")))
                 )
             )
         else:
             raise signals.TestFailure(f"Unhandled security mode {t.security}")
-        authentication = fidl_security.Authentication(
+        authentication = f_wlan_internal.Authentication(
             protocol=protocol, credentials=credentials
         )
 

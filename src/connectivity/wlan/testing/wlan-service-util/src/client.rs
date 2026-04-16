@@ -4,18 +4,18 @@
 
 use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints;
+use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_common::WlanMacRole;
 use fidl_fuchsia_wlan_device_service::DeviceMonitorProxy;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use futures::stream::TryStreamExt;
 use ieee80211::Ssid;
 use wlan_common::bss::{BssDescription, Protection};
 use wlan_common::security::SecurityError;
 use wlan_common::security::wep::WepKey;
 use wlan_common::security::wpa::credential::{Passphrase, Psk};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_common_security as fidl_security,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 type WlanService = DeviceMonitorProxy;
 
@@ -35,20 +35,20 @@ struct SecurityContext {
 ///
 /// This is necessary, because the service utilities communicate directly with SME, which requires
 /// more detailed information than the Policy layer.
-impl TryFrom<SecurityContext> for fidl_security::Authentication {
+impl TryFrom<SecurityContext> for fidl_internal::Authentication {
     type Error = SecurityError;
 
     fn try_from(context: SecurityContext) -> Result<Self, SecurityError> {
         let SecurityContext { bss, unparsed_credential_bytes } = context;
         fn parse_wpa_credentials(
             unparsed_credential_bytes: Vec<u8>,
-        ) -> Result<fidl_security::Credentials, SecurityError> {
+        ) -> Result<fidl_internal::Credentials, SecurityError> {
             // Interpret credentials as a PSK first. This format is more specific.
             if let Ok(psk) = Psk::try_from(unparsed_credential_bytes.as_slice()) {
-                Ok(fidl_security::Credentials::Wpa(fidl_security::WpaCredentials::Psk(psk.into())))
+                Ok(fidl_internal::Credentials::Wpa(fidl_internal::WpaCredentials::Psk(psk.into())))
             } else {
                 let passphrase = Passphrase::try_from(unparsed_credential_bytes)?;
-                Ok(fidl_security::Credentials::Wpa(fidl_security::WpaCredentials::Passphrase(
+                Ok(fidl_internal::Credentials::Wpa(fidl_internal::WpaCredentials::Passphrase(
                     passphrase.into(),
                 )))
             }
@@ -65,26 +65,26 @@ impl TryFrom<SecurityContext> for fidl_security::Authentication {
             {
                 Err(SecurityError::Incompatible)
             }
-            Protection::Open | Protection::OpenOweTransition => Ok(fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Open,
+            Protection::Open | Protection::OpenOweTransition => Ok(fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Open,
                 credentials: None,
             }),
-            Protection::Owe => Ok(fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Owe,
+            Protection::Owe => Ok(fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Owe,
                 credentials: None,
             }),
             Protection::Wep => WepKey::parse(unparsed_credential_bytes.as_slice())
-                .map(|key| fidl_security::Authentication {
-                    protocol: fidl_security::Protocol::Wep,
-                    credentials: Some(Box::new(fidl_security::Credentials::Wep(
-                        fidl_security::WepCredentials { key: key.into() },
+                .map(|key| fidl_internal::Authentication {
+                    protocol: fidl_internal::Protocol::Wep,
+                    credentials: Some(Box::new(fidl_internal::Credentials::Wep(
+                        fidl_internal::WepCredentials { key: key.into() },
                     ))),
                 })
                 .map_err(From::from),
             Protection::Wpa1 => {
                 parse_wpa_credentials(unparsed_credential_bytes).map(|credentials| {
-                    fidl_security::Authentication {
-                        protocol: fidl_security::Protocol::Wpa1,
+                    fidl_internal::Authentication {
+                        protocol: fidl_internal::Protocol::Wpa1,
                         credentials: Some(Box::new(credentials)),
                     }
                 })
@@ -94,8 +94,8 @@ impl TryFrom<SecurityContext> for fidl_security::Authentication {
             | Protection::Wpa2PersonalTkipOnly
             | Protection::Wpa2Personal => {
                 parse_wpa_credentials(unparsed_credential_bytes).map(|credentials| {
-                    fidl_security::Authentication {
-                        protocol: fidl_security::Protocol::Wpa2Personal,
+                    fidl_internal::Authentication {
+                        protocol: fidl_internal::Protocol::Wpa2Personal,
                         credentials: Some(Box::new(credentials)),
                     }
                 })
@@ -103,28 +103,28 @@ impl TryFrom<SecurityContext> for fidl_security::Authentication {
             Protection::Wpa2Wpa3Personal => {
                 // Use WPA2 for transitional networks when a PSK is supplied.
                 if let Ok(psk) = Psk::try_from(unparsed_credential_bytes.as_slice()) {
-                    Ok(fidl_security::Authentication {
-                        protocol: fidl_security::Protocol::Wpa2Personal,
-                        credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                            fidl_security::WpaCredentials::Psk(psk.into()),
+                    Ok(fidl_internal::Authentication {
+                        protocol: fidl_internal::Protocol::Wpa2Personal,
+                        credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                            fidl_internal::WpaCredentials::Psk(psk.into()),
                         ))),
                     })
                 } else {
                     Passphrase::try_from(unparsed_credential_bytes)
-                        .map(|passphrase| fidl_security::Authentication {
-                            protocol: fidl_security::Protocol::Wpa3Personal,
-                            credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                                fidl_security::WpaCredentials::Passphrase(passphrase.into()),
+                        .map(|passphrase| fidl_internal::Authentication {
+                            protocol: fidl_internal::Protocol::Wpa3Personal,
+                            credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                                fidl_internal::WpaCredentials::Passphrase(passphrase.into()),
                             ))),
                         })
                         .map_err(From::from)
                 }
             }
             Protection::Wpa3Personal => Passphrase::try_from(unparsed_credential_bytes)
-                .map(|passphrase| fidl_security::Authentication {
-                    protocol: fidl_security::Protocol::Wpa3Personal,
-                    credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                        fidl_security::WpaCredentials::Passphrase(passphrase.into()),
+                .map(|passphrase| fidl_internal::Authentication {
+                    protocol: fidl_internal::Protocol::Wpa3Personal,
+                    credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                        fidl_internal::WpaCredentials::Passphrase(passphrase.into()),
                     ))),
                 })
                 .map_err(From::from),
@@ -169,7 +169,7 @@ pub async fn connect(
     // Create a `ConnectRequest` using the given network information.
     // Negotiate a security protocol based on the given credential and BSS metadata. Note that the
     // resulting `Authentication` may be invalid.
-    let authentication = fidl_security::Authentication::try_from(SecurityContext {
+    let authentication = fidl_internal::Authentication::try_from(SecurityContext {
         bss: BssDescription::try_from(target_bss_desc.clone())?,
         unparsed_credential_bytes: target_pwd,
     })?;
@@ -314,10 +314,12 @@ mod tests {
     use super::*;
     use crate::*;
     use fidl::endpoints::RequestStream;
+    use fidl_fuchsia_wlan_common as fidl_common;
     use fidl_fuchsia_wlan_device_service::{
         self as wlan_service, DeviceMonitorMarker, DeviceMonitorProxy, DeviceMonitorRequest,
         DeviceMonitorRequestStream,
     };
+    use fidl_fuchsia_wlan_internal as fidl_internal;
     use fidl_fuchsia_wlan_sme::{
         ClientSmeMarker, ClientSmeRequest, ClientSmeRequestStream, Protection,
     };
@@ -331,9 +333,6 @@ mod tests {
     use wlan_common::channel::{Cbw, Channel};
     use wlan_common::scan::write_vmo;
     use wlan_common::{assert_variant, fake_fidl_bss_description};
-    use {
-        fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_common_security as fidl_security,
-    };
 
     fn generate_random_wpa2_bss_description() -> fidl_fuchsia_wlan_internal::BssDescription {
         let mut rng = rand::rng();
@@ -875,7 +874,7 @@ mod tests {
             &mut exec,
             &mut next_client_sme_req,
             &target_ssid,
-            fidl_security::Authentication::try_from(SecurityContext {
+            fidl_internal::Authentication::try_from(SecurityContext {
                 bss: BssDescription::try_from(target_bss_desc.clone()).unwrap(),
                 unparsed_credential_bytes: target_password.to_vec(),
             })
@@ -933,7 +932,7 @@ mod tests {
             &mut exec,
             &mut next_client_sme_req,
             &target_ssid,
-            fidl_security::Authentication::try_from(SecurityContext {
+            fidl_internal::Authentication::try_from(SecurityContext {
                 bss: BssDescription::try_from(target_bss_desc.clone()).unwrap(),
                 unparsed_credential_bytes: target_password.to_vec(),
             })
@@ -966,7 +965,7 @@ mod tests {
             &mut exec,
             &mut next_client_sme_req,
             &target_ssid,
-            fidl_security::Authentication::try_from(SecurityContext {
+            fidl_internal::Authentication::try_from(SecurityContext {
                 bss: BssDescription::try_from(target_bss_desc.clone()).unwrap(),
                 unparsed_credential_bytes: vec![],
             })
@@ -979,7 +978,7 @@ mod tests {
         exec: &mut TestExecutor,
         server: &mut StreamFuture<ClientSmeRequestStream>,
         expected_ssid: &Ssid,
-        expected_authentication: fidl_security::Authentication,
+        expected_authentication: fidl_internal::Authentication,
         expected_bss_desc: fidl_common::BssDescription,
     ) {
         match poll_client_sme_request(exec, server) {
@@ -996,7 +995,7 @@ mod tests {
         exec: &mut TestExecutor,
         server: &mut StreamFuture<ClientSmeRequestStream>,
         expected_ssid: &Ssid,
-        expected_authentication: fidl_security::Authentication,
+        expected_authentication: fidl_internal::Authentication,
         connect_result: fidl_ieee80211::StatusCode,
     ) {
         let responder = match poll_client_sme_request(exec, server) {
@@ -1176,7 +1175,7 @@ mod tests {
                 Channel::new(1, Cbw::Cbw20),
                 Protection::Wpa2Personal,
                 Some(fidl_sme::Compatibility {
-                    mutual_security_protocols: vec![fidl_security::Protocol::Wpa2Personal],
+                    mutual_security_protocols: vec![fidl_internal::Protocol::Wpa2Personal],
                 }),
             ),
             create_scan_result(

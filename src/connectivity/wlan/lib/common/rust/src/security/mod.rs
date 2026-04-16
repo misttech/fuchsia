@@ -20,7 +20,7 @@
 //! # FIDL
 //!
 //! Types in this module support conversion into and from datagrams in the
-//! `fuchsia.wlan.common.security` package. When interacting with FIDL, most code should prefer
+//! `fuchsia.wlan.internal` package. When interacting with FIDL, most code should prefer
 //! conversions between FIDL types and this module's `SecurityDescriptor` and
 //! `SecurityAuthenticator` types, though conversions for intermediate types are also provided.
 //!
@@ -47,7 +47,7 @@
 pub mod wep;
 pub mod wpa;
 
-use fidl_fuchsia_wlan_common_security as fidl_security;
+use fidl_fuchsia_wlan_internal as fidl_internal;
 use thiserror::Error;
 
 use crate::security::wep::WepKey;
@@ -55,21 +55,21 @@ use crate::security::wpa::credential::{Passphrase, PassphraseError, Psk, PskErro
 
 /// Extension methods for the `Credentials` FIDL datagram.
 pub trait CredentialsExt {
-    fn into_wep(self) -> Option<fidl_security::WepCredentials>;
-    fn into_wpa(self) -> Option<fidl_security::WpaCredentials>;
+    fn into_wep(self) -> Option<fidl_internal::WepCredentials>;
+    fn into_wpa(self) -> Option<fidl_internal::WpaCredentials>;
 }
 
-impl CredentialsExt for fidl_security::Credentials {
-    fn into_wep(self) -> Option<fidl_security::WepCredentials> {
-        if let fidl_security::Credentials::Wep(credentials) = self {
+impl CredentialsExt for fidl_internal::Credentials {
+    fn into_wep(self) -> Option<fidl_internal::WepCredentials> {
+        if let fidl_internal::Credentials::Wep(credentials) = self {
             Some(credentials)
         } else {
             None
         }
     }
 
-    fn into_wpa(self) -> Option<fidl_security::WpaCredentials> {
-        if let fidl_security::Credentials::Wpa(credentials) = self {
+    fn into_wpa(self) -> Option<fidl_internal::WpaCredentials> {
+        if let fidl_internal::Credentials::Wpa(credentials) = self {
             Some(credentials)
         } else {
             None
@@ -122,7 +122,7 @@ impl From<PskError> for SecurityError {
 /// occurs in code that communicates directly with SME without support from the Policy layer to
 /// derive this information.
 ///
-/// The FIDL analogue of this type is `fuchsia.wlan.common.security.Credentials`, into and from
+/// The FIDL analogue of this type is `fuchsia.wlan.internal.Credentials`, into and from
 /// which this type can be infallibly converted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BareCredentials {
@@ -139,39 +139,39 @@ pub enum BareCredentials {
     WpaPsk(Psk),
 }
 
-impl From<BareCredentials> for fidl_security::Credentials {
+impl From<BareCredentials> for fidl_internal::Credentials {
     fn from(credentials: BareCredentials) -> Self {
         match credentials {
             BareCredentials::WepKey(key) => {
-                fidl_security::Credentials::Wep(fidl_security::WepCredentials { key: key.into() })
+                fidl_internal::Credentials::Wep(fidl_internal::WepCredentials { key: key.into() })
             }
-            BareCredentials::WpaPassphrase(passphrase) => fidl_security::Credentials::Wpa(
-                fidl_security::WpaCredentials::Passphrase(passphrase.into()),
+            BareCredentials::WpaPassphrase(passphrase) => fidl_internal::Credentials::Wpa(
+                fidl_internal::WpaCredentials::Passphrase(passphrase.into()),
             ),
             BareCredentials::WpaPsk(psk) => {
-                fidl_security::Credentials::Wpa(fidl_security::WpaCredentials::Psk(psk.into()))
+                fidl_internal::Credentials::Wpa(fidl_internal::WpaCredentials::Psk(psk.into()))
             }
         }
     }
 }
 
-impl TryFrom<fidl_security::Credentials> for BareCredentials {
+impl TryFrom<fidl_internal::Credentials> for BareCredentials {
     type Error = SecurityError;
 
-    fn try_from(credentials: fidl_security::Credentials) -> Result<Self, Self::Error> {
+    fn try_from(credentials: fidl_internal::Credentials) -> Result<Self, Self::Error> {
         match credentials {
-            fidl_security::Credentials::Wep(fidl_security::WepCredentials { key }) => {
+            fidl_internal::Credentials::Wep(fidl_internal::WepCredentials { key }) => {
                 WepKey::try_from_literal_bytes(key.as_slice())
                     .map(|key| BareCredentials::WepKey(key))
                     .map_err(From::from)
             }
-            fidl_security::Credentials::Wpa(credentials) => match credentials {
-                fidl_security::WpaCredentials::Passphrase(passphrase) => {
+            fidl_internal::Credentials::Wpa(credentials) => match credentials {
+                fidl_internal::WpaCredentials::Passphrase(passphrase) => {
                     Passphrase::try_from(passphrase)
                         .map(|passphrase| BareCredentials::WpaPassphrase(passphrase))
                         .map_err(From::from)
                 }
-                fidl_security::WpaCredentials::Psk(psk) => Psk::try_from(psk.as_slice())
+                fidl_internal::WpaCredentials::Psk(psk) => Psk::try_from(psk.as_slice())
                     .map(|psk| BareCredentials::WpaPsk(psk))
                     .map_err(From::from),
                 // Unknown variant.
@@ -292,34 +292,34 @@ impl SecurityDescriptor {
     }
 }
 
-impl From<fidl_security::Protocol> for SecurityDescriptor {
-    fn from(protocol: fidl_security::Protocol) -> Self {
+impl From<fidl_internal::Protocol> for SecurityDescriptor {
+    fn from(protocol: fidl_internal::Protocol) -> Self {
         match protocol {
-            fidl_security::Protocol::Open => SecurityDescriptor::Open,
-            fidl_security::Protocol::Owe => SecurityDescriptor::Owe,
-            fidl_security::Protocol::Wep => SecurityDescriptor::Wep,
-            fidl_security::Protocol::Wpa1 => {
+            fidl_internal::Protocol::Open => SecurityDescriptor::Open,
+            fidl_internal::Protocol::Owe => SecurityDescriptor::Owe,
+            fidl_internal::Protocol::Wep => SecurityDescriptor::Wep,
+            fidl_internal::Protocol::Wpa1 => {
                 SecurityDescriptor::Wpa(wpa::WpaDescriptor::Wpa1 { credentials: () })
             }
-            fidl_security::Protocol::Wpa2Personal => {
+            fidl_internal::Protocol::Wpa2Personal => {
                 SecurityDescriptor::Wpa(wpa::WpaDescriptor::Wpa2 {
                     authentication: wpa::Authentication::Personal(()),
                     cipher: None,
                 })
             }
-            fidl_security::Protocol::Wpa2Enterprise => {
+            fidl_internal::Protocol::Wpa2Enterprise => {
                 SecurityDescriptor::Wpa(wpa::WpaDescriptor::Wpa2 {
                     authentication: wpa::Authentication::Enterprise(()),
                     cipher: None,
                 })
             }
-            fidl_security::Protocol::Wpa3Personal => {
+            fidl_internal::Protocol::Wpa3Personal => {
                 SecurityDescriptor::Wpa(wpa::WpaDescriptor::Wpa3 {
                     authentication: wpa::Authentication::Personal(()),
                     cipher: None,
                 })
             }
-            fidl_security::Protocol::Wpa3Enterprise => {
+            fidl_internal::Protocol::Wpa3Enterprise => {
                 SecurityDescriptor::Wpa(wpa::WpaDescriptor::Wpa3 {
                     authentication: wpa::Authentication::Enterprise(()),
                     cipher: None,
@@ -330,21 +330,21 @@ impl From<fidl_security::Protocol> for SecurityDescriptor {
     }
 }
 
-impl From<SecurityDescriptor> for fidl_security::Protocol {
+impl From<SecurityDescriptor> for fidl_internal::Protocol {
     fn from(descriptor: SecurityDescriptor) -> Self {
         match descriptor {
-            SecurityDescriptor::Open => fidl_security::Protocol::Open,
-            SecurityDescriptor::Owe => fidl_security::Protocol::Owe,
-            SecurityDescriptor::Wep => fidl_security::Protocol::Wep,
+            SecurityDescriptor::Open => fidl_internal::Protocol::Open,
+            SecurityDescriptor::Owe => fidl_internal::Protocol::Owe,
+            SecurityDescriptor::Wep => fidl_internal::Protocol::Wep,
             SecurityDescriptor::Wpa(wpa) => match wpa {
-                wpa::WpaDescriptor::Wpa1 { .. } => fidl_security::Protocol::Wpa1,
+                wpa::WpaDescriptor::Wpa1 { .. } => fidl_internal::Protocol::Wpa1,
                 wpa::WpaDescriptor::Wpa2 { authentication, .. } => match authentication {
-                    wpa::Authentication::Personal(_) => fidl_security::Protocol::Wpa2Personal,
-                    wpa::Authentication::Enterprise(_) => fidl_security::Protocol::Wpa2Enterprise,
+                    wpa::Authentication::Personal(_) => fidl_internal::Protocol::Wpa2Personal,
+                    wpa::Authentication::Enterprise(_) => fidl_internal::Protocol::Wpa2Enterprise,
                 },
                 wpa::WpaDescriptor::Wpa3 { authentication, .. } => match authentication {
-                    wpa::Authentication::Personal(_) => fidl_security::Protocol::Wpa3Personal,
-                    wpa::Authentication::Enterprise(_) => fidl_security::Protocol::Wpa3Enterprise,
+                    wpa::Authentication::Personal(_) => fidl_internal::Protocol::Wpa3Personal,
+                    wpa::Authentication::Enterprise(_) => fidl_internal::Protocol::Wpa3Enterprise,
                 },
             },
         }
@@ -450,36 +450,36 @@ impl From<wpa::WpaAuthenticator> for SecurityAuthenticator {
     }
 }
 
-impl From<SecurityAuthenticator> for fidl_security::Authentication {
+impl From<SecurityAuthenticator> for fidl_internal::Authentication {
     fn from(authenticator: SecurityAuthenticator) -> Self {
         match authenticator {
-            SecurityAuthenticator::Open => fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Open,
+            SecurityAuthenticator::Open => fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Open,
                 credentials: None,
             },
-            SecurityAuthenticator::Owe => fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Owe,
+            SecurityAuthenticator::Owe => fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Owe,
                 credentials: None,
             },
-            SecurityAuthenticator::Wep(wep) => fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Wep,
-                credentials: Some(Box::new(fidl_security::Credentials::Wep(wep.into()))),
+            SecurityAuthenticator::Wep(wep) => fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Wep,
+                credentials: Some(Box::new(fidl_internal::Credentials::Wep(wep.into()))),
             },
             SecurityAuthenticator::Wpa(wpa) => {
                 use wpa::Authentication::{Enterprise, Personal};
                 use wpa::Wpa::{Wpa1, Wpa2, Wpa3};
 
                 let protocol = match (&wpa, wpa.to_credentials()) {
-                    (Wpa1 { .. }, _) => fidl_security::Protocol::Wpa1,
-                    (Wpa2 { .. }, Personal(_)) => fidl_security::Protocol::Wpa2Personal,
-                    (Wpa2 { .. }, Enterprise(_)) => fidl_security::Protocol::Wpa2Enterprise,
-                    (Wpa3 { .. }, Personal(_)) => fidl_security::Protocol::Wpa3Personal,
-                    (Wpa3 { .. }, Enterprise(_)) => fidl_security::Protocol::Wpa3Enterprise,
+                    (Wpa1 { .. }, _) => fidl_internal::Protocol::Wpa1,
+                    (Wpa2 { .. }, Personal(_)) => fidl_internal::Protocol::Wpa2Personal,
+                    (Wpa2 { .. }, Enterprise(_)) => fidl_internal::Protocol::Wpa2Enterprise,
+                    (Wpa3 { .. }, Personal(_)) => fidl_internal::Protocol::Wpa3Personal,
+                    (Wpa3 { .. }, Enterprise(_)) => fidl_internal::Protocol::Wpa3Enterprise,
                 };
-                fidl_security::Authentication {
+                fidl_internal::Authentication {
                     protocol,
                     // TODO(https://fxbug.dev/42174395): This panics when encountering WPA Enterprise.
-                    credentials: Some(Box::new(fidl_security::Credentials::Wpa(
+                    credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
                         wpa.into_credentials().into(),
                     ))),
                 }
@@ -496,28 +496,28 @@ impl From<SecurityAuthenticator> for fidl_security::Authentication {
 ///
 /// Returns an error if the `Authentication` datagram is invalid, such as specifying contradictory
 /// protocols or encoding incompatible or invalid credentials.
-impl TryFrom<fidl_security::Authentication> for SecurityAuthenticator {
+impl TryFrom<fidl_internal::Authentication> for SecurityAuthenticator {
     type Error = SecurityError;
 
-    fn try_from(authentication: fidl_security::Authentication) -> Result<Self, Self::Error> {
-        let fidl_security::Authentication { protocol, credentials } = authentication;
+    fn try_from(authentication: fidl_internal::Authentication) -> Result<Self, Self::Error> {
+        let fidl_internal::Authentication { protocol, credentials } = authentication;
         match protocol {
-            fidl_security::Protocol::Open => match credentials {
+            fidl_internal::Protocol::Open => match credentials {
                 None => Ok(SecurityAuthenticator::Open),
                 _ => Err(SecurityError::Incompatible),
             },
-            fidl_security::Protocol::Owe => match credentials {
+            fidl_internal::Protocol::Owe => match credentials {
                 None => Ok(SecurityAuthenticator::Owe),
                 _ => Err(SecurityError::Incompatible),
             },
-            fidl_security::Protocol::Wep => credentials
+            fidl_internal::Protocol::Wep => credentials
                 .ok_or(SecurityError::Incompatible)? // No credentials.
                 .into_wep()
                 .map(wep::WepAuthenticator::try_from)
                 .transpose()? // Conversion failure.
                 .map(From::from)
                 .ok_or(SecurityError::Incompatible), // Non-WEP credentials.
-            fidl_security::Protocol::Wpa1 => credentials
+            fidl_internal::Protocol::Wpa1 => credentials
                 .ok_or(SecurityError::Incompatible)? // No credentials.
                 .into_wpa()
                 .map(wpa::Wpa1Credentials::try_from)
@@ -525,7 +525,7 @@ impl TryFrom<fidl_security::Authentication> for SecurityAuthenticator {
                 .map(|credentials| wpa::WpaAuthenticator::Wpa1 { credentials })
                 .map(From::from)
                 .ok_or(SecurityError::Incompatible), // Non-WPA credentials.
-            fidl_security::Protocol::Wpa2Personal => credentials
+            fidl_internal::Protocol::Wpa2Personal => credentials
                 .ok_or(SecurityError::Incompatible)? // No credentials.
                 .into_wpa()
                 .map(wpa::Wpa2PersonalCredentials::try_from)
@@ -534,7 +534,7 @@ impl TryFrom<fidl_security::Authentication> for SecurityAuthenticator {
                 .map(|authentication| wpa::WpaAuthenticator::Wpa2 { cipher: None, authentication })
                 .map(From::from)
                 .ok_or(SecurityError::Incompatible), // Non-WPA credentials.
-            fidl_security::Protocol::Wpa3Personal => credentials
+            fidl_internal::Protocol::Wpa3Personal => credentials
                 .ok_or(SecurityError::Incompatible)? // No credentials.
                 .into_wpa()
                 .map(wpa::Wpa3PersonalCredentials::try_from)
@@ -554,7 +554,7 @@ impl TryFrom<fidl_security::Authentication> for SecurityAuthenticator {
 
 #[cfg(test)]
 mod tests {
-    use fidl_fuchsia_wlan_common_security as fidl_security;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
 
     use test_case::test_case;
 
@@ -568,40 +568,40 @@ mod tests {
         fn wpa3_personal_no_credentials() -> Self;
     }
 
-    impl AuthenticationTestCase for fidl_security::Authentication {
+    impl AuthenticationTestCase for fidl_internal::Authentication {
         fn wpa2_personal_psk() -> Self {
-            fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Wpa2Personal,
-                credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                    fidl_security::WpaCredentials::Psk([0u8; 32]),
+            fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Wpa2Personal,
+                credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                    fidl_internal::WpaCredentials::Psk([0u8; 32]),
                 ))),
             }
         }
 
         // Invalid: WPA3 with PSK.
         fn wpa3_personal_psk() -> Self {
-            fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Wpa3Personal,
-                credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                    fidl_security::WpaCredentials::Psk([0u8; 32]),
+            fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Wpa3Personal,
+                credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                    fidl_internal::WpaCredentials::Psk([0u8; 32]),
                 ))),
             }
         }
 
         // Invalid: WPA3 with WEP key.
         fn wpa3_personal_wep_key() -> Self {
-            fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Wpa3Personal,
-                credentials: Some(Box::new(fidl_security::Credentials::Wep(
-                    fidl_security::WepCredentials { key: vec![0u8; 13] },
+            fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Wpa3Personal,
+                credentials: Some(Box::new(fidl_internal::Credentials::Wep(
+                    fidl_internal::WepCredentials { key: vec![0u8; 13] },
                 ))),
             }
         }
 
         // Invalid: WPA3 with no credentials.
         fn wpa3_personal_no_credentials() -> Self {
-            fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Wpa3Personal,
+            fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Wpa3Personal,
                 credentials: None,
             }
         }
@@ -620,7 +620,7 @@ mod tests {
     #[test_case(AuthenticationTestCase::wpa3_personal_wep_key() => Err(SecurityError::Incompatible))]
     #[test_case(AuthenticationTestCase::wpa3_personal_no_credentials() => Err(SecurityError::Incompatible))]
     fn security_authenticator_from_authentication_fidl(
-        authentication: fidl_security::Authentication,
+        authentication: fidl_internal::Authentication,
     ) -> Result<SecurityAuthenticator, SecurityError> {
         SecurityAuthenticator::try_from(authentication)
     }
@@ -633,13 +633,13 @@ mod tests {
             ),
             cipher: None,
         });
-        let authentication = fidl_security::Authentication::from(authenticator);
+        let authentication = fidl_internal::Authentication::from(authenticator);
         assert_eq!(
             authentication,
-            fidl_security::Authentication {
-                protocol: fidl_security::Protocol::Wpa3Personal,
-                credentials: Some(Box::new(fidl_security::Credentials::Wpa(
-                    fidl_security::WpaCredentials::Passphrase(b"roflcopter".as_slice().into()),
+            fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Wpa3Personal,
+                credentials: Some(Box::new(fidl_internal::Credentials::Wpa(
+                    fidl_internal::WpaCredentials::Passphrase(b"roflcopter".as_slice().into()),
                 ))),
             }
         );

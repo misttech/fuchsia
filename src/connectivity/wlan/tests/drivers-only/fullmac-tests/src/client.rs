@@ -5,6 +5,12 @@
 use crate::FullmacDriverFixture;
 use assert_matches::assert_matches;
 use drivers_only_common::sme_helpers;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_wlan_security;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fullmac_helpers::config::FullmacDriverConfig;
 use fullmac_helpers::recorded_request_stream::FullmacRequest;
 use fullmac_helpers::{COMPATIBLE_OPEN_BSS, COMPATIBLE_WPA2_BSS, COMPATIBLE_WPA3_BSS};
@@ -15,12 +21,6 @@ use wlan_common::random_fidl_bss_description;
 use wlan_rsn::key::Tk;
 use wlan_rsn::key::exchange::Key;
 use wlan_rsn::rsna::{AuthStatus, SecAssocStatus, SecAssocUpdate, UpdateSink};
-use {
-    fidl_fuchsia_wlan_common as fidl_common,
-    fidl_fuchsia_wlan_common_security as fidl_wlan_security,
-    fidl_fuchsia_wlan_fullmac as fidl_fullmac, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 /// Many tests will want to start from a connected state, so this will create and start the test
 /// realm, fullmac driver, and client SME, and then get the client SME into a connected state.

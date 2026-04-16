@@ -7,8 +7,8 @@ import abc
 from collections.abc import Sequence
 
 import fidl_fuchsia_wlan_common as f_wlan_common
-import fidl_fuchsia_wlan_common_security as f_wlan_common_security
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
+import fidl_fuchsia_wlan_internal as f_wlan_internal
 
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
@@ -26,7 +26,7 @@ class AsyncWlanCore(abc.ABC):
         self,
         ssid: str,
         bss_desc: f_wlan_common.BssDescription,
-        authentication: f_wlan_common_security.Authentication,
+        authentication: f_wlan_internal.Authentication,
     ) -> bool:
         """Trigger connection to a network.
 
@@ -199,7 +199,7 @@ class WlanCore(affordance.Affordance):
         self,
         ssid: str,
         bss_desc: f_wlan_common.BssDescription,
-        authentication: f_wlan_common_security.Authentication,
+        authentication: f_wlan_internal.Authentication,
     ) -> bool:
         """Trigger connection to a network.
 
