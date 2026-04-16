@@ -4,6 +4,8 @@
 
 import("//build/sdk/sdk_atom.gni")
 
+# LINT.IfChange(idk_data)
+
 # Declares a set of data files to be added to an SDK.
 #
 # Parameters
@@ -80,3 +82,4 @@ template("sdk_data") {
     }
   }
 }
+# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_data.bzl:idk_data)

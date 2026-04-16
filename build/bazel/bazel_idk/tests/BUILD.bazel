@@ -7,13 +7,13 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library")
 load(
     "//build/bazel/bazel_idk:defs.bzl",
-    "create_idk_atom_for_test",
     "idk_cc_shared_library",
     "idk_cc_shared_library_zx",
     "idk_cc_source_library",
     "idk_cc_source_library_zx",
     "idk_cc_static_library",
     "idk_cc_static_library_zx",
+    "idk_data",
     "idk_molecule",
     "idk_noop_atom",
 )
@@ -30,44 +30,47 @@ load(
     "verify_atom_info",
 )
 
-create_idk_atom_for_test(
-    name = "test_atom",
+idk_data(
+    name = "test_data_atom",
     testonly = True,
     api_area = "Developer",
-    atom_build_deps = [],
     category = "partner",
-    id = "sdk://pkg/test",
-    idk_name = "test_atom",
-    meta_dest = "/pkg/test",
-    stable = True,
-    type = "data",
+    file = "include/lib/test_lib/test_header.h",
+    idk_name = "test_data_idk_name",
+    type = "config",
 )
 
 create_test_atom_info(
-    name = "test_atom_golden_info",
+    name = "test_data_atom_golden_info",
     testonly = True,
-    additional_prebuild_info = {},
+    additional_prebuild_info = {
+        "data": '["data/config/test_data_idk_name/config.json"]',
+        "name": '"test_data_idk_name"',
+        "type": '"config"',
+    },
     api_area = "Developer",
     api_contents_map = {},
     api_file_path = None,
     atom_build_deps = ["//build/bazel/bazel_idk:partner_idk_data_allowlist"],
     atom_files_map_generated_files = {},
-    atom_files_map_source_files = {},
+    atom_files_map_source_files = {
+        "data/config/test_data_idk_name/config.json": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+    },
     category = "partner",
-    id = "sdk://pkg/test",
-    idk_name = "test_atom",
+    id = "sdk://data/test_data_idk_name",
+    idk_name = "test_data_idk_name",
     is_stable = True,
-    label = ":test_atom_idk",
-    meta_dest = "/pkg/test",
+    label = "//build/bazel/bazel_idk/tests:test_data_atom_idk",
+    meta_dest = "data/config/test_data_idk_name/meta.json",
     type = "data",
     deps = [],
 )
 
 verify_atom_info(
-    name = "verify_test_atom_info",
+    name = "verify_test_data_atom_info",
     testonly = True,
-    atom = ":test_atom_idk",
-    expected_atom_info = ":test_atom_golden_info",
+    atom = ":test_data_atom_idk",
+    expected_atom_info = ":test_data_atom_golden_info",
 )
 
 # The headers used by some_library.cc are made available as follows for Fuchsia builds:
@@ -748,7 +751,7 @@ idk_molecule(
         ":test-shared-library_idk",
         ":test-source-library_idk",
         ":test-static-library_idk",
-        ":test_atom_idk",
+        ":test_data_atom_idk",
         ":test_shared_library_zx_idk",
         ":test_source_set_zx_idk",
         ":test_static_library_zx_idk",
@@ -896,7 +899,7 @@ filegroup(
         ":verify_test_static_library_link_lib_file_path",
 
         # Verify that the info about atoms that goes into the IDK is correct.
-        ":verify_test_atom_info",
+        ":verify_test_data_atom_info",
         ":verify_test_shared_library_atom_info",
         ":verify_test_source_library_atom_info",
         ":verify_test_static_library_atom_info",
@@ -1010,7 +1013,7 @@ build_idk_combinations(
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//build/bazel/rules/tests:__pkg__"],
     deps = [
-        ":test_atom_idk",
+        ":test_data_atom_idk",
         "//sdk/lib/magma_common:magma_common_idk",
         "//sdk/lib/media/cpp:no_converters_idk",
         "//sdk/lib/memory_barriers:memory_barriers_idk",
