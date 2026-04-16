@@ -11,7 +11,9 @@ use crate::vfs::socket::{SocketAddress, SocketMessageFlags};
 use crate::vfs::{FdFlags, FdNumber, FileHandle, FsString};
 use byteorder::{ByteOrder, NativeEndian};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
+use starnix_uapi::auth::{CAP_SETGID, CAP_SETUID, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
+
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef};
 use starnix_uapi::{
     IP_RECVORIGDSTADDR, IP_TOS, IP_TTL, IPV6_HOPLIMIT, IPV6_PKTINFO, IPV6_TCLASS, SCM_CREDENTIALS,
@@ -350,12 +352,48 @@ impl UnixControlData {
                 Ok(UnixControlData::Rights(files))
             }
             SCM_CREDENTIALS => {
+                // A privileged process is allowed to specify
+                // values that do not match its own. The sender must specify
+                // its own process ID (unless it has the capability
+                // CAP_SYS_ADMIN, in which case the PID of any existing
+                // process may be specified), its real user ID, effective user
+                // ID, or saved set-user-ID (unless it has CAP_SETUID), and
+                // its real group ID, effective group ID, or saved set-group-
+                // ID (unless it has CAP_SETGID).
+                //
+                // See https://man7.org/linux/man-pages/man7/unix.7.html
+
                 if message.data.len() < UcredPtr::size_of_object_for(current_task) {
                     return error!(EINVAL);
                 }
 
                 let credentials = UcredPtr::read_from_prefix(current_task, &message.data)
                     .map_err(|_| errno!(EINVAL))?;
+
+                let task_creds = current_task.current_creds();
+                let actual_pid = current_task.get_pid();
+
+                // Validate pid: must match sender's PID, or sender has CAP_SYS_ADMIN
+                if credentials.pid != actual_pid && !task_creds.has_capability(CAP_SYS_ADMIN) {
+                    return error!(EPERM);
+                }
+                // Validate uid: must match sender's uid/euid/suid, or sender has CAP_SETUID
+                if credentials.uid != task_creds.uid
+                    && credentials.uid != task_creds.euid
+                    && credentials.uid != task_creds.saved_uid
+                    && !task_creds.has_capability(CAP_SETUID)
+                {
+                    return error!(EPERM);
+                }
+                // Validate gid: must match sender's gid/egid/sgid, or sender has CAP_SETGID
+                if credentials.gid != task_creds.gid
+                    && credentials.gid != task_creds.egid
+                    && credentials.gid != task_creds.saved_gid
+                    && !task_creds.has_capability(CAP_SETGID)
+                {
+                    return error!(EPERM);
+                }
+
                 Ok(UnixControlData::Credentials(credentials))
             }
             SCM_SECURITY => Ok(UnixControlData::Security(message.data.into())),
