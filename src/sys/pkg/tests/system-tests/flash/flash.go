@@ -7,7 +7,6 @@ package flash
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/artifacts"
@@ -45,8 +44,7 @@ func FlashDevice(
 	logger.Infof(ctx, "Flashing successful in %s", time.Now().Sub(startTime))
 
 	startTime = time.Now()
-	cmd := []string{"/bin/update", "wait-for-commit"}
-	if err := d.Run(ctx, cmd, os.Stdout, os.Stderr); err != nil {
+	if err := d.WaitForCommit(ctx, nextFfx, d.Name()); err != nil {
 		return fmt.Errorf("update wait-for-commit failed after flash: %w", err)
 	}
 	logger.Infof(ctx, "Commit successful in %s", time.Now().Sub(startTime))

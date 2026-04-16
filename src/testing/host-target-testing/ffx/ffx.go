@@ -304,6 +304,23 @@ func (f *FFXTool) TargetUpdateForceInstallNoReboot(ctx context.Context, target s
 	_, err := f.runFFXCmd(ctx, args...)
 	return err
 }
+
+func (f *FFXTool) TargetUpdateWaitForCommit(ctx context.Context, target string) error {
+	args := []string{
+		"--config",
+		"ssh.allow_fdomain=true",
+		"--direct",
+		"--target",
+		target,
+		"target",
+		"update",
+		"wait-for-commit",
+	}
+
+	_, err := f.runFFXCmd(ctx, args...)
+	return err
+}
+
 func (f *FFXTool) Flasher() *Flasher {
 	return newFlasher(f)
 }
