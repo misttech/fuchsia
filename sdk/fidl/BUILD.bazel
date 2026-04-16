@@ -22,6 +22,9 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_idk",
     "//sdk/fidl/fuchsia.bluetooth.gatt:fuchsia.bluetooth.gatt_idk",
     "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_idk",
+    "//sdk/fidl/fuchsia.bluetooth.hfp:fuchsia.bluetooth.hfp_idk",
+    "//sdk/fidl/fuchsia.bluetooth.host:fuchsia.bluetooth.host_idk",
+    "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_idk",
     "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_idk",
     "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_idk",
     "//sdk/fidl/fuchsia.camera:fuchsia.camera_idk",
@@ -113,6 +116,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
 
 PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
+    "//sdk/fidl/fuchsia.bluetooth.test:fuchsia.bluetooth.test_idk",
     "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_idk",
     "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata_idk",
     "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_idk",
