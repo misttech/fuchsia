@@ -120,7 +120,12 @@ async fn parse_test_output(
         // The SELinux test suite reports the passed / failed tests starting with the prefix
         // "ok {index}" or "not ok {index}" correspondingly.
         if let Some(index_str) = line.strip_prefix("ok ") {
-            report_subcase(ftest::Status::Passed, index_str)?;
+            // If the `index_str` contains "# skip" then the test was skipped.
+            if let Some(pos) = index_str.find("# skip") {
+                report_subcase(ftest::Status::Skipped, &index_str[..pos])?;
+            } else {
+                report_subcase(ftest::Status::Passed, index_str)?;
+            }
         } else if let Some(index_str) = line.strip_prefix("not ok ") {
             report_subcase(ftest::Status::Failed, index_str)?;
         } else if line.starts_with("Result: ") {
