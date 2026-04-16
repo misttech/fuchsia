@@ -26,6 +26,12 @@ class DhcpController:
             f"uci set dhcp.lan.dynamicdhcp='{int(config.lan.dynamic_dhcp)}'"
         )
         self.ssh.run(f"uci set dhcp.lan.leasetime='{config.lan.lease_time}'")
+        if config.lan.start is not None:
+            self.ssh.run(f"uci set dhcp.lan.start='{config.lan.start}'")
+        if config.lan.limit is not None:
+            self.ssh.run(f"uci set dhcp.lan.limit='{config.lan.limit}'")
+        if config.dnsmasq.noping:
+            self.ssh.run("uci set dhcp.@dnsmasq[0].noping='1'")
         self.ssh.run("uci commit dhcp")
         self.ssh.run("/etc/init.d/dnsmasq restart")
         self.mark_test_start()

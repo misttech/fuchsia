@@ -12,6 +12,7 @@ from antlion.controllers.ap_lib import dhcp_config
 from antlion.controllers.utils_lib.commands import ip
 from antlion.test_utils.dhcp import base_test
 from mobly import asserts, signals, test_runner
+from mobly_controller.openwrt_access_point import DhcpConfig, Dnsmasq, Lan
 
 
 class Dhcpv4DuplicateAddressTest(base_test.Dhcpv4InteropFixture):
@@ -19,11 +20,36 @@ class Dhcpv4DuplicateAddressTest(base_test.Dhcpv4InteropFixture):
         super().setup_test()
         self.extra_addresses: list[IPv4Address] = []
         self.ap_params = self.setup_ap()
-        self.ap_ip_cmd = ip.LinuxIpCommand(self.access_point.ssh)
+        if self.access_point:
+            self.ap_ip_cmd = ip.LinuxIpCommand(self.access_point.ssh)
 
     def teardown_test(self) -> None:
         super().teardown_test()
         for ip in self.extra_addresses:
+            self._remove_ap_ipv4_address(ip)
+
+    def _add_ap_ipv4_address(self, ip: IPv4Address) -> None:
+        """Adds an IPv4 address to the AP's LAN interface."""
+        if self.openwrt_ap:
+            self.openwrt_ap.ssh.run(
+                f"ip addr add {ip}/{ip.max_prefixlen} dev br-lan"
+            )
+        elif self.access_point:
+            self.ap_ip_cmd.add_ipv4_address(
+                self.ap_params.id,
+                ipaddress.IPv4Interface(f"{ip}/{ip.max_prefixlen}"),
+            )
+
+    def _remove_ap_ipv4_address(self, ip: IPv4Address) -> None:
+        """Removes an IPv4 address from the AP's LAN interface."""
+        if self.openwrt_ap:
+            try:
+                self.openwrt_ap.ssh.run(
+                    f"ip addr del {ip}/{ip.max_prefixlen} dev br-lan"
+                )
+            except Exception:
+                pass
+        elif self.access_point:
             self.ap_ip_cmd.remove_ipv4_address(self.ap_params.id, ip)
 
     def test_duplicate_address_assignment(self) -> None:
@@ -32,90 +58,139 @@ class Dhcpv4DuplicateAddressTest(base_test.Dhcpv4InteropFixture):
         refuse to assign that address. Clients should also recover by asking for a different
         address.
         """
-        # Modify subnet to hold fewer addresses.
-        # A '/29' has 8 addresses (6 usable excluding router / broadcast)
-        subnet = next(self.ap_params.network.subnets(new_prefix=29))
-        subnet_conf = dhcp_config.Subnet(
-            subnet=subnet,
-            router=self.ap_params.ip,
-            # When the DHCP server is considering dynamically allocating an IP address to a client,
-            # it first sends an ICMP Echo request (a ping) to the address being assigned. It waits
-            # for a second, and if no ICMP Echo response has been heard, it assigns the address.
-            # If a response is heard, the lease is abandoned, and the server does not respond to
-            # the client.
-            # The ping-check configuration parameter can be used to control checking - if its value
-            # is false, no ping check is done.
-            additional_parameters={"ping-check": "false"},
-        )
-        dhcp_conf = dhcp_config.DhcpConfig(subnets=[subnet_conf])
-        self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
+        if self.openwrt_ap:
+            # OpenWrt case: Limit pool and disable ping check
+            pool_start = 100
+            pool_limit = 5
 
-        # Add each of the usable IPs as an alias for the router's interface, such that the router
-        # will respond to any pings on it.
-        for ip in subnet.hosts():
-            self.ap_ip_cmd.add_ipv4_address(
-                self.ap_params.id,
-                ipaddress.IPv4Interface(f"{ip}/{ip.max_prefixlen}"),
+            self.openwrt_ap.dhcp.start_dhcp(
+                config=DhcpConfig(
+                    lan=Lan(start=pool_start, limit=pool_limit),
+                    dnsmasq=Dnsmasq(noping=True),
+                )
             )
-            # Ensure we remove the address in self.teardown_test() even if the test fails
-            self.extra_addresses.append(ip)
+
+            network_addr = self.ap_params.network.network_address
+            pool_ips = [
+                network_addr + i
+                for i in range(pool_start, pool_start + pool_limit)
+            ]
+            # Add each of the usable IPs as an alias for the router's interface, such that the router
+            # will respond to any pings on it.
+            for ip in pool_ips:
+                self._add_ap_ipv4_address(ip)
+                # Ensure we remove the address in self.teardown_test() even if the test fails
+                self.extra_addresses.append(ip)
+
+        elif self.access_point:
+            # Modify subnet to hold fewer addresses.
+            # A '/29' has 8 addresses (6 usable excluding router / broadcast)
+            subnet = next(self.ap_params.network.subnets(new_prefix=29))
+            subnet_conf = dhcp_config.Subnet(
+                subnet=subnet,
+                router=self.ap_params.ip,
+                # When the DHCP server is considering dynamically allocating an IP address to a client,
+                # it first sends an ICMP Echo request (a ping) to the address being assigned. It waits
+                # for a second, and if no ICMP Echo response has been heard, it assigns the address.
+                # If a response is heard, the lease is abandoned, and the server does not respond to
+                # the client.
+                # The ping-check configuration parameter can be used to control checking - if its value
+                # is false, no ping check is done.
+                additional_parameters={"ping-check": "false"},
+            )
+            dhcp_conf = dhcp_config.DhcpConfig(subnets=[subnet_conf])
+            self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
+            # Add each of the usable IPs as an alias for the router's interface, such that the router
+            # will respond to any pings on it.
+            for ip in subnet.hosts():
+                self.ap_ip_cmd.add_ipv4_address(
+                    self.ap_params.id,
+                    ipaddress.IPv4Interface(f"{ip}/{ip.max_prefixlen}"),
+                )
+                # Ensure we remove the address in self.teardown_test() even if the test fails
+                self.extra_addresses.append(ip)
 
         self.connect(ap_params=self.ap_params)
         with asserts.assert_raises(ConnectionError):
             self.get_device_ipv4_addr()
 
-        # Per spec, the flow should be:
-        # Discover -> Offer -> Request -> Ack -> client optionally performs DAD
-        dhcp_logs = self.access_point.get_dhcp_logs()
+        dhcp_logs = self.get_dhcp_logs()
         if dhcp_logs is None:
             raise signals.TestError(
                 "DHCP logs not found; was the DHCP server started?"
             )
 
-        for expected_message in [
-            r"DHCPDISCOVER from \S+",
-            r"DHCPOFFER on [0-9.]+ to \S+",
-            r"DHCPREQUEST for [0-9.]+",
-            r"DHCPACK on [0-9.]+",
-            r"DHCPDECLINE of [0-9.]+ from \S+ via .*: abandoned",
-            r"Abandoning IP address [0-9.]+: declined",
-        ]:
-            asserts.assert_true(
-                re.search(expected_message, dhcp_logs),
-                f"Did not find expected message ({expected_message}) in dhcp logs: {dhcp_logs}"
-                + "\n",
-            )
+        if self.openwrt_ap:
+            # In this test, all IPs in the pool are marked as in-use on the AP interface.
+            # The client detects the conflict after receiving DHCPOFFER and ignores it,
+            # so it never sends a DHCPREQUEST. Thus, only DISCOVER and OFFER are seen.
+            expected_patterns = [
+                r"DHCPDISCOVER",
+                r"DHCPOFFER",
+            ]
+            unexpected_patterns = [
+                r"DHCPREQUEST",
+                r"DHCPACK",
+            ]
+
+            # Positive checks
+            for pattern in expected_patterns:
+                asserts.assert_true(
+                    re.search(pattern, dhcp_logs),
+                    f"Did not find expected message ({pattern}) in logs",
+                )
+
+            # Negative checks
+            for pattern in unexpected_patterns:
+                asserts.assert_false(
+                    re.search(pattern, dhcp_logs),
+                    f"Found unexpected message ({pattern}) in logs which should not be there!",
+                )
+        elif self.access_point:
+            # Per spec, the flow should be:
+            # Discover -> Offer -> Request -> Ack -> client optionally performs DAD
+            expected_patterns = [
+                r"DHCPDISCOVER from \S+",
+                r"DHCPOFFER on [0-9.]+ to \S+",
+                r"DHCPREQUEST for [0-9.]+",
+                r"DHCPACK on [0-9.]+",
+                r"DHCPDECLINE of [0-9.]+ from \S+ via .*: abandoned",
+                r"Abandoning IP address [0-9.]+: declined",
+            ]
+            for expected_message in expected_patterns:
+                asserts.assert_true(
+                    re.search(expected_message, dhcp_logs),
+                    f"Did not find expected message ({expected_message}) in dhcp logs: {dhcp_logs}"
+                    + "\n",
+                )
 
         # Remove each of the IP aliases.
-        # Note: this also removes the router's address (e.g. 192.168.1.1), so pinging the
-        # router after this will not work.
         while self.extra_addresses:
-            self.ap_ip_cmd.remove_ipv4_address(
-                self.ap_params.id, self.extra_addresses.pop()
-            )
+            ip = self.extra_addresses.pop()
+            self._remove_ap_ipv4_address(ip)
 
         # Now, we should get an address successfully
         ip = self.get_device_ipv4_addr()
-        dhcp_logs = self.access_point.get_dhcp_logs()
+        dhcp_logs = self.get_dhcp_logs()
         if dhcp_logs is None:
             raise signals.TestError(
                 "DHCP logs not found; was the DHCP server started?"
             )
 
-        expected_string = f"DHCPREQUEST for {ip}"
+        request_matches = len(
+            re.findall(rf"DHCPREQUEST.*{re.escape(str(ip))}", dhcp_logs)
+        )
         asserts.assert_true(
-            dhcp_logs.count(expected_string) >= 1,
-            f'Incorrect count of DHCP Requests ("{expected_string}") in logs: '
-            + dhcp_logs
-            + "\n",
+            request_matches >= 1,
+            f"Incorrect count of DHCP Requests in logs: {dhcp_logs}\n",
         )
 
-        expected_string = f"DHCPACK on {ip}"
+        ack_matches = len(
+            re.findall(rf"DHCPACK.*{re.escape(str(ip))}", dhcp_logs)
+        )
         asserts.assert_true(
-            dhcp_logs.count(expected_string) >= 1,
-            f'Incorrect count of DHCP Acks ("{expected_string}") in logs: '
-            + dhcp_logs
-            + "\n",
+            ack_matches >= 1,
+            f"Incorrect count of DHCP Acks in logs: " + dhcp_logs + "\n",
         )
 
 

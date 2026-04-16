@@ -22,7 +22,13 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     BssSettings,
     Security,
 )
-from mobly_controller.openwrt_access_point.lib.dhcp_config import DhcpConfig
+from mobly_controller.openwrt_access_point.lib.dhcp_config import (
+    DhcpConfig as DhcpConfig,
+)
+from mobly_controller.openwrt_access_point.lib.dhcp_config import (
+    Dnsmasq as Dnsmasq,
+)
+from mobly_controller.openwrt_access_point.lib.dhcp_config import Lan as Lan
 from mobly_controller.openwrt_access_point.lib.dhcp_controller import (
     DhcpController,
 )

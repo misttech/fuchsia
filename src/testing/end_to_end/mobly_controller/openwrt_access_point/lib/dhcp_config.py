@@ -13,10 +13,25 @@ class Lan:
     Attributes:
         dynamic_dhcp: Whether to enable dynamic DHCP.
         lease_time: The lease time for IP addresses (e.g., '12h', '30m').
+        start: The start offset for the DHCP pool.
+        limit: The number of addresses in the DHCP pool.
     """
 
     dynamic_dhcp: bool = True
     lease_time: str = "12h"
+    start: int | None = None
+    limit: int | None = None
+
+
+@dataclasses.dataclass
+class Dnsmasq:
+    """UCI dhcp.dnsmasq configuration.
+
+    Attributes:
+        noping: Disable ping check before assigning IP.
+    """
+
+    noping: bool = False
 
 
 @dataclasses.dataclass
@@ -25,6 +40,8 @@ class DhcpConfig:
 
     Attributes:
         lan: The LAN interface DHCP configuration.
+        dnsmasq: The dnsmasq DHCP configuration.
     """
 
     lan: Lan = dataclasses.field(default_factory=Lan)
+    dnsmasq: Dnsmasq = dataclasses.field(default_factory=Dnsmasq)
