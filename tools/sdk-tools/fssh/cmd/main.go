@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/google/subcommands"
@@ -26,6 +27,15 @@ func insertFSSHToCmd(args []string, position int) []string {
 }
 
 func main() {
+	fmt.Fprintf(os.Stderr, "[Warning] fssh is being deprecated! See go/fssh-manual for its replacement manual steps.\n")
+	fmt.Fprintf(os.Stderr, "Questions? Reach out in go/smart-display-developers-chat.\n\n")
+
+	if isTerminal() {
+		fmt.Print("Press Enter to acknowledge and continue...")
+		fmt.Scanln()
+		fmt.Println("")
+	}
+
 	// Hack to support a default subcommand.
 	if len(os.Args) == 1 || (os.Args[1] != "tunnel" && os.Args[1] != "sync-keys" && os.Args[1] != "fssh") {
 		os.Args = insertFSSHToCmd(os.Args, 1)
@@ -41,4 +51,12 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 	os.Exit(int(subcommands.Execute(ctx)))
+}
+
+func isTerminal() bool {
+	fileInfo, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fileInfo.Mode() & os.ModeCharDevice) != 0
 }
