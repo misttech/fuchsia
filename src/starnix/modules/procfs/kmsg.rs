@@ -5,7 +5,7 @@
 use starnix_core::security;
 use starnix_core::task::{CurrentTask, EventHandler, Syslog, SyslogAccess, WaitCanceler, Waiter};
 use starnix_core::vfs::{
-    AppendLockGuard, CheckAccessReason, FileObject, FileOps, FileSystemHandle, FsNode,
+    AppendLockWriteGuard, CheckAccessReason, FileObject, FileOps, FileSystemHandle, FsNode,
     FsNodeHandle, FsNodeInfo, FsNodeOps, InputBuffer, OutputBuffer, fileops_impl_noop_sync,
     fileops_impl_seekless, fs_node_impl_not_dir,
 };
@@ -62,7 +62,7 @@ impl FsNodeOps for KmsgNode {
     fn truncate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _length: u64,

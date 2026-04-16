@@ -14,12 +14,12 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::rw_queue::{RwQueueReadGuard, RwQueueWriteGuard};
 use starnix_core::vfs::{
-    AppendLockGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryHandle, DirectoryEntryType,
-    DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle,
-    FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    InputBuffer, MountInfo, OutputBuffer, RenameFlags, SeekTarget, SymlinkTarget, UnlinkKind,
-    ValueOrSize, VecInputBuffer, VecOutputBuffer, XattrOp, default_seek, emit_dotdot,
-    fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
+    AppendLockWriteGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryHandle,
+    DirectoryEntryType, DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
+    FsNodeOps, FsStr, FsString, InputBuffer, MountInfo, OutputBuffer, RenameFlags, SeekTarget,
+    SymlinkTarget, UnlinkKind, ValueOrSize, VecInputBuffer, VecOutputBuffer, XattrOp, default_seek,
+    emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{
@@ -1019,7 +1019,7 @@ impl FsNodeOps for OverlayNodeOps {
     fn truncate(
         &self,
         locked: &mut Locked<FileOpsCore>,
-        guard: &AppendLockGuard<'_>,
+        guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         current_task: &CurrentTask,
         length: u64,
@@ -1034,7 +1034,7 @@ impl FsNodeOps for OverlayNodeOps {
     fn allocate(
         &self,
         locked: &mut Locked<FileOpsCore>,
-        guard: &AppendLockGuard<'_>,
+        guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         current_task: &CurrentTask,
         mode: FallocMode,

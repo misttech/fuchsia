@@ -129,3 +129,54 @@ TEST(ReadWriteTest, PwriteOAppendAtomicity) {
   ASSERT_EQ(fstat(temp_file.fd(), &st), 0);
   EXPECT_EQ(st.st_size, static_cast<off_t>(kNumThreads * kWriteSize * kNumWrites));
 }
+
+// This test is somewhat best-effort; it won't reliably fail, necessarily.
+// It attempts to verify the atomicity of concurrent write and truncate operations
+// on an O_APPEND file by spawning multiple writer and truncater threads and
+// checking if holes are created in the file.
+TEST(ReadWriteTest, TruncateWriteAtomicity) {
+  test_helper::ScopedTempFD temp_file;
+  ASSERT_TRUE(temp_file);
+
+  int fd = temp_file.fd();
+  int flags = fcntl(fd, F_GETFL);
+  ASSERT_NE(flags, -1);
+  ASSERT_EQ(fcntl(fd, F_SETFL, flags | O_APPEND), 0);
+
+  // Write some initial data.
+  constexpr size_t kBufferSize = 1000;
+  char buf[kBufferSize];
+  memset(buf, 'A', kBufferSize);
+  ASSERT_EQ(write(fd, buf, kBufferSize), static_cast<ssize_t>(kBufferSize));
+
+  constexpr size_t kNumIterations = 1000;
+  constexpr size_t kNumThreads = 10;
+  std::vector<std::thread> writers;
+  std::vector<std::thread> truncaters;
+
+  for (size_t i = 0; i < kNumThreads; ++i) {
+    writers.emplace_back([fd, buf]() {
+      for (size_t j = 0; j < kNumIterations; ++j) {
+        HANDLE_EINTR(write(fd, buf, kBufferSize));
+      }
+    });
+    truncaters.emplace_back([fd]() {
+      for (size_t j = 0; j < kNumIterations; ++j) {
+        HANDLE_EINTR(ftruncate(fd, 0));
+      }
+    });
+  }
+
+  for (auto& t : writers)
+    t.join();
+  for (auto& t : truncaters)
+    t.join();
+
+  // Check if the file contains holes.
+  lseek(fd, 0, SEEK_SET);
+  char read_buf[kBufferSize];
+  ssize_t n = read(fd, read_buf, kBufferSize);
+  if (n > 0) {
+    EXPECT_NE(read_buf[0], 0) << "Found hole at beginning of file!";
+  }
+}

@@ -10,7 +10,7 @@ use fidl_fuchsia_hardware_power_statecontrol::{
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    AppendLockGuard, FileObject, FileOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, InputBuffer,
+    AppendLockWriteGuard, FileObject, FileOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, InputBuffer,
     OutputBuffer, SeekTarget, fileops_impl_noop_sync,
 };
 use starnix_logging::{log_info, log_warn, track_stub};
@@ -92,7 +92,7 @@ impl FsNodeOps for SysRqNode {
     fn truncate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _length: u64,

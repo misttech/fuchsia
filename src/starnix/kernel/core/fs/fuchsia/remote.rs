@@ -14,7 +14,7 @@ use crate::vfs::file_server::serve_file_tagged;
 use crate::vfs::fsverity::FsVerityState;
 use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
 use crate::vfs::{
-    Anon, AppendLockGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink,
+    Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink,
     FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
     FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, LookupVec,
     SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_ioctl, default_seek,
@@ -1226,7 +1226,7 @@ impl FsNodeOps for RemoteNode {
     fn truncate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         current_task: &CurrentTask,
         length: u64,
@@ -1241,7 +1241,7 @@ impl FsNodeOps for RemoteNode {
     fn allocate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         current_task: &CurrentTask,
         mode: FallocMode,

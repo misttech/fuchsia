@@ -10,7 +10,7 @@ use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    AppendLockGuard, DirEntry, FallocMode, FileHandle, FileObject, FileOps, FileSystemHandle,
+    AppendLockWriteGuard, DirEntry, FallocMode, FileHandle, FileObject, FileOps, FileSystemHandle,
     FsNode, FsNodeInfo, FsNodeLinkBehavior, FsNodeOps, FsString, MAX_LFS_FILESIZE,
     MemoryXattrStorage, Mount, MountInfo, NamespaceNode, WhatToMount, XattrStorage as _,
     default_ioctl, fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
@@ -92,7 +92,7 @@ impl FsNodeOps for MemoryRegularNode {
     fn truncate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         _current_task: &CurrentTask,
         length: u64,
@@ -134,7 +134,7 @@ impl FsNodeOps for MemoryRegularNode {
     fn allocate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         _current_task: &CurrentTask,
         mode: FallocMode,

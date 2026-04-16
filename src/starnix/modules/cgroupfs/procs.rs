@@ -12,7 +12,7 @@
 use starnix_core::fs_node_impl_not_dir;
 use starnix_core::task::{CgroupOps, CurrentTask, Kernel, ProcessEntryRef};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
-use starnix_core::vfs::{AppendLockGuard, FileOps, FsNode, FsNodeOps, InputBuffer};
+use starnix_core::vfs::{AppendLockWriteGuard, FileOps, FsNode, FsNodeOps, InputBuffer};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
@@ -45,7 +45,7 @@ impl FsNodeOps for ControlGroupNode {
     fn truncate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _length: u64,

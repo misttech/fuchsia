@@ -9,7 +9,7 @@ use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
-    AppendLockGuard, FileObject, FileOps, FsNode, FsNodeOps, InputBuffer, OutputBuffer,
+    AppendLockWriteGuard, FileObject, FileOps, FsNode, FsNodeOps, InputBuffer, OutputBuffer,
     fileops_impl_noop_sync,
 };
 use starnix_core::{fileops_impl_seekable, fs_node_impl_not_dir};
@@ -243,7 +243,7 @@ impl<P: DiscoverableProtocolMarker, O: SysfsOps<P::SynchronousProxy>> FsNodeOps
     fn truncate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _length: u64,

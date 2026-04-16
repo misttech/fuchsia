@@ -19,7 +19,7 @@ use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
-    AppendLockGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryOps, DirectoryEntryType,
+    AppendLockWriteGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryOps, DirectoryEntryType,
     DirentSink, FallocMode, FdNumber, FileObject, FileObjectState, FileOps, FileSystem,
     FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
     FsNodeOps, FsStr, FsString, NamespaceNode, PeekBufferSegmentsCallback, SeekTarget,
@@ -1497,7 +1497,7 @@ impl FsNodeOps for FuseNode {
     fn truncate(
         &self,
         locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         node: &FsNode,
         current_task: &CurrentTask,
         length: u64,
@@ -1535,7 +1535,7 @@ impl FsNodeOps for FuseNode {
     fn allocate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _mode: FallocMode,

@@ -712,7 +712,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         locked: &'a mut Locked<BeforeFsNodeAppend>,
         node: &'a FsNode,
         current_task: &CurrentTask,
-    ) -> Result<(RwQueueReadGuard<'a, FsNodeAppend>, &'a mut Locked<FsNodeAppend>), Errno> {
+    ) -> Result<(AppendLockGuard<'a>, &'a mut Locked<FsNodeAppend>), Errno> {
         return node.append_lock.read_and(locked, current_task);
     }
 
@@ -722,7 +722,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         locked: &'a mut Locked<BeforeFsNodeAppend>,
         node: &'a FsNode,
         current_task: &CurrentTask,
-    ) -> Result<(RwQueueWriteGuard<'a, FsNodeAppend>, &'a mut Locked<FsNodeAppend>), Errno> {
+    ) -> Result<(AppendLockWriteGuard<'a>, &'a mut Locked<FsNodeAppend>), Errno> {
         return node.append_lock.write_and(locked, current_task);
     }
 
@@ -730,7 +730,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     fn truncate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _length: u64,
@@ -742,7 +742,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     fn allocate(
         &self,
         _locked: &mut Locked<FileOpsCore>,
-        _guard: &AppendLockGuard<'_>,
+        _guard: &AppendLockWriteGuard<'_>,
         _node: &FsNode,
         _current_task: &CurrentTask,
         _mode: FallocMode,
@@ -1777,7 +1777,7 @@ impl FsNode {
             security::Auditable::Location(std::panic::Location::caller()),
         )?;
 
-        let (guard, locked) = self.ops().append_lock_read(&mut locked, self, current_task)?;
+        let (guard, locked) = self.ops().append_lock_write(&mut locked, self, current_task)?;
         self.truncate_locked(locked, &guard, current_task, length)
     }
 
@@ -1817,7 +1817,7 @@ impl FsNode {
         // "With ftruncate(), the file must be open for writing; with truncate(),
         // the file must be writable."
 
-        let (guard, locked) = self.ops().append_lock_read(locked, self, current_task)?;
+        let (guard, locked) = self.ops().append_lock_write(locked, self, current_task)?;
         self.truncate_locked(locked, &guard, current_task, length)
     }
 
@@ -1825,7 +1825,7 @@ impl FsNode {
     pub fn truncate_locked<L>(
         &self,
         locked: &mut Locked<L>,
-        guard: &AppendLockGuard<'_>,
+        guard: &AppendLockWriteGuard<'_>,
         current_task: &CurrentTask,
         length: u64,
     ) -> Result<(), Errno>
@@ -1861,14 +1861,14 @@ impl FsNode {
         L: LockEqualOrBefore<BeforeFsNodeAppend>,
     {
         let mut locked = locked.cast_locked::<BeforeFsNodeAppend>();
-        let (guard, locked) = self.ops().append_lock_read(&mut locked, self, current_task)?;
+        let (guard, locked) = self.ops().append_lock_write(&mut locked, self, current_task)?;
         self.fallocate_locked(locked, &guard, current_task, mode, offset, length)
     }
 
     pub fn fallocate_locked<L>(
         &self,
         locked: &mut Locked<L>,
-        guard: &AppendLockGuard<'_>,
+        guard: &AppendLockWriteGuard<'_>,
         current_task: &CurrentTask,
         mode: FallocMode,
         offset: u64,
