@@ -14,6 +14,14 @@ from fidl._ir import get_fidl_ir_map
 _ir_path = get_fidl_ir_map()["fidl.clientsuite"]
 add_ir_path(_ir_path)
 
+from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
+import fidl._construct  # type: ignore[unused-ignore,unused-import]
+from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
+from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
+
+from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
+import collections.abc  # type: ignore[unused-ignore,unused-import]
+
 
 @dataclass
 class Empty:
@@ -3041,22 +3049,6 @@ Test = enum.IntEnum(
 CLIENT_SUITE_VERSION: int = 1
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class AjarTargetServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "fidl.clientsuite"
@@ -3101,22 +3093,6 @@ class AjarTargetEventHandler(EventHandlerBase, ABC):
 AjarTargetMarker = FidlProtocolMarker(
     "(nondiscoverable) fidl.clientsuite/AjarTarget"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class AjarTargetEventReporterServer(ServerBase, ABC):
@@ -3202,22 +3178,6 @@ class AjarTargetEventReporterEventHandler(EventHandlerBase, ABC):
 AjarTargetEventReporterMarker = FidlProtocolMarker(
     "(nondiscoverable) fidl.clientsuite/AjarTargetEventReporter"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class ClosedTargetServer(ServerBase, ABC):
@@ -3822,22 +3782,6 @@ ClosedTargetMarker = FidlProtocolMarker(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class ClosedTargetEventReporterServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "fidl.clientsuite"
@@ -3927,22 +3871,6 @@ class ClosedTargetEventReporterEventHandler(EventHandlerBase, ABC):
 ClosedTargetEventReporterMarker = FidlProtocolMarker(
     "(nondiscoverable) fidl.clientsuite/ClosedTargetEventReporter"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class OpenTargetServer(ServerBase, ABC):
@@ -4439,22 +4367,6 @@ OpenTargetMarker = FidlProtocolMarker(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class OpenTargetEventReporterServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "fidl.clientsuite"
@@ -4542,22 +4454,6 @@ class OpenTargetEventReporterEventHandler(EventHandlerBase, ABC):
 OpenTargetEventReporterMarker = FidlProtocolMarker(
     "(nondiscoverable) fidl.clientsuite/OpenTargetEventReporter"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class RunnerServer(ServerBase, ABC):

@@ -14,6 +14,14 @@ from fidl._ir import get_fidl_ir_map
 _ir_path = get_fidl_ir_map()["test.protocols"]
 add_ir_path(_ir_path)
 
+from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
+import fidl._construct  # type: ignore[unused-ignore,unused-import]
+from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
+from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
+
+from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
+import collections.abc  # type: ignore[unused-ignore,unused-import]
+
 
 @dataclass
 class ChannelProtocolEventARequest:
@@ -1635,22 +1643,6 @@ ErrorEnum = enum.IntEnum(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class AnotherDiscoverableProtocolServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "test.protocols"
@@ -1695,22 +1687,6 @@ class AnotherDiscoverableProtocolEventHandler(EventHandlerBase, ABC):
 AnotherDiscoverableProtocolMarker = FidlProtocolMarker(
     "fake.library.FakeProtocol"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class ChannelProtocolServer(ServerBase, ABC):
@@ -1957,22 +1933,6 @@ ChannelProtocolMarker = FidlProtocolMarker(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class DiscoverableProtocolServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "test.protocols"
@@ -2049,22 +2009,6 @@ class DiscoverableProtocolEventHandler(EventHandlerBase, ABC):
 DiscoverableProtocolMarker = FidlProtocolMarker(
     "test.protocols.DiscoverableProtocol"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class HandleRightsProtocolServer(ServerBase, ABC):
@@ -2229,22 +2173,6 @@ HandleRightsProtocolMarker = FidlProtocolMarker(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class ManyParametersServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "test.protocols"
@@ -2356,22 +2284,6 @@ ManyParametersMarker = FidlProtocolMarker(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class MethodWithUnionServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "test.protocols"
@@ -2464,22 +2376,6 @@ MethodWithUnionMarker = FidlProtocolMarker(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class PlatformServerServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "test.protocols"
@@ -2522,22 +2418,6 @@ class PlatformServerEventHandler(EventHandlerBase, ABC):
 
 
 PlatformServerMarker = FidlProtocolMarker("test.protocols.PlatformServer")
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class WithAndWithoutRequestResponseServer(ServerBase, ABC):
@@ -2882,22 +2762,6 @@ WithAndWithoutRequestResponseMarker = FidlProtocolMarker(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class WithErrorSyntaxServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "test.protocols"
@@ -3121,22 +2985,6 @@ class WithErrorSyntaxEventHandler(EventHandlerBase, ABC):
 WithErrorSyntaxMarker = FidlProtocolMarker(
     "(nondiscoverable) test.protocols/WithErrorSyntax"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class WithProtocolEndsServer(ServerBase, ABC):

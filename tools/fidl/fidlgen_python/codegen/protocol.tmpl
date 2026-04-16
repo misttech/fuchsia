@@ -5,16 +5,6 @@
 */}}
 
 {{ define "ProtocolDeclaration" -}}
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier
-)
-
-from abc import abstractmethod, ABC
-import collections.abc # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class {{ .PythonServerName }}(ServerBase, ABC):

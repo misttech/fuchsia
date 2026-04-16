@@ -14,21 +14,13 @@ from fidl._ir import get_fidl_ir_map
 _ir_path = get_fidl_ir_map()["test.service"]
 add_ir_path(_ir_path)
 
+from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
+import fidl._construct  # type: ignore[unused-ignore,unused-import]
+from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
+from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
+from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
 import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class FirstProtocolServer(ServerBase, ABC):
@@ -107,22 +99,6 @@ class FirstProtocolEventHandler(EventHandlerBase, ABC):
 FirstProtocolMarker = FidlProtocolMarker(
     "(nondiscoverable) test.service/FirstProtocol"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class SecondProtocolServer(ServerBase, ABC):

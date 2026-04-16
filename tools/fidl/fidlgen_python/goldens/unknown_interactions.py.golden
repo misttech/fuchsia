@@ -14,6 +14,14 @@ from fidl._ir import get_fidl_ir_map
 _ir_path = get_fidl_ir_map()["test.unknowninteractions"]
 add_ir_path(_ir_path)
 
+from fidl._client import EventHandlerBase, FidlClient  # type: ignore[unused-ignore,unused-import]
+import fidl._construct  # type: ignore[unused-ignore,unused-import]
+from fidl._server import ServerBase  # type: ignore[unused-ignore,unused-import]
+from fidl._fidl_common import DomainError, FrameworkError, MethodInfo, FidlProtocolMarker, normalize_identifier  # type: ignore[unused-ignore,unused-import]
+
+from abc import abstractmethod, ABC  # type: ignore[unused-ignore,unused-import]
+import collections.abc  # type: ignore[unused-ignore,unused-import]
+
 
 @dataclass
 class UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest:
@@ -4277,22 +4285,6 @@ class UnknownInteractionsProtocolStrictTwoWayUnionErrResult:
         return cls(_empty=())
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "test.unknowninteractions"
@@ -4969,22 +4961,6 @@ UnknownInteractionsAjarProtocolMarker = FidlProtocolMarker(
 )
 
 
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
-
-
 class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     __fidl_kind__ = "server"
     library = "test.unknowninteractions"
@@ -5531,22 +5507,6 @@ class UnknownInteractionsClosedProtocolEventHandler(EventHandlerBase, ABC):
 UnknownInteractionsClosedProtocolMarker = FidlProtocolMarker(
     "(nondiscoverable) test.unknowninteractions/UnknownInteractionsClosedProtocol"
 )
-
-
-from fidl._client import EventHandlerBase, FidlClient
-import fidl._construct
-from fidl._server import ServerBase
-from fidl._fidl_common import (
-    DomainError,
-    FrameworkError,
-    MethodInfo,
-    FidlProtocolMarker,
-    normalize_identifier,
-)
-
-from abc import abstractmethod, ABC
-import collections.abc  # type: ignore[unused-ignore,unused-import]
-import typing
 
 
 class UnknownInteractionsProtocolServer(ServerBase, ABC):
