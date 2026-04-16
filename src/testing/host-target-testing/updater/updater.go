@@ -62,7 +62,6 @@ type client interface {
 	SetUpdateChannel(ctx context.Context, ffxTool *ffx.FFXTool, target string, channel string) error
 	MonitorUpdate(ctx context.Context, ffxTool *ffx.FFXTool, target string) (string, error)
 	ForceInstall(ctx context.Context, ffxTool *ffx.FFXTool, target string, url string) error
-	WaitForCommit(ctx context.Context, ffxTool *ffx.FFXTool, target string) error
 }
 
 type Updater interface {
@@ -342,7 +341,8 @@ func updateCheckNow(
 		return err
 	}
 
-	if err := c.WaitForCommit(ctx, ffxTool, target); err != nil {
+	cmd := []string{"/bin/update", "wait-for-commit"}
+	if err := c.Run(ctx, cmd, os.Stdout, os.Stderr); err != nil {
 		logger.Warningf(ctx, "update wait-for-commit after OTA attempt failed: %v", err)
 	}
 
@@ -422,7 +422,8 @@ func (u *SystemUpdater) Update(
 	logger.Infof(ctx, "Reboot complete in %s", time.Now().Sub(startTime))
 
 	startTime = time.Now()
-	if err := c.WaitForCommit(ctx, ffxTool, target); err != nil {
+	cmd := []string{"/bin/update", "wait-for-commit"}
+	if err := c.Run(ctx, cmd, os.Stdout, os.Stderr); err != nil {
 		logger.Warningf(ctx, "update wait-for-commit failed: %v", err)
 	}
 	logger.Infof(ctx, "Commit successful in %s", time.Now().Sub(startTime))
