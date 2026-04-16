@@ -418,7 +418,7 @@ impl ParsedPolicy {
 
     /// Returns the named category, if present in the policy.
     pub(super) fn category_by_name(&self, name: &str) -> Option<Category> {
-        self.categories.categories(&self.data).find(|x| x.name_bytes() == name.as_bytes())
+        self.categories.category_by_name(&self.data, name)
     }
 
     pub(super) fn class(&self, class_id: ClassId) -> Option<Class> {

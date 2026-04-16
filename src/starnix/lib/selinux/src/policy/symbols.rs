@@ -1842,16 +1842,22 @@ pub(super) struct CategoryIndex {
     // need to? Will all the binary policies that we encounter be "packed" such that
     // they use every integer between one and the largest integer that they use?
     offsets_by_id_minus_one: Box<[U24]>,
+
+    /// A mapping from category name hash to the offset of that category in the policy.
+    offsets_by_name: HashTable<U24>,
 }
 
 impl CategoryIndex {
+    fn parse_category_at(policy_bytes: &PolicyData, offset: U24) -> Category {
+        Category::parse(PolicyCursor::new_at(policy_bytes, PolicyOffset::from(offset)))
+            .expect("These bytes already successfully parsed")
+            .0
+    }
+
     /// Looks up a [`Category`] by its [`CategoryId`].
     pub fn category(&self, policy_bytes: &PolicyData, category_id: CategoryId) -> Category {
-        let offset =
-            PolicyOffset::from(self.offsets_by_id_minus_one[(category_id.0.get() - 1) as usize]);
-        let (category, _) = Category::parse(PolicyCursor::new_at(policy_bytes, offset))
-            .expect("These bytes already successfully parsed");
-        category
+        let offset = self.offsets_by_id_minus_one[(category_id.0.get() - 1) as usize];
+        Self::parse_category_at(policy_bytes, offset)
     }
 
     /// Looks up all [`Category`]s given in the policy. This is linear in time and
@@ -1872,15 +1878,28 @@ impl CategoryIndex {
             }
         })
     }
+
+    /// Looks up a [`Category`] by its name in constant time.
+    pub fn category_by_name(&self, policy_bytes: &PolicyData, name: &str) -> Option<Category> {
+        let name_bytes = name.as_bytes();
+        self.offsets_by_name
+            .find(name_hash(name_bytes), |&other_offset| {
+                name_bytes == Self::parse_category_at(policy_bytes, other_offset).name_bytes()
+            })
+            .map(|&offset| Self::parse_category_at(policy_bytes, offset))
+    }
 }
 
 impl Parse for CategoryIndex {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let policy_data = bytes.data();
         let (metadata, mut tail) = Metadata::parse(bytes)?;
         let category_count = usize::try_from(metadata.count()).unwrap();
         let mut offsets_by_id_minus_one = vec![U24::ZERO; category_count];
+        let mut offsets_by_name = HashTable::with_capacity(category_count);
+
         for _ in 0..category_count {
             let offset = U24::try_from(tail.offset()).unwrap();
             let (category, next_tail) = Category::parse(tail)?;
@@ -1891,9 +1910,33 @@ impl Parse for CategoryIndex {
             }
             offsets_by_id_minus_one[category_id_as_usize - 1] = offset;
 
+            offsets_by_name
+                .entry(
+                    name_hash(category.name_bytes()),
+                    |&other_offset| {
+                        category.name_bytes()
+                            == Self::parse_category_at(&policy_data, other_offset).name_bytes()
+                    },
+                    |&other_offset| {
+                        name_hash(Self::parse_category_at(&policy_data, other_offset).name_bytes())
+                    },
+                )
+                .insert(offset);
+
             tail = next_tail;
         }
-        Ok((Self { offsets_by_id_minus_one: Box::<[U24]>::from(offsets_by_id_minus_one) }, tail))
+
+        offsets_by_name.shrink_to_fit(|&other_offset| {
+            name_hash(Self::parse_category_at(&policy_data, other_offset).name_bytes())
+        });
+
+        Ok((
+            Self {
+                offsets_by_id_minus_one: Box::<[U24]>::from(offsets_by_id_minus_one),
+                offsets_by_name,
+            },
+            tail,
+        ))
     }
 }
 
