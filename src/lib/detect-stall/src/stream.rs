@@ -128,17 +128,17 @@ impl<RS: RequestStream + Unpin, F: FnOnce(Option<zx::Channel>) + Unpin> Stream
         let mut this = self.project();
         match poll_result {
             Poll::Ready(message) => {
-                this.timer.set(None);
                 if message.is_none() {
                     this.unbind_callback.take().unwrap()(None);
+                } else {
+                    this.timer.set(Some(fasync::Timer::new(*this.debounce_interval)));
                 }
                 Poll::Ready(message)
             }
             Poll::Pending => {
-                let debounce_interval = *this.debounce_interval;
                 loop {
                     if this.timer.is_none() {
-                        this.timer.set(Some(fasync::Timer::new(debounce_interval)));
+                        this.timer.set(Some(fasync::Timer::new(*this.debounce_interval)));
                     }
                     ready!(this.timer.as_mut().as_pin_mut().unwrap().poll(cx));
                     this.timer.set(None);
@@ -171,9 +171,10 @@ mod tests {
     use assert_matches::assert_matches;
     use fasync::TestExecutor;
     use fidl::endpoints::Proxy;
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use futures::{FutureExt, TryStreamExt};
     use std::pin::pin;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     #[fuchsia::test(allow_stalls = false)]
     async fn no_message() {
@@ -258,37 +259,39 @@ mod tests {
         let initial = fasync::MonotonicInstant::from_nanos(0);
         TestExecutor::advance_to(initial).await;
         const DURATION_NANOS: i64 = 1_000_000;
-        let idle_duration = MonotonicDuration::from_nanos(DURATION_NANOS);
+        let debounce_interval = MonotonicDuration::from_nanos(DURATION_NANOS);
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fio::DirectoryMarker>();
-        let (stream, stalled) = until_stalled(stream, idle_duration);
-
-        let mut stalled = pin!(stalled);
-        assert_matches!(TestExecutor::poll_until_stalled(&mut stalled).await, Poll::Pending);
-
-        let _ = proxy.get_flags();
-
+        let (stream, stalled) = until_stalled(stream, debounce_interval);
         let mut stream = pin!(stream);
-        let mut message = pin!(stream.next());
-        // Reply to the request so that the stream doesn't have any pending replies.
-        let message = TestExecutor::poll_until_stalled(&mut message).await;
-        let Poll::Ready(Some(Ok(fio::DirectoryRequest::GetFlags { responder }))) = message else {
-            panic!("Unexpected {message:?}");
-        };
-        responder.send(Ok(fio::Flags::empty())).unwrap();
+        let mut stalled = pin!(stalled);
 
-        // The stream hasn't stalled yet.
-        TestExecutor::advance_to(initial + idle_duration * 2).await;
-        assert!(TestExecutor::poll_until_stalled(&mut stalled).await.is_pending());
-
-        // Poll the stream such that it is stalled.
+        // The stream should have no messages.
         let mut message = pin!(stream.next());
         assert_matches!(TestExecutor::poll_until_stalled(&mut message).await, Poll::Pending);
         assert_matches!(TestExecutor::poll_until_stalled(&mut stalled).await, Poll::Pending);
 
-        TestExecutor::advance_to(initial + idle_duration * 3).await;
+        // Send a message to the stream and process it. The debounce timer resets.
+        TestExecutor::advance_to(initial + debounce_interval / 2).await;
+        let _ = proxy.get_flags();
+        assert_matches!(
+            TestExecutor::poll_until_stalled(&mut message).await,
+            Poll::Ready(Some(Ok(fio::DirectoryRequest::GetFlags { responder }))) => {
+                // Reply to the request so that the stream doesn't have any pending replies.
+                responder.send(Ok(fio::Flags::empty())).unwrap();
+            }
+        );
+        assert_matches!(TestExecutor::poll_until_stalled(&mut stalled).await, Poll::Pending);
 
-        // Now the the stream should be finished, because the channel has been unbound.
+        // The stream should remain open after the old debounce interval but before the new debounce
+        // interval.
+        TestExecutor::advance_to(initial + debounce_interval).await;
+        let mut message = pin!(stream.next());
+        assert_matches!(TestExecutor::poll_until_stalled(&mut message).await, Poll::Pending);
+        assert_matches!(TestExecutor::poll_until_stalled(&mut stalled).await, Poll::Pending);
+
+        // The stream should close after the new debounce interval.
+        TestExecutor::advance_to(initial + debounce_interval / 2 + debounce_interval).await;
         assert_matches!(message.await, None);
         assert_matches!(stalled.await, Ok(Some(_)));
     }
