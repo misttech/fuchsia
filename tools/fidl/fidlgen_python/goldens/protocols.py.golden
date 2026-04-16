@@ -1646,6 +1646,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class AnotherDiscoverableProtocolServer(ServerBase, ABC):
@@ -1711,6 +1712,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ChannelProtocolServer(ServerBase, ABC):
@@ -1768,7 +1770,7 @@ class ChannelProtocolServer(ServerBase, ABC):
         self,
         request: ChannelProtocolMethodARequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, MethodAResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, MethodAResponse]
         | MethodAResponse
     ):
         ...
@@ -1792,7 +1794,7 @@ class ChannelProtocolServer(ServerBase, ABC):
         self,
         request: ChannelProtocolMethodBRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, MethodBResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, MethodBResponse]
         | MethodBResponse
     ):
         ...
@@ -1804,7 +1806,7 @@ class ChannelProtocolServer(ServerBase, ABC):
         self,
         request: ChannelProtocolTakeHandleRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TakeHandleResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, TakeHandleResponse]
         | TakeHandleResponse
     ):
         ...
@@ -1816,7 +1818,7 @@ class ChannelProtocolServer(ServerBase, ABC):
         self,
         request: ChannelProtocolMutateSocketRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, MutateSocketResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, MutateSocketResponse]
         | MutateSocketResponse
     ):
         ...
@@ -1859,7 +1861,7 @@ class ChannelProtocolClient(FidlClient):
         *,
         a: int,
         b: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ChannelProtocolMethodBResponse
     ]:
         msg = ChannelProtocolMethodBRequest(
@@ -1879,7 +1881,7 @@ class ChannelProtocolClient(FidlClient):
         self,
         *,
         h: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = ChannelProtocolTakeHandleRequest(
             h,
         )
@@ -1894,7 +1896,7 @@ class ChannelProtocolClient(FidlClient):
         self,
         *,
         a: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ChannelProtocolMutateSocketResponse
     ]:
         msg = ChannelProtocolMutateSocketRequest(
@@ -1938,7 +1940,7 @@ class ChannelProtocolEventHandler(EventHandlerBase, ABC):
     def event_a(
         self,
         request: ChannelProtocolEventARequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 
@@ -1958,6 +1960,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class DiscoverableProtocolServer(ServerBase, ABC):
@@ -1990,7 +1993,7 @@ class DiscoverableProtocolServer(ServerBase, ABC):
     def method(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, MethodResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, MethodResponse]
         | MethodResponse
     ):
         ...
@@ -2055,6 +2058,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class HandleRightsProtocolServer(ServerBase, ABC):
@@ -2096,7 +2100,9 @@ class HandleRightsProtocolServer(ServerBase, ABC):
         self,
         request: HandleRightsProtocolNoResponseMethodRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, NoResponseMethodResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, NoResponseMethodResponse
+        ]
         | NoResponseMethodResponse
     ):
         ...
@@ -2110,7 +2116,9 @@ class HandleRightsProtocolServer(ServerBase, ABC):
         self,
         request: HandleRightsProtocolResponseMethodRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ResponseMethodResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ResponseMethodResponse
+        ]
         | ResponseMethodResponse
     ):
         ...
@@ -2160,7 +2168,7 @@ class HandleRightsProtocolClient(FidlClient):
         self,
         *,
         h: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, HandleRightsProtocolResponseMethodResponse
     ]:
         msg = HandleRightsProtocolResponseMethodRequest(
@@ -2204,7 +2212,7 @@ class HandleRightsProtocolEventHandler(EventHandlerBase, ABC):
     def an_event(
         self,
         request: HandleRightsProtocolAnEventRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 
@@ -2224,6 +2232,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ManyParametersServer(ServerBase, ABC):
@@ -2257,7 +2266,7 @@ class ManyParametersServer(ServerBase, ABC):
         self,
         request: ManyParametersFifteenRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FifteenResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, FifteenResponse]
         | FifteenResponse
     ):
         ...
@@ -2354,6 +2363,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class MethodWithUnionServer(ServerBase, ABC):
@@ -2387,7 +2397,7 @@ class MethodWithUnionServer(ServerBase, ABC):
         self,
         request: MethodWithUnionUnionMethodRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, UnionMethodResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, UnionMethodResponse]
         | UnionMethodResponse
     ):
         ...
@@ -2411,7 +2421,7 @@ class MethodWithUnionClient(FidlClient):
         self,
         *,
         u: TheUnion,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, MethodWithUnionUnionMethodResponse
     ]:
         msg = MethodWithUnionUnionMethodRequest(
@@ -2459,6 +2469,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class PlatformServerServer(ServerBase, ABC):
@@ -2522,6 +2533,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class WithAndWithoutRequestResponseServer(ServerBase, ABC):
@@ -2594,7 +2606,9 @@ class WithAndWithoutRequestResponseServer(ServerBase, ABC):
     def no_request_no_response(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, NoRequestNoResponseResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, NoRequestNoResponseResponse
+        ]
         | NoRequestNoResponseResponse
     ):
         ...
@@ -2605,7 +2619,9 @@ class WithAndWithoutRequestResponseServer(ServerBase, ABC):
     def no_request_empty_response(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, NoRequestEmptyResponseResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, NoRequestEmptyResponseResponse
+        ]
         | NoRequestEmptyResponseResponse
     ):
         ...
@@ -2618,7 +2634,9 @@ class WithAndWithoutRequestResponseServer(ServerBase, ABC):
     def no_request_with_response(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, NoRequestWithResponseResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, NoRequestWithResponseResponse
+        ]
         | NoRequestWithResponseResponse
     ):
         ...
@@ -2630,7 +2648,9 @@ class WithAndWithoutRequestResponseServer(ServerBase, ABC):
         self,
         request: WithAndWithoutRequestResponseWithRequestNoResponseRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, WithRequestNoResponseResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, WithRequestNoResponseResponse
+        ]
         | WithRequestNoResponseResponse
     ):
         ...
@@ -2642,7 +2662,7 @@ class WithAndWithoutRequestResponseServer(ServerBase, ABC):
         self,
         request: WithAndWithoutRequestResponseWithRequestEmptyResponseRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, WithRequestEmptyResponseResponse
         ]
         | WithRequestEmptyResponseResponse
@@ -2658,7 +2678,7 @@ class WithAndWithoutRequestResponseServer(ServerBase, ABC):
         self,
         request: WithAndWithoutRequestResponseWithRequestWithResponseRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, WithRequestWithResponseResponse
         ]
         | WithRequestWithResponseResponse
@@ -2710,7 +2730,7 @@ class WithAndWithoutRequestResponseClient(FidlClient):
 
     def no_request_empty_response(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
         return self._send_two_way_fidl_request(
             1631193469798418024,
@@ -2721,7 +2741,7 @@ class WithAndWithoutRequestResponseClient(FidlClient):
 
     def no_request_with_response(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         WithAndWithoutRequestResponseNoRequestWithResponseResponse,
@@ -2756,7 +2776,7 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         self,
         *,
         arg: str,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = WithAndWithoutRequestResponseWithRequestEmptyResponseRequest(
             arg,
         )
@@ -2771,7 +2791,7 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         self,
         *,
         arg: str,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         WithAndWithoutRequestResponseWithRequestWithResponseResponse,
@@ -2824,14 +2844,14 @@ class WithAndWithoutRequestResponseEventHandler(EventHandlerBase, ABC):
     @abstractmethod
     def on_empty_response(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def on_with_response(
         self,
         request: WithAndWithoutRequestResponseOnWithResponseRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 
@@ -2851,6 +2871,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class WithErrorSyntaxServer(ServerBase, ABC):
@@ -2910,7 +2931,9 @@ class WithErrorSyntaxServer(ServerBase, ABC):
     def response_as_struct(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ResponseAsStructResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ResponseAsStructResponse
+        ]
         | ResponseAsStructResponse
     ):
         ...
@@ -2924,7 +2947,9 @@ class WithErrorSyntaxServer(ServerBase, ABC):
     def error_as_primitive(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorAsPrimitiveResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ErrorAsPrimitiveResponse
+        ]
         | ErrorAsPrimitiveResponse
     ):
         ...
@@ -2938,7 +2963,7 @@ class WithErrorSyntaxServer(ServerBase, ABC):
     def error_as_enum(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorAsEnumResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ErrorAsEnumResponse]
         | ErrorAsEnumResponse
     ):
         ...
@@ -2952,7 +2977,9 @@ class WithErrorSyntaxServer(ServerBase, ABC):
     def handle_in_result(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, HandleInResultResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, HandleInResultResponse
+        ]
         | HandleInResultResponse
     ):
         ...
@@ -2974,7 +3001,7 @@ class WithErrorSyntaxClient(FidlClient):
 
     def response_as_struct(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, WithErrorSyntaxResponseAsStructResult
     ]:
         msg = None
@@ -2989,7 +3016,7 @@ class WithErrorSyntaxClient(FidlClient):
 
     def error_as_primitive(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, WithErrorSyntaxErrorAsPrimitiveResult
     ]:
         msg = None
@@ -3004,7 +3031,7 @@ class WithErrorSyntaxClient(FidlClient):
 
     def error_as_enum(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, WithErrorSyntaxErrorAsEnumResult
     ]:
         msg = None
@@ -3019,7 +3046,7 @@ class WithErrorSyntaxClient(FidlClient):
 
     def handle_in_result(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, WithErrorSyntaxHandleInResultResult
     ]:
         msg = None
@@ -3065,6 +3092,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class WithProtocolEndsServer(ServerBase, ABC):
@@ -3114,7 +3142,7 @@ class WithProtocolEndsServer(ServerBase, ABC):
         self,
         request: WithProtocolEndsClientEndsRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ClientEndsResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ClientEndsResponse]
         | ClientEndsResponse
     ):
         ...
@@ -3126,7 +3154,7 @@ class WithProtocolEndsServer(ServerBase, ABC):
         self,
         request: WithProtocolEndsServerEndsRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ServerEndsResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ServerEndsResponse]
         | ServerEndsResponse
     ):
         ...
@@ -3140,7 +3168,9 @@ class WithProtocolEndsServer(ServerBase, ABC):
         self,
         request: WithProtocolEndsStructContainingEndsRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StructContainingEndsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StructContainingEndsResponse
+        ]
         | StructContainingEndsResponse
     ):
         ...
@@ -3164,7 +3194,7 @@ class WithProtocolEndsClient(FidlClient):
         self,
         *,
         in_: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, WithProtocolEndsClientEndsResponse
     ]:
         msg = WithProtocolEndsClientEndsRequest(
@@ -3183,7 +3213,7 @@ class WithProtocolEndsClient(FidlClient):
         self,
         *,
         in_: typing.Optional[int],
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, WithProtocolEndsServerEndsResponse
     ]:
         msg = WithProtocolEndsServerEndsRequest(
@@ -3202,7 +3232,7 @@ class WithProtocolEndsClient(FidlClient):
         self,
         *,
         in_: ProtocolEnds,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, WithProtocolEndsStructContainingEndsResponse
     ]:
         msg = WithProtocolEndsStructContainingEndsRequest(

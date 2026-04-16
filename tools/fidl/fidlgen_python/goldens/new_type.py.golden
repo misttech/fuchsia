@@ -241,6 +241,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class CalculatorServer(ServerBase, ABC):
@@ -273,7 +274,10 @@ class CalculatorServer(ServerBase, ABC):
     def add(
         self,
         request: CalculatorAddRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, AddResponse] | AddResponse:
+    ) -> (
+        collections.abc.Coroutine[typing.Any, typing.Any, AddResponse]
+        | AddResponse
+    ):
         ...
 
 
@@ -296,7 +300,9 @@ class CalculatorClient(FidlClient):
         *,
         a: int,
         b: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, CalculatorAddResponse]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, CalculatorAddResponse
+    ]:
         msg = CalculatorAddRequest(
             a,
             b,

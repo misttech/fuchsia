@@ -4288,6 +4288,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
@@ -4392,7 +4393,7 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_one_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
         | StrictOneWayResponse
     ):
         ...
@@ -4403,7 +4404,9 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def flexible_one_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleOneWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleOneWayResponse
+        ]
         | FlexibleOneWayResponse
     ):
         ...
@@ -4414,7 +4417,7 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_two_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictTwoWayResponse]
         | StrictTwoWayResponse
     ):
         ...
@@ -4427,7 +4430,9 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_two_way_fields(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayFieldsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayFieldsResponse
+        ]
         | StrictTwoWayFieldsResponse
     ):
         ...
@@ -4440,7 +4445,9 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_two_way_union(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayUnionResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayUnionResponse
+        ]
         | StrictTwoWayUnionResponse
     ):
         ...
@@ -4453,7 +4460,9 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_two_way_table(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayTableResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayTableResponse
+        ]
         | StrictTwoWayTableResponse
     ):
         ...
@@ -4467,7 +4476,9 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_two_way_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayErrResponse
+        ]
         | StrictTwoWayErrResponse
     ):
         ...
@@ -4481,7 +4492,9 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_two_way_fields_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayFieldsErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayFieldsErrResponse
+        ]
         | StrictTwoWayFieldsErrResponse
     ):
         ...
@@ -4495,7 +4508,9 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_two_way_union_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayUnionErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayUnionErrResponse
+        ]
         | StrictTwoWayUnionErrResponse
     ):
         ...
@@ -4509,7 +4524,9 @@ class UnknownInteractionsAjarProtocolServer(ServerBase, ABC):
     def strict_two_way_table_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayTableErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayTableErrResponse
+        ]
         | StrictTwoWayTableErrResponse
     ):
         ...
@@ -4627,7 +4644,7 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
 
     def strict_two_way(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
         return self._send_two_way_fidl_request(
             364341676962177080,
@@ -4638,7 +4655,7 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
 
     def strict_two_way_fields(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse,
@@ -4655,7 +4672,7 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
 
     def strict_two_way_union(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse,
@@ -4672,7 +4689,7 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
 
     def strict_two_way_table(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsAjarProtocolStrictTwoWayTableResponse,
@@ -4689,7 +4706,7 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
 
     def strict_two_way_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsAjarProtocolStrictTwoWayErrResult,
@@ -4706,7 +4723,7 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
 
     def strict_two_way_fields_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResult,
@@ -4723,7 +4740,7 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
 
     def strict_two_way_union_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResult,
@@ -4740,7 +4757,7 @@ class UnknownInteractionsAjarProtocolClient(FidlClient):
 
     def strict_two_way_table_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsAjarProtocolStrictTwoWayTableErrResult,
@@ -4839,55 +4856,55 @@ class UnknownInteractionsAjarProtocolEventHandler(EventHandlerBase, ABC):
     @abstractmethod
     def strict_event(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_fields(
         self,
         request: UnknownInteractionsAjarProtocolStrictEventFieldsRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_union(
         self,
         request: UnknownInteractionsAjarProtocolStrictEventUnionRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_table(
         self,
         request: UnknownInteractionsAjarProtocolStrictEventTableRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event_fields(
         self,
         request: UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event_union(
         self,
         request: UnknownInteractionsAjarProtocolFlexibleEventUnionRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event_table(
         self,
         request: UnknownInteractionsAjarProtocolFlexibleEventTableRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 
@@ -4907,6 +4924,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
@@ -5003,7 +5021,7 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_one_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
         | StrictOneWayResponse
     ):
         ...
@@ -5014,7 +5032,7 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_two_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictTwoWayResponse]
         | StrictTwoWayResponse
     ):
         ...
@@ -5027,7 +5045,9 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_two_way_fields(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayFieldsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayFieldsResponse
+        ]
         | StrictTwoWayFieldsResponse
     ):
         ...
@@ -5040,7 +5060,9 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_two_way_union(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayUnionResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayUnionResponse
+        ]
         | StrictTwoWayUnionResponse
     ):
         ...
@@ -5053,7 +5075,9 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_two_way_table(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayTableResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayTableResponse
+        ]
         | StrictTwoWayTableResponse
     ):
         ...
@@ -5067,7 +5091,9 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_two_way_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayErrResponse
+        ]
         | StrictTwoWayErrResponse
     ):
         ...
@@ -5081,7 +5107,9 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_two_way_fields_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayFieldsErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayFieldsErrResponse
+        ]
         | StrictTwoWayFieldsErrResponse
     ):
         ...
@@ -5095,7 +5123,9 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_two_way_union_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayUnionErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayUnionErrResponse
+        ]
         | StrictTwoWayUnionErrResponse
     ):
         ...
@@ -5109,7 +5139,9 @@ class UnknownInteractionsClosedProtocolServer(ServerBase, ABC):
     def strict_two_way_table_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayTableErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayTableErrResponse
+        ]
         | StrictTwoWayTableErrResponse
     ):
         ...
@@ -5179,7 +5211,7 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
 
     def strict_two_way(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
         return self._send_two_way_fidl_request(
             6834828562275693047,
@@ -5190,7 +5222,7 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
 
     def strict_two_way_fields(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse,
@@ -5207,7 +5239,7 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
 
     def strict_two_way_union(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse,
@@ -5224,7 +5256,7 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
 
     def strict_two_way_table(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsClosedProtocolStrictTwoWayTableResponse,
@@ -5241,7 +5273,7 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
 
     def strict_two_way_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsClosedProtocolStrictTwoWayErrResult,
@@ -5258,7 +5290,7 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
 
     def strict_two_way_fields_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResult,
@@ -5275,7 +5307,7 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
 
     def strict_two_way_union_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResult,
@@ -5292,7 +5324,7 @@ class UnknownInteractionsClosedProtocolClient(FidlClient):
 
     def strict_two_way_table_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsClosedProtocolStrictTwoWayTableErrResult,
@@ -5359,28 +5391,28 @@ class UnknownInteractionsClosedProtocolEventHandler(EventHandlerBase, ABC):
     @abstractmethod
     def strict_event(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_fields(
         self,
         request: UnknownInteractionsClosedProtocolStrictEventFieldsRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_union(
         self,
         request: UnknownInteractionsClosedProtocolStrictEventUnionRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_table(
         self,
         request: UnknownInteractionsClosedProtocolStrictEventTableRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 
@@ -5400,6 +5432,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class UnknownInteractionsProtocolServer(ServerBase, ABC):
@@ -5568,7 +5601,7 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_one_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
         | StrictOneWayResponse
     ):
         ...
@@ -5579,7 +5612,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_one_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleOneWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleOneWayResponse
+        ]
         | FlexibleOneWayResponse
     ):
         ...
@@ -5590,7 +5625,7 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_two_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictTwoWayResponse]
         | StrictTwoWayResponse
     ):
         ...
@@ -5603,7 +5638,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_two_way_fields(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayFieldsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayFieldsResponse
+        ]
         | StrictTwoWayFieldsResponse
     ):
         ...
@@ -5616,7 +5653,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_two_way_union(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayUnionResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayUnionResponse
+        ]
         | StrictTwoWayUnionResponse
     ):
         ...
@@ -5629,7 +5668,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_two_way_table(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayTableResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayTableResponse
+        ]
         | StrictTwoWayTableResponse
     ):
         ...
@@ -5643,7 +5684,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_two_way_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayErrResponse
+        ]
         | StrictTwoWayErrResponse
     ):
         ...
@@ -5657,7 +5700,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_two_way_fields_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayFieldsErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayFieldsErrResponse
+        ]
         | StrictTwoWayFieldsErrResponse
     ):
         ...
@@ -5671,7 +5716,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_two_way_union_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayUnionErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayUnionErrResponse
+        ]
         | StrictTwoWayUnionErrResponse
     ):
         ...
@@ -5685,7 +5732,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def strict_two_way_table_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayTableErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayTableErrResponse
+        ]
         | StrictTwoWayTableErrResponse
     ):
         ...
@@ -5699,7 +5748,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_two_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayResponse
+        ]
         | FlexibleTwoWayResponse
     ):
         ...
@@ -5713,7 +5764,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_two_way_fields(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayFieldsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayFieldsResponse
+        ]
         | FlexibleTwoWayFieldsResponse
     ):
         ...
@@ -5727,7 +5780,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_two_way_union(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayUnionResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayUnionResponse
+        ]
         | FlexibleTwoWayUnionResponse
     ):
         ...
@@ -5741,7 +5796,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_two_way_table(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayTableResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayTableResponse
+        ]
         | FlexibleTwoWayTableResponse
     ):
         ...
@@ -5756,7 +5813,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_two_way_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayErrResponse
+        ]
         | FlexibleTwoWayErrResponse
     ):
         ...
@@ -5771,7 +5830,7 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_two_way_fields_err(
         self,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, FlexibleTwoWayFieldsErrResponse
         ]
         | FlexibleTwoWayFieldsErrResponse
@@ -5788,7 +5847,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_two_way_union_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayUnionErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayUnionErrResponse
+        ]
         | FlexibleTwoWayUnionErrResponse
     ):
         ...
@@ -5803,7 +5864,9 @@ class UnknownInteractionsProtocolServer(ServerBase, ABC):
     def flexible_two_way_table_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayTableErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayTableErrResponse
+        ]
         | FlexibleTwoWayTableErrResponse
     ):
         ...
@@ -5921,7 +5984,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def strict_two_way(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
         return self._send_two_way_fidl_request(
             8308184097687583042,
@@ -5932,7 +5995,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def strict_two_way_fields(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolStrictTwoWayFieldsResponse,
@@ -5949,7 +6012,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def strict_two_way_union(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolStrictTwoWayUnionResponse,
@@ -5966,7 +6029,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def strict_two_way_table(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolStrictTwoWayTableResponse,
@@ -5983,7 +6046,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def strict_two_way_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, UnknownInteractionsProtocolStrictTwoWayErrResult
     ]:
         msg = None
@@ -5998,7 +6061,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def strict_two_way_fields_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolStrictTwoWayFieldsErrResult,
@@ -6015,7 +6078,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def strict_two_way_union_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolStrictTwoWayUnionErrResult,
@@ -6032,7 +6095,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def strict_two_way_table_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolStrictTwoWayTableErrResult,
@@ -6049,7 +6112,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def flexible_two_way(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, UnknownInteractionsProtocolFlexibleTwoWayResult
     ]:
         msg = None
@@ -6064,7 +6127,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def flexible_two_way_fields(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolFlexibleTwoWayFieldsResult,
@@ -6081,7 +6144,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def flexible_two_way_union(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolFlexibleTwoWayUnionResult,
@@ -6098,7 +6161,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def flexible_two_way_table(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolFlexibleTwoWayTableResult,
@@ -6115,7 +6178,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def flexible_two_way_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolFlexibleTwoWayErrResult,
@@ -6132,7 +6195,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def flexible_two_way_fields_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResult,
@@ -6149,7 +6212,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def flexible_two_way_union_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolFlexibleTwoWayUnionErrResult,
@@ -6166,7 +6229,7 @@ class UnknownInteractionsProtocolClient(FidlClient):
 
     def flexible_two_way_table_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         UnknownInteractionsProtocolFlexibleTwoWayTableErrResult,
@@ -6265,55 +6328,55 @@ class UnknownInteractionsProtocolEventHandler(EventHandlerBase, ABC):
     @abstractmethod
     def strict_event(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_fields(
         self,
         request: UnknownInteractionsProtocolStrictEventFieldsRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_union(
         self,
         request: UnknownInteractionsProtocolStrictEventUnionRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event_table(
         self,
         request: UnknownInteractionsProtocolStrictEventTableRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event_fields(
         self,
         request: UnknownInteractionsProtocolFlexibleEventFieldsRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event_union(
         self,
         request: UnknownInteractionsProtocolFlexibleEventUnionRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event_table(
         self,
         request: UnknownInteractionsProtocolFlexibleEventTableRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 

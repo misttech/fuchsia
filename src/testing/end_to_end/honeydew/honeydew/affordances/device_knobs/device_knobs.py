@@ -4,8 +4,7 @@
 """Abstract base class for async knobs that control a device."""
 
 import abc
-from collections.abc import Callable
-from typing import Any, Coroutine
+from collections.abc import Awaitable, Callable
 
 import fuchsia_inspect
 
@@ -467,7 +466,7 @@ class DeviceKnobs(abc.ABC):
 
     @abc.abstractmethod
     def register_for_on_device_close(
-        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        self, fn: Callable[[], None] | Callable[[], Awaitable[None]]
     ) -> None:
         """Register a function that will be called during device clean up in `close()`.
 
@@ -479,7 +478,7 @@ class DeviceKnobs(abc.ABC):
     def register_for_on_device_ip_change(
         self,
         fn: Callable[[custom_types.IpPort], None]
-        | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]],
+        | Callable[[custom_types.IpPort], Awaitable[None]],
     ) -> None:
         """Register a function that will be called when an IP address is changed.
 

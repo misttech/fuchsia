@@ -162,6 +162,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ChildServer(ServerBase, ABC):
@@ -225,6 +226,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ParentServer(ServerBase, ABC):
@@ -281,7 +283,7 @@ class ParentServer(ServerBase, ABC):
     def get_child(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, GetChildResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, GetChildResponse]
         | GetChildResponse
     ):
         ...
@@ -292,7 +294,9 @@ class ParentServer(ServerBase, ABC):
     def get_child_request(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, GetChildRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, GetChildRequestResponse
+        ]
         | GetChildRequestResponse
     ):
         ...
@@ -304,7 +308,7 @@ class ParentServer(ServerBase, ABC):
         self,
         request: ParentTakeChildRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TakeChildResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, TakeChildResponse]
         | TakeChildResponse
     ):
         ...
@@ -316,7 +320,9 @@ class ParentServer(ServerBase, ABC):
         self,
         request: ParentTakeChildRequestRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TakeChildRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TakeChildRequestResponse
+        ]
         | TakeChildRequestResponse
     ):
         ...
@@ -338,7 +344,9 @@ class ParentClient(FidlClient):
 
     def get_child(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, ParentGetChildResponse]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, ParentGetChildResponse
+    ]:
         msg = None
         return self._send_two_way_fidl_request(
             881818649151440699,
@@ -349,7 +357,7 @@ class ParentClient(FidlClient):
 
     def get_child_request(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ParentGetChildRequestResponse
     ]:
         msg = None

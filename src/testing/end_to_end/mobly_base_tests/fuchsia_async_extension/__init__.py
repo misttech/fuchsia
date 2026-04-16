@@ -8,8 +8,9 @@ import functools
 import inspect
 import logging
 import typing
+from collections.abc import Coroutine
 from functools import wraps
-from typing import Any, Callable, Coroutine, ParamSpec, Sequence, TypeVar
+from typing import Any, Callable, ParamSpec, Sequence, TypeVar
 
 from mobly import base_test, records, signals
 
@@ -24,7 +25,7 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 
-def make_sync_wrapper(
+def _make_sync_wrapper(
     func: Callable[P, Coroutine[Any, Any, T]]
 ) -> Callable[P, Coroutine[Any, Any, T] | T]:
     @wraps(func)
@@ -96,7 +97,7 @@ class _AsyncBaseTestClassMeta(_BaseTestClass):
             ):
                 async_attr_name = f"_async_{attr_name}"
                 setattr(cls, async_attr_name, attr_value)
-                setattr(cls, attr_name, make_sync_wrapper(attr_value))
+                setattr(cls, attr_name, _make_sync_wrapper(attr_value))
 
             # Handle async test methods
             elif attr_name.startswith("test_") and inspect.iscoroutinefunction(
@@ -104,7 +105,7 @@ class _AsyncBaseTestClassMeta(_BaseTestClass):
             ):
                 async_attr_name = f"_async_{attr_name}"
                 setattr(cls, async_attr_name, attr_value)
-                setattr(cls, attr_name, make_sync_wrapper(attr_value))
+                setattr(cls, attr_name, _make_sync_wrapper(attr_value))
 
 
 class TestCases:
@@ -160,7 +161,7 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
     # These methods intentionally mask their Mobly synchronous counterparts.
     # This ensures each subclass of this one will define these methods as async,
     # because mypy checks will enforce that. Then the __init_subclass__ in
-    # _AsyncBaseTestClassMeta will wrap them with make_sync_wrapper.
+    # _AsyncBaseTestClassMeta will wrap them with _make_sync_wrapper.
 
     TEST_CASES: Sequence[type[TestCases]] | None = None
 
@@ -202,7 +203,7 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
         arg_sets: Sequence[Any],
         uid_func: Callable[P, str] | None = None,
     ) -> None:
-        if inspect.iscoroutinefunction(test_logic):
+        if asyncio.iscoroutinefunction(test_logic):
 
             @wraps(test_logic)
             def wrapper(*t_args: P.args, **t_kwargs: P.kwargs) -> None:
@@ -213,7 +214,7 @@ class AsyncBaseTestClass(_AsyncBaseTestClassMeta):
                     pass
 
                 # This should be the typical case of Mobly calling a test method
-                # from a synchronous context. Run the coroutine on the global
+                # from a synchronous context. Run the future on the global
                 # event loop.
                 if loop is None:
                     return get_loop().run_until_complete(

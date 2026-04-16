@@ -94,6 +94,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ChildServer(ServerBase, ABC):
@@ -135,7 +136,8 @@ class ChildServer(ServerBase, ABC):
         self,
         request: ParentFirstRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FirstResponse] | FirstResponse
+        collections.abc.Coroutine[typing.Any, typing.Any, FirstResponse]
+        | FirstResponse
     ):
         ...
 
@@ -146,7 +148,7 @@ class ChildServer(ServerBase, ABC):
         self,
         request: ChildSecondRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, SecondResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, SecondResponse]
         | SecondResponse
     ):
         ...
@@ -231,6 +233,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ParentServer(ServerBase, ABC):
@@ -264,7 +267,8 @@ class ParentServer(ServerBase, ABC):
         self,
         request: ParentFirstRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FirstResponse] | FirstResponse
+        collections.abc.Coroutine[typing.Any, typing.Any, FirstResponse]
+        | FirstResponse
     ):
         ...
 

@@ -214,6 +214,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ExampleUseOfErrorSyntaxServer(ServerBase, ABC):
@@ -258,7 +259,7 @@ class ExampleUseOfErrorSyntaxServer(ServerBase, ABC):
         self,
         request: fidl_test_errorsyntax_parent.ParentUsesErrorSyntaxComposedCallWhichMayFailRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, ComposedCallWhichMayFailResponse
         ]
         | ComposedCallWhichMayFailResponse
@@ -275,7 +276,9 @@ class ExampleUseOfErrorSyntaxServer(ServerBase, ABC):
         self,
         request: ExampleUseOfErrorSyntaxCallWhichMayFailRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallWhichMayFailResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallWhichMayFailResponse
+        ]
         | CallWhichMayFailResponse
     ):
         ...
@@ -299,7 +302,7 @@ class ExampleUseOfErrorSyntaxClient(FidlClient):
         self,
         *,
         s: str,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_errorsyntax_parent.ParentUsesErrorSyntaxComposedCallWhichMayFailResult,
@@ -320,7 +323,7 @@ class ExampleUseOfErrorSyntaxClient(FidlClient):
         self,
         *,
         s: str,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ExampleUseOfErrorSyntaxCallWhichMayFailResult
     ]:
         msg = ExampleUseOfErrorSyntaxCallWhichMayFailRequest(

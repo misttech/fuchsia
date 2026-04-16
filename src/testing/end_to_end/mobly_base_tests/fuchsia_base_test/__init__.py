@@ -11,7 +11,8 @@ import logging
 import os
 import pathlib
 import typing
-from typing import Any, Callable, Coroutine, Dict, ParamSpec, TypeVar, Union
+from collections.abc import Awaitable
+from typing import Any, Callable, Dict, ParamSpec, TypeVar, Union
 
 import fuchsia_async_extension
 from honeydew import errors

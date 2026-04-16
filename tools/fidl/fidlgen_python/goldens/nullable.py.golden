@@ -429,6 +429,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class SimpleProtocolServer(ServerBase, ABC):
@@ -461,7 +462,10 @@ class SimpleProtocolServer(ServerBase, ABC):
     def add(
         self,
         request: SimpleProtocolAddRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, AddResponse] | AddResponse:
+    ) -> (
+        collections.abc.Coroutine[typing.Any, typing.Any, AddResponse]
+        | AddResponse
+    ):
         ...
 
 
@@ -484,7 +488,9 @@ class SimpleProtocolClient(FidlClient):
         *,
         a: int,
         b: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, SimpleProtocolAddResponse]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, SimpleProtocolAddResponse
+    ]:
         msg = SimpleProtocolAddRequest(
             a,
             b,

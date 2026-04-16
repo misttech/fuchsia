@@ -4,8 +4,7 @@
 """Contains Abstract Base Classes for all affordances capable devices."""
 
 import abc
-from collections.abc import Callable
-from typing import Any, Coroutine
+from collections.abc import Awaitable, Callable
 
 import fuchsia_inspect
 
@@ -26,7 +25,7 @@ class RebootCapableDevice(abc.ABC):
 
     @abc.abstractmethod
     def register_for_on_device_boot(
-        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        self, fn: Callable[[], None] | Callable[[], Awaitable[None]]
     ) -> None:
         """Register a function that will be called in `on_device_boot()`.
 
@@ -65,7 +64,7 @@ class FuchsiaDeviceClose(abc.ABC):
 
     @abc.abstractmethod
     def register_for_on_device_close(
-        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        self, fn: Callable[[], None] | Callable[[], Awaitable[None]]
     ) -> None:
         """Register a function that will be called during device clean up in `close()`.
 
@@ -82,7 +81,7 @@ class FuchsiaDeviceIpChange(abc.ABC):
     def register_for_on_device_ip_change(
         self,
         fn: Callable[[custom_types.IpPort], None]
-        | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]],
+        | Callable[[custom_types.IpPort], Awaitable[None]],
     ) -> None:
         """Register a function that will be called when an IP address is changed.
 

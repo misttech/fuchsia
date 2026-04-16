@@ -328,6 +328,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ProtocolServer(ServerBase, ABC):
@@ -371,7 +372,7 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: ProtocolRequestStrictResponseFlexibleRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, RequestStrictResponseFlexibleResponse
         ]
         | RequestStrictResponseFlexibleResponse
@@ -387,7 +388,7 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: ProtocolRequestFlexibleResponseStrictRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, RequestFlexibleResponseStrictResponse
         ]
         | RequestFlexibleResponseStrictResponse
@@ -413,7 +414,7 @@ class ProtocolClient(FidlClient):
         self,
         *,
         s: StrictFoo,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ProtocolRequestStrictResponseFlexibleResponse
     ]:
         msg = ProtocolRequestStrictResponseFlexibleRequest(
@@ -432,7 +433,7 @@ class ProtocolClient(FidlClient):
         self,
         *,
         s: FlexibleFoo,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ProtocolRequestFlexibleResponseStrictResponse
     ]:
         msg = ProtocolRequestFlexibleResponseStrictRequest(

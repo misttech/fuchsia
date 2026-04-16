@@ -2056,6 +2056,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class TestProtocolServer(ServerBase, ABC):
@@ -2098,7 +2099,7 @@ class TestProtocolServer(ServerBase, ABC):
     def strict_union_hence_response_may_be_stack_allocated(
         self,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any,
             typing.Any,
             StrictUnionHenceResponseMayBeStackAllocatedResponse,
@@ -2115,7 +2116,7 @@ class TestProtocolServer(ServerBase, ABC):
     def flexible_union_hence_response_must_be_heap_allocated(
         self,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any,
             typing.Any,
             FlexibleUnionHenceResponseMustBeHeapAllocatedResponse,
@@ -2141,7 +2142,7 @@ class TestProtocolClient(FidlClient):
 
     def strict_union_hence_response_may_be_stack_allocated(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse,
@@ -2158,7 +2159,7 @@ class TestProtocolClient(FidlClient):
 
     def flexible_union_hence_response_must_be_heap_allocated(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse,

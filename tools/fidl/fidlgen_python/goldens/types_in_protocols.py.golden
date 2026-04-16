@@ -1731,6 +1731,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ProtocolServer(ServerBase, ABC):
@@ -1972,7 +1973,7 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: Basic,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayBasicResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, OneWayBasicResponse]
         | OneWayBasicResponse
     ):
         ...
@@ -1984,7 +1985,7 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: Basic,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayBasicResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, TwoWayBasicResponse]
         | TwoWayBasicResponse
     ):
         ...
@@ -1998,7 +1999,7 @@ class ProtocolServer(ServerBase, ABC):
     def error_basic(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorBasicResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ErrorBasicResponse]
         | ErrorBasicResponse
     ):
         ...
@@ -2042,7 +2043,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: Compound,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayCompoundResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayCompoundResponse
+        ]
         | OneWayCompoundResponse
     ):
         ...
@@ -2054,7 +2057,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: Compound,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayCompoundResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayCompoundResponse
+        ]
         | TwoWayCompoundResponse
     ):
         ...
@@ -2068,7 +2073,7 @@ class ProtocolServer(ServerBase, ABC):
     def error_compound(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorCompoundResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ErrorCompoundResponse]
         | ErrorCompoundResponse
     ):
         ...
@@ -2102,7 +2107,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: ArrayBasic,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayArrayBasicResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayArrayBasicResponse
+        ]
         | OneWayArrayBasicResponse
     ):
         ...
@@ -2114,7 +2121,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: ArrayBasic,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayArrayBasicResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayArrayBasicResponse
+        ]
         | TwoWayArrayBasicResponse
     ):
         ...
@@ -2128,7 +2137,9 @@ class ProtocolServer(ServerBase, ABC):
     def error_array_basic(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorArrayBasicResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ErrorArrayBasicResponse
+        ]
         | ErrorArrayBasicResponse
     ):
         ...
@@ -2172,7 +2183,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: ArrayCompound,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayArrayCompoundResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayArrayCompoundResponse
+        ]
         | OneWayArrayCompoundResponse
     ):
         ...
@@ -2184,7 +2197,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: ArrayCompound,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayArrayCompoundResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayArrayCompoundResponse
+        ]
         | TwoWayArrayCompoundResponse
     ):
         ...
@@ -2198,7 +2213,9 @@ class ProtocolServer(ServerBase, ABC):
     def error_array_compound(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorArrayCompoundResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ErrorArrayCompoundResponse
+        ]
         | ErrorArrayCompoundResponse
     ):
         ...
@@ -2232,7 +2249,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: VectorBasic,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayVectorBasicResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayVectorBasicResponse
+        ]
         | OneWayVectorBasicResponse
     ):
         ...
@@ -2244,7 +2263,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: VectorBasic,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayVectorBasicResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayVectorBasicResponse
+        ]
         | TwoWayVectorBasicResponse
     ):
         ...
@@ -2258,7 +2279,9 @@ class ProtocolServer(ServerBase, ABC):
     def error_vector_basic(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorVectorBasicResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ErrorVectorBasicResponse
+        ]
         | ErrorVectorBasicResponse
     ):
         ...
@@ -2302,7 +2325,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: VectorCompound,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayVectorCompoundResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayVectorCompoundResponse
+        ]
         | OneWayVectorCompoundResponse
     ):
         ...
@@ -2314,7 +2339,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: VectorCompound,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayVectorCompoundResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayVectorCompoundResponse
+        ]
         | TwoWayVectorCompoundResponse
     ):
         ...
@@ -2328,7 +2355,9 @@ class ProtocolServer(ServerBase, ABC):
     def error_vector_compound(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorVectorCompoundResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ErrorVectorCompoundResponse
+        ]
         | ErrorVectorCompoundResponse
     ):
         ...
@@ -2362,7 +2391,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: VectorOptional,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayVectorOptionalResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayVectorOptionalResponse
+        ]
         | OneWayVectorOptionalResponse
     ):
         ...
@@ -2374,7 +2405,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: VectorOptional,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayVectorOptionalResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayVectorOptionalResponse
+        ]
         | TwoWayVectorOptionalResponse
     ):
         ...
@@ -2388,7 +2421,9 @@ class ProtocolServer(ServerBase, ABC):
     def error_vector_optional(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorVectorOptionalResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ErrorVectorOptionalResponse
+        ]
         | ErrorVectorOptionalResponse
     ):
         ...
@@ -2418,7 +2453,7 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: ArrayVectorNested,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, OneWayArrayVectorNestedResponse
         ]
         | OneWayArrayVectorNestedResponse
@@ -2432,7 +2467,7 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: ArrayVectorNested,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, TwoWayArrayVectorNestedResponse
         ]
         | TwoWayArrayVectorNestedResponse
@@ -2448,7 +2483,9 @@ class ProtocolServer(ServerBase, ABC):
     def error_array_vector_nested(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorArrayVectorNestedResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ErrorArrayVectorNestedResponse
+        ]
         | ErrorArrayVectorNestedResponse
     ):
         ...
@@ -2476,7 +2513,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: Resource,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayResourceResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayResourceResponse
+        ]
         | OneWayResourceResponse
     ):
         ...
@@ -2488,7 +2527,9 @@ class ProtocolServer(ServerBase, ABC):
         self,
         request: Resource,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayResourceResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayResourceResponse
+        ]
         | TwoWayResourceResponse
     ):
         ...
@@ -2502,7 +2543,7 @@ class ProtocolServer(ServerBase, ABC):
     def error_resource(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ErrorResourceResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ErrorResourceResponse]
         | ErrorResourceResponse
     ):
         ...
@@ -2637,7 +2678,7 @@ class ProtocolClient(FidlClient):
         float64: float,
         string: str,
         opt_string: typing.Optional[str],
-    ) -> typing.Coroutine[typing.Any, typing.Any, Basic]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, Basic]:
         msg = Basic(
             uint8,
             uint16,
@@ -2661,7 +2702,9 @@ class ProtocolClient(FidlClient):
 
     def error_basic(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, ProtocolErrorBasicResult]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, ProtocolErrorBasicResult
+    ]:
         msg = None
         return self._send_two_way_fidl_request(
             5016634351643393939,
@@ -2710,7 +2753,7 @@ class ProtocolClient(FidlClient):
         union: Union,
         opt_struct: typing.Optional[Struct],
         opt_union: typing.Optional[Union],
-    ) -> typing.Coroutine[typing.Any, typing.Any, Compound]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, Compound]:
         msg = Compound(
             bits,
             enum,
@@ -2729,7 +2772,9 @@ class ProtocolClient(FidlClient):
 
     def error_compound(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, ProtocolErrorCompoundResult]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, ProtocolErrorCompoundResult
+    ]:
         msg = None
         return self._send_two_way_fidl_request(
             2990809657626249085,
@@ -2793,7 +2838,7 @@ class ProtocolClient(FidlClient):
         array_float64: typing.Sequence[float],
         array_string: typing.Sequence[str],
         array_opt_string: typing.Sequence[typing.Optional[str]],
-    ) -> typing.Coroutine[typing.Any, typing.Any, ArrayBasic]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, ArrayBasic]:
         msg = ArrayBasic(
             array_uint8,
             array_uint16,
@@ -2817,7 +2862,7 @@ class ProtocolClient(FidlClient):
 
     def error_array_basic(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ProtocolErrorArrayBasicResult
     ]:
         msg = None
@@ -2868,7 +2913,7 @@ class ProtocolClient(FidlClient):
         array_union: typing.Sequence[Union],
         array_opt_struct: typing.Sequence[typing.Optional[Struct]],
         array_opt_union: typing.Sequence[typing.Optional[Union]],
-    ) -> typing.Coroutine[typing.Any, typing.Any, ArrayCompound]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, ArrayCompound]:
         msg = ArrayCompound(
             array_bits,
             array_enum,
@@ -2887,7 +2932,7 @@ class ProtocolClient(FidlClient):
 
     def error_array_compound(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ProtocolErrorArrayCompoundResult
     ]:
         msg = None
@@ -2953,7 +2998,7 @@ class ProtocolClient(FidlClient):
         vector_float64: typing.Sequence[float],
         vector_string: typing.Sequence[str],
         vector_opt_string: typing.Sequence[typing.Optional[str]],
-    ) -> typing.Coroutine[typing.Any, typing.Any, VectorBasic]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, VectorBasic]:
         msg = VectorBasic(
             vector_uint8,
             vector_uint16,
@@ -2977,7 +3022,7 @@ class ProtocolClient(FidlClient):
 
     def error_vector_basic(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ProtocolErrorVectorBasicResult
     ]:
         msg = None
@@ -3028,7 +3073,7 @@ class ProtocolClient(FidlClient):
         vector_union: typing.Sequence[Union],
         vector_opt_struct: typing.Sequence[typing.Optional[Struct]],
         vector_opt_union: typing.Sequence[typing.Optional[Union]],
-    ) -> typing.Coroutine[typing.Any, typing.Any, VectorCompound]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, VectorCompound]:
         msg = VectorCompound(
             vector_bits,
             vector_enum,
@@ -3047,7 +3092,7 @@ class ProtocolClient(FidlClient):
 
     def error_vector_compound(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ProtocolErrorVectorCompoundResult
     ]:
         msg = None
@@ -3093,7 +3138,7 @@ class ProtocolClient(FidlClient):
         opt_vector_opt_struct: typing.Optional[
             typing.Sequence[typing.Optional[Struct]]
         ],
-    ) -> typing.Coroutine[typing.Any, typing.Any, VectorOptional]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, VectorOptional]:
         msg = VectorOptional(
             opt_vector_uint8,
             opt_vector_string,
@@ -3109,7 +3154,7 @@ class ProtocolClient(FidlClient):
 
     def error_vector_optional(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ProtocolErrorVectorOptionalResult
     ]:
         msg = None
@@ -3151,7 +3196,7 @@ class ProtocolClient(FidlClient):
         array_vector_uint8: typing.Sequence[typing.Sequence[int]],
         vector_array_uint8: typing.Sequence[typing.Sequence[int]],
         vector_vector_uint8: typing.Sequence[typing.Sequence[int]],
-    ) -> typing.Coroutine[typing.Any, typing.Any, ArrayVectorNested]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, ArrayVectorNested]:
         msg = ArrayVectorNested(
             array_array_uint8,
             array_vector_uint8,
@@ -3167,7 +3212,7 @@ class ProtocolClient(FidlClient):
 
     def error_array_vector_nested(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ProtocolErrorArrayVectorNestedResult
     ]:
         msg = None
@@ -3278,7 +3323,7 @@ class ProtocolClient(FidlClient):
         vector_struct: typing.Sequence[ResourceStruct],
         vector_table: typing.Sequence[ResourceTable],
         vector_union: typing.Sequence[ResourceUnion],
-    ) -> typing.Coroutine[typing.Any, typing.Any, Resource]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, Resource]:
         msg = Resource(
             handle,
             vmo,
@@ -3317,7 +3362,9 @@ class ProtocolClient(FidlClient):
 
     def error_resource(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, ProtocolErrorResourceResult]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, ProtocolErrorResourceResult
+    ]:
         msg = None
         return self._send_two_way_fidl_request(
             6568609240497354166,
@@ -3421,63 +3468,63 @@ class ProtocolEventHandler(EventHandlerBase, ABC):
     def event_basic(
         self,
         request: Basic,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def event_compound(
         self,
         request: Compound,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def event_array_basic(
         self,
         request: ArrayBasic,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def event_array_compound(
         self,
         request: ArrayCompound,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def event_vector_basic(
         self,
         request: VectorBasic,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def event_vector_compound(
         self,
         request: VectorCompound,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def event_vector_optional(
         self,
         request: VectorOptional,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def event_array_vector_nested(
         self,
         request: ArrayVectorNested,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def event_resource(
         self,
         request: Resource,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 

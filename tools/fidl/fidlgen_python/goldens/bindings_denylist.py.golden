@@ -1034,6 +1034,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class AllowedServer(ServerBase, ABC):
@@ -1099,6 +1100,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class DenyEachBindingServer(ServerBase, ABC):
@@ -1167,7 +1169,7 @@ class DenyEachBindingServer(ServerBase, ABC):
         self,
         request: DenyEachBindingOnlyDenyCppRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OnlyDenyCppResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, OnlyDenyCppResponse]
         | OnlyDenyCppResponse
     ):
         ...
@@ -1182,7 +1184,7 @@ class DenyEachBindingServer(ServerBase, ABC):
         self,
         request: DenyEachBindingOnlyDenyDartRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OnlyDenyDartResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, OnlyDenyDartResponse]
         | OnlyDenyDartResponse
     ):
         ...
@@ -1197,7 +1199,7 @@ class DenyEachBindingServer(ServerBase, ABC):
         self,
         request: DenyEachBindingOnlyDenyGoRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OnlyDenyGoResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, OnlyDenyGoResponse]
         | OnlyDenyGoResponse
     ):
         ...
@@ -1212,7 +1214,7 @@ class DenyEachBindingServer(ServerBase, ABC):
         self,
         request: DenyEachBindingOnlyDenyRustRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OnlyDenyRustResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, OnlyDenyRustResponse]
         | OnlyDenyRustResponse
     ):
         ...
@@ -1227,7 +1229,9 @@ class DenyEachBindingServer(ServerBase, ABC):
         self,
         request: DenyEachBindingOnlyDenySyzkallerRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OnlyDenySyzkallerResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OnlyDenySyzkallerResponse
+        ]
         | OnlyDenySyzkallerResponse
     ):
         ...
@@ -1251,7 +1255,7 @@ class DenyEachBindingClient(FidlClient):
         self,
         *,
         a: bool,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, DenyEachBindingOnlyDenyCppResult
     ]:
         msg = DenyEachBindingOnlyDenyCppRequest(
@@ -1270,7 +1274,7 @@ class DenyEachBindingClient(FidlClient):
         self,
         *,
         a: bool,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, DenyEachBindingOnlyDenyDartResult
     ]:
         msg = DenyEachBindingOnlyDenyDartRequest(
@@ -1289,7 +1293,7 @@ class DenyEachBindingClient(FidlClient):
         self,
         *,
         a: bool,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, DenyEachBindingOnlyDenyGoResult
     ]:
         msg = DenyEachBindingOnlyDenyGoRequest(
@@ -1308,7 +1312,7 @@ class DenyEachBindingClient(FidlClient):
         self,
         *,
         a: bool,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, DenyEachBindingOnlyDenyRustResult
     ]:
         msg = DenyEachBindingOnlyDenyRustRequest(
@@ -1327,7 +1331,7 @@ class DenyEachBindingClient(FidlClient):
         self,
         *,
         a: bool,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, DenyEachBindingOnlyDenySyzkallerResult
     ]:
         msg = DenyEachBindingOnlyDenySyzkallerRequest(
@@ -1375,6 +1379,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ImportsSameNameContextServer(ServerBase, ABC):
@@ -1415,7 +1420,7 @@ class ImportsSameNameContextServer(ServerBase, ABC):
     def unattributed(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, UnattributedResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, UnattributedResponse]
         | UnattributedResponse
     ):
         ...
@@ -1426,7 +1431,7 @@ class ImportsSameNameContextServer(ServerBase, ABC):
     def always_appears_in_importing_library(
         self,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, AlwaysAppearsInImportingLibraryResponse
         ]
         | AlwaysAppearsInImportingLibraryResponse

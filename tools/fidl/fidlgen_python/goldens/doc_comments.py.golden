@@ -348,6 +348,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class InterfaceServer(ServerBase, ABC):
@@ -386,7 +387,7 @@ class InterfaceServer(ServerBase, ABC):
     def method(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, MethodResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, MethodResponse]
         | MethodResponse
     ):
         ...
@@ -464,7 +465,7 @@ class InterfaceEventHandler(EventHandlerBase, ABC):
     @abstractmethod
     def on_event(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 

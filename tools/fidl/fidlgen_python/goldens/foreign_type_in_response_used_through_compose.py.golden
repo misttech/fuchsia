@@ -29,6 +29,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class TopServer(ServerBase, ABC):
@@ -61,7 +62,7 @@ class TopServer(ServerBase, ABC):
     def get_foo(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, GetFooResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, GetFooResponse]
         | GetFooResponse
     ):
         ...
@@ -83,7 +84,7 @@ class TopClient(FidlClient):
 
     def get_foo(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, fidl_test_middle.MiddleGetFooResponse
     ]:
         msg = None

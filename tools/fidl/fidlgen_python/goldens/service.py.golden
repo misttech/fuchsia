@@ -26,6 +26,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class FirstProtocolServer(ServerBase, ABC):
@@ -58,7 +59,7 @@ class FirstProtocolServer(ServerBase, ABC):
     def method_on_first(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, MethodOnFirstResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, MethodOnFirstResponse]
         | MethodOnFirstResponse
     ):
         ...
@@ -123,6 +124,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class SecondProtocolServer(ServerBase, ABC):
@@ -155,7 +157,9 @@ class SecondProtocolServer(ServerBase, ABC):
     def method_on_second(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, MethodOnSecondResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, MethodOnSecondResponse
+        ]
         | MethodOnSecondResponse
     ):
         ...

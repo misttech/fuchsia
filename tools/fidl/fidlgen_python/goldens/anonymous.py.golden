@@ -562,6 +562,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class SomeProtocolServer(ServerBase, ABC):
@@ -598,7 +599,7 @@ class SomeProtocolServer(ServerBase, ABC):
         self,
         request: SomeProtocolSomeMethodRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, SomeMethodResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, SomeMethodResponse]
         | SomeMethodResponse
     ):
         ...
@@ -623,7 +624,9 @@ class SomeProtocolClient(FidlClient):
         *,
         union_member: UnionMember,
         table_member: TableMember,
-    ) -> typing.Coroutine[typing.Any, typing.Any, SomeProtocolSomeMethodResult]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, SomeProtocolSomeMethodResult
+    ]:
         msg = SomeProtocolSomeMethodRequest(
             union_member,
             table_member,

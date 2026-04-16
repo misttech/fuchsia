@@ -6,9 +6,9 @@
 
 import asyncio
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Any, TypeVar
+from typing import TypeVar
 
 from mobly import signals
 
@@ -43,7 +43,7 @@ class RetriableError(Exception):
 
 
 async def retry_until_deadline(
-    task: Callable[[], Coroutine[Any, Any, T]],
+    task: Callable[[], Awaitable[T]],
     deadline: Deadline,
     retry_delay: timedelta = timedelta(seconds=1),
     backoff: bool = False,
@@ -97,7 +97,7 @@ async def retry_until_deadline(
 
 
 async def retry(
-    task: Callable[[], Coroutine[Any, Any, T]],
+    task: Callable[[], Awaitable[T]],
     max_tries: int | None = None,
     retry_delay: timedelta = timedelta(seconds=1),
     backoff: bool = False,
@@ -158,7 +158,7 @@ async def retry(
 
 
 async def retry_for_duration(
-    task: Callable[[], Coroutine[Any, Any, T]],
+    task: Callable[[], Awaitable[T]],
     duration: timedelta,
     retry_delay: timedelta = timedelta(seconds=1),
     backoff: bool = False,
@@ -170,7 +170,7 @@ async def retry_for_duration(
 
 
 async def repeat_until_deadline(
-    task: Callable[[], Coroutine[Any, Any, T]],
+    task: Callable[[], Awaitable[T]],
     deadline: Deadline,
     repeat_delay: timedelta = timedelta(seconds=1),
 ) -> None:
@@ -192,7 +192,7 @@ async def repeat_until_deadline(
 
 
 async def repeat_for_duration(
-    task: Callable[[], Coroutine[Any, Any, T]],
+    task: Callable[[], Awaitable[T]],
     duration: timedelta,
     repeat_delay: timedelta = timedelta(seconds=1),
 ) -> None:

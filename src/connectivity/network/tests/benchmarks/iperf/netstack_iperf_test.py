@@ -11,9 +11,10 @@ import pathlib
 import stat
 import statistics
 import subprocess
+from collections.abc import Awaitable
 from enum import Enum
 from importlib.resources import as_file, files
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable
 
 import fuchsia_base_test
 import test_data
@@ -303,9 +304,7 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
 
     async def _run_iperf_client_test_case(
         self,
-        test: Callable[
-            [pathlib.Path, int, int], Coroutine[Any, Any, list[str]]
-        ],
+        test: Callable[[pathlib.Path, int, int], Awaitable[list[str]]],
         message_size: int,
         flows: int,
     ) -> list[dict[str, Any]]:

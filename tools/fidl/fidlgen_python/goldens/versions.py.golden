@@ -187,6 +187,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class OtherProtocolServer(ServerBase, ABC):
@@ -252,6 +253,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ProtocolServer(ServerBase, ABC):
@@ -283,7 +285,10 @@ class ProtocolServer(ServerBase, ABC):
     @abstractmethod
     def foo(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, FooResponse] | FooResponse:
+    ) -> (
+        collections.abc.Coroutine[typing.Any, typing.Any, FooResponse]
+        | FooResponse
+    ):
         ...
 
 

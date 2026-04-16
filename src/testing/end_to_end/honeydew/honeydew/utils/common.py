@@ -8,7 +8,7 @@ import logging
 import signal
 import time
 import types
-from collections.abc import Callable, Coroutine, Generator
+from collections.abc import Awaitable, Callable, Generator
 from contextlib import contextmanager
 from typing import Any
 
@@ -27,7 +27,7 @@ def _retry_condition(end_time: float | None = None) -> bool:
 
 @decorators.liveness_check
 async def wait_for_state(
-    state_fn: (Callable[[], bool] | Callable[[], Coroutine[Any, Any, bool]]),
+    state_fn: (Callable[[], bool] | Callable[[], Awaitable[bool]]),
     expected_state: bool,
     timeout: float | None = None,
     wait_time: float = 1,
@@ -63,10 +63,9 @@ async def wait_for_state(
     while _retry_condition(end_time):
         _LOGGER.debug("calling %s", state_fn.__qualname__)
         try:
-            if inspect.iscoroutinefunction(state_fn):
-                current_state = await state_fn()
-            else:
-                current_state = state_fn()
+            current_state = state_fn()
+            if inspect.isawaitable(current_state):
+                current_state = await current_state
 
             _LOGGER.debug(
                 "%s returned %s", state_fn.__qualname__, current_state
@@ -86,7 +85,7 @@ async def wait_for_state(
 
 @decorators.liveness_check
 async def retry(
-    fn: (Callable[[], object] | Callable[[], Coroutine[Any, Any, object]]),
+    fn: (Callable[[], object] | Callable[[], Awaitable[object]]),
     timeout: float | None = None,
     wait_time: int = 1,
 ) -> object:
@@ -122,10 +121,9 @@ async def retry(
     while _retry_condition(end_time):
         _LOGGER.debug("calling %s", fn.__qualname__)
         try:
-            if inspect.iscoroutinefunction(fn):
-                ret_value: object = await fn()
-            else:
-                ret_value = fn()
+            ret_value = fn()
+            if inspect.isawaitable(ret_value):
+                ret_value = await ret_value
 
             _LOGGER.debug("%s returned %s", fn.__qualname__, ret_value)
             _LOGGER.info("Successfully finished %s.", fn.__qualname__)

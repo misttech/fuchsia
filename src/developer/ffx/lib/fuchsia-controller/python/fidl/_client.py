@@ -6,8 +6,9 @@ import asyncio
 import inspect
 import logging
 from abc import abstractmethod
+from collections.abc import Coroutine
 from inspect import getframeinfo, stack
-from typing import Any, Coroutine, Dict, Set, cast
+from typing import Any, Dict, Set, cast
 
 import fuchsia_controller_py as fc
 from fidl_codec import decode_fidl_response, encode_fidl_message

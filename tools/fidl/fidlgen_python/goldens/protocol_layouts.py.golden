@@ -782,6 +782,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class MainProtocolServer(ServerBase, ABC):
@@ -927,7 +928,9 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedProtocolOneWayAnonComposedRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayAnonComposedResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayAnonComposedResponse
+        ]
         | OneWayAnonComposedResponse
     ):
         ...
@@ -941,7 +944,9 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedProtocolTwoWayAnonComposedRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayAnonComposedResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayAnonComposedResponse
+        ]
         | TwoWayAnonComposedResponse
     ):
         ...
@@ -956,7 +961,7 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedProtocolTwoWayAnonComposedWithErrorRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, TwoWayAnonComposedWithErrorResponse
         ]
         | TwoWayAnonComposedWithErrorResponse
@@ -978,7 +983,9 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ImportTablePayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayNamedComposedResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayNamedComposedResponse
+        ]
         | OneWayNamedComposedResponse
     ):
         ...
@@ -992,7 +999,9 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ImportUnionPayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayNamedComposedResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayNamedComposedResponse
+        ]
         | TwoWayNamedComposedResponse
     ):
         ...
@@ -1007,7 +1016,7 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ImportTablePayload,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, TwoWayNamedComposedWithErrorResponse
         ]
         | TwoWayNamedComposedWithErrorResponse
@@ -1027,7 +1036,7 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ImportTablePayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayImportResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, OneWayImportResponse]
         | OneWayImportResponse
     ):
         ...
@@ -1041,7 +1050,7 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ImportUnionPayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayImportResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, TwoWayImportResponse]
         | TwoWayImportResponse
     ):
         ...
@@ -1056,7 +1065,9 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ImportTablePayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayImportWithErrorResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayImportWithErrorResponse
+        ]
         | TwoWayImportWithErrorResponse
     ):
         ...
@@ -1074,7 +1085,7 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: LocalTablePayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayLocalResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, OneWayLocalResponse]
         | OneWayLocalResponse
     ):
         ...
@@ -1086,7 +1097,7 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: LocalUnionPayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayLocalResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, TwoWayLocalResponse]
         | TwoWayLocalResponse
     ):
         ...
@@ -1101,7 +1112,9 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: LocalTablePayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayLocalWithErrorResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayLocalWithErrorResponse
+        ]
         | TwoWayLocalWithErrorResponse
     ):
         ...
@@ -1123,7 +1136,7 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: MainProtocolOneWayAnonRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayAnonResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, OneWayAnonResponse]
         | OneWayAnonResponse
     ):
         ...
@@ -1135,7 +1148,7 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: MainProtocolTwoWayAnonRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayAnonResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, TwoWayAnonResponse]
         | TwoWayAnonResponse
     ):
         ...
@@ -1150,7 +1163,9 @@ class MainProtocolServer(ServerBase, ABC):
         self,
         request: MainProtocolTwoWayAnonWithErrorRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayAnonWithErrorResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayAnonWithErrorResponse
+        ]
         | TwoWayAnonWithErrorResponse
     ):
         ...
@@ -1196,7 +1211,7 @@ class MainProtocolClient(FidlClient):
 
     def two_way_anon_composed(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ComposedProtocolTwoWayAnonComposedResponse,
@@ -1215,7 +1230,7 @@ class MainProtocolClient(FidlClient):
 
     def two_way_anon_composed_with_error(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ComposedProtocolTwoWayAnonComposedWithErrorResult,
@@ -1246,7 +1261,7 @@ class MainProtocolClient(FidlClient):
 
     def two_way_named_composed(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ImportTablePayload,
@@ -1263,7 +1278,7 @@ class MainProtocolClient(FidlClient):
 
     def two_way_named_composed_with_error(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ComposedProtocolTwoWayNamedComposedWithErrorResult,
@@ -1292,7 +1307,7 @@ class MainProtocolClient(FidlClient):
 
     def two_way_import(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ImportTablePayload,
@@ -1309,7 +1324,7 @@ class MainProtocolClient(FidlClient):
 
     def two_way_import_with_error(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, MainProtocolTwoWayImportWithErrorResult
     ]:
         msg = fidl_test_protocollayouts_imported.ImportTablePayload()
@@ -1342,7 +1357,7 @@ class MainProtocolClient(FidlClient):
         self,
         *,
         b: bool | None = None,
-    ) -> typing.Coroutine[typing.Any, typing.Any, LocalTablePayload]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, LocalTablePayload]:
         msg = LocalUnionPayload(
             b,
         )
@@ -1357,7 +1372,7 @@ class MainProtocolClient(FidlClient):
         self,
         *,
         a: int | None = None,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, MainProtocolTwoWayLocalWithErrorResult
     ]:
         msg = LocalTablePayload(
@@ -1392,7 +1407,7 @@ class MainProtocolClient(FidlClient):
         self,
         *,
         b: bool | None = None,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, MainProtocolTwoWayAnonResponse
     ]:
         msg = MainProtocolTwoWayAnonRequest(
@@ -1411,7 +1426,7 @@ class MainProtocolClient(FidlClient):
         self,
         *,
         a: int | None = None,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, MainProtocolTwoWayAnonWithErrorResult
     ]:
         msg = MainProtocolTwoWayAnonWithErrorRequest(
@@ -1487,35 +1502,35 @@ class MainProtocolEventHandler(EventHandlerBase, ABC):
     def on_anon_composed(
         self,
         request: fidl_test_protocollayouts_imported.ComposedProtocolOnAnonComposedRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def on_named_composed(
         self,
         request: fidl_test_protocollayouts_imported.ImportUnionPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def on_import(
         self,
         request: fidl_test_protocollayouts_imported.ImportUnionPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def on_local(
         self,
         request: LocalUnionPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def on_anon(
         self,
         request: MainProtocolOnAnonRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 
@@ -1535,6 +1550,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class OpenProtocolServer(ServerBase, ABC):
@@ -1616,7 +1632,9 @@ class OpenProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedOpenProtocolFlexibleOneWayRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleOneWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleOneWayResponse
+        ]
         | FlexibleOneWayResponse
     ):
         ...
@@ -1631,7 +1649,9 @@ class OpenProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedOpenProtocolFlexibleTwoWayNoErrorRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayNoErrorResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayNoErrorResponse
+        ]
         | FlexibleTwoWayNoErrorResponse
     ):
         ...
@@ -1647,7 +1667,7 @@ class OpenProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedOpenProtocolFlexibleTwoWayWithErrorRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, FlexibleTwoWayWithErrorResponse
         ]
         | FlexibleTwoWayWithErrorResponse
@@ -1671,7 +1691,7 @@ class OpenProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedOpenProtocolStrictOneWayRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
         | StrictOneWayResponse
     ):
         ...
@@ -1685,7 +1705,9 @@ class OpenProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedOpenProtocolStrictTwoWayNoErrorRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayNoErrorResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayNoErrorResponse
+        ]
         | StrictTwoWayNoErrorResponse
     ):
         ...
@@ -1700,7 +1722,9 @@ class OpenProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ComposedOpenProtocolStrictTwoWayWithErrorRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayWithErrorResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayWithErrorResponse
+        ]
         | StrictTwoWayWithErrorResponse
     ):
         ...
@@ -1722,7 +1746,7 @@ class OpenProtocolServer(ServerBase, ABC):
         self,
         request: fidl_test_protocollayouts_imported.ImportStructPayload,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, FlexibleOneWayNamedPayloadResponse
         ]
         | FlexibleOneWayNamedPayloadResponse
@@ -1764,7 +1788,7 @@ class OpenProtocolClient(FidlClient):
         self,
         *,
         value: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ComposedOpenProtocolFlexibleTwoWayNoErrorResult,
@@ -1785,7 +1809,7 @@ class OpenProtocolClient(FidlClient):
         self,
         *,
         value: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ComposedOpenProtocolFlexibleTwoWayWithErrorResult,
@@ -1822,7 +1846,7 @@ class OpenProtocolClient(FidlClient):
         self,
         *,
         value: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ComposedOpenProtocolStrictTwoWayNoErrorResponse,
@@ -1843,7 +1867,7 @@ class OpenProtocolClient(FidlClient):
         self,
         *,
         value: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any,
         typing.Any,
         fidl_test_protocollayouts_imported.ComposedOpenProtocolStrictTwoWayWithErrorResult,
@@ -1913,14 +1937,14 @@ class OpenProtocolEventHandler(EventHandlerBase, ABC):
     def flexible_event(
         self,
         request: fidl_test_protocollayouts_imported.ComposedOpenProtocolFlexibleEventRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def strict_event(
         self,
         request: fidl_test_protocollayouts_imported.ComposedOpenProtocolStrictEventRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 

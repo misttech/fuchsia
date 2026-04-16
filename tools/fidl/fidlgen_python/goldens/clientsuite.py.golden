@@ -3052,6 +3052,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class AjarTargetServer(ServerBase, ABC):
@@ -3117,6 +3118,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class AjarTargetEventReporterServer(ServerBase, ABC):
@@ -3150,7 +3152,7 @@ class AjarTargetEventReporterServer(ServerBase, ABC):
         self,
         request: AjarTargetEventReport,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ReportEventResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ReportEventResponse]
         | ReportEventResponse
     ):
         ...
@@ -3221,6 +3223,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ClosedTargetServer(ServerBase, ABC):
@@ -3341,7 +3344,9 @@ class ClosedTargetServer(ServerBase, ABC):
     def two_way_no_payload(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayNoPayloadResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayNoPayloadResponse
+        ]
         | TwoWayNoPayloadResponse
     ):
         ...
@@ -3352,7 +3357,9 @@ class ClosedTargetServer(ServerBase, ABC):
     def two_way_struct_payload(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayStructPayloadResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayStructPayloadResponse
+        ]
         | TwoWayStructPayloadResponse
     ):
         ...
@@ -3363,7 +3370,9 @@ class ClosedTargetServer(ServerBase, ABC):
     def two_way_table_payload(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayTablePayloadResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayTablePayloadResponse
+        ]
         | TwoWayTablePayloadResponse
     ):
         ...
@@ -3374,7 +3383,9 @@ class ClosedTargetServer(ServerBase, ABC):
     def two_way_union_payload(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayUnionPayloadResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayUnionPayloadResponse
+        ]
         | TwoWayUnionPayloadResponse
     ):
         ...
@@ -3388,7 +3399,9 @@ class ClosedTargetServer(ServerBase, ABC):
     def two_way_struct_payload_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayStructPayloadErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayStructPayloadErrResponse
+        ]
         | TwoWayStructPayloadErrResponse
     ):
         ...
@@ -3400,7 +3413,9 @@ class ClosedTargetServer(ServerBase, ABC):
         self,
         request: NonEmptyPayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayStructRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayStructRequestResponse
+        ]
         | TwoWayStructRequestResponse
     ):
         ...
@@ -3412,7 +3427,9 @@ class ClosedTargetServer(ServerBase, ABC):
         self,
         request: TablePayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayTableRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayTableRequestResponse
+        ]
         | TwoWayTableRequestResponse
     ):
         ...
@@ -3424,7 +3441,9 @@ class ClosedTargetServer(ServerBase, ABC):
         self,
         request: UnionPayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, TwoWayUnionRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, TwoWayUnionRequestResponse
+        ]
         | TwoWayUnionRequestResponse
     ):
         ...
@@ -3435,7 +3454,9 @@ class ClosedTargetServer(ServerBase, ABC):
     def one_way_no_request(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayNoRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayNoRequestResponse
+        ]
         | OneWayNoRequestResponse
     ):
         ...
@@ -3447,7 +3468,9 @@ class ClosedTargetServer(ServerBase, ABC):
         self,
         request: NonEmptyPayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayStructRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayStructRequestResponse
+        ]
         | OneWayStructRequestResponse
     ):
         ...
@@ -3459,7 +3482,9 @@ class ClosedTargetServer(ServerBase, ABC):
         self,
         request: TablePayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayTableRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayTableRequestResponse
+        ]
         | OneWayTableRequestResponse
     ):
         ...
@@ -3471,7 +3496,9 @@ class ClosedTargetServer(ServerBase, ABC):
         self,
         request: UnionPayload,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, OneWayUnionRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, OneWayUnionRequestResponse
+        ]
         | OneWayUnionRequestResponse
     ):
         ...
@@ -3529,7 +3556,7 @@ class ClosedTargetClient(FidlClient):
 
     def two_way_no_payload(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
         return self._send_two_way_fidl_request(
             8823160117673072416,
@@ -3540,7 +3567,7 @@ class ClosedTargetClient(FidlClient):
 
     def two_way_struct_payload(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, NonEmptyPayload]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, NonEmptyPayload]:
         msg = None
         return self._send_two_way_fidl_request(
             4197391242806919613,
@@ -3551,7 +3578,7 @@ class ClosedTargetClient(FidlClient):
 
     def two_way_table_payload(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, TablePayload]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, TablePayload]:
         msg = None
         return self._send_two_way_fidl_request(
             6034278263774013116,
@@ -3562,7 +3589,7 @@ class ClosedTargetClient(FidlClient):
 
     def two_way_union_payload(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, UnionPayload]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, UnionPayload]:
         msg = None
         return self._send_two_way_fidl_request(
             2303581613023334284,
@@ -3573,7 +3600,7 @@ class ClosedTargetClient(FidlClient):
 
     def two_way_struct_payload_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, ClosedTargetTwoWayStructPayloadErrResult
     ]:
         msg = None
@@ -3590,7 +3617,7 @@ class ClosedTargetClient(FidlClient):
         self,
         *,
         some_field: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = NonEmptyPayload(
             some_field,
         )
@@ -3605,7 +3632,7 @@ class ClosedTargetClient(FidlClient):
         self,
         *,
         some_field: int | None = None,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = TablePayload(
             some_field,
         )
@@ -3620,7 +3647,7 @@ class ClosedTargetClient(FidlClient):
         self,
         *,
         some_variant: int | None = None,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = UnionPayload(
             some_variant,
         )
@@ -3743,28 +3770,28 @@ class ClosedTargetEventHandler(EventHandlerBase, ABC):
     @abstractmethod
     def on_event_no_payload(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def on_event_struct_payload(
         self,
         request: NonEmptyPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def on_event_table_payload(
         self,
         request: TablePayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def on_event_union_payload(
         self,
         request: UnionPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 
@@ -3784,6 +3811,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ClosedTargetEventReporterServer(ServerBase, ABC):
@@ -3817,7 +3845,7 @@ class ClosedTargetEventReporterServer(ServerBase, ABC):
         self,
         request: ClosedTargetEventReport,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ReportEventResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ReportEventResponse]
         | ReportEventResponse
     ):
         ...
@@ -3894,6 +3922,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class OpenTargetServer(ServerBase, ABC):
@@ -3998,7 +4027,7 @@ class OpenTargetServer(ServerBase, ABC):
     def strict_one_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictOneWayResponse]
         | StrictOneWayResponse
     ):
         ...
@@ -4009,7 +4038,9 @@ class OpenTargetServer(ServerBase, ABC):
     def flexible_one_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleOneWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleOneWayResponse
+        ]
         | FlexibleOneWayResponse
     ):
         ...
@@ -4020,7 +4051,7 @@ class OpenTargetServer(ServerBase, ABC):
     def strict_two_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, StrictTwoWayResponse]
         | StrictTwoWayResponse
     ):
         ...
@@ -4031,7 +4062,9 @@ class OpenTargetServer(ServerBase, ABC):
     def strict_two_way_fields(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayFieldsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayFieldsResponse
+        ]
         | StrictTwoWayFieldsResponse
     ):
         ...
@@ -4045,7 +4078,9 @@ class OpenTargetServer(ServerBase, ABC):
     def strict_two_way_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayErrResponse
+        ]
         | StrictTwoWayErrResponse
     ):
         ...
@@ -4059,7 +4094,9 @@ class OpenTargetServer(ServerBase, ABC):
     def strict_two_way_fields_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, StrictTwoWayFieldsErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, StrictTwoWayFieldsErrResponse
+        ]
         | StrictTwoWayFieldsErrResponse
     ):
         ...
@@ -4073,7 +4110,9 @@ class OpenTargetServer(ServerBase, ABC):
     def flexible_two_way(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayResponse
+        ]
         | FlexibleTwoWayResponse
     ):
         ...
@@ -4087,7 +4126,9 @@ class OpenTargetServer(ServerBase, ABC):
     def flexible_two_way_fields(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayFieldsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayFieldsResponse
+        ]
         | FlexibleTwoWayFieldsResponse
     ):
         ...
@@ -4102,7 +4143,9 @@ class OpenTargetServer(ServerBase, ABC):
     def flexible_two_way_err(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, FlexibleTwoWayErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, FlexibleTwoWayErrResponse
+        ]
         | FlexibleTwoWayErrResponse
     ):
         ...
@@ -4117,7 +4160,7 @@ class OpenTargetServer(ServerBase, ABC):
     def flexible_two_way_fields_err(
         self,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, FlexibleTwoWayFieldsErrResponse
         ]
         | FlexibleTwoWayFieldsErrResponse
@@ -4177,7 +4220,7 @@ class OpenTargetClient(FidlClient):
 
     def strict_two_way(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
         return self._send_two_way_fidl_request(
             995098632483095874,
@@ -4188,7 +4231,7 @@ class OpenTargetClient(FidlClient):
 
     def strict_two_way_fields(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, NonEmptyPayload]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, NonEmptyPayload]:
         msg = None
         return self._send_two_way_fidl_request(
             8775166568163566307,
@@ -4199,7 +4242,7 @@ class OpenTargetClient(FidlClient):
 
     def strict_two_way_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, OpenTargetStrictTwoWayErrResult
     ]:
         msg = None
@@ -4214,7 +4257,7 @@ class OpenTargetClient(FidlClient):
 
     def strict_two_way_fields_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, OpenTargetStrictTwoWayFieldsErrResult
     ]:
         msg = None
@@ -4229,7 +4272,7 @@ class OpenTargetClient(FidlClient):
 
     def flexible_two_way(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, OpenTargetFlexibleTwoWayResult
     ]:
         msg = None
@@ -4244,7 +4287,7 @@ class OpenTargetClient(FidlClient):
 
     def flexible_two_way_fields(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, OpenTargetFlexibleTwoWayFieldsResult
     ]:
         msg = None
@@ -4259,7 +4302,7 @@ class OpenTargetClient(FidlClient):
 
     def flexible_two_way_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, OpenTargetFlexibleTwoWayErrResult
     ]:
         msg = None
@@ -4274,7 +4317,7 @@ class OpenTargetClient(FidlClient):
 
     def flexible_two_way_fields_err(
         self,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, OpenTargetFlexibleTwoWayFieldsErrResult
     ]:
         msg = None
@@ -4323,13 +4366,13 @@ class OpenTargetEventHandler(EventHandlerBase, ABC):
     @abstractmethod
     def strict_event(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
     @abstractmethod
     def flexible_event(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 
@@ -4349,6 +4392,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class OpenTargetEventReporterServer(ServerBase, ABC):
@@ -4382,7 +4426,7 @@ class OpenTargetEventReporterServer(ServerBase, ABC):
         self,
         request: OpenTargetEventReport,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ReportEventResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, ReportEventResponse]
         | ReportEventResponse
     ):
         ...
@@ -4457,6 +4501,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class RunnerServer(ServerBase, ABC):
@@ -4713,7 +4758,7 @@ class RunnerServer(ServerBase, ABC):
     def get_version(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, GetVersionResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, GetVersionResponse]
         | GetVersionResponse
     ):
         ...
@@ -4725,7 +4770,7 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerIsTestEnabledRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, IsTestEnabledResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, IsTestEnabledResponse]
         | IsTestEnabledResponse
     ):
         ...
@@ -4736,7 +4781,7 @@ class RunnerServer(ServerBase, ABC):
     def check_alive(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CheckAliveResponse]
+        collections.abc.Coroutine[typing.Any, typing.Any, CheckAliveResponse]
         | CheckAliveResponse
     ):
         ...
@@ -4747,7 +4792,9 @@ class RunnerServer(ServerBase, ABC):
     def get_bindings_properties(
         self,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, GetBindingsPropertiesResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, GetBindingsPropertiesResponse
+        ]
         | GetBindingsPropertiesResponse
     ):
         ...
@@ -4759,7 +4806,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallTwoWayNoPayloadRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallTwoWayNoPayloadResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallTwoWayNoPayloadResponse
+        ]
         | CallTwoWayNoPayloadResponse
     ):
         ...
@@ -4773,7 +4822,7 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallTwoWayStructPayloadRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, CallTwoWayStructPayloadResponse
         ]
         | CallTwoWayStructPayloadResponse
@@ -4787,7 +4836,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallTwoWayTablePayloadRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallTwoWayTablePayloadResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallTwoWayTablePayloadResponse
+        ]
         | CallTwoWayTablePayloadResponse
     ):
         ...
@@ -4799,7 +4850,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallTwoWayUnionPayloadRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallTwoWayUnionPayloadResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallTwoWayUnionPayloadResponse
+        ]
         | CallTwoWayUnionPayloadResponse
     ):
         ...
@@ -4813,7 +4866,7 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallTwoWayStructPayloadErrRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, CallTwoWayStructPayloadErrResponse
         ]
         | CallTwoWayStructPayloadErrResponse
@@ -4829,7 +4882,7 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallTwoWayStructRequestRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, CallTwoWayStructRequestResponse
         ]
         | CallTwoWayStructRequestResponse
@@ -4843,7 +4896,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallTwoWayTableRequestRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallTwoWayTableRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallTwoWayTableRequestResponse
+        ]
         | CallTwoWayTableRequestResponse
     ):
         ...
@@ -4855,7 +4910,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallTwoWayUnionRequestRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallTwoWayUnionRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallTwoWayUnionRequestResponse
+        ]
         | CallTwoWayUnionRequestResponse
     ):
         ...
@@ -4867,7 +4924,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallOneWayNoRequestRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallOneWayNoRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallOneWayNoRequestResponse
+        ]
         | CallOneWayNoRequestResponse
     ):
         ...
@@ -4881,7 +4940,7 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallOneWayStructRequestRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, CallOneWayStructRequestResponse
         ]
         | CallOneWayStructRequestResponse
@@ -4895,7 +4954,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallOneWayTableRequestRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallOneWayTableRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallOneWayTableRequestResponse
+        ]
         | CallOneWayTableRequestResponse
     ):
         ...
@@ -4907,7 +4968,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallOneWayUnionRequestRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallOneWayUnionRequestResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallOneWayUnionRequestResponse
+        ]
         | CallOneWayUnionRequestResponse
     ):
         ...
@@ -4919,7 +4982,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallStrictOneWayRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallStrictOneWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallStrictOneWayResponse
+        ]
         | CallStrictOneWayResponse
     ):
         ...
@@ -4931,7 +4996,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallFlexibleOneWayRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallFlexibleOneWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallFlexibleOneWayResponse
+        ]
         | CallFlexibleOneWayResponse
     ):
         ...
@@ -4943,7 +5010,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallStrictTwoWayRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallStrictTwoWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallStrictTwoWayResponse
+        ]
         | CallStrictTwoWayResponse
     ):
         ...
@@ -4957,7 +5026,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallStrictTwoWayFieldsRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallStrictTwoWayFieldsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallStrictTwoWayFieldsResponse
+        ]
         | CallStrictTwoWayFieldsResponse
     ):
         ...
@@ -4971,7 +5042,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallStrictTwoWayErrRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallStrictTwoWayErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallStrictTwoWayErrResponse
+        ]
         | CallStrictTwoWayErrResponse
     ):
         ...
@@ -4985,7 +5058,7 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallStrictTwoWayFieldsErrRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, CallStrictTwoWayFieldsErrResponse
         ]
         | CallStrictTwoWayFieldsErrResponse
@@ -4999,7 +5072,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallFlexibleTwoWayRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallFlexibleTwoWayResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallFlexibleTwoWayResponse
+        ]
         | CallFlexibleTwoWayResponse
     ):
         ...
@@ -5013,7 +5088,7 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallFlexibleTwoWayFieldsRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, CallFlexibleTwoWayFieldsResponse
         ]
         | CallFlexibleTwoWayFieldsResponse
@@ -5029,7 +5104,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallFlexibleTwoWayErrRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, CallFlexibleTwoWayErrResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, CallFlexibleTwoWayErrResponse
+        ]
         | CallFlexibleTwoWayErrResponse
     ):
         ...
@@ -5043,7 +5120,7 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerCallFlexibleTwoWayFieldsErrRequest,
     ) -> (
-        typing.Coroutine[
+        collections.abc.Coroutine[
             typing.Any, typing.Any, CallFlexibleTwoWayFieldsErrResponse
         ]
         | CallFlexibleTwoWayFieldsErrResponse
@@ -5057,7 +5134,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerReceiveClosedEventsRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ReceiveClosedEventsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ReceiveClosedEventsResponse
+        ]
         | ReceiveClosedEventsResponse
     ):
         ...
@@ -5069,7 +5148,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerReceiveAjarEventsRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ReceiveAjarEventsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ReceiveAjarEventsResponse
+        ]
         | ReceiveAjarEventsResponse
     ):
         ...
@@ -5081,7 +5162,9 @@ class RunnerServer(ServerBase, ABC):
         self,
         request: RunnerReceiveOpenEventsRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, ReceiveOpenEventsResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, ReceiveOpenEventsResponse
+        ]
         | ReceiveOpenEventsResponse
     ):
         ...
@@ -5103,7 +5186,9 @@ class RunnerClient(FidlClient):
 
     def get_version(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, RunnerGetVersionResponse]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, RunnerGetVersionResponse
+    ]:
         msg = None
         return self._send_two_way_fidl_request(
             6151094865554034132,
@@ -5116,7 +5201,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         test: int | Test,
-    ) -> typing.Coroutine[typing.Any, typing.Any, RunnerIsTestEnabledResponse]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, RunnerIsTestEnabledResponse
+    ]:
         msg = RunnerIsTestEnabledRequest(
             test,
         )
@@ -5131,7 +5218,7 @@ class RunnerClient(FidlClient):
 
     def check_alive(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
         return self._send_two_way_fidl_request(
             6518872820703682864,
@@ -5142,7 +5229,7 @@ class RunnerClient(FidlClient):
 
     def get_bindings_properties(
         self,
-    ) -> typing.Coroutine[typing.Any, typing.Any, BindingsProperties]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, BindingsProperties]:
         msg = None
         return self._send_two_way_fidl_request(
             8553849771382515254,
@@ -5155,7 +5242,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallTwoWayNoPayloadRequest(
             target,
         )
@@ -5170,7 +5259,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, NonEmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, NonEmptyResultClassification
+    ]:
         msg = RunnerCallTwoWayStructPayloadRequest(
             target,
         )
@@ -5187,7 +5278,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, TableResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, TableResultClassification
+    ]:
         msg = RunnerCallTwoWayTablePayloadRequest(
             target,
         )
@@ -5202,7 +5295,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, UnionResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, UnionResultClassification
+    ]:
         msg = RunnerCallTwoWayUnionPayloadRequest(
             target,
         )
@@ -5217,7 +5312,7 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, NonEmptyResultWithErrorClassification
     ]:
         msg = RunnerCallTwoWayStructPayloadErrRequest(
@@ -5237,7 +5332,9 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         request: NonEmptyPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallTwoWayStructRequestRequest(
             target,
             request,
@@ -5254,7 +5351,9 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         request: TablePayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallTwoWayTableRequestRequest(
             target,
             request,
@@ -5271,7 +5370,9 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         request: UnionPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallTwoWayUnionRequestRequest(
             target,
             request,
@@ -5287,7 +5388,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallOneWayNoRequestRequest(
             target,
         )
@@ -5303,7 +5406,9 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         request: NonEmptyPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallOneWayStructRequestRequest(
             target,
             request,
@@ -5320,7 +5425,9 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         request: TablePayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallOneWayTableRequestRequest(
             target,
             request,
@@ -5337,7 +5444,9 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         request: UnionPayload,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallOneWayUnionRequestRequest(
             target,
             request,
@@ -5353,7 +5462,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallStrictOneWayRequest(
             target,
         )
@@ -5368,7 +5479,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallFlexibleOneWayRequest(
             target,
         )
@@ -5383,7 +5496,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallStrictTwoWayRequest(
             target,
         )
@@ -5398,7 +5513,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, NonEmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, NonEmptyResultClassification
+    ]:
         msg = RunnerCallStrictTwoWayFieldsRequest(
             target,
         )
@@ -5415,7 +5532,7 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, EmptyResultWithErrorClassification
     ]:
         msg = RunnerCallStrictTwoWayErrRequest(
@@ -5434,7 +5551,7 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, NonEmptyResultWithErrorClassification
     ]:
         msg = RunnerCallStrictTwoWayFieldsErrRequest(
@@ -5453,7 +5570,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, EmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, EmptyResultClassification
+    ]:
         msg = RunnerCallFlexibleTwoWayRequest(
             target,
         )
@@ -5468,7 +5587,9 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, NonEmptyResultClassification]:
+    ) -> collections.abc.Coroutine[
+        typing.Any, typing.Any, NonEmptyResultClassification
+    ]:
         msg = RunnerCallFlexibleTwoWayFieldsRequest(
             target,
         )
@@ -5485,7 +5606,7 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, EmptyResultWithErrorClassification
     ]:
         msg = RunnerCallFlexibleTwoWayErrRequest(
@@ -5504,7 +5625,7 @@ class RunnerClient(FidlClient):
         self,
         *,
         target: int,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, NonEmptyResultWithErrorClassification
     ]:
         msg = RunnerCallFlexibleTwoWayFieldsErrRequest(
@@ -5524,7 +5645,7 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         reporter: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = RunnerReceiveClosedEventsRequest(
             target,
             reporter,
@@ -5541,7 +5662,7 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         reporter: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = RunnerReceiveAjarEventsRequest(
             target,
             reporter,
@@ -5558,7 +5679,7 @@ class RunnerClient(FidlClient):
         *,
         target: int,
         reporter: int,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = RunnerReceiveOpenEventsRequest(
             target,
             reporter,

@@ -90,6 +90,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class SubServer(ServerBase, ABC):
@@ -122,7 +123,10 @@ class SubServer(ServerBase, ABC):
     def foo(
         self,
         request: SuperFooRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, FooResponse] | FooResponse:
+    ) -> (
+        collections.abc.Coroutine[typing.Any, typing.Any, FooResponse]
+        | FooResponse
+    ):
         ...
 
 
@@ -144,7 +148,7 @@ class SubClient(FidlClient):
         self,
         *,
         s: str,
-    ) -> typing.Coroutine[typing.Any, typing.Any, SuperFooResponse]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, SuperFooResponse]:
         msg = SuperFooRequest(
             s,
         )
@@ -186,6 +190,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class SuperServer(ServerBase, ABC):
@@ -218,7 +223,10 @@ class SuperServer(ServerBase, ABC):
     def foo(
         self,
         request: SuperFooRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, FooResponse] | FooResponse:
+    ) -> (
+        collections.abc.Coroutine[typing.Any, typing.Any, FooResponse]
+        | FooResponse
+    ):
         ...
 
 
@@ -240,7 +248,7 @@ class SuperClient(FidlClient):
         self,
         *,
         s: str,
-    ) -> typing.Coroutine[typing.Any, typing.Any, SuperFooResponse]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, SuperFooResponse]:
         msg = SuperFooRequest(
             s,
         )

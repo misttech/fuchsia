@@ -196,6 +196,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class ExampleServer(ServerBase, ABC):
@@ -231,7 +232,10 @@ class ExampleServer(ServerBase, ABC):
     def foo(
         self,
         request: ExampleFooRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, FooResponse] | FooResponse:
+    ) -> (
+        collections.abc.Coroutine[typing.Any, typing.Any, FooResponse]
+        | FooResponse
+    ):
         ...
 
 
@@ -253,7 +257,7 @@ class ExampleClient(FidlClient):
         self,
         *,
         s: str,
-    ) -> typing.Coroutine[typing.Any, typing.Any, ExampleFooResult]:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, ExampleFooResult]:
         msg = ExampleFooRequest(
             s,
         )

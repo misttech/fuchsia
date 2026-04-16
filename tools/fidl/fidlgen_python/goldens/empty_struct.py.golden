@@ -188,6 +188,7 @@ from fidl._fidl_common import (
 )
 
 from abc import abstractmethod, ABC
+import collections.abc  # type: ignore[unused-ignore,unused-import]
 
 
 class EmptyProtocolServer(ServerBase, ABC):
@@ -228,7 +229,10 @@ class EmptyProtocolServer(ServerBase, ABC):
     def send(
         self,
         request: EmptyProtocolSendRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, SendResponse] | SendResponse:
+    ) -> (
+        collections.abc.Coroutine[typing.Any, typing.Any, SendResponse]
+        | SendResponse
+    ):
         ...
 
     def receive(
@@ -250,7 +254,9 @@ class EmptyProtocolServer(ServerBase, ABC):
         self,
         request: EmptyProtocolSendAndReceiveRequest,
     ) -> (
-        typing.Coroutine[typing.Any, typing.Any, SendAndReceiveResponse]
+        collections.abc.Coroutine[
+            typing.Any, typing.Any, SendAndReceiveResponse
+        ]
         | SendAndReceiveResponse
     ):
         ...
@@ -290,7 +296,7 @@ class EmptyProtocolClient(FidlClient):
         self,
         *,
         e: Empty,
-    ) -> typing.Coroutine[
+    ) -> collections.abc.Coroutine[
         typing.Any, typing.Any, EmptyProtocolSendAndReceiveResponse
     ]:
         msg = EmptyProtocolSendAndReceiveRequest(
@@ -334,7 +340,7 @@ class EmptyProtocolEventHandler(EventHandlerBase, ABC):
     def receive(
         self,
         request: EmptyProtocolReceiveRequest,
-    ) -> typing.Coroutine[typing.Any, typing.Any, None] | None:
+    ) -> collections.abc.Coroutine[typing.Any, typing.Any, None] | None:
         ...
 
 

@@ -13,9 +13,10 @@ import stat
 import tempfile
 import time
 import typing
+from collections.abc import Awaitable
 from datetime import timedelta
 from importlib import resources
-from typing import Any, Callable, Coroutine, TypeVar
+from typing import Any, Callable, TypeVar
 
 from honeydew import affordances_capable, errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
@@ -85,7 +86,7 @@ T = TypeVar("T")
 
 
 async def _poll_until(
-    func: Callable[..., T | Coroutine[Any, Any, T]],
+    func: Callable[..., T | Awaitable[T]],
     target_value: T,
     interval: timedelta = timedelta(seconds=1),
     timeout: timedelta | None = None,

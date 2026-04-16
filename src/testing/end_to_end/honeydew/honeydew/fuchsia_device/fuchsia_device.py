@@ -10,10 +10,10 @@ import ipaddress
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from functools import cached_property
-from typing import Any, Coroutine
+from typing import Any
 
 import fidl_fuchsia_buildinfo as f_buildinfo
 import fidl_fuchsia_developer_remotecontrol as fd_remotecontrol
@@ -222,20 +222,20 @@ class FuchsiaDevice(
         self._ffx_config_data: FfxConfigData = ffx_config_data
 
         self._on_device_boot_fns: list[
-            Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+            Callable[[], None] | Callable[[], Awaitable[None]]
         ] = []
         self._on_device_close_fns: list[
-            Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+            Callable[[], None] | Callable[[], Awaitable[None]]
         ] = []
         self._on_device_ip_change_fns: list[
             Callable[[custom_types.IpPort], None]
-            | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]]
+            | Callable[[custom_types.IpPort], Awaitable[None]]
         ] = []
         self._on_device_suspend_fns: list[
-            Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+            Callable[[], None] | Callable[[], Awaitable[None]]
         ] = []
         self._on_device_resume_fns: list[
-            Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+            Callable[[], None] | Callable[[], Awaitable[None]]
         ] = []
         self._pre_suspend_boot_id: str | None = None
 
@@ -820,10 +820,9 @@ class FuchsiaDevice(
         """Clean up method."""
         for fn in self._on_device_close_fns:
             _LOGGER.info("Calling %s", fn.__qualname__)
-            if inspect.iscoroutinefunction(fn):
-                await fn()
-            else:
-                fn()
+            res = fn()
+            if inspect.isawaitable(res):
+                await res
 
     def health_check(self) -> None:
         """Ensure device is healthy.
@@ -974,10 +973,9 @@ class FuchsiaDevice(
 
         for fn in self._on_device_boot_fns:
             _LOGGER.info("Calling %s", fn.__qualname__)
-            if inspect.iscoroutinefunction(fn):
-                await fn()
-            else:
-                fn()
+            res = fn()
+            if inspect.isawaitable(res):
+                await res
 
     async def power_cycle(
         self,
@@ -1025,7 +1023,7 @@ class FuchsiaDevice(
 
     def register_on_device_suspend_fn(
         self,
-        fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
+        fn: Callable[[], None] | Callable[[], Awaitable[None]],
     ) -> None:
         """Register a function to be called when device is suspended.
 
@@ -1036,7 +1034,7 @@ class FuchsiaDevice(
 
     def register_on_device_resume_fn(
         self,
-        fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]],
+        fn: Callable[[], None] | Callable[[], Awaitable[None]],
     ) -> None:
         """Register a function to be called when device is resumed.
 
@@ -1077,10 +1075,9 @@ class FuchsiaDevice(
             )
 
         for fn in self._on_device_suspend_fns:
-            if inspect.iscoroutinefunction(fn):
-                await fn()
-            else:
-                fn()
+            res = fn()
+            if inspect.isawaitable(res):
+                await res
 
         _LOGGER.info("Disconnecting USB from %s...", self.device_name)
         self._pre_suspend_boot_id = await self.boot_id()
@@ -1117,10 +1114,9 @@ class FuchsiaDevice(
             )
 
         for fn in self._on_device_resume_fns:
-            if inspect.iscoroutinefunction(fn):
-                await fn()
-            else:
-                fn()
+            res = fn()
+            if inspect.isawaitable(res):
+                await res
 
     async def reboot(self) -> None:
         """Soft reboot the device.
@@ -1148,7 +1144,7 @@ class FuchsiaDevice(
         )
 
     def register_for_on_device_boot(
-        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        self, fn: Callable[[], None] | Callable[[], Awaitable[None]]
     ) -> None:
         """Register a function that will be called in `on_device_boot()`.
 
@@ -1158,7 +1154,7 @@ class FuchsiaDevice(
         self._on_device_boot_fns.append(fn)
 
     def register_for_on_device_close(
-        self, fn: Callable[[], None] | Callable[[], Coroutine[Any, Any, None]]
+        self, fn: Callable[[], None] | Callable[[], Awaitable[None]]
     ) -> None:
         """Register a function that will be called during device clean up in `close()`.
 
@@ -1225,10 +1221,9 @@ class FuchsiaDevice(
                 fn.__qualname__,
                 ip_port,
             )
-            if inspect.iscoroutinefunction(fn):
-                await fn(ip_port)
-            else:
-                fn(ip_port)
+            res = fn(ip_port)
+            if inspect.isawaitable(res):
+                await res
 
         # Step #3 - Ensure device is healthy
         self.health_check()
@@ -1236,7 +1231,7 @@ class FuchsiaDevice(
     def register_for_on_device_ip_change(
         self,
         fn: Callable[[custom_types.IpPort], None]
-        | Callable[[custom_types.IpPort], Coroutine[Any, Any, None]],
+        | Callable[[custom_types.IpPort], Awaitable[None]],
     ) -> None:
         """Register a function that will be called when an IP address is changed.
 
