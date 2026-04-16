@@ -5,13 +5,13 @@
 use crate::helpers;
 use anyhow::Error;
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_test::{self as ftest, Result_ as TestResult};
+use fuchsia_async as fasync;
 use futures::io::BufReader;
 use futures::{AsyncBufReadExt, AsyncWriteExt as _};
 use zx::Socket;
-use {
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata, fuchsia_async as fasync,
-};
 
 pub async fn run_selinux_test_suite_cases(
     tests: Vec<ftest::Invocation>,
@@ -46,12 +46,9 @@ pub async fn run_selinux_test_suite_cases(
 
         // Run the test component and parse out the individual test results.
         let _ = helpers::start_test_component(start_info, component_runner)?;
-        parse_test_output(test, test_stdout, stdout_writer, run_listener_proxy).await?;
-
-        // Always report the test-suite as passing; failures will be reported by parse_test_output
-        // for individual cases.
-        top_level_report_proxy
-            .finished(&TestResult { status: Some(ftest::Status::Passed), ..Default::default() })?;
+        let status =
+            Some(parse_test_output(test, test_stdout, stdout_writer, run_listener_proxy).await?);
+        top_level_report_proxy.finished(&TestResult { status, ..Default::default() })?;
     }
 
     Ok(())
@@ -85,43 +82,51 @@ fn get_program_dictionary(
     fidl_fuchsia_data::Dictionary { entries: Some(program_entries), ..Default::default() }
 }
 
-/// Parses the output of a single SELinux test suite case and reports the results of individual
-/// subcases.
+/// Parses the output of a single SELinux test suite case and returns a boolean indicating whether
+/// it ran to completion.
 ///
-/// In this context a test suite case corresponds to the set of tests in a single file of
-/// the SELinux test suite, like "perf_event". A subcase corresponds to a single tested line within
-/// that SELinux test, like "perf_event/1" for the first test expectation within the "perf_event"
-/// test.
+/// Output is read from `test_stdout` and piped to `stdout` to allow inclusion in the report for
+/// the test suite case (e.g. "perf_event").  The results of individual subcases are reported to the
+/// `run_listener_proxy` based on the case name and subcase index (e.g. "perf_event/1").
 async fn parse_test_output(
     test: ftest::Invocation,
     test_stdout: Socket,
     stdout: Socket,
     run_listener_proxy: &ftest::RunListenerProxy,
-) -> Result<(), Error> {
+) -> Result<ftest::Status, Error> {
     let mut reader: BufReader<fidl::AsyncSocket> =
         BufReader::new(fasync::Socket::from_socket(test_stdout));
     let mut writer = fasync::Socket::from_socket(stdout);
     let mut line = String::new();
-    while reader.read_line(&mut line).await? > 0 {
+    let mut did_complete = false;
+
+    let report_subcase = |status, index_str: &str| {
+        let index = index_str.trim().parse::<i32>().expect("expected format \"[not] ok {index}\"");
+        report_result(test.clone(), index, run_listener_proxy, status)
+    };
+
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).await? == 0 {
+            if did_complete {
+                return Ok(ftest::Status::Passed);
+            }
+            return Ok(ftest::Status::Failed);
+        }
+
         // Copy output to test's stdout.
         writer.write_all(line.as_bytes()).await?;
+
         // The SELinux test suite reports the passed / failed tests starting with the prefix
         // "ok {index}" or "not ok {index}" correspondingly.
-        let (status, index_str) = if let Some(index_str) = line.strip_prefix("ok ") {
-            (Some(ftest::Status::Passed), index_str)
+        if let Some(index_str) = line.strip_prefix("ok ") {
+            report_subcase(ftest::Status::Passed, index_str)?;
         } else if let Some(index_str) = line.strip_prefix("not ok ") {
-            (Some(ftest::Status::Failed), index_str)
-        } else {
-            (None, "")
-        };
-        if let Some(status) = status {
-            let index =
-                index_str.trim().parse::<i32>().expect("expected format \"[not] ok {index}\"");
-            report_result(test.clone(), index, run_listener_proxy, status)?;
+            report_subcase(ftest::Status::Failed, index_str)?;
+        } else if line.starts_with("Result: ") {
+            did_complete = true;
         }
-        line.clear();
     }
-    Ok(())
 }
 
 /// Reports the result for the `index`-th subtest within a SELinux test suite case. This will be
