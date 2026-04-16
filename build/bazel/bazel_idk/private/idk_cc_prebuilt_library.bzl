@@ -754,6 +754,7 @@ When not using a Zircon-specific toolchain:
         "category": attr.string(
             doc = """See idk_cc_shared_library().
 GN equivalent: `sdk_publishable`""",
+            values = ["partner"],
             mandatory = True,
             configurable = False,
         ),
@@ -841,6 +842,7 @@ When not using a Zircon-specific toolchain:
         "category": attr.string(
             doc = """See idk_cc_static_library().
 GN equivalent: `sdk_publishable`""",
+            values = ["partner"],
             mandatory = True,
             configurable = False,
         ),

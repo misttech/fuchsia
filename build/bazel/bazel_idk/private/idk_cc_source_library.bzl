@@ -499,6 +499,7 @@ When not using a Zircon-specific toolchain:
         "category": attr.string(
             doc = """See idk_cc_source_library().
 GN equivalent: `sdk_publishable`""",
+            values = ["partner"],
             mandatory = True,
             configurable = False,
         ),

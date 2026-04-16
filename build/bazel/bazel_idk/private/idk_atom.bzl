@@ -662,7 +662,7 @@ macros to handle such a target as any other IDK target.
         ),
         "category": attr.string(
             doc = "See _create_idk_atom().",
-            values = ["compat_test", "host_tool", "prebuilt", "partner"],
+            values = ["partner"],
             mandatory = True,
         ),
         "stable": attr.bool(
