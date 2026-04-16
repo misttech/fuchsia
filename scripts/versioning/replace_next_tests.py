@@ -28,25 +28,31 @@ class TestSubstitution(unittest.TestCase):
             "#if FUCHSIA_API_LEVEL_AT_LEAST(42)",
         )
 
-        # TODO(https://fxbug.dev/453724925):
-        # self.assertSubstitution(
-        #     path,
-        #     "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT) || !defined(__Fuchsia__)",
-        #     "#if FUCHSIA_API_LEVEL_AT_LEAST(42) || !defined(__Fuchsia__)",
-        # )
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT) || !defined(__Fuchsia__)",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(42) || !defined(__Fuchsia__)",
+        )
 
-        # https://fxbug.dev/453724925
-        # self.assertSubstitution(
-        #     path,
-        #     "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT) && FUCHSIA_API_LEVEL_LESS_THAN(HEAD)",
-        #     "#if FUCHSIA_API_LEVEL_AT_LEAST(42) && FUCHSIA_API_LEVEL_LESS_THAN(HEAD)",
-        # )
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT) && FUCHSIA_API_LEVEL_LESS_THAN(HEAD)",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(42) && FUCHSIA_API_LEVEL_LESS_THAN(HEAD)",
+        )
 
-        # self.assertSubstitution(
-        #     path,
-        #     "#if FUCHSIA_API_LEVEL_AT_LEAST( NEXT )",
-        #     "#if FUCHSIA_API_LEVEL_AT_LEAST( 42 )",
-        # )
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT) && FUCHSIA_API_LEVEL_LESS_THAN(NEXT)",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(42) && FUCHSIA_API_LEVEL_LESS_THAN(42)",
+        )
+
+        self.assertSubstitution(
+            path,
+            "#if FUCHSIA_API_LEVEL_AT_LEAST( NEXT )",
+            # TODO(https://fxbug.dev/502591261): Fix behavior and use this line:
+            # "#if FUCHSIA_API_LEVEL_AT_LEAST( 42 )",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST( NEXT )",
+        )
 
         self.assertSubstitution(
             path, "} ZX_AVAILABLE_SINCE(NEXT)", "} ZX_AVAILABLE_SINCE(42)"
@@ -62,18 +68,21 @@ class TestSubstitution(unittest.TestCase):
                                 "Use DoNewThing() instead")""",
         )
 
-        # self.assertSubstitution(
-        #     path,
-        #     "ZX_REMOVED_SINCE((1), 19, NEXT)",
-        #     "ZX_REMOVED_SINCE((1), 19, 42)",
-        # )
+        self.assertSubstitution(
+            path,
+            "ZX_REMOVED_SINCE((1), 19, NEXT)",
+            # TODO(https://fxbug.dev/502591261): Fix behavior and use this line:
+            # "ZX_REMOVED_SINCE((1), 19, 42)",
+            "ZX_REMOVED_SINCE((1), 19, NEXT)",
+        )
 
-        # https://fxbug.dev/453685340
-        # self.assertSubstitution(
-        #     path,
-        #     """ZX_REMOVED_SINCE(1, NEXT, NEXT, "Use ProtocolReceive instead");""",
-        #     """ZX_REMOVED_SINCE(1, 42, 42, "Use ProtocolReceive instead");""",
-        # )
+        self.assertSubstitution(
+            path,
+            """ZX_REMOVED_SINCE(1, NEXT, NEXT, "Use ProtocolReceive instead");""",
+            # TODO(https://fxbug.dev/453685340): Fix behavior and use this line:
+            # """ZX_REMOVED_SINCE(1, 42, 42, "Use ProtocolReceive instead");""",
+            """ZX_REMOVED_SINCE(1, NEXT, 42, "Use ProtocolReceive instead");""",
+        )
 
         # Test NEVER_REPLACE_NEXT.
         self.assertSubstitution(
@@ -107,23 +116,17 @@ class TestSubstitution(unittest.TestCase):
         self.assertSubstitution(
             path,
             "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // Some text (NEVER REPLACE NEXT)",
-            # TODO(https://fxbug.dev/453724925): Fix the bug and use this line:
-            # "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // Some text (NEVER REPLACE NEXT)",
-            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // Some text (NEVER REPLACE NEXT)",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // Some text (NEVER REPLACE NEXT)",
         )
         self.assertSubstitution(
             path,
             "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // Do this later (NEXT)",
-            # TODO(https://fxbug.dev/453724925): Fix the bug and use this line:
-            # "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // Do this later (NEXT)",
-            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // Do this later (42)",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // Do this later (42)",
         )
         self.assertSubstitution(
             path,
             "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // NEVER REPLACE NEXT",
-            # TODO(https://fxbug.dev/453724925): Fix the bug and use this line:
-            # "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // NEVER REPLACE NEXT",
-            "#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // NEVER REPLACE NEXT",
+            "#if FUCHSIA_API_LEVEL_AT_LEAST(42)  // NEVER REPLACE NEXT",
         )
 
     def test_rust(self) -> None:
@@ -141,11 +144,13 @@ class TestSubstitution(unittest.TestCase):
         )
 
         # I don't think this is actually an interesting, valid case, but it's mentioned in the pattern definitions...
-        # self.assertSubstitution(
-        #     path,
-        #     """cfg(all(fuchsia_api_level_at_least = "NEXT", fuchsia_api_level_less_than = "NEXT"))""",
-        #     """cfg(all(fuchsia_api_level_at_least = "42", fuchsia_api_level_less_than = "42"))""",
-        # )
+        self.assertSubstitution(
+            path,
+            """cfg(all(fuchsia_api_level_at_least = "NEXT", fuchsia_api_level_less_than = "NEXT"))""",
+            # TODO(https://fxbug.dev/502591261): Fix behavior and use this line:
+            # """cfg(all(fuchsia_api_level_at_least = "42", fuchsia_api_level_less_than = "42"))""",
+            """cfg(all(fuchsia_api_level_at_least = "NEXT", fuchsia_api_level_less_than = "42"))""",
+        )
 
         # Test NEVER_REPLACE_NEXT.
         self.assertSubstitution(

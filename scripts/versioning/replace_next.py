@@ -73,13 +73,11 @@ CPP_PATH_REGEX: re.Pattern[str] = re.compile(r"\.(h|c|cc|json)$")
 PATTERNS = [
     Pattern(
         path_regex=CPP_PATH_REGEX,
-        # Matches macros like `FUCHSIA_API_LEVEL_AT_LEAST(NEXT)`, at the end of
-        # lines.
+        # Matches macros like `FUCHSIA_API_LEVEL_AT_LEAST(NEXT)`.
         #
         # Possible coverage gaps:
-        # - FUCHSIA_API_LEVEL_AT_LEAST(NEXT) && FUCHSIA_API_LEVEL_LESS_THAN(HEAD)
         # - FUCHSIA_API_LEVEL_AT_LEAST( NEXT )
-        sub_regex=re.compile(r"(?P<prefix>\()NEXT(?P<suffix>\)(\n|$))"),
+        sub_regex=re.compile(r"(?P<prefix>\()NEXT(?P<suffix>\))"),
     ),
     Pattern(
         path_regex=CPP_PATH_REGEX,
