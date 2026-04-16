@@ -23,7 +23,9 @@
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 #define BPF_LOAD_MAP(reg, value)                               \
@@ -1286,6 +1288,56 @@ TEST_F(BpfIdTest, MapIds) {
 
   maps_after = GetMapIds();
   ASSERT_TRUE(std::find(maps_after.begin(), maps_after.end(), map_id) == maps_after.end());
+}
+
+TEST_F(BpfIdTest, RequiresSysAdmin) {
+  if (!test_helper::HasCapability(CAP_SYS_ADMIN)) {
+    GTEST_SKIP() << "Test expects CAP_SYS_ADMIN";
+  }
+
+  // Create a BPF program and a map while capabilities are still present.
+  bpf_insn program_insns[] = {
+      BPF_MOV_IMM(0, 1),
+      BPF_RETURN(),
+  };
+  auto prog = LoadProgram(program_insns, sizeof(program_insns) / sizeof(program_insns[0]),
+                          BPF_PROG_TYPE_SOCKET_FILTER, 0);
+  int prog_id = BpfGetProgId(prog.get());
+
+  auto map = CreateMap(BPF_MAP_TYPE_ARRAY, sizeof(int), 1024, 10);
+  int map_id = BpfGetMapId(map.get());
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([prog_id, map_id] {
+    test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+
+    bpf_attr attr;
+    memset(&attr, 0, sizeof(attr));
+
+    // BPF_PROG_GET_NEXT_ID
+    attr.start_id = 0;
+    EXPECT_EQ(bpf(BPF_PROG_GET_NEXT_ID, &attr), -1);
+    EXPECT_EQ(errno, EPERM);
+
+    // BPF_MAP_GET_NEXT_ID
+    memset(&attr, 0, sizeof(attr));
+    attr.start_id = 0;
+    EXPECT_EQ(bpf(BPF_MAP_GET_NEXT_ID, &attr), -1);
+    EXPECT_EQ(errno, EPERM);
+
+    // BPF_PROG_GET_FD_BY_ID
+    memset(&attr, 0, sizeof(attr));
+    attr.prog_id = prog_id;
+    EXPECT_EQ(bpf(BPF_PROG_GET_FD_BY_ID, &attr), -1);
+    EXPECT_EQ(errno, EPERM);
+
+    // BPF_MAP_GET_FD_BY_ID
+    memset(&attr, 0, sizeof(attr));
+    attr.map_id = map_id;
+    EXPECT_EQ(bpf(BPF_MAP_GET_FD_BY_ID, &attr), -1);
+    EXPECT_EQ(errno, EPERM);
+  });
+  EXPECT_TRUE(fork_helper.WaitForChildren());
 }
 
 }  // namespace

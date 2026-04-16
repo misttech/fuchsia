@@ -24,6 +24,7 @@ use starnix_logging::{log_error, log_trace, track_stub};
 use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
+use starnix_uapi::auth::CAP_SYS_ADMIN;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserCString, UserRef};
@@ -516,6 +517,7 @@ pub fn sys_bpf(
             error!(EINVAL)
         }
         bpf_cmd_BPF_PROG_GET_NEXT_ID => {
+            security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
             let mut get_next_attr: bpf_attr__bindgen_ty_8 =
                 read_attr(current_task, attr_addr, attr_size)?;
             // SAFETY: Reading u32 value from a union is safe.
@@ -529,6 +531,7 @@ pub fn sys_bpf(
             Ok(SUCCESS)
         }
         bpf_cmd_BPF_MAP_GET_NEXT_ID => {
+            security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
             let mut get_next_attr: bpf_attr__bindgen_ty_8 =
                 read_attr(current_task, attr_addr, attr_size)?;
             // SAFETY: Reading u32 value from a union is safe.
@@ -542,6 +545,7 @@ pub fn sys_bpf(
             Ok(SUCCESS)
         }
         bpf_cmd_BPF_PROG_GET_FD_BY_ID => {
+            security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
             let get_by_id_attr: bpf_attr__bindgen_ty_8 =
                 read_attr(current_task, attr_addr, attr_size)?;
             // SAFETY: Reading u32 value from a union is safe.
@@ -554,6 +558,7 @@ pub fn sys_bpf(
             install_bpf_fd(locked, current_task, prog)
         }
         bpf_cmd_BPF_MAP_GET_FD_BY_ID => {
+            security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
             let get_by_id_attr: bpf_attr__bindgen_ty_8 =
                 read_attr(current_task, attr_addr, attr_size)?;
             // SAFETY: Reading u32 value from a union is safe.
