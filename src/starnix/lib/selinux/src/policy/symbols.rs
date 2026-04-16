@@ -19,8 +19,9 @@ use super::{
 
 use anyhow::{Context as _, anyhow};
 use hashbrown::hash_table::HashTable;
+use rapidhash::RapidHasher;
 use std::fmt::Debug;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::num::{NonZeroU8, NonZeroU32};
 use std::ops::Deref;
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
@@ -1249,7 +1250,7 @@ impl Validate for TypeMetadata {
 }
 
 fn name_hash(name: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = RapidHasher::default();
     name.hash(&mut hasher);
     hasher.finish()
 }
