@@ -185,6 +185,14 @@ func TestParseArgsAndEnv(t *testing.T) {
 			expectErr: true,
 		},
 		{
+			name: "rejects conflicting --dir flags",
+			env: map[string]string{
+				"FUCHSIA_BUILD_DIR_FROM_FX": "out/foo",
+			},
+			args:      []string{"core.x64", "--dir", "out/bar"},
+			expectErr: true,
+		},
+		{
 			name: "honors top-level fx --dir flag",
 			args: []string{"core.x64"},
 			env: map[string]string{
@@ -247,6 +255,16 @@ func TestParseArgsAndEnv(t *testing.T) {
 				buildDir:      "out/core.x64-balanced",
 				includeClippy: false,
 				cargoTOMLGen:  true,
+			},
+		},
+		{
+			name: "explicit directory via flag",
+			args: []string{"core.x64", "--dir", "out/foo"},
+			expected: setArgs{
+				product:       "core",
+				board:         "x64",
+				buildDir:      "out/foo",
+				includeClippy: true,
 			},
 		},
 		{

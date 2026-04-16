@@ -275,17 +275,6 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 	cmd.ccacheDir = env[ccacheDirEnvVar] // Not required.
 
 	cmd.buildDir = env[buildDirEnvVar] // Not required.
-	// Check and rebase if buildDir is an absolute path.
-	if filepath.IsAbs(cmd.buildDir) {
-		if !strings.HasPrefix(cmd.buildDir, cmd.checkoutDir+"/") {
-			return nil, fmt.Errorf("build dir %q is not under checkout dir %q", cmd.buildDir, cmd.checkoutDir)
-		}
-		var err error
-		cmd.buildDir, err = filepath.Rel(cmd.checkoutDir, cmd.buildDir)
-		if err != nil {
-			return nil, fmt.Errorf("rebasing build dir to check out dir: %v", err)
-		}
-	}
 
 	flagSet := flag.NewFlagSet("fx set", flag.ExitOnError)
 	// TODO(olivernewman): Decide whether to have this tool print usage or
@@ -297,6 +286,7 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 
 	flagSet.BoolVar(&cmd.skipLocalArgs, "skip-local-args", false, "")
 	flagSet.BoolVar(&cmd.noChangeEnv, "no-change-env", false, "Do not configure global .fx-build-dir or symlink")
+	flagSet.StringVar(&cmd.buildDir, "dir", cmd.buildDir, "")
 
 	var autoDir = true // default to automatically creating a named build directory
 
@@ -348,6 +338,22 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 
 	if err := flagSet.Parse(args); err != nil {
 		return nil, err
+	}
+
+	if env["FUCHSIA_BUILD_DIR_FROM_FX"] != "" && flagSet.Changed("dir") {
+		return nil, fmt.Errorf("cannot specify --dir both as global flag and as subcommand flag")
+	}
+
+	// Check and rebase if buildDir is an absolute path.
+	if filepath.IsAbs(cmd.buildDir) {
+		if !strings.HasPrefix(cmd.buildDir, cmd.checkoutDir+"/") {
+			return nil, fmt.Errorf("build dir %q is not under checkout dir %q", cmd.buildDir, cmd.checkoutDir)
+		}
+		var err error
+		cmd.buildDir, err = filepath.Rel(cmd.checkoutDir, cmd.buildDir)
+		if err != nil {
+			return nil, fmt.Errorf("rebasing build dir to check out dir: %v", err)
+		}
 	}
 
 	modesSet := 0
