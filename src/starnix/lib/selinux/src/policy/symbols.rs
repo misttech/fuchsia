@@ -1880,14 +1880,14 @@ impl Parse for CategoryIndex {
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
         let (metadata, mut tail) = Metadata::parse(bytes)?;
         let category_count = usize::try_from(metadata.count()).unwrap();
-        let mut offsets_by_id_minus_one = Vec::with_capacity(category_count);
+        let mut offsets_by_id_minus_one = vec![U24::ZERO; category_count];
         for _ in 0..category_count {
             let offset = U24::try_from(tail.offset()).unwrap();
             let (category, next_tail) = Category::parse(tail)?;
             let category_id_as_usize = category.id().0.get() as usize;
 
             if offsets_by_id_minus_one.len() < category_id_as_usize {
-                offsets_by_id_minus_one.resize(category_id_as_usize, U24::try_from(0).unwrap());
+                offsets_by_id_minus_one.resize(category_id_as_usize, U24::ZERO);
             }
             offsets_by_id_minus_one[category_id_as_usize - 1] = offset;
 
