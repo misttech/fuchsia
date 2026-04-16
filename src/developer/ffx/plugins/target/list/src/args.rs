@@ -162,9 +162,9 @@ impl std::str::FromStr for AddressTypes {
         let mut ret = AddressTypes::empty();
         for item in s.split(',').map(|x| x.trim()) {
             match item {
-                "ip" => ret.insert(AddressTypes::IPV4),
+                "ip" => ret.insert(AddressTypes::IP),
                 "ipv4" | "ip4" | "4" => ret.insert(AddressTypes::IPV4),
-                "ipv6" | "ip6" | "6" => ret.insert(AddressTypes::IPV4),
+                "ipv6" | "ip6" | "6" => ret.insert(AddressTypes::IPV6),
                 "usb" => ret.insert(AddressTypes::USB),
                 "vsock" => ret.insert(AddressTypes::VSOCK),
                 _ => {
