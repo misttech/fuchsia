@@ -31,7 +31,10 @@
             ],
         },
         {
-            protocol: [ "fuchsia.feedback.CrashReporter" ],
+            protocol: [
+                "fuchsia.feedback.CrashReporter",
+                "fuchsia.power.cpu.manager.Boost",
+            ],
             availability: "optional",
         },
         {

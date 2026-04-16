@@ -12,6 +12,7 @@ use async_utils::hanging_get::server::{HangingGet, Publisher};
 use fidl::endpoints::{Proxy, ServerEnd, create_endpoints};
 use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_cpu_manager as fcpumanager;
 use fidl_fuchsia_power_observability as fobs;
 use fidl_fuchsia_power_suspend as fsuspend;
 use fidl_fuchsia_power_system::{
@@ -554,6 +555,10 @@ pub struct SystemActivityGovernor {
     /// The lease which hold execution_state at suspending state temporarily
     /// after suspension.
     resume_control_lease: Rc<RefCell<Option<fbroker::LeaseControlProxy>>>,
+    /// The token for the CPU frequency boost.
+    boost_token: Rc<RefCell<Option<zx::EventPair>>>,
+    /// The proxy used to call Boost.
+    boost_proxy: fcpumanager::BoostProxy,
     /// Temporarily holds the boot_control lease.
     booting_lease: Rc<RefCell<Option<fidl::endpoints::ClientEnd<fbroker::LeaseControlMarker>>>>,
     /// Logger for system-wide activity governor events.
@@ -579,6 +584,7 @@ impl SystemActivityGovernor {
         is_shutting_down: Rc<Cell<bool>>,
         crash_reporter: ffeedback::CrashReporterProxy,
         stuck_warning_timeout: fasync::MonotonicDuration,
+        boost_proxy: fcpumanager::BoostProxy,
     ) -> Result<Rc<Self>> {
         let mut element_power_level_names: Vec<fbroker::ElementPowerLevelNames> = Vec::new();
 
@@ -740,6 +746,8 @@ impl SystemActivityGovernor {
             element_power_level_names,
             es_activation_after_resume_signal: Rc::new(RefCell::new(async_lock::OnceCell::new())),
             resume_control_lease: Rc::new(RefCell::new(None)),
+            boost_token: Rc::new(RefCell::new(None)),
+            boost_proxy,
             is_running_signal: async_lock::OnceCell::new(),
             is_shutting_down,
             booting_lease: Rc::new(RefCell::new(None)),
@@ -1355,11 +1363,15 @@ impl SuspendResumeListener for SystemActivityGovernor {
             lease_status = lease.watch_status(lease_status).await.unwrap();
         }
 
-        if !self.es_activation_after_resume_signal.borrow().is_initialized() {
+        if self.es_activation_after_resume_signal.borrow().is_initialized() {
+            log::info!("System already Active, dropping boost token immediately");
+            drop(self.boost_token.borrow_mut().take());
+        } else {
             let _ = self.resume_control_lease.borrow_mut().insert(lease);
-
             let resume_control_lease = self.resume_control_lease.clone();
             let es_activation_after_resume_signal = self.es_activation_after_resume_signal.clone();
+            let boost_token = self.boost_token.clone();
+
             fasync::Task::local(async move {
                 let _ = es_activation_after_resume_signal
                     .borrow()
@@ -1370,6 +1382,7 @@ impl SuspendResumeListener for SystemActivityGovernor {
                     })
                     .await;
                 drop(resume_control_lease.borrow_mut().take());
+                drop(boost_token.borrow_mut().take());
             })
             .detach();
         }
@@ -1381,12 +1394,32 @@ impl SuspendResumeListener for SystemActivityGovernor {
 
         fuchsia_trace::duration!("power", "system-activity-governor:suspend_callbacks");
         log::debug!("notify_on_suspend");
-        self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseStarted);
-        self.update_suspend_blockers(true).await;
-        self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseEnded);
 
-        drop(tx);
-        *self.before_suspend_notifier.borrow_mut() = None;
+        let boost_fut = async {
+            log::info!("Calling Boost protocol");
+            match self.boost_proxy.boost().await {
+                Ok(Ok(token)) => {
+                    log::info!("Boost successful");
+                    let _ = self.boost_token.borrow_mut().insert(token);
+                }
+                Ok(Err(e)) => {
+                    log::warn!("Boost failed: {e:?}");
+                }
+                Err(e) => {
+                    log::warn!("FIDL error during Boost call: {e:?}");
+                }
+            }
+        };
+
+        let update_fut = async {
+            self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseStarted);
+            self.update_suspend_blockers(true).await;
+            self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseEnded);
+            drop(tx);
+            *self.before_suspend_notifier.borrow_mut() = None;
+        };
+
+        futures::join!(boost_fut, update_fut);
         log::debug!("update_suspend_blockers(true) done");
     }
 

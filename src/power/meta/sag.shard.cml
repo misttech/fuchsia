@@ -77,5 +77,15 @@
             from: "#role_manager",
             to: "#system-activity-governor",
         },
+        {
+            protocol: "fuchsia.power.cpu.manager.Boost",
+            from: "#cpu_manager",
+            to: "#system-activity-governor",
+
+            // SAG already depends on boot-drivers which strongly depend on
+            // cpu-manager.
+            dependency: "weak",
+            source_availability: "unknown",
+        },
     ],
 }

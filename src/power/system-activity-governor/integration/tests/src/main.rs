@@ -147,8 +147,13 @@ macro_rules! block_until_inspect_matches {
     ($loop_iter:expr, $sag_moniker:expr, $($tree:tt)+) => {{
         let mut reader = ArchiveReader::inspect();
 
+        let moniker = if $sag_moniker.is_empty() {
+            REALM_FACTORY_CHILD_NAME.to_string()
+        } else {
+            format!("{}/{}", REALM_FACTORY_CHILD_NAME, $sag_moniker)
+        };
         reader
-            .select_all_for_component(format!("{}/{}", REALM_FACTORY_CHILD_NAME, $sag_moniker))
+            .select_all_for_component(moniker)
             .with_minimum_schema_count(1);
 
         for i in 1.. {
@@ -290,6 +295,17 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
 
     drop(suspend_lease_control);
     assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
+
+    // Check that boost is active before resume.
+    block_until_inspect_matches!(
+        "",
+        root: contains {
+            "fake-boost": contains {
+                active: true,
+            }
+        }
+    );
+
     suspend_device
         .resume(&tsc::DeviceResumeRequest::Result(tsc::SuspendResult {
             suspend_duration: Some(2i64),
@@ -300,6 +316,9 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
         .unwrap()
         .unwrap();
 
+    // Take a lease to prevent the system from suspending again before we can check Inspect.
+    let keep_awake_lease = lease(&suspend_controller, 1).await?;
+
     let current_stats = stats.watch().await?;
     assert_eq!(Some(1), current_stats.success_count);
     assert_eq!(Some(0), current_stats.fail_count);
@@ -307,20 +326,32 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
     assert_eq!(Some(2), current_stats.last_time_in_suspend);
     assert_eq!(Some(2), current_stats.total_time_in_suspend);
 
+    // Check that boost becomes inactive after resume.
+    block_until_inspect_matches!(
+        "",
+        root: contains {
+            "fake-boost": contains {
+                active: false,
+            }
+        }
+    );
+
+    // Drop the lease to let the system suspend again as intended by the test.
+    drop(keep_awake_lease);
+
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
-                    // Due to timeout of the resume lease, expect this to be 0.
+                    // Due to timeout of the resume lease (and dropping keep_awake_lease), expect this to be 0.
                     power_level: 0u64,
                 },
                 application_activity: {
                     power_level: 0u64,
                 },
                 cpu: {
-                    // Due to timeout of the resume lease, expect this to be 0.
                     power_level: 0u64,
                 },
             },

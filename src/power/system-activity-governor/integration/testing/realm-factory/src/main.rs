@@ -4,6 +4,7 @@
 
 use anyhow::{Error, Result};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_power_cpu_manager as fcpumanager;
 use fidl_fuchsia_testing_harness::RealmProxy_Marker;
 use fidl_test_systemactivitygovernor::*;
 use fuchsia_async as fasync;
@@ -11,13 +12,20 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, DEFAULT_COLLECTION_NAME, RealmBuilder, RealmInstance, Ref, Route,
 };
-use futures::{StreamExt, TryStreamExt};
+use fuchsia_inspect::Node as INode;
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::*;
-
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 const ACTIVITY_GOVERNOR_CHILD_NAME: &str = "system-activity-governor";
+const FAKE_BOOST_CHILD_NAME: &str = "fake-boost";
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
+    let inspector = fuchsia_inspect::component::inspector();
+    let _inspect_server_task =
+        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
+
     let mut fs = ServiceFs::new();
     fs.dir("svc").add_fidl_service(|stream: RealmFactoryRequestStream| stream);
     fs.take_and_serve_directory_handle()?;
@@ -272,6 +280,85 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
             .await?;
     }
 
+    let fake_boost_ref = builder
+        .add_local_child(
+            FAKE_BOOST_CHILD_NAME,
+            move |handles| {
+                async move {
+                    let mut fs = ServiceFs::new();
+                    fs.dir("svc").add_fidl_service(
+                        move |stream: fcpumanager::BoostRequestStream| {
+                            fasync::Task::local(async move {
+                                let inspector = fuchsia_inspect::component::inspector();
+                                if let Err(e) =
+                                    run_fake_boost(inspector.root().clone_weak(), stream).await
+                                {
+                                    warn!("FakeBoost failed: {:?}", e);
+                                }
+                            })
+                            .detach();
+                        },
+                    );
+                    fs.serve_connection(handles.outgoing_dir)?;
+                    fs.collect::<()>().await;
+                    Ok(())
+                }
+                .boxed()
+            },
+            ChildOptions::new(),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name("fuchsia.power.cpu.manager.Boost"))
+                .from(&fake_boost_ref)
+                .to(&component_ref),
+        )
+        .await?;
+
     let realm = builder.build().await?;
     Ok(SagRealm { realm })
+}
+
+async fn run_fake_boost(node: INode, mut stream: fcpumanager::BoostRequestStream) -> Result<()> {
+    let active = Arc::new(AtomicBool::new(false));
+    let active_clone = active.clone();
+
+    let _node = node.create_lazy_child_with_thread_local("fake-boost", move || {
+        let active = active_clone.clone();
+        async move {
+            let inspector = fuchsia_inspect::Inspector::default();
+            inspector.root().record_bool("active", active.load(Ordering::Relaxed));
+            Ok(inspector)
+        }
+        .boxed_local()
+    });
+
+    while let Some(request) = stream.try_next().await? {
+        match request {
+            fcpumanager::BoostRequest::Boost { responder } => {
+                log::info!("FakeBoost: Received Boost request");
+                let (server_token, client_token) = zx::EventPair::create();
+                let active = active.clone();
+                active.store(true, Ordering::Relaxed);
+
+                fasync::Task::local(async move {
+                    let _ =
+                        fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED)
+                            .await;
+                    log::info!("FakeBoost: Client closed token, ending boost");
+                    active.store(false, Ordering::Relaxed);
+                })
+                .detach();
+
+                responder.send(Ok(client_token))?;
+            }
+            fcpumanager::BoostRequest::_UnknownMethod { .. } => {
+                log::warn!("FakeBoost: Unknown method called");
+            }
+        }
+    }
+    Ok(())
 }

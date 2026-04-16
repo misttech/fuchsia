@@ -19,6 +19,7 @@ use fidl_fuchsia_hardware_platform_bus as ffhpb;
 use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
 use fidl_fuchsia_hardware_power_suspend as fhsuspend;
 use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_cpu_manager as fcpumanager;
 use fidl_fuchsia_power_suspend as fsuspend;
 use fidl_fuchsia_power_system as fsystem;
 use fuchsia_async as fasync;
@@ -224,6 +225,7 @@ async fn main() -> Result<()> {
 
     let topology = connect_to_protocol::<fbroker::TopologyMarker>()?;
     let crash_reporter = connect_to_protocol::<ffeedback::CrashReporterMarker>()?;
+    let boost_proxy = connect_to_protocol::<fcpumanager::BoostMarker>()?;
     let sag_event_logger = SagEventLogger::new(inspector.root());
 
     let topology2 = topology.clone();
@@ -240,6 +242,7 @@ async fn main() -> Result<()> {
         let sag_event_logger = sag_event_logger2.clone();
         let is_shutting_down = is_shutting_down_sag.clone();
         let crash_reporter = crash_reporter.clone();
+        let boost_proxy = boost_proxy.clone();
         async move {
             log::info!("Creating activity governor server...");
             SystemActivityGovernor::new(
@@ -251,6 +254,7 @@ async fn main() -> Result<()> {
                 is_shutting_down,
                 crash_reporter,
                 MonotonicDuration::from_seconds(stuck_warning_timeout.into()),
+                boost_proxy,
             )
             .await
         }
