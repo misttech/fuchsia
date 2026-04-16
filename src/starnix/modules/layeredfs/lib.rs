@@ -363,11 +363,13 @@ impl FileOps for LayeredFileOps {
             }
         }
 
-        let mut root_file_offset = self.root_file.offset.lock();
+        let mut root_file_offset = self.root_file.offset.copy();
         let mut wrapper =
-            DirentSinkWrapper { sink, mappings: &self.fs.mappings, offset: &mut root_file_offset };
+            DirentSinkWrapper { sink, mappings: &self.fs.mappings, offset: &mut *root_file_offset };
 
-        self.root_file.readdir(locked, current_task, &mut wrapper)
+        self.root_file.readdir(locked, current_task, &mut wrapper)?;
+        root_file_offset.update();
+        Ok(())
     }
 }
 

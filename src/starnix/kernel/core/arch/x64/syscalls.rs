@@ -230,10 +230,12 @@ pub fn sys_getdents(
     user_capacity: usize,
 ) -> Result<usize, Errno> {
     let file = current_task.get_file(fd)?;
-    let mut offset = file.offset.lock();
-    let mut sink = DirentSink32::new(current_task, &mut offset, user_buffer, user_capacity);
+    let mut offset = file.offset.copy();
+    let mut sink = DirentSink32::new(current_task, &mut *offset, user_buffer, user_capacity);
     let result = file.readdir(locked, current_task, &mut sink);
-    sink.map_result_with_actual(result)
+    let ret = sink.map_result_with_actual(result);
+    offset.update();
+    ret
 }
 
 pub fn sys_getpgrp(

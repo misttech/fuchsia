@@ -111,7 +111,7 @@ impl RecordRange {
     fn build(flock: &uapi::flock, file: &FileObject) -> Result<RecordRange, Errno> {
         let origin: __kernel_off_t = match flock.l_whence as u32 {
             SEEK_SET => 0,
-            SEEK_CUR => *file.offset.lock(),
+            SEEK_CUR => file.offset.read(),
             SEEK_END => file.node().info().size.try_into().map_err(|_| errno!(EINVAL))?,
             _ => {
                 return error!(EINVAL);

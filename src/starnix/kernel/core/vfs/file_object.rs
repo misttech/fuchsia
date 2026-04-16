@@ -22,6 +22,7 @@ use crate::vfs::{
 };
 use starnix_crypt::EncryptionKeyId;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
+use starnix_rcu::RcuAtomic;
 use starnix_types::ownership::ReleaseGuard;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::user_address::ArchSpecific;
@@ -1007,7 +1008,7 @@ pub fn default_ioctl(
                 .fetch_and_refresh_info(locked, current_task)
                 .map_err(|_| errno!(EINVAL))?
                 .size;
-            let offset = usize::try_from(*file.offset.lock()).map_err(|_| errno!(EINVAL))?;
+            let offset = usize::try_from(file.offset.read()).map_err(|_| errno!(EINVAL))?;
             let remaining =
                 if size < offset { 0 } else { i32::try_from(size - offset).unwrap_or(i32::MAX) };
             current_task.write_object(arg.into(), &remaining)?;
@@ -1470,7 +1471,7 @@ pub struct FileObjectState {
 
     pub fs: FileSystemHandle,
 
-    pub offset: Mutex<off_t>,
+    pub offset: RcuAtomic<off_t>,
 
     flags: AtomicOpenFlags,
 
@@ -1599,7 +1600,7 @@ impl FileObject {
                     id,
                     name: name.into_active(),
                     fs,
-                    offset: Mutex::new(0),
+                    offset: RcuAtomic::new(0),
                     flags: AtomicOpenFlags::new(flags - OpenFlags::CREAT),
                     async_owner: Default::default(),
                     epoll_files: Default::default(),
@@ -1747,11 +1748,12 @@ impl FileObject {
                 return self.ops.read(locked, self, current_task, 0, data);
             }
 
-            let mut offset_guard = self.offset.lock();
+            let mut offset_guard = self.offset.copy();
             let offset = *offset_guard as usize;
             checked_add_offset_and_length(offset, data.available())?;
             let read = self.ops.read(locked, self, current_task, offset, data)?;
             *offset_guard += read as off_t;
+            offset_guard.update();
             Ok(read)
         })
     }
@@ -1843,7 +1845,7 @@ impl FileObject {
                 reason = "Force documented unsafe blocks in Starnix"
             )]
             let locked = unsafe { Unlocked::new() };
-            let mut offset = self.offset.lock();
+            let mut offset = self.offset.copy();
             let bytes_written = if self.flags().contains(OpenFlags::APPEND) {
                 let (_guard, locked) = self.node().ops().append_lock_write(
                     locked.cast_locked::<BeforeFsNodeAppend>(),
@@ -1869,6 +1871,7 @@ impl FileObject {
             if self.ops().writes_update_seek_offset() {
                 *offset += bytes_written as off_t;
             }
+            offset.update();
             Ok(bytes_written)
         })
     }
@@ -1933,9 +1936,10 @@ impl FileObject {
             return self.ops().seek(locked, self, current_task, 0, target);
         }
 
-        let mut offset_guard = self.offset.lock();
+        let mut offset_guard = self.offset.copy();
         let new_offset = self.ops().seek(locked, self, current_task, *offset_guard, target)?;
         *offset_guard = new_offset;
+        offset_guard.update();
         Ok(new_offset)
     }
 

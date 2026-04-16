@@ -490,16 +490,19 @@ impl StarnixNodeConnection {
                 }
                 _ => return error!(EINVAL),
             };
-            if *file.offset.lock() != offset {
+            if file.offset.read() != offset {
                 file.seek(locked, current_task, SeekTarget::Set(offset))?;
             }
-            let mut file_offset = file.offset.lock();
-            let mut dirent_sink = DirentSinkAdapter {
-                sink: Some(directory::dirents_sink::AppendResult::Ok(sink)),
-                offset: &mut file_offset,
+            let mut file_offset = file.offset.copy();
+            let sink_result = {
+                let mut dirent_sink = DirentSinkAdapter {
+                    sink: Some(directory::dirents_sink::AppendResult::Ok(sink)),
+                    offset: &mut *file_offset,
+                };
+                file.readdir(locked, current_task, &mut dirent_sink)?;
+                dirent_sink.sink
             };
-            file.readdir(locked, current_task, &mut dirent_sink)?;
-            match dirent_sink.sink {
+            let ret = match sink_result {
                 Some(directory::dirents_sink::AppendResult::Sealed(seal)) => {
                     Ok((directory::traversal_position::TraversalPosition::End, seal))
                 }
@@ -508,7 +511,9 @@ impl StarnixNodeConnection {
                     sink.seal(),
                 )),
                 None => error!(ENOTSUP),
-            }
+            };
+            file_offset.update();
+            ret
         })
     }
 

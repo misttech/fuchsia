@@ -618,7 +618,7 @@ impl FsNodeOps for FdInfoDirectory {
         let task = Task::from_weak(&self.task)?;
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
         let file = task.live()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
-        let pos = *file.offset.lock();
+        let pos = file.offset.read();
         let flags = file.flags();
         let mut data = format!("pos:\t{}\nflags:\t0{:o}\n", pos, flags.bits()).into_bytes();
         if let Some(extra_fdinfo) = file.extra_fdinfo(locked, current_task) {
