@@ -748,8 +748,12 @@ socket_class_permission_enum! {
         // keep-sorted start
         /// Permission for nlmsg xperms.
         Nlmsg("nlmsg"),
+        /// Permission to read the kernel neighbor table.
+        NlmsgGetNeigh("nlmsg_getneigh"),
         /// Permission to read the kernel routing table.
         NlmsgRead("nlmsg_read"),
+        /// Permission to read privileged netlink messages.
+        NlmsgReadPriv("nlmsg_readpriv"),
         /// Permission to write to the kernel routing table.
         NlmsgWrite("nlmsg_write"),
         // keep-sorted end

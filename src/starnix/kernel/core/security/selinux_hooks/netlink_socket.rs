@@ -67,9 +67,12 @@ fn legacy_permission_for_family_and_message_type(
 ) -> Option<KernelPermission> {
     match netlink_family {
         NetlinkFamily::Route => match message_type as u32 {
-            RTM_GETROUTE | RTM_GETLINK | RTM_GETADDR | RTM_GETNEIGH | RTM_GETNEIGHTBL
-            | RTM_GETQDISC | RTM_GETCHAIN | RTM_GETNSID | RTM_GETRULE | RTM_GETTCLASS
-            | RTM_GETTFILTER => Some(NetlinkRouteSocketPermission::NlmsgRead.into()),
+            RTM_GETNEIGH => Some(NetlinkRouteSocketPermission::NlmsgGetNeigh.into()),
+            RTM_GETROUTE | RTM_GETADDR | RTM_GETNEIGHTBL | RTM_GETQDISC | RTM_GETCHAIN
+            | RTM_GETNSID | RTM_GETRULE | RTM_GETTCLASS | RTM_GETTFILTER => {
+                Some(NetlinkRouteSocketPermission::NlmsgRead.into())
+            }
+            RTM_GETLINK => Some(NetlinkRouteSocketPermission::NlmsgReadPriv.into()),
             RTM_NEWROUTE | RTM_DELROUTE | RTM_NEWLINK | RTM_DELLINK | RTM_NEWADDR | RTM_DELADDR
             | RTM_DELCHAIN | RTM_DELLINKPROP | RTM_DELNEIGH | RTM_DELNSID | RTM_DELQDISC
             | RTM_DELRULE | RTM_DELTCLASS | RTM_DELTFILTER | RTM_NEWCHAIN | RTM_NEWLINKPROP

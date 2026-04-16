@@ -697,9 +697,27 @@
             ]
         },
         {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_ROUTE__RTM_GETLINK__0x5__netlink_socket_nlmsg_readpriv_t",
+            "audit_expectations": [
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
             "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_ROUTE__RTM_GETLINK__0x5__netlink_socket_no_nlmsg_t",
             "audit_expectations": [
-                "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "avc:  denied  { nlmsg_readpriv } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "avc:  denied  { audit_write } for capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_ROUTE__RTM_GETNEIGH__0x301__netlink_socket_nlmsg_getneigh_t",
+            "audit_expectations": [
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
@@ -718,7 +736,7 @@
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_ROUTE__RTM_GETNEIGH__0x301__netlink_socket_no_nlmsg_t",
             "audit_expectations": [
-                "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "avc:  denied  { nlmsg_getneigh } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
