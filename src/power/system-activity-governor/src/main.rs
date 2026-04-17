@@ -250,6 +250,7 @@ async fn main() -> Result<()> {
     let stuck_warning_timeout = config.suspend_resume_stuck_warning_timeout;
     let front_end_clone = front_end.clone();
     let inspector_clone = inspector.clone();
+    let max_active_wake_leases_to_log = config.max_active_wake_leases_to_log as usize;
     let sag_factory_fn = move |cpu_manager, execution_state_dependencies| {
         let front_end = front_end_clone.clone();
         let topology = topology2.clone();
@@ -274,6 +275,7 @@ async fn main() -> Result<()> {
                     MonotonicDuration::from_seconds(stuck_warning_timeout.into()),
                     boost_proxy,
                     use_suspender,
+                    max_active_wake_leases_to_log,
                 )
                 .await
         }

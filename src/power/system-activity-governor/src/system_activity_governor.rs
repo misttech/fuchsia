@@ -31,6 +31,7 @@ use futures::prelude::*;
 use futures::stream::StreamExt;
 use power_broker_client::PowerElementContext;
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use zx::HandleBased;
@@ -187,6 +188,34 @@ impl SuspendStatsUpdater for SuspendStatsManager {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum LeaseStatus {
+    Satisfied,
+    AwaitingSatisfaction,
+    FailedSatisfaction,
+}
+
+impl LeaseStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Satisfied => fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+            Self::AwaitingSatisfaction => fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION,
+            Self::FailedSatisfaction => fobs::WAKE_LEASE_ITEM_STATUS_FAILED_SATISFACTION,
+        }
+    }
+}
+
+/// Helper struct for LeaseManager.
+struct ActiveWakeLease {
+    name: String,
+    lease_type: &'static str,
+    is_long: bool,
+    client_token_koid: u64,
+    server_token_koid: u64,
+    status: RefCell<LeaseStatus>,
+    error: RefCell<Option<String>>,
+}
+
 /// Manager of leases that block execution state.
 ///
 /// Used to facilitate the `TakeWakeLease()` and `TakeApplicationActivityLease()`
@@ -198,8 +227,11 @@ impl SuspendStatsUpdater for SuspendStatsManager {
 /// An application activity lease requires Application Activity to be at least
 /// [`ApplicationActivityLevel::Active`].
 struct LeaseManager {
-    /// The inspect node for lease stats.
-    inspect_node: INode,
+    /// The inspect node for active wake leases.
+    _wake_leases_node: LazyNode,
+    /// The active wake leases, ordered by lease ID. Because lease IDs are assigned
+    /// sequentially, this is also ordered by lease creation time.
+    active_wake_leases: Rc<RefCell<BTreeMap<u64, Rc<ActiveWakeLease>>>>,
     /// Logger for system-wide activity governor events.
     sag_event_logger: SagEventLogger,
     /// Proxy to the power topology to create power elements.
@@ -225,7 +257,7 @@ struct LeaseManager {
 
 impl LeaseManager {
     pub fn new(
-        inspect_node: INode,
+        parent_node: &INode,
         sag_event_logger: SagEventLogger,
         topology: fbroker::TopologyProxy,
         execution_state_lessor: fbroker::LessorProxy,
@@ -234,10 +266,60 @@ impl LeaseManager {
         before_suspend_notifier: Rc<
             RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>,
         >,
+        max_wake_leases_to_log: usize,
         report_sender: futures::channel::mpsc::UnboundedSender<ffeedback::CrashReport>,
     ) -> Self {
+        let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
+        let active_wake_leases_clone = active_wake_leases.clone();
+
+        // The wake_leases node is created lazily so we don't have to keep it up to date every time
+        // a new lease is created or dropped.
+        let callback = move || {
+            let active_leases = active_wake_leases_clone.clone();
+            async move {
+                let inspector = Inspector::default();
+                let active = active_leases.borrow();
+                inspector.root().record_uint("active_count", active.len() as u64);
+
+                let oldest_active_node = inspector.root().create_child("oldest_active");
+                for (lease_id, lease) in active.iter().take(max_wake_leases_to_log) {
+                    let lease_node =
+                        oldest_active_node.create_child(lease.server_token_koid.to_string());
+
+                    NodeTimeExt::<zx::BootTimeline>::record_time(
+                        &lease_node,
+                        fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
+                    );
+                    lease_node.record_string(fobs::WAKE_LEASE_ITEM_NAME, lease.name.clone());
+                    lease_node.record_string(fobs::WAKE_LEASE_ITEM_TYPE, lease.lease_type);
+                    if lease.is_long {
+                        lease_node.record_bool("is_long_lease", true);
+                    }
+                    lease_node.record_uint(
+                        fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID,
+                        lease.client_token_koid,
+                    );
+                    lease_node.record_uint(fobs::WAKE_LEASE_ITEM_ID, *lease_id);
+                    lease_node.record_string(
+                        fobs::WAKE_LEASE_ITEM_STATUS,
+                        lease.status.borrow().as_str(),
+                    );
+                    if let Some(error) = lease.error.borrow().as_deref() {
+                        lease_node.record_string(fobs::WAKE_LEASE_ITEM_ERROR, error);
+                    }
+                    oldest_active_node.record(lease_node);
+                }
+                inspector.root().record(oldest_active_node);
+                Ok(inspector)
+            }
+            .boxed_local()
+        };
+        let wake_leases_node =
+            parent_node.create_lazy_child_with_thread_local(fobs::WAKE_LEASES_NODE, callback);
+
         Self {
-            inspect_node,
+            _wake_leases_node: wake_leases_node,
+            active_wake_leases,
             sag_event_logger,
             topology,
             execution_state_lessor,
@@ -302,23 +384,8 @@ impl LeaseManager {
         sag_event_logger.log(SagEvent::WakeLeaseSatisfied { name: name.clone(), id: lease_id });
 
         let token_info = server_token.basic_info()?;
-        let inspect_lease_node =
-            self.inspect_node.create_child(token_info.koid.raw_koid().to_string());
         let related_koid = token_info.related_koid.raw_koid();
 
-        inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name.clone());
-        inspect_lease_node.record_string(
-            fobs::WAKE_LEASE_ITEM_TYPE,
-            fobs::WAKE_LEASE_ITEM_TYPE_APPLICATION_ACTIVITY,
-        );
-        inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID, related_koid);
-        inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_ID, lease_id);
-        NodeTimeExt::<zx::BootTimeline>::record_time(
-            &inspect_lease_node,
-            fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
-        );
-        inspect_lease_node
-            .record_string(fobs::WAKE_LEASE_ITEM_STATUS, fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED);
         if let Some(detector) = &loop_detector {
             match detector.on_lease_taken() {
                 LeaseTakenAction::ShouldReport => {
@@ -341,6 +408,20 @@ impl LeaseManager {
         }
 
         let loop_detector = loop_detector.clone();
+
+        let active_lease = Rc::new(ActiveWakeLease {
+            name: name.clone(),
+            lease_type: fobs::WAKE_LEASE_ITEM_TYPE_APPLICATION_ACTIVITY,
+            is_long: false,
+            client_token_koid: related_koid,
+            server_token_koid: token_info.koid.raw_koid(),
+            status: RefCell::new(LeaseStatus::Satisfied),
+            error: RefCell::new(None),
+        });
+        self.active_wake_leases.borrow_mut().insert(lease_id, active_lease);
+
+        let active_wake_leases = self.active_wake_leases.clone();
+
         fasync::Task::local(async move {
             // Keep lease alive for as long as the client keeps it alive.
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
@@ -351,7 +432,7 @@ impl LeaseManager {
             }
 
             sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
-            drop(inspect_lease_node);
+            active_wake_leases.borrow_mut().remove(&lease_id);
         })
         .detach();
 
@@ -376,8 +457,8 @@ impl LeaseManager {
         };
 
         let execution_state_suspending_lease = self.execution_state_suspending_lease.clone();
-        let inspect_node = self.inspect_node.clone_weak();
         let before_suspend_notifier = self.before_suspend_notifier.clone();
+        let active_wake_leases = self.active_wake_leases.clone();
         let execution_state_lessor = self.execution_state_lessor.clone();
 
         log::debug!("Acquiring wake lease for '{}'", name);
@@ -387,26 +468,18 @@ impl LeaseManager {
 
         fasync::Task::local(async move {
             let token_info = server_token.basic_info().expect("zx_object_get_info failed");
-            let inspect_lease_node =
-                inspect_node.create_child(token_info.koid.raw_koid().to_string());
             let related_koid = token_info.related_koid.raw_koid();
 
-            NodeTimeExt::<zx::BootTimeline>::record_time(
-                &inspect_lease_node,
-                fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
-            );
-            inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_NAME, name.clone());
-            inspect_lease_node
-                .record_string(fobs::WAKE_LEASE_ITEM_TYPE, fobs::WAKE_LEASE_ITEM_TYPE_WAKE);
-            if is_long {
-                inspect_lease_node.record_bool("is_long_lease", true);
-            }
-            inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID, related_koid);
-            inspect_lease_node.record_uint(fobs::WAKE_LEASE_ITEM_ID, lease_id);
-            let lease_status_property = inspect_lease_node.create_string(
-                fobs::WAKE_LEASE_ITEM_STATUS,
-                fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION,
-            );
+            let active_lease = Rc::new(ActiveWakeLease {
+                name: name.clone(),
+                lease_type: fobs::WAKE_LEASE_ITEM_TYPE_WAKE,
+                is_long,
+                client_token_koid: related_koid,
+                server_token_koid: token_info.koid.raw_koid(),
+                status: RefCell::new(LeaseStatus::AwaitingSatisfaction),
+                error: RefCell::new(None),
+            });
+            active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
 
             // If a suspend transition is currently in progress, race the wake lease token's
             // close signal with the BeforeSuspend callbacks. If the wake lease token is dropped
@@ -438,6 +511,7 @@ impl LeaseManager {
                         "Wake lease '{}' dropped before BeforeSuspend completed, skipping power broker lease request",
                         &name);
                     sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
+                    active_wake_leases.borrow_mut().remove(&lease_id);
                     return;
                 }
             }
@@ -460,7 +534,7 @@ impl LeaseManager {
 
             match &lease.1 {
                 Ok(_) => {
-                    lease_status_property.set(fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED);
+                    *active_lease.status.borrow_mut() = LeaseStatus::Satisfied;
                     sag_event_logger
                         .log(SagEvent::WakeLeaseSatisfied { name: name.clone(), id: lease_id });
                 }
@@ -474,8 +548,8 @@ impl LeaseManager {
                         related_koid,
                         e
                     );
-                    lease_status_property.set(fobs::WAKE_LEASE_ITEM_STATUS_FAILED_SATISFACTION);
-                    inspect_lease_node.record_string(fobs::WAKE_LEASE_ITEM_ERROR, e.to_string());
+                    *active_lease.status.borrow_mut() = LeaseStatus::FailedSatisfaction;
+                    *active_lease.error.borrow_mut() = Some(e.to_string());
                     sag_event_logger.log(SagEvent::WakeLeaseSatisfactionFailed {
                         name: name.clone(),
                         id: lease_id,
@@ -491,8 +565,7 @@ impl LeaseManager {
 
             log::debug!("Dropping wake lease for '{}'", name);
             sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
-            drop(lease_status_property);
-            drop(inspect_lease_node);
+            active_wake_leases.borrow_mut().remove(&lease_id);
 
             // Drop `suspend_blocker` before `lease` to avoid to avoid the possibility (however
             // unlikely) that the lease drop leads to a suspend attempt before the suspend blocker
@@ -718,6 +791,7 @@ impl SystemActivityGovernor {
         stuck_warning_timeout: fasync::MonotonicDuration,
         boost_proxy: fcpumanager::BoostProxy,
         use_suspender: bool,
+        max_active_wake_leases_to_log: usize,
     ) -> Result<Rc<Self>> {
         let (report_sender, mut report_receiver) =
             futures::channel::mpsc::unbounded::<ffeedback::CrashReport>();
@@ -793,13 +867,14 @@ impl SystemActivityGovernor {
 
         let before_suspend_notifier = Rc::new(RefCell::new(None));
         let lease_manager = LeaseManager::new(
-            inspect_root.create_child(fobs::WAKE_LEASES_NODE),
+            &inspect_root,
             sag_event_logger.clone(),
             topology.clone(),
             execution_state.lessor.clone(),
             application_activity.assertive_dependency_token().expect("token not registered"),
             cpu_manager.suspend_block_manager().await,
             before_suspend_notifier.clone(),
+            max_active_wake_leases_to_log,
             report_sender.clone(),
         );
 

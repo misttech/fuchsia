@@ -280,11 +280,12 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                  },
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -404,11 +405,12 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 },
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -490,11 +492,12 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 },
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -561,11 +564,12 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
                  },
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -642,11 +646,12 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
                 },
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -713,11 +718,12 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                  },
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -794,11 +800,12 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                 },
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1021,11 +1028,12 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
             },
             "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1135,11 +1143,12 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
             },
             "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1206,11 +1215,12 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
                  },
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1262,11 +1272,12 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
                 }
             },
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -1558,14 +1569,16 @@ async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_h
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    var server_token_koid: {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    }
                 }
             },
         }
@@ -1577,11 +1590,12 @@ async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_h
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -1639,14 +1653,16 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_sus
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    var server_token_koid: {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    }
                 }
             },
         }
@@ -1658,11 +1674,12 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_sus
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -1722,14 +1739,16 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: application_activity_lease.koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    var server_token_koid: {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: application_activity_lease.koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    }
                 }
             },
             ref fobs::SUSPEND_EVENTS_NODE: {
@@ -1759,7 +1778,7 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
         }
     );
 
@@ -1804,6 +1823,7 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
     let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
     let mut root_assertion = TreeAssertion::new("root", false);
     let mut wake_leases_child = TreeAssertion::new("wake_leases", true);
+    let mut oldest_active_child = TreeAssertion::new("oldest_active", true);
     let mut wake_leases = Vec::new();
 
     for i in 0..1000u64 {
@@ -1814,26 +1834,30 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
             &wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
         let client_token_koid = &wake_lease.koid().unwrap().raw_koid();
 
-        let mut wake_lease_child = TreeAssertion::new(server_token_koid, false);
-        wake_lease_child.add_property_assertion(
-            fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
-            Arc::new(NonZeroUintProperty),
-        );
-        wake_lease_child.add_property_assertion(
-            fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID,
-            Arc::new(*client_token_koid),
-        );
-        wake_lease_child
-            .add_property_assertion(fobs::WAKE_LEASE_ITEM_NAME, Arc::new(wake_lease_name));
-        wake_lease_child.add_property_assertion(fobs::WAKE_LEASE_ITEM_ID, Arc::new(i));
-        wake_lease_child
-            .add_property_assertion(fobs::WAKE_LEASE_ITEM_TYPE, Arc::new(AnyStringProperty));
-        wake_lease_child
-            .add_property_assertion(fobs::WAKE_LEASE_ITEM_STATUS, Arc::new(AnyStringProperty));
-        wake_leases_child.add_child_assertion(wake_lease_child);
+        if i < 10 {
+            let mut wake_lease_child = TreeAssertion::new(server_token_koid, false);
+            wake_lease_child.add_property_assertion(
+                fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
+                Arc::new(NonZeroUintProperty),
+            );
+            wake_lease_child.add_property_assertion(
+                fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID,
+                Arc::new(*client_token_koid),
+            );
+            wake_lease_child
+                .add_property_assertion(fobs::WAKE_LEASE_ITEM_NAME, Arc::new(wake_lease_name));
+            wake_lease_child.add_property_assertion(fobs::WAKE_LEASE_ITEM_ID, Arc::new(i));
+            wake_lease_child
+                .add_property_assertion(fobs::WAKE_LEASE_ITEM_TYPE, Arc::new(AnyStringProperty));
+            wake_lease_child
+                .add_property_assertion(fobs::WAKE_LEASE_ITEM_STATUS, Arc::new(AnyStringProperty));
+            oldest_active_child.add_child_assertion(wake_lease_child);
+        }
 
         wake_leases.push(wake_lease);
     }
+    wake_leases_child.add_child_assertion(oldest_active_child);
+    wake_leases_child.add_property_assertion("active_count", Arc::new(1000u64));
     root_assertion.add_child_assertion(wake_leases_child);
 
     let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
@@ -1848,11 +1872,12 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -1869,6 +1894,7 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
     let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
     let mut root_assertion = TreeAssertion::new("root", false);
     let mut wake_leases_child = TreeAssertion::new("wake_leases", true);
+    let mut oldest_active_child = TreeAssertion::new("oldest_active", true);
     let mut wake_leases = Vec::new();
 
     for i in 0..1000u64 {
@@ -1879,26 +1905,29 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
             &wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
         let client_token_koid = &wake_lease.koid().unwrap().raw_koid();
 
-        let mut wake_lease_child = TreeAssertion::new(server_token_koid, false);
-        wake_lease_child.add_property_assertion(
-            fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
-            Arc::new(NonZeroUintProperty),
-        );
-        wake_lease_child.add_property_assertion(
-            fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID,
-            Arc::new(*client_token_koid),
-        );
-        wake_lease_child
-            .add_property_assertion(fobs::WAKE_LEASE_ITEM_NAME, Arc::new(wake_lease_name));
-        wake_lease_child.add_property_assertion(fobs::WAKE_LEASE_ITEM_ID, Arc::new(i));
-        wake_lease_child
-            .add_property_assertion(fobs::WAKE_LEASE_ITEM_TYPE, Arc::new(AnyStringProperty));
-        wake_lease_child
-            .add_property_assertion(fobs::WAKE_LEASE_ITEM_STATUS, Arc::new(AnyStringProperty));
-        wake_leases_child.add_child_assertion(wake_lease_child);
-
+        if i < 10 {
+            let mut wake_lease_child = TreeAssertion::new(server_token_koid, false);
+            wake_lease_child.add_property_assertion(
+                fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT,
+                Arc::new(NonZeroUintProperty),
+            );
+            wake_lease_child.add_property_assertion(
+                fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID,
+                Arc::new(*client_token_koid),
+            );
+            wake_lease_child
+                .add_property_assertion(fobs::WAKE_LEASE_ITEM_NAME, Arc::new(wake_lease_name));
+            wake_lease_child.add_property_assertion(fobs::WAKE_LEASE_ITEM_ID, Arc::new(i));
+            wake_lease_child
+                .add_property_assertion(fobs::WAKE_LEASE_ITEM_TYPE, Arc::new(AnyStringProperty));
+            wake_lease_child
+                .add_property_assertion(fobs::WAKE_LEASE_ITEM_STATUS, Arc::new(AnyStringProperty));
+            oldest_active_child.add_child_assertion(wake_lease_child);
+        }
         wake_leases.push(wake_lease);
     }
+    wake_leases_child.add_child_assertion(oldest_active_child);
+    wake_leases_child.add_property_assertion("active_count", Arc::new(1000u64));
     root_assertion.add_child_assertion(wake_leases_child);
 
     let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
@@ -1913,11 +1942,12 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -2338,6 +2368,7 @@ async fn test_acquire_wake_lease_blocks_during_suspend() -> Result<()> {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -2397,6 +2428,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -2413,11 +2445,13 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                     power_level: 1u64,
                 },
             },
-            ref fobs::WAKE_LEASES_NODE: {
-                var last_token_koid: contains {
-                    ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease0",
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                },
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    var last_token_koid: contains {
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease0",
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                    },
+                }
             },
             ref fobs::SUSPEND_EVENTS_NODE: contains {
                 // Events 4-6 cover the creation and satisfaction of the two
@@ -2433,6 +2467,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -2448,7 +2483,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                     power_level: 0u64,
                 },
             },
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             ref fobs::SUSPEND_EVENTS_NODE: contains {
                 "8": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
@@ -2476,6 +2511,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -2510,13 +2546,15 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {
-                var koid_0: contains {
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
-                },
-                var koid_1: contains {
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
-                },
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    var koid_0: contains {
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    },
+                    var koid_1: contains {
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    },
+                }
             }
         }
     );
@@ -2555,6 +2593,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -2571,11 +2610,13 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                     power_level: 1u64,
                 },
             },
-            ref fobs::WAKE_LEASES_NODE: {
-                var last_token_koid: contains {
-                    ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease1",
-                    ref fobs::WAKE_LEASE_ITEM_ID: 1u64,
-                },
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    var last_token_koid: contains {
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "wake_lease1",
+                        ref fobs::WAKE_LEASE_ITEM_ID: 1u64,
+                    },
+                }
             },
             ref fobs::SUSPEND_EVENTS_NODE: contains {
                 "7": {
@@ -2589,6 +2630,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -2604,7 +2646,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                     power_level: 0u64,
                 },
             },
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             ref fobs::SUSPEND_EVENTS_NODE: contains {
                 "8": {
                     ref fobs::WAKE_LEASE_DROPPED_AT: AnyProperty,
@@ -2632,6 +2674,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -3216,11 +3259,12 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
             },
             "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -3313,11 +3357,12 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
             },
             "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
@@ -3722,17 +3767,19 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: contains {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    var server_token_koid: contains {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
                     "is_long_lease": true,
                 }
-            },
+            }
+        },
         }
     );
 
@@ -3742,11 +3789,12 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
                 suspend_resume_stuck_warning_timeout: 60u64,
+                max_active_wake_leases_to_log: 10u64,
             },
         }
     );
@@ -3818,10 +3866,13 @@ async fn test_acquire_and_drop_wake_lease_during_before_suspend() -> Result<()> 
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: contains {
-                    ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION,
+            ref fobs::WAKE_LEASES_NODE: contains {
+                active_count: 1u64,
+                oldest_active: contains {
+                    var server_token_koid: contains {
+                        ref fobs::WAKE_LEASE_ITEM_NAME: wake_lease_name,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_AWAITING_SATISFACTION,
+                    }
                 }
             },
         }
@@ -3834,7 +3885,9 @@ async fn test_acquire_and_drop_wake_lease_during_before_suspend() -> Result<()> 
     block_until_inspect_matches!(
         activity_governor_moniker,
         root: contains {
-            ref fobs::WAKE_LEASES_NODE: {},
+            ref fobs::WAKE_LEASES_NODE: contains {
+                active_count: 0u64,
+            },
         }
     );
 
@@ -3989,13 +4042,16 @@ async fn test_activity_governor_wake_leases_before_and_after_sag_creation() -> R
         activity_governor_moniker,
         root: contains {
             ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.as_ref().unwrap().koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: "early_lease",
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                active_count: 1u64,
+                oldest_active: {
+                    var server_token_koid: {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.as_ref().unwrap().koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "early_lease",
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    }
                 }
             },
         }
@@ -4011,21 +4067,24 @@ async fn test_activity_governor_wake_leases_before_and_after_sag_creation() -> R
         activity_governor_moniker,
         root: contains {
             ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.as_ref().unwrap().koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: "early_lease",
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
-                },
-                var server_token_koid2: {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease2.as_ref().unwrap().koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: "late_lease",
-                    ref fobs::WAKE_LEASE_ITEM_ID: 1u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                active_count: 2u64,
+                oldest_active: {
+                    var server_token_koid: {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.as_ref().unwrap().koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "early_lease",
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    },
+                    var server_token_koid2: {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease2.as_ref().unwrap().koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "late_lease",
+                        ref fobs::WAKE_LEASE_ITEM_ID: 1u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    }
                 }
             },
         }
@@ -4073,15 +4132,18 @@ async fn test_activity_governor_application_activity_lease_before_sag_creation()
         activity_governor_moniker,
         root: contains {
             ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: app_lease.koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: "early_app_lease",
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                active_count: 1u64,
+                oldest_active: {
+                    var server_token_koid: {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: app_lease.koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "early_app_lease",
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    }
                 }
-            },
+            }
         }
     );
 
@@ -4134,15 +4196,18 @@ async fn test_activity_governor_early_lease_dropped_before_dependency_registrati
         activity_governor_moniker,
         root: contains {
             ref fobs::WAKE_LEASES_NODE: {
-                var server_token_koid: {
-                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
-                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease1.koid().unwrap().raw_koid(),
-                    ref fobs::WAKE_LEASE_ITEM_NAME: "lease_retained",
-                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
-                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
-                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                active_count: 1u64,
+                oldest_active: {
+                    var server_token_koid: {
+                        ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                        ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease1.koid().unwrap().raw_koid(),
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "lease_retained",
+                        ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                        ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                        ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                    }
                 }
-            },
+            }
         }
     );
 
@@ -4215,8 +4280,11 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
             _activity_governor_moniker,
             root: contains {
                 ref fobs::WAKE_LEASES_NODE: {
-                    var prevent_suspend_koid_str: contains {
-                        ref fobs::WAKE_LEASE_ITEM_NAME: "prevent-suspend",
+                    active_count: 1u64,
+                    oldest_active: {
+                        var prevent_suspend_koid_str: contains {
+                            ref fobs::WAKE_LEASE_ITEM_NAME: "prevent-suspend",
+                        }
                     }
                 },
             }
@@ -4236,5 +4304,145 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
     assert_eq!(num_filed, 1);
 
     drop(wake_lease);
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_limits_wake_leases_node() -> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+
+    let element_info_provider = realm
+        .connect_to_service_instance::<fbroker::ElementInfoProviderServiceMarker>(
+            &"system_activity_governor",
+        )
+        .await
+        .expect("failed to connect to service ElementInfoProviderService")
+        .connect_to_status_provider()
+        .expect("failed to connect to protocol ElementInfoProvider");
+
+    let status_endpoints: HashMap<String, fbroker::StatusProxy> = element_info_provider
+        .get_status_endpoints()
+        .await?
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.identifier.unwrap(), s.status.unwrap().into_proxy()))
+        .collect();
+
+    let es_status = status_endpoints.get("execution_state").unwrap();
+    assert_eq!(es_status.watch_power_level().await?.unwrap(), 2);
+
+    let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
+    let max_leases_to_log = inspect
+        .get_property_by_path(&["config", "max_active_wake_leases_to_log"])
+        .unwrap()
+        .uint()
+        .unwrap() as usize;
+
+    let mut leases = Vec::new();
+    for i in 0..max_leases_to_log + 5 {
+        let wake_lease = activity_governor
+            .acquire_wake_lease(&format!("wake_lease_{i}"))
+            .await
+            .unwrap()
+            .unwrap();
+        leases.push(wake_lease);
+    }
+
+    // Trigger "boot complete" signal.
+    {
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        let () =
+            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+
+    // Block until the final retained wake lease (lease 9) is fully populated in Inspect.
+    let last_logged_koid =
+        &leases[max_leases_to_log - 1].basic_info().unwrap().related_koid.raw_koid().to_string();
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: contains {
+                oldest_active: contains {
+                    var last_logged_koid: contains {
+                        ref fobs::WAKE_LEASE_ITEM_NAME: format!("wake_lease_{}", max_leases_to_log - 1),
+                    }
+                }
+            }
+        }
+    );
+
+    // Verify that the 10 oldest leases are in the WAKE_LEASES_NODE Inspect property.
+    let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
+    let mut root_assertion = TreeAssertion::new("root", false);
+    let mut wake_leases_child = TreeAssertion::new("wake_leases", true);
+    let mut oldest_active_child = TreeAssertion::new("oldest_active", true);
+
+    for i in 0..max_leases_to_log {
+        let server_token_koid =
+            &leases[i].basic_info().unwrap().related_koid.raw_koid().to_string();
+        let mut wake_lease_child = TreeAssertion::new(server_token_koid, false);
+        wake_lease_child.add_property_assertion(
+            fobs::WAKE_LEASE_ITEM_NAME,
+            Arc::new(format!("wake_lease_{i}")),
+        );
+        oldest_active_child.add_child_assertion(wake_lease_child);
+    }
+    wake_leases_child.add_child_assertion(oldest_active_child);
+    wake_leases_child.add_property_assertion("active_count", Arc::new(15u64));
+    root_assertion.add_child_assertion(wake_leases_child);
+
+    root_assertion
+        .run(&inspect)
+        .expect("WAKE_LEASES_NODE should contain exactly the 10 oldest wake leases");
+
+    for i in 0..5 {
+        let next_lease_idx = max_leases_to_log + i;
+        let _ = leases.remove(0);
+
+        let expected_active_count = (max_leases_to_log + 5 - i - 1) as u64;
+        block_until_inspect_matches!(
+            activity_governor_moniker,
+            root: contains {
+                ref fobs::WAKE_LEASES_NODE: contains {
+                    active_count: expected_active_count,
+                }
+            }
+        );
+
+        let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
+        let mut root_assertion = TreeAssertion::new("root", false);
+        let mut wake_leases_child = TreeAssertion::new("wake_leases", true);
+        let mut oldest_active_child = TreeAssertion::new("oldest_active", true);
+
+        for i in 0..max_leases_to_log {
+            let server_token_koid =
+                &leases[i].basic_info().unwrap().related_koid.raw_koid().to_string();
+            let name_idx = next_lease_idx - (max_leases_to_log - 1) + i;
+            let mut wake_lease_child = TreeAssertion::new(server_token_koid, false);
+            wake_lease_child.add_property_assertion(
+                fobs::WAKE_LEASE_ITEM_NAME,
+                Arc::new(format!("wake_lease_{name_idx}")),
+            );
+            oldest_active_child.add_child_assertion(wake_lease_child);
+        }
+        wake_leases_child.add_child_assertion(oldest_active_child);
+        wake_leases_child.add_property_assertion(
+            "active_count",
+            Arc::new((max_leases_to_log + 5 - i - 1) as u64),
+        );
+        root_assertion.add_child_assertion(wake_leases_child);
+
+        root_assertion.run(&inspect).unwrap_or_else(|_| {
+            panic!(
+                "WAKE_LEASES_NODE should contain exactly the {} oldest wake leases",
+                max_leases_to_log
+            )
+        });
+    }
+
     Ok(())
 }
