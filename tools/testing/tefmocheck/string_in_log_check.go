@@ -619,6 +619,10 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			&stringInLogCheck{String: "DRIVER OOPS", Type: lt, AttributeToTest: true, ExceptBlocks: oopsExceptBlocks},
 			&stringInLogCheck{String: "lockup_detector: no heartbeat from", Type: lt, AttributeToTest: true, ExceptBlocks: oopsExceptBlocks},
 			&stringInLogCheck{String: "ZIRCON KERNEL OOPS", Type: lt, AttributeToTest: true, ExceptBlocks: oopsExceptBlocks},
+			// TODO(https://fxbug.dev/448121736): Remove once cause of panic is resolved.
+			// LINT.IfChange(scheduler_start_finish_time)
+			&stringInLogCheck{String: "state->start_time() < state->finish_time()", Type: lt, AttributeToTest: true},
+			// LINT.ThenChange(//zircon/kernel/kernel/scheduler.cc:scheduler_start_finish_time)
 			&stringInLogCheck{String: "ZIRCON KERNEL PANIC", AttributeToTest: true, Type: lt, ExceptBlocks: []*logBlock{
 				// These tests intentionally trigger kernel panics.
 				{startString: "RUN   TestBasicCrash", endString: "PASS: TestBasicCrash"},

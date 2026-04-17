@@ -2570,6 +2570,7 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
   SchedulerState* const state = &thread->scheduler_state();
   // Check the consistency of the start and finish times before adding the
   // thread to the run queue.
+  // LINT.IfChange(scheduler_start_finish_time)
   DEBUG_ASSERT_MSG(
       state->start_time() < state->finish_time(),
       "now=%" PRId64 " start=%" PRId64 " finish=%" PRId64 " remaining_time_slice=%" PRId64
@@ -2579,6 +2580,7 @@ void Scheduler::QueueThread(Thread* thread, Placement placement, SchedTime now,
       fair_affine_transform_.monotonic_reference_time().raw_value(),
       fair_affine_transform_.variable_reference_time().raw_value(),
       Format(fair_affine_transform_.slope()).c_str());
+  // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:scheduler_start_finish_time)
 
   // Only update the enqueue time and emit a flow event if this is an insertion,
   // preemption, or migration. In contrast, an adjustment only changes the queue
