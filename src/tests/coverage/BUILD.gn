@@ -271,6 +271,8 @@ if (is_host) {
       ":clang_coverage_test_bin($host_toolchain)",
       ":clang_coverage_test_deps($host_toolchain)",
       ":clang_coverage_test_deps_on_host($host_toolchain)",
+      "//src/developer/ffx:test_data($host_toolchain)",
+      "//src/developer/ffx/plugins/coverage:ffx_coverage_tool_test_data($host_toolchain)",
     ]
 
     args = [
@@ -285,6 +287,8 @@ if (is_host) {
       rebase_path("$clang_prefix/llvm-cov", root_build_dir),
       "--llvm-profdata",
       rebase_path("$clang_prefix/llvm-profdata", root_build_dir),
+      "--ffx",
+      rebase_path("$host_tools_dir/ffx", root_build_dir),
     ]
   }
 }
@@ -295,6 +299,7 @@ go_test("clang_coverage_tests_on_target") {
     ":clang_coverage_test_deps($host_toolchain)",
     ":clang_coverage_test_deps_on_target($host_toolchain)",
     "//src/developer/ffx:test_data($host_toolchain)",
+    "//src/developer/ffx/plugins/coverage:ffx_coverage_tool_test_data($host_toolchain)",
     "//src/developer/ffx/plugins/test:ffx_test_tool_test_data($host_toolchain)",
   ]
   package_deps = [ ":clang_coverage_test_package_on_target" ]
@@ -330,6 +335,8 @@ if (is_host) {
       ":rust_coverage_test_deps($host_toolchain)",
       ":rust_coverage_test_deps_on_host($host_toolchain)",
       "//build/rust:prebuilt_toolchain_host_test_data($host_toolchain)",
+      "//src/developer/ffx:test_data($host_toolchain)",
+      "//src/developer/ffx/plugins/coverage:ffx_coverage_tool_test_data($host_toolchain)",
     ]
 
     args = [
@@ -344,6 +351,8 @@ if (is_host) {
       rebase_path("$clang_prefix/llvm-cov", root_build_dir),
       "--llvm-profdata",
       "$out_rustc_prefix/bin/llvm-profdata",
+      "--ffx",
+      rebase_path("$host_tools_dir/ffx", root_build_dir),
     ]
   }
 }
@@ -355,6 +364,7 @@ go_test("rust_coverage_tests_on_target") {
     ":rust_coverage_test_deps_on_target($host_toolchain)",
     "//build/rust:prebuilt_toolchain_host_test_data($host_toolchain)",
     "//src/developer/ffx:test_data($host_toolchain)",
+    "//src/developer/ffx/plugins/coverage:ffx_coverage_tool_test_data($host_toolchain)",
     "//src/developer/ffx/plugins/test:ffx_test_tool_test_data($host_toolchain)",
   ]
   package_deps = [ ":rust_coverage_test_package_on_target" ]

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -148,6 +149,87 @@ func TestCoverage(t *testing.T) {
 		var generatedCoverage llvm.Export
 		if err := json.Unmarshal(generatedCoverageJson, &generatedCoverage); err != nil {
 			t.Fatalf("cannot unmarshal covargs output: %s", err)
+		}
+
+		if len(goldenCoverageExport.Data) != 1 || len(generatedCoverage.Data) != 1 {
+			t.Fatalf("unexpected data length")
+		}
+
+		diff := cmp.Diff(goldenCoverageExport.Data[0].Totals, generatedCoverage.Data[0].Totals)
+		if diff != "" {
+			t.Fatalf("unexpected coverage summary (-golden +generated): %s", diff)
+		}
+	})
+
+	// Subtest 3: Verify coverage using ffx coverage.
+	t.Run("FfxCoverage", func(t *testing.T) {
+		outputJson := filepath.Join(testOutDir, "ffx_coverage.json")
+		// ffx coverage expects a standard Clang installation structure where
+		// tools are in a 'bin' subdirectory. Since host_test_data flattens
+		// or places files directly, we create a mock Clang dir with a 'bin'
+		// subdirectory and link the required tools.
+		mockClangDir := t.TempDir()
+		mockBinDir := filepath.Join(mockClangDir, "bin")
+		if err := os.Mkdir(mockBinDir, 0755); err != nil {
+			t.Fatalf("failed to create mock bin dir: %s", err)
+		}
+
+		absLlvmCov, err := filepath.Abs(*llvmCov)
+		if err != nil {
+			t.Fatalf("failed to get absolute path for llvm-cov: %s", err)
+		}
+		absLlvmProfdata, err := filepath.Abs(*llvmProfData)
+		if err != nil {
+			t.Fatalf("failed to get absolute path for llvm-profdata: %s", err)
+		}
+
+		if err := os.Symlink(absLlvmCov, filepath.Join(mockBinDir, "llvm-cov")); err != nil {
+			t.Fatalf("failed to link llvm-cov: %s", err)
+		}
+		if err := os.Symlink(absLlvmProfdata, filepath.Join(mockBinDir, "llvm-profdata")); err != nil {
+			t.Fatalf("failed to link llvm-profdata: %s", err)
+		}
+		buildIdDir := filepath.Join(testOutDir, ".build-id")
+
+		// Ensure buildIdDir exists and has the binary (same as Covargs test)
+		debugFile := filepath.Join(buildIdDir, embeddedBuildId[:2], embeddedBuildId[2:]+".debug")
+		if _, err := os.Stat(debugFile); os.IsNotExist(err) {
+			if err := osmisc.CopyFile(*coverageTestBinary, debugFile); err != nil {
+				t.Fatalf("failed to create a debug file: %s", err)
+			}
+		}
+
+		// Create a mock symbol index JSON
+		symbolIndexFile := filepath.Join(testOutDir, "mock_symbol_index.json")
+		symbolIndexContent := fmt.Sprintf(`{"build_id_dirs": [{"path": "%s"}]}`, buildIdDir)
+		if err := os.WriteFile(symbolIndexFile, []byte(symbolIndexContent), 0644); err != nil {
+			t.Fatalf("failed to write mock symbol index: %s", err)
+		}
+
+		ffxDir := filepath.Dir(*ffxPath)
+		ffxCoveragePath := filepath.Join(ffxDir, "ffx-coverage")
+
+		args := []string{
+			"coverage",
+			"--test-output-dir", testOutDir,
+			"--clang-dir", mockClangDir,
+			"--export-json", outputJson,
+			"--symbol-index-json", symbolIndexFile,
+		}
+
+		coverageCmd := exec.Command(ffxCoveragePath, args...)
+		if output, err := coverageCmd.CombinedOutput(); err != nil {
+			t.Fatalf("ffx coverage failed: %s (error: %v)", string(output), err)
+		}
+
+		generatedCoverageJson, err := os.ReadFile(outputJson)
+		if err != nil {
+			t.Fatalf("cannot read ffx_coverage.json: %s", err)
+		}
+
+		var generatedCoverage llvm.Export
+		if err := json.Unmarshal(generatedCoverageJson, &generatedCoverage); err != nil {
+			t.Fatalf("cannot unmarshal ffx coverage output: %s", err)
 		}
 
 		if len(goldenCoverageExport.Data) != 1 || len(generatedCoverage.Data) != 1 {
