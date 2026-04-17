@@ -41,6 +41,7 @@ use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
 use wlan_metrics_registry as metrics;
+use wlan_telemetry::ThrottledErrorLogger;
 
 // Include a timeout on stats calls so that if the driver deadlocks, telemtry doesn't get stuck.
 const GET_IFACE_STATS_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
@@ -4430,51 +4431,6 @@ impl StatsLogger {
             1,
             &[dimension.as_event_code()],
         ))
-    }
-}
-
-// If metrics cannot be reported for extended periods of time, logging new metrics will fail and
-// the error messages tend to clutter up the logs.  This container limits the rate at which such
-// potentially noisy logs are reported.  Duplicate error messages are aggregated periodically
-// reported.
-struct ThrottledErrorLogger {
-    time_of_last_log: fasync::MonotonicInstant,
-    suppressed_errors: HashMap<String, usize>,
-    minutes_between_reports: i64,
-}
-
-impl ThrottledErrorLogger {
-    fn new(minutes_between_reports: i64) -> Self {
-        Self {
-            time_of_last_log: fasync::MonotonicInstant::from_nanos(0),
-            suppressed_errors: HashMap::new(),
-            minutes_between_reports,
-        }
-    }
-
-    fn throttle_error(&mut self, result: Result<(), Error>) {
-        if let Err(e) = result {
-            // If sufficient time has passed since the last time a cobalt error was logged, report
-            // the number of cobalt errors that have been encountered.
-            let curr_time = fasync::MonotonicInstant::now();
-            let time_since_last_log = curr_time - self.time_of_last_log;
-            if time_since_last_log.into_minutes() > self.minutes_between_reports {
-                warn!("{}", e);
-                if !self.suppressed_errors.is_empty() {
-                    for (log, count) in self.suppressed_errors.iter() {
-                        warn!("Suppressed {} instances: {}", count, log);
-                    }
-                    self.suppressed_errors.clear();
-                }
-                self.time_of_last_log = curr_time;
-            } else {
-                // If not enough time has passed since the last warning log, just update the record
-                // of cobalt errors so that they can be reported later.
-                let error_string = e.to_string();
-                let count = self.suppressed_errors.entry(error_string).or_default();
-                *count += 1;
-            }
-        }
     }
 }
 

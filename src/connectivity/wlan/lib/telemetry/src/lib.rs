@@ -73,6 +73,51 @@ pub enum TelemetryEvent {
     },
 }
 
+/// If metrics cannot be reported for extended periods of time, logging new metrics will fail and
+/// the error messages tend to clutter up the logs.  This container limits the rate at which such
+/// potentially noisy logs are reported.  Duplicate error messages are aggregated periodically
+/// reported.
+pub struct ThrottledErrorLogger {
+    time_of_last_log: fasync::MonotonicInstant,
+    pub suppressed_errors: std::collections::HashMap<String, usize>,
+    minutes_between_reports: i64,
+}
+
+impl ThrottledErrorLogger {
+    pub fn new(minutes_between_reports: i64) -> Self {
+        Self {
+            time_of_last_log: fasync::MonotonicInstant::from_nanos(0),
+            suppressed_errors: std::collections::HashMap::new(),
+            minutes_between_reports,
+        }
+    }
+
+    pub fn throttle_log(&mut self, error: String) {
+        let curr_time = fasync::MonotonicInstant::now();
+        let time_since_last_log = curr_time - self.time_of_last_log;
+
+        if time_since_last_log.into_minutes() > self.minutes_between_reports {
+            error!("{}", error);
+            if !self.suppressed_errors.is_empty() {
+                for (log, count) in self.suppressed_errors.iter() {
+                    log::warn!("Suppressed {} instances: {}", count, log);
+                }
+                self.suppressed_errors.clear();
+            }
+            self.time_of_last_log = curr_time;
+        } else {
+            let count = self.suppressed_errors.entry(error).or_default();
+            *count += 1;
+        }
+    }
+
+    pub fn throttle_error(&mut self, result: Result<(), Error>) {
+        if let Err(e) = result {
+            self.throttle_log(e.to_string());
+        }
+    }
+}
+
 /// Attempts to connect to the Cobalt service.
 pub async fn setup_cobalt_proxy()
 -> Result<fidl_fuchsia_metrics::MetricEventLoggerProxy, anyhow::Error> {
