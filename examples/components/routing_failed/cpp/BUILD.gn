@@ -9,12 +9,12 @@ executable("bin") {
   sources = [ "main.cc" ]
 
   deps = [
-    "//examples/components/routing/fidl:echo_hlcpp",
+    "//examples/components/routing/fidl:echo_cpp",
     "//sdk/lib/async",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/sys/cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/cpp",
   ]
 }
