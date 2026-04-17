@@ -93,21 +93,6 @@ pub enum ParentType {
     Optional,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum BindParserWarning {
-    DeprecatedNodeKeyword,
-}
-
-impl fmt::Display for BindParserWarning {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BindParserWarning::DeprecatedNodeKeyword => {
-                write!(f, "The 'node' keyword is deprecated. Use 'parent' instead.")
-            }
-        }
-    }
-}
-
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum BindParserError {
     Type(String),
