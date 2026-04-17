@@ -310,10 +310,12 @@ pub async fn open_with_timeout_at<T: ProtocolMarker>(
     let connect_capability_fut = async move {
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
         let (proxy, server) = rcs_proxy.domain().create_proxy::<T>();
-        rcs_proxy
+        log::info!("RCS: Connecting to capability '{}' at moniker '{}'", capability_name, moniker);
+        let res = rcs_proxy
             .connect_capability(moniker, capability_set, capability_name, server.into_channel())
-            .await
-            .map(|result| result.map(|_| proxy))
+            .await;
+        log::info!("RCS: ConnectCapability response received for '{}'", capability_name);
+        res.map(|result| result.map(|_| proxy))
     };
     if let Ok(result) = timeout::timeout(dur, connect_capability_fut).await {
         let fidl_result = result.map_err(|e| anyhow::anyhow!(e))?;
