@@ -1,0 +1,16 @@
+{
+    "policy_exceptions": {
+        "AllProjectsMustHaveALicense": [
+            {
+                "bug": "TODO: b/missing",
+                "description": "Migrated from legacy _config.json",
+                "paths": [
+                    "build/secondary/third_party/android/platform/system/core/demangle",
+                    "third_party/android/platform/packages/modules/Bluetooth",
+                    "third_party/android/platform/system",
+                    "third_party/android/platform/system/core/debuggerd"
+                ]
+            }
+        ]
+    }
+}

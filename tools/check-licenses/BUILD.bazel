@@ -23,7 +23,9 @@ install_host_tools(
 
 go_library(
     name = "v2_pipeline",
-    srcs = ["v2/pipeline/interfaces.go"],
+    srcs = [
+        "v2/pipeline/interfaces.go",
+    ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
@@ -31,7 +33,9 @@ go_library(
 
 go_library(
     name = "v2_stages_discover",
-    srcs = ["v2/stages/discover/discover.go"],
+    srcs = [
+        "v2/stages/discover/discover.go",
+    ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
@@ -40,9 +44,42 @@ go_library(
     ],
 )
 
+go_library(
+    name = "v2_config",
+    srcs = [
+        "v2/config/builder.go",
+        "v2/config/types.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+)
+
+go_test(
+    name = "v2_config_test",
+    srcs = [
+        "v2/config/builder_test.go",
+    ],
+    embed = [":v2_config"],
+    target_compatible_with = HOST_CONSTRAINTS,
+)
+
+go_test(
+    name = "v2_stages_discover_test",
+    srcs = [
+        "v2/stages/discover/discover_test.go",
+    ],
+    embed = [":v2_stages_discover"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        "//tools/check-licenses/metrics",
+    ],
+)
+
 test_suite(
     name = "tests",
     tests = [
+        ":v2_config_test",
         ":v2_stages_discover_test",
         "//tools/check-licenses/cmd:cmd_test",
         "//tools/check-licenses/directory:directory_test",
@@ -53,11 +90,4 @@ test_suite(
         "//tools/check-licenses/result:result_test",
         "//tools/check-licenses/util:util_test",
     ],
-)
-
-go_test(
-    name = "v2_stages_discover_test",
-    srcs = ["v2/stages/discover/discover_test.go"],
-    embed = [":v2_stages_discover"],
-    target_compatible_with = HOST_CONSTRAINTS,
 )

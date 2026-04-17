@@ -1,0 +1,14 @@
+{
+    "barriers": [
+        {
+            "paths": [
+                "prebuilt",
+                "third_party",
+                "thirdparty",
+                "vendor",
+                "third_party/pylibs"
+            ],
+            "description": "The GN build system will likely not be able to accurately\n\nanalyze dependencies in these lower level 3P directories.\n\nTo simplify license collection, collect all license files under\n\nthe closest parent project."
+        }
+    ]
+}

@@ -1,0 +1,50 @@
+{
+    "skips": [
+        {
+            "paths": [
+                "__pycache__"
+            ],
+            "skipAnywhere": true,
+            "description": "These contain compiled python files which are unreadable by check-licenses."
+        },
+        {
+            "paths": [
+                "testdata"
+            ],
+            "skipAnywhere": true,
+            "description": "Skip testdata directories."
+        },
+        {
+            "paths": [
+                ".clang-format",
+                ".cache",
+                ".git",
+                ".build_id",
+                ".versions",
+                ".github",
+                ".gradle",
+                ".idea",
+                ".vscode",
+                ".hidden",
+                ".circleci",
+                ".cargo",
+                ".clang-tidy",
+                ".fx-build-dir",
+                ".fx-metrics-config",
+                ".fx-ssh-path",
+                ".git-blame-ignore-revs",
+                ".gitattributes",
+                ".cipd",
+                ".gn",
+                ".fx",
+                ".gitignore",
+                ".ignore",
+                ".jiri_root",
+                ".jiri_manifest",
+                ".ssh"
+            ],
+            "skipAnywhere": true,
+            "description": "Skip these hidden directories that host infrastructure files."
+        }
+    ]
+}

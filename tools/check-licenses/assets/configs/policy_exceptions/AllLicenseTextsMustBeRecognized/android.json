@@ -1,0 +1,14 @@
+{
+    "policy_exceptions": {
+        "AllLicenseTextsMustBeRecognized": [
+            {
+                "bug": "TODO: b/missing",
+                "description": "Migrated from legacy _config.json",
+                "paths": [
+                    "third_party/android/device/generic/vulkan-cereal/third-party/stb/include/stb/LICENSE",
+                    "third_party/android/platform/external/aac/NOTICE"
+                ]
+            }
+        ]
+    }
+}

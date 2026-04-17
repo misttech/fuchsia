@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
 go_library(
@@ -17,6 +17,9 @@ go_library(
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
         "//third_party/golibs:github.com/google/subcommands",
+        "//tools/check-licenses:v2_config",
+        "//tools/check-licenses:v2_pipeline",
+        "//tools/check-licenses:v2_stages_discover",
         "//tools/check-licenses/directory",
         "//tools/check-licenses/file",
         "//tools/check-licenses/metrics",
@@ -30,7 +33,9 @@ go_library(
 
 go_test(
     name = "cmd_test",
-    srcs = ["config_test.go"],
+    srcs = [
+        "config_test.go",
+    ],
     embed = [":main"],
     target_compatible_with = HOST_CONSTRAINTS,
 )

@@ -1,0 +1,11 @@
+{
+    "skips": [
+        {
+            "paths": [
+                "prebuilt/drivers/rtc/pcf8563"
+            ],
+            "description": "Legacy GN license checker does not know how to process SPDX files.\nThis is a temporary skip until either the old system is updated to read spdx,\nor the new bazel-based GN metadata solution is enabled across the tree.\nSee b/305986490",
+            "bug": "https://fxbug.dev/305986490"
+        }
+    ]
+}
