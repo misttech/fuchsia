@@ -212,6 +212,9 @@
                 "mmap/036",
                 "mmap/038",
 
+                // TODO: https://fxbug.dev/319480589 - Starnix does not support dynamic kernel module loading.
+                "module_load/*",
+
                 // TODO: https://fxbug.dev/398663319
                 "msg/001",
                 "msg/002",
@@ -294,10 +297,7 @@
         },
         {
             type: "skip",
-            matchers: [
-                // TODO: https://fxbug.dev/319480589 - Starnix does not support dynamic kernel module loading.
-                "module_load",
-            ],
+            matchers: [],
         },
     ],
 }
