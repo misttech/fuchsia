@@ -91,6 +91,7 @@ group("tests") {
     "scoped_task:tests",
     "security:tests",
     "shared-buffer:tests",
+    "sorted_vec_map_rs:tests",
     "stdformat:tests",
     "structured_ui:tests",
     "symbolizer-markup:tests",

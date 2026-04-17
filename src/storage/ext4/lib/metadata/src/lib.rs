@@ -2,14 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::sorted_vec_map::SortedVecMap;
 use flyweights::{FlyByteStr, FlyStr};
 use serde::{Deserialize, Serialize};
+use sorted_vec_map_rs::SortedVecMap;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
-
-mod sorted_vec_map;
 
 // This is deliberately the same as ext4.
 pub const ROOT_INODE_NUM: u64 = 2;
