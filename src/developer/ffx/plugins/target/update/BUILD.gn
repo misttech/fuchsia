@@ -15,6 +15,7 @@ ffx_plugin("ffx_update") {
     "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust_fdomain",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
     "//sdk/fidl/fuchsia.update:fuchsia.update_rust_fdomain",
+    "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust_fdomain",
     "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust_fdomain",
     "//sdk/rust/zx-status",
     "//src/developer/ffx/config:lib",

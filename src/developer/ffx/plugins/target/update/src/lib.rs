@@ -11,6 +11,7 @@ use fdomain_fuchsia_update::{
     CheckOptions, CommitStatusProviderProxy, Initiator, ManagerMarker, ManagerProxy, MonitorMarker,
     MonitorRequest, MonitorRequestStream,
 };
+use fdomain_fuchsia_update_channel as fupdate_channel;
 use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
 use fdomain_fuchsia_update_installer::{self as finstaller, InstallerProxy};
 use ffx_config::EnvironmentContext;
@@ -44,6 +45,8 @@ pub struct UpdateTool {
     #[with(moniker("/core/system-update"))]
     update_manager_proxy: ManagerProxy,
     #[with(moniker("/core/system-update"))]
+    channel_provider_proxy: fupdate_channel::ProviderProxy,
+    #[with(moniker("/core/system-update"))]
     channel_control_proxy: ChannelControlProxy,
     #[with(deferred(moniker("/core/system-update/system-updater")))]
     installer_proxy: Deferred<InstallerProxy>,
@@ -66,7 +69,13 @@ impl FfxMain for UpdateTool {
 
         match update.cmd {
             args::Command::Channel(args::Channel { ref cmd }) => {
-                handle_channel_control_cmd(&cmd, self.channel_control_proxy, &mut writer).await?;
+                handle_channel_control_cmd(
+                    &cmd,
+                    self.channel_provider_proxy,
+                    self.channel_control_proxy,
+                    &mut writer,
+                )
+                .await?;
             }
             args::Command::CheckNow(ref check_now) => {
                 Box::pin(self.handle_check_now_cmd(check_now, &mut writer)).await?;
@@ -516,15 +525,15 @@ fn write_progress<W: std::io::Write>(s: &str, writer: &mut W) -> Result<()> {
 }
 
 /// Handle subcommands for `update channel`.
-/// Handle subcommands for `update channel`.
 async fn handle_channel_control_cmd<W: std::io::Write>(
     cmd: &args::channel::Command,
+    channel_provider: fupdate_channel::ProviderProxy,
     channel_control: fdomain_fuchsia_update_channelcontrol::ChannelControlProxy,
     writer: &mut W,
 ) -> Result<()> {
     match cmd {
         args::channel::Command::Get(_) => {
-            let channel = channel_control.get_current().await.map_err(|e: fidl::Error| bug!(e))?;
+            let channel = channel_provider.get_current().await.map_err(|e: fidl::Error| bug!(e))?;
             writeln!(writer, "current channel: {}", channel).bug()?;
         }
         args::channel::Command::Target(_) => {
@@ -709,6 +718,45 @@ mod tests {
     use std::sync::Arc;
     use target_holders::fdomain::{fake_async_proxy, fake_proxy};
 
+    async fn perform_channel_provider_test<V, O>(
+        argument: args::channel::Command,
+        verifier: V,
+        output: O,
+    ) where
+        V: Fn(fupdate_channel::ProviderRequest),
+        O: Fn(String),
+    {
+        let client = fdomain_local::local_client_empty();
+        let (proxy, mut stream) =
+            client.create_proxy_and_stream::<fupdate_channel::ProviderMarker>();
+        let mut buf = Vec::new();
+        let fut = async {
+            assert_matches!(
+                handle_channel_control_cmd(
+                    &argument,
+                    proxy,
+                    client.create_proxy::<
+                        fdomain_fuchsia_update_channelcontrol::ChannelControlMarker,
+                    >()
+                    .0,
+                    &mut buf
+                )
+                .await,
+                Ok(())
+            );
+        };
+        let stream_fut = async move {
+            let result = stream.next().await.unwrap();
+            match result {
+                Ok(cmd) => verifier(cmd),
+                err => panic!("Err in request handler: {:?}", err),
+            }
+        };
+        future::join(fut, stream_fut).await;
+        let out = String::from_utf8(buf).unwrap();
+        output(out);
+    }
+
     async fn perform_channel_control_test<V, O>(
         argument: args::channel::Command,
         verifier: V,
@@ -723,7 +771,16 @@ mod tests {
             );
         let mut buf = Vec::new();
         let fut = async {
-            assert_matches!(handle_channel_control_cmd(&argument, proxy, &mut buf).await, Ok(()));
+            assert_matches!(
+                handle_channel_control_cmd(
+                    &argument,
+                    client.create_proxy::<fupdate_channel::ProviderMarker>().0,
+                    proxy,
+                    &mut buf
+                )
+                .await,
+                Ok(())
+            );
         };
         let stream_fut = async move {
             let result = stream.next().await.unwrap();
@@ -778,13 +835,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_channel_get() {
-        perform_channel_control_test(
+        perform_channel_provider_test(
             args::channel::Command::Get(args::channel::Get {}),
             |cmd| match cmd {
-                ChannelControlRequest::GetCurrent { responder } => {
+                fupdate_channel::ProviderRequest::GetCurrent { responder } => {
                     responder.send("channel").unwrap();
                 }
-                request => panic!("Unexpected request: {:?}", request),
             },
             |output| assert_eq!(output, "current channel: channel\n"),
         )
@@ -863,6 +919,8 @@ mod tests {
             Deferred::from_output(Ok(fake_proxy(Arc::clone(&client), move |req| {
                 panic!("Unexpected request: {:?}", req)
             })));
+        let fake_channel_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_channel_control_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
@@ -890,6 +948,7 @@ mod tests {
             },
             context: test_env.context.clone(),
             update_manager_proxy: fake_update_manager_proxy,
+            channel_provider_proxy: fake_channel_provider_proxy,
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: fake_installer_proxy,
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
@@ -945,6 +1004,8 @@ mod tests {
 
         let fake_update_manager_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_channel_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_channel_control_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
@@ -955,6 +1016,7 @@ mod tests {
             cmd: Update { cmd: args::Command::ForceInstall(args) },
             context: test_env.context.clone(),
             update_manager_proxy: fake_update_manager_proxy,
+            channel_provider_proxy: fake_channel_provider_proxy,
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
@@ -1034,6 +1096,8 @@ mod tests {
 
         let fake_update_manager_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_channel_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_channel_control_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_commit_status_provider_proxy =
@@ -1064,6 +1128,7 @@ mod tests {
             cmd: Update { cmd: args::Command::ForceInstall(args) },
             context: test_env.context.clone(),
             update_manager_proxy: fake_update_manager_proxy,
+            channel_provider_proxy: fake_channel_provider_proxy,
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
@@ -1121,6 +1186,8 @@ mod tests {
             }
             _ => panic!("Unexpected request: {req:?}"),
         });
+        let fake_channel_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
         let fake_channel_control_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
         let fake_commit_status_provider_proxy =
@@ -1132,6 +1199,7 @@ mod tests {
             cmd: Update { cmd: args::Command::ForceInstall(args) },
             context: test_env.context.clone(),
             update_manager_proxy: fake_update_manager_proxy,
+            channel_provider_proxy: fake_channel_provider_proxy,
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
