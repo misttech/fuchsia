@@ -778,6 +778,15 @@ class CommandRunner(object):
         return ret
 
 
+# A MockCommandFilter is a callable that takes a list of command arguments
+# as input, and returns a CommandResult as output. It may also raise
+# ValueError if the input command arguments are invalid / unexpected.
+#
+# Note that the input is a list of strings, while CommandRunner.run_command()
+# takes a list of FilePath values.
+MockCommandFilter: T.TypeAlias = T.Callable[[list[str]], CommandResult]
+
+
 class MockCommandRunner(CommandRunner):
     """A mock CommandRunner that can be used in unit-tests.
 
@@ -807,6 +816,49 @@ class MockCommandRunner(CommandRunner):
 
         super().__init__(log_cmd=_log_command, log_result=_log_result)
         self._result_queue: list[CommandResult] = []
+        self._command_filter: T.Optional[MockCommandFilter] = None
+
+    def set_command_filter(self, command_filter: MockCommandFilter) -> None:
+        """Set a command filter.
+
+        The command filter is called automatically by run_command_internal()
+        if there are no more results in the CommandResult FIFO (which were
+        previously added with push_result()).
+
+        Args:
+            command_filter: A MockCommandFilter values.
+        """
+        self._command_filter = command_filter
+
+    @staticmethod
+    def new_command_filter_from_list(
+        cmd_list: list[tuple[str, str]],
+    ) -> MockCommandFilter:
+        """Create a command filter value that will return the given results in order.
+
+        Args:
+            cmd_list: A list of (command, stdout) pairs, where |command| is the
+                space-separated command string, and |stdout| is the corresponding
+                stdout.
+        Returns:
+            A new MockCommandFilter value.
+        """
+        command_index = 0
+
+        def _command_filter(cmd_args: list[str]) -> CommandResult:
+            nonlocal command_index
+            if command_index >= len(cmd_list):
+                raise ValueError("Too many command invocations")
+            actual_args = " ".join(arg for arg in cmd_args)
+            expected_cmd_args, stdout = cmd_list[command_index]
+            if actual_args != expected_cmd_args:
+                raise ValueError(
+                    f"Unexpected command arguments (command index {command_index}:\n  Actual:   {actual_args}\n  Expected: {expected_cmd_args}"
+                )
+            command_index += 1
+            return CommandResult(0, stdout, "")
+
+        return _command_filter
 
     def push_result(
         self,
@@ -830,6 +882,15 @@ class MockCommandRunner(CommandRunner):
             )
         )
 
+    def _pop_result(self) -> CommandResult:
+        """Pop one result value from the CommandResult FIFO."""
+        assert (
+            self._result_queue
+        ), f"Result queue is empty, did you forget to call MockCommandRunner.push_result()"
+        result = self._result_queue[0]
+        self._result_queue = self._result_queue[1:]
+        return result
+
     def run_command_internal(
         self, cmd_args: list[FilePath], **subprocess_run_kwargs: T.Any
     ) -> CommandResult:
@@ -844,12 +905,12 @@ class MockCommandRunner(CommandRunner):
         Raises:
             AssertionError if there are no results in the FIFO.
         """
-        assert (
-            self._result_queue
-        ), f"Result queue is empty, did you forget to call MockCommandRunner.push_result()"
-        result = self._result_queue[0]
-        self._result_queue = self._result_queue[1:]
-        result.args = [str(c) for c in cmd_args]
+        result_args = [str(c) for c in cmd_args]
+        if self._command_filter:
+            result = self._command_filter(result_args)
+        else:
+            result = self._pop_result()
+        result.args = result_args
         return result
 
 
@@ -944,10 +1005,12 @@ class BazelLauncher(object):
         query_cmd: list[FilePath] = []
         query_cmd.append(query_type)
         query_cmd.extend(query_args)
+        stderr = subprocess.PIPE
         if ignore_errors:
             query_cmd += ["--keep_going"]
+            stderr = subprocess.DEVNULL
 
-        return self.run_bazel_command(query_cmd)
+        return self.run_bazel_command(query_cmd, stderr=stderr)
 
 
 class MockBazelLauncher(BazelLauncher):
@@ -962,6 +1025,15 @@ class MockBazelLauncher(BazelLauncher):
         """Push a sequence of expected command outputs to the mock  command runner."""
         for output in outputs:
             self.command_runner.push_result(0, output, "")
+
+    @staticmethod
+    def new_with_empty_outputs() -> "MockBazelLauncher":
+        """Create a new MockBazelLauncher instance with empty outputs by default."""
+        launcher = MockBazelLauncher()
+        launcher.command_runner.set_command_filter(
+            lambda args: CommandResult(0, "", "")
+        )
+        return launcher
 
 
 class BazelQueryCache(object):

@@ -868,5 +868,72 @@ class BazelQueryCacheTest(unittest.TestCase):
         self.assertEqual(args3, args4)
 
 
+class MockCommandRunnerTest(unittest.TestCase):
+    def test_set_command_filter(self) -> None:
+        mock_runner = MockCommandRunner()
+
+        def my_filter(args: list[str]) -> build_utils.CommandResult:
+            if args == ["echo", "hello"]:
+                return build_utils.CommandResult(
+                    returncode=0, stdout="world\n", stderr=""
+                )
+            raise ValueError(f"Unexpected command: {args}")
+
+        mock_runner.set_command_filter(my_filter)
+
+        result = mock_runner.run_command(["echo", "hello"])
+        self.assertEqual(result.stdout, "world\n")
+
+        with self.assertRaises(ValueError):
+            mock_runner.run_command(["echo", "bad"])
+
+    def test_new_command_filter_from_list(self) -> None:
+        mock_runner = MockCommandRunner()
+
+        cmd_list = [
+            ("echo hello", "world\n"),
+            ("echo bar", "baz\n"),
+        ]
+        filter_func = MockCommandRunner.new_command_filter_from_list(cmd_list)
+        mock_runner.set_command_filter(filter_func)
+
+        result = mock_runner.run_command(["echo", "hello"])
+        self.assertEqual(result.stdout, "world\n")
+
+        result = mock_runner.run_command(["echo", "bar"])
+        self.assertEqual(result.stdout, "baz\n")
+
+        # Test exhausted list
+        with self.assertRaises(ValueError) as context:
+            mock_runner.run_command(["echo", "extra"])
+        self.assertIn("Too many command invocations", str(context.exception))
+
+    def test_new_command_filter_from_list_mismatch(self) -> None:
+        mock_runner = MockCommandRunner()
+
+        cmd_list = [
+            ("echo hello", "world\n"),
+        ]
+        filter_func = MockCommandRunner.new_command_filter_from_list(cmd_list)
+        mock_runner.set_command_filter(filter_func)
+
+        with self.assertRaises(ValueError) as context:
+            mock_runner.run_command(["echo", "bad"])
+        self.assertIn("Unexpected command arguments", str(context.exception))
+
+
+class MockBazelLauncherTest(unittest.TestCase):
+    def test_new_with_empty_outputs(self) -> None:
+        launcher = build_utils.MockBazelLauncher.new_with_empty_outputs()
+
+        result = launcher.run_query(
+            "query", ["deps(//src:foo)"], ignore_errors=False
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "")
+
+
 if __name__ == "__main__":
     unittest.main()
