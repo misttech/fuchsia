@@ -98,6 +98,20 @@ if (is_host) {
   }
 }
 if (is_host) {
+  go_library("v2_stages_classify") {
+    sources = [
+      "v2/stages/classify/classify.go",
+      "v2/stages/classify/notice.go",
+    ]
+    visibility = [ "//tools/check-licenses/*" ]
+    deps = [
+      ":v2_pipeline",
+      "//third_party/golibs:github.com/google/licenseclassifier/v2",
+      "//tools/check-licenses/metrics",
+    ]
+  }
+}
+if (is_host) {
   go_test("v2_config_test") {
     sources = [ "v2/config/builder_test.go" ]
     embed = [ ":v2_config" ]
@@ -136,6 +150,16 @@ if (is_host) {
   }
 }
 if (is_host) {
+  go_test("v2_stages_classify_test") {
+    sources = [
+      "v2/stages/classify/classify_test.go",
+      "v2/stages/classify/notice_test.go",
+    ]
+    embed = [ ":v2_stages_classify" ]
+    deps = [ ":v2_pipeline" ]
+  }
+}
+if (is_host) {
   go_test("v2_stages_discover_test") {
     sources = [ "v2/stages/discover/discover_test.go" ]
     embed = [ ":v2_stages_discover" ]
@@ -148,6 +172,7 @@ group("tests") {
     ":v2_pipeline_test",
     ":v2_readme_test",
     ":v2_stages_boundary_test",
+    ":v2_stages_classify_test",
     ":v2_stages_discover_test",
     ":v2_stages_prune_test",
     "//tools/check-licenses/cmd:cmd_test",

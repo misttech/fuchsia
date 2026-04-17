@@ -47,6 +47,7 @@ if (is_host) {
       "//tools/check-licenses:v2_pipeline",
       "//tools/check-licenses:v2_readme",
       "//tools/check-licenses:v2_stages_boundary",
+      "//tools/check-licenses:v2_stages_classify",
       "//tools/check-licenses:v2_stages_discover",
       "//tools/check-licenses:v2_stages_prune",
       "//tools/check-licenses/directory",

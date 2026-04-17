@@ -95,6 +95,22 @@ go_library(
     ],
 )
 
+go_library(
+    name = "v2_stages_classify",
+    srcs = [
+        "v2/stages/classify/classify.go",
+        "v2/stages/classify/notice.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        ":v2_pipeline",
+        "//third_party/golibs:github.com/google/licenseclassifier/v2",
+        "//tools/check-licenses/metrics",
+    ],
+)
+
 go_test(
     name = "v2_config_test",
     srcs = [
@@ -149,6 +165,19 @@ go_test(
 )
 
 go_test(
+    name = "v2_stages_classify_test",
+    srcs = [
+        "v2/stages/classify/classify_test.go",
+        "v2/stages/classify/notice_test.go",
+    ],
+    embed = [":v2_stages_classify"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        ":v2_pipeline",
+    ],
+)
+
+go_test(
     name = "v2_stages_discover_test",
     srcs = [
         "v2/stages/discover/discover_test.go",
@@ -167,6 +196,7 @@ test_suite(
         ":v2_pipeline_test",
         ":v2_readme_test",
         ":v2_stages_boundary_test",
+        ":v2_stages_classify_test",
         ":v2_stages_discover_test",
         ":v2_stages_prune_test",
         "//tools/check-licenses/cmd:cmd_test",
