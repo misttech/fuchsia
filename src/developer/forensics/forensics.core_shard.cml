@@ -98,7 +98,10 @@
             source_availability: "unknown",
         },
         {
-            protocol: "fuchsia.update.channelcontrol.ChannelControl",
+            protocol: [
+                "fuchsia.update.channel.Provider",
+                "fuchsia.update.channelcontrol.ChannelControl",
+            ],
             from: "#system-update",
             to: "#feedback",
             dependency: "weak",

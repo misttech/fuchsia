@@ -5,7 +5,7 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_CURRENT_CHANNEL_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_CURRENT_CHANNEL_PROVIDER_H_
 
-#include <fuchsia/update/channelcontrol/cpp/fidl.h>
+#include <fuchsia/update/channel/cpp/fidl.h>
 
 #include "src/developer/forensics/feedback/annotations/fidl_provider.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
@@ -17,11 +17,11 @@ struct CurrentChannelToAnnotations {
 };
 
 // Responsible for collecting annotations for
-// fuchsia.update.channelcontrol/ChannelControl::GetCurrent.
-class CurrentChannelProvider : public StaticSingleFidlMethodAnnotationProvider<
-                                   fuchsia::update::channelcontrol::ChannelControl,
-                                   &fuchsia::update::channelcontrol::ChannelControl::GetCurrent,
-                                   CurrentChannelToAnnotations> {
+// fuchsia.update.channel/Provider::GetCurrent.
+class CurrentChannelProvider
+    : public StaticSingleFidlMethodAnnotationProvider<
+          fuchsia::update::channel::Provider, &fuchsia::update::channel::Provider::GetCurrent,
+          CurrentChannelToAnnotations> {
  public:
   using StaticSingleFidlMethodAnnotationProvider::StaticSingleFidlMethodAnnotationProvider;
 
