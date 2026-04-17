@@ -846,7 +846,8 @@ impl HrTimerManager {
                     self.lock().debug_start_stage_counter = 1;
                     defer! {
                         // Allow add_timer to proceed once command processing is done.
-                        signal_event(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).map_err(|err| to_errno_with_log(err)).expect("event can be signaled");
+                        let _ = signal_event(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED)
+                            .map_err(|err| to_errno_with_log(err));
                     }
 
                     let hr_timer = &new_timer_node.hr_timer;
@@ -1015,7 +1016,8 @@ impl HrTimerManager {
                 Cmd::Stop { timer, done, message_counter } => {
                     self.lock().debug_start_stage_counter = 20;
                     defer! {
-                        signal_event(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).expect("can signal");
+                        let _ = signal_event(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED)
+                            .map_err(|err| to_errno_with_log(err));
                     }
                     let timer_id = timer.get_id();
                     log_debug!("watch_new_hrtimer_loop: Cmd::Stop: timer_id: {:?}", timer_id);
