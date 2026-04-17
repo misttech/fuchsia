@@ -13,7 +13,7 @@ use fuchsia_sync::Mutex;
 use log::Log;
 use moniker::Moniker;
 use routing::DictExt;
-use runtime_capabilities::{Capability, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{Capability, WeakInstanceToken};
 use std::collections::LinkedList;
 use std::sync::{Arc, LazyLock};
 
@@ -100,18 +100,9 @@ impl LoggerCache {
         let (logsink, server) = endpoints::create_endpoints::<flogger::LogSinkMarker>();
         let scope = &resolved_instance_state.execution_scope;
         scope.spawn(async move {
-            let Ok(res) = router.route(None, false, target).await else {
-                // router will take care of logging error
-                return;
-            };
-            match res {
-                RouterResponse::Capability(c) => {
-                    let _ = c.send(runtime_capabilities::Message { channel: server.into() });
-                }
-                RouterResponse::Unavailable => {}
-                RouterResponse::Debug(_) => {
-                    unreachable!("try_attributed_log: debug response from non-debug route");
-                }
+            // the router itself should handle logging things in event of an error
+            if let Ok(Some(c)) = router.route(None, target).await {
+                let _ = c.send(runtime_capabilities::Message { channel: server.into() });
             }
         });
 

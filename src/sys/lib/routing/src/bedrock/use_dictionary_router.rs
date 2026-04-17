@@ -10,8 +10,8 @@ use futures::channel::oneshot;
 use futures::stream::FuturesUnordered;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, Dictionary, EntryUpdate, Request, Routable, Router, RouterResponse,
-    UpdateNotifierRetention, WeakInstanceToken,
+    Capability, Data, Dictionary, EntryUpdate, Request, Routable, Router, UpdateNotifierRetention,
+    WeakInstanceToken,
 };
 
 /// Given an original dictionary and a handful of additional dictionary routers, produces a router
@@ -89,26 +89,17 @@ impl Routable<Dictionary> for UseDictionaryRouter {
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dictionary>, RouterError> {
-        if debug {
-            return Ok(RouterResponse::Debug(
-                self.capability_source
-                    .clone()
-                    .try_into()
-                    .expect("failed to serialize capability source"),
-            ));
-        }
+    ) -> Result<Option<Dictionary>, RouterError> {
         let mut futures_unordered = FuturesUnordered::new();
         for dictionary_router in self.dictionary_routers.iter() {
             let request = request.as_ref().and_then(|r| r.try_clone().ok());
-            futures_unordered.push(dictionary_router.route(request, false, target.clone()));
+            futures_unordered.push(dictionary_router.route(request, target.clone()));
         }
         let resulting_dictionary = self.original_dictionary.shallow_copy().unwrap();
         while let Some(route_result) = futures_unordered.next().await {
             match route_result {
-                Ok(RouterResponse::Capability(other_dictionary)) => {
+                Ok(Some(other_dictionary)) => {
                     let initial_conflicts = self
                         .dictionary_follow_updates_from(
                             resulting_dictionary.clone(),
@@ -140,10 +131,7 @@ impl Routable<Dictionary> for UseDictionaryRouter {
                         .into());
                     }
                 }
-                Ok(RouterResponse::Unavailable) => (),
-                Ok(RouterResponse::Debug(_)) => {
-                    panic!("got debug response when we didn't request one")
-                }
+                Ok(None) => (),
                 Err(_e) => {
                     // Errors are already logged by this point by the WithPorcelain router.
                     // Specifically, the routers in `dictionary_routers` are assembled by
@@ -154,6 +142,18 @@ impl Routable<Dictionary> for UseDictionaryRouter {
         }
         Ok(resulting_dictionary.into())
     }
+
+    async fn route_debug(
+        &self,
+        _request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        Ok(self
+            .capability_source
+            .clone()
+            .try_into()
+            .expect("failed to serialize capability source"))
+    }
 }
 
 async fn try_get_router_source(
@@ -161,20 +161,20 @@ async fn try_get_router_source(
     target: WeakInstanceToken,
 ) -> Option<String> {
     let source: crate::capability_source::CapabilitySource = match capability {
-        Capability::DictionaryRouter(router) => match router.route(None, true, target).await {
-            Ok(RouterResponse::Debug(data)) => data.try_into().ok()?,
+        Capability::DictionaryRouter(router) => match router.route_debug(None, target).await {
+            Ok(data) => data.try_into().ok()?,
             _ => return None,
         },
-        Capability::ConnectorRouter(router) => match router.route(None, true, target).await {
-            Ok(RouterResponse::Debug(data)) => data.try_into().ok()?,
+        Capability::ConnectorRouter(router) => match router.route_debug(None, target).await {
+            Ok(data) => data.try_into().ok()?,
             _ => return None,
         },
-        Capability::DirConnectorRouter(router) => match router.route(None, true, target).await {
-            Ok(RouterResponse::Debug(data)) => data.try_into().ok()?,
+        Capability::DirConnectorRouter(router) => match router.route_debug(None, target).await {
+            Ok(data) => data.try_into().ok()?,
             _ => return None,
         },
-        Capability::DataRouter(router) => match router.route(None, true, target).await {
-            Ok(RouterResponse::Debug(data)) => data.try_into().ok()?,
+        Capability::DataRouter(router) => match router.route_debug(None, target).await {
+            Ok(data) => data.try_into().ok()?,
             _ => return None,
         },
         _ => return None,

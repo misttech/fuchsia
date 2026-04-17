@@ -13,7 +13,7 @@ use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component_internal as finternal;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
-use runtime_capabilities::{Capability, Dictionary, RouterResponse, WeakInstanceToken};
+use runtime_capabilities::{Capability, Dictionary, WeakInstanceToken};
 
 pub fn serve(
     chan: zx::Channel,
@@ -97,8 +97,7 @@ async fn is_builtin_runner(program_input: &ProgramInput, target: WeakInstanceTok
     let Some(runner_router) = program_input.runner() else {
         return false;
     };
-    let Ok(RouterResponse::Debug(source_data)) = runner_router.route(None, true, target).await
-    else {
+    let Ok(source_data) = runner_router.route_debug(None, target).await else {
         return false;
     };
     let source: ::routing::capability_source::CapabilitySource =

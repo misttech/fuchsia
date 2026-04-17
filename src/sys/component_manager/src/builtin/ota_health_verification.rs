@@ -14,7 +14,7 @@ use fuchsia_inspect::ArrayProperty;
 use futures::TryStreamExt;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
-use runtime_capabilities::{Capability, Message, RouterResponse};
+use runtime_capabilities::{Capability, Message};
 use std::sync::{Arc, Weak};
 
 #[derive(Debug, Clone)]
@@ -162,18 +162,14 @@ async fn open_protocol(
             .into());
         }
     };
-    let connector = match router.route(None, false, instance.clone().as_weak().into()).await? {
-        RouterResponse::Capability(cap) => cap,
-        RouterResponse::Unavailable => {
+    let connector = match router.route(None, instance.clone().as_weak().into()).await? {
+        Some(cap) => cap,
+        None => {
             return Err(RoutingError::RouteUnexpectedUnavailable {
                 type_name: cm_rust::CapabilityTypeName::Protocol,
                 moniker: ExtendedMoniker::from(moniker.clone()),
             }
             .into());
-        }
-        RouterResponse::Debug(_) => {
-            log::error!("received unexpected debug data when routing for OTA health checks");
-            return Err(RouterError::Internal);
         }
     };
 

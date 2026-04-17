@@ -68,7 +68,7 @@ use router_error::{Explain, RouterError};
 use runner::component::StopInfo;
 use runtime_capabilities::{
     Capability, Connector, Data, Dictionary, DirConnector, Message, Request, Routable, Router,
-    RouterResponse, WeakInstanceToken,
+    WeakInstanceToken,
 };
 use std::clone::Clone;
 use std::collections::{HashMap, HashSet};
@@ -1120,13 +1120,17 @@ impl ComponentInstance {
             async fn route(
                 &self,
                 _request: Option<Request>,
-                _debug: bool,
                 _target: WeakInstanceToken,
-            ) -> Result<RouterResponse<Dictionary>, RouterError> {
+            ) -> Result<Option<Dictionary>, RouterError> {
                 let component = self.component.upgrade().map_err(RoutingError::from)?;
-                Ok(RouterResponse::<Dictionary>::Capability(
-                    component.get_component_output_dict().await?,
-                ))
+                Ok(Some(component.get_component_output_dict().await?))
+            }
+            async fn route_debug(
+                &self,
+                _request: Option<Request>,
+                _target: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
+                panic!("ComponentOutput router does not support debug routes");
             }
         }
 
@@ -1462,16 +1466,14 @@ probably not intended: {}",
         let resp = resolver_router
             .route(
                 Some(Request { metadata: resolver_metadata(cm_rust::Availability::Required) }),
-                false,
                 self.clone().as_weak().into(),
             )
             .await
             .map_err(|err| ResolverError::routing_error(err))?;
-        // TODO(361308923): only support the Connector type here.
         let resolver_proxy = match resp {
             // Built-in resolver are hosted by a LaunchTaskOnReceive, which returns a Connector
             // capability for new routes.
-            RouterResponse::<Connector>::Capability(resolver_connector) => {
+            Some(resolver_connector) => {
                 let (proxy, server_end) = create_proxy::<fresolution::ResolverMarker>();
                 resolver_connector.send(Message { channel: server_end.into_channel() }).map_err(
                     |_| {
@@ -1483,19 +1485,13 @@ probably not intended: {}",
                 )?;
                 proxy
             }
-            RouterResponse::<Connector>::Unavailable => {
+            None => {
                 return Err(ResolverError::routing_error(
                     RoutingError::RouteUnexpectedUnavailable {
                         type_name: CapabilityTypeName::Resolver,
                         moniker: self.moniker.clone().into(),
                     },
                 ));
-            }
-            RouterResponse::<Connector>::Debug(_) => {
-                return Err(ResolverError::routing_error(RoutingError::RouteUnexpectedDebug {
-                    type_name: CapabilityTypeName::Resolver,
-                    moniker: self.moniker.clone().into(),
-                }));
             }
         };
         let (component_url, some_context) = component_address.to_url_and_context();

@@ -12,8 +12,8 @@ use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Request, Routable,
-    Router, RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Data, Dictionary, Request, Routable, Router, RouterResponse,
+    WeakInstanceToken,
 };
 use std::fmt::Debug;
 
@@ -98,6 +98,23 @@ impl<T: CapabilityBound> TryFrom<GenericRouterResponse> for RouterResponse<T> {
     }
 }
 
+impl<T: CapabilityBound> TryFrom<GenericRouterResponse> for Option<T> {
+    // Returns the capability's debug typename.
+    type Error = &'static str;
+
+    fn try_from(r: GenericRouterResponse) -> Result<Self, Self::Error> {
+        let r = match r {
+            GenericRouterResponse::Capability(c) => {
+                let debug_name = c.debug_typename();
+                Some(c.try_into().map_err(|_| debug_name)?)
+            }
+            GenericRouterResponse::Unavailable => None,
+            GenericRouterResponse::Debug(_) => return Err("unexpected debug value"),
+        };
+        Ok(r)
+    }
+}
+
 #[async_trait]
 impl DictExt for Dictionary {
     fn get_capability(&self, path: &impl IterablePath) -> Option<Capability> {
@@ -140,9 +157,16 @@ impl DictExt for Dictionary {
             async fn route(
                 &self,
                 _request: Option<Request>,
-                _debug: bool,
                 _target: WeakInstanceToken,
-            ) -> Result<RouterResponse<T>, RouterError> {
+            ) -> Result<Option<T>, RouterError> {
+                Err(self.not_found_error.clone())
+            }
+
+            async fn route_debug(
+                &self,
+                _request: Option<Request>,
+                _target: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
                 Err(self.not_found_error.clone())
             }
         }
@@ -162,21 +186,16 @@ impl DictExt for Dictionary {
             async fn route(
                 &self,
                 request: Option<Request>,
-                debug: bool,
                 target: WeakInstanceToken,
-            ) -> Result<RouterResponse<T>, RouterError> {
+            ) -> Result<Option<T>, RouterError> {
                 let get_init_request = || request_with_dictionary_replacement(request.as_ref());
 
-                // If `debug` is true, that should only apply to the capability at `path`.
-                // Here we're looking up the containing dictionary, so set `debug = false`, to
-                // obtain the actual Dictionary and not its debug info. For the same reason, we
-                // need to set the capability type on the first request to Dictionary.
                 let init_request = (get_init_request)()?;
-                match self.router.route(init_request, false, target.clone()).await? {
-                    RouterResponse::<Dictionary>::Capability(dict) => {
+                match self.router.route(init_request, target.clone()).await? {
+                    Some(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
                         let resp = dict
-                            .get_with_request(&moniker, &self.path, request, debug, target)
+                            .get_with_request(&moniker, &self.path, request, false, target)
                             .await?;
                         let resp =
                             resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
@@ -189,34 +208,43 @@ impl DictExt for Dictionary {
                         })?;
                         Ok(resp)
                     }
-                    RouterResponse::<Dictionary>::Debug(data) => {
-                        Ok(RouterResponse::<T>::Debug(data))
-                    }
-                    RouterResponse::<Dictionary>::Unavailable => {
-                        if !debug {
-                            Ok(RouterResponse::<T>::Unavailable)
-                        } else {
-                            // `debug=true` was the input to this function but the call above to
-                            // [`Router::route`] used `debug=false`. Call the router again with the
-                            // same arguments but with `debug=true` so that we return the debug
-                            // info to the caller (which ought to be [`CapabilitySource::Void`]).
-                            let init_request = (get_init_request)()?;
-                            match self.router.route(init_request, true, target).await? {
-                                RouterResponse::<Dictionary>::Debug(d) => {
-                                    Ok(RouterResponse::<T>::Debug(d))
-                                }
-                                _ => {
-                                    // This shouldn't happen (we passed debug=true).
-                                    let moniker = self.not_found_error.clone().into();
-                                    Err(RoutingError::BedrockWrongCapabilityType {
-                                        expected: "RouterResponse::Debug".into(),
-                                        actual: "not RouterResponse::Debug".into(),
-                                        moniker,
-                                    }
-                                    .into())
-                                }
+                    None => Ok(None),
+                }
+            }
+
+            async fn route_debug(
+                &self,
+                request: Option<Request>,
+                target: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
+                let get_init_request = || request_with_dictionary_replacement(request.as_ref());
+
+                // When performing a debug route, we only want to call `route_debug` on the
+                // capability at `path`. Here we're looking up the containing dictionary, so we do
+                // non-debug routing, to obtain the actual Dictionary and not its debug info.
+                let init_request = (get_init_request)()?;
+                match self.router.route(init_request, target.clone()).await? {
+                    Some(dict) => {
+                        let moniker: ExtendedMoniker = self.not_found_error.clone().into();
+                        let resp = dict
+                            .get_with_request(&moniker, &self.path, request, true, target)
+                            .await?;
+                        let resp =
+                            resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
+                        match resp {
+                            GenericRouterResponse::Debug(data) => Ok(data),
+                            _other => {
+                                panic!("non-debug value from debug route")
                             }
                         }
+                    }
+                    None => {
+                        // The above route was non-debug, but the routing operation failed. Call
+                        // the router again with the same arguments but with `route_debug` so that
+                        // we return the debug info to the caller (which ought to be
+                        // [`CapabilitySource::Void`]).
+                        let init_request = (get_init_request)()?;
+                        self.router.route_debug(init_request, target).await
                     }
                 }
             }
@@ -354,16 +382,11 @@ impl DictExt for Dictionary {
                         current_dict = d;
                     }
                     Capability::DictionaryRouter(r) => {
-                        match r.route(dict_request, false, target.clone()).await? {
-                            RouterResponse::<Dictionary>::Capability(d) => {
+                        match r.route(dict_request, target.clone()).await? {
+                            Some(d) => {
                                 current_dict = d;
                             }
-                            RouterResponse::<Dictionary>::Debug(d) => {
-                                // This shouldn't happen (we passed debug=false). Just pass it up
-                                // the chain so the caller can decide how to deal with it.
-                                return Ok(Some(GenericRouterResponse::Debug(d)));
-                            }
-                            RouterResponse::<Dictionary>::Unavailable => {
+                            None => {
                                 if !debug {
                                     return Ok(Some(GenericRouterResponse::Unavailable));
                                 } else {
@@ -374,20 +397,8 @@ impl DictExt for Dictionary {
                                     // to be [`CapabilitySource::Void`]).
                                     let dict_request =
                                         request_with_dictionary_replacement(request.as_ref())?;
-                                    match r.route(dict_request, true, target).await? {
-                                        RouterResponse::<Dictionary>::Debug(d) => {
-                                            return Ok(Some(GenericRouterResponse::Debug(d)));
-                                        }
-                                        _ => {
-                                            // This shouldn't happen (we passed debug=true).
-                                            return Err(RoutingError::BedrockWrongCapabilityType {
-                                                expected: "RouterResponse::Debug".into(),
-                                                actual: "not RouterResponse::Debug".into(),
-                                                moniker: moniker.clone(),
-                                            }
-                                            .into());
-                                        }
-                                    }
+                                    let data = r.route_debug(dict_request, target).await?;
+                                    return Ok(Some(GenericRouterResponse::Debug(data)));
                                 }
                             }
                         }
@@ -408,50 +419,46 @@ impl DictExt for Dictionary {
                 // There's a bit of repetition here because this function supports multiple router
                 // types.
                 let request = request.as_ref().map(|r| r.try_clone()).transpose()?;
-                let capability: Capability = match capability {
-                    Capability::DictionaryRouter(r) => {
-                        match r.route(request, debug, target).await? {
-                            RouterResponse::<Dictionary>::Capability(c) => c.into(),
-                            RouterResponse::<Dictionary>::Unavailable => {
-                                return Ok(Some(GenericRouterResponse::Unavailable));
-                            }
-                            RouterResponse::<Dictionary>::Debug(d) => {
-                                return Ok(Some(GenericRouterResponse::Debug(d)));
-                            }
+                return match (capability, debug) {
+                    (Capability::DictionaryRouter(r), false) => {
+                        match r.route(request, target).await? {
+                            Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
+                            None => Ok(Some(GenericRouterResponse::Unavailable)),
                         }
                     }
-                    Capability::ConnectorRouter(r) => {
-                        match r.route(request, debug, target).await? {
-                            RouterResponse::<Connector>::Capability(c) => c.into(),
-                            RouterResponse::<Connector>::Unavailable => {
-                                return Ok(Some(GenericRouterResponse::Unavailable));
-                            }
-                            RouterResponse::<Connector>::Debug(d) => {
-                                return Ok(Some(GenericRouterResponse::Debug(d)));
-                            }
+                    (Capability::DictionaryRouter(r), true) => {
+                        let data = r.route_debug(request, target).await?;
+                        Ok(Some(GenericRouterResponse::Debug(data)))
+                    }
+                    (Capability::ConnectorRouter(r), false) => {
+                        match r.route(request, target).await? {
+                            Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
+                            None => Ok(Some(GenericRouterResponse::Unavailable)),
                         }
                     }
-                    Capability::DataRouter(r) => match r.route(request, debug, target).await? {
-                        RouterResponse::<Data>::Capability(c) => c.into(),
-                        RouterResponse::<Data>::Unavailable => {
-                            return Ok(Some(GenericRouterResponse::Unavailable));
-                        }
-                        RouterResponse::<Data>::Debug(d) => {
-                            return Ok(Some(GenericRouterResponse::Debug(d)));
-                        }
+                    (Capability::ConnectorRouter(r), true) => {
+                        let data = r.route_debug(request, target).await?;
+                        Ok(Some(GenericRouterResponse::Debug(data)))
+                    }
+                    (Capability::DataRouter(r), false) => match r.route(request, target).await? {
+                        Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
+                        None => Ok(Some(GenericRouterResponse::Unavailable)),
                     },
-                    Capability::DirConnectorRouter(r) => {
-                        match r.route(request, debug, target).await? {
-                            RouterResponse::<DirConnector>::Capability(c) => c.into(),
-                            RouterResponse::<DirConnector>::Unavailable => {
-                                return Ok(Some(GenericRouterResponse::Unavailable));
-                            }
-                            RouterResponse::<DirConnector>::Debug(d) => {
-                                return Ok(Some(GenericRouterResponse::Debug(d)));
-                            }
+                    (Capability::DataRouter(r), true) => {
+                        let data = r.route_debug(request, target).await?;
+                        Ok(Some(GenericRouterResponse::Debug(data)))
+                    }
+                    (Capability::DirConnectorRouter(r), false) => {
+                        match r.route(request, target).await? {
+                            Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
+                            None => Ok(Some(GenericRouterResponse::Unavailable)),
                         }
                     }
-                    _other if debug => {
+                    (Capability::DirConnectorRouter(r), true) => {
+                        let data = r.route_debug(request, target).await?;
+                        Ok(Some(GenericRouterResponse::Debug(data)))
+                    }
+                    (_other, true) => {
                         // This is a debug route, and we've found a non-router capability. We must
                         // return debug information for the debug route, and the only reason there
                         // would be a non-router capability in a dictionary would be if a user
@@ -477,9 +484,8 @@ impl DictExt for Dictionary {
                             .expect("failed to serialize capability source"),
                         )));
                     }
-                    other => other,
+                    (other, false) => Ok(Some(GenericRouterResponse::Capability(other))),
                 };
-                return Ok(Some(GenericRouterResponse::Capability(capability)));
             }
         }
         unreachable!("get_with_request: All cases are handled in the loop");
@@ -516,16 +522,21 @@ impl Routable<Dictionary> for AdditiveDictionaryRouter {
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dictionary>, RouterError> {
-        let dictionary = match self.preexisting_router.route(request, debug, target).await {
-            Ok(RouterResponse::<Dictionary>::Capability(dictionary)) => {
-                dictionary.shallow_copy().unwrap()
-            }
+    ) -> Result<Option<Dictionary>, RouterError> {
+        let dictionary = match self.preexisting_router.route(request, target).await {
+            Ok(Some(dictionary)) => dictionary.shallow_copy().unwrap(),
             other_response => return other_response,
         };
         let _ = dictionary.insert_capability(&self.path, self.capability.clone());
-        Ok(RouterResponse::Capability(dictionary))
+        Ok(Some(dictionary))
+    }
+
+    async fn route_debug(
+        &self,
+        request: Option<Request>,
+        target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        self.preexisting_router.route_debug(request, target).await
     }
 }

@@ -17,7 +17,7 @@ use errors::ModelError;
 use log::error;
 use router_error::RouterError;
 use routing::component_instance::ComponentInstanceInterface;
-use runtime_capabilities::{Capability, RouterResponse};
+use runtime_capabilities::Capability;
 use std::sync::Arc;
 
 pub struct RoutedStorage {
@@ -40,13 +40,11 @@ pub(super) async fn route_storage(
     let Capability::DirConnectorRouter(router) = storage_router_capability else {
         panic!("wrong type for used storage capability");
     };
-    let storage_source: CapabilitySource =
-        match router.route(None, true, target.as_weak().into()).await? {
-            RouterResponse::Debug(data) => {
-                data.try_into().expect("failed to deserialize capability source")
-            }
-            _ => panic!("unexpected return value for debug route"),
-        };
+    let storage_source: CapabilitySource = router
+        .route_debug(None, target.as_weak().into())
+        .await?
+        .try_into()
+        .expect("failed to deserialize capability source");
     let backing_dir_info = storage::route_backing_directory(target, storage_source).await?;
     Ok(RoutedStorage { backing_dir_info, target: WeakComponentInstance::new(target) })
 }

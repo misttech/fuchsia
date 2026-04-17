@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{ConversionError, Data, Router, RouterResponse, WeakInstanceToken};
+use crate::{ConversionError, Data, Router, WeakInstanceToken};
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
@@ -19,22 +19,6 @@ impl crate::RemotableCapability for Router<Data> {
         token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Ok(self.into_directory_entry(fio::DirentType::Service, scope, token))
-    }
-}
-
-impl TryFrom<RouterResponse<Data>> for fsandbox::DataRouterRouteResponse {
-    type Error = fsandbox::RouterError;
-
-    fn try_from(resp: RouterResponse<Data>) -> Result<Self, Self::Error> {
-        match resp {
-            RouterResponse::<Data>::Capability(c) => {
-                Ok(fsandbox::DataRouterRouteResponse::Data(c.into()))
-            }
-            RouterResponse::<Data>::Unavailable => {
-                Ok(fsandbox::DataRouterRouteResponse::Unavailable(fsandbox::Unit {}))
-            }
-            RouterResponse::<Data>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
-        }
     }
 }
 
@@ -56,7 +40,14 @@ impl Router<Data> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 fsandbox::DataRouterRequest::Route { payload, responder } => {
-                    responder.send(router::route_from_fidl(&self, payload, token.clone()).await)?;
+                    let resp = match router::route_from_fidl(&self, payload, token.clone()).await {
+                        Ok(Some(c)) => Ok(fsandbox::DataRouterRouteResponse::Data(c.into())),
+                        Ok(None) => {
+                            Ok(fsandbox::DataRouterRouteResponse::Unavailable(fsandbox::Unit {}))
+                        }
+                        Err(e) => Err(e),
+                    };
+                    responder.send(resp)?;
                 }
                 fsandbox::DataRouterRequest::_UnknownMethod { ordinal, .. } => {
                     log::warn!(ordinal:%; "Received unknown DataRouter request");

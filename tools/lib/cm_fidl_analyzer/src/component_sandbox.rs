@@ -257,9 +257,8 @@ impl Routable<Dictionary> for FrameworkRouter {
     async fn route(
         &self,
         _request: Option<Request>,
-        _debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dictionary>, RouterError> {
+    ) -> Result<Option<Dictionary>, RouterError> {
         let target = target
             .inner
             .as_any()
@@ -314,7 +313,15 @@ impl Routable<Dictionary> for FrameworkRouter {
                 .into(),
             )
             .expect("failed to insert framework pkg directory capability into dictionary");
-        Ok(RouterResponse::Capability(framework_dict))
+        Ok(Some(framework_dict))
+    }
+
+    async fn route_debug(
+        &self,
+        _request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        panic!("should never be debug routed");
     }
 }
 
@@ -411,7 +418,7 @@ impl ProgramOutputGenerator {
                 ),
             }
         }
-        Ok(RouterResponse::<Dictionary>::Capability(dict))
+        Ok(RouterResponse::Capability(dict))
     }
 }
 
@@ -513,9 +520,8 @@ pub(crate) fn static_children_component_output_dictionary_routers(
         async fn route(
             &self,
             _request: Option<Request>,
-            _debug: bool,
             _target: WeakInstanceToken,
-        ) -> Result<RouterResponse<Dictionary>, RouterError> {
+        ) -> Result<Option<Dictionary>, RouterError> {
             let component =
                 self.weak_component.upgrade().expect("part of component tree was dropped");
             let child = component.children.read().get(&self.child_name).cloned().ok_or(
@@ -526,7 +532,15 @@ pub(crate) fn static_children_component_output_dictionary_routers(
                 ))),
             )?;
             let component_output_dict = child.sandbox.component_output.capabilities();
-            Ok(RouterResponse::<Dictionary>::Capability(component_output_dict))
+            Ok(Some(component_output_dict))
+        }
+
+        async fn route_debug(
+            &self,
+            _request: Option<Request>,
+            _target: WeakInstanceToken,
+        ) -> Result<Data, RouterError> {
+            panic!("this should never be debug routed");
         }
     }
 
@@ -566,7 +580,7 @@ pub fn new_event_stream_multiplexing_router(
             async move {
                 let mut routing_tasks = FuturesUnordered::new();
                 for EventStreamSourceRouter { router, .. } in sources.iter() {
-                    routing_tasks.push(router.route(None, true, target.clone()));
+                    routing_tasks.push(router.route_debug(None, target.clone()));
                 }
                 let mut any_result = None;
                 while let Some(result) = routing_tasks.next().await {
@@ -575,14 +589,9 @@ pub fn new_event_stream_multiplexing_router(
                         Err(e) => return Err(e),
                     }
                 }
-                match any_result {
-                    Some(RouterResponse::Debug(data)) => Ok(RouterResponse::Debug(data)),
-                    Some(RouterResponse::Unavailable) => Ok(RouterResponse::Unavailable),
-                    Some(RouterResponse::Capability(_)) => {
-                        panic!("debug route returned capability, which is disallowed")
-                    }
-                    None => panic!("no result produced, is sources empty?"),
-                }
+                Ok(RouterResponse::Debug(
+                    any_result.expect("no result produced, is sources empty?"),
+                ))
             }
             .boxed()
         },

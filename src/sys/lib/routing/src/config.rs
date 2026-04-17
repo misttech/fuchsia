@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::RoutingError;
 use crate::bedrock::dict_ext::DictExt;
 use crate::bedrock::request_metadata;
 use crate::component_instance::ComponentInstanceInterface;
-use crate::{RouterResponse, RoutingError};
 use cm_rust::{Availability, FidlIntoNative};
 use router_error::Explain;
 use runtime_capabilities::Data;
@@ -57,16 +57,9 @@ where
     let request = runtime_capabilities::Request {
         metadata: request_metadata::config_metadata(use_config.availability),
     };
-    let data = match router.route(Some(request), false, component.as_weak().into()).await {
-        Ok(RouterResponse::<Data>::Capability(d)) => d,
-        Ok(RouterResponse::<Data>::Unavailable) => return Ok(use_config.default.clone()),
-        Ok(RouterResponse::<Data>::Debug(_)) => {
-            return Err(RoutingError::RouteUnexpectedDebug {
-                type_name: cm_rust::CapabilityTypeName::Config,
-                moniker: component.moniker().clone().into(),
-            }
-            .into());
-        }
+    let data = match router.route(Some(request), component.as_weak().into()).await {
+        Ok(Some(d)) => d,
+        Ok(None) => return Ok(use_config.default.clone()),
         Err(e)
             if use_config.availability == Availability::Transitional
                 && e.as_zx_status() == zx::Status::NOT_FOUND =>

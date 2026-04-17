@@ -24,8 +24,8 @@ use router_error::{Explain, RouterError};
 use routing::bedrock::request_metadata::Metadata;
 use routing::subdir::SubDir;
 use runtime_capabilities::{
-    Connectable, Connector, DirConnectable, DirConnector, Message, Request, Routable, Router,
-    RouterResponse, WeakInstanceToken,
+    Connectable, Connector, Data, DirConnectable, DirConnector, Message, Request, Routable, Router,
+    WeakInstanceToken,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -178,24 +178,27 @@ impl LaunchTaskOnReceive {
             async fn route(
                 &self,
                 _request: Option<Request>,
-                debug: bool,
                 target: WeakInstanceToken,
-            ) -> Result<RouterResponse<Connector>, RouterError> {
+            ) -> Result<Option<Connector>, RouterError> {
                 let WeakExtendedInstance::Component(target) = target.to_instance() else {
                     return Err(cm_unexpected());
                 };
                 let conn = self.inner.clone().into_sender(target);
-                if !debug {
-                    Ok(RouterResponse::<Connector>::Capability(conn))
-                } else {
-                    let data = self
-                        .inner
-                        .capability_source
-                        .clone()
-                        .try_into()
-                        .expect("failed to convert capability source to Data");
-                    Ok(RouterResponse::<Connector>::Debug(data))
-                }
+                Ok(Some(conn))
+            }
+
+            async fn route_debug(
+                &self,
+                _request: Option<Request>,
+                _target: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
+                let data = self
+                    .inner
+                    .capability_source
+                    .clone()
+                    .try_into()
+                    .expect("failed to convert capability source to Data");
+                Ok(data)
             }
         }
         Router::<Connector>::new(LaunchTaskRouter { inner: Arc::new(self) })
@@ -211,9 +214,8 @@ impl LaunchTaskOnReceive {
             async fn route(
                 &self,
                 request: Option<Request>,
-                debug: bool,
                 target: WeakInstanceToken,
-            ) -> Result<RouterResponse<DirConnector>, RouterError> {
+            ) -> Result<Option<DirConnector>, RouterError> {
                 let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
                 let WeakExtendedInstance::Component(target) = target.to_instance() else {
                     return Err(cm_unexpected());
@@ -222,17 +224,21 @@ impl LaunchTaskOnReceive {
                 let rights: Rights = request.metadata.get_metadata().unwrap();
                 let conn =
                     self.inner.clone().into_dir_connector(target, subdir.into(), rights.into());
-                if !debug {
-                    Ok(RouterResponse::<DirConnector>::Capability(conn))
-                } else {
-                    let data = self
-                        .inner
-                        .capability_source
-                        .clone()
-                        .try_into()
-                        .expect("failed to convert capability source to Data");
-                    Ok(RouterResponse::<DirConnector>::Debug(data))
-                }
+                Ok(Some(conn))
+            }
+
+            async fn route_debug(
+                &self,
+                _request: Option<Request>,
+                _target: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
+                let data = self
+                    .inner
+                    .capability_source
+                    .clone()
+                    .try_into()
+                    .expect("failed to convert capability source to Data");
+                Ok(data)
             }
         }
         Router::<DirConnector>::new(LaunchTaskRouter { inner: Arc::new(self) })
@@ -287,12 +293,8 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
             async fn route(
                 &self,
                 request: Option<Request>,
-                debug: bool,
                 target_token: WeakInstanceToken,
-            ) -> Result<RouterResponse<Connector>, RouterError> {
-                if debug {
-                    return self.router.route(request, debug, target_token).await;
-                }
+            ) -> Result<Option<Connector>, RouterError> {
                 let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
 
                 let ExtendedInstance::Component(target) =
@@ -306,26 +308,31 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                     default_fn: F,
                 }
                 #[async_trait]
-                impl<F: Fn() -> Result<Request, RouterError> + Send + Sync + 'static>
-                    Routable<Connector> for DefaultRoutable<F>
-                {
+                impl<F: Fn() -> Request + Send + Sync + 'static> Routable<Connector> for DefaultRoutable<F> {
                     async fn route(
                         &self,
                         request: Option<Request>,
-                        debug: bool,
                         target: WeakInstanceToken,
-                    ) -> Result<RouterResponse<Connector>, RouterError> {
-                        let request = match request {
-                            request @ Some(_) => request,
-                            None => Some((self.default_fn)()?),
-                        };
-                        self.router.route(request, debug, target).await
+                    ) -> Result<Option<Connector>, RouterError> {
+                        let request = request.unwrap_or_else(|| (self.default_fn)());
+                        self.router.route(Some(request), target).await
+                    }
+
+                    async fn route_debug(
+                        &self,
+                        request: Option<Request>,
+                        target: WeakInstanceToken,
+                    ) -> Result<Data, RouterError> {
+                        let request = request.unwrap_or_else(|| (self.default_fn)());
+                        self.router.route_debug(Some(request), target).await
                     }
                 }
 
                 let router = Router::new(DefaultRoutable {
                     router: self.router.clone(),
-                    default_fn: move || request.try_clone(),
+                    default_fn: move || {
+                        request.try_clone().expect("dictionary cloning is infallible")
+                    },
                 });
 
                 // Wrap the router in something that will wait until the channel is readable.
@@ -373,25 +380,16 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                         if !signals.contains(fidl::Signals::OBJECT_READABLE) {
                             return Err(zx::Status::PEER_CLOSED);
                         }
-                        let conn = match router.route(None, false, target_token).await.and_then(
-                            |resp| match resp {
-                                RouterResponse::<Connector>::Capability(c) => Ok(c),
-                                RouterResponse::<Connector>::Unavailable => {
-                                    Err(RoutingError::RouteUnexpectedUnavailable {
-                                        type_name: CapabilityTypeName::Protocol,
-                                        moniker: target.moniker.clone().into(),
-                                    }
-                                    .into())
+                        let conn = match router.route(None, target_token).await.and_then(|resp| {
+                            match resp {
+                                Some(c) => Ok(c),
+                                None => Err(RoutingError::RouteUnexpectedUnavailable {
+                                    type_name: CapabilityTypeName::Protocol,
+                                    moniker: target.moniker.clone().into(),
                                 }
-                                RouterResponse::<Connector>::Debug(_) => {
-                                    Err(RoutingError::RouteUnexpectedDebug {
-                                        type_name: CapabilityTypeName::Protocol,
-                                        moniker: target.moniker.clone().into(),
-                                    }
-                                    .into())
-                                }
-                            },
-                        ) {
+                                .into()),
+                            }
+                        }) {
                             Ok(c) => c,
                             Err(err) => {
                                 // TODO(https://fxbug.dev/319754472): Improve the fidelity of error
@@ -417,7 +415,15 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
 
                 let on_readable =
                     OnReadable { scope: self.scope.clone(), router, target, target_token };
-                Ok(RouterResponse::<Connector>::Capability(Connector::new_sendable(on_readable)))
+                Ok(Some(Connector::new_sendable(on_readable)))
+            }
+
+            async fn route_debug(
+                &self,
+                request: Option<Request>,
+                target_token: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
+                return self.router.route_debug(request, target_token).await;
             }
         }
 
@@ -440,7 +446,7 @@ pub mod tests {
     use routing::bedrock::request_metadata::Metadata;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::{DictExt, GenericRouterResponse, LazyGet, test_invalid_instance_token};
-    use runtime_capabilities::{Capability, Data, Dictionary, RemotableCapability};
+    use runtime_capabilities::{Capability, Dictionary, RemotableCapability, RouterResponse};
     use std::pin::pin;
     use std::sync::Weak;
     use std::task::Poll;
@@ -647,11 +653,18 @@ pub mod tests {
         async fn route(
             &self,
             _: Option<Request>,
-            _: bool,
             _: WeakInstanceToken,
-        ) -> Result<RouterResponse<Connector>, RouterError> {
+        ) -> Result<Option<Connector>, RouterError> {
             self.counter.inc();
-            Ok(RouterResponse::<Connector>::Capability(self.connector.clone()))
+            Ok(Some(self.connector.clone()))
+        }
+
+        async fn route_debug(
+            &self,
+            _: Option<Request>,
+            _: WeakInstanceToken,
+        ) -> Result<Data, RouterError> {
+            unimplemented!("should not be called during tests");
         }
     }
 
@@ -676,10 +689,8 @@ pub mod tests {
         .await;
         let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
-        let RouterResponse::<Connector>::Capability(conn) = router
-            .route(Some(Request { metadata }), false, component.as_weak().into())
-            .await
-            .unwrap()
+        let Some(conn) =
+            router.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap()
         else {
             panic!();
         };
@@ -728,10 +739,8 @@ pub mod tests {
         .await;
         let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
-        let RouterResponse::<Connector>::Capability(conn) = router
-            .route(Some(Request { metadata }), false, component.as_weak().into())
-            .await
-            .unwrap()
+        let Some(conn) =
+            router.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap()
         else {
             panic!();
         };
@@ -790,10 +799,10 @@ pub mod tests {
         let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Required);
         let resp =
-            router.route(Some(Request { metadata }), true, target.as_weak().into()).await.unwrap();
+            router.route_debug(Some(Request { metadata }), target.as_weak().into()).await.unwrap();
         assert_matches!(
             resp,
-            RouterResponse::<Connector>::Debug(Data::String(s)) if &*s == "debug"
+            Data::String(s) if &*s == "debug"
         );
     }
 
@@ -812,15 +821,11 @@ pub mod tests {
         let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
         let capability = downscoped_router
-            .route(
-                Some(Request { metadata }),
-                false,
-                test_invalid_instance_token::<ComponentInstance>(),
-            )
+            .route(Some(Request { metadata }), test_invalid_instance_token::<ComponentInstance>())
             .await
             .unwrap();
         let capability = match capability {
-            RouterResponse::<Data>::Capability(d) => d,
+            Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
         assert_eq!(capability, Data::String("hello".into()));
@@ -853,15 +858,11 @@ pub mod tests {
         let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
         let capability = downscoped_router
-            .route(
-                Some(Request { metadata }),
-                false,
-                test_invalid_instance_token::<ComponentInstance>(),
-            )
+            .route(Some(Request { metadata }), test_invalid_instance_token::<ComponentInstance>())
             .await
             .unwrap();
         let capability = match capability {
-            RouterResponse::<Data>::Capability(d) => d,
+            Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
         assert_eq!(capability, Data::String("hello".into()));
@@ -880,9 +881,9 @@ pub mod tests {
 
         let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
-        let capability = router.route(None, false, WeakInstanceToken::new_invalid()).await.unwrap();
+        let capability = router.route(None, WeakInstanceToken::new_invalid()).await.unwrap();
         let capability = match capability {
-            RouterResponse::<Data>::Capability(d) => d,
+            Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
         assert_eq!(capability, Data::String("hello".into()));
@@ -913,9 +914,9 @@ pub mod tests {
 
         let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
-        let capability = router.route(None, false, WeakInstanceToken::new_invalid()).await.unwrap();
+        let capability = router.route(None, WeakInstanceToken::new_invalid()).await.unwrap();
         let capability = match capability {
-            RouterResponse::<Data>::Capability(d) => d,
+            Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
         assert_eq!(capability, Data::String("hello".into()));

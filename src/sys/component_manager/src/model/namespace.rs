@@ -65,9 +65,8 @@ pub async fn create_namespace(
                     )?)
                 {
                     if let Err(RouterError::NotFound(e)) = router
-                        .route(
+                        .route_debug(
                             Some(Request { metadata: storage_metadata(Availability::Required) }),
-                            true,
                             component.as_weak().into(),
                         )
                         .await

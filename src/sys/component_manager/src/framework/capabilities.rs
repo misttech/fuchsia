@@ -24,8 +24,7 @@ use routing::capability_source::{CapabilitySource, RemotedAtSource};
 use routing::error::RoutingError;
 use runtime_capabilities::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dictionary, DirConnectable,
-    DirConnector, Message, RemotableCapability, Request, Routable, Router, RouterResponse,
-    WeakInstanceToken,
+    DirConnector, Message, RemotableCapability, Request, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -560,15 +559,14 @@ where
         request_from_remote(&remote_capabilities, request).map_err(|_| zx::Status::INVALID_ARGS)?;
     let target: WeakInstanceToken =
         remote_capabilities.get(target).map_err(|_| zx::Status::INVALID_ARGS)?;
-    match router.route(maybe_request, false, target).await {
-        Ok(RouterResponse::Capability(cap)) => {
+    match router.route(maybe_request, target).await {
+        Ok(Some(cap)) => {
             remote_capabilities
                 .store(capability_result, cap)
                 .map_err(|_| zx::Status::INVALID_ARGS)?;
             Ok(fruntime::RouterResponse::Success)
         }
-        Ok(RouterResponse::Unavailable) => Ok(fruntime::RouterResponse::Unavailable),
-        Ok(RouterResponse::Debug(_)) => panic!("we didn't request a debug response"),
+        Ok(None) => Ok(fruntime::RouterResponse::Unavailable),
         Err(e) => Err(e.as_zx_status()),
     }
 }
@@ -598,21 +596,8 @@ where
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         target_token: WeakInstanceToken,
-    ) -> Result<RouterResponse<C>, RouterError> {
-        if debug {
-            let type_name: Option<CapabilityTypeName> =
-                request.and_then(|r| r.metadata.get_metadata());
-            return Ok(RouterResponse::Debug(
-                CapabilitySource::RemotedAt(RemotedAtSource {
-                    moniker: self.moniker.clone(),
-                    type_name,
-                })
-                .try_into()
-                .unwrap(),
-            ));
-        }
+    ) -> Result<Option<C>, RouterError> {
         let request =
             request.map(|r| request_to_remote(&self.remote_capabilities, r)).unwrap_or_default();
         let (token, token_other_end) = zx::EventPair::create();
@@ -627,12 +612,12 @@ where
         match result {
             Ok(Ok(fruntime::RouterResponse::Success)) => {
                 if let Ok(cap) = remote_capabilities.get::<C>(e2) {
-                    Ok(RouterResponse::Capability(cap))
+                    Ok(Some(cap))
                 } else {
                     Err(RoutingError::RemoteFIDLError { moniker: self.moniker.clone() }.into())
                 }
             }
-            Ok(Ok(fruntime::RouterResponse::Unavailable)) => Ok(RouterResponse::Unavailable),
+            Ok(Ok(fruntime::RouterResponse::Unavailable)) => Ok(None),
             Ok(Ok(_)) => {
                 Err(RoutingError::RemoteFIDLError { moniker: self.moniker.clone() }.into())
             }
@@ -643,6 +628,20 @@ where
             .into()),
             Err(_e) => Err(RoutingError::RemoteFIDLError { moniker: self.moniker.clone() }.into()),
         }
+    }
+
+    async fn route_debug(
+        &self,
+        request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        let type_name: Option<CapabilityTypeName> = request.and_then(|r| r.metadata.get_metadata());
+        Ok(CapabilitySource::RemotedAt(RemotedAtSource {
+            moniker: self.moniker.clone(),
+            type_name,
+        })
+        .try_into()
+        .unwrap())
     }
 }
 
@@ -1154,8 +1153,8 @@ mod tests {
         let router: Router<Connector> = remote_capabilities.get(router).unwrap();
 
         let capability_source =
-            match router.route(None, true, WeakInstanceToken::new_invalid()).await {
-                Ok(RouterResponse::Debug(data)) => CapabilitySource::try_from(data).unwrap(),
+            match router.route_debug(None, WeakInstanceToken::new_invalid()).await {
+                Ok(data) => CapabilitySource::try_from(data).unwrap(),
                 other_value => panic!("unexpected response from router: {other_value:?}"),
             };
         assert_eq!(
@@ -1181,7 +1180,7 @@ mod tests {
         let router: Router<Connector> = remote_capabilities.get(router).unwrap();
         drop(router_stream);
 
-        let router_err = match router.route(None, false, WeakInstanceToken::new_invalid()).await {
+        let router_err = match router.route(None, WeakInstanceToken::new_invalid()).await {
             Ok(val) => panic!("unexpected success: {val:?}"),
             Err(e) => e,
         };

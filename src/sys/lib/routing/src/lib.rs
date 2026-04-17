@@ -27,7 +27,6 @@ use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker};
 use runtime_capabilities::{
     Capability, CapabilityBound, Dictionary, DirConnector, Request, Routable, Router,
-    RouterResponse,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -221,13 +220,9 @@ where
     Router<T>: TryFrom<Capability>,
 {
     let request = Request { metadata };
-    let data = match router
-        .route(Some(request), true, target.as_weak().into())
+    let data = router
+        .route_debug(Some(request), target.as_weak().into())
         .await
-        .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?
-    {
-        RouterResponse::<T>::Debug(d) => d,
-        d => panic!("Debug route did not return a debug response: {d:?}"),
-    };
+        .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?;
     Ok(data.try_into().unwrap())
 }

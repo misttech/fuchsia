@@ -38,7 +38,7 @@ use routing_test_helpers::{
     CheckUse, ComponentEventRoute, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
     ServiceInstance,
 };
-use runtime_capabilities::{Capability, RouterResponse};
+use runtime_capabilities::Capability;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
@@ -589,8 +589,8 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             Capability::ConnectorRouter(r) => r,
             _ => panic!("unexpected capability type"),
         };
-        match (expected_res, router.route(None, true, target.as_weak().into()).await) {
-            (ExpectedResult::Ok, Ok(RouterResponse::Debug(_debug_data))) => {}
+        match (expected_res, router.route_debug(None, target.as_weak().into()).await) {
+            (ExpectedResult::Ok, Ok(_debug_data)) => {}
             (ExpectedResult::Err(status), Err(err)) => {
                 if status != err.as_zx_status() {
                     panic!(
@@ -604,14 +604,11 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             (ExpectedResult::Ok, Err(err)) => {
                 panic!("failed to route when we expected to succeed: {:?}", err);
             }
-            (ExpectedResult::Err(_status), Ok(RouterResponse::Debug(debug_data))) => {
+            (ExpectedResult::Err(_status), Ok(debug_data)) => {
                 panic!(
                     "routing succeeded when we expected an error, the capability was provided by {:?}",
                     CapabilitySource::try_from(debug_data)
                 );
-            }
-            (_, Ok(RouterResponse::Unavailable | RouterResponse::Capability(_))) => {
-                panic!("unexpected router response");
             }
             (ExpectedResult::ErrWithNoEpitaph, _) => unimplemented!(),
         }

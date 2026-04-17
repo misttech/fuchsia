@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{ConversionError, DirConnector, Router, RouterResponse, WeakInstanceToken};
+use crate::{ConversionError, DirConnector, Router, WeakInstanceToken};
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
@@ -19,22 +19,6 @@ impl crate::RemotableCapability for Router<DirConnector> {
         token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Ok(self.into_directory_entry(fio::DirentType::Directory, scope, token))
-    }
-}
-
-impl TryFrom<RouterResponse<DirConnector>> for fsandbox::DirConnectorRouterRouteResponse {
-    type Error = fsandbox::RouterError;
-
-    fn try_from(resp: RouterResponse<DirConnector>) -> Result<Self, Self::Error> {
-        match resp {
-            RouterResponse::<DirConnector>::Capability(c) => {
-                Ok(fsandbox::DirConnectorRouterRouteResponse::DirConnector(c.into()))
-            }
-            RouterResponse::<DirConnector>::Unavailable => {
-                Ok(fsandbox::DirConnectorRouterRouteResponse::Unavailable(fsandbox::Unit {}))
-            }
-            RouterResponse::<DirConnector>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
-        }
     }
 }
 
@@ -56,7 +40,16 @@ impl Router<DirConnector> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 fsandbox::DirConnectorRouterRequest::Route { payload, responder } => {
-                    responder.send(router::route_from_fidl(&self, payload, token.clone()).await)?;
+                    let resp = match router::route_from_fidl(&self, payload, token.clone()).await {
+                        Ok(Some(c)) => {
+                            Ok(fsandbox::DirConnectorRouterRouteResponse::DirConnector(c.into()))
+                        }
+                        Ok(None) => Ok(fsandbox::DirConnectorRouterRouteResponse::Unavailable(
+                            fsandbox::Unit {},
+                        )),
+                        Err(e) => Err(e),
+                    };
+                    responder.send(resp)?;
                 }
                 fsandbox::DirConnectorRouterRequest::_UnknownMethod { ordinal, .. } => {
                     log::warn!(

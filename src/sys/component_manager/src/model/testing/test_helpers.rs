@@ -24,7 +24,7 @@ use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use hooks::{EventType, HooksRegistration};
 use moniker::{BorrowedChildName, ChildName, Moniker};
-use runtime_capabilities::{Capability, Message, Request, RouterResponse};
+use runtime_capabilities::{Capability, Message, Request};
 use std::collections::HashSet;
 use std::sync::Arc;
 use zx::{self as zx, Koid};
@@ -564,9 +564,9 @@ pub async fn new_event_stream(
 
     let metadata = event_stream_metadata(cm_rust::Availability::Required, Default::default());
     let request = Request { metadata };
-    let result = use_router.route(Some(request), false, root_component.as_weak().into()).await;
+    let result = use_router.route(Some(request), root_component.as_weak().into()).await;
     let connector = match result {
-        Ok(RouterResponse::Capability(connector)) => connector,
+        Ok(Some(connector)) => connector,
         other_response => panic!("unexpected router response: {:?}", other_response),
     };
     let (proxy, server_end) = fidl::endpoints::create_proxy::<fcomponent::EventStreamMarker>();

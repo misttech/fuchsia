@@ -46,14 +46,13 @@ impl TryFrom<fsandbox::DictionaryRouterRouteResponse> for RouterResponse<Diction
 
 /// Binds a Route request from fidl to the Rust [Router::Route] API. Shared by
 /// [Router] server implementations.
-pub(crate) async fn route_from_fidl<T, R>(
+pub(crate) async fn route_from_fidl<T>(
     router: &Router<T>,
     payload: fsandbox::RouteRequest,
     token: WeakInstanceToken,
-) -> Result<R, fsandbox::RouterError>
+) -> Result<Option<T>, fsandbox::RouterError>
 where
     T: CapabilityBound,
-    R: TryFrom<RouterResponse<T>, Error = fsandbox::RouterError>,
 {
     let resp = match (payload.requesting, payload.metadata) {
         (Some(token), Some(metadata)) => {
@@ -70,14 +69,14 @@ where
                 return Err(fsandbox::RouterError::InvalidArgs);
             };
             let request = Request { metadata };
-            router.route(Some(request), false, component).await?
+            router.route(Some(request), component).await?
         }
-        (None, None) => router.route(None, false, token).await?,
+        (None, None) => router.route(None, token).await?,
         _ => {
             return Err(fsandbox::RouterError::InvalidArgs);
         }
     };
-    resp.try_into()
+    Ok(resp)
 }
 
 impl<T: CapabilityBound + Clone> Router<T>
@@ -132,14 +131,10 @@ where
                 };
 
                 // Request a capability from the `router`.
-                let result = match self.router.route(None, false, self.token.clone()).await {
-                    Ok(RouterResponse::<T>::Capability(c)) => Ok(Capability::from(c)),
-                    Ok(RouterResponse::<T>::Unavailable) => {
+                let result = match self.router.route(None, self.token.clone()).await {
+                    Ok(Some(c)) => Ok(Capability::from(c)),
+                    Ok(None) => {
                         return Err(zx::Status::NOT_FOUND);
-                    }
-                    Ok(RouterResponse::<T>::Debug(_)) => {
-                        // This shouldn't happen.
-                        return Err(zx::Status::INTERNAL);
                     }
                     Err(e) => Err(e),
                 };

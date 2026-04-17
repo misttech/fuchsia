@@ -8,9 +8,7 @@ use crate::rights::Rights;
 use async_trait::async_trait;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use runtime_capabilities::{
-    CapabilityBound, Request, Routable, Router, RouterResponse, WeakInstanceToken,
-};
+use runtime_capabilities::{CapabilityBound, Data, Request, Routable, Router, WeakInstanceToken};
 
 struct RightsRouter<T: CapabilityBound> {
     router: Router<T>,
@@ -18,16 +16,10 @@ struct RightsRouter<T: CapabilityBound> {
     moniker: ExtendedMoniker,
 }
 
-#[async_trait]
-impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
-    async fn route(
-        &self,
-        request: Option<Request>,
-        debug: bool,
-        target: WeakInstanceToken,
-    ) -> Result<RouterResponse<T>, router_error::RouterError> {
+impl<T: CapabilityBound> RightsRouter<T> {
+    fn check_and_compute_rights(&self, request: Option<Request>) -> Result<Request, RouterError> {
         let request = request.ok_or(RouterError::InvalidArgs)?;
-        let RightsRouter { router, rights, moniker } = self;
+        let RightsRouter { router: _, rights, moniker } = self;
         let InheritRights(inherit) =
             request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
         let request_rights: Rights = match request.metadata.get_metadata() {
@@ -53,9 +45,30 @@ impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
         // The rights of the request must be compatible with the
         // rights of this step of the route.
         match request_rights.validate_next(&rights, moniker.clone().into()) {
-            Ok(()) => router.route(Some(request), debug, target).await,
+            Ok(()) => Ok(request),
             Err(e) => Err(RoutingError::from(e).into()),
         }
+    }
+}
+
+#[async_trait]
+impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
+    async fn route(
+        &self,
+        request: Option<Request>,
+        target: WeakInstanceToken,
+    ) -> Result<Option<T>, RouterError> {
+        let request = self.check_and_compute_rights(request)?;
+        self.router.route(Some(request), target).await
+    }
+
+    async fn route_debug(
+        &self,
+        request: Option<Request>,
+        target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        let request = self.check_and_compute_rights(request)?;
+        self.router.route_debug(Some(request), target).await
     }
 }
 
@@ -103,12 +116,10 @@ mod tests {
         let metadata = Dictionary::new();
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::R_STAR_DIR));
-        let capability = proxy
-            .route(Some(Request { metadata }), false, FakeComponentToken::new())
-            .await
-            .unwrap();
+        let capability =
+            proxy.route(Some(Request { metadata }), FakeComponentToken::new()).await.unwrap();
         let capability = match capability {
-            RouterResponse::<Data>::Capability(d) => d,
+            Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
         };
         assert_eq!(capability, Data::String("hello".into()));
@@ -122,10 +133,8 @@ mod tests {
         let metadata = Dictionary::new();
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::RW_STAR_DIR));
-        let error = proxy
-            .route(Some(Request { metadata }), false, FakeComponentToken::new())
-            .await
-            .unwrap_err();
+        let error =
+            proxy.route(Some(Request { metadata }), FakeComponentToken::new()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)
@@ -149,7 +158,7 @@ mod tests {
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::R_STAR_DIR));
         let error = intermediate
-            .route(Some(Request { metadata }), false, FakeComponentToken::new())
+            .route(Some(Request { metadata }), FakeComponentToken::new())
             .await
             .unwrap_err();
         assert_matches!(

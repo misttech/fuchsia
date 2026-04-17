@@ -11,7 +11,7 @@ use moniker::ExtendedMoniker;
 use routing::bedrock::request_metadata::resolver_metadata;
 use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
-use runtime_capabilities::{Capability, Request, RouterResponse};
+use runtime_capabilities::{Capability, Request};
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::v2_component_model::V2ComponentModel;
 use serde::{Deserialize, Serialize};
@@ -81,17 +81,11 @@ impl ComponentResolversVisitor {
             let request = Request { metadata: resolver_metadata(cm_types::Availability::Required) };
 
             let source: CapabilitySource = match resolver_router
-                .route(Some(request), true, instance.as_weak().into())
+                .route_debug(Some(request), instance.as_weak().into())
                 .now_or_never()
                 .expect("now or never did not return a result")
             {
-                Ok(RouterResponse::Debug(data)) => {
-                    data.try_into().expect("failed to deserialize debug data")
-                }
-                Ok(RouterResponse::Capability(_)) => panic!("received unexpected router response"),
-                Ok(RouterResponse::Unavailable) => {
-                    panic!("resolvers cannot be optional, yet received unavailable response")
-                }
+                Ok(data) => data.try_into().expect("failed to deserialize debug data"),
                 Err(e) => {
                     eprintln!(
                         "Ignoring invalid resolver configuration for {}: {:#}",

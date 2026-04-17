@@ -11,9 +11,7 @@ use moniker::ExtendedMoniker;
 use router_error::RouterError;
 #[cfg(not(target_os = "fuchsia"))]
 use runtime_capabilities::Capability;
-use runtime_capabilities::{
-    CapabilityBound, Request, Routable, Router, RouterResponse, WeakInstanceToken,
-};
+use runtime_capabilities::{CapabilityBound, Data, Request, Routable, Router, WeakInstanceToken};
 
 /// If the metadata for a route contains a Data::Uint64 value under this key with a value greater
 /// than 0, then no policy checks will be performed. This behavior is limited to non-fuchsia
@@ -74,25 +72,21 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> PolicyCheckRou
             _phantom_data: std::marker::PhantomData::<C>,
         }
     }
-}
 
-#[async_trait]
-impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
-    for PolicyCheckRouter<C, T>
-{
-    async fn route(
+    fn check_policy(
         &self,
-        request: Option<Request>,
-        debug: bool,
+        _request: &Option<Request>,
         target_token: WeakInstanceToken,
-    ) -> Result<RouterResponse<T>, RouterError> {
-        let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
+    ) -> Result<(), RouterError> {
         #[cfg(not(target_os = "fuchsia"))]
-        if let Some(Capability::Data(runtime_capabilities::Data::Uint64(num))) =
-            request.metadata.get(&cm_types::Name::new(SKIP_POLICY_CHECKS).unwrap())
+        if let Some(Capability::Data(runtime_capabilities::Data::Uint64(num))) = _request
+            .as_ref()
+            .ok_or_else(|| RouterError::InvalidArgs)?
+            .metadata
+            .get(&cm_types::Name::new(SKIP_POLICY_CHECKS).unwrap())
         {
             if num > 0 {
-                return self.router.route(Some(request), debug, target_token.clone()).await;
+                return Ok(());
             }
         }
         let target = target_token
@@ -107,8 +101,31 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
             .into());
         };
         match self.policy_checker.can_route_capability(&self.capability_source, &moniker) {
-            Ok(()) => self.router.route(Some(request), debug, target_token).await,
+            Ok(()) => Ok(()),
             Err(policy_error) => Err(RoutingError::PolicyError(policy_error).into()),
         }
+    }
+}
+
+#[async_trait]
+impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
+    for PolicyCheckRouter<C, T>
+{
+    async fn route(
+        &self,
+        request: Option<Request>,
+        target_token: WeakInstanceToken,
+    ) -> Result<Option<T>, RouterError> {
+        self.check_policy(&request, target_token.clone())?;
+        self.router.route(request, target_token).await
+    }
+
+    async fn route_debug(
+        &self,
+        request: Option<Request>,
+        target_token: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        self.check_policy(&request, target_token.clone())?;
+        self.router.route_debug(request, target_token).await
     }
 }

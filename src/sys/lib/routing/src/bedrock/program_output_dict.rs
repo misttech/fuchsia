@@ -25,8 +25,7 @@ use log::warn;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Connector, Data, Dictionary, DirConnector, Request, Routable, Router, RouterResponse,
-    WeakInstanceToken,
+    Connector, Data, Dictionary, DirConnector, Request, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -192,16 +191,12 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 _component_type: PhantomData<C>,
             }
 
-            #[async_trait]
-            impl<C: ComponentInstanceInterface + 'static> Routable<DirConnector>
-                for StorageBackingDirRouter<C>
-            {
-                async fn route(
+            impl<C: ComponentInstanceInterface + 'static> StorageBackingDirRouter<C> {
+                fn prepare_route(
                     &self,
                     request: Option<Request>,
-                    debug: bool,
                     target: WeakInstanceToken,
-                ) -> Result<RouterResponse<DirConnector>, RouterError> {
+                ) -> Result<Request, RouterError> {
                     fn generate_moniker_based_storage_path(
                         subdir: Option<String>,
                         moniker: &Moniker,
@@ -240,9 +235,9 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                     let StorageBackingDirRouter {
                         subdir,
                         storage_id,
-                        backing_dir_router,
+                        backing_dir_router: _,
                         storage_source_moniker,
-                        backing_dir_target,
+                        backing_dir_target: _,
                         _component_type: _,
                     } = self;
                     let instance: ExtendedInstanceInterface<C> = target.upgrade().unwrap();
@@ -284,7 +279,34 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                     request
                         .metadata
                         .set_metadata(StorageSourceMoniker(storage_source_moniker.clone()));
-                    backing_dir_router.route(Some(request), debug, backing_dir_target.clone()).await
+                    Ok(request)
+                }
+            }
+
+            #[async_trait]
+            impl<C: ComponentInstanceInterface + 'static> Routable<DirConnector>
+                for StorageBackingDirRouter<C>
+            {
+                async fn route(
+                    &self,
+                    request: Option<Request>,
+                    target: WeakInstanceToken,
+                ) -> Result<Option<DirConnector>, RouterError> {
+                    let request = self.prepare_route(request, target)?;
+                    self.backing_dir_router
+                        .route(Some(request), self.backing_dir_target.clone())
+                        .await
+                }
+
+                async fn route_debug(
+                    &self,
+                    request: Option<Request>,
+                    target: WeakInstanceToken,
+                ) -> Result<Data, RouterError> {
+                    let request = self.prepare_route(request, target)?;
+                    self.backing_dir_router
+                        .route_debug(Some(request), self.backing_dir_target.clone())
+                        .await
                 }
             }
 
@@ -351,19 +373,20 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 async fn route(
                     &self,
                     _request: Option<Request>,
-                    debug: bool,
                     _target: WeakInstanceToken,
-                ) -> Result<RouterResponse<Data>, RouterError> {
-                    if debug {
-                        Ok(RouterResponse::Debug(
-                            self.source
-                                .clone()
-                                .try_into()
-                                .expect("failed to convert capability source to dictionary"),
-                        ))
-                    } else {
-                        Ok(RouterResponse::Capability(self.data.clone()))
-                    }
+                ) -> Result<Option<Data>, RouterError> {
+                    Ok(Some(self.data.clone()))
+                }
+                async fn route_debug(
+                    &self,
+                    _request: Option<Request>,
+                    _target: WeakInstanceToken,
+                ) -> Result<Data, RouterError> {
+                    Ok(self
+                        .source
+                        .clone()
+                        .try_into()
+                        .expect("failed to convert capability source to dictionary"))
                 }
             }
             let source = CapabilitySource::Component(ComponentSource {
@@ -435,19 +458,21 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
         async fn route(
             &self,
             _request: Option<Request>,
-            debug: bool,
             _target: WeakInstanceToken,
-        ) -> Result<RouterResponse<Dictionary>, RouterError> {
-            if debug {
-                Ok(RouterResponse::Debug(
-                    self.source
-                        .clone()
-                        .try_into()
-                        .expect("failed to convert capability source to dictionary"),
-                ))
-            } else {
-                Ok(RouterResponse::Capability(self.dict.clone().into()))
-            }
+        ) -> Result<Option<Dictionary>, RouterError> {
+            Ok(Some(self.dict.clone().into()))
+        }
+
+        async fn route_debug(
+            &self,
+            _request: Option<Request>,
+            _target: WeakInstanceToken,
+        ) -> Result<Data, RouterError> {
+            Ok(self
+                .source
+                .clone()
+                .try_into()
+                .expect("failed to convert capability source to dictionary"))
         }
     }
     let source = CapabilitySource::Component(ComponentSource {

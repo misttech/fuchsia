@@ -39,7 +39,7 @@ use futures::prelude::*;
 use hooks::HooksRegistration;
 use moniker::Moniker;
 use router_error::Explain;
-use runtime_capabilities::{Capability, Message, RouterResponse};
+use runtime_capabilities::{Capability, Message};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
@@ -1520,14 +1520,11 @@ pub mod capability_util {
             Capability::ConnectorRouter(r) => r,
             _ => panic!("unexpected capability type"),
         };
-        let connector = match router
-            .route(None, false, component.clone().as_weak().into())
+        let connector = router
+            .route(None, component.clone().as_weak().into())
             .await
             .expect("failed to route")
-        {
-            RouterResponse::Capability(c) => c,
-            _ => panic!("unexpected router response"),
-        };
+            .expect("unexpected router response");
 
         let (echo_proxy, server_end) = endpoints::create_proxy::<echo::EchoMarker>();
         connector.send(Message { channel: server_end.into_channel() }).unwrap();

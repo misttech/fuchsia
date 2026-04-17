@@ -19,9 +19,7 @@ use futures::future::BoxFuture;
 use moniker::Moniker;
 use router_error::RouterError;
 use routing::capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
-use runtime_capabilities::{
-    Dictionary, Request, Routable, Router, RouterResponse, WeakInstanceToken,
-};
+use runtime_capabilities::{Data, Dictionary, Request, Routable, Router, WeakInstanceToken};
 use std::sync::Arc;
 
 pub mod binder;
@@ -54,9 +52,8 @@ impl Routable<Dictionary> for FrameworkRouter {
     async fn route(
         &self,
         _request: Option<Request>,
-        _debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dictionary>, RouterError> {
+    ) -> Result<Option<Dictionary>, RouterError> {
         let target = target
             .inner
             .as_any()
@@ -134,7 +131,15 @@ impl Routable<Dictionary> for FrameworkRouter {
                 let _ = framework_dictionary.insert(name.clone(), capability.clone());
             }
         }
-        Ok(RouterResponse::Capability(framework_dictionary))
+        Ok(Some(framework_dictionary))
+    }
+
+    async fn route_debug(
+        &self,
+        _request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        panic!("framework router does not support debug routes");
     }
 }
 

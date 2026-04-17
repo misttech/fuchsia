@@ -24,8 +24,8 @@ use routing::capability_source::{
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use runtime_capabilities::{
-    Capability, Data, Dictionary, DirConnector, RemotableCapability, Request, Router,
-    RouterResponse, WeakInstanceToken,
+    Capability, Data, Dictionary, DirConnector, RemotableCapability, Request, Routable, Router,
+    WeakInstanceToken,
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -64,23 +64,27 @@ pub struct AggregateRouter {
 }
 
 #[async_trait]
-impl runtime_capabilities::Routable<DirConnector> for AggregateRouter {
+impl Routable<DirConnector> for AggregateRouter {
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         _target: WeakInstanceToken,
-    ) -> Result<RouterResponse<DirConnector>, RouterError> {
+    ) -> Result<Option<DirConnector>, RouterError> {
         let aggregate_dir = self.get_aggregate_dir(request).await?;
-        if debug {
-            let data: Data = self
-                .get_capability_source_with_instances()
-                .try_into()
-                .expect("failed to persist capability source");
-            return Ok(RouterResponse::Debug(data));
-        }
+        Ok(Some(aggregate_dir))
+    }
 
-        return Ok(RouterResponse::Capability(aggregate_dir));
+    async fn route_debug(
+        &self,
+        request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        let _aggregate_dir = self.get_aggregate_dir(request).await?;
+        let data: Data = self
+            .get_capability_source_with_instances()
+            .try_into()
+            .expect("failed to persist capability source");
+        Ok(data)
     }
 }
 
@@ -208,20 +212,16 @@ impl AggregateRouter {
         for router in source_dir_routers {
             routing_futures.push(router.route(
                 request.as_ref().map(|r| r.try_clone()).transpose()?,
-                false,
                 self.component.clone().into(),
             ));
         }
         let aggregate_dictionary = Dictionary::new();
         while let Some(router_response) = routing_futures.next().await {
             let source_dir = match router_response {
-                Ok(RouterResponse::Capability(dir_connector)) => dir_connector,
-                Ok(RouterResponse::Unavailable) => {
+                Ok(Some(dir_connector)) => dir_connector,
+                Ok(None) => {
                     // If the capability is unavailable, then there's nothing for us to do here.
                     continue;
-                }
-                Ok(RouterResponse::Debug(_)) => {
-                    panic!("unexpected debug result from non-debug route");
                 }
                 Err(router_error) => {
                     log::warn!(
@@ -402,24 +402,10 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                 }
             }
         };
-        match router
-            .route(None, true, self.component.clone().into())
+        let data = router
+            .route_debug(None, self.component.clone().into())
             .await
-            .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?
-        {
-            RouterResponse::Debug(data) => Ok((
-                router,
-                data.try_into().expect("failed to convert capability source data to struct"),
-            )),
-            RouterResponse::Unavailable => Err(RoutingError::RouteUnexpectedUnavailable {
-                type_name: cm_rust::CapabilityTypeName::Service,
-                moniker: self.component.moniker.clone().into(),
-            }),
-            // We won't see `RouterResponse::Capability` because the debug flag is set to `true` in
-            // the call to `route`.
-            RouterResponse::Capability(_) => {
-                panic!("received capability when requesting debug info")
-            }
-        }
+            .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?;
+        Ok((router, data.try_into().expect("failed to convert capability source data to struct")))
     }
 }

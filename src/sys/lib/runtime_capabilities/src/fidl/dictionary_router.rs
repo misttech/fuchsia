@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{ConversionError, Dictionary, Router, RouterResponse, WeakInstanceToken};
+use crate::{ConversionError, Dictionary, Router, WeakInstanceToken};
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
@@ -19,22 +19,6 @@ impl crate::RemotableCapability for Router<Dictionary> {
         token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Ok(self.into_directory_entry(fio::DirentType::Directory, scope, token))
-    }
-}
-
-impl TryFrom<RouterResponse<Dictionary>> for fsandbox::DictionaryRouterRouteResponse {
-    type Error = fsandbox::RouterError;
-
-    fn try_from(resp: RouterResponse<Dictionary>) -> Result<Self, Self::Error> {
-        match resp {
-            RouterResponse::<Dictionary>::Capability(c) => {
-                Ok(fsandbox::DictionaryRouterRouteResponse::Dictionary(c.into()))
-            }
-            RouterResponse::<Dictionary>::Unavailable => {
-                Ok(fsandbox::DictionaryRouterRouteResponse::Unavailable(fsandbox::Unit {}))
-            }
-            RouterResponse::<Dictionary>::Debug(_) => Err(fsandbox::RouterError::NotSupported),
-        }
     }
 }
 
@@ -56,7 +40,16 @@ impl Router<Dictionary> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 fsandbox::DictionaryRouterRequest::Route { payload, responder } => {
-                    responder.send(router::route_from_fidl(&self, payload, token.clone()).await)?;
+                    let resp = match router::route_from_fidl(&self, payload, token.clone()).await {
+                        Ok(Some(c)) => {
+                            Ok(fsandbox::DictionaryRouterRouteResponse::Dictionary(c.into()))
+                        }
+                        Ok(None) => Ok(fsandbox::DictionaryRouterRouteResponse::Unavailable(
+                            fsandbox::Unit {},
+                        )),
+                        Err(e) => Err(e),
+                    };
+                    responder.send(resp)?;
                 }
                 fsandbox::DictionaryRouterRequest::_UnknownMethod { ordinal, .. } => {
                     log::warn!(

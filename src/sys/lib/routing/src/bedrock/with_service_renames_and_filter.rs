@@ -11,7 +11,7 @@ use router_error::RouterError;
 use runtime_capabilities::RemotableCapability;
 use runtime_capabilities::{
     Capability, Connector, Data, Dictionary, DirConnector, Request, Routable, Router,
-    RouterResponse, WeakInstanceToken,
+    WeakInstanceToken,
 };
 
 /// A router that will apply renames/filtering on any dictionaries routed through it.
@@ -28,24 +28,12 @@ impl Routable<DirConnector> for ServiceRenameRouter {
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<DirConnector>, RouterError> {
-        self.handle_dir_router(request, debug, target).await
-    }
-}
-
-impl ServiceRenameRouter {
-    async fn handle_dir_router(
-        &self,
-        request: Option<Request>,
-        debug: bool,
-        target: WeakInstanceToken,
-    ) -> Result<RouterResponse<DirConnector>, RouterError> {
-        let result = self.router.route(request, debug, target.clone()).await;
+    ) -> Result<Option<DirConnector>, RouterError> {
+        let result = self.router.route(request, target.clone()).await;
         match result {
             #[cfg(target_os = "fuchsia")]
-            Ok(RouterResponse::Capability(source_services_directory)) => {
+            Ok(Some(source_services_directory)) => {
                 let target_services_dict = Dictionary::new();
                 for rename in &self.renames {
                     let path = cm_types::RelativePath::new(&rename.source_name).unwrap();
@@ -62,21 +50,29 @@ impl ServiceRenameRouter {
                     .unwrap();
                 let dir_connector =
                     DirConnector::from_directory_entry(dir_entry, fidl_fuchsia_io::PERM_READABLE);
-                return Ok(dir_connector.into());
+                return Ok(Some(dir_connector));
             }
             #[cfg(not(target_os = "fuchsia"))]
-            Ok(RouterResponse::Capability(_)) => {
+            Ok(Some(_)) => {
                 let (_receiver, dir_connector) = DirConnector::new();
-                return Ok(dir_connector.into());
+                return Ok(Some(dir_connector));
             }
-            Ok(RouterResponse::Debug(capability_source_data)) => {
-                Ok(RouterResponse::Debug(self.wrap_debug_response(capability_source_data)))
-            }
-            Ok(RouterResponse::Unavailable) => Ok(RouterResponse::Unavailable),
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
     }
 
+    async fn route_debug(
+        &self,
+        request: Option<Request>,
+        target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        let data = self.router.route_debug(request, target).await?;
+        Ok(self.wrap_debug_response(data))
+    }
+}
+
+impl ServiceRenameRouter {
     /// Converts a capability source into `CapabilitySource::FilteredProvider`
     fn wrap_debug_response(&self, capability_source_data: Data) -> Data {
         log::warn!("wrapping debug response with a filtered provider");

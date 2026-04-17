@@ -33,7 +33,7 @@ use futures::{Future, TryFutureExt, TryStreamExt};
 use log::{debug, error, warn};
 use moniker::{ChildName, Moniker};
 use routing::{DictExt, WithPorcelain};
-use runtime_capabilities::{Capability, DirConnector, Router, RouterResponse};
+use runtime_capabilities::{Capability, DirConnector, Router};
 use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
@@ -164,14 +164,9 @@ impl StorageAdmin {
         Ok(Arc::new(Self { storage_decl, weak_component, storage_router, backing_dir_router }))
     }
 
-    async fn route_storage_as(
-        &self,
-        target: &Arc<ComponentInstance>,
-        debug: bool,
-    ) -> Result<RouterResponse<DirConnector>, fcomponent::Error> {
+    fn get_storage_router(&self, target: &Arc<ComponentInstance>) -> Router<DirConnector> {
         let capability_decl = CapabilityDecl::Storage(self.storage_decl.clone());
-        let storage_router: Router<DirConnector> = self
-            .storage_router
+        self.storage_router
             .clone()
             .with_porcelain_with_default(CapabilityTypeName::Storage)
             .error_info(RouteRequestErrorInfo::from(&capability_decl))
@@ -181,40 +176,38 @@ impl StorageAdmin {
             .rights(Some(fidl_fuchsia_io::RW_STAR_DIR.into()))
             .subdir(cm_types::RelativePath::dot().into())
             .inherit_rights(false)
-            .build();
-        storage_router.route(None, debug, target.as_weak().into()).await.map_err(|e| {
-            log::error!("failed to route storage: {e:?}");
-            fcomponent::Error::Internal
-        })
+            .build()
     }
 
     async fn debug_route_storage_as(
         &self,
         target: &Arc<ComponentInstance>,
     ) -> Result<CapabilitySource, fcomponent::Error> {
-        let router_res = self.route_storage_as(&target, true).await?;
-        match router_res {
-            RouterResponse::Capability(_) => {
-                panic!("got capability for debug route")
-            }
-            RouterResponse::Debug(data) => {
-                Ok(data.try_into().expect("failed to deserialize capability source"))
-            }
-            RouterResponse::Unavailable => {
-                panic!("got unavailable for debug route")
-            }
-        }
+        let data = self
+            .get_storage_router(target)
+            .route_debug(None, target.as_weak().into())
+            .await
+            .map_err(|e| {
+                log::error!("failed to route storage: {e:?}");
+                fcomponent::Error::Internal
+            })?;
+        Ok(data.try_into().expect("failed to deserialize capability source"))
     }
 
     async fn open_storage_as(
         &self,
         target: &Arc<ComponentInstance>,
     ) -> Result<DirConnector, fcomponent::Error> {
-        let router_res = self.route_storage_as(target, false).await?;
+        let router_res =
+            self.get_storage_router(target).route(None, target.as_weak().into()).await.map_err(
+                |e| {
+                    log::error!("failed to route storage: {e:?}");
+                    fcomponent::Error::Internal
+                },
+            )?;
         match router_res {
-            RouterResponse::Capability(dir_connector) => Ok(dir_connector),
-            RouterResponse::Debug(_) => panic!("got debug info for non-debug route"),
-            RouterResponse::Unavailable => Err(fcomponent::Error::Internal),
+            Some(dir_connector) => Ok(dir_connector),
+            None => Err(fcomponent::Error::Internal),
         }
     }
 
@@ -235,12 +228,10 @@ impl StorageAdmin {
             .subdir(cm_types::RelativePath::dot().into())
             .inherit_rights(false)
             .build();
-        let router_res =
-            backing_dir_router.route(None, false, self.weak_component.clone().into()).await;
+        let router_res = backing_dir_router.route(None, self.weak_component.clone().into()).await;
         let dir_connector = match router_res {
-            Ok(RouterResponse::Capability(dir_connector)) => dir_connector,
-            Ok(RouterResponse::Debug(_)) => panic!("got debug info for non-debug route"),
-            Ok(RouterResponse::Unavailable) => return Err(fcomponent::Error::Internal),
+            Ok(Some(dir_connector)) => dir_connector,
+            Ok(None) => return Err(fcomponent::Error::Internal),
             Err(_e) => return Err(fcomponent::Error::Internal),
         };
         let (dir_proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
@@ -716,8 +707,8 @@ impl StorageAdmin {
                     Some(Capability::DirConnectorRouter(router)) => router,
                     _ => continue,
                 };
-                let storage_source = match router.route(None, true, component_weak).await {
-                    Ok(RouterResponse::Debug(data)) => CapabilitySource::try_from(data)
+                let storage_source = match router.route_debug(None, component_weak).await {
+                    Ok(data) => CapabilitySource::try_from(data)
                         .expect("failed to convert Data to capability source"),
                     _ => continue,
                 };

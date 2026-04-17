@@ -122,8 +122,8 @@ fn connect_to_heapdump(builtin_environment: &BuiltinEnvironment) {
             cm_types::Name::new("fuchsia.memory.heapdump.process.Registry").unwrap(),
         );
         let heapdump_connector =
-            match heapdump_router.route(None, false, model.root().clone().as_weak().into()).await {
-                Ok(runtime_capabilities::RouterResponse::Capability(connector)) => connector,
+            match heapdump_router.route(None, model.root().clone().as_weak().into()).await {
+                Ok(Some(connector)) => connector,
                 other_value => {
                     error!("Failed to connect to heapdump collector: {:?}", other_value);
                     return;

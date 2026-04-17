@@ -26,8 +26,7 @@ use routing::bedrock::sandbox_construction::{EventStreamFilter, EventStreamSourc
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dictionary, Receiver, Request, Routable, Router, RouterResponse,
-    WeakInstanceToken,
+    Capability, Connector, Data, Dictionary, Receiver, Request, Routable, Router, WeakInstanceToken,
 };
 use std::pin::{Pin, pin};
 use std::sync::Arc;
@@ -50,61 +49,38 @@ impl Routable<Connector> for EventStreamUseRouter {
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Connector>, RouterError> {
-        if debug {
-            return self.route_debug(request, target).await;
-        }
-
+    ) -> Result<Option<Connector>, RouterError> {
         let mut routing_tasks = FuturesUnordered::new();
         for source_route in self.sources.iter() {
             let request = request.as_ref().and_then(|r| r.try_clone().ok());
             let filter = source_route.filter.clone();
             routing_tasks.push(
-                source_route
-                    .router
-                    .route(request, false, target.clone())
-                    .map(move |res| (res, filter)),
+                source_route.router.route(request, target.clone()).map(move |res| (res, filter)),
             );
         }
         let mut routed_dictionaries = vec![];
         while let Some((result, filter)) = routing_tasks.next().await {
-            match result? {
-                RouterResponse::Capability(dictionary) => {
-                    routed_dictionaries.push((dictionary, filter))
-                }
-                RouterResponse::Unavailable => continue,
-                RouterResponse::Debug(_) => {
-                    panic!("non-debug route returned debug info, which is disallowed")
-                }
+            if let Some(dictionary) = result? {
+                routed_dictionaries.push((dictionary, filter))
             }
         }
         let target_component = self.component.upgrade().map_err(RoutingError::from)?;
         let (connector, use_receiver) =
             EventStreamUseReceiver::new(routed_dictionaries, target_component.clone());
         target_component.execution_scope.spawn(use_receiver.run());
-        Ok(RouterResponse::Capability(connector))
-    }
-}
-
-impl EventStreamUseRouter {
-    pub fn new(
-        component: &Arc<ComponentInstance>,
-        sources: Vec<EventStreamSourceRouter>,
-    ) -> Router<Connector> {
-        Router::new(Self { component: component.as_weak(), sources })
+        Ok(Some(connector))
     }
 
     async fn route_debug(
         &self,
         request: Option<Request>,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Connector>, RouterError> {
+    ) -> Result<Data, RouterError> {
         let mut routing_tasks = FuturesUnordered::new();
         for source_route in self.sources.iter() {
             let request = request.as_ref().and_then(|r| r.try_clone().ok());
-            routing_tasks.push(source_route.router.route(request, true, target.clone()));
+            routing_tasks.push(source_route.router.route_debug(request, target.clone()));
         }
         // Our router might route multiple capabilities to perform its job. In this case the
         // current API isn't a great fit, because we'll get multiple capability sources, but we can
@@ -119,13 +95,18 @@ impl EventStreamUseRouter {
             }
         }
         match any_result {
-            Some(RouterResponse::Debug(data)) => Ok(RouterResponse::Debug(data)),
-            Some(RouterResponse::Unavailable) => Ok(RouterResponse::Unavailable),
-            Some(RouterResponse::Capability(_)) => {
-                panic!("debug route returned capability, which is disallowed")
-            }
+            Some(data) => Ok(data),
             None => panic!("no result produced, is sources empty?"),
         }
+    }
+}
+
+impl EventStreamUseRouter {
+    pub fn new(
+        component: &Arc<ComponentInstance>,
+        sources: Vec<EventStreamSourceRouter>,
+    ) -> Router<Connector> {
+        Router::new(Self { component: component.as_weak(), sources })
     }
 }
 

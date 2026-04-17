@@ -1009,7 +1009,7 @@ mod tests {
     use routing::capability_source::CapabilitySource;
     use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
     use routing::error::ComponentInstanceError;
-    use runtime_capabilities::{Capability, Request, RouterResponse};
+    use runtime_capabilities::{Capability, Request};
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -1461,9 +1461,9 @@ mod tests {
             panic!("unexpected capability for runner");
         };
         let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
-        let res = runner_router.route(Some(request), true, child_instance.as_weak().into()).await;
+        let res = runner_router.route_debug(Some(request), child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
-            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
         };
         assert_eq!(source.source_moniker(), Moniker::root().into());
@@ -1476,9 +1476,9 @@ mod tests {
             panic!("unexpected capability for resolver");
         };
         let request = Request { metadata: resolver_metadata(cm_rust::Availability::Required) };
-        let res = resolver_router.route(Some(request), true, child_instance.as_weak().into()).await;
+        let res = resolver_router.route_debug(Some(request), child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
-            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
         };
         assert_eq!(source.source_moniker(), Moniker::root().into());
@@ -1489,9 +1489,9 @@ mod tests {
             panic!("unexpected capability for runner");
         };
         let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
-        let res = runner_router.route(Some(request), true, child_instance.as_weak().into()).await;
+        let res = runner_router.route_debug(Some(request), child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
-            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
         };
         assert_eq!(source.source_moniker(), Moniker::root().into());
@@ -1501,9 +1501,9 @@ mod tests {
             panic!("unexpected capability for runner");
         };
         let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
-        let res = runner_router.route(Some(request), true, child_instance.as_weak().into()).await;
+        let res = runner_router.route_debug(Some(request), child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
-            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
         };
         assert_eq!(source.source_moniker(), ExtendedMoniker::ComponentManager);
@@ -1514,9 +1514,9 @@ mod tests {
             panic!("unexpected capability for resolver");
         };
         let request = Request { metadata: resolver_metadata(cm_rust::Availability::Required) };
-        let res = resolver_router.route(Some(request), true, child_instance.as_weak().into()).await;
+        let res = resolver_router.route_debug(Some(request), child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
-            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
         };
         assert_eq!(source.source_moniker(), ExtendedMoniker::ComponentManager);

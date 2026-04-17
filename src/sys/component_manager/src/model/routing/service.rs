@@ -24,7 +24,7 @@ use routing::capability_source::{
 };
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
-use runtime_capabilities::{DirConnector, Router, RouterResponse};
+use runtime_capabilities::{DirConnector, Router};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -517,17 +517,16 @@ impl AnonymizedAggregateServiceDir {
             self.parent.upgrade().map_err(|err| ModelError::ComponentInstanceError { err })?;
 
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let result = router.route(None, false, self.parent.clone().into()).await;
+        let result = router.route(None, self.parent.clone().into()).await;
         let dir_connector = match result? {
-            RouterResponse::Capability(dir_connector) => dir_connector,
-            RouterResponse::Unavailable => {
+            Some(dir_connector) => dir_connector,
+            None => {
                 return Err(RoutingError::RouteUnexpectedUnavailable {
                     type_name: CapabilityTypeName::Service,
                     moniker: target.moniker.clone().into(),
                 }
                 .into());
             }
-            RouterResponse::Debug(_) => panic!("we didn't ask for a debug route"),
         };
         let _ = dir_connector.send(server_end, RelativePath::dot(), Some(FLAGS));
 
@@ -908,7 +907,7 @@ mod tests {
     use maplit::hashmap;
     use proptest::prelude::*;
     use rand::SeedableRng;
-    use runtime_capabilities::{Request, WeakInstanceToken};
+    use runtime_capabilities::{Request, RouterResponse, WeakInstanceToken};
     use std::collections::HashSet;
     use vfs::pseudo_directory;
 
@@ -979,7 +978,16 @@ mod tests {
                         );
                     let request =
                         Request { metadata: service_metadata(cm_types::Availability::Required) };
-                    service_router.route(Some(request), debug, target).await
+                    if !debug {
+                        match service_router.route(Some(request), target).await? {
+                            Some(c) => Ok(RouterResponse::Capability(c)),
+                            None => Ok(RouterResponse::Unavailable),
+                        }
+                    } else {
+                        Ok(RouterResponse::Debug(
+                            service_router.route_debug(Some(request), target).await?,
+                        ))
+                    }
                 }
                 .boxed()
             });

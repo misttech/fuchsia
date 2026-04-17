@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::model::component::{ComponentInstance, RouterError, RouterResponse};
+use crate::model::component::{ComponentInstance, RouterError};
 use ::routing::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use ::routing::component_instance::TopInstanceInterface;
 use anyhow::format_err;
@@ -18,7 +18,7 @@ use fuchsia_sync::Mutex;
 use log::warn;
 use moniker::Moniker;
 use routing::error::{ComponentInstanceError, RoutingError};
-use runtime_capabilities::{Connector, Request, Routable, WeakInstanceToken};
+use runtime_capabilities::{Connector, Data, Request, Routable, Router, WeakInstanceToken};
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
@@ -92,14 +92,8 @@ impl ComponentManagerInstance {
             source_name: cm_types::Name,
         }
 
-        #[async_trait]
-        impl Routable<Connector> for RootCapabilityRouter {
-            async fn route(
-                &self,
-                request: Option<Request>,
-                debug: bool,
-                target: WeakInstanceToken,
-            ) -> Result<RouterResponse<Connector>, RouterError> {
+        impl RootCapabilityRouter {
+            async fn get_router(&self) -> Result<Router<Connector>, RouterError> {
                 let component_output = self
                     .root
                     .lock_resolved_state()
@@ -114,15 +108,33 @@ impl ComponentManagerInstance {
                     .component_output
                     .clone();
                 match component_output.capabilities().get(&self.source_name) {
-                    Some(runtime_capabilities::Capability::ConnectorRouter(router)) => {
-                        Ok(router.route(request, debug, target).await?)
-                    }
+                    Some(runtime_capabilities::Capability::ConnectorRouter(router)) => Ok(router),
                     _ => Err(RouterError::NotFound(Arc::new(
                         RoutingError::UseFromRootExposeNotFound {
                             capability_id: self.source_name.to_string(),
                         },
                     ))),
                 }
+            }
+        }
+
+        #[async_trait]
+        impl Routable<Connector> for RootCapabilityRouter {
+            async fn route(
+                &self,
+                request: Option<Request>,
+                target: WeakInstanceToken,
+            ) -> Result<Option<Connector>, RouterError> {
+                let router = self.get_router().await?;
+                router.route(request, target).await
+            }
+            async fn route_debug(
+                &self,
+                request: Option<Request>,
+                target: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
+                let router = self.get_router().await?;
+                router.route_debug(request, target).await
             }
         }
 

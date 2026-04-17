@@ -64,7 +64,7 @@ use {
     routing_test_helpers::{
         RoutingTestModel, default_service_capability, instantiate_common_routing_tests,
     },
-    runtime_capabilities::{Connector, Router, RouterResponse, WeakInstanceToken},
+    runtime_capabilities::{Connector, Router, WeakInstanceToken},
     std::time::Duration,
     std::{
         collections::HashSet,
@@ -3328,18 +3328,16 @@ async fn source_component_stopping_when_routing() {
         // Route the capability.
         let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
         let cap = Router::<Connector>::try_from(cap).unwrap();
-        let Ok(RouterResponse::Capability(conn)) = cap
+        let conn = cap
             .route(
                 Some(runtime_capabilities::Request {
                     metadata: protocol_metadata(Availability::Required),
                 }),
-                false,
                 root.as_weak().into(),
             )
             .await
-        else {
-            panic!()
-        };
+            .expect("failed to route")
+            .expect("capability not available");
 
         // Connect to the capability.
         conn.send(runtime_capabilities::Message { channel: server_end }).unwrap()
@@ -3394,18 +3392,16 @@ async fn source_component_stopped_after_routing_before_open() {
 
     let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
     let cap = Router::<Connector>::try_from(cap).unwrap();
-    let Ok(RouterResponse::Capability(conn)) = cap
+    let conn = cap
         .route(
             Some(runtime_capabilities::Request {
                 metadata: protocol_metadata(Availability::Required),
             }),
-            false,
             root.as_weak().into(),
         )
         .await
-    else {
-        panic!()
-    };
+        .expect("failed to route")
+        .expect("capability not available");
 
     // It should be started with the capability access start reason.
     assert!(root.is_started().await);
@@ -3465,18 +3461,16 @@ async fn source_component_shutdown_after_routing_before_open() {
         root.lock_resolved_state().await.unwrap().sandbox.component_output.capabilities().clone();
     let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
     let cap = Router::<Connector>::try_from(cap).unwrap();
-    let Ok(RouterResponse::Capability(conn)) = cap
+    let conn = cap
         .route(
             Some(runtime_capabilities::Request {
                 metadata: protocol_metadata(Availability::Required),
             }),
-            false,
             root.as_weak().into(),
         )
         .await
-    else {
-        panic!()
-    };
+        .expect("failed to route")
+        .expect("capability not available");
 
     // It should be started with the capability access start reason.
     assert!(root.is_started().await);

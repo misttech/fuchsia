@@ -25,7 +25,7 @@ use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use moniker::{ChildName, Moniker};
 use routing::capability_source::StorageBackingDirectorySource;
-use runtime_capabilities::{Dictionary, DirConnector, Router, RouterResponse};
+use runtime_capabilities::{Dictionary, DirConnector, Router};
 use std::path::PathBuf;
 use std::sync::Arc;
 use vfs::ToObjectRequest;
@@ -203,8 +203,8 @@ pub async fn route_backing_directory(
             name: storage_decl.backing_dir.to_string(),
         },
     );
-    let source: CapabilitySource = match backing_dir_router
-        .route(
+    let source: CapabilitySource = backing_dir_router
+        .route_debug(
             Some(runtime_capabilities::Request {
                 metadata: routing::bedrock::request_metadata::directory_metadata(
                     cm_types::Availability::Transitional,
@@ -212,17 +212,12 @@ pub async fn route_backing_directory(
                     None,
                 ),
             }),
-            true,
             storage_component.as_weak().into(),
         )
         .await
         .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?
-    {
-        RouterResponse::Debug(data) => {
-            data.try_into().expect("failed to deserialize capability source")
-        }
-        _ => panic!("unexpected response to debug route"),
-    };
+        .try_into()
+        .expect("failed to deserialize capability source");
 
     let (dir_source_path, dir_source_instance, dir_subdir) = match source {
         CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {

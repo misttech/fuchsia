@@ -81,7 +81,7 @@ use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
 use runtime_capabilities::{
     Capability, Connector, Data, Dictionary, DirConnector, RemotableCapability, Request, Routable,
-    Router, RouterResponse, WeakInstanceToken,
+    Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -536,8 +536,8 @@ impl ResolvedInstanceState {
             let metadata =
                 event_stream_metadata(use_event_stream_decl.availability, route_metadata);
             let request = Request { metadata };
-            let Ok(RouterResponse::Capability(dictionary)) =
-                offered_router.route(Some(request), false, component.as_weak().into()).await
+            let Ok(Some(dictionary)) =
+                offered_router.route(Some(request), component.as_weak().into()).await
             else {
                 continue;
             };
@@ -1365,9 +1365,8 @@ impl Routable<Connector> for CapabilityRequestedHook {
     async fn route(
         &self,
         _request: Option<Request>,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Connector>, RouterError> {
+    ) -> Result<Option<Connector>, RouterError> {
         fn cm_unexpected() -> RouterError {
             RoutingError::from(ComponentInstanceError::ComponentManagerInstanceUnexpected {}).into()
         }
@@ -1402,21 +1401,21 @@ impl Routable<Connector> for CapabilityRequestedHook {
             receiver: receiver.clone(),
         });
         source.hooks.dispatch(&event).await;
-        let resp = if debug {
-            RouterResponse::<Connector>::Debug(
-                CapabilitySource::Component(ComponentSource {
-                    capability: self.capability_decl.clone().into(),
-                    moniker: self.source.moniker.clone(),
-                })
-                .try_into()
-                .expect("failed to convert capability source to Data"),
-            )
-        } else if receiver.is_taken() {
-            RouterResponse::<Connector>::Capability(sender)
-        } else {
-            RouterResponse::<Connector>::Capability(self.connector.clone())
-        };
-        Ok(resp)
+        let resp = if receiver.is_taken() { sender } else { self.connector.clone() };
+        Ok(Some(resp))
+    }
+
+    async fn route_debug(
+        &self,
+        _request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        Ok(CapabilitySource::Component(ComponentSource {
+            capability: self.capability_decl.clone().into(),
+            moniker: self.source.moniker.clone(),
+        })
+        .try_into()
+        .expect("failed to convert capability source to Data"))
     }
 }
 
@@ -1432,20 +1431,12 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         _target: WeakInstanceToken,
-    ) -> Result<RouterResponse<DirConnector>, RouterError> {
+    ) -> Result<Option<DirConnector>, RouterError> {
         let request = request.ok_or(RouterError::InvalidArgs)?;
         let subdir: SubDir = request.metadata.get_metadata().unwrap_or_else(|| SubDir::dot());
-        let subdir_relative = subdir.as_ref().clone();
         let subdir = vfs::path::Path::validate_and_split(format!("{}", subdir))
             .map_err(|_| RouterError::InvalidArgs)?;
-        let StorageSubdir(storage_subdir) =
-            request.metadata.get_metadata().unwrap_or_else(|| StorageSubdir(RelativePath::dot()));
-        let StorageSourceMoniker(storage_source_moniker) = request
-            .metadata
-            .get_metadata()
-            .unwrap_or_else(|| StorageSourceMoniker(Moniker::root()));
         let path = subdir.with_prefix(&self.path);
         let rights: Rights = request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
         let source_component = self.source_component.upgrade().map_err(RoutingError::from)?;
@@ -1456,44 +1447,39 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
                 isolated_storage_path.to_string_lossy().into_owned(),
             )
             .unwrap();
-            if !debug {
-                source_component.ensure_started(&StartReason::StorageAdmin).await.map_err(
-                    |err| {
-                        RoutingError::from(ComponentInstanceError::StartFailed {
-                            moniker: source_component.moniker.clone(),
-                            err_msg: format!("{err}"),
-                            err_as_zx: err.as_zx_status(),
-                        })
-                    },
-                )?;
-                let (proxy, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-                let flags =
-                    fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY;
-                let mut obj_request = vfs::object_request::ObjectRequest::new(
-                    flags,
-                    &fio::Options::default(),
-                    server.into(),
-                );
-                let open_request = vfs::directory::entry::OpenRequest::new(
-                    source_component.execution_scope.clone(),
-                    flags,
-                    path.clone(),
-                    &mut obj_request,
-                );
-                source_component.get_outgoing().clone().open_entry(open_request).unwrap();
-                let _ = fuchsia_fs::directory::create_directory_recursive(
-                    &proxy,
-                    isolated_storage_path.as_str(),
-                    flags,
-                )
-                .await
-                .map_err(|err| {
-                    RoutingError::from(ComponentInstanceError::FailedToCreateStorage {
-                        moniker: source_component.moniker.clone(),
-                        err_msg: format!("{err}"),
-                    })
-                })?;
-            }
+            source_component.ensure_started(&StartReason::StorageAdmin).await.map_err(|err| {
+                RoutingError::from(ComponentInstanceError::StartFailed {
+                    moniker: source_component.moniker.clone(),
+                    err_msg: format!("{err}"),
+                    err_as_zx: err.as_zx_status(),
+                })
+            })?;
+            let (proxy, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+            let flags = fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::PROTOCOL_DIRECTORY;
+            let mut obj_request = vfs::object_request::ObjectRequest::new(
+                flags,
+                &fio::Options::default(),
+                server.into(),
+            );
+            let open_request = vfs::directory::entry::OpenRequest::new(
+                source_component.execution_scope.clone(),
+                flags,
+                path.clone(),
+                &mut obj_request,
+            );
+            source_component.get_outgoing().clone().open_entry(open_request).unwrap();
+            let _ = fuchsia_fs::directory::create_directory_recursive(
+                &proxy,
+                isolated_storage_path.as_str(),
+                flags,
+            )
+            .await
+            .map_err(|err| {
+                RoutingError::from(ComponentInstanceError::FailedToCreateStorage {
+                    moniker: source_component.moniker.clone(),
+                    err_msg: format!("{err}"),
+                })
+            })?;
             isolated_storage_path.with_prefix(&path)
         } else {
             path
@@ -1555,6 +1541,23 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
                 path,
                 flags: rights.into(),
             });
+        Ok(Some(dir_connector))
+    }
+
+    async fn route_debug(
+        &self,
+        request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        let request = request.ok_or(RouterError::InvalidArgs)?;
+        let subdir: SubDir = request.metadata.get_metadata().unwrap_or_else(|| SubDir::dot());
+        let subdir_relative = subdir.as_ref().clone();
+        let StorageSubdir(storage_subdir) =
+            request.metadata.get_metadata().unwrap_or_else(|| StorageSubdir(RelativePath::dot()));
+        let StorageSourceMoniker(storage_source_moniker) = request
+            .metadata
+            .get_metadata()
+            .unwrap_or_else(|| StorageSourceMoniker(Moniker::root()));
         let capability_source =
             if let CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
                 capability,
@@ -1574,13 +1577,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             } else {
                 self.capability_source.clone()
             };
-        if debug {
-            Ok(RouterResponse::Debug(
-                capability_source.try_into().expect("failed to convert capability source to Data"),
-            ))
-        } else {
-            Ok(RouterResponse::Capability(dir_connector))
-        }
+        Ok(capability_source.try_into().expect("failed to convert capability source to Data"))
     }
 }
 
@@ -1595,21 +1592,8 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<Dictionary>, RouterError> {
-        if debug {
-            let source = CapabilitySource::Component(ComponentSource {
-                capability: self.capability.clone(),
-                moniker: self.component.moniker.clone(),
-            });
-            let cap = Capability::try_from(source)
-                .expect("failed to convert capability source to capability");
-            let Capability::Data(data) = cap else {
-                panic!("failed to convert capability source to Debug");
-            };
-            return Ok(RouterResponse::<Dictionary>::Debug(data));
-        }
+    ) -> Result<Option<Dictionary>, RouterError> {
         let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
         fn open_error(e: OpenOutgoingDirError) -> OpenError {
             CapabilityProviderError::from(ComponentProviderError::from(e)).into()
@@ -1638,7 +1622,14 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
                 .await
                 .map_err(|e| open_error(OpenOutgoingDirError::Fidl(e)))?
                 .map_err(RouterError::from)?;
-            return resp.try_into().map_err(|e| RouterError::NotFound(Arc::new(e)));
+            match resp {
+                fsandbox::DictionaryRouterRouteResponse::Dictionary(d) => {
+                    let dictionary =
+                        Dictionary::try_from(d).map_err(|e| RouterError::NotFound(Arc::new(e)))?;
+                    return Ok(Some(dictionary));
+                }
+                fsandbox::DictionaryRouterRouteResponse::Unavailable(_) => return Ok(None),
+            }
         }
 
         let (inner_router, server_end) = create_proxy::<fruntime::DictionaryRouterMarker>();
@@ -1651,6 +1642,20 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
             component.context.remote_capabilities().clone(),
             component.moniker.clone(),
         );
-        router.route(Some(request), debug, target).await
+        router.route(Some(request), target).await
+    }
+
+    async fn route_debug(
+        &self,
+        _request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        let source = CapabilitySource::Component(ComponentSource {
+            capability: self.capability.clone(),
+            moniker: self.component.moniker.clone(),
+        });
+        let data =
+            Data::try_from(source).expect("failed to convert capability source to capability");
+        Ok(data)
     }
 }

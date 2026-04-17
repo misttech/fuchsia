@@ -38,8 +38,7 @@ use num_traits::cast::FromPrimitive;
 use router_error::RouterError;
 use routing::bedrock::request_metadata::runner_metadata;
 use runtime_capabilities::{
-    Capability, Connector, Dictionary, DirConnector, Message, Request, Router, RouterResponse,
-    WeakInstanceToken,
+    Capability, Connector, Dictionary, DirConnector, Message, Request, Router, WeakInstanceToken,
 };
 use serve_processargs::NamespaceBuilder;
 use std::sync::Arc;
@@ -127,22 +126,9 @@ fn open_protocols_with_numbered_handle(
                         let (client, server) = fidl::Channel::create();
                         let target = target.clone();
                         scope.spawn(async move {
-                            let Ok(res) = router.route(None, false, target).await else {
-                                // router will take care of logging error
-                                return;
-                            };
-                            match res {
-                                RouterResponse::Capability(c) => {
-                                    let _ =
-                                        c.send(runtime_capabilities::Message { channel: server });
-                                }
-                                RouterResponse::Unavailable => {}
-                                RouterResponse::Debug(_) => {
-                                    warn!(
-                                        "open_protocols_with_numbered_handle: debug response from \
-                                         non-debug route"
-                                    );
-                                }
+                            // the router should handle logging in the event of an error
+                            if let Ok(Some(c)) = router.route(None, target).await {
+                                let _ = c.send(runtime_capabilities::Message { channel: server });
                             }
                         });
                         handle_info_from(client, numbered_handle)
@@ -505,7 +491,7 @@ async fn open_runner(
     // Open up a channel to the runner.
     let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
     let runner_capability = runner_router
-        .route(Some(request), false, component.as_weak().into())
+        .route(Some(request), component.as_weak().into())
         .await
         .map_err(|err| StartActionError::ResolveRunnerError {
             moniker: component.moniker.clone(),
@@ -515,7 +501,7 @@ async fn open_runner(
     match &runner_capability {
         // Built-in runners are hosted by a LaunchTaskOnReceive, which returns a Connector
         // capability for new routes.
-        RouterResponse::<Connector>::Capability(runner_connector) => {
+        Some(runner_connector) => {
             let (proxy, server_end) = create_proxy::<fcrunner::ComponentRunnerMarker>();
             runner_connector.send(Message { channel: server_end.into_channel() }).map_err(
                 |_| StartActionError::ResolveRunnerError {

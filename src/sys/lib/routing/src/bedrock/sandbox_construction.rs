@@ -38,7 +38,7 @@ use moniker::{ChildName, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
     Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Request, Routable,
-    Router, RouterResponse, WeakInstanceToken,
+    Router, WeakInstanceToken,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
@@ -200,9 +200,15 @@ impl Default for ComponentSandbox {
             async fn route(
                 &self,
                 _request: Option<Request>,
-                _debug: bool,
                 _target: WeakInstanceToken,
-            ) -> Result<RouterResponse<Dictionary>, RouterError> {
+            ) -> Result<Option<Dictionary>, RouterError> {
+                panic!("null router invoked");
+            }
+            async fn route_debug(
+                &self,
+                _request: Option<Request>,
+                _target: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
                 panic!("null router invoked");
             }
         }
@@ -1779,12 +1785,12 @@ where
     C: ComponentInstanceInterface + 'static,
 {
     let request = Request { metadata: Dictionary::new() };
-    let dict: Result<RouterResponse<Dictionary>, RouterError> = router
-        .route(Some(request), false, component.as_weak().into())
+    let dict: Result<Option<Dictionary>, RouterError> = router
+        .route(Some(request), component.as_weak().into())
         .now_or_never()
         .expect("failed to now_or_never");
     let dict = match dict {
-        Ok(RouterResponse::Capability(dict)) => dict,
+        Ok(Some(dict)) => dict,
         // shouldn't happen, fallback
         _ => Dictionary::new(),
     };
@@ -1971,18 +1977,8 @@ impl<T: CapabilityBound, C: ComponentInstanceInterface + 'static> Routable<T>
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         _target: WeakInstanceToken,
-    ) -> Result<RouterResponse<T>, RouterError> {
-        if debug {
-            let data = CapabilitySource::Void(VoidSource {
-                capability: self.capability.clone(),
-                moniker: self.component.moniker.clone(),
-            })
-            .try_into()
-            .expect("failed to convert capability source to Data");
-            return Ok(RouterResponse::<T>::Debug(data));
-        }
+    ) -> Result<Option<T>, RouterError> {
         let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
         let availability = request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
         match availability {
@@ -1992,9 +1988,21 @@ impl<T: CapabilityBound, C: ComponentInstanceInterface + 'static> Routable<T>
                 }
                 .into())
             }
-            cm_rust::Availability::Optional | cm_rust::Availability::Transitional => {
-                Ok(RouterResponse::Unavailable)
-            }
+            cm_rust::Availability::Optional | cm_rust::Availability::Transitional => Ok(None),
         }
+    }
+
+    async fn route_debug(
+        &self,
+        _request: Option<Request>,
+        _target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        let data = CapabilitySource::Void(VoidSource {
+            capability: self.capability.clone(),
+            moniker: self.component.moniker.clone(),
+        })
+        .try_into()
+        .expect("failed to convert capability source to Data");
+        return Ok(data);
     }
 }

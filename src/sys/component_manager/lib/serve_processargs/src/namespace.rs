@@ -8,9 +8,7 @@ use fuchsia_async as fasync;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use namespace::{Entry as NamespaceEntry, EntryError, Namespace, NamespaceError, Tree};
 use router_error::Explain;
-use runtime_capabilities::{
-    Capability, Dictionary, RemotableCapability, RouterResponse, WeakInstanceToken,
-};
+use runtime_capabilities::{Capability, Dictionary, RemotableCapability, WeakInstanceToken};
 use thiserror::Error;
 use vfs::directory::entry::serve_directory;
 use vfs::execution_scope::ExecutionScope;
@@ -152,17 +150,14 @@ impl NamespaceBuilder {
                         if res.is_err() {
                             return;
                         }
-                        match c.route(None, false, token.clone()).await {
-                            Ok(RouterResponse::Capability(dir_connector)) => {
+                        match c.route(None, token.clone()).await {
+                            Ok(Some(dir_connector)) => {
                                 // See the comment in the `DirConnector` branch for why rights are
                                 // `None`.
                                 let _ = dir_connector.send(server, RelativePath::dot(), None);
                             }
-                            Ok(RouterResponse::Unavailable) => {
+                            Ok(None) => {
                                 let _ = server.close_with_epitaph(fidl::Status::NOT_FOUND);
-                            }
-                            Ok(RouterResponse::Debug(_)) => {
-                                panic!("debug response wasn't requested");
                             }
                             Err(e) => {
                                 // Error logging will be performed by the ErrorReporter router set
@@ -211,8 +206,8 @@ impl NamespaceBuilder {
                         if res.is_err() {
                             return;
                         }
-                        match router.route(None, false, token.clone()).await {
-                            Ok(RouterResponse::Capability(dictionary)) => {
+                        match router.route(None, token.clone()).await {
+                            Ok(Some(dictionary)) => {
                                 let entry = match dictionary.try_into_directory_entry(scope.clone(), token.clone()) {
                                     Ok(entry) => entry,
                                     Err(e) => {
@@ -231,11 +226,8 @@ impl NamespaceBuilder {
                                 let proxy = client_end.into_proxy();
                                 fuchsia_fs::directory::clone_onto(&proxy, server).expect("failed to clone directory we are hosting");
                             }
-                            Ok(RouterResponse::Unavailable) => {
+                            Ok(None) => {
                                 let _ = server.close_with_epitaph(fidl::Status::NOT_FOUND);
-                            }
-                            Ok(RouterResponse::Debug(_)) => {
-                                panic!("debug response wasn't requested");
                             }
                             Err(e) => {
                                 // Error logging will be performed by the ErrorReporter router set

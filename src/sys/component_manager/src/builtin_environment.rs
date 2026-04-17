@@ -99,7 +99,7 @@ use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use hooks::EventType;
 use log::{error, info, warn};
-use runtime_capabilities::{Capability, Message, Request, RouterResponse};
+use runtime_capabilities::{Capability, Message, Request};
 use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
@@ -1296,10 +1296,10 @@ impl BuiltinEnvironment {
             let request = Request { metadata };
 
             let connector = match use_router
-                .route(Some(request), false, self.model.root().clone().as_weak().into())
+                .route(Some(request), self.model.root().clone().as_weak().into())
                 .await
             {
-                Ok(RouterResponse::Capability(connector)) => connector,
+                Ok(Some(connector)) => connector,
                 other_response => panic!(
                     "event stream routing from root should always succeed, instead we got {:?}",
                     other_response

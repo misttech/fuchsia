@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::dict_ext::request_with_dictionary_replacement;
+use crate::bedrock::dict_ext::{GenericRouterResponse, request_with_dictionary_replacement};
 use crate::{DictExt, RoutingError};
 use async_trait::async_trait;
 use cm_types::IterablePath;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    CapabilityBound, Dictionary, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+    CapabilityBound, Data, Dictionary, Request, Routable, Router, WeakInstanceToken,
 };
 use std::fmt::Debug;
 
@@ -40,29 +40,16 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
             async fn route(
                 &self,
                 request: Option<Request>,
-                debug: bool,
                 target: WeakInstanceToken,
-            ) -> Result<RouterResponse<T>, RouterError> {
-                let get_init_request = || -> Result<Option<Request>, RoutingError> {
-                    let res = if self.path.iter_segments().count() > 1 {
-                        request_with_dictionary_replacement(request.as_ref())?
-                    } else {
-                        request.as_ref().map(|r| r.try_clone()).transpose().map_err(|e| {
-                            RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError)
-                        })?
-                    };
-                    Ok(res)
-                };
+            ) -> Result<Option<T>, RouterError> {
+                let get_init_request = || request_with_dictionary_replacement(request.as_ref());
 
-                // If `debug` is true, that should only apply to the capability at `path`.
-                // Here we're looking up the containing dictionary, so set `debug = false`, to
-                // obtain the actual Dictionary and not its debug info.
                 let init_request = (get_init_request)()?;
-                match self.router.route(init_request, false, target.clone()).await? {
-                    RouterResponse::<Dictionary>::Capability(dict) => {
+                match self.router.route(init_request, target.clone()).await? {
+                    Some(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
                         let resp = dict
-                            .get_with_request(&moniker, &self.path, request, debug, target.clone())
+                            .get_with_request(&moniker, &self.path, request, false, target)
                             .await?;
                         let resp =
                             resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
@@ -73,36 +60,45 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
                                 moniker,
                             }
                         })?;
-                        return Ok(resp);
+                        Ok(resp)
                     }
-                    RouterResponse::<Dictionary>::Debug(data) => {
-                        Ok(RouterResponse::<T>::Debug(data))
-                    }
-                    RouterResponse::<Dictionary>::Unavailable => {
-                        if !debug {
-                            Ok(RouterResponse::<T>::Unavailable)
-                        } else {
-                            // `debug=true` was the input to this function but the call above to
-                            // [`Router::route`] used `debug=false`. Call the router again with the
-                            // same arguments but with `debug=true` so that we return the debug
-                            // info to the caller (which ought to be [`CapabilitySource::Void`]).
-                            let init_request = (get_init_request)()?;
-                            match self.router.route(init_request, true, target).await? {
-                                RouterResponse::<Dictionary>::Debug(d) => {
-                                    Ok(RouterResponse::<T>::Debug(d))
-                                }
-                                _ => {
-                                    // This shouldn't happen (we passed debug=true).
-                                    let moniker = self.not_found_error.clone().into();
-                                    Err(RoutingError::BedrockWrongCapabilityType {
-                                        expected: "RouterResponse::Debug".into(),
-                                        actual: "not RouterResponse::Debug".into(),
-                                        moniker,
-                                    }
-                                    .into())
-                                }
+                    None => Ok(None),
+                }
+            }
+
+            async fn route_debug(
+                &self,
+                request: Option<Request>,
+                target: WeakInstanceToken,
+            ) -> Result<Data, RouterError> {
+                let get_init_request = || request_with_dictionary_replacement(request.as_ref());
+
+                // When performing a debug route, we only want to call `route_debug` on the
+                // capability at `path`. Here we're looking up the containing dictionary, so we do
+                // non-debug routing, to obtain the actual Dictionary and not its debug info.
+                let init_request = (get_init_request)()?;
+                match self.router.route(init_request, target.clone()).await? {
+                    Some(dict) => {
+                        let moniker: ExtendedMoniker = self.not_found_error.clone().into();
+                        let resp = dict
+                            .get_with_request(&moniker, &self.path, request, true, target)
+                            .await?;
+                        let resp =
+                            resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
+                        match resp {
+                            GenericRouterResponse::Debug(data) => Ok(data),
+                            _other => {
+                                panic!("non-debug value from debug route")
                             }
                         }
+                    }
+                    None => {
+                        // The above route was non-debug, but the routing operation failed. Call
+                        // the router again with the same arguments but with `route_debug` so that
+                        // we return the debug info to the caller (which ought to be
+                        // [`CapabilitySource::Void`]).
+                        let init_request = (get_init_request)()?;
+                        self.router.route_debug(init_request, target).await
                     }
                 }
             }

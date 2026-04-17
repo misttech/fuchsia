@@ -16,9 +16,7 @@ use futures::{FutureExt, TryStreamExt};
 use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
-use runtime_capabilities::{
-    Capability, CapabilityBound, Data, Dictionary, Router, RouterResponse, WeakInstanceToken,
-};
+use runtime_capabilities::{Capability, Data, Dictionary, WeakInstanceToken};
 
 pub fn serve(
     server_end: zx::Channel,
@@ -158,7 +156,7 @@ async fn validate_sandbox(
         .await,
     );
     if let Some(runner_router) = sandbox.program_input.runner() {
-        let result = debug_route(runner_router, component_instance_token.clone()).await;
+        let result = runner_router.route_debug(None, component_instance_token.clone()).await;
         let mut report = fsys::RouteReport {
             capability: Some("<runner>".to_string()),
             decl_type: Some(fsys::DeclType::Use),
@@ -201,21 +199,6 @@ async fn validate_sandbox(
         }
     }
     reports
-}
-async fn debug_route<T: CapabilityBound>(
-    router: Router<T>,
-    component_instance_token: WeakInstanceToken,
-) -> Result<Data, RouterError> {
-    match router.route(None, true, component_instance_token).await {
-        Ok(RouterResponse::Capability(_)) => {
-            panic!("router gave us capability for a debug route")
-        }
-        Ok(RouterResponse::Unavailable) => {
-            panic!("router gave us unavailable for a debug route")
-        }
-        Ok(RouterResponse::Debug(data)) => Ok(data),
-        Err(e) => Err(e),
-    }
 }
 
 fn fill_in_report_with_route_result(
@@ -291,27 +274,26 @@ fn validate_dictionary(
                     reports.append(&mut sub_reports);
                 }
                 Capability::ConnectorRouter(router) => {
-                    let result = debug_route(router, component_instance_token.clone()).await;
+                    let result = router.route_debug(None, component_instance_token.clone()).await;
                     fill_in_report_with_route_result(&mut report, result);
                     reports.push(report);
                 }
                 Capability::DirConnectorRouter(router) => {
-                    let result = debug_route(router, component_instance_token.clone()).await;
+                    let result = router.route_debug(None, component_instance_token.clone()).await;
                     fill_in_report_with_route_result(&mut report, result);
                     reports.push(report);
                 }
                 Capability::DataRouter(router) => {
-                    let result = debug_route(router, component_instance_token.clone()).await;
+                    let result = router.route_debug(None, component_instance_token.clone()).await;
                     fill_in_report_with_route_result(&mut report, result);
                     reports.push(report);
                 }
                 Capability::DictionaryRouter(router) => {
-                    let result =
-                        debug_route(router.clone(), component_instance_token.clone()).await;
+                    let result = router.route_debug(None, component_instance_token.clone()).await;
                     fill_in_report_with_route_result(&mut report, result);
 
-                    if let Ok(RouterResponse::Capability(routed_dictionary)) =
-                        router.route(None, false, component_instance_token.clone()).await
+                    if let Ok(Some(routed_dictionary)) =
+                        router.route(None, component_instance_token.clone()).await
                     {
                         let entries = routed_dictionary
                             .snapshot_keys_as_strings()

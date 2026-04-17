@@ -15,8 +15,7 @@ use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Dictionary, Request, Routable, Router, RouterResponse,
-    WeakInstanceToken,
+    Capability, CapabilityBound, Data, Dictionary, Request, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -42,10 +41,25 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
     async fn route(
         &self,
         request: Option<Request>,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<T>, RouterError> {
-        match self.do_route(request, debug, D, target).await {
+    ) -> Result<Option<T>, RouterError> {
+        match self.route_inner(request, D, target).await {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                self.error_reporter
+                    .report(&self.route_request, &err, self.target.clone().into())
+                    .await;
+                Err(err)
+            }
+        }
+    }
+
+    async fn route_debug(
+        &self,
+        request: Option<Request>,
+        target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        match self.route_debug_inner(request, D, target).await {
             Ok(res) => Ok(res),
             Err(err) => {
                 self.error_reporter
@@ -60,23 +74,40 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static, const D: bool>
     PorcelainRouter<T, R, C, D>
 {
-    #[inline]
-    async fn do_route(
+    async fn route_inner(
         &self,
         request: Option<Request>,
-        debug: bool,
         supply_default: bool,
         target: WeakInstanceToken,
-    ) -> Result<RouterResponse<T>, RouterError> {
+    ) -> Result<Option<T>, RouterError> {
+        let request = self.check_and_compute_request(request, supply_default)?;
+        self.router.route(Some(request), target).await
+    }
+
+    async fn route_debug_inner(
+        &self,
+        request: Option<Request>,
+        supply_default: bool,
+        target: WeakInstanceToken,
+    ) -> Result<Data, RouterError> {
+        let request = self.check_and_compute_request(request, supply_default)?;
+        self.router.route_debug(Some(request), target).await
+    }
+
+    fn check_and_compute_request(
+        &self,
+        request: Option<Request>,
+        supply_default: bool,
+    ) -> Result<Request, RouterError> {
         let PorcelainRouter {
-            router,
+            router: _,
             porcelain_type,
             availability,
             rights,
             subdir,
             inherit_rights,
             event_stream_route_metadata,
-            target: _,
+            target,
             route_request: _,
             error_reporter: _,
         } = self;
@@ -101,7 +132,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             Request { metadata }
         };
 
-        let moniker: ExtendedMoniker = match &self.target {
+        let moniker: ExtendedMoniker = match target {
             WeakExtendedInstanceInterface::Component(t) => t.moniker.clone().into(),
             WeakExtendedInstanceInterface::AboveRoot(_) => ExtendedMoniker::ComponentManager,
         };
@@ -128,7 +159,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 
         // Everything checks out, forward the request.
         request.metadata.set_metadata(updated_availability);
-        router.route(Some(request), debug, target).await
+        Ok(request)
     }
 }
 
@@ -565,12 +596,10 @@ mod tests {
         metadata.set_metadata(CapabilityTypeName::Protocol);
         metadata.set_metadata(Availability::Optional);
 
-        let capability = proxy
-            .route(Some(Request { metadata }), false, component.as_weak().into())
-            .await
-            .unwrap();
+        let capability =
+            proxy.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap();
         let capability = match capability {
-            RouterResponse::<Data>::Capability(d) => d,
+            Some(d) => d,
             _ => panic!(),
         };
         assert_eq!(capability, Data::String("hello".into()));
@@ -593,10 +622,8 @@ mod tests {
         let metadata = Dictionary::new();
         metadata.set_metadata(Availability::Optional);
 
-        let error = proxy
-            .route(Some(Request { metadata }), false, component.as_weak().into())
-            .await
-            .unwrap_err();
+        let error =
+            proxy.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)
@@ -629,10 +656,8 @@ mod tests {
         metadata.set_metadata(CapabilityTypeName::Service);
         metadata.set_metadata(Availability::Optional);
 
-        let error = proxy
-            .route(Some(Request { metadata }), false, component.as_weak().into())
-            .await
-            .unwrap_err();
+        let error =
+            proxy.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)
@@ -667,10 +692,8 @@ mod tests {
         metadata.set_metadata(CapabilityTypeName::Protocol);
         metadata.set_metadata(Availability::Required);
 
-        let error = proxy
-            .route(Some(Request { metadata }), false, component.as_weak().into())
-            .await
-            .unwrap_err();
+        let error =
+            proxy.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)
