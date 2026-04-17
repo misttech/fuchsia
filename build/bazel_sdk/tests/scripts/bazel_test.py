@@ -751,6 +751,19 @@ def main() -> int:
         / "third_party/bazel_vendor/_registries/bcr.bazel.build"
     )
 
+    # If there's a //vendor dir in the fuchsia source dir, we need to symlink to it
+    # from the tests directory, so that any hlcpp visibility rules referencing
+    # allowlisted vendor targets won't fail.
+    vendor_dir = fuchsia_source_dir / "vendor"
+    vendor_dir_link = workspace_dir / "vendor"
+    if vendor_dir.exists():
+        _force_symlink(vendor_dir, vendor_dir_link)
+    else:
+        # And if //vendor has been removed (ie, integration repo change),
+        # then remove the link.
+        if os.path.lexists(vendor_dir_link) and vendor_dir_link.is_symlink():
+            vendor_dir_link.unlink()
+
     # To ensure that the repository rules for @fuchsia_clang and
     # @prebuilt_python are re-run properly when the content of the prebuilt
     # toolchain directory changes, use a version file that is symlinked into

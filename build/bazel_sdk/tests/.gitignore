@@ -5,3 +5,4 @@ bazel-*
 tools/.versions/
 tools/bazel
 MODULE.bazel.lock
+vendor
