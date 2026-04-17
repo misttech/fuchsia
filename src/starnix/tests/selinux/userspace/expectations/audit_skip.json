@@ -13,6 +13,10 @@
         "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/5",
         "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/6",
         "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/7",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/8",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/9",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/10",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest.CheckNetlinkMsgXperms/11",
 
         // These tests do not produce any useful audit logs.
         "NetlinkAuditTest.RegisterAuditDaemon",

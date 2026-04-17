@@ -32,6 +32,14 @@ INSTANTIATE_TEST_SUITE_P(
     NetlinkSocketTests, NetlinkSocketXpermsTest,
     ::testing::Values(
         // NETLINK_ROUTE xperms test cases
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
+                                            "nlmsg_xperms_getlink_yes_t", fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
+                                            "nlmsg_xperms_getlink_no_xperms_t", fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
+                                            "nlmsg_xperms_getlink_no_nlmsg_t", fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
+                                            "nlmsg_xperms_no_getlink_t", fit::error(EACCES)},
         netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
                                             "nlmsg_xperms_getroute_yes_t", fit::ok()},
         netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
