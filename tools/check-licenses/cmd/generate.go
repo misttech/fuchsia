@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -26,6 +27,12 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/project"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/result"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/util"
+
+	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
+	v2readme "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	v2report "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
 )
 
 const (
@@ -56,6 +63,8 @@ type GenerateCommand struct {
 	outputLicenseFile    bool
 	runAnalysis          bool
 	logLevel             int
+	runV2                bool
+	verifyReadmes        bool
 }
 
 func (*GenerateCommand) Name() string { return "generate" }
@@ -64,8 +73,8 @@ func (*GenerateCommand) Synopsis() string {
 }
 func (*GenerateCommand) Usage() string {
 	return `generate [options] [<gn_target>]:
-  Traverses the repository, executes the Google License Classifier, and generates SPDX/NOTICE files.
-`
+	Traverses the repository, executes the Google License Classifier, and generates SPDX/NOTICE files.
+	`
 }
 
 func (p *GenerateCommand) SetFlags(f *flag.FlagSet) {
@@ -86,6 +95,9 @@ func (p *GenerateCommand) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&p.runAnalysis, "run_analysis", true, "Flag for enabling license analysis and 'result' package tests.")
 
 	f.IntVar(&p.logLevel, "log_level", 2, "Log level. Set to 0 for no logs, 1 to log to a file, 2 to log to stdout.")
+
+	f.BoolVar(&p.runV2, "v2", false, "Run the experimental v2 pipeline architecture.")
+	f.BoolVar(&p.verifyReadmes, "verify_readmes", false, "Flag for verifying if README.fuchsia files accurately reflect project licenses in v2 pipeline.")
 }
 
 func (p *GenerateCommand) Execute(_ context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
@@ -221,6 +233,13 @@ func (p *GenerateCommand) executeImpl(f *flag.FlagSet) error {
 		return err
 	}
 
+	if p.runV2 {
+		if err := p.executeV2Pipeline(); err != nil {
+			return fmt.Errorf("failed to execute v2 pipeline: %w", err)
+		}
+		return nil
+	}
+
 	if err := p.executePipeline(); err != nil {
 		return fmt.Errorf("failed to analyze the given directory: %w", err)
 	}
@@ -273,6 +292,189 @@ func getLogWriters(logLevel int, outDir string) (io.Writer, error) {
 
 	w := io.MultiWriter(logTargets...)
 	return w, nil
+}
+
+// executeV2Pipeline runs the experimental v2 compliance engine.
+func (p *GenerateCommand) executeV2Pipeline() error {
+	log.Println("Starting v2 fast compliance pipeline...")
+	startTime := time.Now()
+	ctx := context.Background()
+
+	endTrack := metrics.TotalRuntime.Track()
+
+	// 1. Assembly Phase
+	builder := v2config.NewBuilder(p.fuchsiaDir)
+	if err := builder.Assemble(); err != nil {
+		return fmt.Errorf("failed to assemble configuration: %w", err)
+	}
+
+	config := builder.Config
+	log.Printf("Assembled configuration in %v", time.Since(startTime))
+
+	// We still use the GN parsing logic for now to establish the build graph map
+	var validFiles map[string]bool
+	if Config.OutputLicenseFile {
+		gnStart := time.Now()
+		log.Printf("Generating GN project file to extract build graph... (This may take a while)")
+
+		gn, err := util.NewGn(Config.Project.GnPath, Config.Project.BuildDir)
+		if err != nil {
+			return err
+		}
+		if err := gn.GenerateProjectFile(ctx); err != nil {
+			return err
+		}
+
+		log.Printf("Loading and parsing GN project.json file...")
+		gen, err := util.LoadGen(Config.Project.GenProjectFile)
+		if err != nil {
+			return err
+		}
+
+		log.Printf("Extracting transitive files from build graph...")
+		validFiles, err = gen.GetTransitiveFiles(Config.Project.Target, p.fuchsiaDir)
+		if err != nil {
+			return err
+		}
+		log.Printf("Build graph resolution complete in %v (Found %d valid files)", time.Since(gnStart), len(validFiles))
+	}
+
+	// Reporter generates artifacts but skips virtual diff (verifyReadmes=false) since this is the fast path
+	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, true, config.OutOfTreeReadmes)
+
+	cFilesChan := make(chan pipeline.ClassifiedFile)
+	errChan := make(chan pipeline.ComplianceError)
+
+	go func() {
+		defer close(cFilesChan)
+		defer close(errChan)
+
+		// 1. Find all physical and virtual READMEs
+		_ = filepath.WalkDir(p.fuchsiaDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+
+			// check SkipPaths
+			base := d.Name()
+			for _, skip := range config.SkipAnywhere {
+				if base == skip {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+			}
+			relPath, _ := filepath.Rel(p.fuchsiaDir, path)
+			for _, skip := range config.SkipPaths {
+				if relPath == skip || strings.HasPrefix(relPath, skip+string(filepath.Separator)) {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+			}
+
+			if !d.IsDir() && (base == "README.fuchsia" || base == "Cargo.toml") {
+				readmes, err := v2readme.ParseFile(path)
+				if err != nil {
+					return nil
+				}
+
+				dir := filepath.Dir(path)
+				for _, r := range readmes {
+					for _, lf := range r.LicenseFiles {
+						if lf.Path == "" {
+							continue
+						}
+
+						absLicensePath := filepath.Join(dir, lf.Path)
+
+						// Prune
+						if len(validFiles) > 0 && !validFiles[absLicensePath] {
+							continue
+						}
+
+						// Read license text
+						text, _ := os.ReadFile(absLicensePath)
+
+						// Parse licenses
+						spdxIDs := strings.Split(lf.License, ",")
+						var matches []pipeline.LicenseMatch
+						for _, id := range spdxIDs {
+							id = strings.TrimSpace(id)
+							if id != "" {
+								matches = append(matches, pipeline.LicenseMatch{
+									SPDXID: id,
+									Text:   text,
+								})
+							}
+						}
+
+						cFilesChan <- pipeline.ClassifiedFile{
+							Path:          absLicensePath,
+							ProjectRoot:   filepath.Join(dir, r.Location),
+							IsLicenseFile: true,
+							AnalyzedText:  text,
+							Matches:       matches,
+						}
+					}
+				}
+			}
+			return nil
+		})
+
+		// Also handle Virtual READMEs
+		for logPath, physPath := range config.OutOfTreeReadmes {
+			readmes, err := v2readme.ParseFile(physPath)
+			if err != nil {
+				continue
+			}
+			absLogPath := filepath.Join(p.fuchsiaDir, logPath)
+
+			for _, r := range readmes {
+				for _, lf := range r.LicenseFiles {
+					if lf.Path == "" {
+						continue
+					}
+
+					absLicensePath := filepath.Join(absLogPath, lf.Path)
+					if len(validFiles) > 0 && !validFiles[absLicensePath] {
+						continue
+					}
+					text, _ := os.ReadFile(absLicensePath)
+					spdxIDs := strings.Split(lf.License, ",")
+					var matches []pipeline.LicenseMatch
+					for _, id := range spdxIDs {
+						id = strings.TrimSpace(id)
+						if id != "" {
+							matches = append(matches, pipeline.LicenseMatch{
+								SPDXID: id,
+								Text:   text,
+							})
+						}
+					}
+					cFilesChan <- pipeline.ClassifiedFile{
+						Path:          absLicensePath,
+						ProjectRoot:   filepath.Join(absLogPath, r.Location),
+						IsLicenseFile: true,
+						AnalyzedText:  text,
+						Matches:       matches,
+					}
+				}
+			}
+		}
+	}()
+
+	log.Println("Generating reports...")
+	if err := reporter.Run(ctx, cFilesChan, errChan); err != nil {
+		return fmt.Errorf("reporting stage failed: %w", err)
+	}
+
+	endTrack()
+
+	log.Printf("v2 pipeline completed successfully in %v\n", time.Since(startTime))
+	return printMetricsSummary(nil, true, p.logLevel)
 }
 
 // executePipeline kicks-off the check-licenses runthrough.
@@ -345,6 +547,14 @@ func (p *GenerateCommand) executePipeline() error {
 	// Done.
 	endTrack() // Capture total execution time before printing summary
 
+	var checkNames []string
+	for _, check := range Config.Result.Checks {
+		checkNames = append(checkNames, check.Name)
+	}
+	return printMetricsSummary(checkNames, false, p.logLevel)
+}
+
+func printMetricsSummary(checkNames []string, isV2 bool, logLevel int) error {
 	// Print standard terminal metrics summary
 	log.Println("\n[check-licenses] Execution Summary")
 	log.Println("----------------------------------")
@@ -352,19 +562,26 @@ func (p *GenerateCommand) executePipeline() error {
 	log.Printf("Time spent in GN Filter:          %v\n", metrics.FilterDuration.GetTotalDuration())
 	log.Printf("Wall time spent in Classifier:    %v\n", metrics.AnalyzeDuration.GetTotalDuration())
 	log.Printf("Thread time spent in Classifier:  %v\n", metrics.ClassifierDuration.GetTotalDuration())
-	projectsAnalyzed, err := metrics.ProjectsProcessed.GetCount("analyzed")
+
+	var projectsAnalyzed int64
+	var err error
+	if isV2 {
+		projectsAnalyzed, err = metrics.ProjectsProcessed.GetCount("kept_by_gn")
+	} else {
+		projectsAnalyzed, err = metrics.ProjectsProcessed.GetCount("analyzed")
+	}
 	if err != nil {
-		return err
+		projectsAnalyzed = 0
 	}
 	log.Printf("Projects Analyzed:         %d\n", projectsAnalyzed)
 
 	rawTexts, err := metrics.LicenseDeduplication.GetCount("raw_texts")
 	if err != nil {
-		return err
+		rawTexts = 0
 	}
 	uniqueTexts, err := metrics.LicenseDeduplication.GetCount("unique_texts")
 	if err != nil {
-		return err
+		uniqueTexts = 0
 	}
 	compression := 0.0
 	if rawTexts > 0 {
@@ -375,17 +592,11 @@ func (p *GenerateCommand) executePipeline() error {
 	var validationErrors int64 = 0
 	var allowlistHits int64 = 0
 
-	for _, check := range Config.Result.Checks {
-		vErr, err := metrics.ValidationErrors.GetCount(check.Name)
-		if err != nil {
-			return err
-		}
+	for _, name := range checkNames {
+		vErr, _ := metrics.ValidationErrors.GetCount(name)
 		validationErrors += vErr
 
-		aHits, err := metrics.AllowlistHits.GetCount(check.Name)
-		if err != nil {
-			return err
-		}
+		aHits, _ := metrics.AllowlistHits.GetCount(name)
 		allowlistHits += aHits
 	}
 

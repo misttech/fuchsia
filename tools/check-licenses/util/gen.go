@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -65,4 +66,60 @@ func (g *Gen) clean() error {
 
 	g.IsCleaned = true
 	return nil
+}
+
+// GetTransitiveFiles performs a BFS starting from the given target name
+// to find all transitively dependent files (Sources and Inputs).
+// It returns a map of absolute physical file paths.
+func (g *Gen) GetTransitiveFiles(rootTarget string, fuchsiaDir string) (map[string]bool, error) {
+	if rootTarget == "" {
+		rootTarget = "//:default"
+	}
+
+	validFiles := make(map[string]bool, len(g.Targets)) // Pre-allocate map capacity
+	visited := make(map[string]bool, len(g.Targets))
+
+	// A queue for BFS, pre-allocated to avoid constant slice resizing
+	queue := make([]string, 0, len(g.Targets)/2)
+	queue = append(queue, rootTarget)
+
+	// Pre-compute the prefix to avoid allocations in the loop
+	fuchsiaPrefix := fuchsiaDir + string(filepath.Separator)
+
+	for len(queue) > 0 {
+		currentName := queue[0]
+		queue = queue[1:]
+
+		if visited[currentName] {
+			continue
+		}
+		visited[currentName] = true
+
+		target, ok := g.Targets[currentName]
+		if !ok {
+			// Some targets might not be in the map (e.g. action outputs), just continue
+			continue
+		}
+
+		// Enqueue all dependencies
+		for _, dep := range target.Deps {
+			if !visited[dep] {
+				queue = append(queue, dep)
+			}
+		}
+
+		// Process sources and inputs
+		for _, file := range target.Sources {
+			if len(file) > 2 && file[0] == '/' && file[1] == '/' {
+				validFiles[fuchsiaPrefix+file[2:]] = true
+			}
+		}
+		for _, file := range target.Inputs {
+			if len(file) > 2 && file[0] == '/' && file[1] == '/' {
+				validFiles[fuchsiaPrefix+file[2:]] = true
+			}
+		}
+	}
+
+	return validFiles, nil
 }

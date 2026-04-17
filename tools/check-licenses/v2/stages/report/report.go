@@ -16,6 +16,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
 )
 
 // Reporter implements pipeline.Renderer. It acts as the final stage of the pipeline,
@@ -23,12 +24,16 @@ import (
 // errors are encountered, otherwise it deduplicates licenses and generates the final
 // artifacts (NOTICE.txt, SPDX.json).
 type Reporter struct {
-	OutDir string
+	FuchsiaDir        string
+	OutDir            string
+	VerifyReadmes     bool
+	GenerateArtifacts bool
+	OutOfTreeReadmes  map[string]string
 }
 
 // NewReporter creates a new stateful Reporter that writes to the given outDir.
-func NewReporter(outDir string) *Reporter {
-	return &Reporter{OutDir: outDir}
+func NewReporter(fuchsiaDir, outDir string, verifyReadmes, generateArtifacts bool, outOfTreeReadmes map[string]string) *Reporter {
+	return &Reporter{FuchsiaDir: fuchsiaDir, OutDir: outDir, VerifyReadmes: verifyReadmes, GenerateArtifacts: generateArtifacts, OutOfTreeReadmes: outOfTreeReadmes}
 }
 
 // Run deduplicates and generates final artifacts from ClassifiedFiles and ComplianceErrors.
@@ -90,6 +95,68 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 		}
 	}
 
+	// 1.5 Virtual Diff: Ensure READMEs accurately reflect classified licenses
+	filesByProject := make(map[string][]pipeline.ClassifiedFile)
+	for _, cf := range cFiles {
+		filesByProject[cf.ProjectRoot] = append(filesByProject[cf.ProjectRoot], cf)
+	}
+
+	for projRoot, projFiles := range filesByProject {
+		var readmePath string
+
+		relRoot, err := filepath.Rel(r.FuchsiaDir, projRoot)
+		if err == nil {
+			if overridePath, ok := r.OutOfTreeReadmes[relRoot]; ok {
+				readmePath = overridePath
+			}
+		}
+
+		if readmePath == "" {
+			readmePath = filepath.Join(projRoot, "README.fuchsia")
+		}
+
+		readmes, err := readme.ParseFile(readmePath)
+		if err != nil || len(readmes) == 0 {
+			continue // Skip if no physical README.fuchsia is present
+		}
+
+		oldFormatted := readme.Format(readmes)
+
+		// We only pass found licenses (non-Copyright) to the updater
+		var foundLicenses []pipeline.ClassifiedFile
+		for _, cf := range projFiles {
+			hasLicense := false
+			for _, m := range cf.Matches {
+				if m.MatchType != "Copyright" && !strings.HasPrefix(m.MatchType, "_") {
+					hasLicense = true
+					break
+				}
+			}
+			if hasLicense {
+				foundLicenses = append(foundLicenses, cf)
+			}
+		}
+
+		readme.UpdateWithClassifiedFiles(r.FuchsiaDir, projRoot, readmes, foundLicenses)
+		newFormatted := readme.Format(readmes)
+
+		if oldFormatted != newFormatted {
+			if err := os.WriteFile(readmePath, []byte(newFormatted), 0644); err != nil {
+				errs = append(errs, pipeline.ComplianceError{
+					Project:  projRoot,
+					FilePath: readmePath,
+					Issue:    fmt.Sprintf("README.fuchsia is out of date, but failed to automatically update it: %v", err),
+				})
+			} else {
+				errs = append(errs, pipeline.ComplianceError{
+					Project:  projRoot,
+					FilePath: readmePath,
+					Issue:    "README.fuchsia was out of date and has been automatically updated. Please review and commit the changes.",
+				})
+			}
+		}
+	}
+
 	// 2. Halt on Error
 	if len(errs) > 0 {
 		var b strings.Builder
@@ -101,7 +168,10 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 	}
 
 	// 2. Generate Reports
-	return r.generateReports(cFiles)
+	if r.GenerateArtifacts {
+		return r.generateReports(cFiles)
+	}
+	return nil
 }
 
 type dedupedLicense struct {

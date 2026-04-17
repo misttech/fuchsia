@@ -25,6 +25,7 @@ func TestGrouper_Run(t *testing.T) {
 		map[string]string{
 			filepath.Join("prebuilt", "virtual"): "/fake/path/to/README.fuchsia",
 		},
+		false,
 	)
 
 	inChan := make(chan pipeline.RawPath, 10)

@@ -17,19 +17,22 @@ import (
 func TestValidator_Run(t *testing.T) {
 	fuchsiaDir := t.TempDir()
 
-	allowlists := map[string]map[string]bool{
+	policyExceptions := map[string]map[string]bool{
 		"AllLicenseTextsMustBeRecognized": {
 			"third_party/foo/LICENSE": true,
 		},
 		"AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders": {
 			"src/legacy/old.cc": true,
 		},
-		"AllLicensePatternUsagesMustBeApproved": {
+	}
+
+	allowedLicenses := map[string]map[string]bool{
+		"GPL-2.0": {
 			"third_party/legacy_gpl/LICENSE": true,
 		},
 	}
 
-	validator := NewValidator(fuchsiaDir, allowlists)
+	validator := NewValidator(fuchsiaDir, policyExceptions, allowedLicenses)
 
 	inChan := make(chan pipeline.ClassifiedFile, 15)
 

@@ -74,6 +74,7 @@ if (is_host) {
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
       ":v2_pipeline",
+      ":v2_readme",
       "//tools/check-licenses/metrics",
     ]
   }
@@ -92,10 +93,13 @@ if (is_host) {
   go_library("v2_readme") {
     sources = [
       "v2/readme/formatter.go",
+      "v2/readme/locator.go",
       "v2/readme/parser.go",
       "v2/readme/types.go",
+      "v2/readme/update.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
+    deps = [ ":v2_pipeline" ]
   }
 }
 if (is_host) {

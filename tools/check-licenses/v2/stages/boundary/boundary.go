@@ -18,17 +18,19 @@ import (
 // buffers them, identifies project boundaries (via READMEs or Barriers),
 // and emits grouped Project structs.
 type Grouper struct {
-	FuchsiaDir       string
-	BarrierPaths     []string
-	OutOfTreeReadmes map[string]string
+	FuchsiaDir        string
+	BarrierPaths      []string
+	OutOfTreeReadmes  map[string]string
+	FilesInReadmeOnly bool
 }
 
 // NewGrouper creates a new stateless boundary grouper.
-func NewGrouper(fuchsiaDir string, barrierPaths []string, outOfTreeReadmes map[string]string) *Grouper {
+func NewGrouper(fuchsiaDir string, barrierPaths []string, outOfTreeReadmes map[string]string, filesInReadmeOnly bool) *Grouper {
 	return &Grouper{
-		FuchsiaDir:       fuchsiaDir,
-		BarrierPaths:     barrierPaths,
-		OutOfTreeReadmes: outOfTreeReadmes,
+		FuchsiaDir:        fuchsiaDir,
+		BarrierPaths:      barrierPaths,
+		OutOfTreeReadmes:  outOfTreeReadmes,
+		FilesInReadmeOnly: filesInReadmeOnly,
 	}
 }
 
@@ -125,23 +127,37 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 
 			// Determine if this specific file needs a custom parser based on the parsed Readmes at this root
 			parser := ""
+			listedInReadme := false
 			if readmes, ok := projectRoots[root]; ok {
 				// Check all Readme structs registered at this boundary (handles sub-projects)
+				relToReadme, _ := filepath.Rel(root, file)
+				relToFuchsia, _ := filepath.Rel(g.FuchsiaDir, file)
+
 				for _, r := range readmes {
 					for _, lf := range r.LicenseFiles {
-						if lf.LicenseType != "" {
-							// The LicenseFile path in the README is relative to FuchsiaDir
-							absLicensePath := filepath.Join(g.FuchsiaDir, lf.Path)
-							if absLicensePath == file {
-								parser = lf.LicenseType
-								break
-							}
+						if filepath.Clean(lf.Path) == relToReadme || filepath.Clean(lf.Path) == relToFuchsia {
+							parser = lf.LicenseType
+							listedInReadme = true
+							break
 						}
 					}
-					if parser != "" {
+					if listedInReadme {
+						break
+					}
+					for _, nlf := range r.NonLicenseFiles {
+						if filepath.Clean(nlf.Path) == relToReadme || filepath.Clean(nlf.Path) == relToFuchsia {
+							listedInReadme = true
+							break
+						}
+					}
+					if listedInReadme {
 						break
 					}
 				}
+			}
+
+			if g.FilesInReadmeOnly && !listedInReadme {
+				continue
 			}
 
 			projects[root].Files = append(projects[root].Files, pipeline.FileInfo{
