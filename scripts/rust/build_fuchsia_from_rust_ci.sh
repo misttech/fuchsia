@@ -141,6 +141,12 @@ $fx set \
     workbench_eng.x64 \
     ; echo
 
+# FIXME(https://fxbug.dev/503768468): `fx build` is responsible for setting up some files, like
+# `last_bazel_build_invocations.json`. We'll run the build in quiet dry-run mode to get them
+# created. We can remove this once `fx clippy` is using the same infrastructure as `fx build` to set
+# up the build environment.
+$fx build --quiet -- -n
+
 # Now run the build. We use `fx clippy` to drive the build because it reduces the
 # amount of Rust code that we actually need to produce binaries for. Under the
 # hood `fx clippy` runs ninja.
