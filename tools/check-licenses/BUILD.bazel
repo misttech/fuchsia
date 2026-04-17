@@ -59,6 +59,34 @@ go_library(
 )
 
 go_library(
+    name = "v2_stages_report",
+    srcs = [
+        "v2/stages/report/report.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        ":v2_pipeline",
+        "//tools/check-licenses/metrics",
+    ],
+)
+
+go_library(
+    name = "v2_stages_validate",
+    srcs = [
+        "v2/stages/validate/validate.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        ":v2_pipeline",
+        "//tools/check-licenses/metrics",
+    ],
+)
+
+go_library(
     name = "v2_readme",
     srcs = [
         "v2/readme/formatter.go",
@@ -130,6 +158,18 @@ go_test(
 )
 
 go_test(
+    name = "v2_stages_report_test",
+    srcs = [
+        "v2/stages/report/report_test.go",
+    ],
+    embed = [":v2_stages_report"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        ":v2_pipeline",
+    ],
+)
+
+go_test(
     name = "v2_readme_test",
     srcs = [
         "v2/readme/formatter_test.go",
@@ -137,6 +177,18 @@ go_test(
     ],
     embed = [":v2_readme"],
     target_compatible_with = HOST_CONSTRAINTS,
+)
+
+go_test(
+    name = "v2_stages_validate_test",
+    srcs = [
+        "v2/stages/validate/validate_test.go",
+    ],
+    embed = [":v2_stages_validate"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        ":v2_pipeline",
+    ],
 )
 
 go_test(
@@ -199,6 +251,8 @@ test_suite(
         ":v2_stages_classify_test",
         ":v2_stages_discover_test",
         ":v2_stages_prune_test",
+        ":v2_stages_report_test",
+        ":v2_stages_validate_test",
         "//tools/check-licenses/cmd:cmd_test",
         "//tools/check-licenses/directory:directory_test",
         "//tools/check-licenses/file:file_test",

@@ -1,0 +1,192 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+package report
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
+)
+
+// Reporter implements pipeline.Renderer. It acts as the final stage of the pipeline,
+// consuming all ClassifiedFiles and ComplianceErrors. It fails the pipeline if any
+// errors are encountered, otherwise it deduplicates licenses and generates the final
+// artifacts (NOTICE.txt, SPDX.json).
+type Reporter struct {
+	OutDir string
+}
+
+// NewReporter creates a new stateful Reporter that writes to the given outDir.
+func NewReporter(outDir string) *Reporter {
+	return &Reporter{OutDir: outDir}
+}
+
+// Run deduplicates and generates final artifacts from ClassifiedFiles and ComplianceErrors.
+func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile, errors <-chan pipeline.ComplianceError) error {
+	var errs []pipeline.ComplianceError
+	var cFiles []pipeline.ClassifiedFile
+
+	var wg sync.WaitGroup
+	var errsMu sync.Mutex
+	var cFilesMu sync.Mutex
+
+	// We must consume both channels concurrently so we don't block upstream stages.
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for e := range errors {
+			errsMu.Lock()
+			errs = append(errs, e)
+			errsMu.Unlock()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for f := range files {
+			cFilesMu.Lock()
+			cFiles = append(cFiles, f)
+			cFilesMu.Unlock()
+		}
+	}()
+
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// 1. Check: AllProjectsMustHaveALicense
+	// Verify that every project emitted downstream had at least one valid license file.
+	projectHasLicense := make(map[string]bool)
+	for _, cf := range cFiles {
+		if _, exists := projectHasLicense[cf.ProjectRoot]; !exists {
+			projectHasLicense[cf.ProjectRoot] = false
+		}
+		if cf.IsLicenseFile && len(cf.Matches) > 0 {
+			projectHasLicense[cf.ProjectRoot] = true
+		}
+	}
+
+	for proj, hasLicense := range projectHasLicense {
+		if !hasLicense {
+			// We emit this directly into the error slice so it fails the build
+			errs = append(errs, pipeline.ComplianceError{
+				Project:  proj,
+				FilePath: "",
+				Issue:    "Project has no recognized license files (AllProjectsMustHaveALicense)",
+			})
+		}
+	}
+
+	// 2. Halt on Error
+	if len(errs) > 0 {
+		var b strings.Builder
+		b.WriteString(fmt.Sprintf("Pipeline failed with %d compliance error(s):\n", len(errs)))
+		for _, e := range errs {
+			b.WriteString(fmt.Sprintf("- [%s] %s: %s\n", e.Project, e.FilePath, e.Issue))
+		}
+		return fmt.Errorf(b.String())
+	}
+
+	// 2. Generate Reports
+	return r.generateReports(cFiles)
+}
+
+type dedupedLicense struct {
+	SPDXID string
+	Text   []byte
+	Hash   string
+}
+
+func (r *Reporter) generateReports(files []pipeline.ClassifiedFile) error {
+	defer metrics.SpdxGenerationDuration.Track()()
+	// Deduplicate identical license texts
+	uniqueLicenses := make(map[string]dedupedLicense)
+
+	for _, cf := range files {
+		for _, match := range cf.Matches {
+			metrics.LicenseDeduplication.Inc("raw_texts")
+			h := sha256.New()
+			h.Write(match.Text)
+			hashStr := fmt.Sprintf("%x", h.Sum(nil))
+
+			if _, exists := uniqueLicenses[hashStr]; !exists {
+				uniqueLicenses[hashStr] = dedupedLicense{
+					SPDXID: match.SPDXID,
+					Text:   match.Text,
+					Hash:   hashStr,
+				}
+				metrics.LicenseDeduplication.Inc("unique_texts")
+			}
+		}
+	}
+
+	// If OutDir is not specified (e.g. during a dry-run or unit test), skip file I/O
+	if r.OutDir == "" {
+		return nil
+	}
+
+	if err := os.MkdirAll(r.OutDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// 1. Generate NOTICE.txt
+	noticePath := filepath.Join(r.OutDir, "NOTICE.txt")
+	noticeFile, err := os.Create(noticePath)
+	if err != nil {
+		return fmt.Errorf("failed to create NOTICE.txt: %w", err)
+	}
+	defer noticeFile.Close()
+
+	for _, lic := range uniqueLicenses {
+		noticeContent := fmt.Sprintf("=======================================================================\nSPDX ID: %s\nLicenseRef: LicenseRef-%s\n=======================================================================\n%s\n\n", lic.SPDXID, lic.Hash, string(lic.Text))
+		if _, err := noticeFile.WriteString(noticeContent); err != nil {
+			return err
+		}
+	}
+
+	// 2. Generate minimal SPDX.json SBOM
+	spdxPath := filepath.Join(r.OutDir, "SPDX.json")
+	spdxFile, err := os.Create(spdxPath)
+	if err != nil {
+		return fmt.Errorf("failed to create SPDX.json: %w", err)
+	}
+	defer spdxFile.Close()
+
+	spdxData := map[string]interface{}{
+		"SPDXID":                     "SPDXRef-DOCUMENT",
+		"name":                       "Fuchsia Platform",
+		"dataLicense":                "CC0-1.0",
+		"hasExtractedLicensingInfos": []map[string]string{},
+	}
+
+	var extracted []map[string]string
+	for _, lic := range uniqueLicenses {
+		extracted = append(extracted, map[string]string{
+			"licenseId":     fmt.Sprintf("LicenseRef-%s", lic.Hash),
+			"extractedText": string(lic.Text),
+			"name":          lic.SPDXID,
+		})
+	}
+	spdxData["hasExtractedLicensingInfos"] = extracted
+
+	encoder := json.NewEncoder(spdxFile)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(spdxData); err != nil {
+		return err
+	}
+
+	return nil
+}
