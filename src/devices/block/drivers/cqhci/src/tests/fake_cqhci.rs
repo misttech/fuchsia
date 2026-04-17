@@ -58,6 +58,9 @@ impl FakeCqhci {
         let mut harness = TestHarness::<CqhciDriver>::new().set_config(config);
 
         let bti = FakeBti::create().unwrap();
+        // If the number of addresses here gets smaller, it might impact tests which make
+        // assumptions about the maximum number of operations that can be queued to avoid
+        // tripping this limit (see MAX_PIN_OPS).
         let paddrs: Vec<_> =
             (0x100_000..).step_by(2 * zx::system_get_page_size() as usize).take(4096).collect();
         bti.set_paddrs(&paddrs);

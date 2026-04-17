@@ -31,6 +31,11 @@ use zx::HandleBased as _;
 
 use fake_cqhci::{Blocker, FakeCqhci};
 
+// With the fake, there are a limited number of reads that can be performed before pinning will
+// start failing.  This is related to the number of addresses we provide to our fake BTI
+// implementation, so if that changes, this might need to change.
+const MAX_PIN_OPS: usize = 1750;
+
 fn connect_block_proxy(
     started_driver: &DriverUnderTest<'_, CqhciDriver>,
     partition_name: &str,
@@ -214,7 +219,7 @@ async fn test_error_recovery() {
         let block_client = connect_block_client(&started_driver, "user").await;
         let state = state.clone();
         fixture.scope.spawn(async move {
-            loop {
+            for _ in 0..MAX_PIN_OPS {
                 let mut buf = vec![0u8; 512];
                 let result = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
                 let mut state = state.lock();
@@ -285,7 +290,7 @@ async fn test_crypto_icce_recovery() {
         let block_client = connect_block_client(&started_driver, "user").await;
         let state = state.clone();
         fixture.scope.spawn(async move {
-            loop {
+            for _ in 0..MAX_PIN_OPS {
                 let mut buf = vec![0u8; 512];
                 let result = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
                 let mut state = state.lock();
@@ -377,7 +382,7 @@ async fn test_crypto_gce_recovery() {
         let block_client = connect_block_client(&started_driver, "user").await;
         let state = state.clone();
         fixture.scope.spawn(async move {
-            loop {
+            for _ in 0..MAX_PIN_OPS {
                 let mut buf = vec![0u8; 512];
                 let result = block_client.read_at(MutableBufferSlice::from(&mut buf[..]), 0).await;
                 let mut state = state.lock();
