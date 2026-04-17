@@ -832,6 +832,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.bluetooth.le/CigParameters.expected_peers",
+        "ordinal": "7",
+        "type": "vector<fuchsia.bluetooth/PeerId>"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.bluetooth.le/CigParameters.framing",
         "ordinal": "4",
         "type": "fuchsia.bluetooth.le/CigFramingOptions"
@@ -1276,6 +1282,11 @@
         "kind": "enum/member",
         "name": "fuchsia.bluetooth.le/EstablishStreamsError.PEER_NOT_CONNECTED",
         "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.bluetooth.le/EstablishStreamsError.PEER_PARAMETERS_OUT_OF_RANGE",
+        "value": "5"
     },
     {
         "kind": "enum",

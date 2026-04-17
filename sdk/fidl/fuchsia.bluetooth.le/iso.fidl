@@ -131,6 +131,13 @@ type CigParameters = table {
     /// central).
     /// Required.
     6: max_transport_latency_p_to_c uint16;
+
+    /// The expected or intended peers to join this CIG, if known. This may be
+    /// used to optimize parameters, but may limit the set of peers that can
+    /// connect to the group.
+    /// Optional.
+    @available(added=NEXT)
+    7: expected_peers vector<bt.PeerId>:MAX;
 };
 
 @available(added=27)
@@ -195,12 +202,19 @@ type EstablishStreamsError = flexible enum {
 
     /// One or more of the peers specified in the CIS parameters are not connected.
     PEER_NOT_CONNECTED = 4;
+
+    /// Expected peers were provided at CIG creation, and one or more peers
+    /// requested did not satisfy the parameters of the CIG decided by that
+    /// set.
+    @available(added=NEXT)
+    PEER_PARAMETERS_OUT_OF_RANGE = 5;
 };
 
 @available(added=24)
 open protocol IsochronousStream {
     /// Provide notification when a CIS is established, as initiated by a Central
-    /// (from CigServer::CreateCis()), or a Peripheral (from CisRequestManager::Accept()).
+    /// (from ConnectedIsochronousGroup/EstablishStreams), or a Peripheral
+    /// (from Connection/AcceptCis).
     flexible -> OnEstablished(table {
 
         /// A result of ZX_ERR_INTERNAL indicates that the controller received a request
