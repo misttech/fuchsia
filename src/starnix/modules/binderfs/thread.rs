@@ -41,7 +41,7 @@ use starnix_uapi::{
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use zerocopy::{Immutable, IntoBytes};
 
@@ -158,10 +158,6 @@ pub struct BinderThread {
     /// The mutable state of the binder thread, protected by a single lock.
     pub state: Mutex<BinderThreadState>,
 
-    /// A hint as to whether or not the thread is available. This is eventually consistent with the
-    /// state protected by the lock.
-    pub available: AtomicBool,
-
     /// A hint as to the registration state of the thread. This is eventually consistent with the
     /// state protected by the lock.
     pub registration: AtomicU8,
@@ -190,7 +186,6 @@ impl BinderThread {
             tid,
             thread,
             state,
-            available: AtomicBool::new(false),
             registration: AtomicU8::new(RegistrationState::Unregistered.to_u8()),
             command_queue_waiters,
             available_threads,
@@ -237,6 +232,8 @@ pub struct BinderThreadState {
     /// The thread should finish waiting without returning anything, then reset the flag. Used by
     /// kick_all_threads by flush.
     pub request_kick: bool,
+    /// Tracks whether this thread is registered as an available thread.
+    pub available: bool,
 }
 
 pub struct BinderThreadGuard<'a> {
@@ -260,8 +257,9 @@ impl DerefMut for BinderThreadGuard<'_> {
 
 impl Drop for BinderThreadGuard<'_> {
     fn drop(&mut self) {
+        let was_available = self.guard.available;
         let is_available = self.guard.is_available();
-        let was_available = self.thread.available.swap(is_available, Ordering::AcqRel);
+        self.guard.available = is_available;
         if is_available && !was_available {
             self.thread.available_threads.push(self.thread.weak_self.clone());
         }
@@ -278,6 +276,7 @@ impl BinderThreadState {
             transactions: Default::default(),
             command_queue: Default::default(),
             request_kick: false,
+            available: false,
         }
     }
 
