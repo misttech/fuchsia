@@ -62,7 +62,6 @@ BUILD_HOST_TOOLS_ATOMS = [
     "//tools/fidl/fidlc:fidlc_idk",
     "//tools/fidl/fidlgen_cpp:fidlgen_cpp_idk",
     "//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp_idk",
-    "//tools/fidl/fidlgen_rust:fidlgen_rust_idk",
 ]
 
 NON_BUILD_HOST_TOOLS_ATOMS = [

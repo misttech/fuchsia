@@ -22,8 +22,6 @@ toc:
     path: /reference/tools/sdk/fidlgen_cpp.md
   - title: "fidlgen HLCPP"
     path: /reference/tools/sdk/fidlgen_hlcpp.md
-  - title: "fidlgen Rust"
-    path: /reference/tools/sdk/fidlgen_rust.md
 - title: "Debugging commands"
   section:
   - title: "symbolizer"
