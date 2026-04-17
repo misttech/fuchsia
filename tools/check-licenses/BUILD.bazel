@@ -68,6 +68,20 @@ go_library(
     visibility = ["//tools/check-licenses:__subpackages__"],
 )
 
+go_library(
+    name = "v2_stages_boundary",
+    srcs = [
+        "v2/stages/boundary/boundary.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        ":v2_pipeline",
+        ":v2_readme",
+    ],
+)
+
 go_test(
     name = "v2_config_test",
     srcs = [
@@ -97,6 +111,18 @@ go_test(
 )
 
 go_test(
+    name = "v2_stages_boundary_test",
+    srcs = [
+        "v2/stages/boundary/boundary_test.go",
+    ],
+    embed = [":v2_stages_boundary"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        ":v2_pipeline",
+    ],
+)
+
+go_test(
     name = "v2_stages_discover_test",
     srcs = [
         "v2/stages/discover/discover_test.go",
@@ -114,6 +140,7 @@ test_suite(
         ":v2_config_test",
         ":v2_pipeline_test",
         ":v2_readme_test",
+        ":v2_stages_boundary_test",
         ":v2_stages_discover_test",
         "//tools/check-licenses/cmd:cmd_test",
         "//tools/check-licenses/directory:directory_test",
