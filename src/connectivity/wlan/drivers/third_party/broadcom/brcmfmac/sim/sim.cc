@@ -198,12 +198,8 @@ void brcmf_sim_firmware_crash(brcmf_simdev* simdev) {
     BRCMF_ERR("Increase recovery trigger condition failed -- error: %s", zx_status_get_string(err));
   }
 
-  // Incrementing the firmware_crash_ condition adds the recovery worker to the default workqueue.
-  // To ensure the recovery worker completes before returning to the test, flush the default
-  // workqueue here.
-  async_dispatcher_t* dispatcher =
-      fdf_dispatcher_get_async_dispatcher(drvr->device->GetDriverDispatcher());
-  async::PostTask(dispatcher, [drvr]() { drvr->default_wq.Flush(); });
+  // Firmware crashes will run asynchronously. Tests that need to wait for recovery to complete should
+  // wait for the device to call OnRecoveryComplete().
 }
 
 void brcmf_sim_exit(brcmf_bus* bus) {

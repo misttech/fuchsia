@@ -267,6 +267,10 @@ class SimTest : public ::zxtest::Test, public simulation::StationIfc {
   void WaitForDeviceCountWithProperty(const fuchsia_driver_framework::NodeProperty2& property,
                                       uint32_t expected);
 
+  // Wait for recovery to complete on the calling thread. Recovery happens on the driver dispatcher,
+  // so this should never be called on the driver dispatcher. Doing so will deadlock the test.
+  void WaitForRecoveryComplete();
+
   // Provides synchronous access to the brcmfmac::SimDevice instance via a callback. The callback
   // is posted to the SimDevice's dispatcher (i.e., driver_dispatcher_).
   //

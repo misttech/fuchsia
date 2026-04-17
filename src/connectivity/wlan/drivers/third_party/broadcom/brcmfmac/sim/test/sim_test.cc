@@ -692,13 +692,6 @@ zx_status_t SimTest::InterfaceDestroyed(SimInterface* ifc) {
       bind_fuchsia_wlan_fullmac::SERVICE, bind_fuchsia_wlan_fullmac::SERVICE_ZIRCONTRANSPORT);
   WaitForDeviceCountWithProperty(fullmac_service_prop, ifaces_.size());
 
-  // Wait until reset is complete. This has to happen on this thread, not the driver dispatcher.
-  // Otherwise the wait will block part of the recovery work that has to happen on the driver
-  // dispatcher.
-  brcmfmac::SimDevice* device_ptr = nullptr;
-  WithSimDevice([&](brcmfmac::SimDevice* device) { device_ptr = device; });
-  device_ptr->WaitForRecoveryComplete();
-
   return ZX_OK;
 }
 
@@ -733,6 +726,15 @@ void SimTest::WaitForDeviceCountWithProperty(
   while (expected != DeviceCountWithProperty(property)) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
+}
+
+void SimTest::WaitForRecoveryComplete() {
+  // Wait until reset is complete. This has to happen on this thread, not the driver dispatcher.
+  // Otherwise the wait will block part of the recovery work that has to happen on the driver
+  // dispatcher.
+  brcmfmac::SimDevice* device_ptr = nullptr;
+  WithSimDevice([&](brcmfmac::SimDevice* device) { device_ptr = device; });
+  device_ptr->WaitForRecoveryComplete();
 }
 
 void SimTest::WithSimDevice(fit::function<void(brcmfmac::SimDevice*)> callback) {

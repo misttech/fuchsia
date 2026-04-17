@@ -69,7 +69,9 @@ void CrashRecoveryTest::ScheduleCrash(zx::duration delay) {
   env_->ScheduleNotification(crash_firmware_callback, delay);
 
   // Reset the MAC address to firmware after recovery.
-  auto reset_mac_addr_callback = [this]() {
+  auto wait_for_recovery_and_reset_mac_addr_callback = [this]() {
+    // Tests expect that the crash process is complete before continuing.
+    WaitForRecoveryComplete();
     WithSimDevice([&](brcmfmac::SimDevice* device) {
       brcmf_simdev* sim = device->GetSim();
       struct brcmf_if* ifp = brcmf_get_ifp(sim->drvr, client_ifc_.iface_id_);
@@ -77,7 +79,7 @@ void CrashRecoveryTest::ScheduleCrash(zx::duration delay) {
           brcmf_fil_iovar_data_set(ifp, "cur_etheraddr", client_mac_addr_.byte, ETH_ALEN, nullptr));
     });
   };
-  env_->ScheduleNotification(reset_mac_addr_callback, delay + zx::msec(1));
+  env_->ScheduleNotification(wait_for_recovery_and_reset_mac_addr_callback, delay + zx::nsec(1));
 }
 
 void CrashRecoveryTest::VerifyScanResult(const uint64_t scan_id, size_t min_result_num,
@@ -223,6 +225,7 @@ TEST_F(CrashRecoveryTest, ScanAfterCrashAfterConnect) {
 
   client_ifc_.AssociateWith(ap_, zx::msec(10));
   ScheduleCrash(zx::msec(20));
+
   env_->ScheduleNotification(std::bind(&CrashRecoveryTest::RecreateClientIface, this),
                              zx::msec(30));
   env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kScanId, false,
