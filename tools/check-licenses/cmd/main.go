@@ -24,6 +24,7 @@ func main() {
 
 	// Register our tool's commands
 	commander.Register(&GenerateCommand{}, "")
+	commander.Register(&ProjectCommand{}, "")
 	commander.Register(&CopyrightCommand{}, "")
 	commander.Register(&ClassifyCommand{}, "")
 
@@ -31,6 +32,7 @@ func main() {
 	// If no valid subcommand is provided, we insert "generate" into os.Args.
 	knownCommands := map[string]bool{
 		"generate":  true,
+		"project":   true,
 		"copyright": true,
 		"classify":  true,
 		"help":      true,
