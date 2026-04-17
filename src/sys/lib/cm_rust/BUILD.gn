@@ -27,8 +27,11 @@ rustc_library("cm_rust") {
     "//third_party/rust_crates:thiserror",
   ]
   sources = [
+    "src/capability.rs",
+    "src/config.rs",
     "src/lib.rs",
     "src/offer.rs",
+    "src/use.rs",
   ]
 
   features = []
