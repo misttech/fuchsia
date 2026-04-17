@@ -38,6 +38,7 @@ if (is_host) {
     sources = [
       "classify.go",
       "config.go",
+      "copyright.go",
       "generate.go",
       "main.go",
     ]
@@ -69,6 +70,7 @@ if (is_host) {
     sources = [
       "classify_test.go",
       "config_test.go",
+      "copyright_test.go",
     ]
     embed = [ ":main" ]
   }

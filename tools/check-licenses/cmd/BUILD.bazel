@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "classify.go",
         "config.go",
+        "copyright.go",
         "generate.go",
         "main.go",
     ],
@@ -43,6 +44,7 @@ go_test(
     srcs = [
         "classify_test.go",
         "config_test.go",
+        "copyright_test.go",
     ],
     embed = [":main"],
     target_compatible_with = HOST_CONSTRAINTS,

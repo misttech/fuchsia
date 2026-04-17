@@ -24,16 +24,18 @@ func main() {
 
 	// Register our tool's commands
 	commander.Register(&GenerateCommand{}, "")
+	commander.Register(&CopyrightCommand{}, "")
 	commander.Register(&ClassifyCommand{}, "")
 
 	// Fallback routing for backward compatibility
 	// If no valid subcommand is provided, we insert "generate" into os.Args.
 	knownCommands := map[string]bool{
-		"generate": true,
-		"classify": true,
-		"help":     true,
-		"flags":    true,
-		"commands": true,
+		"generate":  true,
+		"copyright": true,
+		"classify":  true,
+		"help":      true,
+		"flags":     true,
+		"commands":  true,
 	}
 
 	insertGenerate := true
