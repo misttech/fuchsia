@@ -7,8 +7,8 @@ use super::signalfd::SignalFd;
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::signals::{
-    IntoSignalInfoOptions, SI_MAX_SIZE_AS_USIZE, SignalDetail, SignalInfo, UncheckedSignalInfo,
-    restore_from_signal_handler, send_signal,
+    IntoSignalInfoOptions, RunState, SI_MAX_SIZE_AS_USIZE, SignalDetail, SignalInfo,
+    UncheckedSignalInfo, restore_from_signal_handler, send_signal,
 };
 use crate::task::{
     CurrentTask, PidTable, ProcessEntryRef, ProcessSelector, Task, TaskMutableState, ThreadGroup,
@@ -20,7 +20,7 @@ use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef};
 use starnix_uapi::{tid_t, uapi};
 
 use starnix_logging::track_stub;
-use starnix_sync::{Locked, Unlocked};
+use starnix_sync::{InterruptibleEvent, Locked, Unlocked, WakeReason};
 use starnix_syscalls::SyscallResult;
 use starnix_types::time::{duration_from_timespec, timeval_from_duration};
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno, ErrnoResultExt};
@@ -706,6 +706,24 @@ pub fn sys_rt_tgsigqueueinfo(
 
     verify_tgid_for_task(&task, tgid, &pids)?;
     send_unchecked_signal_info(locked, current_task, &task, unchecked_signal, siginfo_ref)
+}
+
+/// The `pause` syscall causes the calling process sleep until it receives a signal or terminates.
+///
+/// # Returns
+/// This function never returns `Ok(())` under normal circumstances. It always returns `Err(EINTR)`.
+pub fn sys_pause(_locked: &mut Locked<Unlocked>, current_task: &CurrentTask) -> Result<(), Errno> {
+    let event = InterruptibleEvent::new();
+    let guard = event.begin_wait();
+    let result = current_task.run_in_state(RunState::Event(event.clone()), || {
+        match guard.block_until(None, zx::MonotonicInstant::INFINITE) {
+            Err(WakeReason::Interrupted) => error!(ERESTARTNOHAND),
+            Err(WakeReason::DeadlineExpired) => panic!("blocking forever cannot time out"),
+            Ok(()) => Ok(()),
+        }
+    });
+    // ERESTARTNOHAND is mapped to EINTR if interrupted by signal delivery.
+    result.map_eintr(|| errno!(ERESTARTNOHAND))
 }
 
 /// The `pidfd_send_signal` syscall sends a signal to a process specified by a PID file

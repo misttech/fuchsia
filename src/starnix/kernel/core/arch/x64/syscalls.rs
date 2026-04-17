@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_sync::{InterruptibleEvent, Locked, Unlocked, WakeReason};
+use starnix_sync::{Locked, Unlocked};
 
 use crate::mm::MemoryAccessorExt;
-use crate::signals::RunState;
 use crate::signals::syscalls::sys_signalfd4;
 use crate::task::CurrentTask;
 use crate::task::syscalls::do_clone;
@@ -21,7 +20,7 @@ use starnix_types::time::{
     duration_from_poll_timeout, duration_from_timeval, timeval_from_duration,
 };
 use starnix_uapi::device_id::DeviceId;
-use starnix_uapi::errors::{Errno, ErrnoResultExt};
+use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{SIGCHLD, SigSet};
@@ -332,19 +331,6 @@ pub fn sys_open(
     mode: FileMode,
 ) -> Result<FdNumber, Errno> {
     sys_openat(locked, current_task, FdNumber::AT_FDCWD, user_path, flags, mode)
-}
-
-pub fn sys_pause(_locked: &mut Locked<Unlocked>, current_task: &CurrentTask) -> Result<(), Errno> {
-    let event = InterruptibleEvent::new();
-    let guard = event.begin_wait();
-    let result = current_task.run_in_state(RunState::Event(event.clone()), || {
-        match guard.block_until(None, zx::MonotonicInstant::INFINITE) {
-            Err(WakeReason::Interrupted) => error!(ERESTARTNOHAND),
-            Err(WakeReason::DeadlineExpired) => panic!("blocking forever cannot time out"),
-            Ok(()) => Ok(()),
-        }
-    });
-    result.map_eintr(|| errno!(ERESTARTNOHAND))
 }
 
 pub fn sys_pipe(

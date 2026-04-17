@@ -154,7 +154,8 @@ pub fn dispatch_syscall(
             sys_arch32_pidfd_send_signal, sys_arch32_rt_sigaction, sys_arch32_rt_sigqueueinfo,
             sys_arch32_rt_sigtimedwait, sys_arch32_rt_tgsigqueueinfo, sys_arch32_sigaltstack,
             sys_arch32_signalfd, sys_arch32_signalfd4, sys_arch32_waitid,
-            sys_kill as sys_arch32_kill, sys_restart_syscall as sys_arch32_restart_syscall,
+            sys_kill as sys_arch32_kill, sys_pause as sys_arch32_pause,
+            sys_restart_syscall as sys_arch32_restart_syscall,
             sys_rt_sigpending as sys_arch32_rt_sigpending,
             sys_rt_sigprocmask as sys_arch32_rt_sigprocmask,
             sys_rt_sigreturn as sys_arch32_rt_sigreturn,
@@ -253,9 +254,10 @@ pub fn dispatch_syscall(
             sys_access, sys_alarm, sys_arch_prctl, sys_chmod, sys_chown, sys_creat, sys_dup2,
             sys_epoll_create, sys_epoll_wait, sys_eventfd, sys_fork, sys_getdents, sys_getpgrp,
             sys_inotify_init, sys_lchown, sys_link, sys_lstat, sys_mkdir, sys_mknod, sys_open,
-            sys_pause, sys_pipe, sys_poll, sys_readlink, sys_rename, sys_renameat, sys_rmdir,
-            sys_signalfd, sys_stat, sys_symlink, sys_time, sys_unlink, sys_vfork,
+            sys_pipe, sys_poll, sys_readlink, sys_rename, sys_renameat, sys_rmdir, sys_signalfd,
+            sys_stat, sys_symlink, sys_time, sys_unlink, sys_vfork,
         };
+        pub use starnix_core::signals::syscalls::sys_pause;
         pub use starnix_core::vfs::syscalls::sys_select;
     }
     #[cfg(target_arch = "x86_64")]
@@ -397,6 +399,7 @@ pub fn dispatch_syscall(
             nanosleep[2],
             open[3],
             openat[4],
+            pause[0],
             perf_event_open[5],
             personality[1],
             pidfd_getfd[3],
