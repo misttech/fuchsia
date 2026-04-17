@@ -1,5 +1,7 @@
 Name: Fuchsia
+URL: https://fuchsia.googlesource.com/
+Version: Fuchsia Platform Version
+Security Critical: yes
 
 License File: LICENSE
- -> License File Format: Single License
- -> License Classifications: BSD-2-Clause, Copyright
+  License: BSD-2-Clause, Copyright

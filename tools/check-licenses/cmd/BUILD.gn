@@ -45,6 +45,7 @@ if (is_host) {
       "//third_party/golibs:github.com/google/subcommands",
       "//tools/check-licenses:v2_config",
       "//tools/check-licenses:v2_pipeline",
+      "//tools/check-licenses:v2_readme",
       "//tools/check-licenses:v2_stages_discover",
       "//tools/check-licenses/directory",
       "//tools/check-licenses/file",

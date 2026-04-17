@@ -45,6 +45,18 @@ go_library(
 )
 
 go_library(
+    name = "v2_readme",
+    srcs = [
+        "v2/readme/formatter.go",
+        "v2/readme/parser.go",
+        "v2/readme/types.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+)
+
+go_library(
     name = "v2_config",
     srcs = [
         "v2/config/builder.go",
@@ -65,6 +77,16 @@ go_test(
 )
 
 go_test(
+    name = "v2_readme_test",
+    srcs = [
+        "v2/readme/formatter_test.go",
+        "v2/readme/parser_test.go",
+    ],
+    embed = [":v2_readme"],
+    target_compatible_with = HOST_CONSTRAINTS,
+)
+
+go_test(
     name = "v2_stages_discover_test",
     srcs = [
         "v2/stages/discover/discover_test.go",
@@ -80,6 +102,7 @@ test_suite(
     name = "tests",
     tests = [
         ":v2_config_test",
+        ":v2_readme_test",
         ":v2_stages_discover_test",
         "//tools/check-licenses/cmd:cmd_test",
         "//tools/check-licenses/directory:directory_test",
