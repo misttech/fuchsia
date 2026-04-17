@@ -46,6 +46,19 @@ go_library(
 )
 
 go_library(
+    name = "v2_stages_prune",
+    srcs = [
+        "v2/stages/prune/prune.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/prune",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        ":v2_pipeline",
+    ],
+)
+
+go_library(
     name = "v2_readme",
     srcs = [
         "v2/readme/formatter.go",
@@ -111,6 +124,19 @@ go_test(
 )
 
 go_test(
+    name = "v2_stages_prune_test",
+    srcs = [
+        "v2/stages/prune/prune_test.go",
+    ],
+    embed = [":v2_stages_prune"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    deps = [
+        ":v2_pipeline",
+        "//tools/check-licenses/metrics",
+    ],
+)
+
+go_test(
     name = "v2_stages_boundary_test",
     srcs = [
         "v2/stages/boundary/boundary_test.go",
@@ -142,6 +168,7 @@ test_suite(
         ":v2_readme_test",
         ":v2_stages_boundary_test",
         ":v2_stages_discover_test",
+        ":v2_stages_prune_test",
         "//tools/check-licenses/cmd:cmd_test",
         "//tools/check-licenses/directory:directory_test",
         "//tools/check-licenses/file:file_test",

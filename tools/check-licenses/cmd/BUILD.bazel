@@ -22,6 +22,7 @@ go_library(
         "//tools/check-licenses:v2_readme",
         "//tools/check-licenses:v2_stages_boundary",
         "//tools/check-licenses:v2_stages_discover",
+        "//tools/check-licenses:v2_stages_prune",
         "//tools/check-licenses/directory",
         "//tools/check-licenses/file",
         "//tools/check-licenses/metrics",

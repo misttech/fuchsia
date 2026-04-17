@@ -62,6 +62,13 @@ if (is_host) {
   }
 }
 if (is_host) {
+  go_library("v2_stages_prune") {
+    sources = [ "v2/stages/prune/prune.go" ]
+    visibility = [ "//tools/check-licenses/*" ]
+    deps = [ ":v2_pipeline" ]
+  }
+}
+if (is_host) {
   go_library("v2_readme") {
     sources = [
       "v2/readme/formatter.go",
@@ -112,6 +119,16 @@ if (is_host) {
   }
 }
 if (is_host) {
+  go_test("v2_stages_prune_test") {
+    sources = [ "v2/stages/prune/prune_test.go" ]
+    embed = [ ":v2_stages_prune" ]
+    deps = [
+      ":v2_pipeline",
+      "//tools/check-licenses/metrics",
+    ]
+  }
+}
+if (is_host) {
   go_test("v2_stages_boundary_test") {
     sources = [ "v2/stages/boundary/boundary_test.go" ]
     embed = [ ":v2_stages_boundary" ]
@@ -132,6 +149,7 @@ group("tests") {
     ":v2_readme_test",
     ":v2_stages_boundary_test",
     ":v2_stages_discover_test",
+    ":v2_stages_prune_test",
     "//tools/check-licenses/cmd:cmd_test",
     "//tools/check-licenses/directory:directory_test",
     "//tools/check-licenses/file:file_test",
