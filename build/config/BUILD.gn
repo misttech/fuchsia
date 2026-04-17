@@ -894,7 +894,7 @@ config("Wno-unused-function") {
 }
 
 config("Wno-deprecated-declarations") {
-  visibility = [ "//third_party/boringssl:*" ]
+  visibility = [ "//third_party/*" ]
   cflags = [ "-Wno-deprecated-declarations" ]
 }
 
