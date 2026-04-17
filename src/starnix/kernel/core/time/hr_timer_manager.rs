@@ -956,22 +956,29 @@ impl HrTimerManager {
                     self.lock().debug_start_stage_counter = 5;
                     ftrace::instant!("alarms", "starnix:hrtimer:pre_setup_event_signal", ftrace::Scope::Process, "timer_id" => timer_id);
 
-                    // This should be almost instantaneous.  Blocking for a long time here is a
-                    // bug.
-                    log_long_op!(wait_signaled(&setup_event)).map_err(|e| to_errno_with_log(e))?;
-                    ftrace::instant!("alarms", "starnix:hrtimer:setup_event_signaled", ftrace::Scope::Process, "timer_id" => timer_id);
-                    let mut guard = self.lock();
-                    guard.debug_start_stage_counter = 6;
-                    self.record_inspect_on_start(
-                        &mut guard,
-                        timer_id,
-                        task,
-                        deadline,
-                        new_timer_node,
-                        prev_len,
-                    );
-                    log_debug!("Cmd::Start scheduled: timer_id: {:?}", timer_id);
-                    guard.debug_start_stage_counter = 999;
+                    // wait_signaled here should be almost instantaneous.  Blocking for a long time
+                    // here is a bug.
+                    match log_long_op!(wait_signaled(&setup_event)) {
+                        Ok(_) => {
+                            ftrace::instant!("alarms", "starnix:hrtimer:setup_event_signaled", ftrace::Scope::Process, "timer_id" => timer_id);
+                            let mut guard = self.lock();
+                            guard.debug_start_stage_counter = 6;
+                            self.record_inspect_on_start(
+                                &mut guard,
+                                timer_id,
+                                task,
+                                deadline,
+                                new_timer_node,
+                                prev_len,
+                            );
+                            log_debug!("Cmd::Start scheduled: timer_id: {:?}", timer_id);
+                        }
+                        Err(err) => {
+                            ftrace::instant!("alarms", "starnix:hrtimer:setup_event_error", ftrace::Scope::Process, "timer_id" => timer_id);
+                            to_errno_with_log(err);
+                        }
+                    }
+                    self.lock().debug_start_stage_counter = 999;
                 }
                 Cmd::Alarm { new_timer_node, lease, message_counter } => {
                     self.lock().debug_start_stage_counter = 10;
