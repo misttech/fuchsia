@@ -64,12 +64,18 @@ pub struct ShowCommand {
 #[argh(
     subcommand,
     name = "connect",
-    description = "Send a connection request to a peer.",
+    description = "Send a connection request to a peer. To start a pairing delegate first, use \
+`--with-pairing`.",
     example = "ffx bluetooth peer connect <id|addr>"
 )]
 pub struct ConnectCommand {
     #[argh(positional)]
     pub id_or_addr: ffx_bluetooth_common::PeerIdOrAddr,
+
+    /// start a pairing delegate before connecting. Use this when connecting to unbonded devices to
+    /// ensure the connection isn't rejected when pairing is required
+    #[argh(switch, long = "with-pairing")]
+    pub with_pairing: bool,
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]

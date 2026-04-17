@@ -7,9 +7,12 @@ use ::ffx_bluetooth_peer_args::{LeSecurityLevel, PeerCommand, PeerSubCommand, Tr
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_fuchsia_bluetooth::PeerId as FidlPeerId;
 use fdomain_fuchsia_bluetooth_affordances::{
-    PeerControllerPairRequest, PeerControllerProxy, PeerSelector,
+    HostControllerProxy, HostControllerStartPairingDelegateRequest, PeerControllerPairRequest,
+    PeerControllerProxy, PeerSelector,
 };
-use fdomain_fuchsia_bluetooth_sys::{BondableMode, PairingOptions, PairingSecurityLevel};
+use fdomain_fuchsia_bluetooth_sys::{
+    BondableMode, InputCapability, OutputCapability, PairingOptions, PairingSecurityLevel,
+};
 use ffx_bluetooth_common::PeerIdOrAddr;
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use fuchsia_bluetooth::types::{Address, Peer, PeerId};
@@ -24,6 +27,8 @@ pub struct PeerTool {
     cmd: PeerCommand,
     #[with(toolbox())]
     peer_controller: PeerControllerProxy,
+    #[with(toolbox())]
+    host_controller: HostControllerProxy,
 }
 
 fho::embedded_plugin!(PeerTool);
@@ -57,6 +62,11 @@ impl FfxMain for PeerTool {
                         cmd.id_or_addr
                     )));
                 };
+
+                if cmd.with_pairing {
+                    self.allow_pairing().await?;
+                    writer.line("Allowing pairing")?;
+                }
 
                 self.connect_peer(peer_id).await?;
                 writer.line(format!("Successfully sent connection request to peer {peer_id}"))?;
@@ -173,6 +183,24 @@ impl PeerTool {
             .map_err(|err| {
                 fho::Error::Unexpected(anyhow::anyhow!(
                     "fuchsia.bluetooth.affordances.PeerController error: {err:?}"
+                ))
+            })?)
+    }
+
+    async fn allow_pairing(&self) -> Result<()> {
+        let request = HostControllerStartPairingDelegateRequest {
+            input_capability: Some(InputCapability::None),
+            output_capability: Some(OutputCapability::None),
+            ..Default::default()
+        };
+        Ok(self
+            .host_controller
+            .start_pairing_delegate(&request)
+            .await
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
+            .map_err(|err| {
+                fho::Error::Unexpected(anyhow::anyhow!(
+                    "fuchsia.bluetooth.affordances.HostController error: {err:?}"
                 ))
             })?)
     }
