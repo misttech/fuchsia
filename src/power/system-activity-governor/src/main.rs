@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod activity_governor_request_frontend;
 mod cpu_element_manager;
 mod cpu_manager;
 mod events;
 mod power_observability;
 mod system_activity_governor;
 
+use crate::activity_governor_request_frontend::ActivityGovernorRequestFrontend;
 use crate::cpu_element_manager::{CpuElementManager, SystemActivityGovernorFactory};
 use crate::events::SagEventLogger;
 use crate::power_observability::WakeSourceObservability;
@@ -71,7 +73,11 @@ enum IncomingService {
     ElementInfoProviderService(fbroker::ElementInfoProviderServiceRequest),
 }
 
-async fn run<F>(cpu_service: Rc<CpuElementManager<F>>, booting_node: Rc<IBool>) -> Result<()>
+async fn run<F>(
+    cpu_service: Rc<CpuElementManager<F>>,
+    booting_node: Rc<IBool>,
+    front_end: Rc<ActivityGovernorRequestFrontend>,
+) -> Result<()>
 where
     F: SystemActivityGovernorFactory,
 {
@@ -93,6 +99,7 @@ where
         .for_each_concurrent(None, move |request: IncomingService| {
             let cpu_service = cpu_service.clone();
             let booting_node = booting_node.clone();
+            let front_end = front_end.clone();
             // Before constructing the SystemActivityGovernor type, the system-activity-governor
             // component must receive a token from another component. To ensure components that
             // depend on fuchsia.power.system.ActivityGovernor, et. al. have consistent behavior,
@@ -101,7 +108,7 @@ where
             async move {
                 match request {
                     IncomingService::ActivityGovernor(stream) => {
-                        cpu_service.sag().await.handle_activity_governor_stream(stream).await
+                        front_end.handle_activity_governor_stream(stream).await
                     }
                     IncomingService::BootControl(stream) => {
                         cpu_service
@@ -232,31 +239,40 @@ async fn main() -> Result<()> {
     let sag_event_logger2 = sag_event_logger.clone();
     let sag_event_logger_obs = sag_event_logger.clone();
 
+    let sag_cell = Rc::new(OnceCell::<Rc<SystemActivityGovernor>>::new());
+    let front_end = Rc::new(ActivityGovernorRequestFrontend::new(sag_cell.clone()));
+
     let is_shutting_down_node = inspector.root().create_bool("is_shutting_down", false);
     let is_shutting_down = register_terminal_state_watcher(is_shutting_down_node).await;
     let is_shutting_down_sag = is_shutting_down.clone();
 
     let stuck_warning_timeout = config.suspend_resume_stuck_warning_timeout;
+    let front_end_clone = front_end.clone();
+    let inspector_clone = inspector.clone();
     let sag_factory_fn = move |cpu_manager, execution_state_dependencies| {
+        let front_end = front_end_clone.clone();
         let topology = topology2.clone();
         let sag_event_logger = sag_event_logger2.clone();
         let is_shutting_down = is_shutting_down_sag.clone();
         let crash_reporter = crash_reporter.clone();
         let boost_proxy = boost_proxy.clone();
+        let inspect_root = inspector_clone.root().clone_weak();
         async move {
             log::info!("Creating activity governor server...");
-            SystemActivityGovernor::new(
-                &topology,
-                inspector.root().clone_weak(),
-                sag_event_logger,
-                cpu_manager,
-                execution_state_dependencies,
-                is_shutting_down,
-                crash_reporter,
-                MonotonicDuration::from_seconds(stuck_warning_timeout.into()),
-                boost_proxy,
-            )
-            .await
+
+            front_end
+                .create_sag(
+                    &topology,
+                    inspect_root,
+                    sag_event_logger,
+                    cpu_manager,
+                    execution_state_dependencies,
+                    is_shutting_down,
+                    crash_reporter,
+                    MonotonicDuration::from_seconds(stuck_warning_timeout.into()),
+                    boost_proxy,
+                )
+                .await
         }
         .boxed_local()
     };
@@ -287,6 +303,7 @@ async fn main() -> Result<()> {
             inspector.root().clone_weak(),
             sag_event_logger,
             suspender,
+            sag_cell.clone(),
             sag_factory_fn,
             interrupt_attributor,
             is_shutting_down,
@@ -298,6 +315,7 @@ async fn main() -> Result<()> {
             inspector.root().clone_weak(),
             sag_event_logger,
             suspender,
+            sag_cell.clone(),
             sag_factory_fn,
             interrupt_attributor,
             is_shutting_down,
@@ -309,7 +327,7 @@ async fn main() -> Result<()> {
 
     // This future should never complete.
     let booting_node = Rc::new(inspector.root().create_bool("booting", true));
-    let result = run(cpu_service, booting_node).await;
+    let result = run(cpu_service, booting_node, front_end).await;
     log::error!(result:?; "Unexpected exit");
     fuchsia_inspect::component::health().set_unhealthy(&format!("Unexpected exit: {:?}", result));
     result

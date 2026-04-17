@@ -164,8 +164,3 @@ impl WakeSourceObservability {
         self.sag_event_logger.log(event);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-}

@@ -8,6 +8,10 @@ use crate::system_activity_governor::SystemActivityGovernor;
 use anyhow::Result;
 use async_lock::OnceCell;
 use fidl::endpoints::create_endpoints;
+use fidl_fuchsia_hardware_power_suspend as fhsuspend;
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_system as fsystem;
+use fuchsia_async as fasync;
 use fuchsia_inspect::Node as INode;
 use futures::StreamExt;
 use futures::future::LocalBoxFuture;
@@ -15,10 +19,6 @@ use power_broker_client::PowerElementContext;
 use std::cell::Cell;
 use std::rc::Rc;
 use zx::{HandleBased, Rights};
-use {
-    fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_broker as fbroker,
-    fidl_fuchsia_power_system as fsystem, fuchsia_async as fasync,
-};
 
 /// SystemActivityGovernorFactory is a function trait used to construct a new
 /// SystemActivityGovernor instance. The parameters are provided by an instance
@@ -27,7 +27,7 @@ pub trait SystemActivityGovernorFactory:
     Fn(
         /*cpu_manager:*/ Rc<CpuManager>,
         /*execution_state_level_dependencies:*/ Vec<fbroker::LevelDependency>,
-    ) -> LocalBoxFuture<'static, Result<Rc<SystemActivityGovernor>>>
+    ) -> LocalBoxFuture<'static, Result<()>>
     + 'static
 {
 }
@@ -38,7 +38,7 @@ impl<T> SystemActivityGovernorFactory for T where
     T: Fn(
             /*cpu_manager:*/ Rc<CpuManager>,
             /*execution_state_level_dependencies:*/ Vec<fbroker::LevelDependency>,
-        ) -> LocalBoxFuture<'static, Result<Rc<SystemActivityGovernor>>>
+        ) -> LocalBoxFuture<'static, Result<()>>
         + 'static
 {
 }
@@ -62,6 +62,7 @@ where
         inspect_root: INode,
         sag_event_logger: SagEventLogger,
         suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>>,
+        sag: Rc<OnceCell<Rc<SystemActivityGovernor>>>,
         sag_factory: F,
         observability: Rc<OnceCell<crate::power_observability::WakeSourceObservability>>,
         is_shutting_down: Rc<Cell<bool>>,
@@ -117,12 +118,11 @@ where
             .expect("failed to lease CPU element during startup");
         log::info!("Leased CPU power element at 'Active'.");
 
-        let sag = Rc::new(OnceCell::<Rc<SystemActivityGovernor>>::new());
         let sag2 = sag.clone();
         let cpu_manager2 = cpu_manager.clone();
 
         fasync::Task::local(async move {
-            let sag = sag2.wait().await.clone();
+            let sag = sag2.wait().await;
 
             log::info!("Starting activity governor server...");
             cpu_manager2.set_suspend_resume_listener(sag.clone());
@@ -148,6 +148,7 @@ where
         inspect_root: INode,
         sag_event_logger: SagEventLogger,
         suspender: Rc<OnceCell<Option<fhsuspend::SuspenderProxy>>>,
+        sag: Rc<OnceCell<Rc<SystemActivityGovernor>>>,
         sag_factory: F,
         observability: Rc<OnceCell<crate::power_observability::WakeSourceObservability>>,
         is_shutting_down: Rc<Cell<bool>>,
@@ -157,6 +158,7 @@ where
             inspect_root,
             sag_event_logger,
             suspender,
+            sag,
             sag_factory,
             observability,
             is_shutting_down,
@@ -164,14 +166,12 @@ where
         .await;
 
         // No dependencies will be provided, so construct SystemActivityGovernor now.
-        let sag = (manager.sag_factory)(
+        let _ = (manager.sag_factory)(
             manager.cpu_manager.clone(),
             manager.create_execution_state_level_dependencies(Vec::new()),
         )
         .await
         .expect("create sag failed");
-        let _ = manager.sag.set(sag).await;
-
         manager
     }
 
@@ -237,7 +237,7 @@ where
                                 // dependency, so we can construct SAG now.
                                 log::info!("Adding execution state dependency");
 
-                                let sag = (self.sag_factory)(
+                                match (self.sag_factory)(
                                     self.cpu_manager.clone(),
                                     self.create_execution_state_level_dependencies(vec![
                                         fbroker::LevelDependency {
@@ -250,15 +250,12 @@ where
                                     ]),
                                 )
                                 .await
-                                .expect("create sag failed");
-
-                                // When sag is set, pending requests for other
-                                // fuchsia.power.system FIDL protocols will be
-                                // handled by it.
-                                match self.sag.set(sag).await {
-                                    Ok(_) => Ok(()),
-                                    Err(_) => {
-                                        log::error!("System Activity Governor is already created.");
+                                {
+                                    Ok(()) => Ok(()),
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to create System Activity Governor: {e:?}"
+                                        );
                                         Err(fsystem::AddExecutionStateDependencyError::BadState)
                                     }
                                 }

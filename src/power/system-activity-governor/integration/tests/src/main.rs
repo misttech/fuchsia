@@ -2841,6 +2841,29 @@ async fn test_suspend_blocker_receives_no_calls_during_shutdown_with_execution_s
         .unwrap()
         .unwrap();
 
+    // Ensure SAG is serving power elements before shutting down.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            booting: true,
+            is_shutting_down: false,
+            power_elements: contains {
+                execution_state: {
+                    power_level: 2u64,
+                },
+                application_activity: {
+                    power_level: 0u64,
+                },
+                cpu: {
+                    power_level: 1u64,
+                },
+            },
+            "fuchsia.inspect.Health": contains {
+                status: "OK",
+            },
+        }
+    );
+
     let admin = realm.connect_to_protocol::<fstatecontrol::AdminMarker>().await?;
     admin
         .shutdown(&fstatecontrol::ShutdownOptions {
@@ -2857,6 +2880,14 @@ async fn test_suspend_blocker_receives_no_calls_during_shutdown_with_execution_s
     drop(cpu_driver_controller);
     drop(cpu_driver_task);
 
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            booting: true,
+            is_shutting_down: true,
+        }
+    );
+
     // Call SetBootComplete to allow SAG to start suspending.
     {
         let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
@@ -2869,17 +2900,6 @@ async fn test_suspend_blocker_receives_no_calls_during_shutdown_with_execution_s
         root: contains {
             booting: false,
             is_shutting_down: true,
-            power_elements: contains {
-                execution_state: {
-                    power_level: 2u64,
-                },
-                application_activity: {
-                    power_level: 0u64,
-                },
-                cpu: {
-                    power_level: 1u64,
-                },
-            },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
             },
@@ -3913,6 +3933,218 @@ async fn test_activity_governor_files_crash_report_on_suspend_blocker_stall() ->
         .await?;
 
     assert_eq!(num_filed, 1);
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_wake_leases_before_and_after_sag_creation() -> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+        wait_for_suspending_token: Some(true),
+        ..Default::default()
+    })
+    .await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let cpu_element_manager =
+        realm.connect_to_protocol::<fsystem::CpuElementManagerMarker>().await?;
+    let (cpu_driver_controller, _cpu_driver_power_level, _cpu_driver_task) =
+        create_cpu_driver_topology(&realm).await.unwrap();
+
+    // Before registering the execution state dependency, verify cpu is level 1
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            power_elements: contains {
+                cpu: {
+                    power_level: 1u64,
+                },
+            },
+        }
+    );
+
+    // Issue an acquire_wake_lease to ActivityGovernorRequestFrontend
+    let wake_lease = activity_governor.acquire_wake_lease("early_lease").await?;
+
+    // Call add_execution_state_dependency to trigger create_sag.
+    cpu_element_manager
+        .add_execution_state_dependency(
+            fsystem::CpuElementManagerAddExecutionStateDependencyRequest {
+                dependency_token: Some(cpu_driver_controller.assertive_dependency_token().unwrap()),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    let server_token_koid =
+        &wake_lease.as_ref().unwrap().basic_info().unwrap().related_koid.raw_koid().to_string();
+
+    // Verify the inspect now contains the wake lease once dependencies are satisfied
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {
+                var server_token_koid: {
+                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.as_ref().unwrap().koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "early_lease",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                }
+            },
+        }
+    );
+
+    // Take a second wake lease
+    let wake_lease2 = activity_governor.acquire_wake_lease("late_lease").await?;
+    let server_token_koid2 =
+        &wake_lease2.as_ref().unwrap().basic_info().unwrap().related_koid.raw_koid().to_string();
+
+    // Verify both are present
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {
+                var server_token_koid: {
+                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease.as_ref().unwrap().koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "early_lease",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                },
+                var server_token_koid2: {
+                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease2.as_ref().unwrap().koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "late_lease",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 1u64,
+                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                }
+            },
+        }
+    );
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_application_activity_lease_before_sag_creation() -> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+        wait_for_suspending_token: Some(true),
+        ..Default::default()
+    })
+    .await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let cpu_element_manager =
+        realm.connect_to_protocol::<fsystem::CpuElementManagerMarker>().await?;
+    let (cpu_driver_controller, _cpu_driver_power_level, _cpu_driver_task) =
+        create_cpu_driver_topology(&realm).await.unwrap();
+
+    // Issue a take_application_activity_lease to ActivityGovernorRequestFrontend
+    let app_lease = activity_governor.take_application_activity_lease("early_app_lease").await?;
+
+    // Call add_execution_state_dependency to trigger create_sag.
+    cpu_element_manager
+        .add_execution_state_dependency(
+            fsystem::CpuElementManagerAddExecutionStateDependencyRequest {
+                dependency_token: Some(cpu_driver_controller.assertive_dependency_token().unwrap()),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    let server_token_koid = &app_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
+
+    // Verify the inspect now contains the application activity lease once dependencies are satisfied
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {
+                var server_token_koid: {
+                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: app_lease.koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "early_app_lease",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                }
+            },
+        }
+    );
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_early_lease_dropped_before_dependency_registration() -> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+        wait_for_suspending_token: Some(true),
+        ..Default::default()
+    })
+    .await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let cpu_element_manager =
+        realm.connect_to_protocol::<fsystem::CpuElementManagerMarker>().await?;
+    let (cpu_driver_controller, _cpu_driver_power_level, _cpu_driver_task) =
+        create_cpu_driver_topology(&realm).await.unwrap();
+
+    // Acquire two wake leases
+    let wake_lease1 = activity_governor.acquire_wake_lease("lease_retained").await?.unwrap();
+    let wake_lease2 = activity_governor.acquire_wake_lease("lease_dropped").await?.unwrap();
+
+    assert!(!wake_lease1.is_invalid());
+    assert!(!wake_lease2.is_invalid());
+
+    // Drop the second lease before registering execution state dependency
+    drop(wake_lease2);
+
+    // Call add_execution_state_dependency to trigger create_sag.
+    cpu_element_manager
+        .add_execution_state_dependency(
+            fsystem::CpuElementManagerAddExecutionStateDependencyRequest {
+                dependency_token: Some(cpu_driver_controller.assertive_dependency_token().unwrap()),
+                power_level: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    let server_token_koid = &wake_lease1.basic_info().unwrap().related_koid.raw_koid().to_string();
+
+    // Verify the inspect contains ONLY the retained wake lease
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: {
+                var server_token_koid: {
+                    ref fobs::WAKE_LEASE_ITEM_NODE_CREATED_AT: NonZeroUintProperty,
+                    ref fobs::WAKE_LEASE_ITEM_CLIENT_TOKEN_KOID: wake_lease1.koid().unwrap().raw_koid(),
+                    ref fobs::WAKE_LEASE_ITEM_NAME: "lease_retained",
+                    ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
+                    ref fobs::WAKE_LEASE_ITEM_TYPE: AnyStringProperty,
+                    ref fobs::WAKE_LEASE_ITEM_STATUS: fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED,
+                }
+            },
+        }
+    );
 
     Ok(())
 }

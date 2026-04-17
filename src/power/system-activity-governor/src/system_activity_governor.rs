@@ -35,7 +35,24 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use zx::HandleBased;
 
-// TODO(fxbug.dev/491840509): Allow configurable timeouts when needed.
+pub struct StoredWakeLease {
+    pub name: String,
+    pub server_token: fsystem::LeaseToken,
+    pub is_long: bool,
+}
+
+pub struct StoredSuspendBlocker {
+    pub name: String,
+    pub suspend_blocker: fsystem::SuspendBlockerProxy,
+    pub server_token: fsystem::LeaseToken,
+}
+
+pub struct StoredApplicationActivityLease {
+    pub name: String,
+    pub server_token: fsystem::LeaseToken,
+}
+
+// TODO(https://fxbug.dev/491840509): Allow configurable timeouts when needed.
 const RESUME_SUSPENDING_LEASE_DROP_DELAY: std::time::Duration =
     std::time::Duration::from_millis(100);
 const SUSPEND_BLOCKER_WARNING_TIMEOUT: fasync::MonotonicDuration =
@@ -230,7 +247,15 @@ impl LeaseManager {
 
     async fn create_application_activity_lease(&self, name: String) -> Result<fsystem::LeaseToken> {
         let (server_token, client_token) = fsystem::LeaseToken::create();
+        self.create_application_activity_lease_using_token(name, server_token).await?;
+        Ok(client_token)
+    }
 
+    async fn create_application_activity_lease_using_token(
+        &self,
+        name: String,
+        server_token: fsystem::LeaseToken,
+    ) -> Result<()> {
         let lease_token = server_token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
 
         log::debug!("Acquiring application activity lease for '{}'", name);
@@ -293,7 +318,7 @@ impl LeaseManager {
         })
         .detach();
 
-        Ok(client_token)
+        Ok(())
     }
 
     async fn create_wake_lease_using_token(
@@ -898,7 +923,7 @@ impl SystemActivityGovernor {
         while let Some(request) = stream.next().await {
             match request {
                 Ok(fsystem::ActivityGovernorRequest::GetPowerElements { responder }) => {
-                    self.handle_get_power_elements(responder).await;
+                    self.handle_get_power_elements(responder);
                 }
                 Ok(fsystem::ActivityGovernorRequest::TakeApplicationActivityLease {
                     responder,
@@ -938,7 +963,7 @@ impl SystemActivityGovernor {
         }
     }
 
-    async fn handle_get_power_elements(
+    pub(crate) fn handle_get_power_elements(
         &self,
         responder: fsystem::ActivityGovernorGetPowerElementsResponder,
     ) {
@@ -991,7 +1016,7 @@ impl SystemActivityGovernor {
         responder: fsystem::ActivityGovernorTakeWakeLeaseResponder,
         name: String,
     ) {
-        let client_token = match self.lease_manager.create_wake_lease(name, false).await {
+        let client_token = match self.acquire_wake_lease_common(name, false).await {
             Ok(client_token) => client_token,
             Err(error) => {
                 log::warn!(error:?; "Encountered error while registering wake lease");
@@ -1073,6 +1098,8 @@ impl SystemActivityGovernor {
         name: String,
         server_token: fsystem::LeaseToken,
     ) {
+        // TODO(https://fxbug.dev/503324428) Check if the peer closed the other side before making
+        // a wake lease.
         let client_token_res = if name.is_empty() {
             log::warn!("Received invalid name while acquiring wake lease");
             Err(fsystem::AcquireWakeLeaseError::InvalidName)
@@ -1164,6 +1191,98 @@ impl SystemActivityGovernor {
             }
         };
         let _ = responder.send(res);
+    }
+
+    pub(crate) async fn process_accumulated_requests(
+        &self,
+        wake_leases: Vec<StoredWakeLease>,
+        suspend_blockers: Vec<StoredSuspendBlocker>,
+        application_activity_leases: Vec<StoredApplicationActivityLease>,
+    ) -> (
+        Vec<Result<(), anyhow::Error>>,
+        Vec<Result<(), anyhow::Error>>,
+        Vec<Result<(), anyhow::Error>>,
+    ) {
+        log::info!("Processing accumulated requests in SAG...");
+
+        // TODO(https://fxbug.dev/503324428) Check if the peer closed the other side before making
+        // a wake lease.
+        let mut lease_results = Vec::new();
+        for lease in wake_leases {
+            let res = self
+                .lease_manager
+                .create_wake_lease_using_token(
+                    lease.name.clone(),
+                    lease.server_token,
+                    lease.is_long,
+                )
+                .await;
+            if let Err(ref error) = res {
+                log::warn!(
+                    error:?;
+                    "Encountered error while registering accumulated wake lease for {0}", lease.name
+                );
+            }
+            lease_results.push(res);
+        }
+
+        let mut blocker_results = Vec::new();
+        for blocker in suspend_blockers {
+            let proxy = blocker.suspend_blocker;
+            let name = blocker.name;
+            let server_token = blocker.server_token;
+
+            let res = self
+                .lease_manager
+                .create_wake_lease_using_token(name.clone(), server_token, false)
+                .await
+                .map(|()| {
+                    let id = self.suspend_blocker_id_generator.next_id();
+                    self.pending_suspend_blockers.borrow_mut().push((
+                        id,
+                        proxy.clone(),
+                        name.clone(),
+                    ));
+
+                    let suspend_blockers = self.suspend_blockers.clone();
+                    let pending_suspend_blockers = self.pending_suspend_blockers.clone();
+                    fasync::Task::local(async move {
+                        let _ = proxy.on_closed().await;
+                        suspend_blockers.borrow_mut().retain(|(_, p, _)| !p.is_closed());
+                        pending_suspend_blockers.borrow_mut().retain(|(_, p, _)| !p.is_closed());
+                    })
+                    .detach();
+                });
+
+            if let Err(ref error) = res {
+                log::warn!(
+                    error:?;
+                    "Encountered error while registering accumulated suspend blocker for '{0}'", name
+                );
+            }
+            blocker_results.push(res);
+        }
+
+        let mut app_activity_results = Vec::new();
+        for lease in application_activity_leases {
+            let res = self
+                .lease_manager
+                .create_application_activity_lease_using_token(
+                    lease.name.clone(),
+                    lease.server_token,
+                )
+                .await;
+            if let Err(ref error) = res {
+                log::warn!(
+                    error:?;
+                    "Encountered error while registering accumulated application activity lease for {0}",
+                    lease.name
+                );
+            }
+            app_activity_results.push(res);
+        }
+
+        (lease_results, blocker_results, app_activity_results)
     }
 
     pub async fn handle_boot_control_stream(
