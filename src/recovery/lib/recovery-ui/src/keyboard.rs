@@ -105,7 +105,7 @@ impl KeyButton {
                 size2(label_width + padding * 1.5, font_size + padding)
             }
         };
-        let corner: Coord = Coord::from(5.0);
+        let corner: Coord = Coord::from(5.0_f32);
         let background = builder.rounded_rectangle(bg_size, corner, BUTTON_COLOR);
         builder.end_group();
         let button = KeyButton {
