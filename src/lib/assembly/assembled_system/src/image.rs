@@ -29,6 +29,9 @@ pub enum Image {
     /// Verified Boot Metadata.
     VBMeta(Utf8PathBuf),
 
+    /// System Verified Boot Metadata.
+    VBMetaSystem(Utf8PathBuf),
+
     /// Device Tree Blob Overlay.
     Dtbo(Utf8PathBuf),
 
@@ -78,6 +81,7 @@ impl Image {
             Image::BasePackage(s) => s.as_path(),
             Image::ZBI { path, signed: _ } => path.as_path(),
             Image::VBMeta(s) => s.as_path(),
+            Image::VBMetaSystem(s) => s.as_path(),
             Image::Dtbo(s) => s.as_path(),
             Image::BlobFS { path, .. } => path.as_path(),
             Image::FVM(s) => s.as_path(),
@@ -96,6 +100,7 @@ impl Image {
             Image::BasePackage(s) => s,
             Image::ZBI { path, signed: _ } => path,
             Image::VBMeta(s) => s,
+            Image::VBMetaSystem(s) => s,
             Image::Dtbo(s) => s,
             Image::BlobFS { path, .. } => path,
             Image::FVM(s) => s,
@@ -115,6 +120,7 @@ impl Image {
             Image::BasePackage(s) => *s = source,
             Image::ZBI { path, signed: _ } => *path = source,
             Image::VBMeta(s) => *s = source,
+            Image::VBMetaSystem(s) => *s = source,
             Image::Dtbo(s) => *s = source,
             Image::BlobFS { path, .. } => *path = source,
             Image::FVM(s) => *s = source,
@@ -135,6 +141,7 @@ impl Image {
             Image::BasePackage(_)
             | Image::ZBI { .. }
             | Image::VBMeta(_)
+            | Image::VBMetaSystem(_)
             | Image::Dtbo(_)
             | Image::FVM(_)
             | Image::FVMSparse(_)
@@ -153,6 +160,7 @@ impl Image {
             Image::BasePackage(_)
             | Image::ZBI { .. }
             | Image::VBMeta(_)
+            | Image::VBMetaSystem(_)
             | Image::Dtbo(_)
             | Image::FVM(_)
             | Image::FVMSparse(_)
@@ -220,6 +228,13 @@ impl Serialize for Image {
             Image::VBMeta(path) => ImageSerializeHelper {
                 partition_type: "vbmeta",
                 name: "zircon-a",
+                path,
+                signed: None,
+                contents: None,
+            },
+            Image::VBMetaSystem(path) => ImageSerializeHelper {
+                partition_type: "vbmeta",
+                name: "vbmeta_system",
                 path,
                 signed: None,
                 contents: None,
@@ -481,6 +496,7 @@ impl<'de> Deserialize<'de> for Image {
             ("zbi", _, signed) => {
                 Ok(Image::ZBI { path: helper.path, signed: signed.is_some_and(|s| s) })
             }
+            ("vbmeta", "vbmeta_system", None) => Ok(Image::VBMetaSystem(helper.path)),
             ("vbmeta", _, None) => Ok(Image::VBMeta(helper.path)),
             ("dtbo", _, None) => Ok(Image::Dtbo(helper.path)),
             ("blk", "blob", None) => {

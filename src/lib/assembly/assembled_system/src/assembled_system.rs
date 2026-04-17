@@ -233,6 +233,12 @@ impl AssembledSystem {
                         .images
                         .push(Image::QemuKernel(image_assembly_config.qemu_kernel.clone()));
                 }
+                vbmeta::ConstructedVBMeta::VBMetaSystem(path) => {
+                    system.images.push(Image::VBMetaSystem(path));
+                    system
+                        .images
+                        .push(Image::QemuKernel(image_assembly_config.qemu_kernel.clone()));
+                }
                 // Nominally only a QEMU kernel (but one with a VBMeta footer).
                 vbmeta::ConstructedVBMeta::QemuKernelWithFooter(path) => {
                     system.images.push(Image::QemuKernel(path));

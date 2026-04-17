@@ -119,6 +119,20 @@ impl PartitionImageMapper {
                     log::debug!("Adding image type: {} from path {}", image_type, path.clone());
                     slot_entry.insert(image_type, path.clone());
                 }
+                Image::VBMetaSystem(path) => {
+                    if let Slot::R = slot {
+                        // Recovery should not include a system vbmeta.
+                        log::debug!(
+                            "Skipping image at path: {} as recovery should not include a system vbmeta",
+                            path.clone()
+                        );
+                        continue;
+                    } else {
+                        let image_type = ImageType::VBMeta;
+                        log::debug!("Adding image type: {} from path {}", image_type, path.clone());
+                        slot_entry.insert(image_type, path.clone());
+                    }
+                }
                 Image::FVMFastboot(path) => {
                     if let Slot::R = slot {
                         // Recovery should not include a separate FVM, because it is embedded into the

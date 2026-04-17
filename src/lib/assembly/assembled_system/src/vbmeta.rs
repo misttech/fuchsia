@@ -63,6 +63,9 @@ pub enum ConstructedVBMeta {
     /// The path to a normal, standalone, Fuchsia VBMeta.
     Standalone(Utf8PathBuf),
 
+    /// The path to a system VBMeta image.
+    VBMetaSystem(Utf8PathBuf),
+
     /// The path to a copy of the assembled system's QEMU kernel with a VBMeta
     /// footer appended.
     QemuKernelWithFooter(Utf8PathBuf),
@@ -87,7 +90,7 @@ pub fn construct_vbmeta(
     // 0 otherwise.
     let fs = RealFilesystemProvider {};
     let (mut descriptors, rollback_index) = match vbmeta_config.style {
-        VBMetaStyle::Fuchsia => {
+        VBMetaStyle::Fuchsia | VBMetaStyle::VBMetaSystem => {
             let descriptors = descriptors_for_fuchsia(zbi, salt.clone(), base_package, &fs)
                 .context("constructing VBMeta descriptors")?;
             (descriptors, 0)
@@ -131,13 +134,20 @@ pub fn construct_vbmeta(
     .context("signing vbmeta")?;
 
     // For a Fuchsia-style VBMeta, we simply write it out as a standalone image.
-    if vbmeta_config.style == VBMetaStyle::Fuchsia {
+    if vbmeta_config.style == VBMetaStyle::Fuchsia
+        || vbmeta_config.style == VBMetaStyle::VBMetaSystem
+    {
         let vbmeta_path = outdir.as_ref().join(format!("{}.vbmeta", vbmeta_config.name));
         std::fs::write(&vbmeta_path, vbmeta.as_bytes())
             .with_context(|| format!("writing vbmeta: {}", &vbmeta_path))?;
         let vbmeta_path_relative = path_relative_from_current_dir(&vbmeta_path)
             .with_context(|| format!("calculating relative path for: {}", &vbmeta_path))?;
-        Ok(ConstructedVBMeta::Standalone(vbmeta_path_relative))
+
+        if vbmeta_config.style == VBMetaStyle::VBMetaSystem {
+            Ok(ConstructedVBMeta::VBMetaSystem(vbmeta_path_relative))
+        } else {
+            Ok(ConstructedVBMeta::Standalone(vbmeta_path_relative))
+        }
     } else {
         // At this point we are handling an Android pVM-style VBMeta, which gets
         // appended to the boot shim. We do not want to modify the original boot

@@ -82,6 +82,7 @@ impl ProcessCommand {
                     | Image::QemuKernel(_)
                     | Image::TestRamdisk(_)
                     | Image::VBMeta(_)
+                    | Image::VBMetaSystem(_)
                     | Image::ZBI { path: _, signed: _ } => return Box::new(std::iter::empty()),
                     // We skip this one, its contents are listed in the blobfs and fxfs contents.
                     Image::BasePackage(_) => return Box::new(std::iter::empty()),

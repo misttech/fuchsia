@@ -80,6 +80,13 @@ pub enum Slot {
     Recovery(AssembledSystem),
 }
 
+struct SlotImages {
+    zbi: ImageMapping,
+    vbmeta: Option<ImageMapping>,
+    dtbo: Option<ImageMapping>,
+    vbmeta_system: Option<ImageMapping>,
+}
+
 impl Slot {
     /// Get the image manifest.
     fn manifest(&self) -> &AssembledSystem {
@@ -91,12 +98,11 @@ impl Slot {
 
     /// Get the (preferably signed) zbi and optional vbmeta, or None if no zbi image is present in
     /// this manifest.
-    fn zbi_vbmeta_dtbo(
-        &self,
-    ) -> Option<(ImageMapping, Option<ImageMapping>, Option<ImageMapping>)> {
+    fn zbi_vbmeta_dtbo(&self) -> Option<SlotImages> {
         let mut zbi = None;
         let mut vbmeta = None;
         let mut dtbo = None;
+        let mut vbmeta_system = None;
 
         for image in &self.manifest().images {
             match image {
@@ -104,6 +110,9 @@ impl Slot {
                     if *signed || zbi.is_none() {
                         zbi = Some(ImageMapping::new(image.source(), "zbi"));
                     }
+                }
+                Image::VBMetaSystem(_) => {
+                    vbmeta_system = Some(ImageMapping::new(image.source(), "vbmeta_system"));
                 }
                 Image::VBMeta(_) => {
                     vbmeta = Some(ImageMapping::new(image.source(), "vbmeta"));
@@ -115,10 +124,7 @@ impl Slot {
             }
         }
 
-        match zbi {
-            Some(zbi) => Some((zbi, vbmeta, dtbo)),
-            None => None,
-        }
+        zbi.map(|zbi| SlotImages { zbi, vbmeta, dtbo, vbmeta_system })
     }
 }
 
@@ -300,7 +306,7 @@ impl UpdatePackageBuilder {
         // Generate the update_images_fuchsia package.
         let mut builder = self.make_subpackage_builder("images_fuchsia")?;
         if let Some(slot) = &self.slot_primary {
-            let (zbi, vbmeta, dtbo) = slot
+            let SlotImages { zbi, vbmeta, dtbo, vbmeta_system } = slot
                 .zbi_vbmeta_dtbo()
                 .ok_or_else(|| anyhow!("primary slot missing a zbi image"))?;
 
@@ -314,6 +320,13 @@ impl UpdatePackageBuilder {
                     source: dtbo.source.clone(),
                     destination: dtbo.destination.clone(),
                     firmware_type: dtbo.destination.clone(),
+                });
+            }
+            if let Some(vbmeta_system) = &vbmeta_system {
+                firmware_images.push(FirmwareImage {
+                    source: vbmeta_system.source.clone(),
+                    destination: vbmeta_system.destination.clone(),
+                    firmware_type: vbmeta_system.destination.clone(),
                 });
             }
 
@@ -331,7 +344,7 @@ impl UpdatePackageBuilder {
         // Generate the update_images_recovery package.
         let mut builder = self.make_subpackage_builder("images_recovery")?;
         if let Some(slot) = &self.slot_recovery {
-            let (zbi, vbmeta, _) = slot
+            let SlotImages { zbi, vbmeta, .. } = slot
                 .zbi_vbmeta_dtbo()
                 .ok_or_else(|| anyhow!("recovery slot missing a zbi image"))?;
 
@@ -664,13 +677,16 @@ mod tests {
         // Add a ZBI to the update.
         let fake_zbi_tmp = NamedTempFile::new().unwrap();
         let fake_dtbo_tmp = NamedTempFile::new().unwrap();
+        let fake_vbmeta_system_tmp = NamedTempFile::new().unwrap();
         let fake_zbi = Utf8Path::from_path(fake_zbi_tmp.path()).unwrap();
         let fake_dtbo = Utf8Path::from_path(fake_dtbo_tmp.path()).unwrap();
+        let fake_vbmeta_system = Utf8Path::from_path(fake_vbmeta_system_tmp.path()).unwrap();
 
         builder.add_slot_images(Slot::Primary(AssembledSystem {
             images: vec![
                 Image::ZBI { path: fake_zbi.to_path_buf(), signed: true },
                 Image::Dtbo(fake_dtbo.to_path_buf()),
+                Image::VBMetaSystem(fake_vbmeta_system.to_path_buf()),
             ],
             board_name: "my_board".into(),
             partitions_config: None,
@@ -721,12 +737,15 @@ mod tests {
                 assert_eq!(asset.type_, AssetType::Vbmeta);
                 assert_eq!(asset.size, 0);
 
-                assert_eq!(v.firmware.len(), 2);
+                assert_eq!(v.firmware.len(), 3);
                 let firmware = &v.firmware[0];
                 assert_eq!(firmware.type_, "dtbo".to_string());
                 assert_eq!(firmware.size, 0);
                 let firmware = &v.firmware[1];
                 assert_eq!(firmware.type_, "tpl".to_string());
+                assert_eq!(firmware.size, 0);
+                let firmware = &v.firmware[2];
+                assert_eq!(firmware.type_, "vbmeta_system".to_string());
                 assert_eq!(firmware.size, 0);
             }
         }
@@ -793,7 +812,8 @@ mod tests {
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
         let mut contents: Vec<String> = contents.into_contents().into_keys().collect();
         contents.sort();
-        let expected_contents = vec!["dtbo".to_string(), "firmware_tpl".to_string()];
+        let expected_contents =
+            vec!["dtbo".to_string(), "firmware_tpl".to_string(), "vbmeta_system".to_string()];
         assert_eq!(expected_contents, contents);
 
         // Ensure the expected package fars/manifests were generated.

@@ -165,6 +165,7 @@ impl PbGetArtifactsTool {
                     match image {
                         Image::ZBI { path: _, signed: _ }
                         | Image::VBMeta(_)
+                        | Image::VBMetaSystem(_)
                         | Image::Dtbo(_)
                         | Image::FVMFastboot(_)
                         | Image::FxfsSparse { path: _, contents: _ } => {
@@ -204,6 +205,7 @@ impl PbGetArtifactsTool {
                         | Image::QemuKernel(_)
                         | Image::TestRamdisk(_)
                         | Image::VBMeta(_)
+                        | Image::VBMetaSystem(_)
                         | Image::FVM(_)
                         | Image::FxfsSparse { path: _, contents: _ } => {
                             artifacts.push(self.compute_path(&image.source())?)

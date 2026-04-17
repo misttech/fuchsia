@@ -321,6 +321,10 @@ pub enum VBMetaStyle {
     #[default]
     Fuchsia,
 
+    /// Generates a standalone VBMeta image for the system partition.
+    #[serde(rename = "vbmeta-system")]
+    VBMetaSystem,
+
     /// Generates the VBMeta expected by Android protected VMs as a footer to
     /// the product bundle's QEMU kernel (i.e., boot shim), where the choice of
     /// ramdisk (i.e., ZBI) hash descriptor 'partition name' - which controls a

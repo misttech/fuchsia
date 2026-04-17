@@ -210,7 +210,9 @@ pub(crate) trait Canonicalizer {
                         vec![Type::Emu, Type::Flash]
                     }
                     Image::QemuKernel(_) | Image::FVM(_) => vec![Type::Emu],
-                    Image::FVMFastboot(_) | Image::VBMeta(_) => vec![Type::Flash],
+                    Image::FVMFastboot(_) | Image::VBMeta(_) | Image::VBMetaSystem(_) => {
+                        vec![Type::Flash]
+                    }
                     _ => vec![],
                 };
 

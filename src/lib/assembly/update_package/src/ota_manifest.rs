@@ -73,6 +73,9 @@ pub fn write_ota_manifest(
                     }
                     (path, manifest::ImageType::Asset(manifest::AssetType::Zbi))
                 }
+                Image::VBMetaSystem(path) => {
+                    (path, manifest::ImageType::Firmware("vbmeta_system".into()))
+                }
                 Image::VBMeta(path) => {
                     (path, manifest::ImageType::Asset(manifest::AssetType::Vbmeta))
                 }
@@ -114,7 +117,8 @@ pub fn write_ota_manifest(
                             (path, "recovery_zbi")
                         }
                         Image::VBMeta(path) => (path, "recovery_vbmeta"),
-                        Image::BasePackage(_)
+                        Image::VBMetaSystem(_)
+                        | Image::BasePackage(_)
                         | Image::BlobFS { .. }
                         | Image::Dtbo(_)
                         | Image::FVM(_)

@@ -516,7 +516,8 @@ fn write_assembled_system(
                     has_dtbo = true;
                 }
 
-                Image::Fxfs(_)
+                Image::VBMetaSystem(_)
+                | Image::Fxfs(_)
                 | Image::FVM(_)
                 | Image::FVMSparse(_)
                 | Image::FVMFastboot(_)
