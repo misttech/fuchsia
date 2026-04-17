@@ -28,15 +28,22 @@ class TestThreadSampler : public sampler::ThreadSampler {
  public:
   TestThreadSampler() = default;
 
+  auto& get_per_cpu_state() { return per_cpu_state_; }
+  auto& get_state() { return state_; }
+  void set_state(sampler::SamplingState s) TA_NO_THREAD_SAFETY_ANALYSIS { SetState(s); }
+  static auto get_lock() { return sampler::ThreadSampler::ThreadSamplerLock::Get(); }
+  uint64_t get_buffer_ref_count() const {
+    uint64_t state = state_.load(ktl::memory_order_relaxed);
+    return (state & sampler::ThreadSampler::kBufferRefCountMask) >>
+           sampler::ThreadSampler::kBufferRefCountShift;
+  }
+
   void SampleThread(zx_koid_t pid, zx_koid_t tid, GeneralRegsSource source, void* gregs) {
-    // Enforce that we're not able to migrate cpus while accessing per cpu state.
-    DEBUG_ASSERT(arch_ints_disabled());
-    sampler::internal::PerCpuState& cpu_state = GetPerCpuState(arch_curr_cpu_num());
-    bool enabled = cpu_state.SetPendingWrite();
-    if (!enabled) {
+    ktl::optional<PerCpuStateRef> buffers = GetPerCpuState(arch_curr_cpu_num());
+    if (!buffers) {
       return;
     }
-    auto d = fit::defer([&cpu_state]() { cpu_state.ResetPendingWrite(); });
+    sampler::internal::PerCpuState& cpu_state = buffers->Get();
 
     constexpr size_t kMaxUserBacktraceSize = 64;
     vaddr_t bt[kMaxUserBacktraceSize]{};
@@ -132,7 +139,7 @@ class TestThreadSampler : public sampler::ThreadSampler {
       // We should now be able to read the records
       size_t num_cpus = arch_max_num_cpus();
       for (unsigned i = 0; i < num_cpus; ++i) {
-        sampler::internal::PerCpuState& s = test_state.GetPerCpuState(i);
+        sampler::internal::PerCpuState& s = test_state.get_per_cpu_state()[i];
 
         // num_words = 64 backtrace + 1 large_header + 1 metadata + 1 ts + 1 inline pid + 1 inline
         // tid + 1 blob size = 70
@@ -174,10 +181,98 @@ class TestThreadSampler : public sampler::ThreadSampler {
 
     END_TEST;
   }
+
+  static bool StateChange() {
+    BEGIN_TEST;
+    {
+      TestThreadSampler sampler;
+      ASSERT_EQ(uint64_t{0}, sampler.get_state().load(ktl::memory_order_relaxed));
+      zx_sampler_config_t config{
+          .period = zx::msec(1).get(),
+          .buffer_size = kPageSize,
+      };
+      ASSERT_OK(sampler.SetUp(config).status_value());
+      ASSERT_EQ(sampler::SamplingState::Configured, sampler.State());
+      ASSERT_TRUE(sampler.Start().is_ok());
+      ASSERT_EQ(sampler::SamplingState::Running, sampler.State());
+      {
+        ktl::optional<PerCpuStateRef> ref = sampler.GetPerCpuState(0);
+        ASSERT_TRUE(ref.has_value());
+        ASSERT_EQ(sampler::SamplingState::Running, sampler.State());
+        uint64_t ref_count = sampler.get_buffer_ref_count();
+        ASSERT_EQ(uint64_t{1}, ref_count);
+        // Changing the state shouldn't change the ref count
+        {
+          Guard<Mutex> guard(TestThreadSampler::get_lock());
+          sampler.set_state(sampler::SamplingState::Stopping);
+        }
+        ASSERT_EQ(sampler::SamplingState::Stopping, sampler.State());
+        uint64_t ref_count2 = sampler.get_buffer_ref_count();
+        ASSERT_EQ(uint64_t{1}, ref_count2);
+        // Fix up the state after we manually modified it.
+        {
+          Guard<Mutex> guard(TestThreadSampler::get_lock());
+          sampler.set_state(sampler::SamplingState::Running);
+        }
+      }
+
+      ASSERT_OK(sampler.Destroy().status_value());
+    }
+
+    END_TEST;
+  }
+
+  static bool AcquireBuffers() {
+    BEGIN_TEST;
+    {
+      TestThreadSampler sampler;
+      // We shouldn't be able to get a buffer reference if we don't have buffers.
+      for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
+        ktl::optional<PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ASSERT_FALSE(ref.has_value());
+      }
+      // Construct a thread sampler state and initialize it
+      zx_sampler_config_t config{
+          .period = zx::msec(1).get(),
+          .buffer_size = kPageSize,
+      };
+      ASSERT_OK(sampler.SetUp(config).status_value());
+
+      // We shouldn't be able to get the buffers unless we're running.
+      for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
+        ktl::optional<PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ASSERT_FALSE(ref.has_value());
+      }
+      ASSERT_TRUE(sampler.Start().is_ok());
+
+      for (cpu_num_t i = 0; i < arch_max_num_cpus(); i++) {
+        ktl::optional<PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ASSERT_TRUE(ref.has_value());
+      }
+
+      ktl::optional<PerCpuStateRef> bad_ref = sampler.GetPerCpuState(arch_max_num_cpus());
+      ASSERT_FALSE(bad_ref.has_value());
+
+      ASSERT_TRUE(sampler.Stop().is_ok());
+      for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
+        ktl::optional<PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ASSERT_FALSE(ref.has_value());
+      }
+      ASSERT_TRUE(sampler.Destroy().is_ok());
+      for (cpu_num_t i = 0; i < arch_max_num_cpus() + 1; i++) {
+        ktl::optional<PerCpuStateRef> ref = sampler.GetPerCpuState(i);
+        ASSERT_FALSE(ref.has_value());
+      }
+    }
+
+    END_TEST;
+  }
 };
 }  // namespace thread_sampler_tests
 
 UNITTEST_START_TESTCASE(thread_sampler_tests)
 UNITTEST("init/start", thread_sampler_tests::TestThreadSampler::RepeatStartStopTest)
 UNITTEST("read/write", thread_sampler_tests::TestThreadSampler::WriteSampleTest)
+UNITTEST("state_change", thread_sampler_tests::TestThreadSampler::StateChange)
+UNITTEST("acquire_buffers", thread_sampler_tests::TestThreadSampler::AcquireBuffers)
 UNITTEST_END_TESTCASE(thread_sampler_tests, "thread_sampler", "Thread Sampler tests")

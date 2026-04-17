@@ -29,7 +29,8 @@ sampler::ThreadSampler gThreadSampler{};
 zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
   Guard<Mutex> guard(ThreadSamplerLock::Get());
   SamplingState state = State();
-  if (state != SamplingState::Unallocated && state != SamplingState::Allocated) {
+
+  if (state != SamplingState::Unallocated) {
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
 
@@ -77,12 +78,16 @@ zx::result<> sampler::ThreadSampler::Start() {
     state.EnableWrites();
   }
 
+  SetState(SamplingState::Running);
   mp_sync_exec(
       mp_ipi_target::ALL, 0,
-      [](void* sampler) { static_cast<sampler::ThreadSampler*>(sampler)->SetCurrCpuTimer(); },
+      [](void* sampler) {
+        ktl::optional<PerCpuStateRef> ref =
+            reinterpret_cast<ThreadSampler*>(sampler)->GetPerCpuState(arch_curr_cpu_num());
+        DEBUG_ASSERT(ref.has_value());
+        ref->Get().SetTimer();
+      },
       this);
-
-  SetState(SamplingState::Running);
   return zx::ok();
 }
 
@@ -96,6 +101,9 @@ zx::result<> sampler::ThreadSampler::Stop() {
 }
 
 void sampler::ThreadSampler::StopLocked() {
+  // We start by disabling new writes, timers, and buffer references. Then we need to wait for any
+  // that are in flight to finish.
+  SetState(SamplingState::Stopping);
   for (sampler::internal::PerCpuState& state : per_cpu_state_) {
     state.DisableWrites();
     state.CancelTimer();
@@ -109,14 +117,14 @@ void sampler::ThreadSampler::StopLocked() {
     bool pending_writes;
     do {
       pending_timers = i.PendingTimer();
-      pending_writes = i.PendingWrites();
+      pending_writes = (state_.load(ktl::memory_order_acquire) & kBufferRefCountMask) != 0;
       if (pending_timers || pending_writes) {
         Thread::Current::SleepRelative(ZX_MSEC(1));
       }
     } while ((pending_writes || pending_timers) && (current_mono_time() < deadline));
     // We'll wait an unreasonable amount of time for the timer to finish. If the timer really
     // haven't finished by this point, something has gone terribly wrong.
-    ZX_ASSERT(!pending_writes || !pending_timers);
+    ZX_ASSERT(!pending_writes && !pending_timers);
   }
 
   // At this point, there are no longer pending writes. There may still be threads:
@@ -132,6 +140,32 @@ void sampler::ThreadSampler::StopLocked() {
   // writing the sample. While taking a sample, threads have taken an fbl::RefPtr to the sampling
   // state so that the PerCpuStates are not at risk of being destroyed.
   SetState(SamplingState::Configured);
+}
+
+zx::result<> sampler::ThreadSampler::Destroy() {
+  Guard<Mutex> guard(ThreadSamplerLock::Get());
+  SamplingState state = State();
+  if (state == SamplingState::Reading) {
+    // There's a read in flight, we can't destroy our buffers yet. We set the state to Destroying,
+    // and when the read finishes, it will also clean up the buffers.
+    SetState(SamplingState::Destroying);
+    return zx::ok();
+  }
+
+  // The userspace end of the sampler has closed. Time to clean up our state
+  if (state == SamplingState::Running) {
+    StopLocked();
+  }
+
+  // After StopLocked, we have prevented further threads from accessing the per_cpu_states, and then
+  // waited for any threads that were accessing the states to finish.
+  //
+  // It's now safe to destroy our cpu states. This will destroy the mappings and pinnings that the
+  // kernel keeps to write to.
+  SetState(SamplingState::Unallocated);
+  per_cpu_state_.reset();
+
+  return zx::ok();
 }
 
 zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
@@ -241,60 +275,27 @@ zx::result<> sampler::ThreadSampler::SampleThread(zx_koid_t pid, zx_koid_t tid,
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
   }
-
   // Up until this point, interrupts are enabled so that we can handle faults when doing usercopies.
   // However, once we want to write, we aren't using a concurrent writing algorithm. We need to
   // ensure we don't get interrupted or context switched while we are writing. Otherwise, we could
   // SetPendingWrite, get context switched out, and then have another thread attempt to
   // SetPendingWrite which would assert.
   InterruptDisableGuard irqd;
-  sampler::internal::PerCpuState& cpu_state = GetPerCpuState(arch_curr_cpu_num());
-  const bool enabled = cpu_state.SetPendingWrite();
-  if (!enabled) {
-    // Even though we didn't successfully write a sample, we return a success result -- we should
-    // still try to sample the thread as it may later be scheduled on a different cpu.
-    return zx::ok();
-  }
-  auto d = fit::defer([&cpu_state]() { cpu_state.ResetPendingWrite(); });
 
+  ktl::optional<PerCpuStateRef> token = GetPerCpuState(arch_curr_cpu_num());
+  if (!token) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+  sampler::internal::PerCpuState& cpu_state = token->Get();
   constexpr fxt::StringRef<fxt::RefType::kId> empty_string{0};
   const fxt::ThreadRef current_thread{pid, tid};
-  zx_status_t write_result = fxt::WriteLargeBlobRecordWithMetadata(
-      &cpu_state, current_mono_ticks(), empty_string, empty_string, current_thread, bt,
-      sizeof(uint64_t) * frame_num);
 
-  if (write_result != ZX_OK) {
-    cpu_state.DisableWrites();
-    dprintf(INFO, "Buffer full, disabling writes on cpu: %u\n", arch_curr_cpu_num());
-  }
+  // Drop the record if we fail to write out.
+  zx_status_t _ = fxt::WriteLargeBlobRecordWithMetadata(&cpu_state, current_mono_ticks(),
+                                                        empty_string, empty_string, current_thread,
+                                                        bt, sizeof(uint64_t) * frame_num);
   return zx::ok();
 }
-
-zx::result<> sampler::ThreadSampler::Destroy() {
-  Guard<Mutex> guard(ThreadSamplerLock::Get());
-  SamplingState state = State();
-  if (state == SamplingState::Reading) {
-    // There's a read in flight, we can't destroy our buffers yet. We set the state to Destroying,
-    // and when the read finishes, it will also clean up the buffers.
-    SetState(SamplingState::Destroying);
-    return zx::ok();
-  }
-
-  // The userspace end of the sampler has closed. Time to clean up our state
-  if (state == SamplingState::Running) {
-    StopLocked();
-  }
-
-  // After StopLocked, we have prevented further threads from accessing the per_cpu_states, and then
-  // waited for any threads that were accessing the states to finish.
-  //
-  // It's now safe to destroy our cpu states. This will destroy the mappings and pinnings that the
-  // kernel keeps to write to.
-  SetState(SamplingState::Allocated);
-  return zx::ok();
-}
-
-void sampler::ThreadSampler::SetCurrCpuTimer() { GetPerCpuState(arch_curr_cpu_num()).SetTimer(); }
 
 zx::result<sampler::ReadToken> sampler::ThreadSampler::PrepareRead() {
   Guard<Mutex> guard(ThreadSamplerLock::Get());
@@ -313,10 +314,8 @@ void sampler::ThreadSampler::FinishRead(sampler::ReadToken&& token) {
     // The dispatcher was closed while we held a lock doing the read. We were reading, so we delayed
     // cleaning the buffers as to not corrupt the read. However, now we're responsible for the
     // remaining buffer clean up.
-    for (sampler::internal::PerCpuState& pcs : per_cpu_state_) {
-      pcs.Drain();
-    }
-    SetState(SamplingState::Allocated);
+    SetState(SamplingState::Unallocated);
+    per_cpu_state_.reset();
   } else {
     // No additional action is needed.
     SetState(SamplingState::Configured);

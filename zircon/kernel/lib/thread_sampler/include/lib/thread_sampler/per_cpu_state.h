@@ -32,38 +32,27 @@ namespace sampler::internal {
 //
 // Now it's safe to destroy our state.
 //
-// So then, each cpu state also contains an atomic variable with 3 bits: a writes enabled bit, a
-// pending write bit, and a timer pending bit. When a cpu wants to write, it atomically checks if
-// the write enabled bit is set, and if so, sets the pending write bit and checks the write-enabled
-// bit again before proceeding. When it is done, it resets the pending write bit, ignoring the
-// writes enabled bit.
+// So then, each cpu state also contains an atomic variable with 2 bits: a writes enabled bit, and a
+// timer pending bit.
 //
 // The timer callback receives a pointer to the PerCpuState and the timer pending bit ensures that
 // the per cpu state lives longer than the timer callback.
 //
 // Now, when we want to clean up, on each cpu, we reset the writes enabled bit, knowing that no new
-// pending writes or timers can start. We then wait for the pending write bit and pending timer bit
-// to reset on each cpu. Only then do we know that no additional writes will occur.
+// timers can start. We then wait for the pending timer bit to reset on each cpu. We also wait for
+// any active references to the buffers (tracked via ref count in ThreadSampler) to be released.
+// Only then do we know that no additional writes will occur.
 class PerCpuState {
  public:
   constexpr PerCpuState() = default;
 
   zx::result<> SetUp(const zx_sampler_config_t& config, cpu_num_t cpu_number);
 
-  // Atomically mark a pending write to the write state iff writes are enabled and returns true.
-  //
-  // Returns false if a pending write was not set because writes are not enabled.
-  [[nodiscard]] bool SetPendingWrite();
-  void ResetPendingWrite();
-
   void EnableWrites();
   void DisableWrites();
 
   // True if the kWritesEnabled bit is set
   bool WritesEnabled() const;
-
-  // True if the kPendingWrite bit is set
-  bool PendingWrites() const;
 
   // True if the kPendingTimer bit is set
   bool PendingTimer() const;
@@ -100,14 +89,11 @@ class PerCpuState {
   // The interval on which sampling will occur.
   zx_duration_mono_t period_{0};
 
-  // Bit-wise AND with |write_state_| to read if there is a current write
-  static constexpr uint64_t kPendingWrite = 1ul << 0;
-
   // Bit-wise AND with |write_state_| to read if a sample is pending via the timer
-  static constexpr uint64_t kPendingTimer = 1ul << 1;
+  static constexpr uint64_t kPendingTimer = 1ul << 0;
 
   // Bit-wise AND with |write_state_| to read if writes are enabled
-  static constexpr uint64_t kWritesEnabled = 1ul << 2;
+  static constexpr uint64_t kWritesEnabled = 1ul << 1;
   ktl::atomic<uint64_t> write_state_{0};
 };
 
