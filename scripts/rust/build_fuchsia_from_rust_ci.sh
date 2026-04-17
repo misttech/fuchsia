@@ -61,9 +61,6 @@ chmod +x $rust_prefix/bin/rustfmt
 
 # Generate a minimal runtime.json.
 (
-  # This assumes that libtest is not dynamically linked, which is true as of
-  # this writing, but slightly brittle. We keep `disable_elf_checks` below to
-  # disarm any failures that would occur if it were dynamically linked again.
   cd $rust_prefix/lib
   x64_libstd_path=$(ls rustlib/x86_64-unknown-fuchsia/lib/libstd-*.so)
   x64_libstd_soname=$(basename $x64_libstd_path)
@@ -140,13 +137,7 @@ $fx set \
     --args "rustc_prefix = \"$rust_prefix\"" \
     --args "rustc_version_string = \"$version_string\"" \
     --args 'rust_cap_lints = "warn"' \
-    --args 'rustc_use_response_files = false' \
-    --args 'rust_one_rlib_per_dir = false' \
-    --args 'restat_rust = false' \
-    --args 'verify_depfile = false' \
-    --args 'debuginfo = "none"' \
-    --args 'disable_elf_checks = true' \
-    --with '//bundles/buildbot/minimal' \
+    --with '//bundles/buildbot/workbench' \
     workbench_eng.x64 \
     ; echo
 
