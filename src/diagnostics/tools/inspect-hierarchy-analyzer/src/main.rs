@@ -8,6 +8,7 @@ use diagnostics_data::{InspectData, InspectDataBuilder, Timestamp};
 use fuchsia_inspect::hierarchy::{ArrayContent, DiagnosticsHierarchy, Property};
 use fuchsia_inspect::{ArrayProperty, Inspector, InspectorIntrospectionExt, Node};
 use moniker::ExtendedMoniker;
+use std::io::Read as _;
 
 /// Analyze the given Inspect JSON from stdin.
 /// It should be a JSON5 object with a root node named "root".
@@ -22,10 +23,7 @@ pub struct AnalyzeCommand {
 pub fn main() -> Result<(), Error> {
     let args: AnalyzeCommand = argh::from_env();
     let mut buffer = String::new();
-    let stdin = std::io::stdin();
-    for line in stdin.lines() {
-        buffer.push_str(&line.unwrap());
-    }
+    std::io::stdin().read_to_string(&mut buffer)?;
     let data: Vec<InspectData> = if args.from_tooling {
         serde_json5::from_str(&buffer).map_err(|e| anyhow!("parsing JSON failed: {e:?}"))?
     } else {
