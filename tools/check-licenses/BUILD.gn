@@ -47,7 +47,10 @@ if (is_host) {
 }
 if (is_host) {
   go_library("v2_pipeline") {
-    sources = [ "v2/pipeline/interfaces.go" ]
+    sources = [
+      "v2/pipeline/interfaces.go",
+      "v2/pipeline/orchestrator.go",
+    ]
     visibility = [ "//tools/check-licenses/*" ]
   }
 }
@@ -84,6 +87,12 @@ if (is_host) {
   }
 }
 if (is_host) {
+  go_test("v2_pipeline_test") {
+    sources = [ "v2/pipeline/orchestrator_test.go" ]
+    embed = [ ":v2_pipeline" ]
+  }
+}
+if (is_host) {
   go_test("v2_readme_test") {
     sources = [
       "v2/readme/formatter_test.go",
@@ -102,6 +111,7 @@ if (is_host) {
 group("tests") {
   deps = [
     ":v2_config_test",
+    ":v2_pipeline_test",
     ":v2_readme_test",
     ":v2_stages_discover_test",
     "//tools/check-licenses/cmd:cmd_test",

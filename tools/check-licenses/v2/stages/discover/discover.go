@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"path/filepath"
 
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 )
 
@@ -28,6 +29,7 @@ func (c *Crawler) Run(ctx context.Context, rootDirs []string) (<-chan pipeline.R
 
 	go func() {
 		defer close(out)
+		defer metrics.DirectoryTraversalDuration.Track()()
 
 		for _, root := range rootDirs {
 			// Resolve absolute path to ensure consistent downstream processing
@@ -46,6 +48,10 @@ func (c *Crawler) Run(ctx context.Context, rootDirs []string) (<-chan pipeline.R
 					// Log and continue if a specific file/dir has permissions issues
 					fmt.Printf("Error accessing path %q: %v\n", path, err)
 					return nil
+				}
+
+				if !d.IsDir() {
+					metrics.FilesProcessed.Inc("discovered")
 				}
 
 				// Emit the path

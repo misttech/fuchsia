@@ -12,10 +12,16 @@ type RawPath struct {
 	IsDir bool
 }
 
+// FileInfo holds metadata about a specific file within a project.
+type FileInfo struct {
+	Path          string
+	LicenseParser string // e.g., "Android", "Chromium", or "" (default)
+}
+
 // Project represents the output of the Project Boundary Stage (Grouper).
 type Project struct {
 	RootPath string
-	Files    []string
+	Files    []FileInfo
 	// Metadata...
 }
 
@@ -25,11 +31,24 @@ type FilteredProject struct {
 	// Build graph specifics...
 }
 
+// LicenseMatch represents a specific license pattern detected within a file.
+type LicenseMatch struct {
+	SPDXID    string // e.g., "MIT", "Apache-2.0", "FuchsiaCopyright"
+	MatchType string // e.g., "Notice", "Restricted", "Forbidden"
+	StartLine int    // 1-based line number where the match begins
+	EndLine   int    // 1-based line number where the match ends
+	Text      []byte // The exact matched text block
+}
+
 // ClassifiedFile represents the output of the Ingestion Stage (Classifier).
 type ClassifiedFile struct {
-	Path            string
-	DetectedSPDXIDs []string
-	RawLicenseText  []byte
+	Path          string
+	ProjectRoot   string
+	IsLicenseFile bool
+	AnalyzedText  []byte
+
+	// Matches contains every discrete license or copyright block found in the file.
+	Matches []LicenseMatch
 }
 
 // ComplianceError represents a violation found during the Validation Stage (Policy Engine).
