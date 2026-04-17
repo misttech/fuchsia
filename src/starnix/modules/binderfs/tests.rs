@@ -65,7 +65,6 @@ pub mod tests {
     use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::ops::Deref;
-    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
     use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
@@ -4498,9 +4497,7 @@ pub mod tests {
             let device = BinderDevice::default();
             let proc_a = BinderProcessFixture::new_current(locked, current_task, &device);
 
-            // We need an available thread to send to
             let proc_b = BinderProcessFixture::new(locked, current_task, &device);
-            proc_b.thread.available.store(true, Ordering::Release);
             let event = InterruptibleEvent::new();
             let event_clone = event.clone();
 
@@ -4544,13 +4541,6 @@ pub mod tests {
                     transaction,
                 )
                 .expect("A sends to B");
-
-            // Wait for Zircon to see the correct owner for the priority-inheriting wait.
-            // TODO(b/502692311): Replace this polling loop if it starts timing out.
-            let proc_a_thread_koid = proc_a.thread.thread.koid().unwrap();
-            while event.get_owner() != Some(proc_a_thread_koid) {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
 
             let read_buffer_addr =
                 map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
