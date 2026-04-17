@@ -49,7 +49,7 @@ GN to Bazel.
 ## 2. Register the target
 
 1.  If Bazel target has a category, add its IDK atom target to the appropriate
-    list in `//sdk/fidl/BUILD.bazel` based on its category:
+    list in `//sdk/fidl/category_lists.bzl` based on its category:
     -   `partner` (and `stable` is `true`) ->
         `PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST`
     -   `partner` (and `stable` is `false`) ->
@@ -81,13 +81,14 @@ GN to Bazel.
     ```bash
     fx set core.x64
     fx build //sdk/fidl:compatibility_tests
+    fx bazel build --config=fuchsia //sdk/fidl:compatibility_tests
     ```
 
-3.  If the migrated FIDL library does NOT have the `category` attribute set, you
+4.  If the migrated FIDL library does NOT have the `category` attribute set, you
     MUST run a full build to verify:
 
     ```bash
     fx build
     ```
 
-4.  Address and fix any build errors that occur during verification.
+5.  Address and fix any build errors that occur during verification.

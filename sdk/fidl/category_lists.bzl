@@ -1,0 +1,171 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Lists of FIDL libraries in each category.
+
+For information on categories, see
+https://fuchsia.dev/fuchsia-src/contribute/sdk/categories.
+"""
+
+visibility("private")
+
+# Stable FIDL libraries in the partner category.
+# All are included in the IDK.
+PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
+    # buildifier: keep sorted
+    "//sdk/fidl/fuchsia.accessibility.gesture:fuchsia.accessibility.gesture_idk",
+    "//sdk/fidl/fuchsia.audio.effects:fuchsia.audio.effects_idk",
+    "//sdk/fidl/fuchsia.bluetooth.a2dp:fuchsia.bluetooth.a2dp_idk",
+    "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_idk",
+    "//sdk/fidl/fuchsia.bluetooth.fastpair:fuchsia.bluetooth.fastpair_idk",
+    "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_idk",
+    "//sdk/fidl/fuchsia.bluetooth.gatt:fuchsia.bluetooth.gatt_idk",
+    "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_idk",
+    "//sdk/fidl/fuchsia.bluetooth.hfp:fuchsia.bluetooth.hfp_idk",
+    "//sdk/fidl/fuchsia.bluetooth.host:fuchsia.bluetooth.host_idk",
+    "//sdk/fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_idk",
+    "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_idk",
+    "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_idk",
+    "//sdk/fidl/fuchsia.camera:fuchsia.camera_idk",
+    "//sdk/fidl/fuchsia.camera2:fuchsia.camera2_idk",
+    "//sdk/fidl/fuchsia.camera2.hal:fuchsia.camera2.hal_idk",
+    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_idk",
+    "//sdk/fidl/fuchsia.castauth:fuchsia.castauth_idk",
+    "//sdk/fidl/fuchsia.castconfig:fuchsia.castconfig_idk",
+    "//sdk/fidl/fuchsia.castremotecontrol:fuchsia.castremotecontrol_idk",
+    "//sdk/fidl/fuchsia.castsetup:fuchsia.castsetup_idk",
+    "//sdk/fidl/fuchsia.castsysteminfo:fuchsia.castsysteminfo_idk",
+    "//sdk/fidl/fuchsia.castwindow:fuchsia.castwindow_idk",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_idk",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_idk",
+    "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_idk",
+    "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_idk",
+    "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_idk",
+    "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_idk",
+    "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_idk",
+    "//sdk/fidl/fuchsia.data:fuchsia.data_idk",
+    "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_idk",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_idk",
+    "//sdk/fidl/fuchsia.diagnostics.system:fuchsia.diagnostics.system_idk",
+    "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_idk",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
+    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_idk",
+    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_idk",
+    "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing_idk",
+    "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_idk",
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_idk",
+    "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_idk",
+    "//sdk/fidl/fuchsia.images:fuchsia.images_idk",
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_idk",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_idk",
+    "//sdk/fidl/fuchsia.intl:fuchsia.intl_idk",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_idk",
+    "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_idk",
+    "//sdk/fidl/fuchsia.logger:fuchsia.logger_idk",
+    "//sdk/fidl/fuchsia.math:fuchsia.math_idk",
+    "//sdk/fidl/fuchsia.media.audio:fuchsia.media.audio_idk",
+    "//sdk/fidl/fuchsia.media.drm:fuchsia.media.drm_idk",
+    "//sdk/fidl/fuchsia.media:fuchsia.media_idk",
+    "//sdk/fidl/fuchsia.media.sessions2:fuchsia.media.sessions2_idk",
+    "//sdk/fidl/fuchsia.media.sounds:fuchsia.media.sounds_idk",
+    "//sdk/fidl/fuchsia.media.target:fuchsia.media.target_idk",
+    "//sdk/fidl/fuchsia.mediastreams:fuchsia.mediastreams_idk",
+    "//sdk/fidl/fuchsia.mem:fuchsia.mem_idk",
+    "//sdk/fidl/fuchsia.net:fuchsia.net_idk",
+    "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_idk",
+    "//sdk/fidl/fuchsia.process:fuchsia.process_idk",
+    "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_idk",
+    "//sdk/fidl/fuchsia.settings:fuchsia.settings_idk",
+    "//sdk/fidl/fuchsia.settings.policy:fuchsia.settings.policy_idk",
+    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_idk",
+    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_idk",
+    "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_idk",
+    "//sdk/fidl/fuchsia.ui.brightness:fuchsia.ui.brightness_idk",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_idk",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_idk",
+    "//sdk/fidl/fuchsia.ui.gfx:fuchsia.ui.gfx_idk",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_idk",
+    "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_idk",
+    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_idk",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_idk",
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_idk",
+    "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy_idk",
+    "//sdk/fidl/fuchsia.ui.scenic:fuchsia.ui.scenic_idk",
+    "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_idk",
+    "//sdk/fidl/fuchsia.ui.test.scene:fuchsia.ui.test.scene_idk",
+    "//sdk/fidl/fuchsia.ui.types:fuchsia.ui.types_idk",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_idk",
+    "//sdk/fidl/fuchsia.ultrasound:fuchsia.ultrasound_idk",
+    "//sdk/fidl/fuchsia.unknown:fuchsia.unknown_idk",
+    "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_idk",
+    "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_idk",
+    "//sdk/fidl/fuchsia.update.config:fuchsia.update.config_idk",
+    "//sdk/fidl/fuchsia.update:fuchsia.update_idk",
+    "//sdk/fidl/fuchsia.url:fuchsia.url_idk",
+    "//sdk/fidl/fuchsia.version:fuchsia.version_idk",
+    "//sdk/fidl/fuchsia.weave:fuchsia.weave_idk",
+    "//sdk/fidl/fuchsia.web:fuchsia.web_idk",
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_idk",
+    "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_idk",
+    "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_idk",
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_idk",
+    "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:fuchsia.wlan.product.deprecatedclient_idk",
+    "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration_idk",
+    "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_idk",
+    "//zircon/vdso/zx:zx_idk",
+]
+
+# Unstable FIDL libraries in the partner category.
+# All are included in the IDK.
+PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
+    # buildifier: keep sorted
+    "//sdk/fidl/fuchsia.bluetooth.test:fuchsia.bluetooth.test_idk",
+    "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_idk",
+    "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata_idk",
+    "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_idk",
+    "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_idk",
+    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_idk",
+    "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_idk",
+    "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_idk",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_idk",
+    "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_idk",
+    "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_idk",
+    "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_idk",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_idk",
+    "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_idk",
+    "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_idk",
+    "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_idk",
+]
+
+# FIDL libraries in the prebuilt category. All are stable.
+# None are included in the IDK, but they may be used by prebuilt libraries in the IDK.
+PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
+    # buildifier: keep sorted
+    "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_idk",
+    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_idk",
+]
+
+# FIDL libraries in the host tool category. All are stable.
+# None are included in the IDK, but they may be used by host tools in the IDK.
+HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
+    # buildifier: keep sorted
+    "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_idk",
+    "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_idk",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_idk",
+]
+
+# FIDL libraries in the compat test category. All are stable.
+# None are included in the IDK, and they may not be used by anything in the IDK.
+COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST = [
+    # buildifier: keep sorted
+    "//examples/fidl/fuchsia.examples:fuchsia.examples_idk",
+    "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_idk",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_idk",
+    "//sdk/fidl/fuchsia.ui.observation.scope:fuchsia.ui.observation.scope_idk",
+    "//sdk/fidl/fuchsia.ui.observation.test:fuchsia.ui.observation.test_idk",
+    "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment_idk",
+    "//sdk/fidl/fuchsia.ui.test.conformance:fuchsia.ui.test.conformance_idk",
+    "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_idk",
+]
