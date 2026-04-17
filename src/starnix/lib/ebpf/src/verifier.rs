@@ -12,7 +12,7 @@ use crate::{
 };
 use byteorder::{BigEndian, ByteOrder, LittleEndian, NativeEndian};
 use fuchsia_sync::Mutex;
-use linux_uapi::bpf_map_type_BPF_MAP_TYPE_ARRAY;
+use linux_uapi::{bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -242,6 +242,21 @@ impl MemoryParameterSize {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum MapTypeFilter {
+    AllowList(&'static [bpf_map_type]),
+    DenyList(&'static [bpf_map_type]),
+}
+
+impl MapTypeFilter {
+    pub fn is_allowed(&self, map_type: bpf_map_type) -> bool {
+        match self {
+            MapTypeFilter::AllowList(types) => types.contains(&map_type),
+            MapTypeFilter::DenyList(types) => !types.contains(&map_type),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     /// A number.
     ScalarValue(ScalarValueData),
@@ -269,7 +284,7 @@ pub enum Type {
     /// A function parameter that must be a `ScalarValue` when called.
     ScalarValueParameter,
     /// A function parameter that must be a `ConstPtrToMap` when called.
-    ConstPtrToMapParameter,
+    ConstPtrToMapParameter { filter: MapTypeFilter },
     /// A function parameter that must be a key of a map.
     MapKeyParameter {
         /// The index in the arguments list that contains a `ConstPtrToMap` for the map this key is
@@ -587,6 +602,7 @@ impl Type {
     fn match_parameter_type(
         &self,
         context: &ComputationContext,
+        helper_name: &str,
         parameter_type: &Type,
         index: usize,
         next: &mut ComputationContext,
@@ -597,13 +613,21 @@ impl Type {
             {
                 Ok(())
             }
-            (Type::NullOrParameter(t), _) => self.match_parameter_type(context, t, index, next),
+            (Type::NullOrParameter(t), _) => {
+                self.match_parameter_type(context, helper_name, t, index, next)
+            }
             (Type::ScalarValueParameter, Type::ScalarValue(data))
                 if data.is_fully_initialized() =>
             {
                 Ok(())
             }
-            (Type::ConstPtrToMapParameter, Type::ConstPtrToMap { .. }) => Ok(()),
+            (Type::ConstPtrToMapParameter { filter }, Type::ConstPtrToMap { schema, .. }) => {
+                let map_type = schema.map_type;
+                if !filter.is_allowed(map_type) {
+                    return Err(format!("Map type {map_type} not allowed in {helper_name}"));
+                }
+                Ok(())
+            }
             (
                 Type::MapKeyParameter { map_ptr_index },
                 Type::PtrToMemory { offset, buffer_size, .. },
@@ -664,7 +688,7 @@ impl Type {
                 Type::Releasable { id: id2, inner: inner2 },
             ) if id2.has_parent(id1) => {
                 if next.resources.contains(id2) {
-                    inner2.match_parameter_type(context, inner1, index, next)
+                    inner2.match_parameter_type(context, helper_name, inner1, index, next)
                 } else {
                     Err(format!("Resource already released for index {index}"))
                 }
@@ -679,7 +703,7 @@ impl Type {
                 }
             }
             (_, Type::Releasable { inner, .. }) => {
-                inner.match_parameter_type(context, parameter_type, index, next)
+                inner.match_parameter_type(context, helper_name, parameter_type, index, next)
             }
             (Type::AnyParameter, _) => Ok(()),
 
@@ -742,13 +766,20 @@ pub struct FunctionSignature {
     pub invalidate_array_bounds: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct HelperDefinition {
+    pub index: u32,
+    pub name: &'static str,
+    pub signature: FunctionSignature,
+}
+
 #[derive(Debug, Default)]
 pub struct CallingContext {
     /// List of map schemas of the associated map. The maps can be accessed using LDDW instruction
     /// with `src_reg=BPF_PSEUDO_MAP_IDX`.
     pub maps: Vec<MapSchema>,
     /// The registered external functions.
-    pub helpers: HashMap<u32, FunctionSignature>,
+    pub helpers: HashMap<u32, HelperDefinition>,
     /// The args of the program.
     pub args: Vec<Type>,
     /// Packet type. Normally it should be either `None` or `args[0]`.
@@ -761,7 +792,7 @@ impl CallingContext {
         self.maps.push(schema);
         index
     }
-    pub fn set_helpers(&mut self, helpers: HashMap<u32, FunctionSignature>) {
+    pub fn set_helpers(&mut self, helpers: HashMap<u32, HelperDefinition>) {
         self.helpers = helpers;
     }
     pub fn set_args(&mut self, args: &[Type]) {
@@ -2405,15 +2436,15 @@ impl BpfVisitor for DataDependencies {
         context: &mut Self::Context<'a>,
         index: u32,
     ) -> Result<(), String> {
-        let Some(signature) = context.calling_context.helpers.get(&index).cloned() else {
+        let Some(helper) = context.calling_context.helpers.get(&index).cloned() else {
             return Err(format!("unknown external function {}", index));
         };
         // 0 is overwritten and 1 to 5 are scratch registers
-        for register in 0..signature.args.len() + 1 {
+        for register in 0..helper.signature.args.len() + 1 {
             self.registers.remove(&(register as Register));
         }
         // 1 to k are parameters.
-        for register in 0..signature.args.len() {
+        for register in 0..helper.signature.args.len() {
             self.registers.insert((register + 1) as Register);
         }
         Ok(())
@@ -3179,14 +3210,15 @@ impl BpfVisitor for ComputationContext {
         index: u32,
     ) -> Result<(), String> {
         bpf_log!(self, context, "call 0x{:x}", index);
-        let Some(signature) = context.calling_context.helpers.get(&index).cloned() else {
+        let Some(helper) = context.calling_context.helpers.get(&index).cloned() else {
             return Err(format!("unknown external function {}", index));
         };
+        let HelperDefinition { signature, name, .. } = helper;
         debug_assert!(signature.args.len() <= 5);
         let mut next = self.next()?;
-        for (index, arg) in signature.args.iter().enumerate() {
-            let reg = (index + 1) as u8;
-            self.reg(reg)?.match_parameter_type(self, arg, index, &mut next)?;
+        for (arg_index, arg) in signature.args.iter().enumerate() {
+            let reg = (arg_index + 1) as u8;
+            self.reg(reg)?.match_parameter_type(self, name, arg, arg_index, &mut next)?
         }
         // Parameters have been validated, specify the return value on return.
         if signature.invalidate_array_bounds {

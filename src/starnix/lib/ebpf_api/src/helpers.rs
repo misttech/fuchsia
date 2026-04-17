@@ -21,7 +21,7 @@ use linux_uapi::{
     bpf_func_id_BPF_FUNC_sk_lookup_udp, bpf_func_id_BPF_FUNC_sk_release,
     bpf_func_id_BPF_FUNC_sk_storage_get, bpf_func_id_BPF_FUNC_skb_load_bytes,
     bpf_func_id_BPF_FUNC_skb_load_bytes_relative, bpf_func_id_BPF_FUNC_trace_printk,
-    bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, gid_t, pid_t, uid_t,
+    bpf_map_type_BPF_MAP_TYPE_RINGBUF, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, gid_t, pid_t, uid_t,
 };
 use smallvec::SmallVec;
 use std::slice;
@@ -60,11 +60,6 @@ fn bpf_map_lookup_elem<'a, C: MapsProgramContext>(
 ) -> BpfValue {
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
-
-    // TODO(https://fxbug.dev/496639039): This should be checked by the verifier.
-    if map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
-        return BpfValue::default();
-    }
 
     // SAFETY: safety is ensured by the verifier.
     let key = unsafe { EbpfBufferPtr::new(key.as_ptr::<u8>(), map.schema.key_size as usize) };
@@ -175,6 +170,10 @@ fn bpf_ringbuf_reserve<C: EbpfProgramContext>(
     // SAFETY: The safety of the operation is ensured by the bpf verifier. The `map` must be a
     // reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
+
+    // Map type is checked by the verifier.
+    assert!(map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_RINGBUF);
+
     let size = u32::from(size);
     let flags = u64::from(flags);
     map.ringbuf_reserve(size, flags).map(BpfValue::from).unwrap_or_else(|_| BpfValue::default())
@@ -519,9 +518,8 @@ fn bpf_sk_storage_get<'a, C: SkStorageProgramContext + MapsProgramContext>(
     // SAFETY: The `map` must be a reference to a `Map` object kept alive by the program itself.
     let map: &Map = unsafe { &*map.as_ptr::<Map>() };
 
-    if map.schema.map_type != bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
-        return BpfValue::default();
-    }
+    // Checked by the verifier.
+    assert!(map.schema.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE);
 
     C::on_map_access(context, map);
 

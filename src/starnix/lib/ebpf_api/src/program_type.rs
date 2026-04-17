@@ -4,7 +4,8 @@
 
 use ebpf::{
     CallingContext, CbpfConfig, CbpfLenInstruction, FieldDescriptor, FieldType, FunctionSignature,
-    MapSchema, MemoryId, MemoryParameterSize, StructDescriptor, Type,
+    HelperDefinition, MapSchema, MapTypeFilter, MemoryId, MemoryParameterSize, StructDescriptor,
+    Type,
 };
 use fidl_fuchsia_ebpf as febpf;
 use linux_uapi::{
@@ -54,6 +55,7 @@ use linux_uapi::{
     bpf_func_id_BPF_FUNC_skb_change_proto, bpf_func_id_BPF_FUNC_skb_load_bytes,
     bpf_func_id_BPF_FUNC_skb_load_bytes_relative, bpf_func_id_BPF_FUNC_skb_pull_data,
     bpf_func_id_BPF_FUNC_skb_store_bytes, bpf_func_id_BPF_FUNC_trace_printk,
+    bpf_map_type_BPF_MAP_TYPE_RINGBUF, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
     bpf_prog_type_BPF_PROG_TYPE_CGROUP_DEVICE, bpf_prog_type_BPF_PROG_TYPE_CGROUP_SKB,
     bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK, bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK_ADDR,
     bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCKOPT, bpf_prog_type_BPF_PROG_TYPE_CGROUP_SYSCTL,
@@ -80,12 +82,6 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub const BPF_PROG_TYPE_FUSE: u32 = 0x77777777;
 
-pub struct EbpfHelperDefinition {
-    pub index: u32,
-    pub name: &'static str,
-    pub signature: FunctionSignature,
-}
-
 #[derive(Clone, Default, Debug)]
 pub struct BpfTypeFilter(Vec<ProgramType>);
 
@@ -101,17 +97,24 @@ impl BpfTypeFilter {
     }
 }
 
-static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinition)>> =
+// Map types that should not be allowed in `map_lookup_elem`, `map_update_elem`
+// and `map_delete_elem`.
+static SPECIAL_MAP_TYPES: &[linux_uapi::bpf_map_type] =
+    &[bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, bpf_map_type_BPF_MAP_TYPE_RINGBUF];
+
+static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, HelperDefinition)>> =
     LazyLock::new(|| {
         vec![
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_map_lookup_elem,
                     name: "map_lookup_elem",
                     signature: FunctionSignature {
                         args: vec![
-                            Type::ConstPtrToMapParameter,
+                            Type::ConstPtrToMapParameter {
+                                filter: MapTypeFilter::DenyList(SPECIAL_MAP_TYPES),
+                            },
                             Type::MapKeyParameter { map_ptr_index: 0 },
                         ],
                         return_value: Type::NullOrParameter(Box::new(Type::MapValueParameter {
@@ -123,12 +126,14 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_map_update_elem,
                     name: "map_update_elem",
                     signature: FunctionSignature {
                         args: vec![
-                            Type::ConstPtrToMapParameter,
+                            Type::ConstPtrToMapParameter {
+                                filter: MapTypeFilter::DenyList(SPECIAL_MAP_TYPES),
+                            },
                             Type::MapKeyParameter { map_ptr_index: 0 },
                             Type::MapValueParameter { map_ptr_index: 0 },
                             Type::ScalarValueParameter,
@@ -140,12 +145,14 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_map_delete_elem,
                     name: "map_delete_elem",
                     signature: FunctionSignature {
                         args: vec![
-                            Type::ConstPtrToMapParameter,
+                            Type::ConstPtrToMapParameter {
+                                filter: MapTypeFilter::DenyList(SPECIAL_MAP_TYPES),
+                            },
                             Type::MapKeyParameter { map_ptr_index: 0 },
                         ],
                         return_value: Type::UNKNOWN_SCALAR,
@@ -155,7 +162,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_trace_printk,
                     name: "trace_printk",
                     signature: FunctionSignature {
@@ -168,7 +175,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_ktime_get_ns,
                     name: "ktime_get_ns",
                     signature: FunctionSignature {
@@ -180,7 +187,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_probe_read_user,
                     name: "probe_read_user",
                     signature: FunctionSignature {
@@ -200,7 +207,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_probe_read_user_str,
                     name: "probe_read_user_str",
                     signature: FunctionSignature {
@@ -226,7 +233,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::SocketFilter,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_socket_uid,
                     name: "get_socket_uid",
                     signature: FunctionSignature {
@@ -246,7 +253,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::Tracepoint,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_current_uid_gid,
                     name: "get_current_uid_gid",
                     signature: FunctionSignature {
@@ -266,7 +273,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::Tracepoint,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_current_pid_tgid,
                     name: "get_current_pid_tgid",
                     signature: FunctionSignature {
@@ -278,7 +285,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_skb_pull_data,
                     name: "skb_pull_data",
                     signature: FunctionSignature {
@@ -293,12 +300,16 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_ringbuf_reserve,
                     name: "ringbuf_reserve",
                     signature: FunctionSignature {
                         args: vec![
-                            Type::ConstPtrToMapParameter,
+                            Type::ConstPtrToMapParameter {
+                                filter: MapTypeFilter::AllowList(&[
+                                    bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+                                ]),
+                            },
                             Type::ScalarValueParameter,
                             Type::ScalarValueParameter,
                         ],
@@ -316,7 +327,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_ringbuf_submit,
                     name: "ringbuf_submit",
                     signature: FunctionSignature {
@@ -331,7 +342,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_ringbuf_discard,
                     name: "ringbuf_discard",
                     signature: FunctionSignature {
@@ -346,7 +357,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_skb_change_proto,
                     name: "skb_change_proto",
                     signature: FunctionSignature {
@@ -362,7 +373,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_csum_update,
                     name: "csum_update",
                     signature: FunctionSignature {
@@ -377,7 +388,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::Kprobe, ProgramType::Tracepoint].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_probe_read_str,
                     name: "probe_read_str",
                     signature: FunctionSignature {
@@ -396,7 +407,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::SocketFilter,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_socket_cookie,
                     name: "get_socket_cookie",
                     signature: FunctionSignature {
@@ -408,7 +419,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::CgroupSock].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_socket_cookie,
                     name: "get_socket_cookie",
                     signature: FunctionSignature {
@@ -420,7 +431,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::CgroupSockAddr].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_socket_cookie,
                     name: "get_socket_cookie",
                     signature: FunctionSignature {
@@ -432,7 +443,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_redirect,
                     name: "redirect",
                     signature: FunctionSignature {
@@ -444,7 +455,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_skb_adjust_room,
                     name: "skb_adjust_room",
                     signature: FunctionSignature {
@@ -461,7 +472,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_l3_csum_replace,
                     name: "l3_csum_replace",
                     signature: FunctionSignature {
@@ -479,7 +490,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_l4_csum_replace,
                     name: "l4_csum_replace",
                     signature: FunctionSignature {
@@ -497,7 +508,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_skb_store_bytes,
                     name: "skb_store_bytes",
                     signature: FunctionSignature {
@@ -519,7 +530,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_skb_change_head,
                     name: "skb_change_head",
                     signature: FunctionSignature {
@@ -541,7 +552,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::SocketFilter,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_skb_load_bytes,
                     name: "skb_load_bytes",
                     signature: FunctionSignature {
@@ -568,7 +579,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::SocketFilter,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
                     name: "skb_load_bytes_relative",
                     signature: FunctionSignature {
@@ -590,7 +601,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_ktime_get_boot_ns,
                     name: "ktime_get_boot_ns",
                     signature: FunctionSignature {
@@ -602,7 +613,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_ktime_get_coarse_ns,
                     name: "ktime_get_coarse_ns",
                     signature: FunctionSignature {
@@ -620,12 +631,16 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::CgroupSockAddr,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_sk_storage_get,
                     name: "sk_storage_get",
                     signature: FunctionSignature {
                         args: vec![
-                            Type::ConstPtrToMapParameter,
+                            Type::ConstPtrToMapParameter {
+                                filter: MapTypeFilter::AllowList(&[
+                                    bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                                ]),
+                            },
                             Type::StructParameter { id: BPF_SOCK_ID.clone() },
                             Type::NullOrParameter(Box::new(Type::MapValueParameter {
                                 map_ptr_index: 0,
@@ -641,7 +656,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 BpfTypeFilter::default(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_smp_processor_id,
                     name: "get_smp_processor_id",
                     signature: FunctionSignature {
@@ -653,7 +668,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
             ),
             (
                 vec![ProgramType::CgroupSkb, ProgramType::SchedAct, ProgramType::SchedCls].into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_sk_fullsock,
                     name: "sk_fullsock",
                     signature: FunctionSignature {
@@ -672,7 +687,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::CgroupSysctl,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_set_retval,
                     name: "set_retval",
                     signature: FunctionSignature {
@@ -689,7 +704,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::CgroupSysctl,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_retval,
                     name: "get_retval",
                     signature: FunctionSignature {
@@ -709,7 +724,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::SkSkb,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_sk_lookup_tcp,
                     name: "sk_lookup_tcp",
                     signature: FunctionSignature {
@@ -742,7 +757,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::SkSkb,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_sk_lookup_udp,
                     name: "sk_lookup_udp",
                     signature: FunctionSignature {
@@ -775,7 +790,7 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, EbpfHelperDefinitio
                     ProgramType::Xdp,
                 ]
                 .into(),
-                EbpfHelperDefinition {
+                HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_sk_release,
                     name: "sk_release",
                     signature: FunctionSignature {
@@ -1345,11 +1360,11 @@ impl From<ProgramType> for u32 {
 }
 
 impl ProgramType {
-    pub fn get_helpers(self) -> HashMap<u32, FunctionSignature> {
+    pub fn get_helpers(self) -> HashMap<u32, HelperDefinition> {
         BPF_HELPERS_DEFINITIONS
             .iter()
             .filter_map(|(filter, helper)| {
-                filter.accept(self).then_some((helper.index, helper.signature.clone()))
+                filter.accept(self).then_some((helper.index, helper.clone()))
             })
             .collect()
     }

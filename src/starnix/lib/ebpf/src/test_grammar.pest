@@ -41,10 +41,12 @@ STORE_IMM_OP = @{ "stb" | "sth" | "stw" | "stdw" }
 LOAD_OP = @{ "ldxb" | "ldxh" | "ldxw" | "ldxdw" }
 LOAD_PACKET_OP = @{ "ldpb" | "ldph" | "ldpw" | "ldpdw" }
 LDDW_OP = @{ "lddw" }
+MAP_INDEX = { "map" ~ "[" ~ IMM ~ "]" }
 
 MEM_INSTRUCTION = { ( STORE_REG_OP ~ DEREF ~ "," ~ REG ) |
                     ( STORE_IMM_OP ~ DEREF ~ "," ~ IMM ) |
                     ( LOAD_OP ~ REG ~ "," ~ DEREF ) |
+                    ( LDDW_OP ~ REG ~ "," ~ MAP_INDEX ) |
                     ( LDDW_OP ~ REG ~ "," ~ IMM ) |
                     ( LOAD_PACKET_OP ~ REG? ~ OFFSET? ) }
 
