@@ -254,7 +254,7 @@
 
     <!--   FFMPEG library -->
     <package name="fuchsia/lib/ffmpeg/fuchsia"
-             version="git_revision:27cd7c51713120db55e85bedb341649bc5ed09cd"
+             version="git_revision:630708a169f42afd42bdc493651d2d03b55083b7"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/ffmpeg"/>
     <!--   Fonts -->

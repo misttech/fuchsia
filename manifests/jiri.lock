@@ -166,8 +166,8 @@
     },
     {
         "package": "fuchsia/lib/ffmpeg/fuchsia",
-        "version": "git_revision:27cd7c51713120db55e85bedb341649bc5ed09cd",
-        "instance_id": "SyFlik1-AlMB1fbaBDvLg78S6gNvx8CC6B9d2B4VQb0C"
+        "version": "git_revision:630708a169f42afd42bdc493651d2d03b55083b7",
+        "instance_id": "lleVIZ2eN_KZsgWWeCxqMRchL9nO5ojIWRTX1n9WBh4C"
     },
     {
         "package": "fuchsia/prebuilt/bt-hci-virtual/arm64",
