@@ -38,6 +38,16 @@ impl LinkModeConfig {
     pub fn is_mtd(&self) -> bool {
         !self.is_ftd()
     }
+
+    /// Returns true if the sender has its receiver on when not transmitting.
+    pub fn rx_on_while_idle(&self) -> bool {
+        self.contains(Self::RX_ON_WHEN_IDLE)
+    }
+
+    /// Returns true if the sender requires the full Network Data.
+    pub fn full_network_data(&self) -> bool {
+        self.contains(Self::NETWORK_DATA)
+    }
 }
 
 impl From<otLinkModeConfig> for LinkModeConfig {

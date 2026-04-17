@@ -313,6 +313,38 @@ fn record_nat64_mapping_in_inspect_node(nat64_mapping_node: &Node, mapping: Nat6
     }
 }
 
+const ONE_DAY_IN_MSEC: u64 = 24 * 60 * 60 * 1000;
+const OT_HISTORY_TRACKER_MAX_AGE: u64 = 49 * ONE_DAY_IN_MSEC;
+
+fn format_duration_dhms_from_nano(duration_nano: u64) -> String {
+    let duration_ms = duration_nano / 1_000_000;
+
+    if duration_ms >= OT_HISTORY_TRACKER_MAX_AGE {
+        let max_days = OT_HISTORY_TRACKER_MAX_AGE / ONE_DAY_IN_MSEC;
+        return format!("more than {} days", max_days);
+    }
+
+    let ms = duration_ms % 1000;
+    let total_seconds = duration_ms / 1000;
+    let seconds = total_seconds % 60;
+    let total_minutes = total_seconds / 60;
+    let minutes = total_minutes % 60;
+    let total_hours = total_minutes / 60;
+
+    let hours = total_hours % 24;
+    let days = total_hours / 24;
+
+    if days > 0 {
+        let plural_suffix = if days == 1 { "" } else { "s" };
+        format!(
+            "{} day{} {:02}:{:02}:{:02}.{:03}",
+            days, plural_suffix, hours, minutes, seconds, ms
+        )
+    } else {
+        format!("{:02}:{:02}:{:02}.{:03}", hours, minutes, seconds, ms)
+    }
+}
+
 async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Result<(), Error> {
     let (device_client, device_server) = create_endpoints::<DeviceMarker>();
     let (device_extra_client, device_extra_server) = create_endpoints::<DeviceExtraMarker>();
@@ -2078,6 +2110,67 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                                     dataset_child.record_bool(
                                                         "has_extra_tlv",
                                                         z.into(),
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
+                                },
+                            );
+                        }
+                        if let Some(x) = telemetry_data.history_report {
+                            inspector.root().record_child(
+                                "history_tracker_report",
+                                |history_tracker_child| {
+                                    if let Some(y) = x.net_info_history {
+                                        history_tracker_child.record_child(
+                                            "net_info",
+                                            |net_info_child| {
+                                                for (index, info) in y.iter().enumerate() {
+                                                    net_info_child.record_child(
+                                                        format!("{}", index),
+                                                        |info_node| {
+                                                            if let Some(z) = info.age {
+                                                                info_node.record_string(
+                                                                    "age",
+                                                                    format_duration_dhms_from_nano(z.try_into().unwrap()),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.role {
+                                                                info_node.record_string(
+                                                                    "role",
+                                                                    format!("{:?}", z),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.mode {
+                                                                info_node.record_child(
+                                                                    "mode",
+                                                                    |mode_child| {
+                                                                        if let Some(w) = z.rx_on_when_idle {
+                                                                            mode_child.record_bool("rx_on_when_idle", w.into());
+                                                                        }
+                                                                        if let Some(w) = z.device_type {
+                                                                            mode_child.record_bool("is_ftd", w.into());
+                                                                        }
+                                                                        if let Some(w) = z.network_data {
+                                                                            mode_child.record_bool("network_data", w.into());
+                                                                        }
+                                                                    },
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.rloc16 {
+                                                                info_node.record_string(
+                                                                    "rloc",
+                                                                    format!("{:04x}", z),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.partition_id {
+                                                                info_node.record_uint(
+                                                                    "partition_id",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                        },
                                                     );
                                                 }
                                             },

@@ -154,6 +154,9 @@ pub use dns_upstream::*;
 mod multi_radio_neighbor_info;
 pub use multi_radio_neighbor_info::*;
 
+mod history_tracker;
+pub use history_tracker::*;
+
 /// Trait implemented by all OpenThread instances.
 pub trait InstanceInterface:
     Ip6
@@ -180,6 +183,7 @@ pub trait InstanceInterface:
     + DnsUpstream
     + LinkMetrics
     + MultiRadioLink
+    + HistoryTracker
 {
 }
 

@@ -1398,6 +1398,36 @@ where
         let mut commissioning_dataset = Default::default();
         ot.net_data_get_commissioning_dataset(&mut commissioning_dataset);
 
+        // Get the history tracker related information.
+        let net_info_history = ot
+            .history_tracker_net_info_history_get_iterator()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_THREAD_NET_INFO_HISTORY_ENTRIES as usize)
+            .map(|(info, entry_age)| fidl_fuchsia_lowpan_experimental::ThreadNetworkInfoEntry {
+                age: Some(
+                    fuchsia_async::MonotonicDuration::from_millis(entry_age.into())
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                ),
+                role: Some(match info.role() {
+                    ot::DeviceRole::Disabled => Role::Detached,
+                    ot::DeviceRole::Detached => Role::Detached,
+                    ot::DeviceRole::Child => Role::EndDevice,
+                    ot::DeviceRole::Router => Role::Router,
+                    ot::DeviceRole::Leader => Role::Leader,
+                }),
+                mode: Some(fidl_fuchsia_lowpan_experimental::ThreadLinkMode {
+                    rx_on_when_idle: Some(info.mode().rx_on_while_idle()),
+                    device_type: Some(info.mode().is_ftd()),
+                    network_data: Some(info.mode().full_network_data()),
+                    ..Default::default()
+                }),
+                rloc16: Some(info.rloc16()),
+                partition_id: Some(info.partition_id()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1475,6 +1505,10 @@ where
                     has_extra_tlv: Some(commissioning_dataset.has_extra_tlv()),
                     ..Default::default()
                 }),
+                ..Default::default()
+            }),
+            history_report: Some(fidl_fuchsia_lowpan_experimental::ThreadHistoryReport {
+                net_info_history: Some(net_info_history),
                 ..Default::default()
             }),
             ..Default::default()
