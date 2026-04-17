@@ -100,6 +100,12 @@ group("tests_e2e") {
   deps = [
     "tests:tests_host($host_toolchain)",
     "//src/testing/end_to_end/antlion/tests:e2e_tests($host_toolchain)",
+    "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_core/tests/functional_tests",
+    "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_core/tests/unit_tests:tests",
+    "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests/functional_tests",
+    "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy/tests/unit_tests:tests",
+    "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy_ap/tests/functional_tests",
+    "//src/testing/end_to_end/honeydew/honeydew/affordances/connectivity/wlan/wlan_policy_ap/tests/unit_tests:tests",
   ]
 }
 
