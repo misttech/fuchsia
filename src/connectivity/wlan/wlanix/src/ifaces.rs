@@ -499,10 +499,12 @@ impl SmeClientIface {
     /// empirical measurements show that the chips have virtually no power consumption when no
     /// interfaces exist.
     async fn update_power_level(&self, new_level: StaIfacePowerLevel) -> Result<(), Error> {
+        // If the Power Observability Library is initialized, report the new state
         if let Some(recorder) = &mut self.power_state.lock().await.recorder {
             recorder.record(new_level);
         }
 
+        // Send a telemetry update with the new state
         self.telemetry_sender.send(TelemetryEvent::IfacePowerLevelChanged {
             iface_id: self.iface_id,
             iface_power_level: match new_level {
@@ -514,12 +516,11 @@ impl SmeClientIface {
             },
         });
 
-        // Apply (or turn off) the optimizations for "suspend mode"
+        // Apply (or turn off) the APF optimizations for "suspend mode"
         let apf_filter_installed = {
             let power_state = self.power_state.lock().await;
             power_state.apf_filter_installed
         };
-
         if apf_filter_installed {
             if new_level == StaIfacePowerLevel::Suspended {
                 match self.sme_proxy.set_apf_packet_filter_enabled(true).await {
@@ -539,6 +540,22 @@ impl SmeClientIface {
         } else {
             debug!("Skipping APF enable/disable as no filter is installed");
         }
+
+        // Set the hardware power-saving level
+        let power_mode = match new_level {
+            StaIfacePowerLevel::Suspended => fidl_common::PowerSaveType::PsModeUltraLowPower,
+            StaIfacePowerLevel::Normal => fidl_common::PowerSaveType::PsModeBalanced,
+            StaIfacePowerLevel::NoPowerSavings => fidl_common::PowerSaveType::PsModePerformance,
+        };
+        let req = fidl_device_service::SetPowerSaveModeRequest {
+            phy_id: self.phy_id,
+            ps_mode: power_mode,
+        };
+        match self.monitor_svc.set_power_save_mode(&req).await {
+            Ok(zx::sys::ZX_OK) => {}
+            Ok(other) => warn!("Failed to set hardware power state: {}", other),
+            Err(e) => warn!("Failed to set hardware power state: {:?}", e),
+        };
 
         Ok(())
     }
@@ -3150,7 +3167,7 @@ mod tests {
     #[fuchsia::test(add_test_attr = false)]
     fn test_set_power_mode(sequence: Vec<(PowerCall, fidl_common::PowerSaveType)>) {
         let mut exec = fasync::TestExecutor::new();
-        let (monitor_svc, _monitor_stream) =
+        let (monitor_svc, mut monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
@@ -3172,7 +3189,7 @@ mod tests {
         });
 
         // Run each call in the test sequence
-        for (call, _expected_driver_val) in sequence {
+        for (call, expected_driver_val) in sequence {
             // Set the power save mode
             let power_call_fut = match call {
                 PowerCall::SetPowerSaveMode(val) => iface.set_power_save_mode(val),
@@ -3188,6 +3205,16 @@ mod tests {
                     responder.send(Ok(())).expect("failed to send SME response");
                 }
             );
+            assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+
+            // Validate the expected setting is made in the driver
+            assert_matches!(
+                exec.run_until_stalled(&mut monitor_stream.next()),
+                Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req, responder }))) => {
+                    assert_eq!(req.phy_id, phy_id);
+                    assert_matches!(responder.send(zx::Status::OK.into_raw()), Ok(()));
+                    assert_eq!(req.ps_mode, expected_driver_val);
+            });
 
             // Future completes
             exec.run_singlethreaded(power_call_fut).expect("future finished");
@@ -3202,7 +3229,7 @@ mod tests {
         (call, expected_driver_val): (PowerCall, fidl_common::PowerSaveType),
     ) {
         let mut exec = fasync::TestExecutor::new();
-        let (monitor_svc, _monitor_stream) =
+        let (monitor_svc, mut monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
@@ -3235,7 +3262,15 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled: _, responder }))) => {
-                responder.send(Ok(())).expect("failed to send SME response");
+                responder.send(Ok(())).expect("failed to send SetApfPacketFilterEnabled response");
+            }
+        );
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+        // Respond to the call to set power state
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.next()),
+            Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
+                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
             }
         );
 
@@ -3269,7 +3304,7 @@ mod tests {
     #[fuchsia::test(add_test_attr = false)]
     fn test_set_power_mode_unclear_demand_metric(call: PowerCall) {
         let mut exec = fasync::TestExecutor::new();
-        let (monitor_svc, _monitor_stream) =
+        let (monitor_svc, mut monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
@@ -3298,7 +3333,15 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled: _, responder }))) => {
-                responder.send(Ok(())).expect("failed to send SME response");
+                responder.send(Ok(())).expect("failed to send SetApfPacketFilterEnabled response");
+            }
+        );
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+        // Respond to the call to set power state
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.next()),
+            Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
+                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
             }
         );
         // Future completes
@@ -3322,7 +3365,15 @@ mod tests {
         assert_matches!(
             exec.run_until_stalled(&mut sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled: _, responder }))) => {
-                responder.send(Ok(())).expect("failed to send SME response");
+                responder.send(Ok(())).expect("failed to send SetApfPacketFilterEnabled response");
+            }
+        );
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+        // Respond to the call to set power state
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.next()),
+            Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
+                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
             }
         );
         // Future completes
@@ -3343,7 +3394,7 @@ mod tests {
     #[fuchsia::test(add_test_attr = false)]
     fn test_update_power_level_sets_suspend_optimizations(suspend_mode: bool) {
         let mut exec = fasync::TestExecutor::new();
-        let (monitor_svc, _monitor_stream) =
+        let (monitor_svc, mut monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
@@ -3376,7 +3427,15 @@ mod tests {
             exec.run_until_stalled(&mut sme_stream.next()),
             Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetApfPacketFilterEnabled { enabled, responder }))) => {
                 assert_eq!(enabled, suspend_mode);
-                responder.send(Ok(())).expect("failed to send SME response");
+                responder.send(Ok(())).expect("failed to send SetApfPacketFilterEnabled response");
+            }
+        );
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+        // Respond to the call to set power state
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.next()),
+            Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
+                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
             }
         );
 
@@ -3387,7 +3446,7 @@ mod tests {
     #[fuchsia::test]
     fn test_update_power_level_skips_suspend_optimizations_when_no_filter() {
         let mut exec = fasync::TestExecutor::new();
-        let (monitor_svc, _monitor_stream) =
+        let (monitor_svc, mut monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, mut sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
         let phy_id = rand::random();
@@ -3403,6 +3462,15 @@ mod tests {
 
         let power_call_fut = iface.update_power_level(StaIfacePowerLevel::Suspended);
         let mut power_call_fut = pin!(power_call_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Pending);
+        // Respond to the call to set power state
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.next()),
+            Poll::Ready(Some(Ok(fidl_device_service::DeviceMonitorRequest::SetPowerSaveMode { req: _, responder }))) => {
+                responder.send(zx::Status::OK.into_raw()).expect("failed to send SetPowerSaveMode response");
+            }
+        );
 
         assert_matches!(exec.run_until_stalled(&mut power_call_fut), Poll::Ready(Ok(())));
         assert_matches!(exec.run_until_stalled(&mut sme_stream.next()), Poll::Pending);
