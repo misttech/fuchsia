@@ -8,6 +8,7 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 go_library(
     name = "main",
     srcs = [
+        "classify.go",
         "config.go",
         "generate.go",
         "main.go",
@@ -40,6 +41,7 @@ go_library(
 go_test(
     name = "cmd_test",
     srcs = [
+        "classify_test.go",
         "config_test.go",
     ],
     embed = [":main"],
