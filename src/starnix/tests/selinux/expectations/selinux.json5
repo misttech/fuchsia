@@ -241,8 +241,6 @@
                 "notify/018",
 
                 // TODO: https://fxbug.dev/398696739
-                "overlay/007",
-                "overlay/011",
                 "overlay/084",
                 "overlay/090",
                 "overlay/099",

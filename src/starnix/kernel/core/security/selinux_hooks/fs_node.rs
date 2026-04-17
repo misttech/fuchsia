@@ -423,12 +423,14 @@ pub(in crate::security) fn fs_node_init_on_create(
     // Private nodes are currently only supported via `fs_node_init_anon()`.
     debug_assert!(!new_node.is_private());
 
-    // By definition this is a new `FsNode` so should not have already been labeled
-    // (unless we're working in the context of overlayfs and affected by
-    // https://fxbug.dev/369067922).
+    // By definition this is a new `FsNode` so should not have already been labeled.
     let label_class = new_node.security_state.0.read();
-    if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
-        track_stub!(TODO("https://fxbug.dev/369067922"), "new FsNode already labeled");
+    let is_uninitialized = matches!(label_class.label, FsNodeLabel::Uninitialized);
+    assert!(is_uninitialized, "init_on_create() for {:?} with label {:?}", new_node, *label_class);
+    if new_node.fs().name() == "overlay" {
+        // TODO: https://fxbug.dev/369067922 - Find a cleaner way to skip duplicate labeling of
+        // "overlay" filesystem nodes during creation.
+        return Ok(None);
     }
 
     // If the `new_node` does not already have a specific security class selected then choose one
