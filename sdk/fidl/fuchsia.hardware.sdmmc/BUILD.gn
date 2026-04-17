@@ -18,5 +18,4 @@ fidl("fuchsia.hardware.sdmmc") {
   ]
   contains_drivers = true
   enable_rust_next = true
-  enable_rust_drivers = true
 }

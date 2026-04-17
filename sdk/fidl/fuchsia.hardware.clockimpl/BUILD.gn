@@ -15,5 +15,4 @@ fidl("fuchsia.hardware.clockimpl") {
   contains_drivers = true
   public_deps = [ "//zircon/vdso/zx" ]
   enable_rust_next = true
-  enable_rust_drivers = true
 }

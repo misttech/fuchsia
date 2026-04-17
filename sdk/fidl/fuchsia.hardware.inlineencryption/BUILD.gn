@@ -38,7 +38,6 @@ fidl("fuchsia.hardware.inlineencryption") {
   sdk_area = "Storage"
   sdk_category = "partner"
   contains_drivers = true
-  enable_rust_drivers = true
   enable_rust_next = true
   stable = false
   visibility = [ "*" ]
