@@ -1135,6 +1135,9 @@
                 "JobControlTest.SetForegroundProcessGroupDifferentSession",
                 "JobControlTest.SetForegroundProcessGroupNegPgid",
                 "JobControlTest.SetTTY",
+                // TODO(https://fxbug.dev/503441321): Implement SIGHUP on main
+                // PTY closure.
+                "JobControlTest.SIGHUPOnMasterClose",
 
                 // sigstop_test
 
