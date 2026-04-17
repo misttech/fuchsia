@@ -494,13 +494,48 @@ struct SharedMetadataTraits final {
     // Will only ever read up to kSmpte2094_40_MaxSizeBytes regardless of smpte2094_40__size_bytes.
     std::atomic<uint8_t> smpte2094_40__bytes[kSmpte2094_40_MaxSizeBytes];
 
-    static constexpr uint32_t kSmpte2094_50_MaxSizeBytes = 1024;
+    // The minimum allowed value for kSmpte2094_50_MaxSizeBytes comes from
+    // GraphicsMapperStableCTests#GetSetSmpte2094_50 as the "10 KB" value defined as 10 * 1028 (1028
+    // not 1024). It's TBD if any valid kSmpte2094_50 data will ever be this large. The "SMPTE ST
+    // 2094-50" spec allows future versions of smpte2094_50 to have unspecified arbitrary size (see
+    // "application_version" and "minimum_application_version"). The good news is that VMO pages
+    // aren't committed until actually touched.
+    //
+    // This value is chosen to allow the next field after smpte2094_50__bytes to start at offset 16
+    // KiB which is a 4KiB page boundary.
+    //
+    // This value can safely be increased (server first, then clients) until the field after
+    // smpte2094_50__bytes is added. This value cannot safely be decreased.
+    static constexpr uint32_t kSmpte2094_50_MaxSizeBytes = (16 * 1024) - 2136;
+    // see comment above; this static_assert does not imply that kSmpte2094_50_MaxSizeBytes can be
+    // decreased from its current value just above, as that would require soft transition steps
+    static_assert(kSmpte2094_50_MaxSizeBytes >= 10 * 1028);
     // non-zero if std::optional.has_value() (see StandardMetadata<SMPTE2094_50>).
     std::atomic<uint32_t> smpte2094_50__has_value;
-    // Validated to be <= kSmpte2094_50_MaxSizeBytes.
+    // Validated to be <= kSmpte2094_50_MaxSizeBytes (from reader's point of view).
     std::atomic<uint32_t> smpte2094_50__size_bytes;
-    // Will only ever read up to kSmpte2094_50_MaxSizeBytes regardless of smpte2094_50__size_bytes.
+    // Will only ever read up to kSmpte2094_50_MaxSizeBytes (from reader's point of view) regardless
+    // of smpte2094_50__size_bytes.
+    //
+    // As of this comment, typically the offset of smpte2094_50__bytes[smpte2094_50__size_bytes-1]
+    // will be within the first 4KiB page.
     std::atomic<uint8_t> smpte2094_50__bytes[kSmpte2094_50_MaxSizeBytes];
+
+    // The next field after this is at offset 16 KiB. This maximises the page packing efficiency of
+    // metadata beyond smpte2094_50, given that the 4KiB page containing the last part of
+    // smpte2094_50__bytes is unlikely to be committed.
+    //
+    // If adding a new field, this author recommends reading the most recent version of "SMPTE ST
+    // 2094-50" to determine if kSmpte2094_50_MaxSizeBytes should be increased before adding the
+    // next field, because if/when "SMPTE ST 2094-50" allows exceeding kSmpte2094_50_MaxSizeBytes
+    // after we have a subsequent field, we'd need to split the smpte2094_50__bytes across multiple
+    // fields and/or migrate to a new FD with new layout.
+    //
+    // Any new field here should be defined such that the initial all-zeroes when a page is not yet
+    // committed will be the valid default value per StandardMetadataType.aidl comments. For most
+    // image buffers, this may avoid allocating a physical page for pages of this metadata struct/FD
+    // beyond page 0. For most non-image buffers, this may allow this metadata struct/FD to consume
+    // zero physical pages.
   };
   struct SharedMutableMetadata final : public SharedMutableMetadataBase {};
 
@@ -509,7 +544,8 @@ struct SharedMetadataTraits final {
   struct PrivateSharedMutableMetadata final : public SharedMutableMetadataBase {
     static constexpr bool is_expected_field_offsets() {
       static_assert(std::is_standard_layout_v<PrivateSharedImmutableMetadata>);
-      // Don't change existing offsets.
+      // Existing fields above are constrained to their existing offsets, short of a soft transition
+      // to a different layout (and/or an additional FD with new layout scheme).
       static_assert(offsetof(PrivateSharedMutableMetadata, data_space) == 0);
       static_assert(offsetof(PrivateSharedMutableMetadata, blend_mode) == 4);
       static_assert(offsetof(PrivateSharedMutableMetadata, smpte2086__has_value) == 8);
@@ -536,6 +572,9 @@ struct SharedMetadataTraits final {
       static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_50__has_value) == 2128);
       static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_50__size_bytes) == 2132);
       static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_50__bytes) == 2136);
+      // This size is allowed to increase if done in a backward-compatible way. This is the expected
+      // current value.
+      static_assert(sizeof(PrivateSharedMutableMetadata) == 16ull * 1024);
       return true;
     }
   };
@@ -547,7 +586,10 @@ struct SharedMetadataTraits final {
   // This can be used by a HIDL mapper's createDescriptor and a HIDL IAllocator's allocate and/or an
   // AIDL IAllocator allocate (in contrast to an AIDL IAllocator allocate2 which doesn't need this).
   //
-  // TODO(b/306297561): This is temporary; remove when possible.
+  // TODO(b/306297561): This is temporary; remove when the HIDL mapper has been removed, which may
+  // not be possible for a while due to Stable-C mapper currently requiring use of out-of-proc AIDL
+  // to discover the name of the Stable-C mapper.fuchsia-starnix-mapper.so, which is inconvenient
+  // for Vulkan ICDs for example.
   struct SerializedBufferDescriptorBase {
    public:
     static constexpr uint32_t kNameBufferLength =
