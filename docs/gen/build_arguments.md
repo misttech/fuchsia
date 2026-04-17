@@ -1032,7 +1032,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -1090,7 +1090,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -4170,7 +4170,7 @@ From //zircon/vdso/vdso.gni:9
 
 Propagate bandwidth and enable run queue promotion for threads making channel calls.
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
 From //zircon/kernel/params.gni:119
 
