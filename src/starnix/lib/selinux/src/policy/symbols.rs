@@ -1285,6 +1285,12 @@ pub(super) struct TypeIndex {
 }
 
 impl TypeIndex {
+    fn parse_type_at(policy_bytes: &PolicyData, offset: U24) -> Type {
+        Type::parse(PolicyCursor::new_at(policy_bytes, PolicyOffset::from(offset)))
+            .expect("These bytes already successfully parsed")
+            .0
+    }
+
     pub(super) fn primary_names_count(&self) -> u32 {
         self.primary_names_count
     }
@@ -1293,25 +1299,13 @@ impl TypeIndex {
         let name_bytes = name.as_bytes();
         self.offsets_by_name
             .find(name_hash(name_bytes), |&other_offset| {
-                let (other_type, _) =
-                    Type::parse(PolicyCursor::new_at(data, PolicyOffset::from(other_offset)))
-                        .unwrap();
-                name_bytes == other_type.name_bytes()
+                Self::parse_type_at(data, other_offset).name_bytes() == name_bytes
             })
-            .map(|&offset| {
-                let (type_, _) =
-                    Type::parse(PolicyCursor::new_at(data, PolicyOffset::from(offset))).unwrap();
-                type_.id()
-            })
+            .map(|&offset| Self::parse_type_at(data, offset).id())
     }
 
     pub(super) fn type_by_type_id(&self, id: TypeId, data: &PolicyData) -> Type {
-        let (type_, _) = Type::parse(PolicyCursor::new_at(
-            data,
-            PolicyOffset::from(self.offsets_by_id_minus_one[(id.0.get() - 1) as usize]),
-        ))
-        .unwrap();
-        type_
+        Self::parse_type_at(data, self.offsets_by_id_minus_one[(id.0.get() - 1) as usize])
     }
 
     /// Returns an iterator over all the type-Ids, for use by the post-parse validation.
@@ -1329,6 +1323,7 @@ impl Parse for TypeIndex {
     type Error = anyhow::Error;
 
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error> {
+        let policy_data = bytes.data();
         let (metadata, mut tail) = Metadata::parse(bytes)?;
         let type_count = usize::try_from(metadata.count()).unwrap();
         let mut offsets_by_id_minus_one = Vec::with_capacity(type_count);
@@ -1374,20 +1369,11 @@ impl Parse for TypeIndex {
                     .entry(
                         name_hash(name_bytes),
                         |&other_offset| {
-                            let (other_type, _) = Type::parse(PolicyCursor::new_at(
-                                &next_tail.data(),
-                                PolicyOffset::from(other_offset),
-                            ))
-                            .unwrap();
-                            type_.name_bytes() == other_type.name_bytes()
+                            Self::parse_type_at(&policy_data, other_offset).name_bytes()
+                                == name_bytes
                         },
                         |&other_offset| {
-                            let (type_at_other_offset, _) = Type::parse(PolicyCursor::new_at(
-                                &next_tail.data(),
-                                PolicyOffset::from(other_offset),
-                            ))
-                            .unwrap();
-                            name_hash(type_at_other_offset.name_bytes())
+                            name_hash(Self::parse_type_at(&policy_data, other_offset).name_bytes())
                         },
                     )
                     .insert(offset);
@@ -1397,10 +1383,7 @@ impl Parse for TypeIndex {
         }
         let offsets_by_id_minus_one = Box::<[U24]>::from(offsets_by_id_minus_one);
         offsets_by_name.shrink_to_fit(|&other_offset| {
-            let (type_at_other_offset, _) =
-                Type::parse(PolicyCursor::new_at(&tail.data(), PolicyOffset::from(other_offset)))
-                    .unwrap();
-            name_hash(type_at_other_offset.name_bytes())
+            name_hash(Self::parse_type_at(&policy_data, other_offset).name_bytes())
         });
 
         Ok((
@@ -1422,10 +1405,8 @@ impl Validate for TypeIndex {
         let data = context.data.clone();
         let mut primary_names_count = 0u32;
         for offset in &self.offsets_by_id_minus_one {
-            let offset = PolicyOffset::from(*offset);
-            if offset != 0 {
-                let (type_, _) = Type::parse(PolicyCursor::new_at(&data, offset)).unwrap();
-                type_.validate(context)?;
+            if PolicyOffset::from(*offset) != 0 {
+                Self::parse_type_at(&data, *offset).validate(context)?;
                 primary_names_count += 1;
             }
         }
