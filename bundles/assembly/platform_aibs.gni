@@ -351,6 +351,7 @@ platform_aib_names =
       # USB
       "usb_peripheral_drivers_base",
       "usb_policy",
+      "usb_policy_starnix",
 
       # Recovery
       "factory_reset",

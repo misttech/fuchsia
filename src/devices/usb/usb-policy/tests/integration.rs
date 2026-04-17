@@ -90,7 +90,7 @@ async fn mock_service_server_generic(
 /// Routes:
 /// - `fuchsia.hardware.usb.policy.Service` from `mock_service` to `policy`
 /// - `fuchsia.logger.LogSink` from parent to both
-/// - `fuchsia.usb.policy.Health` and `fuchsia.usb.policy.Service` from `policy` to parent
+/// - `fuchsia.usb.policy.Health` and `fuchsia.usb.policy.PolicyProvider` from `policy` to parent
 async fn add_standard_routes(builder: &RealmBuilder) -> Result<(), Error> {
     builder
         .add_route(

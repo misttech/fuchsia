@@ -97,6 +97,11 @@
             from: "parent",
         },
         {
+            protocol: "fuchsia.usb.policy.PolicyProvider",
+            from: "parent",
+            availability: "optional",
+        },
+        {
             service: [
                 "fuchsia.hardware.power.suspend.SuspendService",
                 "fuchsia.hardware.qcom.hvdcpopti.Service",

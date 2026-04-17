@@ -145,6 +145,7 @@
                 "fuchsia.ui.input3.Keyboard",
                 "fuchsia.ui.policy.DeviceListenerRegistry",
                 "fuchsia.ui.test.input.Registry",
+                "fuchsia.usb.policy.PolicyProvider",
                 "fuchsia.wlan.wlanix.Wlanix",
             ],
             from: "parent",

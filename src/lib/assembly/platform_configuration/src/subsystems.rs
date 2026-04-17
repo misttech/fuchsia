@@ -8,6 +8,7 @@ use assembly_config_schema::developer_overrides::DeveloperOnlyOptions;
 use assembly_config_schema::platform_settings::PlatformSettings;
 use assembly_config_schema::product_settings::ProductSettings;
 use assembly_config_schema::{BoardConfig, ExampleConfig};
+use assembly_constants::BoardFeature;
 use assembly_platform_artifacts::PlatformArtifacts;
 use camino::Utf8Path;
 
@@ -417,6 +418,15 @@ fn configure_subsystems(
         builder,
     )
     .context("configuring the 'tee' subsystem")?;
+
+    if context_base.base_context.board_config.provides_feature(BoardFeature::UsbPeripheralSupport)
+        && platform.starnix.enabled
+        && platform.usb.enable_policy
+    {
+        builder
+            .platform_bundle("usb_policy_starnix")
+            .context("configuring the 'usb policy starnix' connection")?;
+    }
 
     Ok(())
 }

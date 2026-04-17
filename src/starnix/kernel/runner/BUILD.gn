@@ -65,6 +65,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules",
+    "//src/starnix/modules/android_usb",
     "//src/starnix/modules/ashmem",
     "//src/starnix/modules/boot",
     "//src/starnix/modules/consent_sync",

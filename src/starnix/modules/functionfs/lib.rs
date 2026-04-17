@@ -5,6 +5,8 @@
 #![recursion_limit = "256"]
 
 use fidl::endpoints::SynchronousProxy;
+use fidl_fuchsia_hardware_adb as fadb;
+use fuchsia_async as fasync;
 use futures_util::StreamExt;
 use starnix_core::power::{create_proxy_for_wake_events_counter_zero, mark_proxy_message_handled};
 use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
@@ -32,7 +34,6 @@ use std::collections::VecDeque;
 use std::ops::Deref;
 use std::sync::{Arc, mpsc};
 use zerocopy::IntoBytes;
-use {fidl_fuchsia_hardware_adb as fadb, fuchsia_async as fasync};
 
 // The node identifiers of different nodes in FunctionFS.
 const ROOT_NODE_ID: ino_t = 1;
@@ -113,11 +114,21 @@ async fn handle_adb(
 
         while let Some(Ok(fadb::UsbAdbImpl_Event::OnStatusChanged { status })) = stream.next().await
         {
-            queue_event(if status == fadb::StatusFlags::ONLINE {
-                usb_functionfs_event_type_FUNCTIONFS_ENABLE
-            } else {
-                usb_functionfs_event_type_FUNCTIONFS_DISABLE
-            });
+            let is_online = status == fadb::StatusFlags::ONLINE;
+            {
+                let mut state_locked = state.lock();
+                state_locked.is_online = is_online;
+                state_locked.event_queue.push_back(usb_functionfs_event {
+                    type_: if is_online {
+                        usb_functionfs_event_type_FUNCTIONFS_ENABLE
+                    } else {
+                        usb_functionfs_event_type_FUNCTIONFS_DISABLE
+                    } as u8,
+                    ..Default::default()
+                });
+                state_locked.waiters.notify_fd_events(FdEvents::POLLIN);
+                state_locked.waiters.notify_all();
+            }
 
             // We can simply clear this after getting a response because we care about
             // reads. Allow new FIDL messages to come through and only go to sleep if
@@ -311,6 +322,9 @@ struct FunctionFsState {
     // respectively. /ep0 is the control endpoint and is always available.
     has_input_output_endpoints: bool,
 
+    // Whether the FunctionFS is currently online (host connected).
+    is_online: bool,
+
     adb_read_channel: Option<async_channel::Sender<ReadCommand>>,
     adb_write_channel: Option<async_channel::Sender<WriteCommand>>,
 
@@ -450,8 +464,32 @@ impl FunctionFsRootDir {
             }
 
             state.has_input_output_endpoints = false;
+            state.is_online = false;
             state.adb_read_channel = None;
             state.adb_write_channel = None;
+        }
+    }
+
+    fn wait_until_online(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
+        file: &FileObject,
+    ) -> Result<(), Errno> {
+        loop {
+            let waiter = {
+                let state = self.state.lock();
+                if state.is_online {
+                    return Ok(());
+                }
+                if file.flags().contains(OpenFlags::NONBLOCK) {
+                    return error!(EAGAIN);
+                }
+                let waiter = Waiter::new();
+                state.waiters.wait_async(&waiter);
+                waiter
+            };
+            waiter.wait(locked, current_task)?;
         }
     }
 
@@ -460,7 +498,15 @@ impl FunctionFsRootDir {
         state.event_queue.len()
     }
 
-    fn write(&self, bytes: &[u8]) -> Result<usize, Errno> {
+    fn write(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
+        file: &FileObject,
+        bytes: &[u8],
+    ) -> Result<usize, Errno> {
+        self.wait_until_online(locked, current_task, file)?;
+
         let data = Vec::from(bytes);
         let (response_sender, receiver) = std::sync::mpsc::channel();
         if let Some(channel) = self.state.lock().adb_write_channel.as_ref() {
@@ -473,7 +519,14 @@ impl FunctionFsRootDir {
         receiver.recv().map_err(|_| errno!(EINVAL))?
     }
 
-    fn read(&self) -> Result<Vec<u8>, Errno> {
+    fn read(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
+        file: &FileObject,
+    ) -> Result<Vec<u8>, Errno> {
+        self.wait_until_online(locked, current_task, file)?;
+
         let (response_sender, receiver) = std::sync::mpsc::channel();
         if let Some(channel) = self.state.lock().adb_read_channel.as_ref() {
             channel.send_blocking(ReadCommand { response_sender }).map_err(|_| errno!(EINVAL))?;
@@ -693,15 +746,15 @@ impl FileOps for FunctionFsInputEndpoint {
 
     fn write(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
+        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         let bytes = data.read_all()?;
         let rootdir = FunctionFsRootDir::from_file(file);
-        rootdir.write(&bytes)
+        rootdir.write(locked, current_task, file, &bytes)
     }
 }
 
@@ -730,14 +783,14 @@ impl FileOps for FunctionFsOutputFileObject {
 
     fn read(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
+        locked: &mut Locked<FileOpsCore>,
         file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
         let rootdir = FunctionFsRootDir::from_file(file);
-        let payload = rootdir.read()?;
+        let payload = rootdir.read(locked, current_task, file)?;
         if payload.len() > data.available() {
             // This means the data will only be partially written, with the rest discarded.
             // Instead of attempting this, we'll instead return error to the client.

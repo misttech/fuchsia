@@ -22,12 +22,7 @@ open protocol Health {
 };
 
 /// An interface to monitor dynamic changes to the USB device state.
+@discoverable
 open protocol PolicyProvider {
     compose fuchsia.hardware.usb.policy.DeviceStateWatcher;
-};
-
-/// A service definition grouping the USB policy provider interface.
-service Service {
-    /// A client end to connect to the PolicyProvider protocol.
-    provider client_end:PolicyProvider;
 };

@@ -16,6 +16,7 @@ use starnix_core::task::{CurrentTask, Kernel, KernelFeatures, SystemLimits};
 use starnix_core::vfs::FsString;
 use starnix_features::Feature;
 use starnix_logging::log_error;
+use starnix_modules_android_usb::usb_device_init;
 use starnix_modules_ashmem::ashmem_device_init;
 use starnix_modules_boot::booted_device_init;
 use starnix_modules_fastrpc::fastrpc_device_init;
@@ -135,6 +136,9 @@ pub struct Features {
     /// Add a stub block device entry for mmcblk0. This is required for certain containers that
     /// query certain functionality based on block device naming.
     pub mmcblk_stub: bool,
+
+    /// Whether to initialize Android-compatible USB monitoring sysfs logic.
+    pub android_usb: bool,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -201,6 +205,7 @@ impl Features {
                 additional_mounts,
                 wakeup_test,
                 mmcblk_stub,
+                android_usb,
             } => {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
@@ -294,6 +299,7 @@ impl Features {
                     inspect_node.record_uint("dirent_cache_size", *dirent_cache_size as u64);
                     inspect_node.record_bool("wakeup_test", *wakeup_test);
                     inspect_node.record_bool("mmcblk_stub", *mmcblk_stub);
+                    inspect_node.record_bool("android_usb", *android_usb);
                     inspect_node.record_bool("fake_ion", *fake_ion);
                 });
             }
@@ -450,6 +456,7 @@ pub fn parse_features(
             (Feature::WakeupTest, _) => features.wakeup_test = true,
             (Feature::MmcblkStub, _) => features.mmcblk_stub = true,
             (Feature::FakeIon, _) => features.kernel.fake_ion = true,
+            (Feature::AndroidUsb, _) => features.android_usb = true,
         };
     }
 
@@ -651,6 +658,9 @@ pub fn run_container_features(
     if features.mmcblk_stub {
         let _device = add_mmc_block_device(locked, system_task)
             .context("Failed to add stub mmcblk0 device")?;
+    }
+    if features.android_usb {
+        usb_device_init(locked, system_task).context("Failed to add android usb device nodes")?;
     }
     Ok(())
 }

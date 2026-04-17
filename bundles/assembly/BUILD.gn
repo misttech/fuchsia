@@ -383,6 +383,19 @@ assembly_input_bundle("usb_policy") {
       [ "//src/devices/usb/usb-policy/meta/usb-policy.core_shard.cml" ]
 }
 
+assembly_input_bundle("usb_policy_starnix") {
+  experimental = true
+  allowed_in = [
+    "standard::eng",
+    "standard::userdebug",
+    "utility::eng",
+    "utility::userdebug",
+  ]
+
+  core_shards =
+      [ "//src/devices/usb/usb-policy/meta/usb-policy-starnix.core_shard.cml" ]
+}
+
 assembly_input_bundle("network_drivers_boot") {
   allowed_in = [
     "userdebug",

@@ -50,6 +50,7 @@ pub enum Feature {
     AdditionalMounts,
     WakeupTest,
     MmcblkStub,
+    AndroidUsb,
     // TODO(https://fxbug.dev/485370648) remove when unnecessary
     FakeIon,
 }
@@ -147,6 +148,7 @@ mod test {
             (Feature::AdditionalMounts, "additional_mounts"),
             (Feature::WakeupTest, "wakeup_test"),
             (Feature::MmcblkStub, "mmcblk_stub"),
+            (Feature::AndroidUsb, "android_usb"),
             // TODO(https://fxbug.dev/485370648) remove when unnecessary
             (Feature::FakeIon, "fake_ion"),
         ] {
