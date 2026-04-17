@@ -626,7 +626,7 @@ impl Inner {
                     start_info.component_instance = Some(token.into());
                     let checker = ScopedPolicyChecker::new(
                         self.resources.security_policy.clone(),
-                        target_moniker.clone(),
+                        (*target_moniker).clone(),
                     );
                     self.elf_runner
                         .clone()

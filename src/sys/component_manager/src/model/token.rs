@@ -35,7 +35,7 @@ impl From<zx::Event> for InstanceToken {
 /// [`InstanceRegistry`] maintains mapping from [`InstanceToken`] KOIDs to the
 /// moniker of those component instances.
 pub struct InstanceRegistry {
-    koid_to_moniker: Mutex<HashMap<Koid, Moniker>>,
+    koid_to_moniker: Mutex<HashMap<Koid, Arc<Moniker>>>,
 }
 
 impl InstanceRegistry {
@@ -46,7 +46,7 @@ impl InstanceRegistry {
     fn add(&self, moniker: Moniker) -> InstanceToken {
         let event = zx::Event::create();
         let koid = event.koid().expect(KOID_ERROR);
-        self.koid_to_moniker.lock().insert(koid, moniker);
+        self.koid_to_moniker.lock().insert(koid, Arc::new(moniker));
         InstanceToken(event)
     }
 
@@ -59,7 +59,7 @@ impl InstanceRegistry {
     ///
     /// If this method returns `None`, then either the component instance has
     /// been destroyed, or the token was not minted by component_manager.
-    pub fn get(&self, token: &InstanceToken) -> Option<Moniker> {
+    pub fn get(&self, token: &InstanceToken) -> Option<Arc<Moniker>> {
         let koid = token.0.koid().expect(KOID_ERROR);
         self.koid_to_moniker.lock().get(&koid).cloned()
     }
