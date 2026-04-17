@@ -369,8 +369,11 @@ zx::result<Thread*> ThreadStorage::Allocate(thrd_zx_create_handles_t allocate_fr
   assert(allocate_from.machine_stack_vmar != ZX_HANDLE_INVALID);
   assert(allocate_from.security_stack_vmar != ZX_HANDLE_INVALID);
   assert(allocate_from.thread_block_vmar != ZX_HANDLE_INVALID);
-  assert(stack);
   assert(!vmo_name.empty());
+
+  if (stack.get() < PTHREAD_STACK_MIN) [[unlikely]] {
+    return zx::error{ZX_ERR_INVALID_ARGS};
+  }
 
   // The thread block size is a complex calculation, while the others depend
   // only on the stack and guard sizes.

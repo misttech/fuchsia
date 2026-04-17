@@ -97,6 +97,8 @@ class ThreadStorage {
   // consider the Fuchsia Compiler ABI <zircon/tls.h> fixed slots, as well as
   // the $tp->self pointer on x86, to be part of the TCB--at one end of it or
   // the other--though nothing else about the TCB is part of any public ABI.)
+  //
+  // Returns ZX_ERR_INVALID_ARGS if the stack size is less than PTHREAD_STACK_MIN.
   zx::result<Thread*> Allocate(thrd_zx_create_handles_t allocate_from, std::string_view vmo_name,
                                PageRoundedSize stack, PageRoundedSize guard);
 

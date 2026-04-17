@@ -609,6 +609,23 @@ TEST_F(LibcThreadTests, ThreadStorage_b492277399_RegressionTest) {
   CheckThreadBlockForLayout(kInterestingLayoutThreadSize, CreateHandles());
 }
 
+TEST_F(LibcThreadTests, ThreadStorageStackTooSmall) {
+  constexpr size_t kStackSizes[] = {0, PTHREAD_STACK_MIN - 1};
+
+  for (size_t stack_size : kStackSizes) {
+    const PageRoundedSize rounded_stack{stack_size};
+    if (rounded_stack.get() >= PTHREAD_STACK_MIN) {
+      continue;
+    }
+
+    ThreadStorage storage;
+    auto result = storage.Allocate(CreateHandles(), kVmoName, rounded_stack, kOnePage);
+    EXPECT_EQ(result.status_value(), ZX_ERR_INVALID_ARGS)
+        << "Expected ZX_ERR_INVALID_ARGS for stack_size: " << stack_size;
+    ;
+  }
+}
+
 }  // namespace
 
 // This is defined in the non-test code to get the real layout from the dynamic
