@@ -240,18 +240,9 @@
                 // TODO: https://fxbug.dev/398696739
                 "overlay/007",
                 "overlay/011",
-                "overlay/035",
-                "overlay/037",
-                "overlay/038",
-                "overlay/051",
                 "overlay/084",
                 "overlay/090",
-                "overlay/093",
-                "overlay/096",
                 "overlay/099",
-                "overlay/108",
-                "overlay/109",
-                "overlay/110",
 
                 // TODO: https://fxbug.dev/398696740
                 "sem/001",

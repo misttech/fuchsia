@@ -1290,6 +1290,33 @@ TEST_P(FsMountTest, CreateAndRenameDirectory) {
   EXPECT_THAT(rename(old_name.c_str(), new_name.c_str()), SyscallSucceeds());
 }
 
+TEST(MknodTest, MknodChrZeroDoesNotRequireCapMknod) {
+  test_helper::ScopedTempDir temp;
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([temp = temp.path()] {
+    // Verify that zero-Id device nodes can be created while holding CAP_MKNOD.
+    std::string chr_dev_file_control = temp + "/zero_chr_dev-control";
+    ASSERT_THAT(mknod(chr_dev_file_control.c_str(), S_IFCHR | 0600, 0), SyscallSucceeds());
+    std::string blk_dev_file_control = temp + "/zero_blk_dev-control";
+    ASSERT_THAT(mknod(blk_dev_file_control.c_str(), S_IFBLK | 0600, 0), SyscallSucceeds());
+
+    test_helper::DropAllCapabilities();
+
+    // Attempting to create a normal character device node will fail without CAP_MKNOD.
+    std::string null_file = temp + "/null_dev";
+    EXPECT_THAT(mknod(null_file.c_str(), S_IFCHR | 0600, makedev(1, 3)),
+                SyscallFailsWithErrno(EPERM));
+
+    // The zero device-Id is never assigned, so userspace can create them without restriction.
+    std::string chr_dev_file = temp + "/zero_chr_dev";
+    EXPECT_THAT(mknod(chr_dev_file.c_str(), S_IFCHR | 0600, 0), SyscallSucceeds());
+    std::string blk_dev_file = temp + "/zero_blk_dev";
+    EXPECT_THAT(mknod(blk_dev_file.c_str(), S_IFBLK | 0600, 0), SyscallFailsWithErrno(EPERM));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 class OtmpfileTest : public ::testing::Test {
  protected:
   void SetUp() override {

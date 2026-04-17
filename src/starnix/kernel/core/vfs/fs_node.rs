@@ -1513,8 +1513,10 @@ impl FsNode {
             //   CAP_MKNOD capability); also returned if the filesystem
             //   containing pathname does not support the type of node
             //   requested.
-            if !matches!(mode.fmt(), FileMode::IFREG | FileMode::IFIFO | FileMode::IFSOCK) {
-                security::check_task_capable(current_task, CAP_MKNOD)?;
+            match mode.fmt() {
+                FileMode::IFREG | FileMode::IFIFO | FileMode::IFSOCK => (),
+                FileMode::IFCHR if dev == DeviceId::NONE => (),
+                _ => security::check_task_capable(current_task, CAP_MKNOD)?,
             }
             let locked = locked.cast_locked::<FileOpsCore>();
             self.ops().mknod(locked, self, current_task, name, mode, dev, owner)?

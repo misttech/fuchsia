@@ -5,15 +5,18 @@
 #include <fcntl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 
 #include <string>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -65,13 +68,15 @@ class OverlayFsTest : public ::testing::Test {
     ASSERT_THAT(umount(overlay_.c_str()), SyscallSucceeds());
   }
 
-  void Mount() {
+  void Mount() { MountWith("test_u:test_r:test_overlayfs_mounter_t:s0"); }
+
+  void MountWith(const char* mounter_label) {
     std::string options = fxl::StringPrintf("lowerdir=%s,upperdir=%s,workdir=%s", lower_.c_str(),
                                             upper_.c_str(), work_.c_str());
-    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_mounter_t:s0", [&] {
-      ASSERT_THAT(mount(nullptr, overlay_.c_str(), "overlay", MS_NOATIME | MS_NOSUID | MS_NODEV,
-                        options.c_str()),
-                  SyscallSucceeds());
+    ASSERT_TRUE(RunSubprocessAs(mounter_label, [&] {
+      ASSERT_THAT(
+          mount(nullptr, overlay_.c_str(), "overlay", MS_NOATIME | MS_NOSUID, options.c_str()),
+          SyscallSucceeds());
     }));
   }
 
@@ -256,6 +261,58 @@ TEST_F(OverlayFsTest, AuditChecksFileOpenAndRead) {
     ASSERT_THAT(fd.get(), SyscallSucceeds());
     char buf[1];
     ASSERT_THAT(read(fd.get(), &buf, sizeof(buf)), SyscallSucceeds());
+  }));
+}
+
+// Verify that the mounter must have 'capability { mknod }' for the caller to be able to create a
+// device node in the overlay.
+TEST_F(OverlayFsTest, MknodRequiresMounterCapability) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_NO_FATAL_FAILURE(MountWith("test_u:test_r:test_overlayfs_mounter_no_mknod_t:s0"));
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
+    ASSERT_TRUE(test_helper::HasCapability(CAP_MKNOD));
+    EXPECT_THAT(mknod((overlay_ + "/devnode").c_str(), S_IFCHR | 0666, makedev(1, 3)),
+                SyscallFailsWithErrno(EPERM));
+  }));
+}
+
+// Verify that the caller must have 'capability { mknod }' to create a device node in the overlay.
+TEST_F(OverlayFsTest, MknodRequiresCallerCapability) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_NO_FATAL_FAILURE(Mount());
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_no_mknod_t:s0", [&] {
+    ASSERT_TRUE(test_helper::HasCapability(CAP_MKNOD));
+    EXPECT_THAT(mknod((overlay_ + "/devnode").c_str(), S_IFCHR | 0666, makedev(1, 3)),
+                SyscallFailsWithErrno(EPERM));
+  }));
+}
+
+// Verify that a device node can be created in the overlay if both mounter and caller have
+// 'capability { mknod }'.
+TEST_F(OverlayFsTest, MknodSucceedsWithPermissions) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_NO_FATAL_FAILURE(Mount());
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
+    ASSERT_TRUE(test_helper::HasCapability(CAP_MKNOD));
+    EXPECT_THAT(mknod((overlay_ + "/devnode").c_str(), S_IFCHR | 0666, makedev(1, 3)),
+                SyscallSucceeds());
+  }));
+}
+
+// Verify that the mounter does not require 'capability { mknod }' in order for "overlay" FS to
+// create a whiteout node when the caller removes a file that exists in the lower layer.
+TEST_F(OverlayFsTest, UnlinkLowerDoesNotRequireMounterMknodCapability) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(files::WriteFile(lower_ + "/file", "data"));
+  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_file_t:s0"), fit::ok());
+
+  ASSERT_NO_FATAL_FAILURE(MountWith("test_u:test_r:test_overlayfs_mounter_no_mknod_t:s0"));
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
+    EXPECT_THAT(unlink((overlay_ + "/file").c_str()), SyscallSucceeds());
   }));
 }
 

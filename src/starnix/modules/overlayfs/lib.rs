@@ -735,6 +735,11 @@ impl FsNodeOps for OverlayNodeOps {
         dev: DeviceId,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
+        if mode.fmt() == FileMode::IFCHR && dev == DeviceId::NONE {
+            // Callers are blocked from creating character device nodes with Id zero, which would
+            // be indistuinguishable from those created to represent whiteouts.
+            return error!(EPERM);
+        }
         let mut creds = Credentials::clone(&self.node.stack.mounter);
         security::dentry_create_files_as(current_task, node, mode, name, &mut creds)?;
         current_task.override_creds(Arc::new(creds), || {

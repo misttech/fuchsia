@@ -12,6 +12,7 @@
 #include <sys/mount.h>
 #include <sys/statfs.h>
 #include <sys/statvfs.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -511,7 +512,7 @@ TEST_F(MountTest, NoDev) {
   auto dir = TestPath("a");
   ASSERT_THAT(mount(nullptr, dir.c_str(), "tmpfs", MS_NODEV, nullptr), SyscallSucceeds());
   auto path = TestPath("a/foo");
-  ASSERT_THAT(mknod(path.c_str(), S_IFBLK | 0777, 0), SyscallSucceeds());
+  ASSERT_THAT(mknod(path.c_str(), S_IFCHR | 0777, makedev(1, 3)), SyscallSucceeds());
   ASSERT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
   ASSERT_THAT(umount(dir.c_str()), SyscallSucceeds());
 }

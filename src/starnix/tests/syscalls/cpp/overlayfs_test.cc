@@ -13,9 +13,11 @@
 #include <fstream>
 
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -321,6 +323,18 @@ TEST_F(OverlayFsTest, RemovedFiles) {
   ASSERT_NO_FATAL_FAILURE(Mount());
 
   EXPECT_EQ(ReadDir(overlay_), (std::vector{DirEntry::CharDev("b"), DirEntry::CharDev("d")}));
+}
+
+TEST_F(OverlayFsTest, MknodZeroDevice) {
+  ASSERT_NO_FATAL_FAILURE(Mount());
+
+  // OverlayFS reserves character devices with device ID 0 for whiteouts.
+  // Attempts to create one via mknod should fail with EPERM, even if the caller has CAP_MKNOD.
+  ASSERT_TRUE(test_helper::HasCapability(CAP_MKNOD));
+
+  EXPECT_THAT(mknod((overlay_ + "/zero_chr_dev").c_str(), S_IFCHR | 0600, 0),
+              SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(mknod((overlay_ + "/zero_blk_dev").c_str(), S_IFBLK | 0600, 0), SyscallSucceeds());
 }
 
 TEST_F(OverlayFsTest, UnlinkLower) {
