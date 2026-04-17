@@ -1142,8 +1142,8 @@ pub mod test {
         let test_memory = TestBuffer::new(&mut test_case.memory);
         let args = vec![test_memory.get_value_type(), Type::from(test_memory.size as u64)];
         let packet_type = test_case.memory.is_some().then_some(test_memory.get_value_type());
-        let helpers: HashMap<u32, HelperDefinition> =
-            HELPER_DEFS.iter().map(|(def, _)| (def.index, def.clone())).collect();
+        let helpers: HashMap<u32, &'static HelperDefinition> =
+            HELPER_DEFS.iter().map(|(def, _)| (def.index, def)).collect();
 
         let verified_program = verify_program(
             test_case.code,

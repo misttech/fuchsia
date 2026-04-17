@@ -1360,12 +1360,10 @@ impl From<ProgramType> for u32 {
 }
 
 impl ProgramType {
-    pub fn get_helpers(self) -> HashMap<u32, HelperDefinition> {
+    pub fn get_helpers(self) -> HashMap<u32, &'static HelperDefinition> {
         BPF_HELPERS_DEFINITIONS
             .iter()
-            .filter_map(|(filter, helper)| {
-                filter.accept(self).then_some((helper.index, helper.clone()))
-            })
+            .filter_map(|(filter, helper)| filter.accept(self).then_some((helper.index, helper)))
             .collect()
     }
 

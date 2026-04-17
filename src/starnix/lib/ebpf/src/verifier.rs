@@ -779,7 +779,7 @@ pub struct CallingContext {
     /// with `src_reg=BPF_PSEUDO_MAP_IDX`.
     pub maps: Vec<MapSchema>,
     /// The registered external functions.
-    pub helpers: HashMap<u32, HelperDefinition>,
+    pub helpers: HashMap<u32, &'static HelperDefinition>,
     /// The args of the program.
     pub args: Vec<Type>,
     /// Packet type. Normally it should be either `None` or `args[0]`.
@@ -791,16 +791,6 @@ impl CallingContext {
         let index = self.maps.len();
         self.maps.push(schema);
         index
-    }
-    pub fn set_helpers(&mut self, helpers: HashMap<u32, HelperDefinition>) {
-        self.helpers = helpers;
-    }
-    pub fn set_args(&mut self, args: &[Type]) {
-        debug_assert!(args.len() <= 5);
-        self.args = args.to_vec();
-    }
-    pub fn set_packet_type(&mut self, packet_type: Type) {
-        self.packet_type = Some(packet_type);
     }
 }
 
