@@ -185,6 +185,7 @@ impl ActivityGovernorRequestFrontend {
         crash_reporter: ffeedback::CrashReporterProxy,
         stuck_warning_timeout: fasync::MonotonicDuration,
         boost_proxy: fcpumanager::BoostProxy,
+        use_suspender: bool,
     ) -> Result<()> {
         log::info!("Creating activity governor server from frontend...");
         let sag = SystemActivityGovernor::new(
@@ -197,6 +198,7 @@ impl ActivityGovernorRequestFrontend {
             crash_reporter,
             stuck_warning_timeout,
             boost_proxy,
+            use_suspender,
         )
         .await?;
 

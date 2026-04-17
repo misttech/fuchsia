@@ -246,6 +246,7 @@ async fn main() -> Result<()> {
     let is_shutting_down = register_terminal_state_watcher(is_shutting_down_node).await;
     let is_shutting_down_sag = is_shutting_down.clone();
 
+    let use_suspender = config.use_suspender;
     let stuck_warning_timeout = config.suspend_resume_stuck_warning_timeout;
     let front_end_clone = front_end.clone();
     let inspector_clone = inspector.clone();
@@ -257,6 +258,7 @@ async fn main() -> Result<()> {
         let crash_reporter = crash_reporter.clone();
         let boost_proxy = boost_proxy.clone();
         let inspect_root = inspector_clone.root().clone_weak();
+        let use_suspender = use_suspender;
         async move {
             log::info!("Creating activity governor server...");
 
@@ -271,6 +273,7 @@ async fn main() -> Result<()> {
                     crash_reporter,
                     MonotonicDuration::from_seconds(stuck_warning_timeout.into()),
                     boost_proxy,
+                    use_suspender,
                 )
                 .await
         }

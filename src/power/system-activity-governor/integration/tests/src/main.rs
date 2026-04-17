@@ -4148,3 +4148,93 @@ async fn test_activity_governor_early_lease_dropped_before_dependency_registrati
 
     Ok(())
 }
+
+#[fuchsia::test]
+async fn test_no_suspend_loop_files_report() -> Result<()> {
+    let (realm, _activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+        use_suspender: Some(true),
+        stuck_warning_timeout_seconds: Some(1),
+        ..Default::default()
+    })
+    .await?;
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+    let querier = realm
+        .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
+        .await?;
+
+    let element_info_provider = realm
+        .connect_to_service_instance::<fbroker::ElementInfoProviderServiceMarker>(
+            &"system_activity_governor",
+        )
+        .await?
+        .connect_to_status_provider()
+        .expect("failed to connect to protocol ElementInfoProvider");
+
+    let status_endpoints: std::collections::HashMap<String, fbroker::StatusProxy> =
+        element_info_provider
+            .get_status_endpoints()
+            .await?
+            .unwrap()
+            .into_iter()
+            .map(|s| (s.identifier.unwrap(), s.status.unwrap().into_proxy()))
+            .collect();
+
+    let aa_status = status_endpoints.get("application_activity").unwrap();
+
+    // Trigger "boot complete" signal to allow element transitions.
+    {
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        let () =
+            boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+
+    // Clear initial state
+    let _ = querier.watch_file().await?;
+
+    // Block suspends by holding a wake lease.
+    let wake_lease = activity_governor.take_wake_lease("prevent-suspend").await?;
+
+    let prevent_suspend_koid = wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
+    let prevent_suspend_koid_str = prevent_suspend_koid.as_str();
+
+    // Cycle Application Activity 5 times.
+    for _ in 0..5 {
+        let lease = activity_governor.take_application_activity_lease("cycle-lease").await?;
+
+        // Wait for Active
+        while aa_status.watch_power_level().await?.unwrap() != 1 {}
+
+        drop(lease);
+
+        // Wait for Inactive
+        while aa_status.watch_power_level().await?.unwrap() != 0 {}
+
+        // Wait for the lease node to disappear from Inspect.
+        // TODO(fxbug.dev/497906970): after landing http://fxrev.dev/1569459, update the condition.
+        block_until_inspect_matches!(
+            _activity_governor_moniker,
+            root: contains {
+                ref fobs::WAKE_LEASES_NODE: {
+                    var prevent_suspend_koid_str: contains {
+                        ref fobs::WAKE_LEASE_ITEM_NAME: "prevent-suspend",
+                    }
+                },
+            }
+        );
+    }
+
+    // Verify crash report
+    let mut watch_fut = Box::pin(querier.watch_file().fuse());
+    let mut timeout_fut =
+        Box::pin(fasync::Timer::new(fasync::MonotonicDuration::from_seconds(5).after_now()).fuse());
+
+    let num_filed = futures::select! {
+        num = watch_fut => num?,
+        _ = timeout_fut => return Err(anyhow::anyhow!("Timeout waiting for crash report")),
+    };
+
+    assert_eq!(num_filed, 1);
+
+    drop(wake_lease);
+    Ok(())
+}

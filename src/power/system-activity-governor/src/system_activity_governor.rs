@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::cpu_manager::{
-    CpuManager, SuspendBlockManager, SuspendResumeListener, SuspendStatsUpdater,
+    CpuManager, SuspendBlockManager, SuspendResult, SuspendResumeListener, SuspendStatsUpdater,
 };
 use crate::events::{SagEvent, SagEventLogger};
 use anyhow::Result;
@@ -57,6 +57,7 @@ const RESUME_SUSPENDING_LEASE_DROP_DELAY: std::time::Duration =
     std::time::Duration::from_millis(100);
 const SUSPEND_BLOCKER_WARNING_TIMEOUT: fasync::MonotonicDuration =
     fasync::MonotonicDuration::from_seconds(10);
+const NO_SUSPEND_CRASH_SIGNATURE: &str = "fuchsia-no-suspend-in-5-application-activity-cycles";
 
 type NotifyFn = Box<dyn Fn(&fsuspend::SuspendStats, fsuspend::StatsWatchResponder) -> bool>;
 type StatsHangingGet = HangingGet<fsuspend::SuspendStats, fsuspend::StatsWatchResponder, NotifyFn>;
@@ -218,6 +219,8 @@ struct LeaseManager {
     max_lease_id: AtomicU64,
     /// A shared receiver that is set when the system is about to suspend.
     before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
+    /// Sender for crash reports.
+    report_sender: futures::channel::mpsc::UnboundedSender<ffeedback::CrashReport>,
 }
 
 impl LeaseManager {
@@ -231,6 +234,7 @@ impl LeaseManager {
         before_suspend_notifier: Rc<
             RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>,
         >,
+        report_sender: futures::channel::mpsc::UnboundedSender<ffeedback::CrashReport>,
     ) -> Self {
         Self {
             inspect_node,
@@ -242,12 +246,18 @@ impl LeaseManager {
             suspend_block_manager: suspend_blocker,
             max_lease_id: AtomicU64::new(0),
             before_suspend_notifier,
+            report_sender,
         }
     }
 
-    async fn create_application_activity_lease(&self, name: String) -> Result<fsystem::LeaseToken> {
+    async fn create_application_activity_lease(
+        &self,
+        name: String,
+        loop_detector: Option<std::rc::Rc<NoSuspendDetector>>,
+    ) -> Result<fsystem::LeaseToken> {
         let (server_token, client_token) = fsystem::LeaseToken::create();
-        self.create_application_activity_lease_using_token(name, server_token).await?;
+        self.create_application_activity_lease_using_token(name, server_token, loop_detector)
+            .await?;
         Ok(client_token)
     }
 
@@ -255,6 +265,7 @@ impl LeaseManager {
         &self,
         name: String,
         server_token: fsystem::LeaseToken,
+        loop_detector: Option<std::rc::Rc<NoSuspendDetector>>,
     ) -> Result<()> {
         let lease_token = server_token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
 
@@ -308,11 +319,37 @@ impl LeaseManager {
         );
         inspect_lease_node
             .record_string(fobs::WAKE_LEASE_ITEM_STATUS, fobs::WAKE_LEASE_ITEM_STATUS_SATISFIED);
+        if let Some(detector) = &loop_detector {
+            match detector.on_lease_taken() {
+                LeaseTakenAction::ShouldReport => {
+                    log::info!(
+                        "No-suspend loop detected for client '{}'; filing crash report",
+                        name
+                    );
+                    let report = ffeedback::CrashReport {
+                        program_name: Some("device".to_string()),
+                        crash_signature: Some(NO_SUSPEND_CRASH_SIGNATURE.to_string()),
+                        is_fatal: Some(false),
+                        ..Default::default()
+                    };
+                    if let Err(e) = self.report_sender.unbounded_send(report) {
+                        log::warn!("Failed to send crash report to channel: {:?}", e);
+                    }
+                }
+                LeaseTakenAction::DoNotReport => {}
+            }
+        }
 
+        let loop_detector = loop_detector.clone();
         fasync::Task::local(async move {
             // Keep lease alive for as long as the client keeps it alive.
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
             log::debug!("Dropping application activity lease for '{}'", name);
+
+            if let Some(detector) = loop_detector {
+                detector.on_lease_dropped();
+            }
+
             sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
             drop(inspect_lease_node);
         })
@@ -534,6 +571,75 @@ impl SuspendBlockerIdGenerator {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum LeaseTakenAction {
+    ShouldReport,
+    DoNotReport,
+}
+
+/// Detects situations where the system repeatedly takes leases and drops them
+/// without entering suspend, potentially indicating a bug or an infinite loop.
+/// It reports when the lease is taken for the `CYCLE_THRESHOLD`th time
+/// (5th time) within a short period, rate-limited by `REPORT_INTERVAL`.
+struct NoSuspendDetector {
+    active_count: std::cell::Cell<u32>,
+    cycle_count: std::cell::Cell<u32>,
+    last_report_time: std::cell::Cell<Option<fasync::MonotonicInstant>>,
+}
+
+impl NoSuspendDetector {
+    const CYCLE_THRESHOLD: u32 = 5;
+    const REPORT_INTERVAL: fasync::MonotonicDuration =
+        fasync::MonotonicDuration::from_seconds(1200);
+
+    fn new() -> Self {
+        Self {
+            active_count: std::cell::Cell::new(0),
+            cycle_count: std::cell::Cell::new(0),
+            last_report_time: std::cell::Cell::new(None),
+        }
+    }
+
+    fn on_lease_taken(&self) -> LeaseTakenAction {
+        let mut action = LeaseTakenAction::DoNotReport;
+        let active = self.active_count.get();
+        if active == 0 {
+            let cycles = self.cycle_count.get() + 1;
+            self.cycle_count.set(cycles);
+
+            if cycles >= Self::CYCLE_THRESHOLD {
+                let now = fasync::MonotonicInstant::now();
+                let should_report = match self.last_report_time.get() {
+                    None => true,
+                    Some(last) => now - last >= Self::REPORT_INTERVAL,
+                };
+
+                if should_report {
+                    self.last_report_time.set(Some(now));
+                    self.cycle_count.set(0);
+                    action = LeaseTakenAction::ShouldReport;
+                }
+            }
+        }
+        self.active_count.set(active + 1);
+        action
+    }
+
+    fn on_lease_dropped(&self) {
+        let active = self.active_count.get();
+        if active > 0 {
+            self.active_count.set(active - 1);
+        }
+    }
+
+    fn on_suspend_success(&self) {
+        if self.cycle_count.get() > 0 {
+            log::debug!("Resetting cycle count for loop detector");
+            self.cycle_count.set(0);
+        }
+    }
+}
+
 /// SystemActivityGovernor runs the server for fuchsia.power.suspend and fuchsia.power.system FIDL
 /// APIs.
 pub struct SystemActivityGovernor {
@@ -595,8 +701,9 @@ pub struct SystemActivityGovernor {
     suspend_blocker_id_generator: Rc<SuspendBlockerIdGenerator>,
     _suspend_blockers_node: LazyNode,
     before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
-    crash_reporter: ffeedback::CrashReporterProxy,
     stuck_warning_timeout: fasync::MonotonicDuration,
+    report_sender: futures::channel::mpsc::UnboundedSender<ffeedback::CrashReport>,
+    loop_detector: Option<std::rc::Rc<NoSuspendDetector>>,
 }
 
 impl SystemActivityGovernor {
@@ -610,7 +717,22 @@ impl SystemActivityGovernor {
         crash_reporter: ffeedback::CrashReporterProxy,
         stuck_warning_timeout: fasync::MonotonicDuration,
         boost_proxy: fcpumanager::BoostProxy,
+        use_suspender: bool,
     ) -> Result<Rc<Self>> {
+        let (report_sender, mut report_receiver) =
+            futures::channel::mpsc::unbounded::<ffeedback::CrashReport>();
+        let crash_reporter_clone = crash_reporter.clone();
+        fasync::Task::local(async move {
+            while let Some(report) = report_receiver.next().await {
+                match crash_reporter_clone.file_report(report).await {
+                    Ok(Ok(result)) => log::info!("Crash report filed: {:?}", result),
+                    Ok(Err(e)) => log::warn!("Failed to file crash report: {:?}", e),
+                    Err(e) => log::warn!("Failed to call FileReport: {:?}", e),
+                }
+            }
+        })
+        .detach();
+
         let mut element_power_level_names: Vec<fbroker::ElementPowerLevelNames> = Vec::new();
 
         element_power_level_names.push(generate_element_power_level_names(
@@ -678,6 +800,7 @@ impl SystemActivityGovernor {
             application_activity.assertive_dependency_token().expect("token not registered"),
             cpu_manager.suspend_block_manager().await,
             before_suspend_notifier.clone(),
+            report_sender.clone(),
         );
 
         element_power_level_names.push(generate_element_power_level_names(
@@ -759,6 +882,9 @@ impl SystemActivityGovernor {
         let suspend_blockers_node =
             inspect_root.create_lazy_child_with_thread_local("suspend_blockers", callback);
 
+        let loop_detector =
+            if use_suspender { Some(std::rc::Rc::new(NoSuspendDetector::new())) } else { None };
+
         Ok(Rc::new(Self {
             execution_state,
             application_activity,
@@ -782,8 +908,9 @@ impl SystemActivityGovernor {
             suspend_blocker_id_generator: Rc::new(SuspendBlockerIdGenerator::default()),
             _suspend_blockers_node: suspend_blockers_node,
             before_suspend_notifier,
-            crash_reporter,
             stuck_warning_timeout,
+            report_sender,
+            loop_detector,
         }))
     }
 
@@ -992,7 +1119,11 @@ impl SystemActivityGovernor {
         responder: fsystem::ActivityGovernorTakeApplicationActivityLeaseResponder,
         name: String,
     ) {
-        let client_token = match self.lease_manager.create_application_activity_lease(name).await {
+        let client_token = match self
+            .lease_manager
+            .create_application_activity_lease(name, self.loop_detector.clone())
+            .await
+        {
             Ok(client_token) => client_token,
             Err(error) => {
                 log::warn!(
@@ -1270,6 +1401,7 @@ impl SystemActivityGovernor {
                 .create_application_activity_lease_using_token(
                     lease.name.clone(),
                     lease.server_token,
+                    self.loop_detector.clone(),
                 )
                 .await;
             if let Err(ref error) = res {
@@ -1380,7 +1512,7 @@ impl SystemActivityGovernor {
         log::info!("Running {method_name} for {} SuspendBlockers", suspend_blockers.len());
 
         let timeout = self.stuck_warning_timeout;
-        let crash_reporter_clone = self.crash_reporter.clone();
+        let report_sender = self.report_sender.clone();
         // Queue a task to warn if the entire suspend or resume operation gets stuck and file crash
         // report.
         let _outer_warn_task = fasync::Task::local(async move {
@@ -1397,10 +1529,8 @@ impl SystemActivityGovernor {
             };
 
             log::info!("Sending crash report request for stuck {phase} phase");
-            match crash_reporter_clone.file_report(report).await {
-                Ok(Ok(result)) => log::info!("Crash report filed: {:?}", result),
-                Ok(Err(e)) => log::warn!("Failed to file crash report: {:?}", e),
-                Err(e) => log::warn!("Failed to call FileReport: {:?}", e),
+            if let Err(e) = report_sender.unbounded_send(report) {
+                log::warn!("Failed to send crash report request: {:?}", e);
             }
 
             for count in 1.. {
@@ -1462,8 +1592,13 @@ impl SuspendResumeListener for SystemActivityGovernor {
         &self.suspend_stats
     }
 
-    async fn on_suspend_ended(&self) {
-        log::debug!("on_suspend_ended");
+    async fn on_suspend_ended(&self, result: SuspendResult) {
+        log::debug!("on_suspend_ended: result={:?}", result);
+        if result == SuspendResult::Success {
+            if let Some(detector) = &self.loop_detector {
+                detector.on_suspend_success();
+            }
+        }
         // Reset Execution State activation signal at each resume transition.
         let _ = self.es_activation_after_resume_signal.borrow_mut().take();
 

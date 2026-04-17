@@ -23,7 +23,7 @@ use std::cell::{Cell, OnceCell};
 use std::rc::Rc;
 
 /// The result of a suspend request.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SuspendResult {
     /// Suspend request succeeded.
     Success,
@@ -45,7 +45,7 @@ pub trait SuspendResumeListener {
     /// Gets the manager of suspend stats.
     fn suspend_stats(&self) -> &dyn SuspendStatsUpdater;
     /// Leases (Execution State, Suspending). Called after system suspension ends.
-    async fn on_suspend_ended(&self);
+    async fn on_suspend_ended(&self, result: SuspendResult);
     /// Notify the listeners that system suspension is about to begin
     async fn notify_on_suspend(&self);
     /// Notify the listeners of a suspend success.
@@ -408,6 +408,7 @@ impl CpuManager {
                             log::warn!("No suspender available, suspend was a no-op");
                             stats.fail_count = stats.fail_count.map(|c| c + 1);
                             stats.last_failed_error = Some(zx::sys::ZX_ERR_NOT_SUPPORTED);
+                            suspend_failed = true;
                         }
                     }
                     true
@@ -417,8 +418,9 @@ impl CpuManager {
         // At this point, the suspend request is no longer in flight and has been handled. With
         // `inner` going out of scope, other tasks can modify flags and update the power level of
         // CPU power element.
-        listener.on_suspend_ended().await;
-        if suspend_failed { SuspendResult::Fail } else { SuspendResult::Success }
+        let result = if suspend_failed { SuspendResult::Fail } else { SuspendResult::Success };
+        listener.on_suspend_ended(result).await;
+        result
     }
 
     pub fn run(
