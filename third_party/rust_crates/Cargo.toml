@@ -175,7 +175,7 @@ overload = "0.1.1"
 p256 = { version = "0.11.1", features = ["pem", "serde"] }
 paste = "1.0.15"
 pathdiff = { version = "0.2.3", features = ["camino"] }
-pem = "0.8.3"
+pem = "3.0.6"
 percent-encoding = "2.3"
 pest = "2.8.6"
 pest_derive = "2.8.6"

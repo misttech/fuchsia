@@ -727,8 +727,7 @@ mod test {
         // Write a test key for the OTA manifest.
         let rng = ring::rand::SystemRandom::new();
         let pkcs8_bytes = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-        let pem =
-            pem::Pem { tag: "PRIVATE KEY".to_string(), contents: pkcs8_bytes.as_ref().to_vec() };
+        let pem = pem::Pem::new("PRIVATE KEY", pkcs8_bytes.as_ref().to_vec());
         let ota_key_path = tempdir.join("ota_key.pem");
         let mut ota_key_file = std::fs::File::create(&ota_key_path).unwrap();
         ota_key_file.write_all(pem::encode(&pem).as_bytes()).unwrap();

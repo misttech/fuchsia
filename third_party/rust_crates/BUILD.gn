@@ -1366,11 +1366,11 @@ group("pathdiff-0.2.3") {
 }
 
 group("pem") {
-  public_deps = [ ":pem-v0_8_3" ]
+  public_deps = [ ":pem-v3_0_6" ]
 }
 
-group("pem-0.8.3") {
-  public_deps = [ ":pem-v0_8_3" ]
+group("pem-3.0.6") {
+  public_deps = [ ":pem-v3_0_6" ]
 }
 
 group("percent-encoding") {
@@ -4012,40 +4012,6 @@ rustc_library("base16ct-v0_2_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":base16ct-v0_2_0.license" ]
-}
-
-license("base64-v0_13_0.license") {
-  public_package_name = "base64"
-  license_files = [
-    "//third_party/rust_crates/vendor/base64-0.13.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/base64-0.13.0/LICENSE-MIT",
-  ]
-}
-
-rustc_library("base64-v0_13_0") {
-  crate_name = "base64"
-  source_root = "//third_party/rust_crates/vendor/base64-0.13.0/src/lib.rs"
-  output_name = "base64-5335de7b20fd4c04"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=5335de7b20fd4c04",
-    "-Cextra-filename=-5335de7b20fd4c04",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"std\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":base64-v0_13_0.license" ]
 }
 
 license("base64-v0_21_7.license") {
@@ -13736,36 +13702,37 @@ rustc_library("pathdiff-v0_2_3") {
   applicable_licenses = [ ":pathdiff-v0_2_3.license" ]
 }
 
-license("pem-v0_8_3.license") {
+license("pem-v3_0_6.license") {
   public_package_name = "pem"
-  license_files = [ "//third_party/rust_crates/vendor/pem-0.8.3/LICENSE.md" ]
+  license_files = [ "//third_party/rust_crates/vendor/pem-3.0.6/LICENSE.md" ]
 }
 
-rustc_library("pem-v0_8_3") {
+rustc_library("pem-v3_0_6") {
   crate_name = "pem"
-  source_root = "//third_party/rust_crates/vendor/pem-0.8.3/src/lib.rs"
-  output_name = "pem-cdefa2bfba638b2c"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/pem-3.0.6/src/lib.rs"
+  output_name = "pem-fa0a1aef88c8a192"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":base64-v0_13_0" ]
-  deps += [ ":once_cell-v1_21_3" ]
-  deps += [ ":regex-v1_7_3" ]
+  deps += [ ":base64-v0_22_1" ]
+  deps += [ ":serde_core-v1_0_228" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=cdefa2bfba638b2c",
-    "-Cextra-filename=-cdefa2bfba638b2c",
+    "-Cmetadata=fa0a1aef88c8a192",
+    "-Cextra-filename=-fa0a1aef88c8a192",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pem-v0_8_3.license" ]
+  applicable_licenses = [ ":pem-v3_0_6.license" ]
 }
 
 license("pem-rfc7468-v0_6_0.license") {

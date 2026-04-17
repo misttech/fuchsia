@@ -1873,14 +1873,14 @@ alias(
 )
 
 alias(
-    name = "pem-0.8.3",
-    actual = "//third_party/rust_crates/vendor/pem-0.8.3:pem",
+    name = "pem-3.0.6",
+    actual = "//third_party/rust_crates/vendor/pem-3.0.6:pem",
     tags = ["manual"],
 )
 
 alias(
     name = "pem",
-    actual = "//third_party/rust_crates/vendor/pem-0.8.3:pem",
+    actual = "//third_party/rust_crates/vendor/pem-3.0.6:pem",
     tags = ["manual"],
 )
 

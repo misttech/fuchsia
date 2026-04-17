@@ -191,7 +191,7 @@ pub fn write_ota_manifest(
     let key_bytes = std::fs::read(&private_key_path)
         .with_context(|| format!("reading private key {}", private_key_path.as_ref().display()))?;
     let pem = pem::parse(key_bytes).context("parsing pem")?;
-    let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pem.contents)
+    let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pem.contents())
         .map_err(|e| anyhow::anyhow!("parsing pkcs8: {e}"))?;
     let signed_manifest_bytes = update_package::signed_manifest::generate(manifest, &key_pair)?;
     std::fs::write(&out_path, &signed_manifest_bytes).context("writing signed ota manifest")?;
@@ -216,8 +216,7 @@ mod tests {
     fn create_private_key() -> (NamedTempFile, ring::signature::UnparsedPublicKey<Vec<u8>>) {
         let rng = ring::rand::SystemRandom::new();
         let pkcs8_bytes = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-        let pem =
-            pem::Pem { tag: "PRIVATE KEY".to_string(), contents: pkcs8_bytes.as_ref().to_vec() };
+        let pem = pem::Pem::new("PRIVATE KEY", pkcs8_bytes.as_ref().to_vec());
         let mut private_key_file = NamedTempFile::new().unwrap();
         write!(private_key_file, "{}", pem::encode(&pem)).unwrap();
         let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();

@@ -421,7 +421,7 @@ _NORMAL_DEPENDENCIES = {
             "overload": Label("//third_party/rust_crates/vendor/overload-0.1.1:overload"),
             "p256": Label("//third_party/rust_crates/vendor/p256-0.11.1:p256"),
             "pathdiff": Label("//third_party/rust_crates/vendor/pathdiff-0.2.3:pathdiff"),
-            "pem": Label("//third_party/rust_crates/vendor/pem-0.8.3:pem"),
+            "pem": Label("//third_party/rust_crates/vendor/pem-3.0.6:pem"),
             "percent-encoding": Label("//third_party/rust_crates/vendor/percent-encoding-2.3.1:percent_encoding"),
             "pest": Label("//third_party/rust_crates/vendor/pest-2.8.6:pest"),
             "phf": Label("//third_party/rust_crates/vendor/phf-0.13.1:phf"),

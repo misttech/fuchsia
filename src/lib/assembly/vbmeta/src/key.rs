@@ -71,8 +71,8 @@ impl Key {
         // DER format. Since the formats are interchangeable, we flexibly
         // accept either and leave it to the assembly user to choose the
         // appropriate one for their AVB context.
-        let rsa_result = ring::signature::RsaKeyPair::from_pkcs8(&pem.contents)
-            .or_else(|_| ring::signature::RsaKeyPair::from_der(&pem.contents));
+        let rsa_result = ring::signature::RsaKeyPair::from_pkcs8(&pem.contents())
+            .or_else(|_| ring::signature::RsaKeyPair::from_der(&pem.contents()));
         if rsa_result.is_err() {
             return Err(KeyError::ParseDer);
         }
