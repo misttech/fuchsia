@@ -152,6 +152,17 @@ bazel_test_package_group("bazel_tests") {
     },
     {
       test_package_target =
+          "//src/devices/spi/drivers/dw-spi:dw-spi-test-package"
+      test_package_name = "dw-spi-test"
+      test_component_names = [ "dw-spi-test-bin" ]
+      test_specs = {
+        log_settings = {
+          max_severity = "ERROR"
+        }
+      }
+    },
+    {
+      test_package_target =
           "//src/devices/usb/drivers/aml-usb-phy:aml-usb-phy-test-package"
       test_package_name = "aml-usb-phy-test"
       test_component_names = [ "aml-usb-phy-test-bin" ]

@@ -1,0 +1,103 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load(
+    "@rules_fuchsia//fuchsia:defs.bzl",
+    "fuchsia_cc_driver",
+    "fuchsia_cc_test",
+    "fuchsia_component_manifest",
+    "fuchsia_driver_bind_bytecode",
+    "fuchsia_driver_component",
+    "fuchsia_package",
+    "fuchsia_unittest_package",
+)
+
+fuchsia_driver_bind_bytecode(
+    name = "dw-spi-bind",
+    output = "dw-spi-bind.bindbc",
+    rules = "meta/dw-spi.bind",
+    deps = [
+        "@fuchsia_sdk//bind/fuchsia.devicetree",
+        "@fuchsia_sdk//bind/fuchsia.platform",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_bindlib",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib",
+    ],
+)
+
+cc_library(
+    name = "common",
+    srcs = [
+        "dw-spi.cc",
+    ],
+    hdrs = [
+        "dw-spi.h",
+        "registers.h",
+    ],
+    features = ["enable_zircon_asserts"],
+    deps = [
+        "@fuchsia_sdk//fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_cpp",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.spiimpl:fuchsia.hardware.spiimpl_cpp",
+        "@fuchsia_sdk//pkg/driver_component_cpp",
+        "@fuchsia_sdk//pkg/driver_logging_cpp",
+        "@fuchsia_sdk//pkg/driver_mmio_cpp",
+        "@fuchsia_sdk//pkg/driver_platform_device_cpp",
+        "@fuchsia_sdk//pkg/driver_runtime",
+        "@fuchsia_sdk//pkg/hwreg",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)
+
+fuchsia_cc_driver(
+    name = "dw-spi-driver",
+    output_name = "dw-spi",
+    deps = [
+        ":common",
+    ],
+)
+
+fuchsia_component_manifest(
+    name = "manifest",
+    src = "meta/dw-spi.cml",
+)
+
+fuchsia_driver_component(
+    name = "component",
+    bind_bytecode = ":dw-spi-bind",
+    driver_lib = ":dw-spi-driver",
+    manifest = ":manifest",
+)
+
+fuchsia_package(
+    name = "dw-spi",
+    package_name = "dw-spi",
+    components = [":component"],
+    fuchsia_api_level = "HEAD",
+    package_repository_name = "fuchsia.com",
+    visibility = ["//visibility:public"],
+)
+
+fuchsia_cc_test(
+    name = "dw-spi-test-bin",
+    srcs = [
+        "tests/dw-spi-test.cc",
+    ],
+    deps = [
+        ":common",
+        "@com_google_googletest//:gtest_main",
+        "@fuchsia_sdk//pkg/driver_testing_cpp",
+        "@fuchsia_sdk//pkg/zx",
+    ],
+)
+
+fuchsia_unittest_package(
+    name = "dw-spi-test-package",
+    package_name = "dw-spi-test",
+    fuchsia_api_level = "HEAD",
+    unit_tests = [":dw-spi-test-bin"],
+    visibility = ["//visibility:public"],
+)

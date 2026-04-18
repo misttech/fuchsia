@@ -1,0 +1,26 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+composite dw_spi;
+
+using fuchsia.devicetree;
+using fuchsia.hardware.clock;
+using fuchsia.hardware.reset;
+using fuchsia.hardware.powerdomain;
+
+primary parent "pdev" {
+  fuchsia.devicetree.FIRST_COMPATIBLE == "google,spi";
+}
+
+parent "clock" {
+  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+}
+
+parent "reset" {
+  fuchsia.hardware.reset.Service == fuchsia.hardware.reset.Service.ZirconTransport;
+}
+
+parent "power-domain" {
+  fuchsia.hardware.powerdomain.Service == fuchsia.hardware.powerdomain.Service.ZirconTransport;
+}
