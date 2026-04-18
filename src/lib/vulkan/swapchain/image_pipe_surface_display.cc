@@ -311,23 +311,9 @@ bool ImagePipeSurfaceDisplay::CreateImage(VkDevice device, VkLayerDispatchTable*
     return false;
   }
 
-#if defined(__x86_64__)
-  // Must be consistent with intel-gpu-core.h
-  static constexpr uint32_t kImageTilingTypeXTiled = 1;
-  static constexpr uint32_t kImageTilingType = kImageTilingTypeXTiled;
-#elif defined(__aarch64__)
-  static constexpr uint32_t kImageTilingType =
-      fuchsia_hardware_display_types::kImageTilingTypeLinear;
-#else
-  static constexpr uint32_t kImageTilingType =
-      fuchsia_hardware_display_types::kImageTilingTypeLinear;
-  // Unsupported display.
-  return false;
-#endif
-
-  const fuchsia_hardware_display_types::ImageBufferUsage image_buffer_usage{
-      kImageTilingType,
-  };
+  const fuchsia_hardware_display_types::ImageBufferUsage image_buffer_usage{{
+      .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear,
+  }};
   const fuchsia_hardware_display_types::ImageMetadata image_metadata({
       .dimensions = fuchsia_math::SizeU({.width = extent.width, .height = extent.height}),
       .tiling_type = image_buffer_usage.tiling_type(),
