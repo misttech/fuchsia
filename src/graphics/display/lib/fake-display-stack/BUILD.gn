@@ -41,9 +41,6 @@ source_set("fake-lib") {
     "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
   ]
-  deps = [
-    "//src/graphics/display/drivers/coordinator:preferred-scanout-image-type",
-  ]
 }
 
 static_library("fake-display-stack") {

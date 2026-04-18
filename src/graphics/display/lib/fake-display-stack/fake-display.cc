@@ -38,7 +38,6 @@
 #include <utility>
 #include <vector>
 
-#include "src/graphics/display/drivers/coordinator/preferred-scanout-image-type.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/color.h"
@@ -310,8 +309,7 @@ display::EngineInfo FakeDisplay::CompleteCoordinatorConnection() {
 namespace {
 
 bool IsAcceptableImageTilingType(display::ImageTilingType image_tiling_type) {
-  return image_tiling_type == display::ImageTilingType::kLinear ||
-         image_tiling_type.ToFidl() == IMAGE_TILING_TYPE_PREFERRED_SCANOUT;
+  return image_tiling_type == display::ImageTilingType::kLinear;
 }
 
 }  // namespace

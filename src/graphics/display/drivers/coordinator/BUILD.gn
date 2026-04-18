@@ -125,10 +125,6 @@ source_set("shared") {
   assert_no_deps = [ "//src/ui/scenic/lib/display/*" ]
 }
 
-source_set("preferred-scanout-image-type") {
-  sources = [ "preferred-scanout-image-type.h" ]
-}
-
 test("display-coordinator-unittests") {
   sources = [
     "added-display-info-test.cc",
