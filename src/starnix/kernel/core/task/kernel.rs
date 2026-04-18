@@ -701,6 +701,10 @@ impl Kernel {
         self.shutting_down.load(Ordering::Acquire)
     }
 
+    pub fn allow_unprivileged_bpf(&self) -> bool {
+        self.disable_unprivileged_bpf.load(Ordering::Relaxed) == 0
+    }
+
     /// Opens a device file (driver) identified by `dev`.
     pub fn open_device<L>(
         &self,

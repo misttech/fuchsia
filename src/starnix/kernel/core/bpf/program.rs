@@ -22,7 +22,6 @@ use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{bpf_attr__bindgen_ty_4, errno, error};
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use zx::HandleBased;
 
@@ -166,7 +165,7 @@ impl Program {
 
     fn check_load_access(current_task: &CurrentTask, info: &ProgramInfo) -> Result<(), Errno> {
         if matches!(info.program_type, ProgramType::CgroupSkb | ProgramType::SocketFilter)
-            && current_task.kernel().disable_unprivileged_bpf.load(Ordering::Relaxed) == 0
+            && current_task.kernel().allow_unprivileged_bpf()
         {
             return Ok(());
         }

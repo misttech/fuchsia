@@ -19,6 +19,7 @@
 #include <atomic>
 #include <climits>
 #include <fstream>
+#include <tuple>
 #include <vector>
 
 #include <fbl/unique_fd.h>
@@ -26,7 +27,12 @@
 #include <linux/capability.h>
 
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
+
+#ifndef CAP_BPF
+#define CAP_BPF 39
+#endif
 
 #define BPF_LOAD_MAP(reg, value)                               \
   bpf_insn{                                                    \
@@ -156,6 +162,15 @@ class BpfTestBase : public testing::Test {
 
   fbl::unique_fd CreateMap(uint32_t type, uint32_t key_size, uint32_t value_size,
                            uint32_t max_entries, uint32_t flags = 0) {
+    auto fd = TryCreateMap(type, key_size, value_size, max_entries, flags);
+    if (!fd.is_valid()) {
+      ADD_FAILURE() << " failed to create eBPF map: " << strerror(errno) << "(" << errno << ")";
+    }
+    return fd;
+  }
+
+  fbl::unique_fd TryCreateMap(uint32_t type, uint32_t key_size, uint32_t value_size,
+                              uint32_t max_entries, uint32_t flags = 0) {
     union bpf_attr attr;
     memset(&attr, 0, sizeof(attr));
     attr.map_type = type;
@@ -164,7 +179,7 @@ class BpfTestBase : public testing::Test {
     attr.max_entries = max_entries;
     attr.map_flags = flags;
 
-    return fbl::unique_fd(SAFE_SYSCALL(bpf(BPF_MAP_CREATE, &attr)));
+    return fbl::unique_fd(bpf(BPF_MAP_CREATE, &attr));
   }
 
   int BpfGetMapId(const int fd) {
@@ -938,14 +953,8 @@ TEST_F(BpfMapTest, NotificationsRingBufTest) {
 
 TEST_F(BpfMapTest, LpmTrieNoFlag) {
   // LPM trie creation without `BPF_F_NO_PREALLOC` should fail.
-  union bpf_attr attr;
-  memset(&attr, 0, sizeof(attr));
-  attr.map_type = BPF_MAP_TYPE_LPM_TRIE;
-  attr.key_size = 20;
-  attr.value_size = 4;
-  attr.max_entries = 10;
-  attr.map_flags = 0;
-  EXPECT_EQ(bpf(BPF_MAP_CREATE, &attr), -1);
+  auto fd = TryCreateMap(BPF_MAP_TYPE_LPM_TRIE, 20, 4, 10, 0);
+  EXPECT_FALSE(fd.is_valid());
   EXPECT_EQ(errno, EINVAL);
 }
 
@@ -1037,6 +1046,112 @@ TEST_F(BpfMapTest, LpmTrie) {
     EXPECT_EQ(value, test.value);
   }
 }
+
+class BpfMapCapabilityTest
+    : public BpfTestBase,
+      public ::testing::WithParamInterface<std::tuple<uint32_t, bool, bool, bool>> {
+ protected:
+  void SetUp() override {
+    if (!test_helper::HasSysAdmin()) {
+      GTEST_SKIP() << "bpf() system call requires CAP_SYS_ADMIN";
+    }
+  }
+
+  bool GetUnprivilegedBpfDisabled() {
+    fbl::unique_fd fd(open("/proc/sys/kernel/unprivileged_bpf_disabled", O_RDONLY));
+    if (!fd.is_valid()) {
+      abort();
+    }
+
+    char buf[16];
+    ssize_t n = read(fd.get(), buf, sizeof(buf) - 1);
+    buf[n] = '\0';
+    int val;
+    auto r = sscanf(buf, "%d", &val);
+    if (r != 1) {
+      abort();
+    }
+    return (val != 0);
+  }
+};
+
+TEST_P(BpfMapCapabilityTest, MapCreation) {
+  auto [map_type, has_bpf, has_net_admin, has_sys_admin] = GetParam();
+
+  bool is_starnix = test_helper::IsStarnix();
+  if (!is_starnix) {
+    if (map_type == BPF_MAP_TYPE_SK_STORAGE) {
+      GTEST_SKIP() << "Linux requires BTF for SK_STORAGE maps";
+    }
+  }
+
+  bool unprivileged_bpf_disabled = GetUnprivilegedBpfDisabled();
+
+  // Determine expected success.
+  bool cap_bpf_always = (map_type == BPF_MAP_TYPE_LPM_TRIE || map_type == BPF_MAP_TYPE_LRU_HASH ||
+                         map_type == BPF_MAP_TYPE_SK_STORAGE);
+  bool requires_bpf = cap_bpf_always || unprivileged_bpf_disabled;
+  bool has_bpf_req = !requires_bpf || has_bpf || has_sys_admin;
+
+  bool requires_net_admin =
+      (map_type == BPF_MAP_TYPE_DEVMAP || map_type == BPF_MAP_TYPE_DEVMAP_HASH);
+  bool has_net_admin_req = !requires_net_admin || has_net_admin || has_sys_admin;
+
+  bool expect_success = has_bpf_req && has_net_admin_req;
+
+  // Some maps need specific flags or sizes.
+  uint32_t key_size = 4;
+  uint32_t value_size = 8;
+  uint32_t max_entries = 32;
+  uint32_t map_flags = 0;
+
+  if (map_type == BPF_MAP_TYPE_LPM_TRIE) {
+    key_size = 8;  // Needs to be at least 8 for LPM_TRIE (prefixlen + key)
+    map_flags = BPF_F_NO_PREALLOC;
+  } else if (map_type == BPF_MAP_TYPE_RINGBUF) {
+    key_size = 0;
+    value_size = 0;
+    max_entries = 4096;
+  } else if (map_type == BPF_MAP_TYPE_SK_STORAGE) {
+    key_size = 4;
+    max_entries = 0;
+    map_flags = BPF_F_NO_PREALLOC;
+  }
+
+  // On some versions of Linux SK_STORAGE maps may need CAP_NET_ADMIN even with
+  // CAP_SYS_ADMIN.
+  bool may_fail = !test_helper::IsStarnix() && !has_net_admin && has_sys_admin &&
+                  map_type == BPF_MAP_TYPE_DEVMAP_HASH;
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    if (!has_bpf) {
+      test_helper::UnsetCapabilityEffective(CAP_BPF);
+    }
+    if (!has_net_admin) {
+      test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+    }
+    if (!has_sys_admin) {
+      test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+    }
+
+    auto fd = TryCreateMap(map_type, key_size, value_size, max_entries, map_flags);
+    if (may_fail) {
+      EXPECT_THAT(fd.get(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
+    } else if (expect_success) {
+      EXPECT_THAT(fd.get(), SyscallSucceeds());
+    } else {
+      EXPECT_THAT(fd.get(), SyscallFailsWithErrno(EPERM));
+    }
+  });
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BpfMapCapabilityTests, BpfMapCapabilityTest,
+    ::testing::Combine(::testing::Values(BPF_MAP_TYPE_HASH, BPF_MAP_TYPE_RINGBUF,
+                                         BPF_MAP_TYPE_SK_STORAGE, BPF_MAP_TYPE_LPM_TRIE,
+                                         BPF_MAP_TYPE_LRU_HASH, BPF_MAP_TYPE_DEVMAP_HASH),
+                       ::testing::Bool(), ::testing::Bool(), ::testing::Bool()));
 
 class BpfCgroupTest : public BpfTestBase {
  protected:

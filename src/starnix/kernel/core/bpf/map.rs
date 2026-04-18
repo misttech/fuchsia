@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://github.com/rust-lang/rust/issues/39371): remove
+#![allow(non_upper_case_globals)]
+
 use crate::mm::memory::MemoryObject;
 use crate::security;
 use crate::task::{CurrentTask, CurrentTaskAndLocked, Kernel, register_delayed_release};
@@ -12,8 +15,21 @@ use starnix_sync::{
     EbpfMapStateLevel, EbpfStateLock, LockBefore, Locked, MutexGuard, OrderedMutex,
 };
 use starnix_types::ownership::{Releasable, ReleaseGuard};
+use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, error};
+use starnix_uapi::{
+    bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS, bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER,
+    bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE, bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_CPUMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP,
+    bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH, bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS,
+    bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE, bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
+    bpf_map_type_BPF_MAP_TYPE_LRU_HASH, bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH,
+    bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE, bpf_map_type_BPF_MAP_TYPE_QUEUE,
+    bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, bpf_map_type_BPF_MAP_TYPE_SOCKHASH,
+    bpf_map_type_BPF_MAP_TYPE_SOCKMAP, bpf_map_type_BPF_MAP_TYPE_STACK,
+    bpf_map_type_BPF_MAP_TYPE_STACK_TRACE, bpf_map_type_BPF_MAP_TYPE_STRUCT_OPS,
+    bpf_map_type_BPF_MAP_TYPE_TASK_STORAGE, bpf_map_type_BPF_MAP_TYPE_XSKMAP, errno, error,
+};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Weak};
@@ -36,6 +52,52 @@ pub(crate) fn map_error_to_errno(e: MapError) -> Errno {
         MapError::MapTypeNotSupported | MapError::NotSupported => errno!(ENOSYS),
         MapError::InvalidVmo | MapError::Internal => errno!(EIO),
     }
+}
+
+fn check_map_create_access(current_task: &CurrentTask, schema: &MapSchema) -> Result<(), Errno> {
+    if security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN) {
+        return Ok(());
+    }
+    let cap_bpf_always_required = matches!(
+        schema.map_type,
+        bpf_map_type_BPF_MAP_TYPE_LPM_TRIE
+            | bpf_map_type_BPF_MAP_TYPE_LRU_HASH
+            | bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH
+            | bpf_map_type_BPF_MAP_TYPE_QUEUE
+            | bpf_map_type_BPF_MAP_TYPE_STACK
+            | bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS
+            | bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS
+            | bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER
+            | bpf_map_type_BPF_MAP_TYPE_SK_STORAGE
+            | bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE
+            | bpf_map_type_BPF_MAP_TYPE_TASK_STORAGE
+            | bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE
+            | bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE
+            | bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE
+    );
+
+    if cap_bpf_always_required || !current_task.kernel().allow_unprivileged_bpf() {
+        security::check_task_capable(current_task, CAP_BPF)?;
+    }
+
+    match schema.map_type {
+        bpf_map_type_BPF_MAP_TYPE_DEVMAP
+        | bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH
+        | bpf_map_type_BPF_MAP_TYPE_CPUMAP
+        | bpf_map_type_BPF_MAP_TYPE_SOCKMAP
+        | bpf_map_type_BPF_MAP_TYPE_SOCKHASH
+        | bpf_map_type_BPF_MAP_TYPE_XSKMAP => {
+            security::check_task_capable(current_task, CAP_NET_ADMIN)?;
+        }
+        bpf_map_type_BPF_MAP_TYPE_STACK_TRACE => {
+            security::check_task_capable(current_task, CAP_PERFMON)?;
+        }
+        bpf_map_type_BPF_MAP_TYPE_STRUCT_OPS => {
+            return error!(EPERM);
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 #[derive(Debug, Default)]
@@ -78,6 +140,8 @@ impl BpfMap {
     where
         L: LockBefore<EbpfStateLock>,
     {
+        check_map_create_access(current_task, &schema)?;
+
         let map = Map::new(schema, name).map_err(map_error_to_errno)?;
         let map = BpfMapHandle::new(
             Self {
