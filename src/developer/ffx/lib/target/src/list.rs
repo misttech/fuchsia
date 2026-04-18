@@ -7,7 +7,7 @@ pub use crate::resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, get_discovery_stream,
     maybe_locally_resolve_target_spec, resolve_target_address,
 };
-use crate::{KnockError, TargetInfoQuery};
+use crate::{KnockCriticalError, KnockError, KnockNonCriticalError, TargetInfoQuery};
 use addr::TargetAddr;
 use anyhow::Result;
 use ffx_config::EnvironmentContext;
@@ -28,7 +28,7 @@ async fn try_get_target_info(
     // We want to make sure to provide an up-to-date list, so don't rely on the cache
     let resolution = resolve_target_address(&spec, false, context)
         .await
-        .map_err(|e| KnockError::CriticalError(e.into()))?;
+        .map_err(|e| KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e))))?;
     let (rcs_state, pc, bc, bi, sn) = match resolution.identify(context).await {
         Ok(id_result) => (
             info::RemoteControlState::Up,
@@ -60,14 +60,16 @@ async fn get_target_info(
         log::debug!("Trying to make a connection to spec {spec:?}");
         match try_get_target_info(spec.into(), context)
             .on_timeout(ssh_timeout, || {
-                Err(KnockError::NonCriticalError(anyhow::anyhow!("knock_rcs() timed out")))
+                Err(KnockError::NonCritical(KnockNonCriticalError::Timeout {
+                    detail: "knock_rcs() timed out".to_string(),
+                }))
             })
             .await
         {
             Ok(res) => {
                 return Ok(res);
             }
-            Err(KnockError::NonCriticalError(e)) => {
+            Err(KnockError::NonCritical(e)) => {
                 log::debug!("Could not connect to {addr:?}: {e:?}");
                 continue;
             }

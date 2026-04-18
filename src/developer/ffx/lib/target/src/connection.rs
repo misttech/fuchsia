@@ -41,8 +41,8 @@ pub enum ConnectionError {
     ConnectionStartError(String, String),
     #[error("internal error: {0}")]
     InternalError(#[from] anyhow::Error),
-    #[error("knock error: {0:?}")]
-    KnockError(#[source] anyhow::Error),
+    #[error("knock error: {0}")]
+    KnockError(#[from] crate::KnockError),
     #[error("Overnet isn't supported for this target")]
     OvernetUnsupported,
 }
@@ -90,9 +90,10 @@ impl Connection {
         let overnet = self.overnet.as_ref().ok_or(ConnectionError::OvernetUnsupported)?;
         if rcs_info.is_none() {
             let (proxy, node_id) = overnet.connect_remote_control().await.map_err(|e| {
-                ConnectionError::KnockError(
-                    self.wrap_connection_errors(e).context("getting RCS proxy"),
-                )
+                crate::KnockError::NonCritical(crate::KnockNonCriticalError::Custom(format!(
+                    "getting RCS proxy: {:?}",
+                    self.wrap_connection_errors(e)
+                )))
             })?;
             *rcs_info = Some(RcsInfo { _rcs_proxy: proxy, node_id });
         }
@@ -108,9 +109,10 @@ impl Connection {
             )
             .await
             .map_err(|e| {
-                ConnectionError::KnockError(
-                    self.wrap_connection_errors(e).context("connecting to new RCS proxy"),
-                )
+                crate::KnockError::NonCritical(crate::KnockNonCriticalError::Custom(format!(
+                    "connecting to new RCS proxy: {:?}",
+                    self.wrap_connection_errors(e)
+                )))
             })?;
         emit_rcs_proxy_event("overnet", None, false).await;
         log::debug!("Overnet RCS Proxy established");

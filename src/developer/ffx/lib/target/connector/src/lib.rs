@@ -77,8 +77,10 @@ async fn knock_rcs(
         .await
         {
             Ok(()) => break,
-            Err(ffx_target::KnockError::CriticalError(e)) => return Err(e.into()),
-            Err(ffx_target::KnockError::NonCriticalError(_)) => {
+            Err(ffx_target::KnockError::Critical(e)) => {
+                return Err(ffx_command_error::Error::Unexpected(anyhow::Error::new(e)));
+            }
+            Err(ffx_target::KnockError::NonCritical(_)) => {
                 // Should we log the error? It'll spam like hell.
             }
         };

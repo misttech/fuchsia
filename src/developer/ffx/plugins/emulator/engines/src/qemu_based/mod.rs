@@ -716,14 +716,14 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     return Ok(0);
                 } else {
                     match compat_res.unwrap_err() {
-                        KnockError::NonCriticalError(e) => {
+                        KnockError::NonCritical(e) => {
                             connection_errors.push(e);
                             log::debug!(
                                 "Unable to connect to emulator: {:?}",
                                 connection_errors.last().unwrap()
                             );
                         }
-                        KnockError::CriticalError(e) => {
+                        KnockError::Critical(e) => {
                             eprintln!("Failed to connect to emulator: {e:?}");
                             return Ok(1);
                         }

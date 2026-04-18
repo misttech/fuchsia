@@ -755,42 +755,49 @@ impl Resolution {
             return Ok(conn.clone());
         }
 
-        let conn = match &self.target {
-            ResolutionTarget::Addr(socket_addr) => {
-                if !context.get(keys::NETWORK_ENABLED).unwrap_or(true) {
-                    bail!("Network connections are disabled");
+        let conn =
+            match &self.target {
+                ResolutionTarget::Addr(socket_addr) => {
+                    if !context.get(keys::NETWORK_ENABLED).unwrap_or(true) {
+                        bail!("Network connections are disabled");
+                    }
+                    let connector = SshConnector::new(
+                        netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
+                        context,
+                    )?;
+                    emit_target_connection_event("SSH").await;
+                    Connection::new(connector).await.map_err(|e| {
+                        crate::KnockError::Critical(crate::KnockCriticalError::TargetError(
+                            format!("{:?}", e),
+                        ))
+                    })?
                 }
-                let connector = SshConnector::new(
-                    netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
-                    context,
-                )?;
-                emit_target_connection_event("SSH").await;
-                Connection::new(connector)
-                    .await
-                    .map_err(|e| crate::KnockError::CriticalError(e.into()))?
-            }
-            ResolutionTarget::Usb(cid) => {
-                if !context.get(keys::USB_ENABLED).unwrap_or(false) {
-                    bail!("USB connections are disabled");
+                ResolutionTarget::Usb(cid) => {
+                    if !context.get(keys::USB_ENABLED).unwrap_or(false) {
+                        bail!("USB connections are disabled");
+                    }
+                    let connector = UsbConnector::new(*cid, context).await?;
+                    emit_target_connection_event("USB").await;
+                    Connection::new(connector).await.map_err(|e| {
+                        crate::KnockError::Critical(crate::KnockCriticalError::TargetError(
+                            format!("{:?}", e),
+                        ))
+                    })?
                 }
-                let connector = UsbConnector::new(*cid, context).await?;
-                emit_target_connection_event("USB").await;
-                Connection::new(connector)
-                    .await
-                    .map_err(|e| crate::KnockError::CriticalError(e.into()))?
-            }
-            ResolutionTarget::Vsock(cid) => {
-                if !context.get(keys::VSOCK_ENABLED).unwrap_or(false) {
-                    bail!("VSOCK connections are disabled");
+                ResolutionTarget::Vsock(cid) => {
+                    if !context.get(keys::VSOCK_ENABLED).unwrap_or(false) {
+                        bail!("VSOCK connections are disabled");
+                    }
+                    let connector = VSockConnector::new(*cid);
+                    emit_target_connection_event("VSOCK").await;
+                    Connection::new(connector).await.map_err(|e| {
+                        crate::KnockError::Critical(crate::KnockCriticalError::TargetError(
+                            format!("{:?}", e),
+                        ))
+                    })?
                 }
-                let connector = VSockConnector::new(*cid);
-                emit_target_connection_event("VSOCK").await;
-                Connection::new(connector)
-                    .await
-                    .map_err(|e| crate::KnockError::CriticalError(e.into()))?
-            }
-            ResolutionTarget::TestMock(f) => f()?,
-        };
+                ResolutionTarget::TestMock(f) => f()?,
+            };
 
         let conn = Arc::new(conn);
         *conn_guard = Some(conn.clone());

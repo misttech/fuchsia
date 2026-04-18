@@ -238,10 +238,36 @@ pub fn is_discovery_enabled(ctx: &EnvironmentContext) -> bool {
 
 #[derive(Debug, Error)]
 pub enum KnockError {
-    #[error("critical error encountered: {0:?}")]
-    CriticalError(anyhow::Error),
-    #[error("non-critical error encountered: {0:?}")]
-    NonCriticalError(#[from] anyhow::Error),
+    #[error("critical error: {0}")]
+    Critical(KnockCriticalError),
+    #[error("non-critical error: {0}")]
+    NonCritical(KnockNonCriticalError),
+}
+
+#[derive(Debug, Error)]
+pub enum KnockCriticalError {
+    #[error("Timeout opening target {target}")]
+    TimeoutOpeningTarget { target: String },
+    #[error("Lost connection to the Daemon: {detail}")]
+    LostDaemonConnection { detail: String },
+    #[error("FIDL error: {0}")]
+    Fidl(String),
+    #[error("Target error: {0}")]
+    TargetError(String),
+    #[error("Other critical error: {0}")]
+    Custom(String),
+}
+
+#[derive(Debug, Error)]
+pub enum KnockNonCriticalError {
+    #[error("Target not found: {target}")]
+    TargetNotFound { target: String },
+    #[error("RCS knock failed: {detail}")]
+    RcsKnockFailed { detail: String },
+    #[error("Timeout: {detail}")]
+    Timeout { detail: String },
+    #[error("Other non-critical error: {0}")]
+    Custom(String),
 }
 
 // Derive from rcs knock timeout as this is the minimum amount of time to knock.
@@ -255,8 +281,8 @@ pub const DEFAULT_RCS_KNOCK_TIMEOUT: Duration =
 impl From<ConnectionError> for KnockError {
     fn from(e: ConnectionError) -> Self {
         match e {
-            ConnectionError::KnockError(ke) => KnockError::NonCriticalError(ke.into()),
-            other => KnockError::CriticalError(other.into()),
+            ConnectionError::KnockError(ke) => ke,
+            other => KnockError::Critical(KnockCriticalError::Custom(format!("{:?}", other))),
         }
     }
 }
@@ -309,10 +335,10 @@ async fn wait_for_device_inner(
                         Ok(())
                     } else {
                         match e {
-                            KnockError::CriticalError(e) => {
+                            KnockError::Critical(e) => {
                                 Err(ffx_command_error::Error::Unexpected(e.into()))
                             }
-                            KnockError::NonCriticalError(e) => {
+                            KnockError::NonCritical(e) => {
                                 log::debug!("received non-critical error. retrying. error: {e}");
                                 Timer::new(Duration::from_millis(DOWN_REPOLL_DELAY_MS)).await;
                                 continue;
@@ -406,20 +432,41 @@ async fn knock_target_with_timeout(
     rcs_timeout: Duration,
 ) -> Result<(), KnockError> {
     if rcs_timeout <= rcs::RCS_KNOCK_TIMEOUT {
-        return Err(KnockError::CriticalError(anyhow::anyhow!(
+        return Err(KnockError::Critical(KnockCriticalError::Custom(format!(
             "rcs verification timeout must be greater than {:?}",
             rcs::RCS_KNOCK_TIMEOUT
-        )));
+        ))));
     }
     let (rcs_proxy, remote_server_end) = create_proxy::<RemoteControlMarker>();
-    timeout(rcs_timeout, target.open_remote_control(remote_server_end))
-        .await
-        .context("timing out")?
-        .context("opening remote_control")?
-        .map_err(|e| anyhow::anyhow!("open remote control err: {:?}", e))?;
-    rcs::knock_rcs(&rcs_proxy)
-        .await
-        .map_err(|e| KnockError::NonCriticalError(anyhow::anyhow!("{e:?}")))
+
+    let open_result = timeout(rcs_timeout, target.open_remote_control(remote_server_end)).await;
+    match open_result {
+        Err(_) => {
+            return Err(KnockError::NonCritical(KnockNonCriticalError::Timeout {
+                detail: "timing out opening remote control".to_string(),
+            }));
+        }
+        Ok(Err(e)) => {
+            return Err(KnockError::NonCritical(KnockNonCriticalError::Custom(format!(
+                "FIDL error opening remote control: {:?}",
+                e
+            ))));
+        }
+        Ok(Ok(Err(e))) => {
+            return Err(KnockError::NonCritical(KnockNonCriticalError::Custom(format!(
+                "open remote control err: {:?}",
+                e
+            ))));
+        }
+        Ok(Ok(Ok(()))) => {}
+    }
+
+    match rcs::knock_rcs(&rcs_proxy).await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(KnockError::NonCritical(KnockNonCriticalError::RcsKnockFailed {
+            detail: format!("{e:?}"),
+        })),
+    }
 }
 
 /// Same as `knock_target_with_timeout` but takes a `TargetCollection` and an
@@ -433,25 +480,31 @@ pub async fn knock_target_by_name(
 ) -> Result<(), KnockError> {
     let (target_proxy, target_remote) = create_proxy::<TargetMarker>();
 
-    timeout::timeout(
+    let open_result = timeout::timeout(
         open_timeout,
         target_collection_proxy.open_target(
             &TargetQuery { string_matcher: target_name.clone(), ..Default::default() },
             target_remote,
         ),
     )
-    .await
-    .map_err(|_e| {
-        KnockError::NonCriticalError(errors::ffx_error!("Timeout opening target.").into())
-    })?
-    .map_err(|e| {
-        KnockError::CriticalError(
-            errors::ffx_error!("Lost connection to the Daemon. Full context:\n{}", e).into(),
-        )
-    })?
-    .map_err(|e| {
-        KnockError::CriticalError(errors::ffx_error!("Error opening target: {:?}", e).into())
-    })?;
+    .await;
+
+    match open_result {
+        Err(_) => {
+            return Err(KnockError::NonCritical(KnockNonCriticalError::Timeout {
+                detail: "Timeout opening target.".to_string(),
+            }));
+        }
+        Ok(Err(e)) => {
+            return Err(KnockError::Critical(KnockCriticalError::LostDaemonConnection {
+                detail: format!("Full context:\n{}", e),
+            }));
+        }
+        Ok(Ok(Err(e))) => {
+            return Err(KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e))));
+        }
+        Ok(Ok(Ok(()))) => {}
+    }
 
     knock_target_with_timeout(&target_proxy, rcs_timeout).await
 }
@@ -479,31 +532,31 @@ pub async fn knock_target_daemonless(
                 FfxTargetError::OpenTargetError {
                     err: ffx::OpenTargetError::TargetNotFound,
                     ..
-                } => KnockError::NonCriticalError(e.into()),
-                _ => KnockError::CriticalError(e.into()),
+                } => KnockError::NonCritical(KnockNonCriticalError::TargetNotFound { target: format!("{:?}", target_spec) }),
+                _ => KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e))),
             })?;
         log::debug!("daemonless knock connecting to resolved target {:?}", res);
         let conn = match res.get_connection_if_already_established() {
             Some(c) => c,
             None => {
-                let conn = res
-                    .get_connection(context)
-                    .await
-                    .map_err(|e| KnockError::CriticalError(e.into()))?;
+                let conn = res.get_connection(context).await.map_err(|e| {
+                    KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e)))
+                })?;
                 log::debug!("daemonless knock connection established");
-                let _ = conn
-                    .rcs_proxy_fdomain()
-                    .await
-                    .map_err(|e| KnockError::NonCriticalError(e.into()))?;
+                let _ = conn.rcs_proxy_fdomain().await.map_err(|e| {
+                    KnockError::NonCritical(KnockNonCriticalError::Custom(format!("{:?}", e)))
+                })?;
                 conn
             }
         };
         Ok(conn.compatibility_info())
     };
     futures_lite::pin!(res_future);
-    timeout::timeout(knock_timeout, res_future)
-        .await
-        .map_err(|e| KnockError::NonCriticalError(e.into()))?
+    timeout::timeout(knock_timeout, res_future).await.map_err(|_| {
+        KnockError::NonCritical(KnockNonCriticalError::Timeout {
+            detail: "daemonless knock timeout".to_string(),
+        })
+    })?
 }
 
 /// Get the target specifier.
@@ -894,7 +947,9 @@ mod test {
     async fn wait_for_device_critical_error_causes_failure() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().times(1).returning(|_, _| {
-            Box::pin(async { Err(KnockError::CriticalError(bug!("Oh no!").into())) })
+            Box::pin(async {
+                Err(KnockError::Critical(KnockCriticalError::Custom(format!("{}", bug!("Oh no!")))))
+            })
         });
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
@@ -912,7 +967,9 @@ mod test {
     async fn wait_for_device_critical_error_does_not_cause_failure_waiting_for_down() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().times(1).returning(|_, _| {
-            Box::pin(async { Err(KnockError::CriticalError(bug!("Oh no!").into())) })
+            Box::pin(async {
+                Err(KnockError::Critical(KnockCriticalError::Custom(format!("{}", bug!("Oh no!")))))
+            })
         });
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
@@ -930,7 +987,12 @@ mod test {
     async fn non_critical_error_causes_eventual_timeout() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().returning(|_, _| {
-            Box::pin(async { Err(KnockError::NonCriticalError(bug!("Oh no!").into())) })
+            Box::pin(async {
+                Err(KnockError::NonCritical(KnockNonCriticalError::Custom(format!(
+                    "{}",
+                    bug!("Oh no!")
+                ))))
+            })
         });
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
@@ -948,7 +1010,12 @@ mod test {
     async fn non_critical_error_returns_ok_for_down_target() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().returning(|_, _| {
-            Box::pin(async { Err(KnockError::NonCriticalError(bug!("Oh no!").into())) })
+            Box::pin(async {
+                Err(KnockError::NonCritical(KnockNonCriticalError::Custom(format!(
+                    "{}",
+                    bug!("Oh no!")
+                ))))
+            })
         });
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
@@ -967,7 +1034,9 @@ mod test {
         let mut mock = MockRcsKnocker::new();
         let mut seq = mockall::Sequence::new();
         mock.expect_knock_rcs().times(1).in_sequence(&mut seq).returning(|_, _| {
-            Box::pin(ready(Err(KnockError::NonCriticalError(bug!("timeout").into()))))
+            Box::pin(ready(Err(KnockError::NonCritical(KnockNonCriticalError::Timeout {
+                detail: "timeout".to_string(),
+            }))))
         });
         mock.expect_knock_rcs()
             .times(1)
@@ -998,9 +1067,10 @@ mod test {
             .in_sequence(&mut seq)
             .returning(|_, _| Box::pin(ready(Ok(()))));
         mock.expect_knock_rcs().times(1).in_sequence(&mut seq).returning(|_, _| {
-            Box::pin(ready(Err(KnockError::NonCriticalError(
-                bug!("Oh no it's not connected").into(),
-            ))))
+            Box::pin(ready(Err(KnockError::NonCritical(KnockNonCriticalError::Custom(format!(
+                "{}",
+                bug!("Oh no it's not connected")
+            ))))))
         });
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
