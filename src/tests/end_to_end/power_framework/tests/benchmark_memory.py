@@ -37,24 +37,26 @@ class PowerMemoryBenchmarkTest(fuchsia_base_test.FuchsiaBaseTest):
         `metric_group` is the name of the metric group for the measured component.
         """
         _LOGGER.info("Running memory benchmark for %s...", metric_group)
-        cmd = [
-            "ffx",
-            "-t",
-            self.dut.device_name,
-            "test",
-            "run",
-            TEST_MONIKER,
-            "--realm",
-            "/core/testing/system-tests",
-            "--test-filter",
-            test_filter,
-            "--",
-            "--repeat",
-            str(repeat),
-            "--timeout-secs",
-            "60",
-            "--wait-for-memory-profiling",
-        ]
+        cmd = self.dut.ffx.generate_ffx_cmd(
+            cmd=[
+                "test",
+                "run",
+                TEST_MONIKER,
+                "--realm",
+                "/core/testing/system-tests",
+                "--test-filter",
+                test_filter,
+                "--",
+                "--repeat",
+                str(repeat),
+                "--timeout-secs",
+                "60",
+                "--wait-for-memory-profiling",
+            ],
+            include_target=True,
+            include_target_name=True,
+            machine="raw",
+        )
         _LOGGER.info("Running command: %s", " ".join(cmd))
 
         process = await asyncio.create_subprocess_exec(
