@@ -13,7 +13,10 @@ use assembly_images_config::{VBMeta, VBMetaStyle};
 use camino::{Utf8Path, Utf8PathBuf};
 use std::path::Path;
 use utf8_path::path_relative_from_current_dir;
-use vbmeta::{Descriptor, HashDescriptor, Key, PropertyDescriptor, Salt, VBMeta as VBMetaImage};
+use vbmeta::{
+    Descriptor, HashDescriptor, KernelCmdlineDescriptor, Key, PropertyDescriptor, Salt,
+    VBMeta as VBMetaImage,
+};
 
 /// The conventional name for the partition name of the hash descriptor in a
 /// VBMeta assembled for Fuchsia.
@@ -54,8 +57,8 @@ const PVM_PROP_VIRT_CAP_KEY: &str = "com.android.virt.cap";
 /// https://android.googlesource.com/platform/packages/modules/Virtualization/+/refs/heads/main/guest/pvmfw/#vbmeta-properties
 const PVM_PROP_VIRT_CAP_VALUE: &str = "trusty_security_vm";
 
-/// The property key used to store the base system merkle root in the VBMeta image.
-const BASE_MERKLE_PROPERTY_KEY: &str = "com.fuchsia.system.base_merkle";
+/// The property key for the base merkle in the VBMeta kernel command line.
+const BASE_MERKLE_CMDLINE_KEY: &str = "com.fuchsia.system.base_merkle";
 
 /// Represents a constructed VBMeta in one of the two supported forms.
 #[derive(Debug)]
@@ -185,9 +188,9 @@ fn descriptors_for_fuchsia<FSP: FilesystemProvider>(
     let mut descriptors = vec![descriptor];
 
     if let Some(bp) = base_package {
-        descriptors.push(Descriptor::Property(PropertyDescriptor::new(
-            BASE_MERKLE_PROPERTY_KEY.to_string(),
-            hex::encode(bp.merkle.as_bytes()),
+        descriptors.push(Descriptor::KernelCmdline(KernelCmdlineDescriptor::new(
+            0,
+            format!("{}={}", BASE_MERKLE_CMDLINE_KEY, &bp.merkle),
         )));
     }
 
@@ -261,14 +264,12 @@ fn sign<FSP: FilesystemProvider>(
 #[cfg(test)]
 mod tests {
     use super::{
-        BASE_MERKLE_PROPERTY_KEY, ConstructedVBMeta, Descriptor, FUCHSIA_HASH_DESCRIPTOR_NAME,
+        BASE_MERKLE_CMDLINE_KEY, ConstructedVBMeta, Descriptor, FUCHSIA_HASH_DESCRIPTOR_NAME,
         HashDescriptor, Key, PVM_HASH_DESCRIPTOR_NAME_KERNEL,
         PVM_HASH_DESCRIPTOR_NAME_RAMDISK_DEBUG, PVM_HASH_DESCRIPTOR_NAME_RAMDISK_NORMAL,
         PVM_PROP_VIRT_CAP_KEY, PVM_PROP_VIRT_CAP_VALUE, Salt, construct_vbmeta,
         descriptors_for_fuchsia, descriptors_for_pvm, sign,
     };
-
-    use fuchsia_hash::Hash;
 
     use crate::base_package::BasePackage;
     use crate::vfs::mock::MockFilesystemProvider;
@@ -276,6 +277,7 @@ mod tests {
     use assembly_config_schema::BuildType;
     use assembly_images_config::{VBMeta, VBMetaStyle};
     use camino::{Utf8Path, Utf8PathBuf};
+    use fuchsia_hash::Hash;
     use tempfile::tempdir;
     use utf8_path::path_relative_from_current_dir;
 
@@ -489,12 +491,12 @@ mod tests {
                 .unwrap();
         assert_eq!(Some(expected_digest.as_ref()), hash.digest());
 
-        let Descriptor::Property(prop) = &descriptors[1] else {
-            panic!("descriptor is not a property descriptor!?: {:#?}", descriptors[1]);
+        let Descriptor::KernelCmdline(cmdline) = &descriptors[1] else {
+            panic!("descriptor is not a kernel cmdline descriptor!?: {:#?}", descriptors[1]);
         };
 
-        assert_eq!(prop.key, BASE_MERKLE_PROPERTY_KEY);
-        assert_eq!(prop.value, hex::encode(base_merkle.as_bytes()));
+        assert_eq!(cmdline.flags, 0);
+        assert_eq!(cmdline.kernel_cmdline, format!("{}={}", BASE_MERKLE_CMDLINE_KEY, base_merkle));
     }
 
     #[test]
@@ -550,6 +552,9 @@ mod tests {
                         assert_eq!(&prop.value, PVM_PROP_VIRT_CAP_VALUE);
                         assert!(!property_seen);
                         property_seen = true;
+                    }
+                    Descriptor::KernelCmdline(_) => {
+                        panic!("Unexpected KernelCmdline descriptor");
                     }
                 }
             }
