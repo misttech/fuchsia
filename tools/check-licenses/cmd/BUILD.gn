@@ -45,6 +45,7 @@ if (is_host) {
       "project_check.go",
       "project_list_info.go",
       "project_update.go",
+      "readme.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
@@ -76,6 +77,7 @@ if (is_host) {
       "config_test.go",
       "copyright_test.go",
       "project_test.go",
+      "readme_test.go",
     ]
     embed = [ ":main" ]
   }
