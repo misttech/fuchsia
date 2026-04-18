@@ -110,7 +110,7 @@ def _idk_cc_prebuilt_library_impl(
         # TODO(https://fxbug.dev/447151364): Implement support for runtime dependencies.
         # This includes the "subtle" logic mentioned below and using an aspect
         # to collect runtime dependencies for prebuild info.
-        print("`runtime_deps` is not yet supported.")
+        pass
 
     if category not in ["partner"]:
         # Other categories are only to ensure ABI compatibility and thus not

@@ -367,7 +367,7 @@ def _fidl_library_impl(
 
     if enable_rust_next:
         # TODO(https://fxbug.dev/454452299): Implement next-generation Rust bindings and conversions.
-        print("Next-generation Rust bindings are not yet supported (https://fxbug.dev/454452299): %s." % library_name)
+        pass
 
     if enable_bindlib:
         # TODO(https://fxbug.dev/442640067): Implement bindlib bindings.
@@ -375,7 +375,7 @@ def _fidl_library_impl(
 
     if enable_banjo:
         # TODO(https://fxbug.dev/428285014): Implement Banjo bindings if necessary.
-        print("Banjo bindings are not yet supported (https://fxbug.dev/428285014): %s." % library_name)
+        pass
 
     if enable_zither:
         zither_library(
