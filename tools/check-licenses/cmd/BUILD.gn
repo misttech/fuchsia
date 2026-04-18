@@ -46,6 +46,7 @@ if (is_host) {
       "project_list_info.go",
       "project_update.go",
       "readme.go",
+      "validate.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [

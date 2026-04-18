@@ -18,6 +18,7 @@ go_library(
         "project_list_info.go",
         "project_update.go",
         "readme.go",
+        "validate.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/cmd",
     target_compatible_with = HOST_CONSTRAINTS,
