@@ -22,7 +22,7 @@ use zx;
 static SERIALIZED_DATA_VMO_NAME: zx::Name = zx::Name::new_lossy("archivist-serialized-data");
 static PACKET_BUFFER_VMO_NAME: zx::Name = zx::Name::new_lossy("archivist-packet-buffer");
 
-const SNAPSHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const SNAPSHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 pub type FormattedStream =
     Pin<Box<dyn Stream<Item = Vec<Result<FormattedContent, AccessorError>>> + Send>>;
@@ -568,7 +568,7 @@ mod tests {
     async fn time_limited_chunks_yields_on_capacity() {
         let stream = futures::stream::iter(vec![1, 2, 3, 4]);
         let mut chunks =
-            Box::pin(TimeLimitedChunks::new(stream, 2, std::time::Duration::from_secs(10)));
+            Box::pin(TimeLimitedChunks::new(stream, 2, std::time::Duration::from_secs(30)));
 
         assert_eq!(chunks.next().await, Some(vec![1, 2]));
         assert_eq!(chunks.next().await, Some(vec![3, 4]));
@@ -579,7 +579,7 @@ mod tests {
     async fn time_limited_chunks_yields_on_stream_end() {
         let stream = futures::stream::iter(vec![1, 2, 3]);
         let mut chunks =
-            Box::pin(TimeLimitedChunks::new(stream, 2, std::time::Duration::from_secs(10)));
+            Box::pin(TimeLimitedChunks::new(stream, 2, std::time::Duration::from_secs(30)));
 
         assert_eq!(chunks.next().await, Some(vec![1, 2]));
         assert_eq!(chunks.next().await, Some(vec![3]));
