@@ -585,6 +585,21 @@ void Device::PowerUp(fdf::Arena& arena, PowerUpCompleter::Sync& completer) {
 }
 
 void Device::Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) {
+  if (!brcmf_pub_) {
+    BRCMF_ERR("brmcf_pub_ is null");
+    completer.buffer(arena).ReplyError(ZX_ERR_INTERNAL);
+    return;
+  }
+
+  bool expected = false;
+  if (!brcmf_pub_->drvr_resetting.compare_exchange_strong(expected, true)) {
+    BRCMF_WARN("Driver is already resetting. Crash recovery may be in progress.");
+    completer.buffer(arena).ReplyError(ZX_ERR_UNAVAILABLE);
+    return;
+  }
+
+  auto finish_reset = fit::defer([this]() { brcmf_pub_->drvr_resetting.store(false); });
+
   if (!device_powered_on_) {
     BRCMF_ERR("Device is powered off, possibly in the middle of Reset already?");
     completer.buffer(arena).ReplyError(ZX_ERR_BAD_STATE);
@@ -592,7 +607,8 @@ void Device::Reset(fdf::Arena& arena, ResetCompleter::Sync& completer) {
   }
   device_powered_on_ = false;
 
-  DestroyAllIfaces([this, arena = std::move(arena), completer = completer.ToAsync()]() mutable {
+  DestroyAllIfaces([this, finish_reset = std::move(finish_reset), arena = std::move(arena),
+                    completer = completer.ToAsync()]() mutable {
     zx_status_t status = brcmf_suspend_chip(brcmf_pub_.get());
     if (status != ZX_OK) {
       BRCMF_ERR("Suspend chip failed: %s", zx_status_get_string(status));

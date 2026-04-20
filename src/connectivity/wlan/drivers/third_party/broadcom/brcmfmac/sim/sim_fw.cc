@@ -3713,4 +3713,14 @@ uint16_t SimFirmware::convert_channel_to_chanspec(wlan_ieee80211_wire::WlanChann
   return channel_to_chanspec(&d11_inf_, channel);
 }
 
+zx_status_t SimFirmware::BusSuspend() { return suspend_hook_ ? suspend_hook_() : ZX_OK; }
+
+zx_status_t SimFirmware::BusResume() { return resume_hook_ ? resume_hook_() : ZX_OK; }
+
+void SimFirmware::BusRecovery() {
+  if (recovery_hook_) {
+    recovery_hook_();
+  }
+}
+
 }  // namespace wlan::brcmfmac

@@ -326,6 +326,16 @@ class SimFirmware {
   // Send a spurious ROAM NO_NETWORKS failure event.
   void TriggerFirmwareRoamEvent(const common::MacAddr& bssid);
 
+  void SetSuspendHook(fit::function<zx_status_t()> suspend_hook) {
+    suspend_hook_ = std::move(suspend_hook);
+  }
+  void SetResumeHook(fit::function<zx_status_t()> resume_hook) {
+    resume_hook_ = std::move(resume_hook);
+  }
+  void SetRecoveryHook(fit::function<void()> recovery_hook) {
+    recovery_hook_ = std::move(recovery_hook);
+  }
+
   // Allow simulation to set CapabilityIovars
   void SetCapabilityIovars(CapabilityIovars new_iovars) { capability_iovars_ = new_iovars; }
 
@@ -354,6 +364,10 @@ class SimFirmware {
   drivers::components::FrameContainer BusAcquireTxSpace(size_t count);
   // This function returns the wsec_key_list for an iface to outside.
   std::vector<brcmf_wsec_key_le> GetKeyList(uint16_t ifidx);
+
+  zx_status_t BusSuspend();
+  zx_status_t BusResume();
+  void BusRecovery();
 
   std::optional<drivers::components::Frame> GetRxFrame();
   void SetHighWmeRxErrorRate() { wme_high_rx_fail_ = true; }
@@ -706,6 +720,10 @@ class SimFirmware {
 
   // Firmware parameters related to HT or VHT capabilities are defined below.
   std::unordered_map<std::string, SimIovar> iovar_table_;
+
+  fit::function<zx_status_t()> suspend_hook_;
+  fit::function<zx_status_t()> resume_hook_;
+  fit::function<void()> recovery_hook_;
 };
 
 }  // namespace wlan::brcmfmac

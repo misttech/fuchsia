@@ -392,6 +392,18 @@ cc_test_executable("lifecycle_test") {
   configs += [ "//build/config:Wno-conversion" ]
 }
 
+cc_test_executable("phy_reset_test") {
+  output_name = "phy_reset_test"
+  testonly = true
+  sources = [ "phy_reset_test.cc" ]
+  deps = [
+    ":sim_test",
+    "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+    "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:core",
+    "//zircon/system/ulib/sync:sync-cpp",
+  ]
+}
+
 cc_test_executable("mfg_test") {
   output_name = "mfg_test"
   testonly = true
@@ -584,6 +596,7 @@ _tests = [
   "passive_scan_test",
   "phy_ps_mode_test",
   "phy_mac_roles_test",
+  "phy_reset_test",
   "reassoc_test",
   "scan_dwell_time_test",
   "scan_while_scanning_test",

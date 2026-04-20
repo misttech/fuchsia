@@ -86,6 +86,17 @@ static const struct brcmf_bus_ops brcmf_sim_bus_ops = {
            uint8_t* vmo_addrs[]) { return BUS_OP(bus)->BusQueueRxSpace(buffers, vmo_addrs); },
     .acquire_tx_space = [](brcmf_bus* bus,
                            size_t count) { return BUS_OP(bus)->BusAcquireTxSpace(count); },
+    .suspend = [](brcmf_bus* bus) { return BUS_OP(bus)->BusSuspend(); },
+    .resume =
+        [](brcmf_bus* bus) {
+          zx_status_t status = BUS_OP(bus)->BusResume();
+          if (status == ZX_OK) {
+            brcmf_simdev* simdev = bus->bus_priv.sim;
+            // Reset firmware in this if BusResume() was successful.
+            simdev->sim_fw = std::make_unique<::wlan::brcmfmac::SimFirmware>(simdev);
+          }
+          return status;
+        },
 };
 #undef BUS_OP
 
@@ -184,6 +195,7 @@ void brcmf_sim_rx_frame(brcmf_simdev* simdev, std::shared_ptr<std::vector<uint8_
 
 zx_status_t brcmf_sim_recovery(brcmf_bus* bus) {
   brcmf_simdev* simdev = bus->bus_priv.sim;
+  simdev->sim_fw->BusRecovery();
 
   // Go through the recovery process in SIM bus(Here we just do firmware reset
   // instead of firmware reload).
@@ -198,8 +210,8 @@ void brcmf_sim_firmware_crash(brcmf_simdev* simdev) {
     BRCMF_ERR("Increase recovery trigger condition failed -- error: %s", zx_status_get_string(err));
   }
 
-  // Firmware crashes will run asynchronously. Tests that need to wait for recovery to complete should
-  // wait for the device to call OnRecoveryComplete().
+  // Firmware crashes will run asynchronously. Tests that need to wait for recovery to complete
+  // should wait for the device to call OnRecoveryComplete().
 }
 
 void brcmf_sim_exit(brcmf_bus* bus) {

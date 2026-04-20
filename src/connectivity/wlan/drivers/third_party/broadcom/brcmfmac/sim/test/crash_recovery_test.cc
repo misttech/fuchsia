@@ -24,7 +24,7 @@ class CrashRecoveryTest : public SimTest {
   CrashRecoveryTest() : ap_(env_.get(), kDefaultBssid, kDefaultSsid, kDefaultChannel) {}
 
   static constexpr zx::duration kTestDuration = zx::sec(50);
-  void Init();
+  void InitWithInterface();
   void ScheduleCrash(zx::duration delay);
   void RecreateClientIface();
   void VerifyScanResult(const uint64_t scan_id, size_t min_result_num,
@@ -34,12 +34,32 @@ class CrashRecoveryTest : public SimTest {
   // counted firmware recovery in driver's metrics.
   void GetInspectCount(uint64_t* out_count, std::string property_name);
 
+  void SetRecoveryHook(fit::function<void()> hook) {
+    WithSimDevice([hook = std::move(hook)](SimDevice* device) mutable {
+      device->GetSim()->sim_fw->SetRecoveryHook(std::move(hook));
+    });
+  }
+
+  void SetSuspendHook(fit::function<zx_status_t()> hook) {
+    WithSimDevice([hook = std::move(hook)](SimDevice* device) mutable {
+      device->GetSim()->sim_fw->SetSuspendHook(std::move(hook));
+    });
+  }
+
+  void SetResumeHook(fit::function<zx_status_t()> hook) {
+    WithSimDevice([hook = std::move(hook)](SimDevice* device) mutable {
+      device->GetSim()->sim_fw->SetResumeHook(std::move(hook));
+    });
+  }
+
+  void ScheduleCrashNoWait(zx::duration delay);
+
   simulation::FakeAp ap_;
   SimInterface client_ifc_;
   common::MacAddr client_mac_addr_;
 };
 
-void CrashRecoveryTest::Init() {
+void CrashRecoveryTest::InitWithInterface() {
   ASSERT_EQ(SimTest::Init(), ZX_OK);
   ASSERT_EQ(StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc_), ZX_OK);
   ap_.EnableBeacon(zx::msec(100));
@@ -58,15 +78,20 @@ void CrashRecoveryTest::RecreateClientIface() {
   SimTest::StartInterface(wlan_common::WlanMacRole::kClient, &client_ifc_);
 }
 
-void CrashRecoveryTest::ScheduleCrash(zx::duration delay) {
+void CrashRecoveryTest::ScheduleCrashNoWait(zx::duration delay) {
   auto crash_firmware_callback = [this]() {
     WithSimDevice([&](brcmfmac::SimDevice* device) {
+      BRCMF_INFO("Crash firmware callback");
       brcmf_simdev* sim = device->GetSim();
       struct brcmf_if* ifp = brcmf_get_ifp(sim->drvr, client_ifc_.iface_id_);
       EXPECT_OK(brcmf_fil_iovar_int_set(ifp, "crash", 0, nullptr));
     });
   };
   env_->ScheduleNotification(crash_firmware_callback, delay);
+}
+
+void CrashRecoveryTest::ScheduleCrash(zx::duration delay) {
+  ScheduleCrashNoWait(delay);
 
   // Reset the MAC address to firmware after recovery.
   auto wait_for_recovery_and_reset_mac_addr_callback = [this]() {
@@ -117,7 +142,7 @@ void CrashRecoveryTest::GetInspectCount(uint64_t* out_count, std::string propert
 }
 
 TEST_F(CrashRecoveryTest, DeviceDestroyOnCrash) {
-  Init();
+  InitWithInterface();
   uint32_t dev_count = DeviceCount();
 
   ScheduleCrash(zx::msec(10));
@@ -134,7 +159,7 @@ TEST_F(CrashRecoveryTest, DeviceDestroyOnCrash) {
 TEST_F(CrashRecoveryTest, DestroyIfaceAfterIfaceDestroyed) {
   // Upper layers depend on returning a very specific error code when attempting to destroy an
   // already destroyed interface. If the wrong code is returned the interface won't be re-created.
-  Init();
+  InitWithInterface();
   uint32_t dev_count = DeviceCount();
 
   ScheduleCrash(zx::msec(10));
@@ -163,7 +188,7 @@ TEST_F(CrashRecoveryTest, DestroyIfaceAfterIfaceDestroyed) {
 TEST_F(CrashRecoveryTest, ConnectAfterCrashDuringScan) {
   constexpr uint64_t kScanId = 0x18c5f;
 
-  Init();
+  InitWithInterface();
   env_->ScheduleNotification(std::bind(&SimInterface::StartScan, &client_ifc_, kScanId, false,
                                        std::optional<const std::vector<uint8_t>>{}),
                              zx::msec(10));
@@ -192,7 +217,7 @@ TEST_F(CrashRecoveryTest, ConnectAfterCrashDuringScan) {
 // Verify that an association can be done correctly after firmware crashes while driver is already
 // in associated state, we don't care about the association state machine in SME in this test.
 TEST_F(CrashRecoveryTest, ConnectAfterCrashAfterConnect) {
-  Init();
+  InitWithInterface();
 
   client_ifc_.AssociateWith(ap_, zx::msec(10));
   ScheduleCrash(zx::msec(20));
@@ -221,7 +246,7 @@ TEST_F(CrashRecoveryTest, ScanAfterCrashAfterConnect) {
   // Firmware will receive 2 beacons while scanning the 9th channel with 120ms dwell time.
   const size_t kExpectMinScanResultNumber = 1;
 
-  Init();
+  InitWithInterface();
 
   client_ifc_.AssociateWith(ap_, zx::msec(10));
   ScheduleCrash(zx::msec(20));
@@ -243,6 +268,73 @@ TEST_F(CrashRecoveryTest, ScanAfterCrashAfterConnect) {
   EXPECT_EQ(1U, count);
   GetInspectCount(&count, "fw_recovery_triggered");
   EXPECT_EQ(1U, count);
+}
+
+TEST_F(CrashRecoveryTest, ResetRejectedIfCrashRecoveryInProgress) {
+  SimTest::Init();
+
+  // Ensure that suspend/resume hooks are not called when reset is rejected.
+  SetSuspendHook([] {
+    ADD_FAILURE();
+    return ZX_ERR_INTERNAL;
+  });
+
+  SetResumeHook([] {
+    ADD_FAILURE();
+    return ZX_ERR_INTERNAL;
+  });
+
+  libsync::Completion recovery_in_progress;
+  libsync::Completion finish_recovery;
+  SetRecoveryHook([&]() {
+    // Note that the recovery hook runs on the default workqueue, which is different from the
+    // default driver dispatcher.
+    recovery_in_progress.Signal();
+    finish_recovery.Wait();
+  });
+
+  // Ensure recovery is in progress
+  ScheduleCrashNoWait(zx::msec(1));
+  env_->Run(kTestDuration);
+  recovery_in_progress.Wait();
+
+  // Check that reset is rejected here.
+  auto res = client_.buffer(test_arena_)->Reset();
+  EXPECT_TRUE(res.ok());
+  EXPECT_TRUE(res->is_error());
+  EXPECT_EQ(res->error_value(), ZX_ERR_UNAVAILABLE);
+
+  finish_recovery.Signal();
+  WaitForRecoveryComplete();
+}
+
+TEST_F(CrashRecoveryTest, CrashRecoveryAfterReset) {
+  InitWithInterface();
+
+  // Trigger reset first
+  auto res = client_.buffer(test_arena_)->Reset();
+  ASSERT_TRUE(res.ok() && !res->is_error());
+
+  // Now trigger crash and verify recovery
+  ScheduleCrash(zx::msec(10));
+  env_->Run(kTestDuration);
+
+  // Recovery should have happened
+  uint64_t count;
+  GetInspectCount(&count, "fw_recovered");
+  EXPECT_EQ(1U, count);
+}
+
+TEST_F(CrashRecoveryTest, ResetAfterCrashRecovery) {
+  InitWithInterface();
+
+  // Trigger crash recovery first
+  ScheduleCrash(zx::msec(10));
+  env_->Run(kTestDuration);
+
+  // Now perform reset and verify success
+  auto res = client_.buffer(test_arena_)->Reset();
+  ASSERT_TRUE(res.ok() && !res->is_error());
 }
 
 }  // namespace wlan::brcmfmac

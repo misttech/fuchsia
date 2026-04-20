@@ -185,7 +185,11 @@ async_dispatcher_t* Environment::GetDispatcher() { return &dispatcher_; }
 
 void Environment::HandleTxNotification(StationIfc* sta, std::shared_ptr<const SimFrame> frame,
                                        std::shared_ptr<const WlanRxInfo> rx_info) {
-  sta->Rx(frame, rx_info);
+  // Check if the sta exists. For firmware recovery and reset tests, it's possible that the sta was
+  // destroyed after a beacon frame was scheduled but before this handler runs.
+  if (stations_.find(sta) != stations_.end()) {
+    sta->Rx(frame, rx_info);
+  }
 }
 
 }  // namespace wlan::simulation
