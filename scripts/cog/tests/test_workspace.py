@@ -6,6 +6,8 @@
 
 import os
 import subprocess
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
@@ -105,14 +107,13 @@ class TestCogMetadata(unittest.TestCase):
 class TestCartfs(unittest.TestCase):
     """Tests for Cartfs."""
 
-    def test_suggest_cartfs_dir_name_sanitizes_id(self) -> None:
-        """Test that the workspace ID is sanitized."""
+    def test_suggest_cartfs_dir_name_handles_collision(self) -> None:
+        """Test that a counter is appended when the directory exists."""
         with mock_fs.FileSystemTestHelper() as fs:
             c = cartfs.Cartfs(fs.cartfs_dir, use_local_mock_cartfs=False)
-            suggested_name = c.suggest_cartfs_dir_name(
-                workspace_name="test-ws", workspace_id="id/with/slashes"
-            )
-            self.assertEqual(str(suggested_name), "test-ws-id_with_slashes")
+            (fs.cartfs_dir / "test-ws").mkdir()
+            suggested_name = c.suggest_cartfs_dir_name(base_name="test-ws")
+            self.assertEqual(str(suggested_name), "test-ws-1")
 
 
 class TestWorkspace(unittest.TestCase):
@@ -150,6 +151,26 @@ class TestWorkspace(unittest.TestCase):
             )
             with self.assertRaises(FileNotFoundError):
                 _ = ws.config
+
+    def test_has_cartfs_dir_true(self) -> None:
+        """Test that has_cartfs_dir returns True when cartfs_dir is available."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.repo_dir,
+                cartfs_instance=MagicMock(),
+            )
+            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
+            self.assertTrue(ws.has_cartfs_dir)
+
+    def test_has_cartfs_dir_false(self) -> None:
+        """Test that has_cartfs_dir returns False when cartfs_dir is not available."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.repo_dir,
+                cartfs_instance=MagicMock(),
+            )
+            with patch.object(ws, "_get_linked_cartfs_dir", return_value=None):
+                self.assertFalse(ws.has_cartfs_dir)
 
     def test_create_success(self) -> None:
         """Test that a Workspace instance can be created successfully."""
@@ -249,7 +270,7 @@ class TestWorkspace(unittest.TestCase):
 
                 workspace.Workspace.create()
 
-    def test_snapshot_from_previous_instance_success(
+    def test_init_cartfs_workspace_snapshot_success(
         self,
     ) -> None:
         """Test that snapshotting from a previous instance is successful."""
@@ -276,38 +297,47 @@ class TestWorkspace(unittest.TestCase):
                 ws,
                 "_find_previous_instance",
                 return_value=Path("foo"),
-            ):
-                result = ws.snapshot_from_previous_instance(
-                    snapshot_function=mock_snapshot_workspace,
-                )
-                self.assertEqual(
-                    result,
-                    Path(cartfs_instance.mount_point)
-                    / suggested_directory_name,
-                )
+            ), patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file:
+                mock_lock_file.return_value = fs.cog_dir / "test.lock"
+                with ws.lock():
+                    ws.init_cartfs_workspace_snapshot(
+                        snapshot_function=mock_snapshot_workspace,
+                    )
+
                 self.assertTrue(
                     fs.full_path(
                         suggested_directory_name, mock_fs.FSType.CARTFS
                     ).is_dir()
                 )
+                symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+                self.assertTrue(symlink_path.is_symlink())
 
-    def test_snapshot_from_previous_instance_no_previous_instance(
+    def test_init_cartfs_workspace_snapshot_no_previous_instance(
         self,
     ) -> None:
-        """Test that None is returned when no previous instance is found."""
+        """Test that nothing happens when no previous instance is found."""
         with mock_fs.FileSystemTestHelper() as fs:
             cartfs_instance = MagicMock()
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
+                repo_dir=fs.repo_dir,
                 cartfs_instance=cartfs_instance,
             )
-            with patch.object(ws, "_find_previous_instance", return_value=None):
-                result = ws.snapshot_from_previous_instance()
-                self.assertIsNone(result)
+            with patch.object(
+                ws, "_find_previous_instance", return_value=None
+            ), patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file:
+                mock_lock_file.return_value = fs.cog_dir / "test.lock"
+                with ws.lock():
+                    ws.init_cartfs_workspace_snapshot()
 
-    def test_snapshot_from_previous_instance_snapshot_error(self) -> None:
-        """Test that None is returned when snapshotting raises a ValueError."""
+                symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+                self.assertFalse(symlink_path.exists())
+
+    def test_init_cartfs_workspace_snapshot_snapshot_error(self) -> None:
+        """Test that nothing happens when snapshotting raises a ValueError."""
         with mock_fs.FileSystemTestHelper() as fs:
             cartfs_instance = MagicMock()
             ws = workspace.Workspace(
@@ -318,7 +348,10 @@ class TestWorkspace(unittest.TestCase):
                 ws,
                 "_find_previous_instance",
                 return_value=fs.cartfs_dir / "previous_instance",
-            ):
+            ), patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file:
+                mock_lock_file.return_value = fs.cog_dir / "test.lock"
 
                 def mock_snapshot_workspace(
                     _workspace_to_snapshot_from: Path,
@@ -327,13 +360,16 @@ class TestWorkspace(unittest.TestCase):
                 ) -> None:
                     raise ValueError("test error")
 
-                result = ws.snapshot_from_previous_instance(
-                    snapshot_function=mock_snapshot_workspace
-                )
-                self.assertIsNone(result)
+                with ws.lock():
+                    ws.init_cartfs_workspace_snapshot(
+                        snapshot_function=mock_snapshot_workspace
+                    )
 
-    def test_create_empty_cartfs_workspace_directory(self) -> None:
-        """Test that an empty cartfs workspace directory is created."""
+                symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+                self.assertFalse(symlink_path.exists())
+
+    def test_init_cartfs_workspace_empty(self) -> None:
+        """Test that an empty cartfs workspace directory is created and linked."""
         with mock_fs.FileSystemTestHelper() as fs:
             cartfs_instance = MagicMock()
             cartfs_instance.mount_point = fs.cartfs_dir
@@ -346,13 +382,19 @@ class TestWorkspace(unittest.TestCase):
                 cartfs_instance=cartfs_instance,
             )
 
-            result = ws.create_empty_cartfs_workspace_directory()
+            with patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file:
+                mock_lock_file.return_value = fs.cog_dir / "test.lock"
+                with ws.lock():
+                    ws.init_cartfs_workspace_empty()
 
             expected_dir = (
                 Path(cartfs_instance.mount_point) / suggested_directory_name
             )
-            self.assertEqual(result, expected_dir)
             self.assertTrue(expected_dir.is_dir())
+            symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+            self.assertTrue(symlink_path.is_symlink())
 
     def test_link_to_cartfs(self) -> None:
         """Test that the workspace can be linked to a cartfs directory."""
@@ -364,7 +406,7 @@ class TestWorkspace(unittest.TestCase):
             )
 
             cartfs_dir = fs.mkdir("cartfs_dir", mock_fs.FSType.CARTFS)
-            ws.link_to_cartfs(cartfs_dir)
+            ws._link_to_cartfs(cartfs_dir)
 
             symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
             self.assertTrue(symlink_path.is_symlink())
@@ -488,7 +530,9 @@ class TestWorkspace(unittest.TestCase):
                     ws, "_checkout_integration_roll", return_value="int_hash"
                 ) as mock_checkout,
             ):
-                ws.checkout_cartfs_to_cog_revisions()
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    ws.checkout_cartfs_to_cog_revisions()
+                    mock_assert_locked.assert_called_once()
 
                 mock_sync.assert_called_once_with("hash123")
                 mock_symlinks.assert_called_once()
@@ -530,7 +574,9 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "_fetch_prebuilts") as mock_fetch,
                 patch.object(ws, "_reinit_integration_repo") as mock_reinit,
             ):
-                ws.checkout_cartfs_to_cog_revisions()
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    ws.checkout_cartfs_to_cog_revisions()
+                    mock_assert_locked.assert_called_once()
 
                 mock_sync.assert_called_once_with("fuchsia_hash")
                 mock_symlinks.assert_called_once()
@@ -571,7 +617,9 @@ class TestWorkspace(unittest.TestCase):
                     return_value="integration_hash_abc",
                 ) as mock_checkout,
             ):
-                ws.checkout_cartfs_to_cog_revisions()
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    ws.checkout_cartfs_to_cog_revisions()
+                    mock_assert_locked.assert_called_once()
 
                 mock_reinit.assert_called_once()
                 mock_checkout.assert_called_once_with("hash123")
@@ -623,7 +671,9 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "_reinit_integration_repo") as mock_reinit,
                 patch.object(ws, "_checkout_integration_roll") as mock_checkout,
             ):
-                ws.checkout_cartfs_to_cog_revisions()
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    ws.checkout_cartfs_to_cog_revisions()
+                    mock_assert_locked.assert_called_once()
 
                 mock_reinit.assert_called_once_with("int_hash")
                 mock_checkout.assert_not_called()
@@ -766,7 +816,9 @@ class TestWorkspace(unittest.TestCase):
                     "custom-integration": "integration_hash",
                 }[repo]
 
-                ws.checkout_cartfs_to_cog_revisions()
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    ws.checkout_cartfs_to_cog_revisions()
+                    mock_assert_locked.assert_called_once()
 
                 # Should bypass checkout_integration_roll
                 mock_checkout_roll.assert_not_called()
@@ -803,7 +855,9 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "get_cog_commit", return_value="hash123"),
                 patch.object(ws, "get_cartfs_commit", return_value="hash123"),
             ):
-                self.assertTrue(ws.is_checkout_uptodate())
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    self.assertTrue(ws.is_checkout_uptodate())
+                    mock_assert_locked.assert_called_once()
 
     def test_is_checkout_uptodate_standalone_false(self) -> None:
         """Test that returns False when standalone checkout is not up to date."""
@@ -826,7 +880,9 @@ class TestWorkspace(unittest.TestCase):
                     ws, "get_cartfs_commit", return_value="different-hash"
                 ),
             ):
-                self.assertFalse(ws.is_checkout_uptodate())
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    self.assertFalse(ws.is_checkout_uptodate())
+                    mock_assert_locked.assert_called_once()
 
     def test_is_checkout_uptodate_superproject_true(self) -> None:
         """Test that returns True when superproject checkout is up to date."""
@@ -853,7 +909,9 @@ class TestWorkspace(unittest.TestCase):
                     ws, "get_cartfs_commit", side_effect=mock_get_commit
                 ),
             ):
-                self.assertTrue(ws.is_checkout_uptodate())
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    self.assertTrue(ws.is_checkout_uptodate())
+                    mock_assert_locked.assert_called_once()
 
     def test_is_checkout_uptodate_superproject_false_fuchsia_differs(
         self,
@@ -876,7 +934,9 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "get_cog_commit", return_value="fuchsia_hash"),
                 patch.object(ws, "get_cartfs_commit", return_value="diff_hash"),
             ):
-                self.assertFalse(ws.is_checkout_uptodate())
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    self.assertFalse(ws.is_checkout_uptodate())
+                    mock_assert_locked.assert_called_once()
 
     def test_is_checkout_uptodate_superproject_false_integration_differs(
         self,
@@ -910,7 +970,128 @@ class TestWorkspace(unittest.TestCase):
                     ws, "get_cartfs_commit", side_effect=mock_get_cartfs_commit
                 ),
             ):
-                self.assertFalse(ws.is_checkout_uptodate())
+                with patch.object(ws, "_assert_locked") as mock_assert_locked:
+                    self.assertFalse(ws.is_checkout_uptodate())
+                    mock_assert_locked.assert_called_once()
+
+    def test_lock_acquisition(self) -> None:
+        """Test that lock can be acquired."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.repo_dir,
+                cartfs_instance=MagicMock(),
+            )
+            with patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file:
+                mock_lock_file.return_value = fs.cog_dir / "test.lock"
+
+                self.assertEqual(ws._lock_count, 0)
+                with ws.lock():
+                    self.assertEqual(ws._lock_count, 1)
+                    self.assertTrue((fs.cog_dir / "test.lock").exists())
+                    lock_content = (fs.cog_dir / "test.lock").read_text()
+                    self.assertEqual(lock_content, str(os.getpid()))
+                self.assertEqual(ws._lock_count, 0)
+
+    def test_lock_reentrant(self) -> None:
+        """Test that lock is reentrant."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.repo_dir,
+                cartfs_instance=MagicMock(),
+            )
+            with patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file:
+                mock_lock_file.return_value = fs.cog_dir / "test.lock"
+
+                with ws.lock():
+                    self.assertEqual(ws._lock_count, 1)
+                    with ws.lock():
+                        self.assertEqual(ws._lock_count, 2)
+                    self.assertEqual(ws._lock_count, 1)
+                self.assertEqual(ws._lock_count, 0)
+
+    def test_lock_blocks_and_resumes(self) -> None:
+        """Test that a second workspace instance blocks and resumes."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws1 = workspace.Workspace(
+                repo_dir=fs.repo_dir, cartfs_instance=MagicMock()
+            )
+            ws2 = workspace.Workspace(
+                repo_dir=fs.repo_dir, cartfs_instance=MagicMock()
+            )
+
+            # Mock Path.home() to return fs.cog_dir
+            with patch("pathlib.Path.home", return_value=fs.cog_dir):
+                lock_acquired_by_ws1 = threading.Event()
+                ws2_can_proceed = threading.Event()
+                ws2_finished = threading.Event()
+
+                def ws2_worker() -> None:
+                    # Wait for ws1 to hold the lock
+                    lock_acquired_by_ws1.wait()
+                    # This should block until ws1 releases the lock
+                    with ws2.lock():
+                        ws2_can_proceed.set()
+                        ws2_finished.set()
+
+                t = threading.Thread(target=ws2_worker)
+                t.start()
+
+                with ws1.lock():
+                    lock_acquired_by_ws1.set()
+                    # ws2 should be blocked now.
+                    # We assert that ws2 has NOT proceeded yet.
+                    self.assertFalse(ws2_can_proceed.is_set())
+                    # Give worker thread a moment to try and block
+                    time.sleep(0.5)
+                    self.assertFalse(ws2_can_proceed.is_set())
+
+                # After ws1 exits lock, ws2 should proceed.
+                ws2_finished.wait(timeout=5)
+                self.assertTrue(ws2_can_proceed.is_set())
+                t.join()
+
+    def test_assert_locked_raises(self) -> None:
+        """Test that _assert_locked raises error when not locked."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.repo_dir,
+                cartfs_instance=MagicMock(),
+            )
+            with self.assertRaises(workspace.WorkspaceError):
+                ws._assert_locked()
+
+    def test_assert_locked_passes(self) -> None:
+        """Test that _assert_locked passes when locked."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            ws = workspace.Workspace(
+                repo_dir=fs.repo_dir,
+                cartfs_instance=MagicMock(),
+            )
+            ws._lock_count = 1
+            ws._assert_locked()
+
+    def test_lock_decorator(self) -> None:
+        """Test that the lock decorator acquires the lock."""
+        mock_ws = MagicMock()
+
+        class SomeClass:
+            def __init__(self) -> None:
+                self.workspace: workspace.Workspace = mock_ws
+
+            @workspace.lock
+            def decorated_method(self, x: int) -> int:
+                return x * 2
+
+        some_object = SomeClass()
+        mock_ws.lock.assert_not_called()
+
+        result = some_object.decorated_method(21)
+        self.assertEqual(result, 42)
+        mock_ws.lock.assert_called_once()
 
 
 if __name__ == "__main__":

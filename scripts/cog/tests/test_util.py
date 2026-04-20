@@ -34,6 +34,18 @@ class TestUtil(unittest.TestCase):
         """Test that check_gcert_status returns False on failure."""
         self.assertFalse(util.check_gcert_status())
 
+    def test_sanitize_filename(self) -> None:
+        """Test that sanitize_filename replaces invalid characters."""
+        self.assertEqual(util.sanitize_filename("hello world"), "hello-world")
+        self.assertEqual(util.sanitize_filename("hello/world"), "hello-world")
+        self.assertEqual(util.sanitize_filename("hello..world"), "hello..world")
+        self.assertEqual(util.sanitize_filename("hello-world"), "hello-world")
+        self.assertEqual(util.sanitize_filename("hello_world"), "hello_world")
+        self.assertEqual(util.sanitize_filename("Hello World"), "hello-world")
+        self.assertEqual(
+            util.sanitize_filename("hello!@#$%^&*()world"), "hello-world"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

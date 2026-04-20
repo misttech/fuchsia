@@ -122,23 +122,15 @@ class Cartfs:
 
         return cls(mount_point, use_local_mock_cartfs)
 
-    def suggest_cartfs_dir_name(
-        self, workspace_name: str, workspace_id: str | None = None
-    ) -> Path:
+    def suggest_cartfs_dir_name(self, base_name: str) -> Path:
         """Suggests a directory name within the cartfs mount point.
 
         Args:
-            workspace_name: The base name for the workspace directory.
-            workspace_id: The unique ID for the workspace.
+            base_name: The base name for the workspace directory.
 
         Returns:
             A path to a directory that does not yet exist.
         """
-        base_name = workspace_name
-        if workspace_id:
-            sanitized_id = workspace_id.replace("/", "_")
-            base_name = f"{workspace_name}-{sanitized_id}"
-
         path = Path(base_name)
         counter = 1
         while (self.mount_point / path).exists():

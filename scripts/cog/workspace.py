@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import base64
+import fcntl
 import json
 import logging
 import os
@@ -10,14 +11,26 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Generator,
+    Literal,
+    ParamSpec,
+    Protocol,
+    TextIO,
+    TypeVar,
+)
 
 import cartfs
 import logger
 import snapshotter
+from util import sanitize_filename
 
 
 class WorkspaceError(Exception):
@@ -101,6 +114,31 @@ class CogMetadata:
         path.write_text(json.dumps(self.to_dict(), indent=4))
 
 
+class HasWorkspace(Protocol):
+    workspace: "Workspace"
+
+
+T = TypeVar("T", bound=HasWorkspace)
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def lock(
+    func: Callable[Concatenate[T, P], R]
+) -> Callable[Concatenate[T, P], R]:
+    """Wraps a method with `self.workspace.lock()`.
+
+    Note: The decorated method must be called on an object that has a
+    `self.workspace` attribute.
+    """
+
+    def lock_and_call(self: T, /, *args: P.args, **kwargs: P.kwargs) -> R:
+        with self.workspace.lock():
+            return func(self, *args, **kwargs)
+
+    return lock_and_call
+
+
 class Workspace:
     """A class to encapsulate a Cog workspace and an associated Cartfs workspace."""
 
@@ -152,6 +190,8 @@ class Workspace:
         self.repo_dir = repo_dir
         self.cartfs_instance = cartfs_instance
         self.cartfs_mount_point = cartfs_instance.mount_point
+        self._lock_file_handle: TextIO | None = None
+        self._lock_count = 0
 
     @property
     def workspace_root(self) -> Path:
@@ -178,6 +218,7 @@ class Workspace:
             raise RepoSetupError("No cartfs directory found.")
         return cartfs_dir
 
+    @property
     def has_cartfs_dir(self) -> bool:
         try:
             _ = self.cartfs_dir
@@ -227,31 +268,81 @@ class Workspace:
 
         return target_path
 
-    def snapshot_from_previous_instance(
-        self,
-        snapshot_function: Callable[
-            [Path, Path, Path], None
-        ] = snapshotter.snapshot_workspace,
-    ) -> Path | None:
-        """Snapshots the workspace from the most recent cartfs directory."""
-        previous_cartfs_instance_rel_path = self._find_previous_instance()
-        if not previous_cartfs_instance_rel_path:
-            return None
-
-        suggested_directory_name = self.cartfs_instance.suggest_cartfs_dir_name(
-            self.workspace_name, self.workspace_id
+    @cached_property
+    def lock_file(self) -> Path:
+        lock_dir = Path.home() / ".cache" / "cog"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        return lock_dir / sanitize_filename(
+            f"{self.workspace_name}-{self.workspace_id}.lock"
         )
-        try:
-            snapshot_function(
-                previous_cartfs_instance_rel_path,
-                suggested_directory_name,
-                self.cartfs_instance.mount_point,
-            )
-        except ValueError as e:
-            logger.log_error(f"Error during snapshotting: {e}")
-            return None
 
-        return self.cartfs_instance.mount_point / suggested_directory_name
+    @contextmanager
+    def lock(self) -> Generator[None, None, None]:
+        """Synchronously locks operations on this Workspace instance.
+
+        Nested lock attempts are no-ops. Not thread safe.
+        """
+        # Lock is only acquired when entering the first `lock` context.
+        self._lock_count += 1
+        if self._lock_count == 1:
+            try:
+                # Acquire lock now, or wait until another process releases the lock.
+                self._lock_file_handle = open(self.lock_file, "a+")
+                try:
+                    fcntl.flock(
+                        self._lock_file_handle, fcntl.LOCK_EX | fcntl.LOCK_NB
+                    )
+                except BlockingIOError:
+                    try:
+                        lock_owner_pid = self.lock_file.read_text().strip()
+                    except Exception:
+                        lock_owner_pid = None
+                    logger.log_warn(
+                        f"Waiting for another process (PID: {lock_owner_pid or 'unknown'}) "
+                        "to finish working on this workspace..."
+                    )
+                    fcntl.flock(self._lock_file_handle, fcntl.LOCK_EX)
+
+                # Update lock file with current process ID.
+                self._lock_file_handle.seek(0)
+                self._lock_file_handle.truncate()
+                self._lock_file_handle.write(str(os.getpid()))
+                self._lock_file_handle.flush()
+                logger.log_debug(
+                    f"Acquired lock for workspace: {self.lock_file}"
+                )
+            except BaseException:
+                logger.log_error("Could not acquire lock for workspace.")
+                if self._lock_file_handle:
+                    self._lock_file_handle.close()
+                    self._lock_file_handle = None
+                self._lock_count -= 1
+                raise
+
+        try:
+            # Lock acquired, continue execution.
+            yield
+        finally:
+            # Lock is only released when exiting the last `lock` context.
+            self._lock_count -= 1
+            if self._lock_count == 0:
+                assert self._lock_file_handle
+                self._lock_file_handle.close()
+                self._lock_file_handle = None
+                logger.log_debug(
+                    f"Released lock for workspace: {self.lock_file}"
+                )
+
+    def _assert_locked(self) -> None:
+        """Asserts that the workspace lock is held by the invoker via `lock`.
+
+        This assertion should be enforced by any method that needs to ensure that this
+        workspace is not being actively modified by another `//scripts/cog` process.
+        """
+        if self._lock_count == 0:
+            raise WorkspaceError(
+                "Please acquire a workspace lock before calling this method."
+            )
 
     @cached_property
     def config(self) -> dict[str, Any]:
@@ -264,17 +355,44 @@ class Workspace:
             )
         return json.loads(repo_config_path.read_text())
 
-    def create_empty_cartfs_workspace_directory(self) -> Path:
-        """Creates a new, empty directory in the cartfs mount for this workspace.
+    def init_cartfs_workspace_snapshot(
+        self,
+        snapshot_function: Callable[
+            [Path, Path, Path], None
+        ] = snapshotter.snapshot_workspace,
+    ) -> None:
+        """Snapshots and links to the workspace from the most recent cartfs directory."""
+        self._assert_locked()
+        previous_cartfs_instance_rel_path = self._find_previous_instance()
+        if not previous_cartfs_instance_rel_path:
+            return
+
+        suggested_directory_name = self.cartfs_instance.suggest_cartfs_dir_name(
+            sanitize_filename(f"{self.workspace_name}-{self.workspace_id}")
+        )
+        try:
+            snapshot_function(
+                previous_cartfs_instance_rel_path,
+                suggested_directory_name,
+                self.cartfs_instance.mount_point,
+            )
+        except ValueError as e:
+            logger.log_error(f"Error during snapshotting: {e}")
+            return
+
+        self._link_to_cartfs(
+            self.cartfs_instance.mount_point / suggested_directory_name
+        )
+
+    def init_cartfs_workspace_empty(self) -> None:
+        """Links to a new, empty directory in the cartfs mount for this workspace.
 
         This method generates a unique directory name based on the workspace name,
         creates the directory, and writes a `.cog.json` metadata file into it.
-
-        Returns:
-            The absolute path to the newly created cartfs directory.
         """
+        self._assert_locked()
         suggested_directory_name = self.cartfs_instance.suggest_cartfs_dir_name(
-            self.workspace_name, self.workspace_id
+            sanitize_filename(f"{self.workspace_name}-{self.workspace_id}")
         )
         cartfs_dir = self.cartfs_instance.mount_point / suggested_directory_name
         # It is ok to use exist_ok here because the suggested directory name
@@ -290,9 +408,9 @@ class Workspace:
         )
         metadata.write(cartfs_dir)
 
-        return cartfs_dir
+        self._link_to_cartfs(cartfs_dir)
 
-    def link_to_cartfs(self, cartfs_dir: Path) -> None:
+    def _link_to_cartfs(self, cartfs_dir: Path) -> None:
         """Links the cog workspace to a cartfs directory.
 
         This creates a symlink named `cartfs-dir` inside the repository
@@ -376,6 +494,8 @@ class Workspace:
         )
 
     def is_checkout_uptodate(self) -> bool:
+        """Checks if the CartFS checkouts are up to date with Cog."""
+        self._assert_locked()
         cog_fuchsia_commit = self.get_cog_commit(self.config["repo"]["fuchsia"])
         cartfs_fuchsia_commit = self.get_cartfs_commit("fuchsia")
         logger.log_debug(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
@@ -402,6 +522,7 @@ class Workspace:
 
     def checkout_cartfs_to_cog_revisions(self) -> None:
         """Checkouts the CartFS fuchsia and integration repos to match the revisions in Cog."""
+        self._assert_locked()
         if not self._is_jiri_bootstrapped():
             self._bootstrap_jiri()
 
@@ -469,6 +590,7 @@ class Workspace:
         self, repository: Literal["fuchsia", "integration"]
     ) -> str | None:
         """Determines the fuchsia or integration repo commit hash from CartFS."""
+        self._assert_locked()
         hash_file = self.cartfs_dir / f".{repository}_commit_hash"
         if not hash_file.is_file():
             return None
@@ -505,20 +627,21 @@ class Workspace:
     def _write_jiri_manifest(self) -> None:
         """Writes the jiri manifest."""
         logger.emit_status("Writing jiri manifest...")
-        localimports = self.config["jiriImports"]
-        self._patch_file(
-            filepath="fuchsia/.jiri_manifest",
-            content=(
-                "<manifest><imports>"
-                + "\n".join(
-                    f'<localimport file="{file}"/>' for file in localimports
-                )
-                + "</imports></manifest>"
-            ),
+        jiri_manifest = self.cartfs_dir / "fuchsia" / ".jiri_manifest"
+        content = (
+            "<manifest><imports>"
+            + "\n".join(
+                f'<localimport file="{file}"/>'
+                for file in self.config["jiriImports"]
+            )
+            + "</imports></manifest>\n"
         )
+        jiri_manifest.parent.mkdir(parents=True, exist_ok=True)
+        if not jiri_manifest.exists() or jiri_manifest.read_text() != content:
+            jiri_manifest.write_text(content)
 
     def _write_jiri_config(self) -> None:
-        """Initialize the jiri config."""
+        """Initializes the jiri config."""
         logger.emit_status("Initializing jiri config...")
         (self.cartfs_fuchsia_dir / ".jiri_root" / "bin").mkdir(
             exist_ok=True, parents=True
@@ -972,17 +1095,3 @@ class Workspace:
             if exit_on_error:
                 sys.exit(e.returncode)
             raise e
-
-    def _patch_file(self, filepath: str, content: str) -> None:
-        """Patches the file in cartFS."""
-        logger.log_debug(f"Patching the {filepath} file.")
-        full_filepath = self.cartfs_dir / filepath
-        if full_filepath.exists():
-            logger.log_debug(f"File {full_filepath} already exists.")
-            return
-
-        full_filepath.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            full_filepath.write_text(content)
-        except Exception as e:
-            logger.log_error(f"An error occurred while writing the file: {e}")

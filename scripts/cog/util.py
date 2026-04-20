@@ -4,6 +4,7 @@
 
 """Utility functions for cog scripts."""
 
+import re
 import subprocess
 
 
@@ -14,3 +15,12 @@ def check_gcert_status() -> bool:
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitizes a string to be used as a safe filename.
+
+    Replaces characters that are not alphanumeric, underscores, periods, or
+    hyphens with hyphens and converts the string to lowercase.
+    """
+    return re.sub(r"[^a-zA-Z0-9._-]+", "-", filename).lower()

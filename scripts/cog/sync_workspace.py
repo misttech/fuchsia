@@ -55,7 +55,7 @@ class WorkspaceSyncService:
             )
 
         self.workspace = workspace.Workspace.create()
-        if not self.workspace.has_cartfs_dir():
+        if not self.workspace.has_cartfs_dir:
             raise workspace.WorkspaceError(
                 "No associated CartFS workspace found. "
                 "Please run `//scripts/cog/setup_cog_workspace.py` first."
@@ -300,6 +300,7 @@ class WorkspaceSyncService:
                 result.failed.add(path)
         return result
 
+    @workspace.lock
     def sync_cog_to_cartfs(self) -> SyncResult:
         """Syncs changes from Cog to CartFS."""
         if not self.workspace.is_checkout_uptodate():
@@ -334,6 +335,7 @@ class WorkspaceSyncService:
         )
         return sync_result
 
+    @workspace.lock
     def sync_cartfs_to_cog(
         self, diff_against_previous_cog_to_cartfs_sync: bool
     ) -> SyncResult:
