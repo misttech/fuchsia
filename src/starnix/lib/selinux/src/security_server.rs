@@ -25,7 +25,7 @@ use anyhow::Context as _;
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 const ROOT_PATH: &'static str = "/";
 
@@ -86,11 +86,6 @@ struct SecurityServerState {
 
     /// Write-only interface to the data stored in the selinuxfs status file.
     status_publisher: Option<Box<dyn SeLinuxStatusPublisher>>,
-
-    /// Count of changes to the active policy.  Changes include both loads
-    /// of complete new policies, and modifications to a previously loaded
-    /// policy, e.g. by committing new values to conditional booleans in it.
-    policy_change_count: u32,
 }
 
 impl SecurityServerState {
@@ -148,7 +143,14 @@ pub(crate) struct SecurityServerBackend {
     state: RwLock<SecurityServerState>,
 
     /// True if the security server is enforcing, rather than permissive.
+    /// Only modified with the `state` lock taken.
     is_enforcing: AtomicBool,
+
+    /// Count of changes to the active policy.  Changes include both loads
+    /// of complete new policies, and modifications to a previously loaded
+    /// policy, e.g. by committing new values to conditional booleans in it.
+    /// Only modified with the `state` lock taken.
+    policy_change_count: AtomicU32,
 }
 
 pub struct SecurityServer {
@@ -179,9 +181,9 @@ impl SecurityServer {
                 active_policy: None,
                 booleans: SeLinuxBooleans::default(),
                 status_publisher: None,
-                policy_change_count: 0,
             }),
             is_enforcing: AtomicBool::new(false),
+            policy_change_count: AtomicU32::new(0),
         });
 
         let access_vector_cache = AccessVectorCache::new(backend.clone());
@@ -263,7 +265,7 @@ impl SecurityServer {
             );
 
             state.active_policy = Some(ActivePolicy { parsed, binary, sid_table, exceptions });
-            state.policy_change_count += 1;
+            self.backend.policy_change_count.fetch_add(1, Ordering::Relaxed);
         });
 
         Ok(())
@@ -318,7 +320,7 @@ impl SecurityServer {
         // TODO(b/324264149): Commit values into the stored policy itself.
         self.with_mut_state_and_update_status(|state| {
             state.booleans.commit_pending();
-            state.policy_change_count += 1;
+            self.backend.policy_change_count.fetch_add(1, Ordering::Relaxed);
         });
     }
 
@@ -334,6 +336,11 @@ impl SecurityServer {
     /// Returns a snapshot of the AVC usage statistics.
     pub fn avc_cache_stats(&self) -> CacheStats {
         self.access_vector_cache.cache_stats()
+    }
+
+    /// Returns the current policy change count.
+    pub fn policy_change_count(&self) -> u32 {
+        self.backend.policy_change_count.load(Ordering::Relaxed)
     }
 
     /// Returns the list of all class names.
@@ -508,7 +515,7 @@ impl SecurityServer {
         f(locked_state.deref_mut());
         let new_value = SeLinuxStatus {
             is_enforcing: self.is_enforcing(),
-            change_count: locked_state.policy_change_count,
+            change_count: self.backend.policy_change_count.load(Ordering::Relaxed),
             deny_unknown: locked_state.deny_unknown(),
         };
         if let Some(status_publisher) = &mut locked_state.status_publisher {
@@ -575,7 +582,7 @@ impl SecurityServerBackend {
         // Initially assume that the computed context will most likely already have a SID assigned,
         // so that the operation can be completed without any modification of the SID table.
         let readable_state = self.state.read();
-        let policy_change_count = readable_state.policy_change_count;
+        let policy_change_count = self.policy_change_count.load(Ordering::Relaxed);
         let policy_state = readable_state
             .active_policy
             .as_ref()
@@ -591,7 +598,8 @@ impl SecurityServerBackend {
         // a new policy having been loaded in-between the read- and write-locked stages, the
         // `context` is re-computed using the new policy state.
         let mut writable_state = self.state.write();
-        let needs_recompute = policy_change_count != writable_state.policy_change_count;
+        let needs_recompute =
+            policy_change_count != self.policy_change_count.load(Ordering::Relaxed);
         let policy_state = writable_state.active_policy.as_mut().unwrap();
         let context = if needs_recompute { compute_context(policy_state)? } else { context };
         policy_state.sid_table.security_context_to_sid(&context).map_err(anyhow::Error::from)
