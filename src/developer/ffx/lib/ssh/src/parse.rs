@@ -232,8 +232,8 @@ pub enum PipeError {
     NoAddress(String),
     #[error("running target overnet pipe: {0}")]
     SpawnError(String),
-    #[error("error with address: {0}")]
-    AddressError(#[source] anyhow::Error),
+    #[error("error with address")]
+    AddressError(#[from] netext::InvalidInterfaceIdError),
 }
 
 pub async fn parse_ssh_output(

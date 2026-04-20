@@ -281,7 +281,7 @@ pub struct ScopedSocketAddr {
 impl ScopedSocketAddr {
     /// Attempts to construct a scoped socket addr by taking a socketaddr and
     /// converting its numeric scope ID into a string by looking it up.
-    pub fn from_socket_addr(addr: SocketAddr) -> Result<Self> {
+    pub fn from_socket_addr(addr: SocketAddr) -> Result<Self, InvalidInterfaceIdError> {
         match &addr {
             SocketAddr::V6(a) => {
                 // This should also apply to link-scope multicast, but this is only really being
@@ -456,11 +456,22 @@ pub fn scope_id_to_name(scope_id: u32) -> String {
     scope_id_to_name_checked(scope_id).unwrap_or_else(|_| scope_id.to_string())
 }
 
-pub fn scope_id_to_name_checked(scope_id: u32) -> Result<String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidInterfaceIdError(pub u32);
+
+impl std::fmt::Display for InvalidInterfaceIdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} is not a valid network interface ID", self.0)
+    }
+}
+
+impl std::error::Error for InvalidInterfaceIdError {}
+
+pub fn scope_id_to_name_checked(scope_id: u32) -> Result<String, InvalidInterfaceIdError> {
     let mut buf = vec![0; libc::IF_NAMESIZE];
     let res = unsafe { libc::if_indextoname(scope_id, buf.as_mut_ptr() as *mut libc::c_char) };
     if res.is_null() {
-        bail!("{scope_id} is not a valid network interface ID")
+        return Err(InvalidInterfaceIdError(scope_id));
     } else {
         Ok(String::from_utf8_lossy(&buf.split(|&c| c == 0u8).next().unwrap_or(&[0u8])).to_string())
     }

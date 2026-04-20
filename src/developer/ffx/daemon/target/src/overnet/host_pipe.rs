@@ -122,8 +122,7 @@ impl HostPipeChildBuilder for HostPipeChildDefaultBuilder {
         let mut ssh = tokio::process::Command::from(
             build_ssh_command_with_env(
                 &self.ssh_path,
-                netext::ScopedSocketAddr::from_socket_addr(addr)
-                    .map_err(PipeError::AddressError)?,
+                netext::ScopedSocketAddr::from_socket_addr(addr)?,
                 &self.context,
                 args,
             )
@@ -244,8 +243,7 @@ impl HostPipeChild {
         let mut ssh = tokio::process::Command::from(
             build_ssh_command_with_env(
                 ssh_path,
-                netext::ScopedSocketAddr::from_socket_addr(addr)
-                    .map_err(PipeError::AddressError)?,
+                netext::ScopedSocketAddr::from_socket_addr(addr)?,
                 &ctx,
                 args,
             )
