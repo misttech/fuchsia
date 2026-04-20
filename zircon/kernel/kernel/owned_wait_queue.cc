@@ -863,8 +863,9 @@ bool OwnedWaitQueue::LockForRequeueOperationOrBackoff(
   // Now, if the requeue-target has a current owner, and that owner is
   // changing, lock its chain. It is OK if this chain hits any of the locks we
   // already hold.
-  if ((requeue_target.owner_ != nullptr) &&
-      (requeue_target.owner_ != res.new_requeue_target_owner)) {
+  const bool locked_current_requeue_target_owner =
+      (requeue_target.owner_ != nullptr) && (requeue_target.owner_ != res.new_requeue_target_owner);
+  if (locked_current_requeue_target_owner) {
     const auto variant_res =
         LockPiChainCommon<LockingBehavior::StopAtCycle>(*requeue_target.owner_);
 
@@ -892,7 +893,9 @@ bool OwnedWaitQueue::LockForRequeueOperationOrBackoff(
     // If we have a result, we either succeeded or need to back off.
     if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
       if (ktl::get<ChainLock::Result>(variant_res) == ChainLock::Result::Backoff) {
-        UnlockOwnerChain(requeue_target.owner_, res.old_requeue_target_owner_stop_point);
+        if (locked_current_requeue_target_owner) {
+          UnlockOwnerChain(requeue_target.owner_, res.old_requeue_target_owner_stop_point);
+        }
         UnlockOwnerChain(res.new_requeue_target_owner, res.new_requeue_target_owner_stop_point);
         UnlockLockedThreads();
         get_lock().Release();
@@ -2177,8 +2180,9 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeAndRequeueInternal(
     }
   } else if (requeue_target.owner_ != nullptr) {
     DEBUG_ASSERT(requeue_target.owner_ == details.new_requeue_target_owner);
-    requeue_target.owner_->get_lock().AssertAcquired();
-    UnlockPiChainCommon(*requeue_target.owner_, details.new_requeue_target_owner_stop_point);
+    details.new_requeue_target_owner->get_lock().AssertAcquired();
+    UnlockPiChainCommon(*details.new_requeue_target_owner,
+                        details.new_requeue_target_owner_stop_point);
   }
 
   // We are finished with the requeue target and can drop its lock now.

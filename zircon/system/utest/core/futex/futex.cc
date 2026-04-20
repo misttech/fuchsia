@@ -41,8 +41,7 @@ constexpr char kThreadName[] = "wakeup-test-thread";
 // Poll until the user provided ShouldStopCallable |should_stop| tells us to stop by
 // returning true.
 template <typename ShouldStopCallable, typename ReportStatusCallable>
-void WaitFor(const ShouldStopCallable& should_stop,
-             const ReportStatusCallable& report_status,
+void WaitFor(const ShouldStopCallable& should_stop, const ReportStatusCallable& report_status,
              zx::duration poll_interval = kDefaultPollInterval,
              zx::duration report_interval = kDefaultReportInterval) {
   static_assert(std::is_same_v<decltype(should_stop()), bool>, "should_stop() must return a bool!");
@@ -78,17 +77,16 @@ void WaitForKernelState(const zx::thread& thread, zx_thread_state_t target_state
   zx_thread_state_t state = 0;
 
   WaitFor(
-    [&]() {
-      GetThreadState(thread, &state);
-      // Stop if we have hit the state we want, or we have an error attempting
-      // to fetch our kernel thread state.
-      return (state == target_state);
-    },
-    [&]() {
-      printf("still waiting for thread to achieve state (%u).  Last observed state (%u)\n",
-             state, target_state);
-    }
-  );
+      [&]() {
+        GetThreadState(thread, &state);
+        // Stop if we have hit the state we want, or we have an error attempting
+        // to fetch our kernel thread state.
+        return (state == target_state);
+      },
+      [&]() {
+        printf("still waiting for thread to achieve state (%u).  Last observed state (%u)\n", state,
+               target_state);
+      });
 
   // Verify that any of the helpers methods called has no assertion failures.
   ASSERT_NO_FATAL_FAILURE();
@@ -136,9 +134,8 @@ class TestThread {
 
     State last_state;
     WaitFor(
-      [&]() { return (last_state = state()) != State::kWaitingToStart; },
-      [&]() { printf("waiting for thread to start (%u)\n", static_cast<uint32_t>(last_state)); }
-    );
+        [&]() { return (last_state = state()) != State::kWaitingToStart; },
+        [&]() { printf("waiting for thread to start (%u)\n", static_cast<uint32_t>(last_state)); });
 
     // Note that this could fail if futex_wait() gets a spurious wakeup.
     EXPECT_EQ(state(), State::kAboutToWait, "Wrong thread state.");
@@ -169,9 +166,8 @@ class TestThread {
   void WaitUntilWoken() const {
     State last_state;
     WaitFor(
-      [&]() { return (last_state = state()) == State::kWaitReturned; },
-      [&]() { printf("waiting for thread to wake (%u)\n", static_cast<uint32_t>(last_state)); }
-    );
+        [&]() { return (last_state = state()) == State::kWaitReturned; },
+        [&]() { printf("waiting for thread to wake (%u)\n", static_cast<uint32_t>(last_state)); });
 
     ASSERT_EQ(state(), State::kWaitReturned, "Thread in wrong state");
   }
@@ -571,16 +567,15 @@ void WaitUntilThreadBlockedOnFutex(thrd_t thread) {
   zx_status_t get_info_res = ZX_ERR_INTERNAL;
 
   WaitFor(
-    [&]() {
-      get_info_res =
-          zx_object_get_info(thrd_handle, ZX_INFO_THREAD, &info, sizeof(info), nullptr, nullptr);
-      return (get_info_res != ZX_OK) || (info.state == ZX_THREAD_STATE_BLOCKED_FUTEX);
-    },
-    [&]() {
-      printf("Waiting for thread to block on futex (0x%x != 0x%x)",
-             info.state, ZX_THREAD_STATE_BLOCKED_FUTEX);
-    }
-  );
+      [&]() {
+        get_info_res =
+            zx_object_get_info(thrd_handle, ZX_INFO_THREAD, &info, sizeof(info), nullptr, nullptr);
+        return (get_info_res != ZX_OK) || (info.state == ZX_THREAD_STATE_BLOCKED_FUTEX);
+      },
+      [&]() {
+        printf("Waiting for thread to block on futex (0x%x != 0x%x)", info.state,
+               ZX_THREAD_STATE_BLOCKED_FUTEX);
+      });
 
   EXPECT_OK(get_info_res);
   EXPECT_EQ(info.state, ZX_THREAD_STATE_BLOCKED_FUTEX);
@@ -711,6 +706,58 @@ TEST(FutexTest, RequeueWithWakeCountZero) {
   // Now that we've got an active futex, wake zero and see that we don't crash.
   ASSERT_OK(zx_futex_requeue(&helper.futex, 0, 0, &helper.other_futex, kThreadRequeueAllCount,
                              ZX_HANDLE_INVALID));
+}
+
+TEST(FutexTest, RequeueCycleStressTest) {
+  // This test was written by Gemini, and serves as a regression test for bug
+  // 502179440.  See b/502179440 for details.
+  constexpr int kNumThreads = 20;
+  constexpr int kNumFutexes = 20;
+  constexpr int kIterations = 100;
+
+  alignas(zx_futex_t) zx_futex_t futexes[kNumFutexes] = {0};
+  std::thread threads[kNumThreads];
+  zx_handle_t thread_handles[kNumThreads];
+  std::atomic<bool> stop{false};
+  std::atomic<bool> ready{false};
+
+  auto thread_func = [&](int id) {
+    while (!ready.load()) {
+      zx_nanosleep(zx_deadline_after(ZX_MSEC(1)));
+    }
+    while (!stop.load()) {
+      int f_idx = id % kNumFutexes;
+      int other_idx = (id + 1) % kNumThreads;
+      zx_futex_wait(&futexes[f_idx], 0, thread_handles[other_idx], zx_deadline_after(ZX_MSEC(10)));
+    }
+  };
+
+  for (int i = 0; i < kNumThreads; i++) {
+    threads[i] = std::thread(thread_func, i);
+    thread_handles[i] = thrd_get_zx_handle(threads[i].native_handle());
+  }
+
+  ready.store(true);
+
+  for (int i = 0; i < kIterations; i++) {
+    int f1 = i % kNumFutexes;
+    int f2 = (i + 1) % kNumFutexes;
+    int t = (i + 2) % kNumThreads;
+    zx_futex_requeue(&futexes[f1], 0, 0, &futexes[f2], 100, thread_handles[t]);
+
+    if (i % 10 == 0) {
+      zx_nanosleep(zx_deadline_after(ZX_MSEC(1)));
+    }
+  }
+
+  stop.store(true);
+  for (int i = 0; i < kNumFutexes; i++) {
+    zx_futex_wake(&futexes[i], kThreadWakeAllCount);
+  }
+
+  for (auto& t : threads) {
+    t.join();
+  }
 }
 
 }  // namespace

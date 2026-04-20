@@ -2792,6 +2792,123 @@ bool owq_topology_test_locked_owner() {
   END_TEST;
 }
 
+bool owq_topology_bug_502179440_regression_test() {
+  BEGIN_TEST;
+
+  // We need to have at least 2 online CPUs to run this test.  Skip it if we
+  // don't have at least that.
+  if (ktl::popcount(mp_get_online_mask()) < 2) {
+    printf("Need at least 2 online CPUs to run test. Skipping.\n");
+    END_TEST;
+  }
+
+  // Force the test thread to run on CPU 0 for the duration of the test.  Be
+  // sure to restore the affinity after the test.
+  const cpu_mask_t old_affinity = Thread::Current::Get()->GetCpuAffinity();
+  Thread::Current::Get()->SetCpuAffinity(0x1);
+  auto restore_affinity =
+      fit::defer([old_affinity]() { Thread::Current::Get()->SetCpuAffinity(old_affinity); });
+
+  struct Args {
+    ktl::array<OwnedWaitQueue, 2> queues;
+    ktl::array<Thread*, 2> threads = {nullptr, nullptr};
+    ktl::atomic<size_t> ready_threads{0};
+    Event quit_event;
+  } args;
+
+  // Create two threads and wait for them to start.
+  for (Thread*& t : args.threads) {
+    t = Thread::Create(
+        "owq_test_thread",
+        [](void* arg) -> int {
+          Args* args = reinterpret_cast<Args*>(arg);
+          args->ready_threads.fetch_add(1);
+          args->quit_event.Wait();
+          return 0;
+        },
+        static_cast<void*>(&args), DEFAULT_PRIORITY);
+    ASSERT_NONNULL(t);
+    t->Resume();
+  }
+
+  while (args.ready_threads.load() != args.threads.size()) {
+    Thread::Current::SleepRelative(ZX_MSEC(1));
+  }
+
+  // Assign thread N as the owner of queue N, forall N.
+  static_assert(args.queues.size() == args.threads.size());
+  for (size_t i = 0; i < args.threads.size(); ++i) {
+    EXPECT_OK(args.queues[i].AssignOwner(args.threads[i]));
+  }
+
+  // Start another thread and have it hold T0's lock.  We need to be told to
+  // Backoff on locking when we attempt to obtain the wake_futex's OWQ's current
+  // owner lock to set up the original conditions of the bug.
+  //
+  // Sadly, it is very difficult to make this fully deterministic.  Once the
+  // requeue operation starts, it will continue to try until it finally
+  // completes.  We need to have T0's lock contested, but we also need to drop
+  // the lock after a certain period of time, or we will be deadlocked.
+  //
+  // Right now, we are hardcoding a timeout of 200mSec for holding the lock.
+  // There is a small chance of a false negative if the lock is dropped before
+  // the requeue operation starts, but automated tests should not be able to
+  // miss a regression forever.
+  //
+  // Also, use hard affinity make sure that the main test thread is not running
+  // on the same CPU as the contesting thread.  If the contesting thread makes
+  // it into the lock, disabling interrupts in the process, and the primary test
+  // thread ends up being scheduled on the same CPU as the contesting thread, it
+  // is possible that it will end up stuck there if there is so little activity
+  // in the system that the main thread does not get stolen by another scheduler
+  // when an unrelated thread goes idle.
+  //
+  Thread* contesting_thread = Thread::Create(
+      "owq_test_thread",
+      [](void* arg) -> int {
+        Args* args = reinterpret_cast<Args*>(arg);
+        {
+          SingleChainLockGuard guard{IrqSaveOption, args->threads[0]->get_lock(),
+                                     CLT_TAG("owq_topology_bug_502179440_regression_test")};
+          args->ready_threads.fetch_add(1);
+
+          zx_instant_mono_t deadline = current_mono_time() + ZX_MSEC(200);
+          while (current_mono_time() < deadline) {
+            arch::Yield();
+          }
+        }
+        args->quit_event.Wait();
+        return 0;
+      },
+      static_cast<void*>(&args), DEFAULT_PRIORITY);
+  ASSERT_NONNULL(contesting_thread);
+  contesting_thread->SetCpuAffinity(0x2);
+  contesting_thread->Resume();
+
+  while (args.ready_threads.load() != args.threads.size() + 1) {
+    Thread::Current::SleepRelative(ZX_MSEC(1));
+  }
+
+  // Requeue from Q0 -> Q1, specifying T1 (who owns Q1 right now) as the new
+  // owner of Q1.
+  class DefaultHook : public OwnedWaitQueue::IWakeRequeueHook {
+  } default_hook;
+  args.queues[0].WakeAndRequeue(args.queues[1], args.threads[1], 1, 0xFFFFFFFF, default_hook,
+                                default_hook, OwnedWaitQueue::WakeOption::None);
+
+  // If we didn't fail any asserts, then we passed!  Shutdown the threads and we are done.
+  args.quit_event.Signal();
+  int unused_retcode;
+  for (Thread*& t : args.threads) {
+    t->Join(&unused_retcode, ZX_TIME_INFINITE);
+    t = nullptr;
+  }
+  contesting_thread->Join(&unused_retcode, ZX_TIME_INFINITE);
+  contesting_thread = nullptr;
+
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(owq_topology_tests)
@@ -2846,4 +2963,5 @@ UNITTEST("wake queue upstream from requeue target shares new wq owner",
 UNITTEST("wake queue upstream from requeue target rejects new rq thread",
          owq_topology_test_wake_queue_upstream_from_requeue_target_rejects_new_rq_thread)
 UNITTEST("new owner is already locked", owq_topology_test_locked_owner)
+UNITTEST("bug 502179440 regression test", owq_topology_bug_502179440_regression_test)
 UNITTEST_END_TESTCASE(owq_topology_tests, "owq", "OwnedWaitQueue topology tests")
