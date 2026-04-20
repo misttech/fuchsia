@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/python/python_binary.gni")
 import("//build/testing/python_build_time_tests.gni")
 
 if (is_host) {
@@ -35,6 +36,20 @@ if (is_host) {
     inputs = [
       "gn_runner.py",
       "//build/bazel/scripts:build_utils.py",
+    ]
+  }
+
+  python_binary("compare_rustc_commands") {
+    testonly = true
+    main_source = "compare_rustc_commands.py"
+
+    # TODO(jayzhuang): Fix mypy errors.
+    enable_mypy = false
+    sources = [
+      "//build/api/ninja_artifacts.py",
+      "//build/bazel/scripts/build_utils.py",
+      "gn_runner.py",
+      "shell_utils.py",
     ]
   }
 }

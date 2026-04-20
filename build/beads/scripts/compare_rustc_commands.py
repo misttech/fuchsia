@@ -9,6 +9,8 @@ import json
 import os
 import pathlib
 import shlex
+import shutil
+import subprocess
 import sys
 import tempfile
 import typing as T
@@ -23,9 +25,10 @@ _DEBUG = False
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 
 # Path to the default Ninja binary.
-_DEFAULT_NINJA_PATH = (
-    _FUCHSIA_DIR / "prebuilt/third_party/ninja/linux-x64/ninja"
-)
+_DEFAULT_NINJA_BIN = _FUCHSIA_DIR / "prebuilt/third_party/ninja/linux-x64/ninja"
+
+# Path to the default GN binary.
+_DEFAULT_GN_BIN = _FUCHSIA_DIR / "prebuilt/third_party/gn/linux-x64/gn"
 
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
 import ninja_artifacts
@@ -41,6 +44,7 @@ _ARGS_TO_IGNORE = (
     "--extern",
     "-L",
     "-Ldependency",
+    "-Zshell-argfiles",
     "@shell:",
     # Ignore --emit flags for now. In GN they are used to emit dep-info and
     # rmeta files, which Bazel doesn't need for now.
@@ -48,6 +52,13 @@ _ARGS_TO_IGNORE = (
     "-Zdep-info-omit-d-target",
     # This is the default value, which Bazel sets explicitly, and GN omits.
     "--error-format=human",
+    # GN and Bazel writes outputs to different locations, so ignore output flags.
+    "--out-dir=",
+    "-o=",
+    # Bazel sets sysroot to the Rust toolchain in bazel-out, while GN omits this.
+    "--sysroot=",
+    # Bazel sets this for determinism purposes, and GN omits it.
+    "--remap-path-prefix=",
     # TODO(https://fxbug.dev/477167250): Propagate debug_info to Bazel and
     # remove this.
     "-Cdebug-assertions=",
@@ -71,6 +82,15 @@ _ARGS_TO_IGNORE = (
     # TODO(https://fxbug.dev/478707341): Figure out the root causes of link-arg inconsistencies.
     "-Clink-arg=",
     "-Clink-args=",
+    # TODO(https://fxbug.dev/478707341): Figure out how to make remote flags
+    # consistent between GN and Bazel.
+    "--remote-flag=",
+    # TODO(https://fxbug.dev/478707341): GN uses clang++ and Bazel uses clang.
+    # Figure out where this discrepancy comes from and remove this.
+    "-Clinker=",
+    # TODO(https://fxbug.dev/478707341): Bazel adds this for some binaries.
+    # Figure out why and determine if it's OK to ignore.
+    "-Cextra-filename=",
 )
 
 # Argument prefixes that need to be converted for consistency between GN and Bazel.
@@ -82,25 +102,33 @@ _ARGS_PREFIXES_TO_CONVERT = {
 }
 
 
-def debug(s: str):
+def debug(s: str) -> None:
     if _DEBUG:
         print(f"DEBUG: {s}", file=sys.stderr)
 
 
-def try_get_build_dir() -> T.Optional[pathlib.Path]:
+def try_get_build_dir(fuchsia_dir: pathlib.Path) -> T.Optional[pathlib.Path]:
     """
     Try to get the build directory using `fx get-build-dir`.
+
+    Args:
+        fuchsia_dir: Path to the Fuchsia source tree.
 
     Returns:
         The build directory if it can be found, None otherwise.
     """
-    fx_build_dir_file = _FUCHSIA_DIR / ".fx-build-dir"
+    fx_build_dir_file = fuchsia_dir / ".fx-build-dir"
     if not fx_build_dir_file.exists():
         return None
     return pathlib.Path(fx_build_dir_file.read_text().strip())
 
 
-def query_ninja_command(build_dir: pathlib.Path, gn_label: str) -> list[str]:
+def query_ninja_command(
+    gn: gn_runner.GnRunner,
+    ninja_runner: ninja_artifacts.NinjaRunner,
+    gn_label: str,
+    fuchsia_dir: pathlib.Path,
+) -> list[str]:
     """
     Fetch the command line of the rustc command for the given GN label.
 
@@ -109,7 +137,8 @@ def query_ninja_command(build_dir: pathlib.Path, gn_label: str) -> list[str]:
     command.
 
     Args:
-        build_dir: The path to the build directory.
+        gn: The GnRunner instance to use.
+        ninja_runner: The NinjaRunner instance to use.
         gn_label: The GN label to fetch the command line for.
 
     Returns:
@@ -118,21 +147,23 @@ def query_ninja_command(build_dir: pathlib.Path, gn_label: str) -> list[str]:
     debug(f"Fetching Ninja command for GN label {gn_label}...")
 
     debug(
-        f"Running gn desc for target {gn_label} in build directory {build_dir}"
+        f"Running gn desc for target {gn_label} in build directory {gn.build_dir}"
     )
-    gn = gn_runner.GnRunner(build_dir)
     desc_output = gn.run_and_extract_output(["desc", gn_label, "outputs"])
     outputs = desc_output.strip().splitlines()
     if not outputs:
         debug(f"No outputs found for GN label {gn_label}.")
         return []
 
-    cmd_raw = ""
+    debug(f"outputs from GN desc: {outputs}")
+    # Outputs are in format `//out/dir/foo/bar`. Need to strip the `//out/dir` part.
+    # Build root is `out/dir`.
+    build_root_relpath = os.path.relpath(gn.build_dir, fuchsia_dir)
     relative_outputs = [
-        os.path.relpath(output[2:], build_dir) for output in outputs
+        os.path.relpath(output[2:], build_root_relpath) for output in outputs
     ]
 
-    ninja_runner = ninja_artifacts.NinjaRunner(_DEFAULT_NINJA_PATH, build_dir)
+    cmd_raw = ""
     for candidate in relative_outputs:
         try:
             ninja_cmd = ["-t", "commands", "-s", candidate]
@@ -144,7 +175,7 @@ def query_ninja_command(build_dir: pathlib.Path, gn_label: str) -> list[str]:
                 selected_output = candidate
                 break
         except Exception as e:
-            debug(f"Error running ninja -t commands for {candidate}: {e}")
+            print(f"ERROR: running ninja -t commands for {candidate}: {e}")
             continue
 
     if not cmd_raw:
@@ -157,9 +188,20 @@ def query_ninja_command(build_dir: pathlib.Path, gn_label: str) -> list[str]:
     return shlex.split(cmd_raw)
 
 
-def query_bazel_command(build_dir: pathlib.Path, bazel_label: str) -> list[str]:
-    bazel_paths = build_utils.BazelPaths(_FUCHSIA_DIR, build_dir)
-    bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
+def query_bazel_command(
+    bazel_launcher: build_utils.BazelLauncher, bazel_label: str
+) -> list[str]:
+    """
+    Query Bazel for the command line of the rustc command for the given Bazel
+    label.
+
+    Args:
+        bazel_launcher: The BazelLauncher instance to use.
+        bazel_label: The Bazel label to fetch the command line for.
+
+    Returns:
+        A list of strings representing the command line of the rustc command.
+    """
     query_args = [
         "--config=host",
         "--config=quiet",
@@ -224,6 +266,22 @@ def normalize_rustc_arg(arg: str) -> str:
         base_linker_name = os.path.basename(parts[1])
         return f"-Clinker={base_linker_name}"
 
+    if not arg.startswith("-"):
+        # This is likely a path, e.g. not a `--arg=val` argument, so try to
+        # apply path-related normalization.
+
+        # Normalize paths to the `rustc` compiler.
+        if os.path.basename(arg) == "rustc":
+            return "rustc"
+
+        # Ignore Bazel-specific paths for prebuilt rust toolchain lib.
+        if arg.startswith("bazel-out") and "fuchsia_prebuilt_rust" in arg:
+            return ""
+
+        # Strip `../../` prefixes, which is how GN/Ninja locates sources.
+        if arg.startswith("../../"):
+            return arg[6:]
+
     return arg
 
 
@@ -240,9 +298,27 @@ def main() -> int:
         description="Compare GN and Bazel build commands for rustc."
     )
     parser.add_argument(
+        "--fuchsia_dir",
+        type=pathlib.Path,
+        default=_FUCHSIA_DIR,
+        help="Path to Fuchsia directory",
+    )
+    parser.add_argument(
         "--build_dir",
         type=pathlib.Path,
         help="Path to GN build directory (e.g. out/default)",
+    )
+    parser.add_argument(
+        "--ninja_bin",
+        type=pathlib.Path,
+        default=_DEFAULT_NINJA_BIN,
+        help="Path to ninja binary",
+    )
+    parser.add_argument(
+        "--gn_bin",
+        type=pathlib.Path,
+        default=_DEFAULT_GN_BIN,
+        help="Path to gn binary",
     )
     parser.add_argument(
         "--gn_label", required=True, help="GN Rust target label"
@@ -257,27 +333,39 @@ def main() -> int:
         default=False,
         help="Print verbose output",
     )
+    parser.add_argument(
+        "--temp_dir", type=pathlib.Path, help="Temporary directory path"
+    )
 
     args = parser.parse_args()
 
     global _DEBUG
     _DEBUG = args.verbose
 
-    build_dir = args.build_dir or try_get_build_dir()
+    build_dir = args.build_dir or try_get_build_dir(args.fuchsia_dir)
     if not build_dir:
         print(
             "Error: Could not determine build directory. Please provide --build_dir."
         )
         return 1
 
+    debug(f"Fuchsia Dir: {args.fuchsia_dir}")
     debug(f"Build Dir: {build_dir}")
+    debug(f"GN Path: {args.gn_bin}")
+    debug(f"Ninja Path: {args.ninja_bin}")
     debug(f"GN Label: {args.gn_label}")
     debug(f"Bazel Label: {args.bazel_label}")
 
-    gn_cmd_list = query_ninja_command(build_dir, args.gn_label)
+    gn = gn_runner.GnRunner(build_dir, args.gn_bin)
+    ninja_runner = ninja_artifacts.NinjaRunner(args.ninja_bin, build_dir)
+    gn_cmd_list = query_ninja_command(
+        gn, ninja_runner, args.gn_label, args.fuchsia_dir
+    )
     gn_cmd = shell_utils.ShellCommand(" ".join(gn_cmd_list))
 
-    bazel_cmd_list = query_bazel_command(build_dir, args.bazel_label)
+    bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, build_dir)
+    bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
+    bazel_cmd_list = query_bazel_command(bazel_launcher, args.bazel_label)
     bazel_cmd = shell_utils.ShellCommand(" ".join(bazel_cmd_list))
 
     gn_rustc_cmd = shell_utils.find_command_with_tool(gn_cmd.split(), "rustc")
@@ -294,24 +382,40 @@ def main() -> int:
         print("Failed to get GN or Bazel rustc command.")
         return 1
 
+    # Fixups to the GN rustc command where it uses `--arg val` instead of
+    # `--arg=val`, which differ from Bazel. These need to be done before
+    # tokenizing the command line.
+    gn_rustc_cmd = str(gn_rustc_cmd).replace("--target ", "--target=")
+    gn_rustc_cmd = str(gn_rustc_cmd).replace("-o ", "-o=")
+
     normalized_gn_args = sorted(
-        set(normalize_rustc_arg(a) for a in str(gn_rustc_cmd).split())
+        set(normalize_rustc_arg(a) for a in shlex.split(gn_rustc_cmd))
     )
     normalized_bazel_args = sorted(
-        set(normalize_rustc_arg(a) for a in str(bazel_rustc_cmd).split())
+        set(normalize_rustc_arg(a) for a in shlex.split(str(bazel_rustc_cmd)))
     )
 
-    temp_dir = tempfile.mkdtemp(prefix="compare_rustc_commands_")
-    with open(os.path.join(temp_dir, "normalized_gn_args.txt"), "w") as f:
-        f.write("\n".join(normalized_gn_args))
-    with open(os.path.join(temp_dir, "normalized_bazel_args.txt"), "w") as f:
-        f.write("\n".join(normalized_bazel_args))
-    print(f"Wrote args to {temp_dir}, to compare commands, run:")
-    print(
-        f"diff -y {temp_dir}/normalized_gn_args.txt {temp_dir}/normalized_bazel_args.txt"
+    temp_dir = tempfile.mkdtemp(
+        prefix="compare_rustc_commands_",
+        dir=args.temp_dir,
     )
+    gn_file = os.path.join(temp_dir, "normalized_gn_args.txt")
+    bazel_file = os.path.join(temp_dir, "normalized_bazel_args.txt")
+    with open(gn_file, "w") as f:
+        f.write("\n".join(normalized_gn_args) + "\n")
+    with open(bazel_file, "w") as f:
+        f.write("\n".join(normalized_bazel_args) + "\n")
 
-    return 0
+    debug(f"Comparing normalized args with command:")
+    debug(f"diff -u {gn_file} {bazel_file}")
+    result = subprocess.run(["diff", "-u", gn_file, bazel_file])
+
+    # Preserve temporary results if verbose mode or a temp dir is specified.
+    # In these modes, the user may want to inspect the temporary files.
+    if not (_DEBUG or args.temp_dir):
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return result.returncode
 
 
 if __name__ == "__main__":

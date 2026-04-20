@@ -100,11 +100,11 @@ class TestCompareRustcCommands(unittest.TestCase):
             compare_rustc_commands.normalize_rustc_arg(
                 "-Clinker=/path/to/clang"
             ),
-            "-Clinker=clang",
+            "",
         )
         self.assertEqual(
             compare_rustc_commands.normalize_rustc_arg("-Clinker=lld"),
-            "-Clinker=lld",
+            "",
         )
 
     def test_rindex(self):
