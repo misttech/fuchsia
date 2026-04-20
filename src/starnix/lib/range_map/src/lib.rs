@@ -1613,6 +1613,43 @@ where
         removed_values
     }
 
+    /// Appends a range with the given value, assuming it does not overlap with any existing range
+    /// and is inserted in sorted order.
+    ///
+    /// This method avoids the overhead of searching for overlapping ranges.
+    /// If the inserted range is directly adjacent to the last range with an equal value, the
+    /// inserted range will be merged with the adjacent range.
+    pub fn append_non_overlapping(&mut self, mut range: Range<K>, value: V) -> bool {
+        if range.end <= range.start {
+            return false;
+        }
+
+        // Check for a range directly before this one. Since we assume sorted insertion,
+        // it will be the last range in the map.
+        if let Some((prev_range, prev_value)) = self.node.last_key_value() {
+            if prev_range.end == range.start && value == *prev_value {
+                let cursor = self.find(&prev_range.start, CursorPosition::Left);
+                range.start = prev_range.start;
+
+                // Remove the previous range before inserting the merged one.
+                let _ = self.remove_at(cursor);
+            } else if range.start < prev_range.end {
+                // Overlaps with previous range.
+                return false;
+            }
+        }
+
+        self.insert_range_internal(range, value);
+
+        #[cfg(test)]
+        self.node.validate_max_gap();
+
+        #[cfg(test)]
+        self.node.validate_keys();
+
+        true
+    }
+
     /// Remove the entry with the given cursor from the map.
     #[must_use]
     fn remove_at(&mut self, cursor: Cursor) -> Option<V> {
@@ -1750,6 +1787,22 @@ mod test {
         assert!(map.get(9).is_none());
         assert_eq!((&(10..34), &-14), map.get(33).unwrap());
         assert!(map.get(34).is_none());
+    }
+
+    #[::fuchsia::test]
+    fn test_append_non_overlapping() {
+        let mut map = RangeMap::<u32, i32>::default();
+
+        assert!(!map.append_non_overlapping(10..10, 1));
+        assert!(map.append_non_overlapping(10..20, 1));
+        assert!(map.append_non_overlapping(20..30, 1)); // Should merge!
+        assert!(map.append_non_overlapping(40..50, 2)); // Should not merge!
+        assert!(!map.append_non_overlapping(15..25, 3)); // Should fail on overlap
+
+        assert_eq!((&(10..30), &1), map.get(15).unwrap());
+        assert_eq!((&(10..30), &1), map.get(25).unwrap());
+        assert_eq!((&(40..50), &2), map.get(45).unwrap());
+        assert!(map.get(35).is_none());
     }
 
     #[::fuchsia::test]

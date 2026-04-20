@@ -3419,7 +3419,6 @@ impl MemoryManager {
                     MappingBacking::Memory(backing) => {
                         trace_duration!(CATEGORY_STARNIX_MM, "memory_backing_clone");
                         let memory_offset = backing.address_to_offset(range.start);
-                        let length = range.end - range.start;
 
                         let target_memory = if mapping.flags().contains(MappingFlags::SHARED)
                             || mapping.name().is_vvar()
@@ -3437,23 +3436,19 @@ impl MemoryManager {
                             memory.clone()
                         };
 
-                        let mut released_mappings = ReleasedMappings::default();
-                        target_state.add_memory_mapping(
-                            &target,
-                            DesiredAddress::Fixed(range.start),
-                            target_memory,
-                            memory_offset,
-                            length,
+                        let mapping = Mapping::with_name(
+                            MappingBacking::Memory(Box::new(MappingBackingMemory::new(
+                                range.start,
+                                target_memory,
+                                memory_offset,
+                            ))),
                             target_mapping_flags,
                             mapping.max_access(),
-                            false,
                             mapping.name().to_owned(),
                             MappingMode::Lazy,
-                            &mut released_mappings,
-                        )?;
+                        );
                         assert!(
-                            released_mappings.is_empty(),
-                            "target mm must be empty when cloning, got {released_mappings:#?}"
+                            target_state.mappings.append_non_overlapping(range.clone(), mapping)
                         );
                     }
                     MappingBacking::PrivateAnonymous => {
@@ -3471,10 +3466,8 @@ impl MemoryManager {
                             mapping.name().to_owned(),
                             MappingMode::Lazy,
                         );
-                        let removed_mappings = target_state.mappings.insert(range.clone(), mapping);
                         assert!(
-                            removed_mappings.is_empty(),
-                            "target mm must be empty when cloning, got {removed_mappings:#?}"
+                            target_state.mappings.append_non_overlapping(range.clone(), mapping)
                         );
                     }
                 };
