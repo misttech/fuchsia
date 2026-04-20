@@ -249,7 +249,6 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
         preserve_work_dir=False,
         json=False,
         update_audit_expectations=False,
-        rebuild_tests=False,
         skip_audit=False,
         kernel=None,
     )
@@ -263,18 +262,6 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
             cls.fuchsia_dir, output_dir = get_fuchsia_paths()
         except EnvironmentError as e:
             raise unittest.SkipTest(str(e))
-
-        if cls.args.rebuild_tests:
-            print("Re-building tests...")
-            subprocess.run(
-                [
-                    "scripts/fx",
-                    "build",
-                    "//src/starnix/tests/selinux/userspace:sestarnix_userspace_tests",
-                ],
-                check=True,
-                cwd=cls.fuchsia_dir,
-            )
 
         # The directory that contains the Android kernel and kernel modules.
         gki_dir = cls.fuchsia_dir / "prebuilt/starnix/internal/gki/x86_64"
@@ -413,15 +400,11 @@ def populate_dynamic_tests() -> None:
         )
 
 
-# When this script is started from `fx test`, `__name__` is not "__main__",
-# so we need to call `populate_dynamic_tests` here.
-populate_dynamic_tests()
-
-# Called when the script is run directly (i.e. not via `fx test`)
-if __name__ == "__main__":
-    # The arguments are parsed twice:
-    # Once here, to get the custom arguments.
-    # Once by unittest, to get the unittest arguments.
+# When this script is started from `fx test`, `__name__` is not "__main__"
+if __name__ != "__main__":
+    populate_dynamic_tests()
+else:
+    # The arguments are parsed twice: once here to get the custom arguments, and once by unittest, to get the unittest arguments.
     parser = argparse.ArgumentParser(
         add_help=False,
         description="Run SEStarnix userspace tests on Linux via QEMU.",
@@ -459,9 +442,6 @@ if __name__ == "__main__":
     )
 
     args, remaining_args = parser.parse_known_args()
-    # When the script is ran directly, the automatic build step is bypassed.
-    # For convenience, force a rebuild of the tests.
-    args.rebuild_tests = True
     if args.json:
         args.all_output = True
 
@@ -469,6 +449,19 @@ if __name__ == "__main__":
         print("Custom Test Runner Help:")
         parser.print_help()
         print("\nStandard Unittest Help:")
+    else:
+        print("Re-building tests...")
+        fuchsia_dir, _ = get_fuchsia_paths()
+        subprocess.run(
+            [
+                "scripts/fx",
+                "build",
+                "//src/starnix/tests/selinux/userspace:sestarnix_userspace_tests",
+            ],
+            check=True,
+            cwd=fuchsia_dir,
+        )
+        populate_dynamic_tests()
 
     TestSestarnixUserspaceOnLinux.args = args
     unittest.main(argv=[sys.argv[0]] + remaining_args, verbosity=2)
