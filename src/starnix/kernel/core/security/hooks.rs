@@ -544,6 +544,7 @@ pub fn fs_node_notify_security_context(
     fs_node: &FsNode,
     context: &FsStr,
 ) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.fs_node_notify_security_context");
     if_selinux_else(
         current_task,
         |security_server| {
