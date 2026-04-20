@@ -115,11 +115,7 @@ fn check_integer(v: &JsonValue) -> Result<(), FieldError> {
 }
 
 fn check_unsigned(v: &JsonValue) -> Result<(), FieldError> {
-    if v.is_u64() {
-        Ok(())
-    } else {
-        Err(FieldError::NumberNotUnsigned)
-    }
+    if v.is_u64() { Ok(()) } else { Err(FieldError::NumberNotUnsigned) }
 }
 
 impl JsonValueExt for JsonValue {
@@ -251,8 +247,12 @@ mod tests {
 
     use FieldError::*;
 
-    fn try_from_int_error() -> TryFromIntError {
+    fn try_from_int_underflow_error() -> TryFromIntError {
         u64::try_from(-1i32).unwrap_err()
+    }
+
+    fn try_from_int_overflow_error() -> TryFromIntError {
+        u64::try_from(u128::MAX).unwrap_err()
     }
 
     macro_rules! field_parse_tests {
@@ -307,7 +307,7 @@ mod tests {
         mod: parse_uint8,
         type: { uint8 },
         tests: [
-            cant_overflow: json!(256) => Err(InvalidNumber(try_from_int_error())),
+            cant_overflow: json!(256) => Err(InvalidNumber(try_from_int_overflow_error())),
             cant_be_negative: json!(-1) =>
                 Err(NumberNotUnsigned),
             cant_be_float: json!(1.0) =>
@@ -329,7 +329,7 @@ mod tests {
         mod: parse_uint16,
         type: { uint16 },
         tests: [
-            cant_overflow: json!(65_536) => Err(InvalidNumber(try_from_int_error())),
+            cant_overflow: json!(65_536) => Err(InvalidNumber(try_from_int_overflow_error())),
             cant_be_negative: json!(-1) =>
                 Err(NumberNotUnsigned),
             cant_be_float: json!(1.0) =>
@@ -351,7 +351,7 @@ mod tests {
         mod: parse_uint32,
         type: { uint32 },
         tests: [
-            cant_overflow: json!(4_294_967_296u64) => Err(InvalidNumber(try_from_int_error())),
+            cant_overflow: json!(4_294_967_296u64) => Err(InvalidNumber(try_from_int_overflow_error())),
             cant_be_negative: json!(-1) =>
                 Err(NumberNotUnsigned),
             cant_be_float: json!(1.0) =>
@@ -394,8 +394,8 @@ mod tests {
         mod: parse_int8,
         type: { int8 },
         tests: [
-            cant_underflow: json!(-129) => Err(InvalidNumber(try_from_int_error())),
-            cant_overflow: json!(128) => Err(InvalidNumber(try_from_int_error())),
+            cant_underflow: json!(-129) => Err(InvalidNumber(try_from_int_underflow_error())),
+            cant_overflow: json!(128) => Err(InvalidNumber(try_from_int_overflow_error())),
             cant_be_float: json!(1.0) =>
                 Err(NumberNotInteger),
             cant_be_null: json!(null) =>
@@ -415,8 +415,8 @@ mod tests {
         mod: parse_int16,
         type: { int16 },
         tests: [
-            cant_underflow: json!(-32_769i32) => Err(InvalidNumber(try_from_int_error())),
-            cant_overflow: json!(32_768) => Err(InvalidNumber(try_from_int_error())),
+            cant_underflow: json!(-32_769i32) => Err(InvalidNumber(try_from_int_underflow_error())),
+            cant_overflow: json!(32_768) => Err(InvalidNumber(try_from_int_overflow_error())),
             cant_be_float: json!(1.0) =>
                 Err(NumberNotInteger),
             cant_be_null: json!(null) =>
@@ -436,8 +436,8 @@ mod tests {
         mod: parse_int32,
         type: { int32 },
         tests: [
-            cant_underflow: json!(-2_147_483_649i64) => Err(InvalidNumber(try_from_int_error())),
-            cant_overflow: json!(2_147_483_648i64) => Err(InvalidNumber(try_from_int_error())),
+            cant_underflow: json!(-2_147_483_649i64) => Err(InvalidNumber(try_from_int_underflow_error())),
+            cant_overflow: json!(2_147_483_648i64) => Err(InvalidNumber(try_from_int_overflow_error())),
             cant_be_float: json!(1.0) =>
                 Err(NumberNotInteger),
             cant_be_null: json!(null) =>
