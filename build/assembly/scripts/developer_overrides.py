@@ -184,20 +184,26 @@ def main() -> int:
             f"bin/{name}" for name in shell_entry.components
         ]
 
-    if overrides_from_gn.packages:
-        # Set up the package copier to copy all the packages
+    package_copier = None
+    if overrides_from_gn.packages or overrides_from_gn.bootfs_files_package:
         package_copier = PackageCopier(args.outdir)
 
-        # For each package details entry from GN, add the package to the set of packages to copy
-        # and then create a new package details entry for assembly that uses the new path of the
-        # copied package.
-        for package_entry in overrides_from_gn.packages:
-            destination_path, _ = package_copier.add_package(
-                package_entry.package
+    if package_copier:
+        if overrides_from_gn.packages:
+            for package_entry in overrides_from_gn.packages:
+                destination_path, _ = package_copier.add_package(
+                    package_entry.package
+                )
+                overrides_for_assembly.packages.append(
+                    PackageDetails(destination_path, package_entry.set)
+                )
+
+        if overrides_from_gn.bootfs_files_package:
+            manifest_path = os.path.join(
+                args.outdir, overrides_from_gn.bootfs_files_package
             )
-            overrides_for_assembly.packages.append(
-                PackageDetails(destination_path, package_entry.set)
-            )
+            destination_path, _ = package_copier.add_package(manifest_path)
+            overrides_for_assembly.bootfs_files_package = str(destination_path)
 
         _, copy_deps = package_copier.perform_copy()
         deps.update(copy_deps)
