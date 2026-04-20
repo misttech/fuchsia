@@ -7,7 +7,6 @@ load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "fuchsia_cc_driver",
     "fuchsia_cc_test",
-    "fuchsia_component_manifest",
     "fuchsia_driver_bind_bytecode",
     "fuchsia_driver_component",
     "fuchsia_package",
@@ -60,16 +59,11 @@ fuchsia_cc_driver(
     ],
 )
 
-fuchsia_component_manifest(
-    name = "manifest",
-    src = "meta/dw-spi.cml",
-)
-
 fuchsia_driver_component(
     name = "component",
     bind_bytecode = ":dw-spi-bind",
     driver_lib = ":dw-spi-driver",
-    manifest = ":manifest",
+    manifest = "meta/dw-spi.cml",
 )
 
 fuchsia_package(
