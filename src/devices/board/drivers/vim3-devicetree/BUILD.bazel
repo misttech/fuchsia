@@ -93,16 +93,11 @@ fuchsia_cc_driver(
     ],
 )
 
-fuchsia_component_manifest(
-    name = "manifest",
-    src = "meta/vim3-devicetree.cml",
-)
-
 fuchsia_driver_component(
     name = "component",
     bind_bytecode = ":vim3-devicetree-bind",
     driver_lib = ":vim3-devicetree-driver",
-    manifest = ":manifest",
+    manifest = "meta/vim3-devicetree.cml",
 )
 
 fuchsia_package(
