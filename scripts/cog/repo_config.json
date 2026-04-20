@@ -8,7 +8,7 @@
     "symlinks": {
         "@cartfs//integration": "@cartfs//fuchsia/integration",
         "@cartfs//fuchsia/scripts/cog/resources/args.gn": "@cartfs//fuchsia/local/args.gn",
-        "@cog//scripts/cog/resources/fx": "@cog//.jiri_root/bin/fx",
+        "@cog//scripts/fx": "@cog//.jiri_root/bin/fx",
         "@cog//scripts/cog/resources/ffx": "@cog//.jiri_root/bin/ffx",
         "@cartfs//fuchsia/.fx-build-dir": "@cog//.fx-build-dir",
         "@cartfs//fuchsia/integration": "@cog//integration",

@@ -215,21 +215,15 @@ if ! fuchsia_dir="$(find_tree_root "$(pwd)")"; then
   exit 1
 fi
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-# In cog workspace, .jiri_root in source tree would symlink to CartFS
-# workspace, where the out directory exist and tests executed.
-script_jiri_root="$(dirname "$(readlink -f "$(find_tree_root "${script_dir}")/.jiri_root")")"
+script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
-# In cog workspace, we will check if we are running fx in either source tree or
-# CartFS workspace.
-if [[ "${fuchsia_dir}" != "${script_jiri_root}"* && "${script_dir}" != "${fuchsia_dir}"* ]]; then
+if [[ "${script_dir}" != "${fuchsia_dir}"* ]]; then
   echo >&2 "ERROR: You are executing fx from outside of the current source tree"
   echo >&2 "ERROR: This is not supported as fx does not have a stable internal API"
   echo >&2
   echo >&2 "    'fx' was executed from: ${BASH_SOURCE[0]}"
   echo >&2 "    'fuchsia directory' resolved to: ${fuchsia_dir}"
   echo >&2 "    'script_dir' resolved to: ${script_dir}"
-  echo >&2 "    'script_jiri_root' resolved to: ${script_jiri_root}"
   echo >&2
   echo >&2 "To run a command in the current Fuchsia directory, run fx from:"
   echo >&2 "  ${fuchsia_dir}/scripts/fx"
@@ -238,6 +232,50 @@ if [[ "${fuchsia_dir}" != "${script_jiri_root}"* && "${script_dir}" != "${fuchsi
   echo >&2 "To change your current environment, update your 'PATH':"
   echo >&2 "  source ${fuchsia_dir}/scripts/fx-env.sh && fx-update-path"
   exit 1
+fi
+
+# IFF `fx` is run within a Cog workspace:
+# 1. Sync local changes from Cog to CartFS
+# 2. Redirect invocation to `fx` from within the CartFS workspace
+# 3. Sync changes back from CartFS to Cog
+if [[ "$fuchsia_dir" == "${_FX_COG_PATH_PREFIX:-/google/cog/cloud/}"* ]]; then
+  set -e
+
+  # Step 1: Sync changes from Cog => CartFS.
+  declare -r sync_workspace_script="${fuchsia_dir}/scripts/cog/sync_workspace.py"
+  sync_result_file="$(mktemp)"
+  declare -r sync_result_file
+  trap 'rm -f "${sync_result_file}"' EXIT
+  "${sync_workspace_script}" --from-cog-to-cartfs --report "${sync_result_file}"
+
+  # Obtain $CARTFS_CWD and $CARTFS_FUCHSIA_DIR.
+  source "${sync_result_file}"
+  if [[ -z "${CARTFS_CWD:-}" || -z "${CARTFS_FUCHSIA_DIR:-}" ]]; then
+    echo >&2 "Error: Cog sync did not provide the required CartFS paths."
+    exit 1
+  fi
+
+  # Register cleanup for Step 3: Sync changes from CartFS => Cog.
+  cleanup() {
+    local status=$?
+    trap - EXIT SIGINT SIGTERM
+    rm -f "${sync_result_file}" || true
+    "${sync_workspace_script}" --from-cartfs-to-cog || true
+    exit "$status"
+  }
+  trap cleanup EXIT SIGINT SIGTERM
+
+  # Step 2: Redirect `fx` invocation to CartFS.
+  (
+    # We need to run this here to make sure that the PATH is updated with the
+    # prebuilts in the CartFS. If we do not do this then we will pick up the wrong
+    # hermetic-env.
+    source "${CARTFS_FUCHSIA_DIR}/scripts/fx-env.sh"
+    fx-update-path
+    cd "${CARTFS_CWD}" || exit 1
+    exec "${CARTFS_FUCHSIA_DIR}/scripts/fx" "$@"
+  )
+  exit $?
 fi
 
 # This line allows commands to find other scripts even if they have not
