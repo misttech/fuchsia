@@ -2453,7 +2453,7 @@ mod tests {
 
             for i in 0..3u64 {
                 let hash =
-                    fixture.write_blob(i.to_le_bytes().as_slice(), CompressionMode::Never).await;
+                    fixture.write_blob(i.to_string().as_bytes(), CompressionMode::Never).await;
                 hashes.push(hash);
             }
             fixture.close().await
@@ -2603,7 +2603,7 @@ mod tests {
                     &Default::default(),
                 )
                 .await;
-                file_proxy.write(i.to_le_bytes().as_slice()).await.unwrap().expect("Writing file");
+                file_proxy.write(i.to_string().as_bytes()).await.unwrap().expect("Writing file");
                 let id = file_proxy
                     .get_attributes(fio::NodeAttributesQuery::ID)
                     .await
@@ -2785,7 +2785,7 @@ mod tests {
             let fixture = blob_testing::new_blob_fixture().await;
             for i in 0..2u64 {
                 let hash =
-                    fixture.write_blob(i.to_le_bytes().as_slice(), CompressionMode::Never).await;
+                    fixture.write_blob(i.to_string().as_bytes(), CompressionMode::Never).await;
                 hashes.push(hash);
             }
             fixture.close().await
