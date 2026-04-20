@@ -1569,6 +1569,10 @@ assembly_input_bundle("core_realm_eng") {
       components = [ "bt-avrcp-controller" ]
     },
     {
+      package = "bt-hfp-hf-tool"
+      components = [ "bt-hfp-hf-tool" ]
+    },
+    {
       package = "display-test"
       components = [ "display-test" ]
     },

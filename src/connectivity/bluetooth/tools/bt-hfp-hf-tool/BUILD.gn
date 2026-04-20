@@ -47,11 +47,11 @@ fuchsia_package("bt-hfp-hf-tool") {
   deps = [ ":bin" ]
 }
 
-fuchsia_unittest_package("bt-hfp-hf-unittests") {
+fuchsia_unittest_package("bt-hfp-hf-tool-unittests") {
   deps = [ ":bin_test" ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":bt-hfp-hf-unittests" ]
+  deps = [ ":bt-hfp-hf-tool-unittests" ]
 }

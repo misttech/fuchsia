@@ -33,6 +33,7 @@
             protocol: [ "fuchsia.media.AudioDeviceEnumerator" ],
             from: "#audio_core",
             to: [ "#bt-hfp-hands-free" ],
+            source_availability: "unknown",
         },
         {
             protocol: [
@@ -46,6 +47,7 @@
             protocol: "fuchsia.mediacodec.CodecFactory",
             from: "#codec_factory",
             to: "#bt-hfp-hands-free",
+            source_availability: "unknown",
         },
         {
             protocol: [ "fuchsia.bluetooth.bredr.Profile" ],
