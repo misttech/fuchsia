@@ -11,6 +11,7 @@
 
 namespace ktl {
 
+using std::declval;
 using std::exchange;
 using std::forward;
 using std::move;
