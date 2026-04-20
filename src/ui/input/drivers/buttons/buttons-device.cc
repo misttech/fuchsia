@@ -758,7 +758,9 @@ void ButtonsDevice::ShutDown() {
   thread_started_.Wait();
   thrd_join(thread_, NULL);
   for (Gpio& gpio : gpios_) {
-    gpio.irq.destroy();
+    if (gpio.irq.is_valid()) {
+      std::move(gpio.irq).destroy();
+    }
   }
 }
 
