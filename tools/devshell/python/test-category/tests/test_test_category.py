@@ -44,6 +44,37 @@ class TestTestCategory(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(len(stats_dict.categories), 0)
         self.assertGreaterEqual(len(stats_dict.tags), 0)
 
+        uncategorized_subcats: list[str] = list(
+            stats_dict.categories.get("Uncategorized", {}).keys()
+        )
+
+        if uncategorized_subcats:
+            invalid_paths: dict[str, str] = {}
+            for path, info in metadata.get("metadata", {}).items():
+                if (coverage := info.get("coverage")) is not None:
+                    if coverage.get(
+                        "category"
+                    ) == "Uncategorized" and coverage.get(
+                        "subcategory"
+                    ) not in (
+                        None,
+                        "",
+                    ):
+                        invalid_paths[
+                            info.get("parent_directory")
+                        ] = coverage.get("subcategory")
+
+            if invalid_paths:
+                error = (
+                    "Uncategorized directories cannot have a subcategory.\n"
+                    + "Please see the following files:\n   "
+                    + "\n   ".join(
+                        f'{file_path}/TESTING.json5: subcategory = "{subcat}"'
+                        for file_path, subcat in invalid_paths.items()
+                    )
+                )
+                self.fail(error)
+
         print("\nStats dict:\n{}\n".format(stats_json))
 
         # Check if output directory is specified
