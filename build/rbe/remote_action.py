@@ -2249,7 +2249,7 @@ exec "${{cmd[@]}}"
             return dl_result.verbose_returncode(f"download {path}")
         else:
             # Not necessarily an error, as some outputs are conditional.
-            self.vmsg("Output {path} not found among remote outputs.")
+            self.vmsg(f"Output {path} not found among remote outputs.")
             return 0
 
     def local_fsatrace_transform(self, line: str) -> str:

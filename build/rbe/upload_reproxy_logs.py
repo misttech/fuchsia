@@ -367,7 +367,7 @@ def main_single_logdir(
     if not dry_run:
         with open(upload_stamp_file, "w") as f:
             f.write(
-                "Already uploaded {reproxy_logdir}.  Remove {upload_stamp_file} and re-run to force re-upload."
+                f"Already uploaded {reproxy_logdir}.  Remove {upload_stamp_file} and re-run to force re-upload."
             )
 
     return 0
