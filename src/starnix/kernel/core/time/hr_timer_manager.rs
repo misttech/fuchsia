@@ -649,6 +649,10 @@ impl HrTimerManager {
         {
             let guard = self.lock();
             if let Some(active_state) = guard.pending_timers.get(&timer_id) {
+                // Wake source is deliberately not signaled here. When the triggered_node for a
+                // timer_id is not pointer-identical to the one stored in pending_timers, it is a
+                // trigger for some previous generation of timer_id, which has since been
+                // rescheduled.
                 if !Arc::ptr_eq(&active_state.node, triggered_node) {
                     log_debug!("notify_timer: ignoring stale alarm for timer_id: {:?}", timer_id);
                     return Ok(false);
@@ -676,6 +680,8 @@ impl HrTimerManager {
         let wake_source = triggered_node.wake_source.clone();
         if let Some(wake_source) = wake_source.as_ref().and_then(|f| f.upgrade()) {
             let lease_token = lease.into_handle();
+            // `.on_wake` must not block, else the timer management loop will stall.
+            // At the moment `.on_wake`s don't stall at all.
             wake_source.on_wake(system_task, &lease_token);
             // Drop the baton lease after wake leases in associated epfd
             // are activated.

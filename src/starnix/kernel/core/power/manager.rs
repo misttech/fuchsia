@@ -11,7 +11,11 @@ use std::sync::{Arc, Weak};
 
 use anyhow::{Context, anyhow};
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_power_observability as fobs;
+use fidl_fuchsia_session_power as fpower;
+use fidl_fuchsia_starnix_runner as frunner;
 use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_inspect as inspect;
 use fuchsia_inspect::ArrayProperty;
 use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
@@ -26,10 +30,6 @@ use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
 use std::fmt;
 use zx::{HandleBased, Peered};
-use {
-    fidl_fuchsia_power_observability as fobs, fidl_fuchsia_session_power as fpower,
-    fidl_fuchsia_starnix_runner as frunner, fuchsia_inspect as inspect,
-};
 
 /// Wake source persistent info, exposed in inspect diagnostics.
 #[derive(Debug, Default)]
@@ -713,7 +713,16 @@ impl SuspendResumeManager {
     }
 }
 
+/// Called when a wake happens resulting from a timer going off.
 pub trait OnWakeOps: Send + Sync {
+    /// Called on wake events.
+    ///
+    /// Must not block.
+    ///
+    /// # Args
+    /// - `current_task`: the currently active task
+    /// - `baton_lease`: the wake lease is provided if `on_wake` has critical
+    ///   work to do and needs to prevent suspend.
     fn on_wake(&self, current_task: &CurrentTask, baton_lease: &zx::NullableHandle);
 }
 
@@ -973,9 +982,10 @@ mod test {
     use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_test_placeholders::{EchoMarker, EchoRequest};
+    use fuchsia_async as fasync;
+    use fuchsia_inspect as inspect;
     use futures::StreamExt;
     use zx::{self, HandleBased};
-    use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
     #[::fuchsia::test]
     fn test_counter_zero_initialization() {
