@@ -10,12 +10,19 @@
 
 #include "src/connectivity/network/mdns/service/common/mdns_addresses.h"
 #include "src/connectivity/network/mdns/service/common/mdns_fidl_util.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_formatting.h"
 
 namespace mdns {
 
 MdnsTransceiver::MdnsTransceiver() = default;
 
 MdnsTransceiver::~MdnsTransceiver() = default;
+
+void MdnsTransceiver::SetVerbose(bool verbose) {
+#ifdef MDNS_TRACE
+  verbose_ = verbose;
+#endif  // MDNS_TRACE
+}
 
 void MdnsTransceiver::Start(fuchsia::net::interfaces::WatcherPtr watcher,
                             fit::closure link_change_callback,
@@ -57,23 +64,44 @@ MdnsInterfaceTransceiver* MdnsTransceiver::GetInterfaceTransceiver(const inet::I
   return iter == interface_transceivers_by_address_.end() ? nullptr : iter->second.get();
 }
 
-void MdnsTransceiver::SendMessage(const DnsMessage& message, const ReplyAddress& reply_address) {
-  if (reply_address.is_multicast_placeholder()) {
-    for (const auto& [address, interface] : interface_transceivers_by_address_) {
-      FX_DCHECK(interface);
-      if ((reply_address.media() == Media::kBoth || reply_address.media() == interface->media()) &&
-          (reply_address.ip_versions() == IpVersions::kBoth ||
-           reply_address.ip_versions() == interface->IpVersions())) {
-        interface->SendMessage(message, reply_address.socket_address());
+void MdnsTransceiver::SendMessages(
+    std::unordered_map<ReplyAddress, Mdns::DnsMessageBuilder, Mdns::ReplyAddressHash> messages) {
+  for (const auto& [interface_address, interface] : interface_transceivers_by_address_) {
+    FX_DCHECK(interface);
+
+    std::unordered_map<inet::SocketAddress, Mdns::DnsMessageBuilder> builders_by_socket_address;
+    for (const auto& [reply_address, builder] : messages) {
+      if (reply_address.is_multicast_placeholder()) {
+        if ((reply_address.media() == Media::kBoth ||
+             reply_address.media() == interface->media()) &&
+            (reply_address.ip_versions() == IpVersions::kBoth ||
+             reply_address.ip_versions() == interface->IpVersions())) {
+          builders_by_socket_address[reply_address.socket_address()].Merge(builder);
+        }
+      } else if (interface_address == reply_address.interface_address()) {
+        builders_by_socket_address[reply_address.socket_address()].Merge(builder);
       }
     }
 
-    return;
-  }
+    // Send all the messages we've accumulated for this interface.
+    for (const auto& [socket_address, builder] : builders_by_socket_address) {
+      DnsMessage message;
+      builder.Build(message);
+#ifdef MDNS_TRACE
+      if (verbose_) {
+        std::ostringstream os;
 
-  auto interface_transceiver = GetInterfaceTransceiver(reply_address.interface_address());
-  if (interface_transceiver != nullptr) {
-    interface_transceiver->SendMessage(message, reply_address.socket_address());
+        if (socket_address == MdnsAddresses::v4_multicast()) {
+          os << " (multicast)";
+        } else {
+          os << " to " << socket_address;
+        }
+
+        FX_LOGS(INFO) << "Outbound message via " << interface->name() << os.str() << ":" << message;
+      }
+#endif  // MDNS_TRACE
+      interface->SendMessage(message, socket_address);
+    }
   }
 }
 

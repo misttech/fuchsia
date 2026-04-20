@@ -10,6 +10,8 @@
 #include <lib/fidl/cpp/binding.h>
 
 #include "src/connectivity/network/mdns/service/common/mdns_addresses.h"
+#include "src/connectivity/network/mdns/service/encoding/dns_reading.h"
+#include "src/connectivity/network/mdns/service/encoding/packet_reader.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/lib/testing/predicates/status.h"
 
@@ -171,6 +173,12 @@ class StubInterfaceTransceiver : public MdnsInterfaceTransceiver {
     return MdnsInterfaceTransceiver::GetInterfaceAddressResources(host_full_name);
   }
 
+  struct SentMessage {
+    DnsMessage message;
+    inet::SocketAddress address;
+  };
+  std::vector<SentMessage> sent_messages_;
+
  protected:
   enum IpVersions IpVersions() override { return ip_versions_; }
   int SetOptionDisableMulticastLoop() override { return 0; }
@@ -180,8 +188,18 @@ class StubInterfaceTransceiver : public MdnsInterfaceTransceiver {
   int SetOptionMulticastTtl() override { return 0; }
   int SetOptionFamilySpecific() override { return 0; }
   int Bind() override { return 0; }
+
   ssize_t SendTo(const void* buffer, size_t size, const inet::SocketAddress& address) override {
-    return 0;
+    std::vector<uint8_t> packet(static_cast<const uint8_t*>(buffer),
+                                static_cast<const uint8_t*>(buffer) + size);
+    PacketReader reader(packet);
+    reader.SetBytesRemaining(size);
+    DnsMessage message;
+    reader >> message;
+    if (reader.complete()) {
+      sent_messages_.push_back({std::move(message), address});
+    }
+    return size;
   }
 
   bool Start(InboundMessageCallback callback) override { return true; }
@@ -490,6 +508,234 @@ TEST_F(MdnsTransceiverTests, InterfaceAddressResources) {
   EXPECT_TRUE(VerifyAddressResource(v6_addr_3[0], v4_address1_, true));
   EXPECT_TRUE(VerifyAddressResource(v6_addr_3[1], v6_address1_, true));
   EXPECT_TRUE(VerifyAddressResource(v6_addr_3[2], v6_address_not_link_local_, false));
+}
+
+TEST_F(MdnsTransceiverTests, SendMessages) {
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(fake_watcher_impl_.CompleteWatchCallback(
+      fuchsia::net::interfaces::Event::WithExisting(std::move(properties_))));
+
+  RunLoopUntilIdle();
+
+  auto v4_transceiver = reinterpret_cast<StubInterfaceTransceiver*>(
+      transceiver_.GetInterfaceTransceiver(v4_address1_));
+  auto v6_transceiver = reinterpret_cast<StubInterfaceTransceiver*>(
+      transceiver_.GetInterfaceTransceiver(v6_address1_));
+
+  ASSERT_NE(v4_transceiver, nullptr);
+  ASSERT_NE(v6_transceiver, nullptr);
+
+  std::unordered_map<ReplyAddress, Mdns::DnsMessageBuilder, Mdns::ReplyAddressHash> messages;
+  ReplyAddress multicast_addr = ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth);
+  Mdns::DnsMessageBuilder builder;
+  builder.AddQuestion(std::make_shared<DnsQuestion>(kHostName, DnsType::kA));
+  messages[multicast_addr] = std::move(builder);
+
+  transceiver_.SendMessages(messages);
+
+  EXPECT_EQ(1u, v4_transceiver->sent_messages_.size());
+  EXPECT_EQ(1u, v6_transceiver->sent_messages_.size());
+
+  if (v4_transceiver->sent_messages_.size() == 1) {
+    EXPECT_EQ(1u, v4_transceiver->sent_messages_[0].message.questions_.size());
+    if (v4_transceiver->sent_messages_[0].message.questions_.size() == 1) {
+      EXPECT_EQ(kHostName, v4_transceiver->sent_messages_[0].message.questions_[0]->name_);
+    }
+  }
+  if (v6_transceiver->sent_messages_.size() == 1) {
+    EXPECT_EQ(1u, v6_transceiver->sent_messages_[0].message.questions_.size());
+    if (v6_transceiver->sent_messages_[0].message.questions_.size() == 1) {
+      EXPECT_EQ(kHostName, v6_transceiver->sent_messages_[0].message.questions_[0]->name_);
+    }
+  }
+}
+
+TEST_F(MdnsTransceiverTests, SendMessagesByIpVersion) {
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(fake_watcher_impl_.CompleteWatchCallback(
+      fuchsia::net::interfaces::Event::WithExisting(std::move(properties_))));
+
+  RunLoopUntilIdle();
+
+  auto v4_transceiver = reinterpret_cast<StubInterfaceTransceiver*>(
+      transceiver_.GetInterfaceTransceiver(v4_address1_));
+  auto v6_transceiver = reinterpret_cast<StubInterfaceTransceiver*>(
+      transceiver_.GetInterfaceTransceiver(v6_address1_));
+
+  ASSERT_NE(v4_transceiver, nullptr);
+  ASSERT_NE(v6_transceiver, nullptr);
+
+  std::unordered_map<ReplyAddress, Mdns::DnsMessageBuilder, Mdns::ReplyAddressHash> messages;
+
+  ReplyAddress addr_both = ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth);
+  Mdns::DnsMessageBuilder builder_both;
+  builder_both.AddResource(std::make_shared<DnsResource>(DnsName("both"), v4_address1_),
+                           MdnsResourceSection::kAnswer);
+  messages[addr_both] = std::move(builder_both);
+
+  ReplyAddress addr_v4 = ReplyAddress::Multicast(Media::kBoth, IpVersions::kV4);
+  Mdns::DnsMessageBuilder builder_v4;
+  builder_v4.AddResource(std::make_shared<DnsResource>(DnsName("v4"), v4_address1_),
+                         MdnsResourceSection::kAnswer);
+  messages[addr_v4] = std::move(builder_v4);
+
+  ReplyAddress addr_v6 = ReplyAddress::Multicast(Media::kBoth, IpVersions::kV6);
+  Mdns::DnsMessageBuilder builder_v6;
+  builder_v6.AddResource(std::make_shared<DnsResource>(DnsName("v6"), v6_address1_),
+                         MdnsResourceSection::kAnswer);
+  messages[addr_v6] = std::move(builder_v6);
+
+  transceiver_.SendMessages(messages);
+
+  EXPECT_EQ(1u, v4_transceiver->sent_messages_.size());
+  EXPECT_EQ(1u, v6_transceiver->sent_messages_.size());
+
+  bool v4_saw_both = false;
+  bool v4_saw_v4 = false;
+  bool v4_saw_v6 = false;
+
+  for (const auto& sent : v4_transceiver->sent_messages_) {
+    for (const auto& resource : sent.message.answers_) {
+      if (resource->name_ == DnsName("both")) {
+        v4_saw_both = true;
+      } else if (resource->name_ == DnsName("v4")) {
+        v4_saw_v4 = true;
+      } else if (resource->name_ == DnsName("v6")) {
+        v4_saw_v6 = true;
+      }
+    }
+  }
+  EXPECT_TRUE(v4_saw_both);
+  EXPECT_TRUE(v4_saw_v4);
+  EXPECT_FALSE(v4_saw_v6);
+
+  bool v6_saw_both = false;
+  bool v6_saw_v4 = false;
+  bool v6_saw_v6 = false;
+
+  for (const auto& sent : v6_transceiver->sent_messages_) {
+    for (const auto& resource : sent.message.answers_) {
+      if (resource->name_ == DnsName("both")) {
+        v6_saw_both = true;
+      } else if (resource->name_ == DnsName("v4")) {
+        v6_saw_v4 = true;
+      } else if (resource->name_ == DnsName("v6")) {
+        v6_saw_v6 = true;
+      }
+    }
+  }
+  EXPECT_TRUE(v6_saw_both);
+  EXPECT_FALSE(v6_saw_v4);
+  EXPECT_TRUE(v6_saw_v6);
+}
+
+TEST_F(MdnsTransceiverTests, SendMessagesByMedia) {
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(fake_watcher_impl_.CompleteWatchCallback(
+      fuchsia::net::interfaces::Event::WithExisting(std::move(properties_))));
+
+  RunLoopUntilIdle();
+
+  fuchsia::net::interfaces::Properties properties2;
+  properties2.set_id(2);
+  properties2.set_name("test02");
+  fuchsia::hardware::network::PortClass wired = fuchsia::hardware::network::PortClass::ETHERNET;
+  properties2.set_port_class(fuchsia::net::interfaces::PortClass::WithDevice(std::move(wired)));
+  properties2.set_online(true);
+  properties2.set_has_default_ipv4_route(false);
+  properties2.set_has_default_ipv6_route(false);
+  properties2.set_addresses(Addresses2());
+
+  ASSERT_TRUE(fake_watcher_impl_.CompleteWatchCallback(
+      fuchsia::net::interfaces::Event::WithAdded(std::move(properties2))));
+
+  RunLoopUntilIdle();
+
+  auto v4_transceiver_wireless = reinterpret_cast<StubInterfaceTransceiver*>(
+      transceiver_.GetInterfaceTransceiver(v4_address1_));
+  auto v6_transceiver_wireless = reinterpret_cast<StubInterfaceTransceiver*>(
+      transceiver_.GetInterfaceTransceiver(v6_address1_));
+  auto v4_transceiver_wired = reinterpret_cast<StubInterfaceTransceiver*>(
+      transceiver_.GetInterfaceTransceiver(v4_address2_));
+  auto v6_transceiver_wired = reinterpret_cast<StubInterfaceTransceiver*>(
+      transceiver_.GetInterfaceTransceiver(v6_address2_));
+
+  ASSERT_NE(v4_transceiver_wireless, nullptr);
+  ASSERT_NE(v6_transceiver_wireless, nullptr);
+  ASSERT_NE(v4_transceiver_wired, nullptr);
+  ASSERT_NE(v6_transceiver_wired, nullptr);
+
+  std::unordered_map<ReplyAddress, Mdns::DnsMessageBuilder, Mdns::ReplyAddressHash> messages;
+
+  ReplyAddress addr_both = ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth);
+  Mdns::DnsMessageBuilder builder_both;
+  builder_both.AddResource(std::make_shared<DnsResource>(DnsName("both"), v4_address1_),
+                           MdnsResourceSection::kAnswer);
+  messages[addr_both] = std::move(builder_both);
+
+  ReplyAddress addr_wireless = ReplyAddress::Multicast(Media::kWireless, IpVersions::kBoth);
+  Mdns::DnsMessageBuilder builder_wireless;
+  builder_wireless.AddResource(std::make_shared<DnsResource>(DnsName("wireless"), v4_address1_),
+                               MdnsResourceSection::kAnswer);
+  messages[addr_wireless] = std::move(builder_wireless);
+
+  ReplyAddress addr_wired = ReplyAddress::Multicast(Media::kWired, IpVersions::kBoth);
+  Mdns::DnsMessageBuilder builder_wired;
+  builder_wired.AddResource(std::make_shared<DnsResource>(DnsName("wired"), v4_address2_),
+                            MdnsResourceSection::kAnswer);
+  messages[addr_wired] = std::move(builder_wired);
+
+  transceiver_.SendMessages(messages);
+
+  EXPECT_EQ(1u, v4_transceiver_wireless->sent_messages_.size());
+  EXPECT_EQ(1u, v6_transceiver_wireless->sent_messages_.size());
+  EXPECT_EQ(1u, v4_transceiver_wired->sent_messages_.size());
+  EXPECT_EQ(1u, v6_transceiver_wired->sent_messages_.size());
+
+  // Verify Wireless Transceivers (V4 & V6)
+  for (auto transceiver : {v4_transceiver_wireless, v6_transceiver_wireless}) {
+    bool saw_both = false;
+    bool saw_wireless = false;
+    bool saw_wired = false;
+    for (const auto& sent : transceiver->sent_messages_) {
+      for (const auto& resource : sent.message.answers_) {
+        if (resource->name_ == DnsName("both")) {
+          saw_both = true;
+        } else if (resource->name_ == DnsName("wireless")) {
+          saw_wireless = true;
+        } else if (resource->name_ == DnsName("wired")) {
+          saw_wired = true;
+        }
+      }
+    }
+    EXPECT_TRUE(saw_both);
+    EXPECT_TRUE(saw_wireless);
+    EXPECT_FALSE(saw_wired);
+  }
+
+  // Verify Wired Transceivers (V4 & V6)
+  for (auto transceiver : {v4_transceiver_wired, v6_transceiver_wired}) {
+    bool saw_both = false;
+    bool saw_wireless = false;
+    bool saw_wired = false;
+    for (const auto& sent : transceiver->sent_messages_) {
+      for (const auto& resource : sent.message.answers_) {
+        if (resource->name_ == DnsName("both")) {
+          saw_both = true;
+        } else if (resource->name_ == DnsName("wireless")) {
+          saw_wireless = true;
+        } else if (resource->name_ == DnsName("wired")) {
+          saw_wired = true;
+        }
+      }
+    }
+    EXPECT_TRUE(saw_both);
+    EXPECT_FALSE(saw_wireless);
+    EXPECT_TRUE(saw_wired);
+  }
 }
 
 }  // namespace mdns::test

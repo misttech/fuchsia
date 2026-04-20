@@ -47,6 +47,8 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
   MdnsUnitTests() : under_test_(*this) {}
 
   //  Mdns::Transceiver implementation.
+  void SetVerbose(bool verbose) override {}
+
   void Start(fuchsia::net::interfaces::WatcherPtr watcher, fit::closure link_change_callback,
              InboundMessageCallback inbound_message_callback,
              InterfaceTransceiverCreateFunction transceiver_factory) override {
@@ -59,10 +61,15 @@ class MdnsUnitTests : public gtest::RealLoopFixture, public Mdns::Transceiver {
 
   bool HasInterfaces() override { return has_interfaces_; }
 
-  void SendMessage(const DnsMessage& message, const ReplyAddress& reply_address) override {
+  void SendMessages(
+      std::unordered_map<ReplyAddress, Mdns::DnsMessageBuilder, Mdns::ReplyAddressHash> messages)
+      override {
+    if (messages.empty()) {
+      return;
+    }
     send_message_called_ = true;
-    send_message_message_ = message;
-    send_message_reply_address_ = reply_address;
+    messages.begin()->second.Build(send_message_message_);
+    send_message_reply_address_ = messages.begin()->first;
   }
 
   void LogTraffic() override {}

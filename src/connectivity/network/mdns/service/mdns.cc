@@ -43,6 +43,7 @@ Mdns::~Mdns() {}
 void Mdns::SetVerbose(bool verbose) {
 #ifdef MDNS_TRACE
   verbose_ = verbose;
+  transceiver_.SetVerbose(verbose);
 #endif  // MDNS_TRACE
 }
 
@@ -687,50 +688,7 @@ void Mdns::AddAgent(std::shared_ptr<MdnsAgent> agent) {
 }
 
 void Mdns::SendMessages() {
-  for (const auto& [reply_address, builder] : outbound_message_builders_by_reply_address_) {
-    DnsMessage message;
-    builder.Build(message);
-
-#ifdef MDNS_TRACE
-    if (verbose_) {
-      std::ostringstream os;
-
-      if (reply_address.is_multicast_placeholder()) {
-        os << "(multicast)";
-      } else {
-        os << "to " << reply_address;
-      }
-
-      switch (reply_address.media()) {
-        case Media::kWired:
-          os << ", wired only";
-          break;
-        case Media::kWireless:
-          os << ", wireless only";
-          break;
-        case Media::kBoth:
-          break;
-      }
-
-      switch (reply_address.ip_versions()) {
-        case IpVersions::kV4:
-          os << ", V4 only";
-          break;
-        case IpVersions::kV6:
-          os << ", V6 only";
-          break;
-        case IpVersions::kBoth:
-          break;
-      }
-
-      FX_LOGS(INFO) << "Outbound message " << os.str() << ":" << message;
-    }
-#endif  // MDNS_TRACE
-
-    transceiver_.SendMessage(std::move(message), reply_address);
-  }
-
-  outbound_message_builders_by_reply_address_.clear();
+  transceiver_.SendMessages(std::move(outbound_message_builders_by_reply_address_));
 }
 
 void Mdns::ReceiveQuestion(const DnsQuestion& question, const ReplyAddress& reply_address,

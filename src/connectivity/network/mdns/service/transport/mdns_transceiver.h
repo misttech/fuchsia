@@ -27,6 +27,8 @@ class MdnsTransceiver : public Mdns::Transceiver {
   ~MdnsTransceiver();
 
   //  Mdns::Transceiver implementation.
+  void SetVerbose(bool verbose) override;
+
   void Start(fuchsia::net::interfaces::WatcherPtr watcher, fit::closure link_change_callback,
              InboundMessageCallback inbound_message_callback,
              InterfaceTransceiverCreateFunction transceiver_factory) override;
@@ -35,7 +37,9 @@ class MdnsTransceiver : public Mdns::Transceiver {
 
   bool HasInterfaces() override;
 
-  void SendMessage(const DnsMessage& message, const ReplyAddress& reply_address) override;
+  void SendMessages(
+      std::unordered_map<ReplyAddress, Mdns::DnsMessageBuilder, Mdns::ReplyAddressHash> messages)
+      override;
 
   void LogTraffic() override;
 
@@ -82,6 +86,12 @@ class MdnsTransceiver : public Mdns::Transceiver {
   std::unordered_map<inet::IpAddress, std::unique_ptr<MdnsInterfaceTransceiver>>
       interface_transceivers_by_address_;
   std::unordered_map<uint64_t, net::interfaces::Properties> interface_properties_;
+#ifdef MDNS_TRACE
+  // Because |verbose_| defaults to true, traffic will be logged as long as the
+  // enable_mdns_trace gn arg is set to true. This is preferred, as there is no
+  // way (currently) to set |verbose_| to true at runtime.
+  bool verbose_ = true;
+#endif  // MDNS_TRACE
 
  public:
   // Disallow copy, assign and move.

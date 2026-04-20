@@ -37,6 +37,81 @@ class ResourceRenewer;
 // Implements mDNS.
 class Mdns : public MdnsAgent::Owner {
  public:
+  struct ReplyAddressHash {
+    std::size_t operator()(const ReplyAddress& reply_address) const noexcept {
+      return std::hash<inet::SocketAddress>{}(reply_address.socket_address()) ^
+             (std::hash<inet::IpAddress>{}(reply_address.interface_address()) << 1) ^
+             (std::hash<uint32_t>{}(reply_address.interface_id()) << 2) ^
+             (std::hash<Media>{}(reply_address.media()) << 3) ^
+             (std::hash<IpVersions>{}(reply_address.ip_versions()) << 4);
+    }
+  };
+
+  struct ResourceHash {
+    std::size_t operator()(std::shared_ptr<DnsResource> resource) const noexcept {
+      return resource ? std::hash<DnsResource>{}(*resource) : 0;
+    }
+  };
+
+  struct ResourceEqual {
+    bool operator()(std::shared_ptr<DnsResource> a, std::shared_ptr<DnsResource> b) const noexcept {
+      return a ? (b ? *a == *b : false) : !b;
+    }
+  };
+
+  class DnsMessageBuilder {
+   public:
+    void AddQuestion(std::shared_ptr<DnsQuestion> question) { questions_.push_back(question); }
+
+    void AddResource(std::shared_ptr<DnsResource> resource, MdnsResourceSection section) {
+      switch (section) {
+        case MdnsResourceSection::kAnswer:
+          answers_.insert(resource);
+          break;
+        case MdnsResourceSection::kAuthority:
+          authorities_.insert(resource);
+          break;
+        case MdnsResourceSection::kAdditional:
+          additionals_.insert(resource);
+          break;
+        case MdnsResourceSection::kExpired:
+          FX_DCHECK(false);
+          break;
+      }
+    }
+
+    void Merge(const DnsMessageBuilder& other) {
+      questions_.insert(questions_.end(), other.questions_.begin(), other.questions_.end());
+      answers_.insert(other.answers_.begin(), other.answers_.end());
+      authorities_.insert(other.authorities_.begin(), other.authorities_.end());
+      additionals_.insert(other.additionals_.begin(), other.additionals_.end());
+    }
+
+    void Build(DnsMessage& message_out) const {
+      if (questions_.empty()) {
+        message_out.header_.SetResponse(true);
+        message_out.header_.SetAuthoritativeAnswer(true);
+      } else {
+        message_out.questions_ = std::move(questions_);
+      }
+
+      message_out.answers_ =
+          std::vector<std::shared_ptr<DnsResource>>(answers_.begin(), answers_.end());
+      message_out.authorities_ =
+          std::vector<std::shared_ptr<DnsResource>>(authorities_.begin(), authorities_.end());
+      message_out.additionals_ =
+          std::vector<std::shared_ptr<DnsResource>>(additionals_.begin(), additionals_.end());
+
+      message_out.UpdateCounts();
+    }
+
+   private:
+    std::vector<std::shared_ptr<DnsQuestion>> questions_;
+    std::unordered_set<std::shared_ptr<DnsResource>, ResourceHash, ResourceEqual> answers_;
+    std::unordered_set<std::shared_ptr<DnsResource>, ResourceHash, ResourceEqual> authorities_;
+    std::unordered_set<std::shared_ptr<DnsResource>, ResourceHash, ResourceEqual> additionals_;
+  };
+
   // Abstract base class for message transceiver.
   class Transceiver {
    public:
@@ -47,6 +122,8 @@ class Mdns : public MdnsAgent::Owner {
                                                                 uint32_t, Media)>;
 
     virtual ~Transceiver() {}
+
+    virtual void SetVerbose(bool verbose) = 0;
 
     // Starts the transceiver.
     virtual void Start(fuchsia::net::interfaces::WatcherPtr watcher,
@@ -60,10 +137,8 @@ class Mdns : public MdnsAgent::Owner {
     // Determines if this transceiver has interfaces.
     virtual bool HasInterfaces() = 0;
 
-    // Sends a message to the specified address. A V6 interface will send to
-    // |MdnsAddresses::V6Multicast| if |reply_address.socket_address()| is
-    // |MdnsAddresses::V4Multicast|.
-    virtual void SendMessage(const DnsMessage& message, const ReplyAddress& reply_address) = 0;
+    virtual void SendMessages(
+        std::unordered_map<ReplyAddress, DnsMessageBuilder, ReplyAddressHash> messages) = 0;
 
     // Writes log messages describing lifetime traffic.
     virtual void LogTraffic() = 0;
@@ -346,28 +421,6 @@ class Mdns : public MdnsAgent::Owner {
     bool operator<(const TaskQueueEntry& other) const { return time_ > other.time_; }
   };
 
-  struct ReplyAddressHash {
-    std::size_t operator()(const ReplyAddress& reply_address) const noexcept {
-      return std::hash<inet::SocketAddress>{}(reply_address.socket_address()) ^
-             (std::hash<inet::IpAddress>{}(reply_address.interface_address()) << 1) ^
-             (std::hash<uint32_t>{}(reply_address.interface_id()) << 2) ^
-             (std::hash<Media>{}(reply_address.media()) << 3) ^
-             (std::hash<IpVersions>{}(reply_address.ip_versions()) << 4);
-    }
-  };
-
-  struct ResourceHash {
-    std::size_t operator()(std::shared_ptr<DnsResource> resource) const noexcept {
-      return resource ? std::hash<DnsResource>{}(*resource) : 0;
-    }
-  };
-
-  struct ResourceEqual {
-    bool operator()(std::shared_ptr<DnsResource> a, std::shared_ptr<DnsResource> b) const noexcept {
-      return a ? (b ? *a == *b : false) : !b;
-    }
-  };
-
   struct RequestorKey {
     RequestorKey() = default;
 
@@ -388,52 +441,6 @@ class Mdns : public MdnsAgent::Owner {
       return std::hash<DnsName>{}(value.name_) ^ (std::hash<Media>{}(value.media_) << 1) ^
              (std::hash<IpVersions>{}(value.ip_versions_) << 2);
     }
-  };
-
-  class DnsMessageBuilder {
-   public:
-    void AddQuestion(std::shared_ptr<DnsQuestion> question) { questions_.push_back(question); }
-
-    void AddResource(std::shared_ptr<DnsResource> resource, MdnsResourceSection section) {
-      switch (section) {
-        case MdnsResourceSection::kAnswer:
-          answers_.insert(resource);
-          break;
-        case MdnsResourceSection::kAuthority:
-          authorities_.insert(resource);
-          break;
-        case MdnsResourceSection::kAdditional:
-          additionals_.insert(resource);
-          break;
-        case MdnsResourceSection::kExpired:
-          FX_DCHECK(false);
-          break;
-      }
-    }
-
-    void Build(DnsMessage& message_out) const {
-      if (questions_.empty()) {
-        message_out.header_.SetResponse(true);
-        message_out.header_.SetAuthoritativeAnswer(true);
-      } else {
-        message_out.questions_ = std::move(questions_);
-      }
-
-      message_out.answers_ =
-          std::vector<std::shared_ptr<DnsResource>>(answers_.begin(), answers_.end());
-      message_out.authorities_ =
-          std::vector<std::shared_ptr<DnsResource>>(authorities_.begin(), authorities_.end());
-      message_out.additionals_ =
-          std::vector<std::shared_ptr<DnsResource>>(additionals_.begin(), additionals_.end());
-
-      message_out.UpdateCounts();
-    }
-
-   private:
-    std::vector<std::shared_ptr<DnsQuestion>> questions_;
-    std::unordered_set<std::shared_ptr<DnsResource>, ResourceHash, ResourceEqual> answers_;
-    std::unordered_set<std::shared_ptr<DnsResource>, ResourceHash, ResourceEqual> authorities_;
-    std::unordered_set<std::shared_ptr<DnsResource>, ResourceHash, ResourceEqual> additionals_;
   };
 
   // Starts the address probe or transitions to ready state, depending on

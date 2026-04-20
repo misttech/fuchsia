@@ -191,13 +191,12 @@ class TestAgent {
   }
 
   void SendRequest() {
-    DnsMessage message;
-    message.questions_.push_back(std::make_shared<DnsQuestion>(kInstanceName, DnsType::kAaaa));
-    // Add address placeholder resource.
-    message.authorities_.push_back(std::make_shared<DnsResource>(kHostName, DnsType::kA));
-    message.UpdateCounts();
-    transceiver_.SendMessage(std::move(message),
-                             ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+    std::unordered_map<ReplyAddress, Mdns::DnsMessageBuilder, Mdns::ReplyAddressHash> messages;
+    auto& builder = messages[ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth)];
+    builder.AddQuestion(std::make_shared<DnsQuestion>(kInstanceName, DnsType::kAaaa));
+    builder.AddResource(std::make_shared<DnsResource>(kHostName, DnsType::kA),
+                        MdnsResourceSection::kAuthority);
+    transceiver_.SendMessages(messages);
   }
 
   void Quit(int exit_code) {

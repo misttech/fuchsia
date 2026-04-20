@@ -23,6 +23,8 @@ class HostNameSubscriberServiceImplTests : public gtest::RealLoopFixture,
 class TestTransceiver : public Mdns::Transceiver {
  public:
   // Mdns::Transceiver implementation.
+  void SetVerbose(bool verbose) override {}
+
   void Start(fuchsia::net::interfaces::WatcherPtr watcher, fit::closure link_change_callback,
              InboundMessageCallback inbound_message_callback,
              InterfaceTransceiverCreateFunction transceiver_factory) override {
@@ -33,7 +35,9 @@ class TestTransceiver : public Mdns::Transceiver {
 
   bool HasInterfaces() override { return true; }
 
-  void SendMessage(const DnsMessage& message, const ReplyAddress& reply_address) override {}
+  void SendMessages(
+      std::unordered_map<ReplyAddress, Mdns::DnsMessageBuilder, Mdns::ReplyAddressHash> messages)
+      override {}
 
   void LogTraffic() override {}
 
