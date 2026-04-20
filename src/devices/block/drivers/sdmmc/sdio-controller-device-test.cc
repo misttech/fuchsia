@@ -96,12 +96,6 @@ class FakeActivityGovernor
   void GetPowerElements(GetPowerElementsCompleter::Sync& completer) override {
     completer.Reply({});
   }
-  void TakeWakeLease(TakeWakeLeaseRequest& request,
-                     TakeWakeLeaseCompleter::Sync& completer) override {
-    zx::eventpair token, peer;
-    zx::eventpair::create(0, &token, &peer);
-    completer.Reply(std::move(token));
-  }
   void AcquireWakeLease(AcquireWakeLeaseRequest& request,
                         AcquireWakeLeaseCompleter::Sync& completer) override {
     zx::eventpair token, peer;

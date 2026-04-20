@@ -1525,7 +1525,7 @@ async fn test_execution_state_always_starts_at_active_power_level() -> Result<()
 }
 
 #[fuchsia::test]
-async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_handling()
+async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_wake_handling()
 -> Result<()> {
     let (realm, activity_governor_moniker) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
@@ -1553,7 +1553,7 @@ async fn test_activity_governor_take_wake_lease_raises_execution_state_to_wake_h
 
     let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
     let wake_lease_name = "wake_lease";
-    let wake_lease = activity_governor.take_wake_lease(wake_lease_name).await?;
+    let wake_lease = activity_governor.acquire_wake_lease(wake_lease_name).await.unwrap().unwrap();
 
     // Trigger "boot complete" signal.
     {
@@ -1828,7 +1828,8 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
 
     for i in 0..1000u64 {
         let wake_lease_name = format!("wake_lease{}", i);
-        let wake_lease = activity_governor.take_wake_lease(&wake_lease_name).await?;
+        let wake_lease =
+            activity_governor.acquire_wake_lease(&wake_lease_name).await.unwrap().unwrap();
 
         let server_token_koid =
             &wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
@@ -2078,7 +2079,7 @@ async fn test_activity_governor_cpu_element_and_execution_state_interaction() ->
     .detach();
 
     // This call should not be processed until the topology is set up.
-    let _wake_lease = activity_governor.take_wake_lease("wake_lease").await?;
+    let _wake_lease = activity_governor.acquire_wake_lease("wake_lease").await.unwrap().unwrap();
 
     // Trigger "boot complete" signal.
     {
@@ -4257,7 +4258,8 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
     let _ = querier.watch_file().await?;
 
     // Block suspends by holding a wake lease.
-    let wake_lease = activity_governor.take_wake_lease("prevent-suspend").await?;
+    let wake_lease =
+        activity_governor.acquire_wake_lease("prevent-suspend").await.unwrap().unwrap();
 
     let prevent_suspend_koid = wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
     let prevent_suspend_koid_str = prevent_suspend_koid.as_str();

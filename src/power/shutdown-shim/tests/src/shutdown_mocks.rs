@@ -5,24 +5,24 @@
 use anyhow::Error;
 use fidl::endpoints::create_proxy;
 use fidl::prelude::*;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_sys2 as fsys;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::LocalComponentHandles;
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use log::info;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_power_system as fsystem, fidl_fuchsia_sys2 as fsys,
-    fuchsia_async as fasync,
-};
 
 pub fn new_mocks_provider(
     is_power_framework_available: bool,
 ) -> (
     impl Fn(LocalComponentHandles) -> BoxFuture<'static, Result<(), anyhow::Error>>
-        + Sync
-        + Send
-        + 'static,
+    + Sync
+    + Send
+    + 'static,
     mpsc::UnboundedReceiver<Signal>,
 ) {
     let (send_signals, recv_signals) = mpsc::unbounded();
@@ -89,7 +89,7 @@ async fn run_activity_governor(
 
     while let Ok(Some(request)) = stream.try_next().await {
         match request {
-            fsystem::ActivityGovernorRequest::TakeWakeLease { name: _, responder } => {
+            fsystem::ActivityGovernorRequest::AcquireWakeLease { name: _, responder } => {
                 let (client_token, server_token) = fsystem::LeaseToken::create();
                 let send_signals2 = send_signals.clone();
                 fasync::Task::spawn(async move {
@@ -104,7 +104,7 @@ async fn run_activity_governor(
                 send_signals
                     .unbounded_send(Signal::ShutdownControlLease(LeaseState::Acquired))
                     .expect("receiver acquired");
-                responder.send(client_token).unwrap();
+                responder.send(Ok(client_token)).unwrap();
             }
             _ => unreachable!("Unexpected request to ActivityGovernor"),
         }

@@ -218,7 +218,7 @@ struct ActiveWakeLease {
 
 /// Manager of leases that block execution state.
 ///
-/// Used to facilitate the `TakeWakeLease()` and `TakeApplicationActivityLease()`
+/// Used to facilitate the `AcquireWakeLease()` and `TakeApplicationActivityLease()`
 /// functionality of `fuchsia.power.system.ActivityGovernor`.
 ///
 /// A wake lease blocks suspension by requiring the power level of the Execution
@@ -1133,9 +1133,6 @@ impl SystemActivityGovernor {
                 }) => {
                     self.handle_take_application_activity_lease(responder, name).await;
                 }
-                Ok(fsystem::ActivityGovernorRequest::TakeWakeLease { responder, name }) => {
-                    self.handle_take_wake_lease(responder, name).await;
-                }
                 Ok(fsystem::ActivityGovernorRequest::AcquireWakeLease { responder, name }) => {
                     self.handle_acquire_wake_lease(responder, name).await;
                 }
@@ -1213,27 +1210,6 @@ impl SystemActivityGovernor {
             log::warn!(
                 error:?;
                 "Encountered error while responding to TakeApplicationActivity request"
-            );
-        }
-    }
-
-    async fn handle_take_wake_lease(
-        &self,
-        responder: fsystem::ActivityGovernorTakeWakeLeaseResponder,
-        name: String,
-    ) {
-        let client_token = match self.acquire_wake_lease_common(name, false).await {
-            Ok(client_token) => client_token,
-            Err(error) => {
-                log::warn!(error:?; "Encountered error while registering wake lease");
-                return;
-            }
-        };
-
-        if let Err(error) = responder.send(client_token) {
-            log::warn!(
-                error:?;
-                "Encountered error while responding to TakeWakeLease request"
             );
         }
     }

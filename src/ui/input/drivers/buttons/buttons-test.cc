@@ -190,11 +190,6 @@ class FakeSystemActivityGovernor
     completer.Reply(fit::ok(AcquireWakeLease()));
   }
 
-  void TakeWakeLease(TakeWakeLeaseRequest& request,
-                     TakeWakeLeaseCompleter::Sync& completer) override {
-    completer.Reply(AcquireWakeLease());
-  }
-
   void RegisterSuspendBlocker(RegisterSuspendBlockerRequest& request,
                               RegisterSuspendBlockerCompleter::Sync& completer) override {
     suspend_blocker_client_.Bind(std::move(request.suspend_blocker().value()),

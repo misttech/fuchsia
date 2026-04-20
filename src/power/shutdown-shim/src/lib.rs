@@ -14,14 +14,17 @@ use fidl_fuchsia_hardware_power_statecontrol::{
     RebootMethodsWatcherRegisterRequestStream, ShutdownAction, ShutdownOptions, ShutdownReason,
     ShutdownWatcherRegisterRequestStream,
 };
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_power::CollaborativeRebootInitiatorRequestStream;
 use fidl_fuchsia_power_internal::{
     CollaborativeRebootReason, CollaborativeRebootSchedulerRequestStream,
 };
+use fidl_fuchsia_power_system as fsystem;
 use fidl_fuchsia_sys2::SystemControllerMarker;
 use fidl_fuchsia_system_state::{
     SystemPowerState, SystemStateTransitionRequest, SystemStateTransitionRequestStream,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::directory::{AsRefDirectory, Directory};
 use fuchsia_component::server::ServiceFs;
@@ -34,7 +37,6 @@ use shutdown_shim_config::Config;
 use std::pin::pin;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_power_system as fsystem, fuchsia_async as fasync};
 
 mod collaborative_reboot;
 
@@ -379,16 +381,18 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                 .connect_to_protocol::<fsystem::ActivityGovernorMarker>()
                 .context("error connecting to system_activity_governor")?;
             activity_governor
-                .take_wake_lease("shutdown_control")
+                .acquire_wake_lease("shutdown_control")
                 .await
-                .context("failed to take wake lease")
+                .context("failed to acquire wake lease")
         }
         .await;
-        res.map_err(|e| {
-            eprintln!("[shutdown-shim]: {e}");
-            ()
-        })
-        .ok()
+        match res {
+            Ok(Ok(token)) => Some(token),
+            e => {
+                eprintln!("[shutdown-shim]: {:?}", e);
+                None
+            }
+        }
     }
 
     /// Cause the program to terminate.

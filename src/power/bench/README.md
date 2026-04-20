@@ -1,6 +1,6 @@
 # Power Framework Benchmarks
 
-Power Framework currently has microbenchmarks exercising the TakeWakeLease call
+Power Framework currently has microbenchmarks exercising the AcquireWakeLease call
 from the System Activity Governor (SAG), and the Lease operation fidls from the
 Topology Test Daemon. These benchmarks are based on the
 [Criterion](https://docs.rs/criterion/latest/criterion/) benchmark

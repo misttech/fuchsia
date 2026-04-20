@@ -32,10 +32,6 @@ class FakeActivityGovernor : public FidlTestBaseDefault<ActivityGovernor> {
                         AcquireWakeLeaseCompleter::Sync& completer) override {
     completer.Reply(fit::ok(AcquireWakeLease()));
   }
-  void TakeWakeLease(TakeWakeLeaseRequest& /* ignored */,
-                     TakeWakeLeaseCompleter::Sync& completer) override {
-    completer.Reply(AcquireWakeLease());
-  }
 
   LeaseToken AcquireWakeLease() {
     LeaseToken client_token, server_token;
