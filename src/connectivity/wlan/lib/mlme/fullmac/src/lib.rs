@@ -24,6 +24,11 @@ use crate::convert::fullmac_to_mlme;
 use crate::device::DeviceOps;
 use crate::mlme_main_loop::create_mlme_main_loop;
 use anyhow::bail;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fuchsia_async as fasync;
 use fuchsia_inspect::Inspector;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
@@ -32,11 +37,6 @@ use log::{error, info, warn};
 use wlan_common::sink::UnboundedSink;
 use wlan_ffi_transport::completers::Completer;
 use wlan_sme::serve::create_sme;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_sme as fidl_sme,
-    fuchsia_async as fasync,
-};
 
 #[derive(thiserror::Error, Debug)]
 pub enum FullmacMlmeError {
@@ -151,15 +151,13 @@ const INSPECT_VMO_SIZE_BYTES: usize = 1000 * 1024;
 /// creates the SME and MLME main loop futures. See the `start` function in this file for details.
 ///
 /// Returns a handle to MLME on success, and an error if MLME failed to initialize.
-pub fn start_and_serve_on_separate_thread<F, D: DeviceOps + Send + 'static>(
+pub async fn start_and_serve_on_separate_thread<F, D: DeviceOps + Send + 'static>(
     device: D,
     shutdown_completer: Completer<F>,
 ) -> anyhow::Result<FullmacMlmeHandle>
 where
     F: FnOnce(zx::sys::zx_status_t) + 'static,
 {
-    // Logger requires the executor to be initialized first.
-    let mut executor = fasync::LocalExecutorBuilder::new().build();
     logger::init();
 
     let (driver_event_sender, driver_event_stream) = mpsc::unbounded();
@@ -186,7 +184,7 @@ where
         shutdown_completer.reply(result);
     });
 
-    match executor.run_singlethreaded(startup_receiver) {
+    match startup_receiver.await {
         Ok(Ok(())) => (),
         Ok(Err(err)) => bail!(
             "MLME failed to start with error {}. MLME main loop returned {:?}.",

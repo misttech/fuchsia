@@ -1,4 +1,4 @@
-# Copyright 2021 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,67 +6,65 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 
-all_hdrs = [
-  "device.h",
-  "debug.h",
-]
-
-all_src = [ "device.cc" ]
-
-all_deps = [
-  ":wlanif_bind",
-  "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
-  "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
-  "//sdk/fidl/fuchsia.wlan.device:fuchsia.wlan.device_hlcpp",
-  "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_cpp",
-  "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_hlcpp",
-  "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_hlcpp",
-  "//sdk/lib/driver/compat/cpp",
-  "//sdk/lib/driver/compat/cpp:symbols",
-  "//sdk/lib/driver/component/cpp",
-  "//sdk/lib/driver/logging/cpp",
-  "//src/connectivity/wlan/lib/common/cpp:common",
-  "//src/connectivity/wlan/lib/mlme/fullmac/c-binding:wlan-fullmac-mlme-c",
-  "//src/devices/lib/driver:driver_runtime",
-  "//zircon/system/ulib/sync",
-  "//zircon/system/ulib/sync:sync-cpp",
-
-  # TODO(https://fxbug.dev/42114366): The fdio dependency here is purely due to
-  # a problem with transitive Rust static library dependencies when linking
-  # C++ programs
-  "//sdk/lib/fdio",
-]
-
-source_set("lib_source") {
-  public = all_hdrs
-  sources = all_src
-  public_deps = all_deps + [ "//src/connectivity/wlan/lib/mlme/fullmac/c-binding:wlan-fullmac-mlme-c" ]
-  include_dirs = [ "src/connectivity/wlan/drivers/wlanif/" ]
-
-  # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [ "//build/config:Wno-conversion" ]
-}
-
 driver_bind_rules("wlanif_bind") {
   rules = "meta/wlanif.bind"
   bind_output = "wlanif.bindbc"
   deps = [ "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_bindlib" ]
 }
 
-fuchsia_cc_driver("wlanif_driver-driver") {
-  output_name = "wlanif"
+fuchsia_rust_driver("wlanif_driver-driver") {
+  edition = "2024"
+  with_unit_tests = true
 
-  deps = [ ":lib_source" ]
-  configs += [ "//build/config/fuchsia:enable_zircon_asserts" ]
+  output_name = "wlanif"
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/runtime/rust",
+    "//sdk/rust/zx",
+    "//src/connectivity/wlan/lib/ffi-transport:wlan-ffi-transport",
+    "//src/connectivity/wlan/lib/mlme/fullmac:wlan-fullmac-mlme",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:log",
+  ]
+  test_deps = [
+    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
+    "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
+    "//sdk/lib/driver/runtime/rust/env",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//third_party/rust_crates:futures",
+  ]
+}
+
+fuchsia_unittest_package("wlanif-test") {
+  deps = [ ":wlanif_driver-driver_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 fuchsia_driver_component("wlanif_driver") {
   component_name = "wlanif"
   manifest = "meta/wlanif.cml"
-  deps = [ ":wlanif_driver-driver" ]
+  deps = [
+    ":wlanif_bind",
+    ":wlanif_driver-driver",
+  ]
   info = "meta/wlanif_driver-info.json"
 }
 
 fuchsia_driver_package("wlanif") {
   driver_components = [ ":wlanif_driver" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":wlanif-test" ]
 }
