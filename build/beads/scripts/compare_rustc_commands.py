@@ -102,7 +102,7 @@ _ARGS_PREFIXES_TO_CONVERT = {
 }
 
 
-def debug(s: str) -> None:
+def debug(s: T.Any) -> None:
     if _DEBUG:
         print(f"DEBUG: {s}", file=sys.stderr)
 
@@ -385,11 +385,14 @@ def main() -> int:
     # Fixups to the GN rustc command where it uses `--arg val` instead of
     # `--arg=val`, which differ from Bazel. These need to be done before
     # tokenizing the command line.
-    gn_rustc_cmd = str(gn_rustc_cmd).replace("--target ", "--target=")
-    gn_rustc_cmd = str(gn_rustc_cmd).replace("-o ", "-o=")
+    gn_rustc_cmd_replaced = (
+        str(gn_rustc_cmd)
+        .replace("--target ", "--target=")
+        .replace("-o ", "-o=")
+    )
 
     normalized_gn_args = sorted(
-        set(normalize_rustc_arg(a) for a in shlex.split(gn_rustc_cmd))
+        set(normalize_rustc_arg(a) for a in shlex.split(gn_rustc_cmd_replaced))
     )
     normalized_bazel_args = sorted(
         set(normalize_rustc_arg(a) for a in shlex.split(str(bazel_rustc_cmd)))

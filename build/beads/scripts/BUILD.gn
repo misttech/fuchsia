@@ -42,9 +42,6 @@ if (is_host) {
   python_binary("compare_rustc_commands") {
     testonly = true
     main_source = "compare_rustc_commands.py"
-
-    # TODO(jayzhuang): Fix mypy errors.
-    enable_mypy = false
     sources = [
       "//build/api/ninja_artifacts.py",
       "//build/bazel/scripts/build_utils.py",

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 _FUCHSIA_DIR = Path(__file__).parent.parent.parent.parent
@@ -31,10 +32,16 @@ class GnRunner(object):
         self._gn = gn
         if build_dir is None:
             build_dir = build_utils.find_fx_build_dir(_FUCHSIA_DIR)
+        if build_dir is None:
+            raise RuntimeError("Could not find GN build directory")
         self._build_dir = build_dir
         self._cmd_runner = (
             command_runner if command_runner else build_utils.CommandRunner()
         )
+
+    @property
+    def gn(self) -> Path:
+        return self._gn
 
     @property
     def build_dir(self) -> Path:
@@ -60,10 +67,9 @@ class GnRunner(object):
         if not cmd:
             raise ValueError("Command list cannot be empty")
 
-        full_cmd = [self._gn, cmd[0], self._build_dir] + cmd[1:]
-
         ret = self._cmd_runner.run_command(
-            full_cmd, **self._cmd_runner.CAPTURE_KWARGS
+            [str(self.gn), cmd[0], str(self.build_dir)] + cmd[1:],
+            **self._cmd_runner.CAPTURE_KWARGS,
         )
         if ret.returncode != 0:
             print("==== GN command failed ===")
@@ -82,7 +88,7 @@ class MockGnRunner(GnRunner):
         super().__init__(build_dir, Path("gn"), self._mock_runner)
         self._mock_runner.push_result(0, mock_output, "")
 
-    def last_gn_args(self) -> list[str | Path]:
+    def last_gn_args(self) -> Sequence[str | Path]:
         """Return the original cmd passed to run_and_extract_output."""
         last_args = self._mock_runner.results[-1].args
         assert last_args[0] == str(self._gn)

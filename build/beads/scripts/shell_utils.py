@@ -164,10 +164,11 @@ def find_command_with_tool(
         The first command that uses the given tool, or None if not found.
     """
     for command in commands:
-        while command:
-            if os.path.basename(command.parse().tool) == tool:
-                return command
-            command = command.unwrap()
+        current_command: T.Optional[ShellCommand] = command
+        while current_command:
+            if os.path.basename(current_command.parse().tool) == tool:
+                return current_command
+            current_command = current_command.unwrap()
     return None
 
 

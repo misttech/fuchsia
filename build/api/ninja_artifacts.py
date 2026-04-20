@@ -8,6 +8,7 @@ import collections
 import os
 import sys
 import typing as T
+from collections.abc import Sequence
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent
@@ -62,6 +63,10 @@ class NinjaRunner(object):
         )
 
     @property
+    def ninja(self) -> Path:
+        return self._ninja
+
+    @property
     def build_dir(self) -> Path:
         return self._build_dir
 
@@ -81,7 +86,7 @@ class NinjaRunner(object):
            subprocess.CalledProcessError if the command failed.
         """
         ret = self._cmd_runner.run_command(
-            [self._ninja, "-C", self._build_dir] + cmd,
+            [str(self.ninja), "-C", str(self.build_dir)] + cmd,
             **self._cmd_runner.CAPTURE_KWARGS,
             check=True,
         )
@@ -96,7 +101,7 @@ class MockNinjaRunner(NinjaRunner):
         super().__init__(Path("ninja"), build_dir, self._mock_runner)
         self._mock_runner.push_result(0, mock_output, "")
 
-    def last_ninja_args(self) -> list[str | Path]:
+    def last_ninja_args(self) -> Sequence[str | Path]:
         last_args = self._mock_runner.results[-1].args
         assert last_args[0:3] == ["ninja", "-C", str(self.build_dir)]
         return last_args[3:]
@@ -123,7 +128,7 @@ def get_last_build_targets(build_dir: Path) -> list[str]:
     return [":default"]
 
 
-def get_build_plan_deps(build_dir: Path) -> T.Sequence[str]:
+def get_build_plan_deps(build_dir: Path) -> list[str]:
     """Return the list of Ninja build plan dependencies.
 
     This is the list of BUILD.gn or .gni files that, if changed, would trigger
@@ -153,7 +158,7 @@ def get_build_plan_deps(build_dir: Path) -> T.Sequence[str]:
 
 
 def check_output_needs_update(
-    output_file: Path, input_files: T.Sequence[Path]
+    output_file: Path, input_files: list[Path]
 ) -> bool:
     """Returns True if an output file needs to be updated.
 
@@ -178,7 +183,7 @@ def check_output_needs_update(
     return False
 
 
-def get_last_build_artifacts(ninja_runner: NinjaRunner) -> T.Sequence[str]:
+def get_last_build_artifacts(ninja_runner: NinjaRunner) -> list[str]:
     """Return the list of all Ninja artifacts corresponding to the last `fx` or `fint` build.
 
     Args:
@@ -214,7 +219,7 @@ def get_last_build_artifacts(ninja_runner: NinjaRunner) -> T.Sequence[str]:
     return ninja_artifacts
 
 
-def get_last_build_sources(ninja_runner: NinjaRunner) -> T.Sequence[str]:
+def get_last_build_sources(ninja_runner: NinjaRunner) -> list[str]:
     """Return the list of all Ninja sources to the last `fx` or `fint` build.
 
     Args:

@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 import typing as T
+from collections.abc import Sequence
 from pathlib import Path
 
 # A type that describes either a path string of a Path instance.
@@ -551,7 +552,7 @@ def log_stderr(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
-def cmd_args_to_string(cmd_args: T.Sequence[FilePath]) -> str:
+def cmd_args_to_string(cmd_args: Sequence[FilePath]) -> str:
     """Convert a list of command arguments to a printable string.
 
     Args:
@@ -737,14 +738,14 @@ class CommandRunner(object):
         self._log_result = log_result
 
     def run_command_internal(
-        self, cmd_args: list[FilePath], **subprocess_run_kwargs: T.Any
+        self, cmd_args: Sequence[FilePath], **subprocess_run_kwargs: T.Any
     ) -> CommandResult:
         """Internal implementation for run_command().
 
         Mock implementations can override this to avoid calling
         external commands during unit-tests.
         """
-        # Enfoce text mode by default.
+        # Enforce text mode by default.
         subprocess_run_kwargs.setdefault("text", True)
         subprocess_run_kwargs.setdefault("encoding", "utf-8")
         ret = subprocess.run(
@@ -754,7 +755,7 @@ class CommandRunner(object):
 
     def run_command(
         self,
-        cmd_args: list[FilePath],
+        cmd_args: Sequence[FilePath],
         **subprocess_run_kwargs: T.Any,
     ) -> CommandResult:
         """Run a command.
@@ -892,7 +893,7 @@ class MockCommandRunner(CommandRunner):
         return result
 
     def run_command_internal(
-        self, cmd_args: list[FilePath], **subprocess_run_kwargs: T.Any
+        self, cmd_args: Sequence[FilePath], **subprocess_run_kwargs: T.Any
     ) -> CommandResult:
         """Simulate command invocation by popping one value from the FIFO.
 
@@ -929,7 +930,7 @@ class BazelLauncher(object):
     def __init__(
         self,
         launcher_script: FilePath,
-        bazel_prefix_args: list[FilePath] = [],
+        bazel_prefix_args: Sequence[FilePath] = [],
         runner: None | CommandRunner = None,
         log_err: None | LogFunc = None,
     ) -> None:
@@ -974,7 +975,7 @@ class BazelLauncher(object):
         subprocess_kwargs.setdefault("stdout", subprocess.PIPE)
         subprocess_kwargs.setdefault("stderr", subprocess.PIPE)
 
-        cmd_args: list[FilePath] = [
+        cmd_args: Sequence[FilePath] = [
             *self._prefix_args,
             self.script,
             *bazel_args,
