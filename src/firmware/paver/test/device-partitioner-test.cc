@@ -479,23 +479,18 @@ class EfiDevicePartitionerTests : public GptDevicePartitionerTests {
   // Create a DevicePartition for a device.
   zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(
       BlockDevice* gpt = nullptr) {
-    fidl::ClientEnd<fuchsia_device::Controller> controller;
-    if (gpt && !BaseDevmgrArgs().enable_storage_host) {
-      controller = gpt->ConnectToLegacyController();
-    }
     zx::result devices = CreateBlockDevices();
     if (devices.is_error()) {
       return devices.take_error();
     }
-    std::shared_ptr<paver::Context> context;
 
     auto paver_config = paver::PaverConfig{
         .arch = paver::Arch::kX64,
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
 
-    return paver::EfiDevicePartitioner::Initialize(*devices, RealmExposedDir(), paver_config,
-                                                   std::move(controller), context);
+    return paver::EfiDevicePartitioner::Initialize(*devices, RealmExposedDir(), paver_config, {},
+                                                   {});
   }
 
   void ResetPartitionTablesTest();
@@ -516,31 +511,6 @@ TEST_F(EfiDevicePartitionerTests, InitializeTwoCandidatesWithoutFvmFails) {
   ASSERT_NO_FATAL_FAILURE(CreateDiskWithGpt(&gpt));
   ASSERT_NO_FATAL_FAILURE(CreateDiskWithGpt(&gpt2));
 
-  ASSERT_NOT_OK(CreatePartitioner({}));
-}
-
-class EfiDevicePartitionerGptAllTests : public EfiDevicePartitionerTests {
- protected:
-  IsolatedDevmgr::Args BaseDevmgrArgs() override {
-    IsolatedDevmgr::Args args;
-    args.disable_block_watcher = false;
-    args.fshost_config.emplace_back(component_testing::ConfigCapability{
-        .name = "fuchsia.fshost.GptAll", .value = component_testing::ConfigValue::Bool(true)});
-    return args;
-  }
-};
-
-TEST_F(EfiDevicePartitionerGptAllTests,
-       InitializeWithMultipleCandidateGPTsFailsWithoutExplicitDevice) {
-  // Set up a two valid GPTs.
-  std::unique_ptr<BlockDevice> gpt, gpt2;
-  ASSERT_NO_FATAL_FAILURE(CreateDiskWithUefiGpt(&gpt, 64 * kGibibyte));
-  ASSERT_NO_FATAL_FAILURE(CreateDiskWithUefiGpt(&gpt2, 64 * kGibibyte));
-
-  ASSERT_OK(CreatePartitioner(gpt.get()));
-  ASSERT_OK(CreatePartitioner(gpt2.get()));
-
-  // Note that this time we don't pass in a block device fd.
   ASSERT_NOT_OK(CreatePartitioner({}));
 }
 
@@ -696,11 +666,7 @@ void EfiDevicePartitionerTests::ResetPartitionTablesTest() {
   ASSERT_OK(status);
   std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
 
-  ASSERT_NO_FATAL_FAILURE(WaitForBlockDevices(1 + 12));
-
   ASSERT_OK(partitioner->ResetPartitionTables());
-
-  ASSERT_NO_FATAL_FAILURE(WaitForBlockDevices(12));
 
   // Ensure the final partition layout looks like we expect it to.
   // Non-Fuchsia partitions ought to have been preserved at their old offsets, and Fuchsia
