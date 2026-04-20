@@ -62,6 +62,10 @@ fn translate_io_error(e: std::io::Error) -> dhcp_client_core::deps::SocketError 
             }
 
             // ============
+            // Enodev can be returned when setting SO_BINDTODEVICE.
+            E::Enodev => dhcp_client_core::deps::SocketError::NoInterface,
+
+            // ============
             // These errors can be returned from `sendto()` at the socket layer.
             E::Eintr => panic!("got EINTR, should be handled by lower-level library: {:?}", e),
             E::Econnreset => panic!("got ECONNRESET, but we aren't using TCP: {:?}", e),
@@ -169,7 +173,6 @@ fn translate_io_error(e: std::io::Error) -> dhcp_client_core::deps::SocketError 
             | E::Erfkill
             | E::Enxio
             | E::Efault
-            | E::Enodev
             | E::Edestaddrreq
             | E::Enetdown
             | E::Ehwpoison => panic!("unexpected error from socket: {:?}", e),
