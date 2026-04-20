@@ -393,30 +393,40 @@ bool Timer::Cancel() {
 
   cpu_num_t cpu = arch_curr_cpu_num();
 
-  // mark the timer as canceled
+  // Mark the timer as canceled. This visible state change allows other CPUs
+  // (e.g., in TrylockOrCancel) to detect that the timer is being cancelled and
+  // abort operations early.
   cancel_.store_locked(true);
-  // TODO(https://fxbug.dev/42142666): Consider whether this DeviceMemoryBarrier is required
+  // TODO(https://fxbug.dev/42142666): Consider whether this DeviceMemoryBarrier
+  // is required
   arch::DeviceMemoryBarrier();
 
-  // see if we're trying to cancel the timer we're currently in the middle of handling
+  // Check if we are attempting to cancel the timer from within its own callback
+  // on the current CPU. If so, we cannot wait for the timer to become un-busy
+  // (as that would deadlock). Instead, we clear the callback and return false,
+  // indicating that the callback was running.
   if (unlikely(active_cpu_.load_locked() == cpu)) {
-    // zero it out
+    // Zero out as defense-in-depth so that incorrect reuse results in a null
+    // dereference rather than executing stale code.
     callback_ = nullptr;
     arg_ = nullptr;
 
-    // we're done, so return back to the callback
+    // We're done, so return back to the callback.
     return false;
   }
 
   bool callback_not_running;
 
-  // If this Timer is in a queue, remove it and adjust hardware timers if needed.
+  // If this Timer is in a queue, remove it and adjust hardware timers if
+  // needed.
   if (InContainer()) {
     callback_not_running = true;
 
     TimerQueue& timer_queue = percpu::Get(cpu).timer_queue;
 
-    // Save a copy of the old head of the queue so later we can see if we modified the head.
+    // Save the old head of the *current* CPU's queue so later we can see if we
+    // modified the head of that queue and need to update the local hardware
+    // timer.
     const Timer* oldhead = nullptr;
     fbl::DoublyLinkedList<Timer*>& timer_list = clock_id_ == ZX_CLOCK_MONOTONIC
                                                     ? timer_queue.monotonic_timer_list_
@@ -425,7 +435,8 @@ bool Timer::Cancel() {
       oldhead = &timer_list.front();
     }
 
-    // Remove this Timer from this whatever TimerQueue it's on.
+    // Remove this Timer from whatever TimerQueue it's on, which may not be the
+    // current CPU's queue.
     RemoveFromContainer();
     kcounter_add(timer_canceled_counter, 1);
 
@@ -433,12 +444,18 @@ bool Timer::Cancel() {
     // the same scheduled_time_ and slack_ non-zero, then it is possible to return
     // that timer to the ideal scheduled_time_.
 
-    // See if we've just modified the head of this TimerQueue.
+    // If the timer was the head of the *current* CPU's queue, we need to update
+    // the hardware timer for this CPU.
     //
-    // If Timer was on another cpu's queue, we'll just let it fire and sort itself out.
+    // Note on cross-CPU cancellation: If the timer was on *another* CPU's
+    // queue, we do not update that CPU's hardware timer here. The hardware
+    // timer on that CPU will still fire at the scheduled time. When it does,
+    // the tick handler will notice the queue head has changed (or is empty) and
+    // will update the hardware timer accordingly. This "lazy" update avoids the
+    // need to IPI the other CPU to update its hardware timer.
     if (unlikely(oldhead == this)) {
-      // The Timer we're canceling was at head of this queue, so see if we should update platform
-      // timer.
+      // The Timer we're canceling was at head of this queue, so see if we
+      // should update platform timer.
       if (!timer_list.is_empty()) {
         timer_queue.UpdatePlatformTimerLocked();
       } else if (timer_queue.next_timer_deadline_ == ZX_TIME_INFINITE) {
@@ -447,17 +464,22 @@ bool Timer::Cancel() {
       }
     }
   } else {
+    // The timer was not in a queue. This means it either has already fired,
+    // or is currently firing on another CPU.
     callback_not_running = false;
   }
 
   guard.Release();
 
-  // wait for the timer to become un-busy in case a callback is currently active on another cpu
+  // Wait for the timer to become un-busy in case a callback is currently active
+  // on another cpu. This ensures that after Cancel() returns, it is safe to
+  // destroy the timer or its arguments.
   while (active_cpu_.load_unlocked() != INVALID_CPU) {
     arch::Yield();
   }
 
-  // zero it out
+  // Zero out as defense-in-depth so that incorrect reuse results in a null
+  // dereference rather than executing stale code.
   callback_ = nullptr;
   arg_ = nullptr;
 
