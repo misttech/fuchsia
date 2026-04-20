@@ -12,7 +12,7 @@
 
         // Grows slowly: double and round observed max (8985 bytes)
         max_bytes: 18000,
-        min_seconds_between_fetch: 720,
+        min_seconds_between_fetch: 60,
         selectors: [
             "INSPECT:core/network/netstack:root/Counters",
         ],
@@ -24,7 +24,7 @@
         // Scales with device count (likely under 10 on deployed system): round and
         // multiply observed max (17447 bytes) by 5.
         max_bytes: 90000,
-        min_seconds_between_fetch: 720,
+        min_seconds_between_fetch: 60,
         selectors: [
             "INSPECT:core/network/netstack:root/Devices",
         ],
@@ -35,7 +35,7 @@
 
         // Grows slowly: double and round observed max (48992 bytes)
         max_bytes: 100000,
-        min_seconds_between_fetch: 720,
+        min_seconds_between_fetch: 60,
         selectors: [
             "INSPECT:core/network/netstack:root/Filtering\\ State",
         ],
@@ -47,7 +47,7 @@
         // Scales with multicast route table size (likely under 100 on deployed
         // systems): multiply observed max (182 bytes) by 20
         max_bytes: 4000,
-        min_seconds_between_fetch: 720,
+        min_seconds_between_fetch: 60,
         selectors: [
             "INSPECT:core/network/netstack:root/MulticastForwarding",
         ],
@@ -59,7 +59,7 @@
         // Scales with neighbor table size (likely over 10 and under 100 on
         // deployed system): multiply observed max (741 bytes) by 20
         max_bytes: 15000,
-        min_seconds_between_fetch: 720,
+        min_seconds_between_fetch: 60,
         selectors: [
             "INSPECT:core/network/netstack:root/Neighbors",
         ],
@@ -71,7 +71,7 @@
         // Scales with route table size (likely over 10 and under 100 on
         // deployed system): multiply observed max (3580 bytes) by 20
         max_bytes: 72000,
-        min_seconds_between_fetch: 720,
+        min_seconds_between_fetch: 60,
         selectors: [
             "INSPECT:core/network/netstack:root/Routes",
         ],
@@ -83,7 +83,7 @@
         // Scales with number of sockets (likely 100s on deployed system):
         // multiply observed max (41509 bytes) by 10
         max_bytes: 415000,
-        min_seconds_between_fetch: 720,
+        min_seconds_between_fetch: 60,
         selectors: [
             "INSPECT:core/network/netstack:root/Sockets",
         ],
