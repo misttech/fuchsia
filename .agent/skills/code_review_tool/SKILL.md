@@ -57,6 +57,9 @@ key mappings and differences you need to know:
   or `Commit-Queue+2`, you must use the `edit` subcommand with the `--add-label` flag.
   - **Example**: `fx gh pr edit <id> --add-label Commit-Queue+1`
 
+#### `pr checks`
+- **Viewing Check Status**: To see the status of CI checks and failing bots for a Gerrit change, use `fx gh pr checks <id>`. This command provides the detailed logs and failure reasons needed to debug failing checks.
+
 #### `pr cherry-pick`
 - **Cherry-picking a CL**: To fetch and apply a Gerrit change to your current
   local Git branch, use `fx gh pr cherry-pick <id>`.
@@ -74,3 +77,4 @@ key mappings and differences you need to know:
   `fx gh pr comment 1569017 --path src/foo.cc --line 42 -m "Looks good"`
 - Mark a CL for CQ dry-run: `fx gh pr edit 1569017 --add-label Commit-Queue+1`
 - Cherry-pick a change locally: `fx gh pr cherry-pick 1569017`
+- View check status: `fx gh pr checks 1569017`
