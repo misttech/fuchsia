@@ -458,16 +458,29 @@ class EfiDevicePartitionerTests : public GptDevicePartitionerTests {
 
   ~EfiDevicePartitionerTests() { loop_.Shutdown(); }
 
+  IsolatedDevmgr::Args BaseDevmgrArgs() override {
+    IsolatedDevmgr::Args args = GptDevicePartitionerTests::BaseDevmgrArgs();
+    args.enable_storage_host = true;
+    args.service_routes.emplace_back(IsolatedDevmgr::Args::ServiceRoute{
+        .name = "fuchsia.system.state.SystemStateTransition",
+        .connector =
+            [this](zx::channel request, async_dispatcher_t* dispatcher) {
+              fidl::BindServer(dispatcher,
+                               fidl::ServerEnd<SystemStateTransition>(std::move(request)),
+                               &fake_system_state_transition_);
+            },
+    });
+    args.fshost_config.emplace_back(
+        component_testing::ConfigCapability{.name = "fuchsia.fshost.RamdiskImage",
+                                            .value = component_testing::ConfigValue::Bool(true)});
+    return args;
+  }
+
   // Create a DevicePartition for a device.
   zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(
       BlockDevice* gpt = nullptr) {
-    return CreatePartitioner(gpt, RealmExposedDir());
-  }
-
-  virtual zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(
-      BlockDevice* gpt, fidl::ClientEnd<fuchsia_io::Directory> svc_root) {
     fidl::ClientEnd<fuchsia_device::Controller> controller;
-    if (gpt) {
+    if (gpt && !BaseDevmgrArgs().enable_storage_host) {
       controller = gpt->ConnectToLegacyController();
     }
     zx::result devices = CreateBlockDevices();
@@ -481,13 +494,14 @@ class EfiDevicePartitionerTests : public GptDevicePartitionerTests {
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
 
-    return paver::EfiDevicePartitioner::Initialize(*devices, std::move(svc_root), paver_config,
+    return paver::EfiDevicePartitioner::Initialize(*devices, RealmExposedDir(), paver_config,
                                                    std::move(controller), context);
   }
 
   void ResetPartitionTablesTest();
 
   async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
+  FakeSystemStateTransition fake_system_state_transition_;
 };
 
 TEST_F(EfiDevicePartitionerTests, InitializeWithoutGptFails) {
@@ -602,34 +616,27 @@ TEST_F(EfiDevicePartitionerTests, OnStopRebootBootloader) {
           PartitionDescription{GUID_ABR_META_NAME, Uuid(kAbrMetaType), 0x10023, 0x8},
       }));
 
-  {
-    FakeSvc fake_svc(loop_.dispatcher());
-    zx::result svc = fake_svc.svc();
-    EXPECT_OK(svc);
+  zx::result partitioner_status = CreatePartitioner(gpt.get());
+  ASSERT_OK(partitioner_status);
+  std::unique_ptr<paver::DevicePartitioner> partitioner = std::move(partitioner_status.value());
 
-    zx::result partitioner_status = CreatePartitioner(gpt.get(), std::move(svc.value()));
-    ASSERT_OK(partitioner_status);
-    std::unique_ptr<paver::DevicePartitioner> partitioner = std::move(partitioner_status.value());
+  ASSERT_NO_FATAL_FAILURE(WaitForBlockDevices(2));
 
-    ASSERT_NO_FATAL_FAILURE(WaitForBlockDevices(2));
+  // Set Termination system state to "reboot to bootloader"
+  fake_system_state_transition_.SetTerminationSystemState(SystemPowerState::kRebootBootloader);
 
-    // Set Termination system state to "reboot to bootloader"
-    fake_svc.fake_system_shutdown_state().SetTerminationSystemState(
-        SystemPowerState::kRebootBootloader);
+  // Trigger OnStop event that should set one shot flag
+  ASSERT_OK(partitioner->OnStop());
 
-    // Trigger OnStop event that should set one shot flag
-    ASSERT_OK(partitioner->OnStop());
-
-    // Verify ABR flags
-    auto partition = partitioner->FindPartition(paver::PartitionSpec(paver::Partition::kAbrMeta));
-    ASSERT_OK(partition);
-    auto abr_partition_client = abr::AbrPartitionClient::Create(std::move(partition.value()));
-    ASSERT_OK(abr_partition_client);
-    auto abr_flags_res = abr_partition_client.value()->GetAndClearOneShotFlags();
-    ASSERT_OK(abr_flags_res);
-    EXPECT_TRUE(AbrIsOneShotBootloaderBootSet(abr_flags_res.value()));
-    EXPECT_FALSE(AbrIsOneShotRecoveryBootSet(abr_flags_res.value()));
-  }
+  // Verify ABR flags
+  auto partition = partitioner->FindPartition(paver::PartitionSpec(paver::Partition::kAbrMeta));
+  ASSERT_OK(partition);
+  auto abr_partition_client = abr::AbrPartitionClient::Create(std::move(partition.value()));
+  ASSERT_OK(abr_partition_client);
+  auto abr_flags_res = abr_partition_client.value()->GetAndClearOneShotFlags();
+  ASSERT_OK(abr_flags_res);
+  EXPECT_TRUE(AbrIsOneShotBootloaderBootSet(abr_flags_res.value()));
+  EXPECT_FALSE(AbrIsOneShotRecoveryBootSet(abr_flags_res.value()));
 }
 
 TEST_F(EfiDevicePartitionerTests, OnStopRebootRecovery) {
@@ -641,63 +648,28 @@ TEST_F(EfiDevicePartitionerTests, OnStopRebootRecovery) {
           PartitionDescription{GUID_ABR_META_NAME, Uuid(kAbrMetaType), 0x10023, 0x8},
       }));
 
-  {
-    FakeSvc fake_svc(loop_.dispatcher());
-    zx::result svc = fake_svc.svc();
-    EXPECT_OK(svc);
+  zx::result partitioner_status = CreatePartitioner(gpt.get());
+  ASSERT_OK(partitioner_status);
+  std::unique_ptr<paver::DevicePartitioner> partitioner = std::move(partitioner_status.value());
 
-    zx::result partitioner_status = CreatePartitioner(gpt.get(), std::move(svc.value()));
-    ASSERT_OK(partitioner_status);
-    std::unique_ptr<paver::DevicePartitioner> partitioner = std::move(partitioner_status.value());
+  ASSERT_NO_FATAL_FAILURE(WaitForBlockDevices(2));
 
-    ASSERT_NO_FATAL_FAILURE(WaitForBlockDevices(2));
+  // Set Termination system state to "reboot to bootloader"
+  fake_system_state_transition_.SetTerminationSystemState(SystemPowerState::kRebootRecovery);
 
-    // Set Termination system state to "reboot to bootloader"
-    fake_svc.fake_system_shutdown_state().SetTerminationSystemState(
-        SystemPowerState::kRebootRecovery);
+  // Trigger OnStop event that should set one shot flag
+  ASSERT_OK(partitioner->OnStop());
 
-    // Trigger OnStop event that should set one shot flag
-    ASSERT_OK(partitioner->OnStop());
-
-    // Verify ABR flags
-    auto partition = partitioner->FindPartition(paver::PartitionSpec(paver::Partition::kAbrMeta));
-    ASSERT_OK(partition);
-    auto abr_partition_client = abr::AbrPartitionClient::Create(std::move(partition.value()));
-    ASSERT_OK(abr_partition_client);
-    auto abr_flags_res = abr_partition_client.value()->GetAndClearOneShotFlags();
-    ASSERT_OK(abr_flags_res);
-    EXPECT_FALSE(AbrIsOneShotBootloaderBootSet(abr_flags_res.value()));
-    EXPECT_TRUE(AbrIsOneShotRecoveryBootSet(abr_flags_res.value()));
-  }
+  // Verify ABR flags
+  auto partition = partitioner->FindPartition(paver::PartitionSpec(paver::Partition::kAbrMeta));
+  ASSERT_OK(partition);
+  auto abr_partition_client = abr::AbrPartitionClient::Create(std::move(partition.value()));
+  ASSERT_OK(abr_partition_client);
+  auto abr_flags_res = abr_partition_client.value()->GetAndClearOneShotFlags();
+  ASSERT_OK(abr_flags_res);
+  EXPECT_FALSE(AbrIsOneShotBootloaderBootSet(abr_flags_res.value()));
+  EXPECT_TRUE(AbrIsOneShotRecoveryBootSet(abr_flags_res.value()));
 }
-
-class EfiDevicePartitionerWithStorageHostTests : public EfiDevicePartitionerTests {
- protected:
-  IsolatedDevmgr::Args BaseDevmgrArgs() override {
-    IsolatedDevmgr::Args args;
-    args.enable_storage_host = true;
-    args.disable_block_watcher = true;
-    args.fshost_config.emplace_back(
-        component_testing::ConfigCapability{.name = "fuchsia.fshost.RamdiskImage",
-                                            .value = component_testing::ConfigValue::Bool(true)});
-    return args;
-  }
-
-  zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(
-      BlockDevice* gpt, fidl::ClientEnd<fuchsia_io::Directory> svc_root) override {
-    zx::result devices = CreateBlockDevices();
-    if (devices.is_error()) {
-      return devices.take_error();
-    }
-
-    auto paver_config = paver::PaverConfig{
-        .arch = paver::Arch::kX64,
-        .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
-    };
-    std::shared_ptr<paver::Context> context;
-    return paver::EfiDevicePartitioner::Initialize(*devices, svc_root, paver_config, {}, context);
-  }
-};
 
 void EfiDevicePartitionerTests::ResetPartitionTablesTest() {
   const Uuid etc_guid = Uuid::Generate();
@@ -776,24 +748,6 @@ void EfiDevicePartitionerTests::ResetPartitionTablesTest() {
 
 TEST_F(EfiDevicePartitionerTests, ResetPartitionTables) {
   ASSERT_NO_FATAL_FAILURE(ResetPartitionTablesTest());
-}
-
-TEST_F(EfiDevicePartitionerWithStorageHostTests, ResetPartitionTables) {
-  ASSERT_NO_FATAL_FAILURE(ResetPartitionTablesTest());
-}
-
-TEST_F(EfiDevicePartitionerWithStorageHostTests, InitializeWithoutGptFails) {
-  std::unique_ptr<BlockDevice> gpt;
-  ASSERT_NO_FATAL_FAILURE(CreateDisk(&gpt, 64 * kGibibyte));
-
-  ASSERT_NOT_OK(EfiDevicePartitionerTests::CreatePartitioner());
-}
-
-TEST_F(EfiDevicePartitionerWithStorageHostTests, InitializeWithoutFvmSucceeds) {
-  std::unique_ptr<BlockDevice> gpt;
-  ASSERT_NO_FATAL_FAILURE(CreateDiskWithUefiGpt(&gpt, 64 * kGibibyte));
-
-  ASSERT_OK(EfiDevicePartitionerTests::CreatePartitioner());
 }
 
 class FixedDevicePartitionerTests : public PaverTest {

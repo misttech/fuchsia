@@ -12,6 +12,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/dispatcher.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
+#include <lib/vfs/cpp/service.h>
 
 #include <vector>
 
@@ -43,6 +44,12 @@ class IsolatedDevmgr {
     fbl::String board_name;
     std::vector<std::string> driver_disable;
     std::vector<std::string> driver_bind_eager;
+
+    struct ServiceRoute {
+      std::string name;
+      vfs::Service::Connector connector;
+    };
+    std::vector<ServiceRoute> service_routes;
   };
 
   IsolatedDevmgr() = default;

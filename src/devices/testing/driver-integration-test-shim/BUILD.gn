@@ -43,6 +43,7 @@ library_headers("driver-integration-test-shim-headers") {
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/driver_test_realm/realm_builder/cpp",
     "//sdk/lib/fit",
+    "//sdk/lib/vfs/cpp",
     "//src/lib/ddk:ddk-metadata-headers",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",

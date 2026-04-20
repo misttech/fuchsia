@@ -58,6 +58,22 @@ class FakeSysinfo : public LocalComponentImpl,
   std::string board_name_;
 };
 
+class ExtraServicesComponent : public LocalComponentImpl {
+ public:
+  explicit ExtraServicesComponent(std::vector<IsolatedDevmgr::Args::ServiceRoute> routes)
+      : routes_(std::move(routes)) {}
+
+  void OnStart() override {
+    for (auto& route : routes_) {
+      auto service = std::make_unique<vfs::Service>(std::move(route.connector));
+      ZX_ASSERT(outgoing()->AddPublicService(std::move(service), route.name) == ZX_OK);
+    }
+  }
+
+ private:
+  std::vector<IsolatedDevmgr::Args::ServiceRoute> routes_;
+};
+
 zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
   IsolatedDevmgr devmgr;
   devmgr.loop_ = std::make_unique<async::Loop>(&kAsyncLoopConfigNoAttachToCurrentThread);
@@ -267,6 +283,23 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
       .source = {ChildRef{"fake-sysinfo"}},
       .targets = {ParentRef()},
   });
+
+  if (!args->service_routes.empty()) {
+    std::vector<Capability> protocols;
+    for (const auto& route : args->service_routes) {
+      protocols.emplace_back(Protocol{route.name});
+    }
+
+    realm_builder.AddLocalChild(
+        "extra-services", [routes = std::move(args->service_routes)]() mutable {
+          return std::make_unique<ExtraServicesComponent>(std::move(routes));
+        });
+    realm_builder.AddRoute(Route{
+        .capabilities = protocols,
+        .source = {ChildRef{"extra-services"}},
+        .targets = {ParentRef(), ChildRef{"fshost"}},
+    });
+  }
 
   // Build the realm.
   devmgr.realm_ = std::make_unique<component_testing::RealmRoot>(
