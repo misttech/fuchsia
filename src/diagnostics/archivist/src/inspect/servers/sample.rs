@@ -370,6 +370,14 @@ impl SampleServer {
             for datum in
                 batch.iter().filter(|datum| matches!(datum.strategy, SampleStrategy::OnDiff))
             {
+                if datum.selector.component_selector.as_ref().is_some_and(|m| {
+                    !selectors::matches_selectors(&inspect_data.moniker, std::slice::from_ref(m))
+                }) {
+                    // NB: If the datum provides a moniker selector, ensure we
+                    // only update the cache with inspect_data from that moniker.
+                    continue;
+                }
+
                 let Ok(current) = select_from_hierarchy(current_hierarchy, &datum.selector) else {
                     continue;
                 };
@@ -1121,6 +1129,121 @@ mod tests {
         exec.set_fake_time(MonotonicInstant::after(zx::MonotonicDuration::from_seconds(310)));
         exec.wake_expired_timers();
         assert_eq!(Poll::Pending, exec.run_until_stalled(&mut fut));
+    }
+
+    // A regression test for b/503719785.
+    //
+    // Ensure that inspect data with the wrong moniker doesn't influence the
+    // on_diff cache.
+    #[fuchsia::test]
+    fn sample_server_on_diff_with_results_from_multiple_monikers() {
+        let mut exec = TestExecutor::new_with_fake_time();
+        let scope = exec.global_scope();
+        let (_pipeline, inspect_repo) = permissive_pipeline(scope);
+
+        // Create 3 inspectors. The last inspector is the one we'll actually
+        // select against.
+        struct InspectorState {
+            inspector: Inspector,
+            moniker: ExtendedMoniker,
+            url: String,
+        }
+        let inspectors = (0..3)
+            .map(|i| {
+                let moniker = ExtendedMoniker::parse_str(format!("./a/b/foo{i}").as_str()).unwrap();
+                let url = format!("fuchsia-package://test-url{i}");
+                let identity = Arc::new(ComponentIdentity::new(moniker.clone(), url.as_str()));
+                let (proxy, inspector) = spawn_test_inspector(scope);
+                inspect_repo.add_inspect_handle(
+                    Arc::clone(&identity),
+                    InspectHandle::tree(proxy, Option::<String>::None),
+                );
+                InspectorState { inspector, moniker, url }
+            })
+            .collect::<Vec<_>>();
+
+        let sampler = Arc::new(SampleServer::new(
+            Arc::clone(&inspect_repo),
+            MonotonicDuration::from_seconds(60),
+            scope.new_child(),
+        ));
+        let (sample_proxy, stream) = fidl::endpoints::create_proxy_and_stream::<SampleMarker>();
+        sampler.spawn(stream);
+
+        let (sample_sink_client, sample_sink_server) =
+            fidl::endpoints::create_endpoints::<SampleSinkMarker>();
+
+        // Only set the expected property on the third inspector.
+        let last_inspector = inspectors.last().unwrap();
+        let prop = last_inspector.inspector.root().create_int("foo", 0);
+
+        let mut fut = async move {
+            sample_proxy
+                .set(&SampleParameters {
+                    data: Some(vec![SampleDatum {
+                        selector: Some(SelectorArgument::RawSelector(format!(
+                            "{}:root:foo",
+                            last_inspector.moniker
+                        ))),
+                        strategy: Some(SampleStrategy::OnDiff),
+                        interval_secs: Some(300),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                })
+                .unwrap();
+            sample_proxy.commit(sample_sink_client).await.unwrap().unwrap();
+
+            let mut sample_sink_server = sample_sink_server.into_stream();
+
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 0);
+
+            // recall that serialization happens here, so positive integers will flip to uint
+            // values in the below tests
+            let actual = drain_batch(batch_iter).await;
+
+            let actual_ts = actual[0].metadata.timestamp;
+            assert_eq!(
+                actual,
+                vec![
+                    InspectDataBuilder::new(
+                        last_inspector.moniker.clone(),
+                        last_inspector.url.as_str(),
+                        actual_ts
+                    )
+                    .with_hierarchy(hierarchy! { root: { foo: 0u64 }})
+                    .build()
+                ]
+            );
+
+            prop.set(5);
+
+            let (batch_iter, runtime) = extract(&mut sample_sink_server).await;
+            assert_eq!(runtime, 300);
+
+            let actual = drain_batch(batch_iter).await;
+
+            let actual_ts = actual[0].metadata.timestamp;
+            assert_eq!(
+                actual,
+                vec![
+                    InspectDataBuilder::new(
+                        last_inspector.moniker.clone(),
+                        last_inspector.url.as_str(),
+                        actual_ts
+                    )
+                    .with_hierarchy(hierarchy! { root: { foo: 5u64 }})
+                    .build()
+                ]
+            );
+        }
+        .boxed();
+
+        let _ = exec.run_until_stalled(&mut fut);
+        exec.set_fake_time(MonotonicInstant::after(zx::MonotonicDuration::from_seconds(300)));
+        exec.wake_expired_timers();
+        assert_eq!(Poll::Ready(()), exec.run_until_stalled(&mut fut));
     }
 
     #[fuchsia::test]
