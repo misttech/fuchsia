@@ -215,10 +215,6 @@ impl SysFs {
             });
             dir.subdir("powercap", dir_mode, |_dir| {});
             dir.subdir("udc", dir_mode, |_dir| {});
-            // TODO(https://fxbug.dev/434255839): This provides the directory but doesn't provide the
-            // state or control nodes. We should consider whether the USB stack should set
-            // this path up itself if we choose to implement the corresponding HALs.
-            dir.subdir("android_usb", dir_mode, empty_dir);
         });
         dir.subdir("dev", dir_mode, |dir| {
             dir.subdir("char", dir_mode, empty_dir);
