@@ -437,7 +437,7 @@ zx::result<> handle_control_register_access(const ExitInfo& exit_info, AutoVmcs&
       }
       auto result = handle_cr0_write(vmcs, *val, local_apic_state);
       if (result.is_error()) {
-        return val.take_error();
+        return result.take_error();
       }
       next_rip(exit_info, vmcs);
       return zx::ok();
