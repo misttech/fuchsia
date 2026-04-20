@@ -12,9 +12,10 @@ use fdomain_fuchsia_hwinfo::{Architecture, BoardProxy, DeviceProxy, ProductProxy
 use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
 use ffx_target;
 use ffx_target_show_args as args;
-use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, FhoEnvironment, deferred};
 use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
+use netext::ScopedSocketAddr;
 use show::{
     AddressData, BoardData, BuildData, DeviceData, ProductData, TargetShowInfo, UpdateData,
 };
@@ -103,9 +104,19 @@ async fn gather_target_info_direct(
     connection: &ffx_target::Connection,
 ) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>)> {
     // If we've gotten a connection, we must have an address we connected to
-    let ad = connection
-        .device_address()
-        .map(|addr| AddressData { host: format!("{}", addr.ip()), port: addr.port() });
+    let ad = match connection.device_address() {
+        Some(addr) => match ScopedSocketAddr::from_socket_addr(addr) {
+            Ok(ssaddr) => Some(AddressData {
+                host: format!("{}", ssaddr.ip_string()),
+                port: ssaddr.addr().port(),
+            }),
+            Err(e) => {
+                log::warn!("Failed to create ScopedSocketAddr from {}: {:?}", addr, e);
+                None
+            }
+        },
+        None => None,
+    };
     Ok((ad, connection.compatibility_info().map(|ci| ci.into())))
 }
 

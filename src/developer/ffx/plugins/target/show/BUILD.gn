@@ -18,6 +18,7 @@ ffx_plugin("ffx_target_show") {
     "//src/developer/ffx/lib/addr:lib",
     "//src/developer/ffx/lib/compat_info:lib",
     "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/netext:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target/behavior:lib",
     "//src/developer/ffx/lib/target/holders:lib",
