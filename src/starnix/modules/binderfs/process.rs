@@ -446,14 +446,21 @@ impl BinderProcess {
 
     /// Attempts to enqueue a command on an available thread.
     /// Pops threads from `available_threads` until one is found that is truly available,
-    /// and enqueues the command on it. Returns `Err(command)` if no available threads are found.
-    fn try_enqueue_on_available_thread(&self, command: Command) -> Result<(), Command> {
+    /// and enqueues the command on it.
+    ///
+    /// Returns `Ok(thread)` if it found a thread to schedule one.
+    /// `Err(command)` if no available threads are found.
+    pub fn try_enqueue_on_available_thread(
+        &self,
+        command: Command,
+    ) -> Result<TempRef<'static, BinderThread>, Command> {
         while let Some(weak_thread) = self.available_threads.pop() {
             if let Some(thread) = weak_thread.upgrade() {
                 let mut thread_guard = thread.lock();
                 if thread_guard.is_available() {
                     thread_guard.enqueue_command(command);
-                    return Ok(());
+                    drop(thread_guard);
+                    return Ok(TempRef::into_static(thread));
                 }
             }
         }
@@ -461,7 +468,10 @@ impl BinderProcess {
     }
 
     /// Enqueues `command` for the process and wakes up any thread that is waiting for commands.
-    pub fn enqueue_command(&self, command: Command) {
+    ///
+    /// Returns Some(thread) if we successfully enqueue the command on a thread, or None if it was
+    /// enqueued in the process's queue.
+    pub fn enqueue_command(&self, command: Command) -> Option<TempRef<'static, BinderThread>> {
         log_trace!("BinderProcess id={} enqueuing command {:?}", self.identifier, command);
         // Handle oneway transactions explicitly. They should always target the process queue to
         // avoid accidentally handling them during an ongoing transaction.
@@ -484,13 +494,13 @@ impl BinderProcess {
                     }
                 }
             }
-            return;
+            return None;
         }
 
         let mut command = command;
         loop {
             match self.try_enqueue_on_available_thread(command) {
-                Ok(_) => break,
+                Ok(thread) => return Some(thread),
                 Err(c) => {
                     let mut state = self.lock();
                     // We must not call try_enqueue_on_available_thread while holding
@@ -502,7 +512,7 @@ impl BinderProcess {
                     }
                     state.command_queue.push_back(c);
                     self.process_waiters.notify_fd_events(starnix_uapi::vfs::FdEvents::POLLIN);
-                    break;
+                    return None;
                 }
             }
         }

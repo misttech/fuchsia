@@ -1073,7 +1073,7 @@ impl BinderDriver {
                     transaction_state.push_guard(guard);
                 }
 
-                let (target_thread, command) = if oneway {
+                if oneway {
                     // The caller is not expecting a reply.
                     context.binder_thread.lock().enqueue_command(if is_target_frozen {
                         Command::PendingFrozen
@@ -1107,7 +1107,8 @@ impl BinderDriver {
                     // the transaction regularly, but mark the object as handling a oneway transaction.
                     object_state.handling_oneway_transaction = true;
 
-                    (None, Command::OnewayTransaction(transaction))
+                    drop(object_state);
+                    target_proc.enqueue_command(Command::OnewayTransaction(transaction));
                 } else {
                     let target_thread = match match context.binder_thread.lock().transactions.last()
                     {
@@ -1127,11 +1128,11 @@ impl BinderDriver {
 
                     // Make the sender thread part of the transaction so it doesn't get scheduled to handle
                     // any other transactions.
-                    context
-                        .binder_thread
-                        .lock()
-                        .transactions
-                        .push(TransactionRole::Sender(transaction_sender));
+                    let expected_len = {
+                        let mut thread_state = context.binder_thread.lock();
+                        thread_state.transactions.push(TransactionRole::Sender(transaction_sender));
+                        thread_state.transactions.len()
+                    };
 
                     // Register the transaction buffer.
                     target_proc.lock().active_transactions.insert(
@@ -1165,23 +1166,40 @@ impl BinderDriver {
                         }
                     }
 
-                    (
-                        target_thread,
-                        Command::Transaction {
-                            sender: WeakBinderPeer::new(context.binder_proc, context.binder_thread),
-                            data: transaction,
-                            scheduler_state,
-                        },
-                    )
-                };
+                    let command = Command::Transaction {
+                        sender: WeakBinderPeer::new(context.binder_proc, context.binder_thread),
+                        data: transaction,
+                        scheduler_state,
+                    };
 
-                // Schedule the transaction on the target_thread if it is specified, otherwise use the
-                // process' command queue.
-                if let Some(target_thread) = target_thread {
-                    target_thread.lock().enqueue_command(command);
-                } else {
-                    target_proc.enqueue_command(command);
-                }
+                    if let Some(target_thread) = target_thread {
+                        target_thread.lock().enqueue_command(command);
+                    } else {
+                        // If we don't have an already known target thread, select one if
+                        // available.
+                        if let Some(thread) = target_proc.enqueue_command(command) {
+                            // If we were able to schedule on a thread's queue (rather than on a
+                            // process' queue), we can update the sender record with that
+                            // information.
+                            let mut binder_thread_state = context.binder_thread.lock();
+                            // If in the time between us dropping the thread lock and reacquiring
+                            // it, if target has died, generate_dead_replies could have popped the
+                            // transaction from our stack.
+                            if binder_thread_state.transactions.len() == expected_len {
+                                if let Some(TransactionRole::Sender(TransactionSender {
+                                    target_proc: id,
+                                    is_alive: true,
+                                    target_thread_handle,
+                                    ..
+                                })) = binder_thread_state.transactions.last_mut()
+                                    && *id == target_proc.identifier
+                                {
+                                    *target_thread_handle = Some(thread.thread.clone());
+                                }
+                            }
+                        }
+                    }
+                };
                 Ok(())
             })
         })

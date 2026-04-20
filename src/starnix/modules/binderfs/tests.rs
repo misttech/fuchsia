@@ -4492,6 +4492,66 @@ pub mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_transaction_known_receiver_from_thread_pool() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let device = BinderDevice::default();
+            let sender = BinderProcessFixture::new_current(locked, current_task, &device);
+            let receiver = BinderProcessFixture::new(locked, current_task, &device);
+
+            const OBJECT_ADDR: UserAddress = UserAddress::const_from(0x01);
+            let (_, guard) =
+                register_binder_object(&receiver.proc, OBJECT_ADDR, (OBJECT_ADDR + 1u64).unwrap());
+            let handle = sender
+                .proc
+                .lock()
+                .handles
+                .insert_for_transaction(guard, &mut RefCountActions::default_released());
+
+            // Make the receiver thread available for transactions.
+            let event = InterruptibleEvent::new();
+            let (mut fake_waiter, _guard) = SimpleWaiter::new(&event);
+            {
+                let mut thread_state = receiver.thread.lock();
+                thread_state.registration = RegistrationState::Main;
+                thread_state.command_queue.waiters.wait_async_simple(&mut fake_waiter);
+            }
+
+            // Construct a synchronous transaction to send from the sender to the receiver.
+            const FIRST_TRANSACTION_CODE: u32 = 42;
+            let transaction = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    code: FIRST_TRANSACTION_CODE,
+                    target: binder_transaction_data__bindgen_ty_1 { handle: handle.into() },
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
+
+            // Process the transaction
+            device
+                .handle_transaction(
+                    locked,
+                    &sender.context(current_task),
+                    &mut Vec::new(),
+                    transaction,
+                )
+                .expect("failed to handle the transaction");
+
+            // We're not responding to a request, but we should still pull a thread from the
+            // pool and thus know who we are sending to.
+            let sender_thread_state = sender.thread.lock();
+            let transaction_role =
+                sender_thread_state.transactions.last().expect("should have a transaction");
+            if let TransactionRole::Sender(sender_info) = transaction_role {
+                assert_eq!(sender_info.target_thread_handle, Some(receiver.thread.thread.clone()));
+            } else {
+                panic!("Expected Sender role, got {:?}", transaction_role);
+            }
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
     async fn test_transaction_priority_inheritance_response_propagation() {
         spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();

@@ -687,7 +687,7 @@ impl BinderObject {
         }
 
         for command in commands {
-            process.enqueue_command(command)
+            process.enqueue_command(command);
         }
     }
 }
