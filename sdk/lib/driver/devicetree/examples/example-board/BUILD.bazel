@@ -49,16 +49,11 @@ fuchsia_cc_driver(
     ],
 )
 
-fuchsia_component_manifest(
-    name = "manifest",
-    src = "meta/example-board.cml",
-)
-
 fuchsia_driver_component(
     name = "component",
     bind_bytecode = ":example-board-bind",
     driver_lib = ":example-board-driver",
-    manifest = ":manifest",
+    manifest = "meta/example-board.cml",
 )
 
 fuchsia_package(

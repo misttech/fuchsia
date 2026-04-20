@@ -5,7 +5,6 @@
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "fuchsia_cc_driver",
-    "fuchsia_component_manifest",
     "fuchsia_driver_bind_bytecode",
     "fuchsia_driver_component",
     "fuchsia_package",
@@ -41,16 +40,11 @@ fuchsia_cc_driver(
     deps = [":common"],
 )
 
-fuchsia_component_manifest(
-    name = "manifest",
-    src = "meta/config_driver.cml",
-)
-
 fuchsia_driver_component(
     name = "component",
     bind_bytecode = ":example-config-bind-bytecode",
     driver_lib = ":example-config-driver",
-    manifest = ":manifest",
+    manifest = "meta/config_driver.cml",
 )
 
 fuchsia_package(

@@ -5,7 +5,6 @@
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "fuchsia_cc_driver",
-    "fuchsia_component_manifest",
     "fuchsia_driver_bind_bytecode",
     "fuchsia_driver_component",
     "fuchsia_package",
@@ -42,16 +41,11 @@ fuchsia_cc_driver(
     deps = [":common"],
 )
 
-fuchsia_component_manifest(
-    name = "manifest",
-    src = "meta/power_driver.cml",
-)
-
 fuchsia_driver_component(
     name = "component",
     bind_bytecode = ":power-bind-bytecode",
     driver_lib = ":power-driver",
-    manifest = ":manifest",
+    manifest = "meta/power_driver.cml",
 )
 
 fuchsia_package(

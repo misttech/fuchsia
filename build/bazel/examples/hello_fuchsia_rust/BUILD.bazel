@@ -5,7 +5,6 @@
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "fuchsia_component",
-    "fuchsia_component_manifest",
     "fuchsia_package",
     "fuchsia_test_component",
     "fuchsia_test_package",
@@ -35,14 +34,9 @@ fuchsia_wrap_rust_binary(
     native_binary = ":hello_fuchsia_rust_native",
 )
 
-fuchsia_component_manifest(
-    name = "manifest",
-    src = "meta/hello_fuchsia_rust.cml",
-)
-
 fuchsia_component(
     name = "component",
-    manifest = ":manifest",
+    manifest = "meta/hello_fuchsia_rust.cml",
     deps = [":hello_fuchsia_rust_bin"],
 )
 
@@ -73,14 +67,9 @@ fuchsia_wrap_rust_binary(
     native_binary = ":hello_fuchsia_rust_test_native",
 )
 
-fuchsia_component_manifest(
-    name = "test_manifest",
-    src = "meta/hello_fuchsia_rust_test.cml",
-)
-
 fuchsia_test_component(
     name = "test_component",
-    manifest = ":test_manifest",
+    manifest = "meta/hello_fuchsia_rust_test.cml",
     deps = [":hello_fuchsia_rust_test"],
 )
 

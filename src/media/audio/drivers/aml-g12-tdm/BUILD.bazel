@@ -6,7 +6,6 @@ load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "fuchsia_cc_driver",
     "fuchsia_cc_test",
-    "fuchsia_component_manifest",
     "fuchsia_driver_bind_bytecode",
     "fuchsia_driver_component",
     "fuchsia_package",
@@ -77,16 +76,11 @@ fuchsia_cc_driver(
     ],
 )
 
-fuchsia_component_manifest(
-    name = "aml-g12-composite-manifest",
-    src = "meta/aml-g12-composite.cml",
-)
-
 fuchsia_driver_component(
     name = "aml-g12-composite-component",
     bind_bytecode = "aml-g12-composite-bind",
     driver_lib = ":aml-g12-composite-driver",
-    manifest = ":aml-g12-composite-manifest",
+    manifest = "meta/aml-g12-composite.cml",
 )
 
 fuchsia_package(

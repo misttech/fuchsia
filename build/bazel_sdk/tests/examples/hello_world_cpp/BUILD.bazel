@@ -7,7 +7,6 @@ load(
     "fuchsia_cc_binary",
     "fuchsia_cc_test",
     "fuchsia_component",
-    "fuchsia_component_manifest",
     "fuchsia_package",
     "fuchsia_select",
     "fuchsia_unittest_package",
@@ -26,14 +25,9 @@ fuchsia_cc_binary(
     ],
 )
 
-fuchsia_component_manifest(
-    name = "manifest",
-    src = "meta/hello_world_cpp.cml",
-)
-
 fuchsia_component(
     name = "component",
-    manifest = ":manifest",
+    manifest = "meta/hello_world_cpp.cml",
     deps = [
         ":hello_world_cpp",
     ],
