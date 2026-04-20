@@ -38,12 +38,13 @@ impl FfxMain for EchoTool {
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         match echo_impl(self.rcs_proxy, self.cmd, &mut writer).await {
-            Ok(()) => (),
+            Ok(()) => Ok(()),
             Err(e) => {
-                writer.machine_or(&EchoMessage::UnexpectedError(e.to_string()), e)?;
+                let error_msg = e.to_string();
+                let _ = writer.machine_or(&EchoMessage::UnexpectedError(error_msg), e);
+                fho::exit_with_code!(1)
             }
-        };
-        Ok(())
+        }
     }
 }
 
@@ -239,6 +240,42 @@ mod test {
 
         let want = EchoMessage::Message("test".into());
         assert_eq!(json, json!(want));
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_echo_failure() -> Result<()> {
+        let cmd = EchoCommand { text: None, repeat: false };
+        let fake_injector = Arc::new(FakeInjector {
+            remote_factory_closure_f: Box::new(move || {
+                Box::pin(async { Err(anyhow::anyhow!("Mock connection failure")) })
+            }),
+            ..Default::default()
+        });
+
+        let env = FhoEnvironment::new_with_args(
+            &ffx_config::EnvironmentContext::no_context(
+                ffx_config::environment::ExecutableKind::Test,
+                Default::default(),
+                None,
+                true,
+            ),
+            &["some", "test"],
+        );
+        let target_env = target_behavior::target_interface(&env);
+        target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(fake_injector));
+
+        let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
+        let tool = EchoTool { cmd, rcs_proxy: connector };
+        let buffers = TestBuffers::default();
+        let writer = <EchoTool as FfxMain>::Writer::new_test(None, &buffers);
+
+        let result = tool.main(writer).await;
+
+        match result {
+            Err(fho::Error::ExitWithCode(1)) => {}
+            _ => panic!("Expected Err(ExitWithCode(1)), got {:?}", result),
+        }
         Ok(())
     }
 }
