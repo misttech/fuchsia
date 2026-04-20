@@ -268,11 +268,19 @@ fn must_interrupt<R>(result: &Result<R, Errno>) -> Option<Errno> {
     }
 }
 
+#[must_use]
+enum NotificationType {
+    All,
+    Value(u64),
+    Unordered(usize),
+}
+
 /// Connection to the remote binder device. One connection is associated to one instance of a
 /// remote fuchsia component.
 struct RemoteBinderHandle<F: RemoteControllerConnector> {
     kernel: Arc<Kernel>,
     state: Mutex<RemoteBinderHandleState>,
+    waiters: WaitQueue,
 
     /// Marker struct, needed because the struct is parametrized by `F`.
     _phantom: std::marker::PhantomData<F>,
@@ -356,10 +364,6 @@ struct RemoteBinderHandleState {
 
     /// Channels that must receive a element at the time the handle exits.
     exit_notifiers: Vec<oneshot::Sender<()>>,
-
-    /// Notification queue to wake tasks waiting for requests.
-    #[derivative(Debug = "ignore")]
-    waiters: WaitQueue,
 }
 
 impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
@@ -370,7 +374,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
 
 impl RemoteBinderHandleState {
     /// Signal all task that they must exit.
-    fn exit(&mut self, result: Result<(), Errno>) {
+    fn exit(&mut self, result: Result<(), Errno>) -> NotificationType {
         // The task requests in state may refer to async FIDL streams and must be dropped before
         // dropping the executor.
         self.koid_to_task.clear();
@@ -380,14 +384,14 @@ impl RemoteBinderHandleState {
         self.taskless_requests.clear();
 
         self.exit = Some(result.map_err(|e| e.code));
-        self.waiters.notify_all();
         for notifier in std::mem::take(&mut self.exit_notifiers) {
             let _ = notifier.send(());
         }
+        NotificationType::All
     }
 
     /// Enqueue a request for the task associated with `koid`.
-    fn enqueue_task_request(&mut self, request: BoundTaskRequest) {
+    fn enqueue_task_request(&mut self, request: BoundTaskRequest) -> NotificationType {
         debug_assert!(self.unassigned_requests.iter().all(|r| r.koid != request.koid));
         if let Some(tid) = self.koid_to_task.get(&request.koid).copied() {
             // Find the task associated with the given koid. If one exist, we enqueue the request
@@ -397,10 +401,9 @@ impl RemoteBinderHandleState {
                 self.pending_requests.insert(tid, PendingRequest::Some(request)),
             ) {
                 log_error!("A single thread received 2 concurrent requests.");
-                self.exit(error!(EINVAL));
-                return;
+                return self.exit(error!(EINVAL));
             }
-            self.waiters.notify_value(tid as u64);
+            NotificationType::Value(tid as u64)
         } else if let Some(tid) = self.unassigned_tasks.iter().next().copied() {
             // There was no task associated with the koid, but there exists an unassigned task.
             // Associated the task with the koid, and insert the pending request.
@@ -410,10 +413,9 @@ impl RemoteBinderHandleState {
                 self.pending_requests.insert(tid, PendingRequest::Some(request)),
             ) {
                 log_error!("A single thread received 2 concurrent requests.");
-                self.exit(error!(EINVAL));
-                return;
+                return self.exit(error!(EINVAL));
             }
-            self.waiters.notify_value(tid as u64);
+            NotificationType::Value(tid as u64)
         } else {
             // Get the eventual RemoteBinderConnection.
             let remote_binder_connection = request.remote_binder_connection();
@@ -423,7 +425,7 @@ impl RemoteBinderHandleState {
             self.enqueue_taskless_request(
                 remote_binder_connection.as_deref(),
                 TaskRequest::Return { spawn_thread: true },
-            );
+            )
         }
     }
 
@@ -432,13 +434,13 @@ impl RemoteBinderHandleState {
         &mut self,
         remote_binder_connection: Option<&RemoteBinderConnection>,
         request: TaskRequest,
-    ) {
+    ) -> NotificationType {
         self.taskless_requests.push_back(request);
         if let Some(remote_binder_connection) = remote_binder_connection {
             remote_binder_connection.interrupt();
         }
         // Interrupt a single task to handle the request.
-        self.waiters.notify_unordered_count(1);
+        NotificationType::Unordered(1)
     }
 
     /// Called when a task starts waiting.
@@ -472,14 +474,27 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                 taskless_requests: Default::default(),
                 exit: Default::default(),
                 exit_notifiers: Default::default(),
-                waiters: Default::default(),
             }),
+            waiters: Default::default(),
             _phantom: Default::default(),
         })
     }
 
+    fn notify(&self, notification: NotificationType) {
+        match notification {
+            NotificationType::All => self.waiters.notify_all(),
+            NotificationType::Value(val) => self.waiters.notify_value(val),
+            NotificationType::Unordered(count) => self.waiters.notify_unordered_count(count),
+        }
+    }
+
+    fn exit(&self, result: Result<(), Errno>) {
+        let notification = self.lock().exit(result);
+        self.notify(notification);
+    }
+
     fn close(self: &Arc<Self>) {
-        self.lock().exit(Ok(()));
+        self.exit(Ok(()))
     }
 
     fn ioctl(
@@ -563,7 +578,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                         }
                         Ok(())
                     });
-                self.lock().enqueue_taskless_request(
+                self.enqueue_taskless_request(
                     Some(&remote_binder_connection),
                     TaskRequest::SetVmo {
                         remote_binder_connection: remote_binder_connection.clone(),
@@ -593,7 +608,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                                 .unwrap_or(fposix::Errno::Einval))),
                     }
                 });
-                self.lock().enqueue_task_request(BoundTaskRequest {
+                self.enqueue_task_request(BoundTaskRequest {
                     koid: tid,
                     request: TaskRequest::Ioctl {
                         remote_binder_connection: remote_binder_connection.clone(),
@@ -612,6 +627,20 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             }
         }
         Ok(())
+    }
+
+    fn enqueue_taskless_request(
+        &self,
+        remote_binder_connection: Option<&RemoteBinderConnection>,
+        request: TaskRequest,
+    ) {
+        let notification = self.lock().enqueue_taskless_request(remote_binder_connection, request);
+        self.notify(notification);
+    }
+
+    fn enqueue_task_request(&self, request: BoundTaskRequest) {
+        let notification = self.lock().enqueue_task_request(request);
+        self.notify(notification);
     }
 
     /// Serve the ContainerPowerController protocol.
@@ -692,7 +721,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     ) -> Result<(), Error> {
         // Open the device.
         let (sender, receiver) = oneshot::channel::<Result<Arc<RemoteBinderConnection>, Errno>>();
-        self.lock().enqueue_taskless_request(
+        self.enqueue_taskless_request(
             None,
             TaskRequest::Open { path, process_accessor, process, responder: sender },
         );
@@ -851,37 +880,39 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
         current_task: &CurrentTask,
     ) -> Result<TaskRequest, Errno> {
         loop {
-            let mut state = self.lock();
-            // Exit immediately if requested.
-            if let Some(result) = state.exit.as_ref() {
-                return result
-                    .map_err(|c| errno_from_code!(c.error_code() as i16))
-                    .map(|_| TaskRequest::Return { spawn_thread: false });
-            }
-            // Taskless request have the highest priority.
-            if let Some(request) = state.taskless_requests.pop_front() {
-                return Ok(request);
-            }
-            let tid = current_task.get_tid();
-            if let Some(request) = state.pending_requests.get_mut(&tid) {
-                // This task is already associated with a remote koid. Check if some request is
-                // available for this task.
-                if let Some(request) = request.take() {
+            let waiter = {
+                let mut state = self.lock();
+                // Exit immediately if requested.
+                if let Some(result) = state.exit.as_ref() {
+                    return result
+                        .map_err(|c| errno_from_code!(c.error_code() as i16))
+                        .map(|_| TaskRequest::Return { spawn_thread: false });
+                }
+                // Taskless request have the highest priority.
+                if let Some(request) = state.taskless_requests.pop_front() {
+                    return Ok(request);
+                }
+                let tid = current_task.get_tid();
+                if let Some(request) = state.pending_requests.get_mut(&tid) {
+                    // This task is already associated with a remote koid. Check if some request is
+                    // available for this task.
+                    if let Some(request) = request.take() {
+                        return Ok(request.request);
+                    }
+                } else if let Some(request) = state.unassigned_requests.pop_front() {
+                    // The task is not associated with any remote koid, and there is an unassigned
+                    // request. Associate this task with the koid of the request, and return the
+                    // request.
+                    state.unassigned_tasks.remove(&tid);
+                    state.koid_to_task.insert(request.koid, tid);
+                    state.pending_requests.insert(tid, PendingRequest::Running);
                     return Ok(request.request);
                 }
-            } else if let Some(request) = state.unassigned_requests.pop_front() {
-                // The task is not associated with any remote koid, and there is an unassigned
-                // request. Associate this task with the koid of the request, and return the
-                // request.
-                state.unassigned_tasks.remove(&tid);
-                state.koid_to_task.insert(request.koid, tid);
-                state.pending_requests.insert(tid, PendingRequest::Running);
-                return Ok(request.request);
-            }
-            // Wait until some request is available.
-            let waiter = Waiter::new();
-            state.waiters.wait_async_value(&waiter, tid as u64);
-            std::mem::drop(state);
+                // Wait until some request is available.
+                let waiter = Waiter::new();
+                self.waiters.wait_async_value(&waiter, tid as u64);
+                waiter
+            };
             waiter.wait(locked, current_task)?;
         }
     }
@@ -978,7 +1009,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             if let Err(e) = &result {
                 log_error!("Error when servicing the DevBinder protocol: {e:#}");
             }
-            handle.lock().exit(result.map_err(|_| errno!(ENOENT)));
+            handle.exit(result.map_err(|_| errno!(ENOENT)));
         };
         let req = SpawnRequestBuilder::new()
             .with_debug_name("remote-binder-start")
