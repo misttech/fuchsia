@@ -20,7 +20,9 @@ use crate::vfs::{
 };
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
-use starnix_logging::{log_error, log_warn, track_file_not_found, track_stub};
+use starnix_logging::{
+    CATEGORY_STARNIX, log_error, log_warn, trace_duration, track_file_not_found, track_stub,
+};
 use starnix_registers::{HeapRegs, RegisterStorageEnum};
 use starnix_stack::clean_stack;
 use starnix_sync::{
@@ -1641,16 +1643,19 @@ impl CurrentTask {
                 };
                 let process_group = thread_group_state.process_group.clone();
 
-                let task_info = create_zircon_process(
-                    locked,
-                    kernel,
-                    Some(thread_group_state),
-                    pid,
-                    child_exit_signal,
-                    process_group,
-                    signal_actions,
-                    command.clone(),
-                )?;
+                let task_info = {
+                    trace_duration!(CATEGORY_STARNIX, "create_zircon_process");
+                    create_zircon_process(
+                        locked,
+                        kernel,
+                        Some(thread_group_state),
+                        pid,
+                        child_exit_signal,
+                        process_group,
+                        signal_actions,
+                        command.clone(),
+                    )?
+                };
 
                 cgroup2_pid_table.inherit_cgroup(self.thread_group(), &task_info.thread_group);
 
