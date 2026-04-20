@@ -3,16 +3,22 @@
 # found in the LICENSE file.
 
 import argparse
+import asyncio
 import collections
 import dataclasses
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import typing
 
 import build_dir
 import fx_cmd
 import statusinfo
+
+HTTP_PORT = 6240
 
 
 @dataclasses.dataclass
@@ -26,8 +32,10 @@ class StatsData:
 class Options(argparse.Namespace):
     def __init__(self) -> None:
         super().__init__()
+        self.web: bool = False
         self.stats: bool = False
         self.paths: list[str] = []
+        self.port: int = HTTP_PORT
 
 
 async def main(arg_override: list[str] | None = None) -> None:
@@ -41,6 +49,18 @@ async def main(arg_override: list[str] | None = None) -> None:
         "--stats",
         action="store_true",
         help="Output stats instead of details",
+    )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Run the web server to visualize test categories",
+    )
+    parser.add_argument(
+        "-p",
+        "--port",
+        type=int,
+        default=HTTP_PORT,
+        help=f"Port to run the web server on (default: {HTTP_PORT})",
     )
 
     args = parser.parse_args(args=arg_override, namespace=Options())
@@ -65,7 +85,9 @@ async def main(arg_override: list[str] | None = None) -> None:
 
     metadata = load_metadata_from_path(metadata_path)
 
-    if args.stats:
+    if args.web:
+        await run_web_server(fuchsia_dir, metadata_path, args.port)
+    elif args.stats:
         show_stats(metadata, args.paths, fuchsia_dir=fuchsia_dir)
     else:
         show_details(metadata, args.paths, fuchsia_dir=fuchsia_dir)
@@ -77,6 +99,10 @@ def important(text: str) -> None:
 
 def green(text: str) -> None:
     print(statusinfo.green_highlight(text))
+
+
+def dim(text: str) -> None:
+    print(statusinfo.dim(text))
 
 
 async def ensure_metadata(out_dir: str) -> None:
@@ -209,3 +235,45 @@ def show_stats(
     sorted_tags = sorted(tags.items(), key=lambda x: x[1], reverse=True)
     for k, v in sorted_tags:
         print(f"  {k}: {v}")
+
+
+async def run_web_server(
+    fuchsia_dir: str, metadata_path: str, port: int
+) -> None:
+    tmpdir = tempfile.mkdtemp()
+    try:
+        shutil.copy(metadata_path, os.path.join(tmpdir, "metadata.json"))
+        shutil.copy(
+            os.path.join(
+                fuchsia_dir, "tools/testing_metadata/visualization/index.html"
+            ),
+            os.path.join(tmpdir, "index.html"),
+        )
+
+        server_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "http.server",
+                "-b",
+                "127.0.0.1",
+                str(port),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=tmpdir,
+        )
+
+        green(f"View categories at http://localhost:{port}?files=metadata.json")
+        dim(
+            "Not seeing the categories you expect? Run `touch BUILD.gn` and then `fx build`"
+        )
+        print("")
+        print("Press enter to stop the server.")
+
+        await asyncio.to_thread(input)
+
+        server_process.terminate()
+        server_process.wait()
+    finally:
+        shutil.rmtree(tmpdir)
