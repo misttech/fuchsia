@@ -5,24 +5,32 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_INPUT_SYSTEM_H_
 #define SRC_UI_SCENIC_LIB_INPUT_INPUT_SYSTEM_H_
 
+#include <lib/async/dispatcher.h>
+
 #include <optional>
 
 #include "src/ui/scenic/lib/input/mouse_system.h"
 #include "src/ui/scenic/lib/input/pointerinjector_registry.h"
 #include "src/ui/scenic/lib/input/touch_system.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
+#if defined(FUCHSIA_DSO)
+#include "src/ui/scenic/lib/input/dso/pointerinjector_registry.h"  // nogncheck
+#endif
 
 namespace scenic_impl::input {
 
 // Tracks and coordinates input APIs.
 class InputSystem {
  public:
-  explicit InputSystem(sys::ComponentContext* context, inspect::Node& inspect_node,
-                       RequestFocusFunc request_focus);
+  InputSystem(sys::ComponentContext* context, inspect::Node& inspect_node,
+              RequestFocusFunc request_focus, async_dispatcher_t* dispatcher);
   ~InputSystem() = default;
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
     pointerinjector_registry_.OnNewViewTreeSnapshot(snapshot);
+#if defined(FUCHSIA_DSO)
+    pointerinjector_registry_dso_.OnNewViewTreeSnapshot(snapshot);
+#endif
     view_tree_snapshot_ = std::move(snapshot);
   }
 
@@ -57,6 +65,9 @@ class InputSystem {
   MouseSystem mouse_system_;
   TouchSystem touch_system_;
   PointerinjectorRegistry pointerinjector_registry_;
+#if defined(FUCHSIA_DSO)
+  ::scenic_impl::input_dso::PointerinjectorRegistry pointerinjector_registry_dso_;
+#endif
 
   std::shared_ptr<const view_tree::Snapshot> view_tree_snapshot_;
 };

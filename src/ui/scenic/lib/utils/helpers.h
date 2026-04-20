@@ -70,6 +70,7 @@ struct SysmemTokens {
 // Helper for extracting the koid from a ViewRef.
 zx_koid_t ExtractKoid(const fuchsia::ui::views::ViewRef& view_ref);
 zx_koid_t ExtractKoid(const fuchsia_ui_views::ViewRef& view_ref);
+zx_koid_t ExtractKoid(const fuchsia_ui_views::wire::ViewRef& view_ref);
 
 // Create an unsignalled zx::event.
 zx::event CreateEvent();

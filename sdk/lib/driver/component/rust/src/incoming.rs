@@ -71,6 +71,55 @@ impl Incoming {
         Ok(libasync_fidl::AsyncChannel::<D>::client_from_zx_channel::<P>(client_end))
     }
 
+    /// Connects to the protocol in the service instance's path in the given directory over driver
+    /// transport, with [`fdf_fidl::DriverChannel`], using `dispatcher`. Logs and returns a
+    /// [`Status::CONNECTION_REFUSED`] if the service instance couldn't be opened.
+    pub fn connect_protocol_driver_transport<P: fidl_next::Discoverable, D>(
+        &self,
+        dispatcher: D,
+    ) -> Result<fidl_next::ClientEnd<P, fdf_fidl::DriverChannel<D>>, zx::Status>
+    where
+        D: Clone,
+    {
+        let path = format!("/svc/{}", P::PROTOCOL_NAME);
+        Self::connect_protocol_driver_transport_at(self, &path, dispatcher)
+    }
+
+    /// Connects to the protocol in the service instance's path in the given directory over driver
+    /// transport, with [`fdf_fidl::DriverChannel`], using `dispatcher`. Logs and returns a
+    /// [`Status::CONNECTION_REFUSED`] if the service instance couldn't be opened.
+    pub fn connect_protocol_driver_transport_at<P: fidl_next::Discoverable, D>(
+        dir: &impl AsRefDirectory,
+        path: &str,
+        dispatcher: D,
+    ) -> Result<fidl_next::ClientEnd<P, fdf_fidl::DriverChannel<D>>, zx::Status>
+    where
+        D: Clone,
+    {
+        let (client_token, server_token) = zx::Channel::create();
+        let (client_end, server_end) = fdf_fidl::DriverChannel::create_with_dispatcher(dispatcher);
+
+        dir.as_ref_directory().open(path, fio::Flags::PROTOCOL_SERVICE, server_token).map_err(
+            |e| {
+                error!("Failed to connect to discoverable protocol `{}`: {e}", P::PROTOCOL_NAME);
+                zx::Status::CONNECTION_REFUSED
+            },
+        )?;
+        // SAFETY: client_token and server_end are valid by construction and
+        // `fdf_token_transfer` consumes both handles and does not interact with rust memory.
+        zx::Status::ok(unsafe {
+            fdf_sys::fdf_token_transfer(
+                client_token.into_raw(),
+                server_end.into_driver_handle().into_raw().get(),
+            )
+        })
+        .inspect_err(|e| {
+            error!("Failed to connect to discoverable protocol `{}`: {e}", P::PROTOCOL_NAME);
+        })?;
+
+        Ok(fidl_next::ClientEnd::<P, _>::from_untyped(client_end))
+    }
+
     /// Creates a connector to the given service's default instance by its marker type. This can be
     /// convenient when the compiler can't deduce the [`ServiceProxy`] type on its own.
     ///

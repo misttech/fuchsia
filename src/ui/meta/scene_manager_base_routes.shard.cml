@@ -48,6 +48,7 @@
                 "fuchsia.ui.display.color.Converter",
                 "fuchsia.ui.display.singleton.Info",
                 "fuchsia.ui.focus.FocusChainListenerRegistry",
+                "fuchsia.ui.pointerinjector.dso.Registry",
                 "fuchsia.ui.pointerinjector.Registry",
                 "fuchsia.ui.views.ViewRefInstalled",
             ],

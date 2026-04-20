@@ -67,6 +67,7 @@ bool IsValidConfig(const fuchsia::ui::pointerinjector::Config& config) {
 
 }  // namespace
 
+// LINT.IfChange
 PointerinjectorRegistry::PointerinjectorRegistry(
     sys::ComponentContext* context, TouchInjectFunc inject_touch_exclusive,
     TouchInjectFunc inject_touch_hit_tested, MouseInjectFunc inject_mouse_exclusive,
@@ -176,5 +177,6 @@ void PointerinjectorRegistry::Register(
 
   callback();
 }
+// LINT.ThenChange(//src/ui/scenic/lib/input/dso/pointerinjector_registry.cc)
 
 }  // namespace scenic_impl::input

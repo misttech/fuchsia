@@ -25,7 +25,6 @@ _scenic_bin = {
     "//src/ui/scenic/lib/flatland/engine",
     "//src/ui/scenic/lib/flatland/renderer",
     "//src/ui/scenic/lib/focus",
-    "//src/ui/scenic/lib/input",
     "//src/ui/scenic/lib/scheduling:frame_metrics_registry",
     "//src/ui/scenic/lib/screen_capture",
     "//src/ui/scenic/lib/screen_capture2",
@@ -60,6 +59,7 @@ executable("bin") {
   deps += [
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
+    "//src/ui/scenic/lib/input",
   ]
 }
 
@@ -70,6 +70,8 @@ fuchsia_cc_dso("dso") {
   async = true
 
   sources += [ "dso_main.cc" ]
+  deps += [ "//src/ui/scenic/lib/input:input_dso" ]
+  defines = [ "FUCHSIA_DSO" ]
 }
 
 source_set("base_deps") {

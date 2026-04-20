@@ -37,6 +37,11 @@ zx_koid_t ExtractKoid(const fuchsia_ui_views::ViewRef& view_ref) {
   return fsl::GetKoid(view_ref.reference().get());
 }
 
+zx_koid_t ExtractKoid(const fuchsia_ui_views::wire::ViewRef& view_ref) {
+  TRACE_DURATION("gfx", "utils::ExtractKoid");
+  return fsl::GetKoid(view_ref.reference.get());
+}
+
 bool IsEventSignalled(const zx::event& event, zx_signals_t signal) {
   zx_signals_t pending = 0u;
   event.wait_one(signal, zx::time(), &pending);

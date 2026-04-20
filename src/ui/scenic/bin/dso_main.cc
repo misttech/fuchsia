@@ -10,7 +10,6 @@
 #include <lib/scheduler/role.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
-#include <lib/trace-provider/provider.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/thread.h>
 
@@ -67,14 +66,7 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   log_settings.BuildAndInitialize();
   FX_LOGS(INFO) << "Started";
 
-  zx::channel trace_client, trace_server;
-  zx::channel::create(0, &trace_client, &trace_server);
-  s = svc_dir->Connect("fuchsia.tracing.provider.Registry", std::move(trace_server));
-  if (s != ZX_OK) {
-    FX_LOGS(ERROR) << "Failed to create trace provider: " << zx_status_get_string(s);
-    return 5;
-  }
-  auto* const trace_provider = new trace::TraceProvider{std::move(trace_client), dispatcher};
+  // Don't setup a trace provider, driver bindings will do that for us.
 
   // Set up an inspect::Node to inject into the App.
   auto [inspect_client, inspect_server] = *fidl::CreateEndpoints<fuchsia_inspect::InspectSink>();
@@ -100,18 +92,16 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
 
   // Instantiate Scenic app.
   // TODO(https://fxbug.dev/485919515): Free `app` when the program terminates
-  auto* const app =
-      new scenic_impl::App{std::move(app_context),
-                           fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
-                           fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
-                           std::move(config),
-                           inspector->root().CreateChild("scenic"),
-                           std::move(display_coordinator_promise),
-                           [lifecycle = std::move(lifecycle), trace_provider, inspector]() mutable {
-                             delete trace_provider;
-                             delete inspector;
-                             // Dropping `lifecycle` causes the component to exit.
-                           }};
+  auto* const app = new scenic_impl::App{std::move(app_context),
+                                         fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
+                                         fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
+                                         std::move(config),
+                                         inspector->root().CreateChild("scenic"),
+                                         std::move(display_coordinator_promise),
+                                         [lifecycle = std::move(lifecycle), inspector]() mutable {
+                                           delete inspector;
+                                           // Dropping `lifecycle` causes the component to exit.
+                                         }};
 
   // TODO(https://fxbug.dev/403545512): Figure out if we should include here or in dso_runner
   // fuchsia_scheduler::SetRoleForRootVmar("fuchsia.ui.scenic");

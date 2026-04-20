@@ -271,10 +271,18 @@ class OutgoingDirectory final {
   // The returned directory is owned by this class.
   vfs::PseudoDir* GetOrCreateDirectory(const std::string& name);
 
+  // public to support dso experiment (HEAD only): https://fxbug.dev/403545512
+  // Once this is no longer needed for the experiment, we should either remove this #if,
+  // or if appropriate promote it to NEXT
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+ public:
+#else
  private:
+#endif
   using Connector = fit::function<void(zx::channel channel, async_dispatcher_t* dispatcher)>;
-
   zx_status_t AddPublicService(Connector connector, std::string service_name) const;
+
+ private:
   zx_status_t RemovePublicService(const std::string& name) const;
 
   // The root of the outgoing directory itself.

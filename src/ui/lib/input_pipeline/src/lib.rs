@@ -35,6 +35,9 @@ pub mod pointer_sensor_scale_handler;
 pub mod text_settings_handler;
 pub mod touch_injector_handler;
 
+#[cfg(feature = "dso")]
+pub use dispatcher::DriverTransport;
+
 pub use dispatcher::{Dispatcher, MonotonicInstant, Transport};
 pub use incoming::Incoming;
 

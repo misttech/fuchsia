@@ -68,6 +68,7 @@
 
                 // Used to distribute focus.
                 "fuchsia.ui.focus.FocusChainListenerRegistry",
+                "fuchsia.ui.pointerinjector.dso.Registry",
                 "fuchsia.ui.pointerinjector.Registry",
             ],
         },

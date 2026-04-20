@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.ui.display.singleton/cpp/hlcpp_conversion.h>
 #include <fuchsia/vulkan/loader/cpp/fidl.h>
+#include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstdint>
@@ -618,19 +619,21 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
 void App::InitializeInput() {
   TRACE_DURATION("gfx", "App::InitializeInput");
-  input_.emplace(app_context_.get(), inspect_node_,
-                 /*request_focus*/
-                 [this, use_auto_focus = config_values_.pointer_auto_focus()](zx_koid_t koid) {
-                   if (!use_auto_focus)
-                     return;
+  input_.emplace(
+      app_context_.get(), inspect_node_,
+      /*request_focus*/
+      [this, use_auto_focus = config_values_.pointer_auto_focus()](zx_koid_t koid) {
+        if (!use_auto_focus)
+          return;
 
-                   const auto& focus_chain = focus_manager_.focus_chain();
-                   if (!focus_chain.empty()) {
-                     const zx_koid_t requestor = focus_chain[0];
-                     const zx_koid_t request = koid != ZX_KOID_INVALID ? koid : requestor;
-                     focus_manager_.RequestFocus(requestor, request);
-                   }
-                 });
+        const auto& focus_chain = focus_manager_.focus_chain();
+        if (!focus_chain.empty()) {
+          const zx_koid_t requestor = focus_chain[0];
+          const zx_koid_t request = koid != ZX_KOID_INVALID ? koid : requestor;
+          focus_manager_.RequestFocus(requestor, request);
+        }
+      },
+      async_get_default_dispatcher());
 }
 
 void App::InitializeHeartbeat(display::Display& display) {

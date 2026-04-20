@@ -106,6 +106,7 @@ mod dso {
     }
 
     pub type Transport = libasync_fidl::AsyncChannel<Dispatcher>;
+    pub type DriverTransport = fdf_fidl::DriverChannel<fdf::CurrentDispatcher>;
 
     #[derive(Debug)]
     pub struct TaskHandle<T> {

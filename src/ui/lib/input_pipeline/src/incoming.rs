@@ -18,6 +18,7 @@ mod dso {
     #![cfg(feature = "dso")]
 
     use super::*;
+    use crate::DriverTransport;
 
     #[derive(Clone)]
     pub struct Incoming(std::sync::Arc<fdf_component::Incoming>);
@@ -43,6 +44,23 @@ mod dso {
         ) -> Result<fidl_next::ClientEnd<P, Transport>, anyhow::Error> {
             fdf_component::Incoming::connect_protocol_next_at(dir, path)
                 .context("connect_protocol_next_at")
+        }
+
+        pub fn connect_protocol_driver_transport<P: fidl_next::Discoverable>(
+            &self,
+        ) -> Result<fidl_next::ClientEnd<P, DriverTransport>, zx::Status> {
+            self.0.connect_protocol_driver_transport::<P, _>(fdf::CurrentDispatcher)
+        }
+
+        pub fn connect_protocol_driver_transport_at<P: fidl_next::Discoverable>(
+            dir: &impl AsRefDirectory,
+            path: &str,
+        ) -> Result<fidl_next::ClientEnd<P, DriverTransport>, zx::Status> {
+            fdf_component::Incoming::connect_protocol_driver_transport_at::<P, _>(
+                dir,
+                path,
+                fdf::CurrentDispatcher,
+            )
         }
     }
 

@@ -22,6 +22,7 @@ using TouchInjectFunc = fit::function<void(InternalTouchEvent event, StreamId st
 using MouseInjectFunc = fit::function<void(InternalMouseEvent event, StreamId stream_id)>;
 
 // Handles the registration and config validation of fuchsia::ui::pointerinjector clients.
+// LINT.IfChange
 class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
  public:
   PointerinjectorRegistry(sys::ComponentContext* context, TouchInjectFunc inject_touch_exclusive,
@@ -58,6 +59,7 @@ class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
 
   inspect::Node inspect_node_;
 };
+// LINT.ThenChange(//src/ui/scenic/lib/input/dso/pointerinjector_registry.h)
 
 }  // namespace scenic_impl::input
 

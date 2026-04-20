@@ -15,6 +15,22 @@ source_set("input") {
   ]
 }
 
+# Variant of ":input" that includes support for fuchsia.ui.pointerinjector.dso
+# (driver transport). Only used in //src/ui/scenic/bin:dso.
+# See https://fxbug.dev/403545512
+source_set("input_dso") {
+  public_deps = [
+    ":constants",
+    ":gesture_contender_interface",
+    ":injection",
+    ":legacy",
+    ":mouse",
+    ":system_dso",
+    ":touch",
+    ":utils",
+  ]
+}
+
 source_set("system") {
   sources = [
     "input_system.cc",
@@ -31,6 +47,32 @@ source_set("system") {
   ]
 
   public_deps = [ "//src/ui/scenic/lib/view_tree:view_tree_snapshot" ]
+}
+
+# Variant of ":system" that includes support for fuchsia.ui.pointerinjector.dso
+# (driver transport). Only used in //src/ui/scenic/bin:dso.
+# See https://fxbug.dev/403545512
+source_set("system_dso") {
+  defines = [ "FUCHSIA_DSO" ]
+  sources = [
+    "input_system.cc",
+    "input_system.h",
+  ]
+
+  deps = [
+    ":injection",
+    ":injection_dso",
+    ":legacy",
+    ":mouse",
+    ":touch",
+    ":utils",
+    "//sdk/lib/inspect/component/cpp",
+  ]
+
+  public_deps = [
+    "//sdk/fidl/fuchsia.ui.pointerinjector.dso:fuchsia.ui.pointerinjector.dso_cpp",
+    "//src/ui/scenic/lib/view_tree:view_tree_snapshot",
+  ]
 }
 
 source_set("constants") {
@@ -118,6 +160,34 @@ source_set("injection") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
+    "//sdk/lib/sys/cpp",
+    "//src/lib/fostr/fidl/fuchsia.ui.pointerinjector",
+  ]
+}
+
+# Clone of ":injection" that supports fuchsia.ui.pointerinjector.dso (driver
+# transport). Only used in //src/ui/scenic/bin:dso.
+# See https://fxbug.dev/403545512
+source_set("injection_dso") {
+  sources = [
+    "dso/injector.cc",
+    "dso/injector.h",
+    "dso/pointerinjector_registry.cc",
+    "dso/pointerinjector_registry.h",
+    "dso/touch_injector.cc",
+    "dso/touch_injector.h",
+  ]
+
+  deps = [
+    ":constants",
+    ":utils",
+    "//zircon/system/ulib/inspect",
+    "//zircon/system/ulib/trace",
+  ]
+
+  public_deps = [
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
+    "//sdk/fidl/fuchsia.ui.pointerinjector.dso:fuchsia.ui.pointerinjector.dso_cpp",
     "//sdk/lib/sys/cpp",
     "//src/lib/fostr/fidl/fuchsia.ui.pointerinjector",
   ]

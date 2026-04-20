@@ -1,15 +1,16 @@
-// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/ui/scenic/lib/input/touch_injector.h"
+#include "src/ui/scenic/lib/input/dso/touch_injector.h"
 
 #include <lib/syslog/cpp/macros.h>
-#include <lib/trace/event.h>
 
-namespace scenic_impl::input {
+namespace scenic_impl::input_dso {
 
-using InjectorEventPhase = fuchsia::ui::pointerinjector::EventPhase;
+using InjectorEventPhase = fuchsia_ui_pointerinjector::EventPhase;
+using input::kInvalidStreamId;
+using input::Phase;
 
 namespace {
 
@@ -26,41 +27,40 @@ InternalTouchEvent CreateCancelEvent(uint32_t device_id, uint32_t pointer_id, zx
 
 }  // namespace
 
-// LINT.IfChange
 TouchInjector::TouchInjector(inspect::Node inspect_node, InjectorSettings settings,
                              Viewport viewport,
-                             fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+                             fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Device> device,
                              fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
                                  is_descendant_and_connected,
                              fit::function<void(InternalTouchEvent, StreamId)> inject,
-                             fit::function<void()> on_channel_closed)
-    : Injector(std::move(inspect_node), settings, std::move(viewport), std::move(device),
-               std::move(is_descendant_and_connected), std::move(on_channel_closed)),
+                             fit::function<void()> on_channel_closed,
+                             async_dispatcher_t* dispatcher)
+    : Injector(std::move(inspect_node), std::move(settings), viewport, std::move(device),
+               std::move(is_descendant_and_connected), std::move(on_channel_closed), dispatcher),
       inject_(std::move(inject)) {
   FX_DCHECK(inject_);
-  FX_DCHECK(settings.device_type == fuchsia::ui::pointerinjector::DeviceType::TOUCH);
+  FX_DCHECK(settings.device_type == fuchsia_ui_pointerinjector::wire::DeviceType::kTouch);
 }
 
-void TouchInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) {
-  TRACE_DURATION("input", "TouchInjector::ForwardEvent");
+void TouchInjector::ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
+                                 uint64_t trace_flow_id) {
   FX_DCHECK(stream_id != kInvalidStreamId);
-  inject_(PointerInjectorEventToInternalTouchEvent(event), stream_id);
+  inject_(PointerInjectorEventToInternalTouchEvent(event, trace_flow_id), stream_id);
 }
 
 InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
-    fuchsia::ui::pointerinjector::Event& event) {
+    fuchsia_ui_pointerinjector::wire::Event& event, uint64_t trace_flow_id) const {
   const InjectorSettings& settings = Injector::settings();
   InternalTouchEvent internal_event;
   if (event.has_wake_lease()) {
-    internal_event.wake_lease = std::move(*event.mutable_wake_lease());
+    internal_event.wake_lease = std::move(event.wake_lease());
   }
   internal_event.timestamp = event.timestamp();
   internal_event.device_id = settings.device_id;
-  if (event.has_trace_flow_id()) {
-    internal_event.trace_flow_id = event.trace_flow_id();
-  }
+  internal_event.trace_flow_id = trace_flow_id;
 
-  const fuchsia::ui::pointerinjector::PointerSample& pointer_sample = event.data().pointer_sample();
+  const fuchsia_ui_pointerinjector::wire::PointerSample& pointer_sample =
+      event.data().pointer_sample();
   internal_event.pointer_id = pointer_sample.pointer_id();
   internal_event.viewport = viewport();
   internal_event.position_in_viewport = {pointer_sample.position_in_viewport()[0],
@@ -69,19 +69,19 @@ InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
   internal_event.target = settings.target_koid;
 
   switch (pointer_sample.phase()) {
-    case InjectorEventPhase::ADD: {
+    case InjectorEventPhase::kAdd: {
       internal_event.phase = Phase::kAdd;
       break;
     }
-    case InjectorEventPhase::CHANGE: {
+    case InjectorEventPhase::kChange: {
       internal_event.phase = Phase::kChange;
       break;
     }
-    case InjectorEventPhase::REMOVE: {
+    case InjectorEventPhase::kRemove: {
       internal_event.phase = Phase::kRemove;
       break;
     }
-    case InjectorEventPhase::CANCEL: {
+    case InjectorEventPhase::kCancel: {
       internal_event.phase = Phase::kCancel;
       break;
     }
@@ -100,6 +100,5 @@ void TouchInjector::CancelStream(uint32_t pointer_id, StreamId stream_id) {
                             settings.target_koid),
           stream_id);
 }
-// LINT.ThenChange(//src/ui/scenic/lib/input/dso/touch_injector.cc)
 
-}  // namespace scenic_impl::input
+}  // namespace scenic_impl::input_dso

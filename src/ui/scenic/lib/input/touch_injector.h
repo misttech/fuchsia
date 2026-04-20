@@ -10,6 +10,7 @@
 namespace scenic_impl::input {
 
 // Implementation of the |fuchsia::ui::pointerinjector::Device| interface. One instance per channel.
+// LINT.IfChange
 class TouchInjector : public Injector {
  public:
   TouchInjector(inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
@@ -32,6 +33,7 @@ class TouchInjector : public Injector {
   // Used to inject the event into InputSystem for dispatch to clients.
   const fit::function<void(InternalTouchEvent, StreamId)> inject_;
 };
+// LINT.ThenChange(//src/ui/scenic/lib/input/dso/touch_injector.h)
 
 }  // namespace scenic_impl::input
 

@@ -6,9 +6,7 @@
 use crate::dispatcher::TaskHandle;
 use crate::input_handler::{BatchInputHandler, Handler, InputHandlerStatus};
 use crate::utils::{self, Position, Size};
-use crate::{
-    Dispatcher, Incoming, MonotonicInstant, Transport, input_device, metrics, touch_binding,
-};
+use crate::{Dispatcher, Incoming, MonotonicInstant, input_device, metrics, touch_binding};
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
@@ -18,6 +16,8 @@ use fidl_fuchsia_ui_input as fidl_ui_input;
 use fidl_fuchsia_ui_pointerinjector_configuration as pointerinjector_config;
 use fidl_fuchsia_ui_policy as fidl_ui_policy;
 use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;
+#[cfg(feature = "dso")]
+use fidl_next_fuchsia_ui_pointerinjector_dso as pointerinjector_dso;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
@@ -25,6 +25,11 @@ use metrics_registry::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+
+#[cfg(feature = "dso")]
+use crate::DriverTransport;
+#[cfg(not(feature = "dso"))]
+use crate::Transport;
 
 /// An input handler that parses touch events and forwards them to Scenic through the
 /// fidl_fuchsia_pointerinjector protocols.
@@ -46,6 +51,9 @@ pub struct TouchInjectorHandler {
     display_size: Size,
 
     /// The FIDL proxy to register new injectors.
+    #[cfg(feature = "dso")]
+    injector_registry_proxy: fidl_next::Client<pointerinjector_dso::Registry, DriverTransport>,
+    #[cfg(not(feature = "dso"))]
     injector_registry_proxy: fidl_next::Client<pointerinjector::Registry, Transport>,
 
     /// The FIDL proxy used to get configuration details for pointer injection.
@@ -64,6 +72,9 @@ struct MutableState {
     viewport: Option<pointerinjector::Viewport>,
 
     /// The injectors registered with Scenic, indexed by their device ids.
+    #[cfg(feature = "dso")]
+    injectors: HashMap<u32, fidl_next::Client<pointerinjector_dso::Device, DriverTransport>>,
+    #[cfg(not(feature = "dso"))]
     injectors: HashMap<u32, fidl_next::Client<pointerinjector::Device, Transport>>,
 
     /// The touch button listeners, key referenced by proxy channel's raw handle.
@@ -165,6 +176,10 @@ impl TouchInjectorHandler {
     ) -> Result<Rc<Self>, Error> {
         let configuration_proxy =
             incoming.connect_protocol::<pointerinjector_config::SetupProxy>()?;
+        #[cfg(feature = "dso")]
+        let injector_registry_proxy =
+            incoming.connect_protocol_driver_transport::<pointerinjector_dso::Registry>()?.spawn();
+        #[cfg(not(feature = "dso"))]
         let injector_registry_proxy =
             incoming.connect_protocol_next::<pointerinjector::Registry>()?.spawn();
 
@@ -199,8 +214,13 @@ impl TouchInjectorHandler {
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
     ) -> Result<Rc<Self>, Error> {
+        #[cfg(feature = "dso")]
+        let injector_registry_proxy =
+            incoming.connect_protocol_driver_transport::<pointerinjector_dso::Registry>()?.spawn();
+        #[cfg(not(feature = "dso"))]
         let injector_registry_proxy =
             incoming.connect_protocol_next::<pointerinjector::Registry>()?.spawn();
+
         Self::new_handler(
             configuration_proxy,
             injector_registry_proxy,
@@ -228,7 +248,14 @@ impl TouchInjectorHandler {
     /// If unable to get injection view refs from `configuration_proxy`.
     async fn new_handler(
         configuration_proxy: pointerinjector_config::SetupProxy,
-        injector_registry_proxy: fidl_next::Client<pointerinjector::Registry, Transport>,
+        #[cfg(feature = "dso")] injector_registry_proxy: fidl_next::Client<
+            pointerinjector_dso::Registry,
+            DriverTransport,
+        >,
+        #[cfg(not(feature = "dso"))] injector_registry_proxy: fidl_next::Client<
+            pointerinjector::Registry,
+            Transport,
+        >,
         display_size: Size,
         input_handlers_node: &fuchsia_inspect::Node,
         metrics_logger: metrics::MetricsLogger,
@@ -365,9 +392,27 @@ impl TouchInjectorHandler {
         }
 
         // Create a new injector.
-        let (device_proxy, device_server) =
-            fidl_next::fuchsia::create_channel::<pointerinjector::Device>();
-        let device_proxy = Dispatcher::client_from_zx_channel(device_proxy).spawn();
+        let device_proxy;
+        let device_server;
+        #[cfg(feature = "dso")]
+        {
+            let (client, server) = DriverTransport::create_with_dispatcher(fdf::CurrentDispatcher);
+            device_proxy =
+                fidl_next::ClientEnd::<pointerinjector_dso::Device, DriverTransport>::from_untyped(
+                    client,
+                )
+                .spawn();
+            device_server =
+                fidl_next::ServerEnd::<pointerinjector_dso::Device, DriverTransport>::from_untyped(
+                    server,
+                );
+        }
+        #[cfg(not(feature = "dso"))]
+        {
+            let (client, server) = fidl_next::fuchsia::create_channel::<pointerinjector::Device>();
+            device_proxy = Dispatcher::client_from_zx_channel(client).spawn();
+            device_server = server;
+        }
         let context = utils::duplicate_view_ref_next(&self.context_view_ref)
             .context("Failed to duplicate context view ref.")?;
         let context = fidl_next_fuchsia_ui_views::ViewRef { reference: context.reference };
@@ -569,7 +614,7 @@ impl TouchInjectorHandler {
                         Some(utils::viewport_to_next(&new_viewport));
 
                     // Update Scenic with the latest viewport.
-                    let injectors: Vec<fidl_next::Client<pointerinjector::Device, _>> =
+                    let injectors: Vec<fidl_next::Client<_, _>> =
                         self.mutable_state.borrow_mut().injectors.values().cloned().collect();
                     for injector in injectors {
                         let events = vec![pointerinjector::Event {

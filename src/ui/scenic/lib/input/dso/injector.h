@@ -1,36 +1,39 @@
-// Copyright 2020 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_UI_SCENIC_LIB_INPUT_INJECTOR_H_
-#define SRC_UI_SCENIC_LIB_INPUT_INJECTOR_H_
+#ifndef SRC_UI_SCENIC_LIB_INPUT_DSO_INJECTOR_H_
+#define SRC_UI_SCENIC_LIB_INPUT_DSO_INJECTOR_H_
 
-#include <fuchsia/ui/pointerinjector/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointerinjector.dso/cpp/driver/wire.h>
 #include <lib/async/cpp/task.h>
-#include <lib/fidl/cpp/binding.h>
 #include <lib/inspect/cpp/inspect.h>
 
 #include <deque>
+#include <optional>
 #include <unordered_map>
 
 #include "src/lib/fxl/macros.h"
 #include "src/ui/scenic/lib/input/internal_pointer_event.h"
 #include "src/ui/scenic/lib/input/stream_id.h"
 
-namespace scenic_impl::input {
+namespace scenic_impl::input_dso {
+
+using scenic_impl::input::StreamId;
+using scenic_impl::input::Viewport;
 
 // Non-FIDL-type struct for keeping client defined settings.
 struct InjectorSettings {
-  fuchsia::ui::pointerinjector::DispatchPolicy dispatch_policy =
-      fuchsia::ui::pointerinjector::DispatchPolicy(0u);
+  fuchsia_ui_pointerinjector::wire::DispatchPolicy dispatch_policy =
+      fuchsia_ui_pointerinjector::wire::DispatchPolicy(0u);
   uint32_t device_id = 0u;
-  fuchsia::ui::pointerinjector::DeviceType device_type =
-      fuchsia::ui::pointerinjector::DeviceType(0u);
+  fuchsia_ui_pointerinjector::wire::DeviceType device_type =
+      fuchsia_ui_pointerinjector::wire::DeviceType(0u);
   zx_koid_t context_koid = ZX_KOID_INVALID;
   zx_koid_t target_koid = ZX_KOID_INVALID;
 
-  std::optional<fuchsia::input::report::Axis> scroll_v_range;
-  std::optional<fuchsia::input::report::Axis> scroll_h_range;
+  std::optional<fuchsia_input_report::wire::Axis> scroll_v_range;
+  std::optional<fuchsia_input_report::wire::Axis> scroll_h_range;
   std::vector<uint8_t> button_identifiers;
 };
 
@@ -39,7 +42,7 @@ class InjectorInspector {
  public:
   explicit InjectorInspector(inspect::Node inspect_node);
 
-  void OnPointerInjectorEvent(const fuchsia::ui::pointerinjector::Event& event);
+  void OnPointerInjectorEvent(const fuchsia_ui_pointerinjector::wire::Event& event);
 
   // How long to track injection history.
   static constexpr uint64_t kNumMinutesOfHistory = 10;
@@ -66,28 +69,28 @@ class InjectorInspector {
   FXL_DISALLOW_COPY_AND_ASSIGN(InjectorInspector);
 };
 
-// Implementation of the |fuchsia::ui::pointerinjector::Device| interface. One instance per channel.
-// LINT.IfChange
-class Injector : public fuchsia::ui::pointerinjector::Device {
+// Implementation of the |fuchsia::ui::pointerinjector_dso::Device| interface. One instance per
+// channel.
+class Injector : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Device> {
  public:
   Injector(inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
-           fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+           fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Device> device,
            fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
                is_descendant_and_connected,
-           fit::function<void()> on_channel_closed);
+           fit::function<void()> on_channel_closed, async_dispatcher_t* dispatcher);
 
   // Check the validity of a Viewport.
   // Returns ZX_OK if valid, otherwise logs an error message and return appropriate error code.
-  static zx_status_t IsValidViewport(const fuchsia::ui::pointerinjector::Viewport& viewport);
+  static zx_status_t IsValidViewport(const fuchsia_ui_pointerinjector::wire::Viewport& viewport);
 
-  // |fuchsia::ui::pointerinjector::Device|
-  void Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
-              InjectCallback callback) override;
-  void InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) override;
+  // |fuchsia_ui_pointerinjector_dso::Device|
+  void InjectEvents(fuchsia_ui_pointerinjector::wire::DeviceInjectRequest* request,
+                    fdf::Arena& arena, InjectEventsCompleter::Sync& completer) override;
 
  protected:
   // Forwards the event to device-specific handler in InputSystem (and eventually the client).
-  virtual void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) = 0;
+  virtual void ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
+                            uint64_t trace_flow_id) = 0;
 
   // Sends an appropriate Cancel event.
   virtual void CancelStream(uint32_t pointer_id, StreamId stream_id) = 0;
@@ -99,13 +102,13 @@ class Injector : public fuchsia::ui::pointerinjector::Device {
   // Return value is either both valid, {ZX_OK, valid stream id} or both
   // invalid: {error, kInvalidStreamId}
   std::pair<zx_status_t, StreamId> ValidatePointerSample(
-      const fuchsia::ui::pointerinjector::PointerSample& pointer_sample);
+      const fuchsia_ui_pointerinjector::wire::PointerSample& pointer_sample);
 
   // Tracks event streams. Returns the id of the event stream if the stream is valid
   // and kInvalidStreamId otherwise.
   // Event streams are expected to start with an ADD, followed by a number of CHANGE events, and
   // ending in either a REMOVE or a CANCEL. Anything else is invalid.
-  StreamId ValidateEventStream(uint32_t pointer_id, fuchsia::ui::pointerinjector::EventPhase phase);
+  StreamId ValidateEventStream(uint32_t pointer_id, fuchsia_ui_pointerinjector::EventPhase phase);
 
   // Injects a CANCEL event for each ongoing stream and stops tracking them.
   void CancelOngoingStreams();
@@ -116,11 +119,13 @@ class Injector : public fuchsia::ui::pointerinjector::Device {
   // they might be made on a destroyed object.
   void CloseChannel(zx_status_t epitaph);
 
+  void OnFidlClose(fidl::UnbindInfo info);
+
   // Client-defined data.
   const InjectorSettings settings_;
   Viewport viewport_;
 
-  fidl::Binding<fuchsia::ui::pointerinjector::Device> binding_;
+  fdf::ServerBinding<fuchsia_ui_pointerinjector_dso::Device> binding_;
 
   // Tracks stream's status (per stream id) as it moves through its state machine. Used to
   // validate each event's phase.
@@ -139,8 +144,7 @@ class Injector : public fuchsia::ui::pointerinjector::Device {
 
   InjectorInspector inspector_;
 };
-// LINT.ThenChange(//src/ui/scenic/lib/input/dso/injector.h)
 
-}  // namespace scenic_impl::input
+}  // namespace scenic_impl::input_dso
 
-#endif  // SRC_UI_SCENIC_LIB_INPUT_INJECTOR_H_
+#endif  // SRC_UI_SCENIC_LIB_INPUT_DSO_INJECTOR_H_

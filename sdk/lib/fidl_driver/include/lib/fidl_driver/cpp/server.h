@@ -36,6 +36,16 @@ class ServerBindingRef : public fidl::internal::ServerBindingRefBase {
   using ServerBindingRefBase::ServerBindingRefBase;
   explicit ServerBindingRef(fidl::internal::ServerBindingRefBase&& base)
       : ServerBindingRefBase(std::move(base)) {}
+
+  // If the |ServerBindingRef| is bound, tears down the binding and starts closing the server
+  // connection with |epitaph|. If unbound does nothing.
+  //
+  // This may be called from any thread.
+  void Close(zx_status_t epitaph) {
+    if (auto binding = fidl::internal::ServerBindingRefBase::binding().lock()) {
+      binding->Close(std::move(binding), epitaph);
+    }
+  }
 };
 
 // |BindServer| starts handling message on |server_end| using implementation
@@ -178,6 +188,11 @@ class ServerBinding final : public ::fidl::internal::ServerBindingBase<FidlProto
   template <typename Impl, typename CloseHandler>
   static void CloseHandlerRequirement() {
     Base::template CloseHandlerRequirement<Impl, CloseHandler>();
+  }
+
+  // Tears down the binding and closes the connection with |epitaph|.
+  void Close(zx_status_t epitaph) {
+    static_cast<ServerBindingRef<FidlProtocol>&>(Base::binding().ref()).Close(epitaph);
   }
 
   // Constructs a binding that dispatches messages from |server_end| to |impl|,
