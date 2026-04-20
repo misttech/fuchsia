@@ -336,7 +336,7 @@ zx::result<> handle_cr0_write(AutoVmcs& vmcs, uint64_t val, LocalApicState& loca
   // From Volume 3, Table 11-5: CD=0 and NW=1 is an invalid setting and should
   // generate a GP fault.
   if (!(val & X86_CR0_CD) && (val & X86_CR0_NW)) {
-    local_apic_state.interrupt_tracker.Interrupt(X86_INT_GP_FAULT);
+    local_apic_state.interrupt_tracker.Interrupt<X86_INT_GP_FAULT>();
     return zx::ok();
   }
 
@@ -537,7 +537,7 @@ void handle_apic_rdmsr(const ExitInfo& exit_info, AutoVmcs& vmcs, GuestState& gu
       // Issue a general protection fault for write only and unimplemented
       // registers.
       dprintf(INFO, "hypervisor: Unhandled guest x2APIC RDMSR %#lx\n", guest_state.rcx);
-      local_apic_state.interrupt_tracker.Interrupt(X86_INT_GP_FAULT);
+      local_apic_state.interrupt_tracker.Interrupt<X86_INT_GP_FAULT>();
       break;
   }
 }
@@ -601,7 +601,7 @@ void handle_rdmsr(const ExitInfo& exit_info, AutoVmcs& vmcs, GuestState& guest_s
       break;
     default:
       dprintf(INFO, "hypervisor: Unhandled guest RDMSR %#lx\n", guest_state.rcx);
-      local_apic_state.interrupt_tracker.Interrupt(X86_INT_GP_FAULT);
+      local_apic_state.interrupt_tracker.Interrupt<X86_INT_GP_FAULT>();
       break;
   }
 }
@@ -631,7 +631,8 @@ void deadline_callback(Timer* timer, zx_instant_mono_t now, void* arg) {
     update_timer(local_apic_state, lvt_deadline(local_apic_state));
   }
   uint8_t vector = local_apic_state.lvt_timer & LVT_TIMER_VECTOR_MASK;
-  local_apic_state.interrupt_tracker.Interrupt(vector);
+  zx::result<> result = local_apic_state.interrupt_tracker.Interrupt(vector);
+  ZX_ASSERT(result.is_ok());
 }
 
 void update_timer(LocalApicState& local_apic_state, zx_instant_mono_t deadline) {
@@ -736,7 +737,7 @@ zx::result<> handle_apic_wrmsr(const ExitInfo& exit_info, AutoVmcs& vmcs,
   // (except for the ICR) are reserved."
   X2ApicMsr reg = static_cast<X2ApicMsr>(guest_state.ecx());
   if (unlikely(guest_state.edx() != 0 && reg != X2ApicMsr::ICR)) {
-    local_apic_state.interrupt_tracker.Interrupt(X86_INT_GP_FAULT);
+    local_apic_state.interrupt_tracker.Interrupt<X86_INT_GP_FAULT>();
     return zx::ok();
   }
 
@@ -745,7 +746,7 @@ zx::result<> handle_apic_wrmsr(const ExitInfo& exit_info, AutoVmcs& vmcs,
     case X2ApicMsr::ESR:
       // From Volume 3, Section 10.12.1.2: "WRMSR of a non-zero value causes #GP(0)."
       if (guest_state.eax() != 0) {
-        local_apic_state.interrupt_tracker.Interrupt(X86_INT_GP_FAULT);
+        local_apic_state.interrupt_tracker.Interrupt<X86_INT_GP_FAULT>();
         return zx::ok();
       }
       next_rip(exit_info, vmcs);
@@ -781,8 +782,7 @@ zx::result<> handle_apic_wrmsr(const ExitInfo& exit_info, AutoVmcs& vmcs,
     case X2ApicMsr::SELF_IPI: {
       next_rip(exit_info, vmcs);
       uint32_t vector = guest_state.eax() & UINT8_MAX;
-      local_apic_state.interrupt_tracker.Interrupt(vector);
-      return zx::ok();
+      return local_apic_state.interrupt_tracker.Interrupt(vector);
     }
     case X2ApicMsr::ICR:
       return handle_ipi(exit_info, vmcs, guest_state, packet);
@@ -790,7 +790,7 @@ zx::result<> handle_apic_wrmsr(const ExitInfo& exit_info, AutoVmcs& vmcs,
       // Issue a general protection fault for read only and unimplemented
       // registers.
       dprintf(INFO, "hypervisor: Unhandled guest x2APIC WRMSR %#" PRIx32 "\n", guest_state.ecx());
-      local_apic_state.interrupt_tracker.Interrupt(X86_INT_GP_FAULT);
+      local_apic_state.interrupt_tracker.Interrupt<X86_INT_GP_FAULT>();
       return zx::ok();
   }
 }
@@ -816,7 +816,7 @@ zx::result<> handle_kvm_wrmsr(const ExitInfo& exit_info, AutoVmcs& vmcs,
       vmcs.Invalidate();
       return pv_clock_update_boot_time(&gpa, guest_paddr);
     default:
-      local_apic_state.interrupt_tracker.Interrupt(X86_INT_GP_FAULT);
+      local_apic_state.interrupt_tracker.Interrupt<X86_INT_GP_FAULT>();
       return zx::ok();
   }
 }
@@ -872,7 +872,7 @@ zx::result<> handle_wrmsr(const ExitInfo& exit_info, AutoVmcs& vmcs, const Guest
       return handle_kvm_wrmsr(exit_info, vmcs, guest_state, local_apic_state, pv_clock, gpa);
     default:
       dprintf(INFO, "hypervisor: Unhandled guest WRMSR %#lx\n", guest_state.rcx);
-      local_apic_state.interrupt_tracker.Interrupt(X86_INT_GP_FAULT);
+      local_apic_state.interrupt_tracker.Interrupt<X86_INT_GP_FAULT>();
       return zx::ok();
   }
 }

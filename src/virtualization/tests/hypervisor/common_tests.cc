@@ -273,6 +273,18 @@ TEST(Guest, VcpuDeleteFromOtherThread) {
   t.join();
 }
 
+// NOTE(https://fxbug.dev/503733885): Test for interrupt out of bounds.
+TEST(Guest, VcpuInterruptOutOfBounds) {
+  TestCase test;
+  ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, vcpu_enter_start, vcpu_enter_end));
+
+  // Attempt to interrupt with out of bounds vector.
+  zx_status_t status = test.vcpu.interrupt(UINT32_MAX);
+  EXPECT_NE(ZX_OK, status);
+
+  ASSERT_NO_FATAL_FAILURE(EnterAndCleanExit(&test));
+}
+
 TEST(Guest, VmarProtect) {
   TestCase test;
   ASSERT_NO_FATAL_FAILURE(SetupGuest(&test, vcpu_enter_start, vcpu_enter_end));

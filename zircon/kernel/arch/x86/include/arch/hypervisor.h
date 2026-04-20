@@ -118,7 +118,7 @@ class Vcpu {
 
   zx::result<> Enter(zx_port_packet_t& packet);
   void Kick();
-  void Interrupt(uint32_t vector);
+  zx::result<> Interrupt(uint32_t vector);
   zx::result<> ReadState(zx_vcpu_state_t& vcpu_state);
   zx::result<> WriteState(const zx_vcpu_state_t& vcpu_state);
   zx::result<> WriteState(const zx_vcpu_io_t& io_state);

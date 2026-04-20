@@ -494,7 +494,7 @@ zx::result<> vmcs_init(AutoVmcs& vmcs, uint16_t vpid, uintptr_t entry, paddr_t m
 }
 
 // Injects an interrupt into the guest, if there is one pending.
-zx_status_t local_apic_maybe_interrupt(AutoVmcs* vmcs, LocalApicState* local_apic_state) {
+zx::result<> local_apic_maybe_interrupt(AutoVmcs* vmcs, LocalApicState* local_apic_state) {
   // Since hardware generated exceptions are delivered to the guest directly,
   // the only exceptions we see here are those we generate in the VMM, e.g. GP
   // faults in vmexit handlers. Therefore we simplify interrupt priority to 1)
@@ -510,7 +510,7 @@ zx_status_t local_apic_maybe_interrupt(AutoVmcs* vmcs, LocalApicState* local_api
     // vector are exceptions.
     pending = local_apic_state->interrupt_tracker.Pop(&vector);
     if (!pending) {
-      return ZX_OK;
+      return zx::ok();
     }
     // If type isn't inactive, then Pop should have initialized vector to a
     // valid value.
@@ -534,13 +534,15 @@ zx_status_t local_apic_maybe_interrupt(AutoVmcs* vmcs, LocalApicState* local_api
 
   if (vector > X86_INT_VIRT && vector < X86_INT_PLATFORM_BASE) {
     dprintf(INFO, "Invalid interrupt vector: %u\n", vector);
-    return ZX_ERR_NOT_SUPPORTED;
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
   } else if ((vector >= X86_INT_PLATFORM_BASE && !can_inject_external_int()) ||
              (vector == X86_INT_NMI && !can_inject_nmi())) {
-    local_apic_state->interrupt_tracker.Track(vector);
-    // If interrupts are disabled, we set VM exit on interrupt enable.
-    vmcs->InterruptWindowExiting(true);
-    return ZX_OK;
+    zx::result<> result = local_apic_state->interrupt_tracker.Track(vector);
+    if (result.is_ok()) {
+      // If interrupts are disabled, we set VM exit on interrupt enable.
+      vmcs->InterruptWindowExiting(true);
+    }
+    return result;
   }
 
   // If the vector is non-maskable or interrupts are enabled, inject interrupt.
@@ -553,7 +555,7 @@ zx_status_t local_apic_maybe_interrupt(AutoVmcs* vmcs, LocalApicState* local_api
   local_apic_state->interrupt_tracker.Clear(0, X86_INT_NMI);
   local_apic_state->interrupt_tracker.Clear(X86_INT_NMI + 1, X86_INT_VIRT + 1);
 
-  return ZX_OK;
+  return zx::ok();
 }
 
 }  // namespace
@@ -1005,9 +1007,8 @@ zx::result<> Vcpu::Enter(zx_port_packet_t& packet) {
       return zx::error(ZX_ERR_CANCELED);
     }
 
-    if (zx_status_t status = local_apic_maybe_interrupt(&vmcs, &local_apic_state_);
-        status != ZX_OK) {
-      return zx::error(status);
+    if (result = local_apic_maybe_interrupt(&vmcs, &local_apic_state_); result.is_error()) {
+      return result;
     }
 
     // Updates guest system time if the guest subscribed to updates.
@@ -1082,9 +1083,12 @@ void Vcpu::InterruptCpu() {
   }
 }
 
-void Vcpu::Interrupt(uint32_t vector) {
-  local_apic_state_.interrupt_tracker.Interrupt(vector);
-  InterruptCpu();
+zx::result<> Vcpu::Interrupt(uint32_t vector) {
+  zx::result<> result = local_apic_state_.interrupt_tracker.Interrupt(vector);
+  if (result.is_ok()) {
+    InterruptCpu();
+  }
+  return result;
 }
 
 zx::result<> Vcpu::ReadState(zx_vcpu_state_t& vcpu_state) {

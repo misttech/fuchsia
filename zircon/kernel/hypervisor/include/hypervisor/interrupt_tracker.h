@@ -28,29 +28,9 @@ class InterruptBitmap {
     DEBUG_ASSERT(result == ZX_OK);
   }
 
-  bool Get(uint32_t vector) const {
-    if (vector >= N) {
-      DEBUG_ASSERT(false);
-      return false;
-    }
-    return bitmap_.GetOne(vector);
-  }
-
-  void Set(uint32_t vector) {
-    if (vector >= N) {
-      DEBUG_ASSERT(false);
-      return;
-    }
-    bitmap_.SetOne(vector);
-  }
-
-  void Clear(uint32_t min, uint32_t max) {
-    if (max < min || max > N) {
-      DEBUG_ASSERT(false);
-      return;
-    }
-    bitmap_.Clear(min, max);
-  }
+  bool Get(uint32_t vector) const { return bitmap_.GetOne(vector); }
+  void Set(uint32_t vector) { bitmap_.SetOne(vector); }
+  void Clear(uint32_t min, uint32_t max) { bitmap_.Clear(min, max); }
 
   bool Scan(uint32_t* vector) {
     size_t bitoff = 0;
@@ -91,10 +71,12 @@ class InterruptTracker {
 
   // Pops the specified vector, if it is pending.
   bool TryPop(uint32_t vector) {
-    Guard<SpinLock, IrqSave> lock{&lock_};
-    if (bitmap_.Get(vector)) {
-      bitmap_.Clear(vector, vector + 1);
-      return true;
+    if (vector >= N) {
+      Guard<SpinLock, IrqSave> lock{&lock_};
+      if (bitmap_.Get(vector)) {
+        bitmap_.Clear(vector, vector + 1);
+        return true;
+      }
     }
     return false;
   }
@@ -110,15 +92,34 @@ class InterruptTracker {
   }
 
   // Tracks the given interrupt.
-  void Track(uint32_t vector) {
+  zx::result<> Track(uint32_t vector) {
+    if (vector >= N) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
     Guard<SpinLock, IrqSave> lock{&lock_};
     bitmap_.Set(vector);
+    return zx::ok();
+  }
+
+  template <uint32_t Vector>
+  void Track() {
+    static_assert(Vector < N, "Vector out of bounds");
+    [[maybe_unused]] zx::result<> result = Track(Vector);
   }
 
   // Tracks the given interrupt, and signals any waiters.
-  void Interrupt(uint32_t vector) {
-    Track(vector);
-    event_.Signal();
+  zx::result<> Interrupt(uint32_t vector) {
+    zx::result<> result = Track(vector);
+    if (result.is_ok()) {
+      event_.Signal();
+    }
+    return result;
+  }
+
+  template <uint32_t Vector>
+  void Interrupt() {
+    static_assert(Vector < N, "Vector out of bounds");
+    [[maybe_unused]] zx::result<> result = Interrupt(Vector);
   }
 
   // Cancels a wait for an interrupt.

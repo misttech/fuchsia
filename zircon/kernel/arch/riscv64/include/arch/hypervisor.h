@@ -59,7 +59,7 @@ class Vcpu {
 
   zx::result<> Enter(zx_port_packet_t& packet) { return zx::error(ZX_ERR_NOT_SUPPORTED); }
   void Kick() { PANIC_UNIMPLEMENTED; }
-  void Interrupt(uint32_t vector) { PANIC_UNIMPLEMENTED; }
+  zx::result<> Interrupt(uint32_t vector) { return zx::error(ZX_ERR_NOT_SUPPORTED); }
   zx::result<> ReadState(zx_vcpu_state_t& state) const { return zx::error(ZX_ERR_NOT_SUPPORTED); }
   zx::result<> WriteState(const zx_vcpu_state_t& state) { return zx::error(ZX_ERR_NOT_SUPPORTED); }
   zx::result<> WriteState(const zx_vcpu_io_t& io_state) { return zx::error(ZX_ERR_NOT_SUPPORTED); }

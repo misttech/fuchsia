@@ -354,14 +354,15 @@ void Vcpu::Kick() {
   kicked_.store(true);
   // Cancel any pending or upcoming wait-for-interrupts.
   gich_state_.Cancel();
-  // Send an IPI to our thread's CPU, if it is currently running.
   InterruptCpu();
 }
 
-void Vcpu::Interrupt(uint32_t vector) {
-  gich_state_.Interrupt(vector);
-  // Send an IPI to our thread's CPU, if it is currently running.
-  InterruptCpu();
+zx::result<> Vcpu::Interrupt(uint32_t vector) {
+  zx::result<> result = gich_state_.Interrupt(vector);
+  if (result.is_ok()) {
+    InterruptCpu();
+  }
+  return result;
 }
 
 zx::result<> Vcpu::ReadState(zx_vcpu_state_t& state) const {

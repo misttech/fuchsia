@@ -74,14 +74,19 @@ class GichState {
 
   bool Pending() { return interrupt_tracker_.Pending(); }
   bool Pop(uint32_t* vector) { return interrupt_tracker_.Pop(vector); }
-  void Track(uint32_t vector) { interrupt_tracker_.Track(vector); }
-  void Interrupt(uint32_t vector) { interrupt_tracker_.Interrupt(vector); }
+  zx::result<> Track(uint32_t vector) { return interrupt_tracker_.Track(vector); }
+  zx::result<> Interrupt(uint32_t vector) { return interrupt_tracker_.Interrupt(vector); }
   void Cancel() { interrupt_tracker_.Cancel(); }
   zx::result<> Wait(zx_time_t deadline) { return interrupt_tracker_.Wait(deadline); }
 
   bool IsUsingListRegister() { return !lr_tracker_.Scan(0, kNumInterrupts, false); }
   bool InListRegister(uint32_t vector) { return lr_tracker_.GetOne(vector); }
   void TrackAllListRegisters(IchState* ich_state);
+
+  template <uint32_t Vector>
+  void Track() {
+    interrupt_tracker_.Track<Vector>();
+  }
 
  private:
   // Tracks pending interrupts.
@@ -119,7 +124,7 @@ class Vcpu {
 
   zx::result<> Enter(zx_port_packet_t& packet);
   void Kick();
-  void Interrupt(uint32_t vector);
+  zx::result<> Interrupt(uint32_t vector);
   zx::result<> ReadState(zx_vcpu_state_t& state) const;
   zx::result<> WriteState(const zx_vcpu_state_t& state);
   zx::result<> WriteState(const zx_vcpu_io_t& io_state) { return zx::error(ZX_ERR_INVALID_ARGS); }
