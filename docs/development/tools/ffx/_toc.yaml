@@ -10,6 +10,8 @@ toc:
   path: /docs/development/tools/ffx/overview.md
 - title: "Using ffx"
   path: /docs/development/tools/ffx/getting-started.md
+- title: "FDomain overview"
+  path: /docs/development/tools/ffx/fdomain.md
 - title: "Developing for ffx"
   section:
   - include: /docs/development/tools/ffx/development/_toc.yaml
