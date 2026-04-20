@@ -431,6 +431,42 @@ impl BluetoothProfilesConfig {
     }
 }
 
+/// Platform configuration for Bluetooth Low Energy advertising.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(default)]
+pub struct LeAdvertisingConfig {
+    /// advertising interval minimum
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub interval_min: u16,
+    /// advertising interval maximum
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub interval_max: u16,
+    /// advertising interval max tx power
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub max_tx_power: i8,
+}
+
+impl Default for LeAdvertisingConfig {
+    fn default() -> Self {
+        Self {
+            interval_min: 0,
+            interval_max: 0,
+            max_tx_power: 127, // 127 (0x7F) indicates no preference
+        }
+    }
+}
+
+/// Platform configuration for Bluetooth Low Energy scanning.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(default)]
+pub struct LeScanConfig {
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub active_interval: u16,
+
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub active_window: u16,
+}
+
 /// Platform configuration for Bluetooth core features.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default)]
@@ -448,6 +484,19 @@ pub struct BluetoothCoreConfig {
     /// Whether the device is BR/EDR connectable by default on boot.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub start_connectable: bool,
+
+    /// slow advertising parameters
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub slow_advertising: LeAdvertisingConfig,
+    /// fast advertising parameters
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub fast_advertising: LeAdvertisingConfig,
+    /// very fast advertising parameters
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub very_fast_advertising: LeAdvertisingConfig,
+    /// scan parameters
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub scan: LeScanConfig,
 }
 
 impl Default for BluetoothCoreConfig {
@@ -457,6 +506,10 @@ impl Default for BluetoothCoreConfig {
             sco_offload_path_index: 6,
             override_vendor_capabilities_version: 0,
             start_connectable: true,
+            slow_advertising: LeAdvertisingConfig::default(),
+            fast_advertising: LeAdvertisingConfig::default(),
+            very_fast_advertising: LeAdvertisingConfig::default(),
+            scan: LeScanConfig::default(),
         }
     }
 }
@@ -617,6 +670,25 @@ mod tests {
                 "sco_offload_path_index": 1,
                 "override_vendor_capabilities_version": 0x9900,
                 "start_connectable": false,
+                "slow_advertising": {
+                    "interval_min": 100,
+                    "interval_max": 200,
+                    "max_tx_power": 10
+                },
+                "fast_advertising": {
+                    "interval_min": 50,
+                    "interval_max": 100,
+                    "max_tx_power": 20
+                },
+                "very_fast_advertising": {
+                    "interval_min": 20,
+                    "interval_max": 40,
+                    "max_tx_power": 30
+                },
+                "scan": {
+                    "active_interval": 30,
+                    "active_window": 60
+                }
             },
         });
 
@@ -668,6 +740,22 @@ mod tests {
             sco_offload_path_index: 1,
             override_vendor_capabilities_version: 0x9900,
             start_connectable: false,
+            slow_advertising: LeAdvertisingConfig {
+                interval_min: 100,
+                interval_max: 200,
+                max_tx_power: 10,
+            },
+            fast_advertising: LeAdvertisingConfig {
+                interval_min: 50,
+                interval_max: 100,
+                max_tx_power: 20,
+            },
+            very_fast_advertising: LeAdvertisingConfig {
+                interval_min: 20,
+                interval_max: 40,
+                max_tx_power: 30,
+            },
+            scan: LeScanConfig { active_interval: 30, active_window: 60 },
         };
         let expected = BluetoothConfig::Standard {
             profiles: expected_profiles,
@@ -716,6 +804,7 @@ mod tests {
                 sco_offload_path_index: 6,
                 override_vendor_capabilities_version: 0,
                 start_connectable: true,
+                ..Default::default()
             },
             snoop: Snoop::None,
         };
@@ -774,6 +863,7 @@ mod tests {
                 sco_offload_path_index: 6,
                 override_vendor_capabilities_version: 0,
                 start_connectable: true,
+                ..Default::default()
             },
             snoop: Snoop::None,
         };

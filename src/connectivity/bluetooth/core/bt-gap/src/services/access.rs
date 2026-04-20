@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_helpers::hanging_get::asynchronous as hanging_get;
 use fidl_fuchsia_bluetooth_sys::{self as sys, AccessRequest, AccessRequestStream};
 use fuchsia_bluetooth::types::pairing_options::{BondableMode, PairingOptions};
 use fuchsia_bluetooth::types::{Peer, PeerId, Technology};
 use fuchsia_sync::Mutex;
-use futures::future::{pending, BoxFuture};
+use futures::future::{BoxFuture, pending};
 use futures::stream::{Count, FuturesUnordered, Stream, StreamExt};
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::mem;

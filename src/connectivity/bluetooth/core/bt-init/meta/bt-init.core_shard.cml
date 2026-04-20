@@ -11,6 +11,12 @@
     ],
     offer: [
         {
+            dictionary: "bluetooth-le-config",
+            from: "parent",
+            to: [ "#bluetooth-core" ],
+            availability: "same_as_target",
+        },
+        {
             protocol: "fuchsia.power.system.ActivityGovernor",
             from: "parent",
             to: "#bluetooth-core",

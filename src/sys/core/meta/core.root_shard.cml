@@ -10,7 +10,34 @@
             environment: "#core-env",
         },
     ],
+    capabilities: [
+        { dictionary: "bluetooth-le-config" },
+    ],
     offer: [
+        {
+            config: [
+                "fuchsia.bluetooth.LeActiveScanInterval",
+                "fuchsia.bluetooth.LeActiveScanWindow",
+                "fuchsia.bluetooth.LeFastAdvIntervalMax",
+                "fuchsia.bluetooth.LeFastAdvIntervalMin",
+                "fuchsia.bluetooth.LeFastAdvMaxTxPower",
+                "fuchsia.bluetooth.LeSlowAdvIntervalMax",
+                "fuchsia.bluetooth.LeSlowAdvIntervalMin",
+                "fuchsia.bluetooth.LeSlowAdvMaxTxPower",
+                "fuchsia.bluetooth.LeVeryFastAdvIntervalMax",
+                "fuchsia.bluetooth.LeVeryFastAdvIntervalMin",
+                "fuchsia.bluetooth.LeVeryFastAdvMaxTxPower",
+            ],
+            from: "#config",
+            to: "self/bluetooth-le-config",
+            availability: "same_as_target",
+        },
+        {
+            dictionary: "bluetooth-le-config",
+            from: "self",
+            to: "#core",
+            availability: "same_as_target",
+        },
         {
             config: [
                 "fuchsia.adb.IsRecovery",

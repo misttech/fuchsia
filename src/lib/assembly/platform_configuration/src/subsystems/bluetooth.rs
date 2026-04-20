@@ -116,6 +116,50 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
             Config::new(ConfigValueType::Uint16, core.override_vendor_capabilities_version.into()),
         )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeSlowAdvIntervalMin",
+            Config::new(ConfigValueType::Uint16, core.slow_advertising.interval_min.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeSlowAdvIntervalMax",
+            Config::new(ConfigValueType::Uint16, core.slow_advertising.interval_max.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeSlowAdvMaxTxPower",
+            Config::new(ConfigValueType::Int8, core.slow_advertising.max_tx_power.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeFastAdvIntervalMin",
+            Config::new(ConfigValueType::Uint16, core.fast_advertising.interval_min.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeFastAdvIntervalMax",
+            Config::new(ConfigValueType::Uint16, core.fast_advertising.interval_max.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeFastAdvMaxTxPower",
+            Config::new(ConfigValueType::Int8, core.fast_advertising.max_tx_power.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeVeryFastAdvIntervalMin",
+            Config::new(ConfigValueType::Uint16, core.very_fast_advertising.interval_min.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeVeryFastAdvIntervalMax",
+            Config::new(ConfigValueType::Uint16, core.very_fast_advertising.interval_max.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeVeryFastAdvMaxTxPower",
+            Config::new(ConfigValueType::Int8, core.very_fast_advertising.max_tx_power.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeActiveScanInterval",
+            Config::new(ConfigValueType::Uint16, core.scan.active_interval.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeActiveScanWindow",
+            Config::new(ConfigValueType::Uint16, core.scan.active_window.into()),
+        )?;
         // Fast Pair Provider is currently disabled by default.
         // TODO(https://fxbug.dev/253626392): Add a Fast Pair config to the schema and use it here.
         builder.set_config_capability(

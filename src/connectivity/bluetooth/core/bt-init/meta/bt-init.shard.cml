@@ -84,6 +84,12 @@
             availability: "optional",
         },
         {
+            dictionary: "bluetooth-le-config",
+            from: "parent",
+            to: [ "#bt-host-collection" ],
+            availability: "same_as_target",
+        },
+        {
             config: "fuchsia.power.SuspendEnabled",
             from: "parent",
             to: [ "#bt-host-collection" ],
