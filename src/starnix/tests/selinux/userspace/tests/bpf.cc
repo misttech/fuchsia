@@ -74,6 +74,35 @@ struct BpfMapTestParam {
       : label(label), map_flags(map_flags), should_succeed(should_succeed) {}
 };
 
+struct BpfMapCreateTestParam {
+  const char* label;
+  bool should_succeed;
+
+  BpfMapCreateTestParam(const char* label, bool should_succeed)
+      : label(label), should_succeed(should_succeed) {}
+};
+
+class BpfMapCreateTest : public ::testing::TestWithParam<BpfMapCreateTestParam> {};
+
+TEST_P(BpfMapCreateTest, Create) {
+  auto [label, should_succeed] = GetParam();
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(label, [&] {
+    fbl::unique_fd fd = CreateArrayMap();
+    if (should_succeed) {
+      EXPECT_THAT(fd.get(), SyscallSucceeds());
+    } else {
+      EXPECT_THAT(fd.get(), SyscallFailsWithErrno(EACCES));
+    }
+  }));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BpfMapCreateTestSuite, BpfMapCreateTest,
+    ::testing::Values(BpfMapCreateTestParam("test_u:test_r:bpf_map_create_t:s0", true),
+                      BpfMapCreateTestParam("test_u:test_r:bpf_map_none_t:s0", false)));
+
 class BpfMapTest : public ::testing::TestWithParam<BpfMapTestParam> {};
 
 TEST_P(BpfMapTest, Map) {
