@@ -245,6 +245,9 @@
                 "overlay/090",
                 "overlay/099",
 
+                // TODO: https://fxbug.dev/494562003
+                "perf_event/005",
+
                 // TODO: https://fxbug.dev/398696740
                 "sem/001",
                 "sem/002",

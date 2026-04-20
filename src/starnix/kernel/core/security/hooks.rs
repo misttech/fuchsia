@@ -189,6 +189,7 @@ impl TryFrom<perf_type_id> for PerfEventType {
 }
 
 /// The target task type. Used in the `check_perf_event_open_access` LSM hook.
+#[derive(PartialEq, Eq)]
 pub enum TargetTaskType<'a> {
     /// Monitor all tasks/activities.
     AllTasks,

@@ -34,6 +34,7 @@ pub(in crate::security) fn check_perf_event_open_access(
         PerfEventPermission::Open,
         audit_context,
     )?;
+
     // Check capability `capability2 { perfmon }` first, and if it fails check
     // `capability { sys_admin }` instead.
     if check_self_permission(
@@ -45,13 +46,24 @@ pub(in crate::security) fn check_perf_event_open_access(
     )
     .is_err()
     {
-        check_self_permission(
+        let sys_admin_check_res = check_self_permission(
             &build_permission_check(current_task, security_server),
             current_task,
             subject_sid,
             CommonCapPermission::SysAdmin.for_class(CapClass::Capability),
             audit_context,
-        )?;
+        );
+        if sys_admin_check_res.is_err() {
+            // Exceptionally, if the event is a tracepoint perf event on the current task and while
+            // excluding kernel, we allow it.
+            if matches!(
+                (event_type, attr.exclude_kernel(), target_task_type),
+                (PerfEventType::Tracepoint, 1, TargetTaskType::CurrentTask)
+            ) {
+                return Ok(());
+            }
+            return sys_admin_check_res;
+        }
     }
 
     // Check `perf_event { kernel }` permission when `exclude_kernel` is 0.
@@ -86,16 +98,8 @@ pub(in crate::security) fn check_perf_event_open_access(
         )?;
     }
 
-    // Check `perf_event { tracepoint }` permission when type is PERF_TYPE_TRACEPOINT
-    if event_type == PerfEventType::Tracepoint {
-        check_self_permission(
-            &build_permission_check(current_task, security_server),
-            current_task,
-            subject_sid,
-            PerfEventPermission::Tracepoint,
-            audit_context,
-        )?;
-    }
+    // Don't check `perf_event { tracepoint }` permission, even if the type is PERF_TYPE_TRACEPOINT:
+    // this has been the observed behavior in SELinux.
 
     Ok(())
 }
