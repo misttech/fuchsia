@@ -640,18 +640,9 @@ impl Polisher {
             return;
         };
 
-        let is_plugged_in = match info.charge_source {
-            Some(fpower::ChargeSource::None) | Some(fpower::ChargeSource::Unknown) | None => false,
-            _ => true,
-        };
-
-        if !is_plugged_in {
-            self.estimator.reset_average_current();
-            if info.charge_status == Some(fpower::ChargeStatus::Full) {
-                info.time_remaining = Some(fpower::TimeRemaining::FullCharge(0));
-            } else {
-                info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
-            }
+        // Short-circuit if no power source (Time To Full is only calculated when plugged in)
+        if !Self::has_power_source(info) {
+            info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
         }
 
@@ -692,6 +683,13 @@ impl Polisher {
                 }
             };
         info.time_remaining = Some(fpower::TimeRemaining::FullCharge(time_to_full_estimate));
+    }
+
+    pub(crate) fn has_power_source(info: &fpower::BatteryInfo) -> bool {
+        !matches!(
+            info.charge_source,
+            Some(fpower::ChargeSource::None) | Some(fpower::ChargeSource::Unknown) | None
+        )
     }
 
     fn rate_limit_level(&mut self, info: &mut fpower::BatteryInfo) {
@@ -737,6 +735,10 @@ impl Polisher {
 
     pub fn reset_rate_limiter(&mut self) {
         self.rate_limiter.reset();
+    }
+
+    pub fn reset_average_current(&mut self) {
+        self.estimator.reset_average_current();
     }
 }
 

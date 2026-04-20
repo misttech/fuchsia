@@ -235,8 +235,14 @@ impl BatteryManager {
         let recovery_event = self.info_recorders.update(raw_level, new_charge_status);
         self.info_recorders.record_raw_level_on_change(raw_level);
 
+        let old_has_source = Polisher::has_power_source(&self.battery_info.borrow());
+        let new_has_source = Polisher::has_power_source(&info);
+
         let info = {
             let mut data_polisher = self.data_polisher.borrow_mut();
+            if !old_has_source && new_has_source {
+                data_polisher.reset_average_current();
+            }
             if recovery_event == FaultRecoveryEvent::Recovered {
                 data_polisher.reset_rate_limiter();
             }
