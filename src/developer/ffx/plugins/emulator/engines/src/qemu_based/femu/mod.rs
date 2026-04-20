@@ -17,6 +17,7 @@ use ffx_emulator_common::config;
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
 use fho::{Result, bug, return_bug};
 use std::env;
+use std::path::Path;
 use std::process::Command;
 
 #[derive(Clone, Debug)]
@@ -194,6 +195,10 @@ impl EmulatorEngine for FemuEngine {
 
     fn emu_config_mut(&mut self) -> &mut EmulatorConfiguration {
         self.data.get_emulator_configuration_mut()
+    }
+
+    async fn screenshot(&mut self, _path: &Path) -> Result<()> {
+        Err(fho::user_error!("Screenshot not implemented for FEMU yet."))
     }
 
     async fn save_to_disk(&self) -> Result<()> {

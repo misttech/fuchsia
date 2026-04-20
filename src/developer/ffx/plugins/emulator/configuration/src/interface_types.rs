@@ -13,6 +13,7 @@ use emulator_instance::{EmulatorConfiguration, EmulatorInstanceData, EngineState
 use ffx_config::EnvironmentContext;
 use fho::Result;
 use std::backtrace::Backtrace;
+use std::path::Path;
 use std::process::Command;
 
 #[async_trait(?Send)]
@@ -63,6 +64,24 @@ pub trait EmulatorEngine: Send + Sync {
     /// may return an error if the instance doesn't exist or the shut down fails, but should succeed
     /// if it's no longer running or gets successfully shut down.
     async fn stop(&mut self) -> Result<()> {
+        let bt = Backtrace::force_capture();
+        unimplemented!(
+            "These default trait implementations are to allow for easier testing and \
+            should not be used directly\n{:?}",
+            bt
+        )
+    }
+
+    /// Takes a screenshot of the emulator's primary display and saves it to the given path.
+    ///
+    /// The implementation must ensure:
+    /// 1. Output format: The saved file must always be in PNG format. (e.g. PPM -> PNG conversion
+    ///    must be handled internally if necessary).
+    /// 2. Precise source: The screenshot should be captured from the emulator's first display.
+    /// 3. Path precondition: If the parent directory of the path does not exist, the
+    ///    implementation should attempt to create it.
+    /// 4. State precondition: The emulator must have at least one display attached.
+    async fn screenshot(&mut self, _path: &Path) -> Result<()> {
         let bt = Backtrace::force_capture();
         unimplemented!(
             "These default trait implementations are to allow for easier testing and \

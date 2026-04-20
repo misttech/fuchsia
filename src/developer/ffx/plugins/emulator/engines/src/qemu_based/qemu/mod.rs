@@ -231,6 +231,10 @@ impl EmulatorEngine for QemuEngine {
         self.data.get_emulator_configuration_mut()
     }
 
+    async fn screenshot(&mut self, _path: &Path) -> Result<()> {
+        Err(fho::user_error!("Screenshot not implemented for QEMU yet."))
+    }
+
     async fn save_to_disk(&self) -> Result<()> {
         write_to_disk(
             &self.data,

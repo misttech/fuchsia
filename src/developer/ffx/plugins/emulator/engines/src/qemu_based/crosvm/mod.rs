@@ -19,6 +19,7 @@ use ffx_emulator_common::{find_unused_vsock_cid, process};
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
 use fho::{Result, bug, return_bug};
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::{Command, Output};
 
 #[derive(Clone, Debug)]
@@ -257,6 +258,10 @@ impl EmulatorEngine for CrosvmEngine {
 
     fn emu_config_mut(&mut self) -> &mut EmulatorConfiguration {
         self.data.get_emulator_configuration_mut()
+    }
+
+    async fn screenshot(&mut self, _path: &Path) -> Result<()> {
+        Err(fho::user_error!("Screenshot not implemented for crosvm yet."))
     }
 
     async fn save_to_disk(&self) -> Result<()> {
