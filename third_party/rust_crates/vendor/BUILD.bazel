@@ -271,14 +271,14 @@ alias(
 )
 
 alias(
-    name = "async-trait-0.1.88",
-    actual = "//third_party/rust_crates/vendor/async-trait-0.1.88:async_trait",
+    name = "async-trait-0.1.89",
+    actual = "//third_party/rust_crates/vendor/async-trait-0.1.89:async_trait",
     tags = ["manual"],
 )
 
 alias(
     name = "async-trait",
-    actual = "//third_party/rust_crates/vendor/async-trait-0.1.88:async_trait",
+    actual = "//third_party/rust_crates/vendor/async-trait-0.1.89:async_trait",
     tags = ["manual"],
 )
 

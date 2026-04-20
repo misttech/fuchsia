@@ -180,11 +180,11 @@ group("async-stream-0.3.6") {
 }
 
 group("async-trait") {
-  public_deps = [ ":async-trait-v0_1_88($host_toolchain)" ]
+  public_deps = [ ":async-trait-v0_1_89($host_toolchain)" ]
 }
 
-group("async-trait-0.1.88") {
-  public_deps = [ ":async-trait-v0_1_88" ]
+group("async-trait-0.1.89") {
+  public_deps = [ ":async-trait-v0_1_89" ]
 }
 
 group("base64") {
@@ -3820,18 +3820,18 @@ rustc_library("async-task-v4_0_3") {
   applicable_licenses = [ ":async-task-v4_0_3.license" ]
 }
 
-license("async-trait-v0_1_88.license") {
+license("async-trait-v0_1_89.license") {
   public_package_name = "async_trait"
   license_files = [
-    "//third_party/rust_crates/vendor/async-trait-0.1.88/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/async-trait-0.1.88/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/async-trait-0.1.89/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/async-trait-0.1.89/LICENSE-MIT",
   ]
 }
 
-rustc_macro("async-trait-v0_1_88") {
+rustc_macro("async-trait-v0_1_89") {
   crate_name = "async_trait"
-  source_root = "//third_party/rust_crates/vendor/async-trait-0.1.88/src/lib.rs"
-  output_name = "async_trait-e24d309deceaa72f"
+  source_root = "//third_party/rust_crates/vendor/async-trait-0.1.89/src/lib.rs"
+  output_name = "async_trait-fe851dfe5735304a"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -3846,13 +3846,13 @@ rustc_macro("async-trait-v0_1_88") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e24d309deceaa72f",
-    "-Cextra-filename=-e24d309deceaa72f",
+    "-Cmetadata=fe851dfe5735304a",
+    "-Cextra-filename=-fe851dfe5735304a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":async-trait-v0_1_88.license" ]
+  applicable_licenses = [ ":async-trait-v0_1_89.license" ]
 }
 
 license("atomic-waker-v1_1_2.license") {
@@ -8695,7 +8695,7 @@ rustc_library("fuse3-v0_6_1") {
 
   deps = []
   deps += [ ":nix-v0_29_0" ]
-  deps += [ ":async-trait-v0_1_88($host_toolchain)" ]
+  deps += [ ":async-trait-v0_1_89($host_toolchain)" ]
   deps += [ ":bincode-v1_3_3" ]
   deps += [ ":bytes-v1_11_1" ]
   deps += [ ":cstr-v0_2_12($host_toolchain)" ]
@@ -21245,7 +21245,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":async-trait-v0_1_88($host_toolchain)" ]
+  deps += [ ":async-trait-v0_1_89($host_toolchain)" ]
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":data-encoding-v2_10_0" ]
   deps += [ ":enum-as-inner-v0_5_1($host_toolchain)" ]

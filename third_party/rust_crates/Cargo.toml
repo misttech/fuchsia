@@ -40,7 +40,7 @@ async-channel = "1.8.0"
 async-lock = "3.4.2"
 async-ringbuf = "0.3.4"
 async-stream = "0.3.6"
-async-trait = "0.1.88"
+async-trait = "0.1.89"
 base64 = "0.22.1"
 bincode = "1.3.3"
 bit-set = "0.9.1"
@@ -534,7 +534,7 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.ash."0.37.0+1.3.209"]
 rustflags = []
 
-[gn.package.async-trait."0.1.88"]
+[gn.package.async-trait."0.1.89"]
 rustflags = []
 
 [gn.package.async-ringbuf."0.3.4"]
