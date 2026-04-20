@@ -76,7 +76,9 @@ class ProfileTest(unittest.TestCase):
 
         dut = Mock()
         dut.ffx.run.side_effect = ffx_run_fake_implementation
-        report = profile.capture(dut, buckets_metrics=".*Graphics")
+        report = profile.capture(
+            dut, buckets_metrics=".*Graphics", board_memory=8 * 1024**3
+        )
 
         self.assertEqual(
             report.structured,
@@ -93,6 +95,12 @@ class ProfileTest(unittest.TestCase):
                     values=(65432,),
                     doc="Total populated bytes in the bucket: [Addl]Graphics",
                 ),
+                metrics.TestCaseResult(
+                    label="Memory/System/FuchsiaOSPopulatedBytes",
+                    unit=metrics.Unit.bytes,
+                    values=(1187840,),
+                    doc="Fuchsia OS Populated Memory",
+                ),
             ],
         )
 
@@ -105,7 +113,9 @@ class ProfileTest(unittest.TestCase):
 
         dut = Mock()
         dut.ffx.run.side_effect = ffx_run_fake_implementation
-        report = profile.capture(dut, principal_groups={"fxfs": "*/fxfs"})
+        report = profile.capture(
+            dut, principal_groups={"fxfs": "*/fxfs"}, board_memory=8 * 1024**3
+        )
 
         self.assertEqual(
             report.structured,
@@ -116,7 +126,13 @@ class ProfileTest(unittest.TestCase):
                     values=(32927744,),
                     doc="Total populated bytes for private uncompressed memory "
                     "VMOs: fxfs",
-                )
+                ),
+                metrics.TestCaseResult(
+                    label="Memory/System/FuchsiaOSPopulatedBytes",
+                    unit=metrics.Unit.bytes,
+                    values=(1187840,),
+                    doc="Fuchsia OS Populated Memory",
+                ),
             ],
         )
         self.maxDiff = None

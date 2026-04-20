@@ -16,6 +16,7 @@ _DESCRIPTION_BASE = "Total populated bytes for private uncompressed memory VMOs"
 def capture(
     dut: Any,
     principal_groups: Mapping[str, str] | None = None,
+    board_memory: int = 2 * 1024**3,
     buckets_metrics: str | None = None,
 ) -> metrics.Report:
     """Captures kernel and user space memory metrics using `ffx profile memory`.
@@ -24,13 +25,15 @@ def capture(
 
     Args:
       dut: A FuchsiaDevice instance connected to the device to profile.
-      buckets_metrics: for each bucket matching this regular expression
-        a metric labelled "Memory/Bucket/{bucket_name}/CommittedBytes" is
-        returned. When not set, none is returned.
-      principal_groups: mapping from group name to a `fnmatch` pattern
+      principal_groups: Mapping from group name to a `fnmatch` pattern
         that selects the principals by name. A metric labelled
         "Memory/Principal/{group_name}/PrivatePopulated" is returned for each
         item.
+      board_memory: Total RAM of the board in bytes, used to calculate Fuchsia
+        OS populated memory.
+      buckets_metrics: For each bucket matching this regular expression
+        a metric labelled "Memory/Bucket/{bucket_name}/CommittedBytes" is
+        returned. When not set, none is returned.
 
     Returns:
       metrics.Report containing two sets of memory measurements:
@@ -55,7 +58,7 @@ def capture(
         )
     )
     structured = process_component_profile(
-        principal_groups, buckets_metrics, component_profile
+        principal_groups, buckets_metrics, component_profile, board_memory
     )
     description = metrics.describe_callable(capture)
     return metrics.Report(
@@ -78,11 +81,31 @@ def process_component_profile(
     principal_groups: Mapping[str, str],
     buckets_metrics: str | None,
     component_profile: Any,
+    board_memory: int,
 ) -> list[metrics.TestCaseResult]:
+    """Processes the component profile data to extract memory metrics.
+
+    Args:
+      principal_groups: Mapping from group name to a `fnmatch` pattern
+        that selects the principals by name. A metric labelled
+        "Memory/Principal/{group_name}/PrivatePopulated" is returned for each
+        item.
+      buckets_metrics: For each bucket matching this regular expression
+        a metric labelled "Memory/Bucket/{bucket_name}/CommittedBytes" and
+        "Memory/Bucket/{bucket_name}/PopulatedBytes" is returned. When not set,
+        none is returned.
+      component_profile: The JSON data extracted from `ffx profile memory`.
+      board_memory: Total RAM of the board in bytes, used to calculate Fuchsia
+        OS populated memory.
+
+    Returns:
+      A list of extracted memory metrics as TestCaseResult objects.
+    """
     results: list[metrics.TestCaseResult] = []
 
+    component_digest = component_profile["ComponentDigest"]
     if buckets_metrics:
-        for bucket in component_profile["ComponentDigest"]["digest"]["buckets"]:
+        for bucket in component_digest["digest"]["buckets"]:
             if re.match(buckets_metrics, bucket["name"]):
                 results.append(
                     metrics.TestCaseResult(
@@ -102,10 +125,9 @@ def process_component_profile(
                 )
 
     for group_name, pattern in principal_groups.items():
-        digest = component_profile["ComponentDigest"]
         private_populated = sum(
             principal["populated_private"]
-            for principal in digest["principals"]
+            for principal in component_digest["principals"]
             if fnmatch.fnmatch(principal["name"], pattern)
         )
         results.append(
@@ -116,6 +138,52 @@ def process_component_profile(
                 doc=f"{_DESCRIPTION_BASE}: {group_name}",
             )
         )
+
+    if (
+        "kernel" in component_digest
+        and "memory_statistics" in component_digest["kernel"]
+    ):
+        total_bytes = component_digest["kernel"]["memory_statistics"][
+            "total_bytes"
+        ]
+
+        addl_anon_bytes = 0
+        starnix_bytes = 0
+        eng_tools_bytes = 0
+
+        for bucket in component_digest["digest"]["buckets"]:
+            name = bucket["name"]
+            if name == "[Addl]PopulatedAnonymousBytes":
+                addl_anon_bytes = bucket["populated_size"]
+            elif name == "StarnixContainer":
+                starnix_bytes = bucket["populated_size"]
+            elif name == "EngTools":
+                eng_tools_bytes = bucket["populated_size"]
+
+        # Total Fuchsia OS populated memory is computed as follows:
+        # 2 GiB (total RAM) - total_bytes (all memory addressable by the kernel and user space):
+        #   this gives the memory that is held by the bootloaders, firmware, and other reservations
+        # + addl_anon_bytes: all the non-reclaimable memory on the system
+        # - starnix_bytes: memory of processes running under Starnix (product memory)
+        # - eng_tools_bytes: memory of engineering tooling (testing overhead)
+        fuchsia_os_memory_bytes = max(
+            0,
+            board_memory
+            - total_bytes
+            + addl_anon_bytes
+            - starnix_bytes
+            - eng_tools_bytes,
+        )
+
+        results.append(
+            metrics.TestCaseResult(
+                label="Memory/System/FuchsiaOSPopulatedBytes",
+                unit=metrics.Unit.bytes,
+                values=[fuchsia_os_memory_bytes],
+                doc="Fuchsia OS Populated Memory",
+            )
+        )
+
     return results
 
 
