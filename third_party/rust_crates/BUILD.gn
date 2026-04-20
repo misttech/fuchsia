@@ -68,11 +68,11 @@ group("arbitrary-1.4.2") {
 }
 
 group("arc-swap") {
-  public_deps = [ ":arc-swap-v1_7_1" ]
+  public_deps = [ ":arc-swap-v1_9_1" ]
 }
 
-group("arc-swap-1.7.1") {
-  public_deps = [ ":arc-swap-v1_7_1" ]
+group("arc-swap-1.9.1") {
+  public_deps = [ ":arc-swap-v1_9_1" ]
 }
 
 group("argh") {
@@ -3033,37 +3033,38 @@ rustc_library("arbitrary-v1_4_2") {
   applicable_licenses = [ ":arbitrary-v1_4_2.license" ]
 }
 
-license("arc-swap-v1_7_1.license") {
+license("arc-swap-v1_9_1.license") {
   public_package_name = "arc_swap"
   license_files = [
-    "//third_party/rust_crates/vendor/arc-swap-1.7.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/arc-swap-1.7.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/arc-swap-1.9.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/arc-swap-1.9.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("arc-swap-v1_7_1") {
+rustc_library("arc-swap-v1_9_1") {
   crate_name = "arc_swap"
-  source_root = "//third_party/rust_crates/vendor/arc-swap-1.7.1/src/lib.rs"
-  output_name = "arc_swap-83263ba41bfa4bf8"
+  source_root = "//third_party/rust_crates/vendor/arc-swap-1.9.1/src/lib.rs"
+  output_name = "arc_swap-781087c310a58982"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":rustversion-v1_0_12($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=83263ba41bfa4bf8",
-    "-Cextra-filename=-83263ba41bfa4bf8",
+    "-Cmetadata=781087c310a58982",
+    "-Cextra-filename=-781087c310a58982",
     "--cfg=feature=\"weak\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":arc-swap-v1_7_1.license" ]
+  applicable_licenses = [ ":arc-swap-v1_9_1.license" ]
 }
 
 license("argh-v0_1_19.license") {

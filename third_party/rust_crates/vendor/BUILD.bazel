@@ -115,14 +115,14 @@ alias(
 )
 
 alias(
-    name = "arc-swap-1.7.1",
-    actual = "//third_party/rust_crates/vendor/arc-swap-1.7.1:arc_swap",
+    name = "arc-swap-1.9.1",
+    actual = "//third_party/rust_crates/vendor/arc-swap-1.9.1:arc_swap",
     tags = ["manual"],
 )
 
 alias(
     name = "arc-swap",
-    actual = "//third_party/rust_crates/vendor/arc-swap-1.7.1:arc_swap",
+    actual = "//third_party/rust_crates/vendor/arc-swap-1.9.1:arc_swap",
     tags = ["manual"],
 )
 
