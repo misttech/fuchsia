@@ -19,11 +19,6 @@ rustc_library("ffx_component") {
     "//src/sys/lib/moniker",
     "//third_party/rust_crates:anyhow",
   ]
-  sources = [
-    "src/format.rs",
-    "src/lib.rs",
-    "src/rcs.rs",
-  ]
 
   if (is_host) {
     deps += [
@@ -32,6 +27,11 @@ rustc_library("ffx_component") {
       "//src/developer/ffx/lib/rcs:lib",
       "//src/developer/ffx/lib/rcs:lib_fdomain",
     ]
-    sources += [ "src/server.rs" ]
   }
+
+  sources = [
+    "src/format.rs",
+    "src/lib.rs",
+    "src/rcs.rs",
+  ]
 }

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::lifecycle::{ActionError, CreateError, DestroyError, ResolveError, StartError};
-use anyhow::{Error, format_err};
+use anyhow::{format_err, Error};
 use cm_types::BorrowedName;
 use moniker::Moniker;
 
@@ -63,22 +63,10 @@ pub fn format_create_error(
     err: CreateError,
 ) -> Error {
     match err {
-        CreateError::InstanceAlreadyExists => format_err!(
-            "\nError: {} already exists.\nUse the `show` subcommand to get information about the instance.\n{}\n",
-            moniker,
-            LIFECYCLE_ERROR_HELP
-        ),
-        CreateError::CollectionNotFound => format_err!(
-            "\nError: The parent {} does not have a collection `{}`.\nCheck the manifest of {} for a collection with this name.\n",
-            parent,
-            collection,
-            parent
-        ),
-        CreateError::BadChildDecl => format_err!(
-            "\nError: Component manager cannot parse the child decl. {}\n",
-            TOOL_INCOMPATIBILITY
-        ),
-        CreateError::ActionError(e) => format_action_error(parent, e),
+        CreateError::InstanceAlreadyExists => format_err!("\nError: {} already exists.\nUse the `show` subcommand to get information about the instance.\n{}\n", moniker, LIFECYCLE_ERROR_HELP),
+        CreateError::CollectionNotFound => format_err!("\nError: The parent {} does not have a collection `{}`.\nCheck the manifest of {} for a collection with this name.\n", parent, collection, parent),
+        CreateError::BadChildDecl => format_err!("\nError: Component manager cannot parse the child decl. {}\n", TOOL_INCOMPATIBILITY),
+        CreateError::ActionError(e) => format_action_error(parent, e)
     }
 }
 
@@ -96,55 +84,17 @@ pub fn format_destroy_error(moniker: &Moniker, err: DestroyError) -> Error {
 /// Format a ResolveError into an error message that is suitable for a CLI tool.
 pub fn format_resolve_error(moniker: &Moniker, err: ResolveError) -> Error {
     match err {
-        ResolveError::PackageNotFound => format_err!(
-            "\nError: The package associated with the instance {} could not be found.\nEnsure that your package server is running and the package is added to it.\nYou can start a package server with 'ffx repository server start' or 'fx serve'.\n",
-            moniker
-        ),
-        ResolveError::ManifestNotFound => format_err!(
-            "\nError: The manifest associated with the instance {} could not be found.\nEnsure that your package contains the manifest.\n",
-            moniker
-        ),
-        ResolveError::ActionError(e) => format_action_error(moniker, e),
+        ResolveError::PackageNotFound => format_err!("\nError: The package associated with the instance {} could not be found.\nEnsure that your package server is running and the package is added to it.\n", moniker),
+        ResolveError::ManifestNotFound => format_err!("\nError: The manifest associated with the instance {} could not be found.\nEnsure that your package contains the manifest.\n", moniker),
+        ResolveError::ActionError(e) => format_action_error(moniker, e)
     }
 }
 
 /// Format a StartError into an error message that is suitable for a CLI tool.
 pub fn format_start_error(moniker: &Moniker, err: StartError) -> Error {
     match err {
-        StartError::PackageNotFound => format_err!(
-            "\nError: The package associated with the instance {} could not be found.\nEnsure that your package server is running and the package is added to it.\nYou can start a package server with 'ffx repository server start' or 'fx serve'.\n",
-            moniker
-        ),
-        StartError::ManifestNotFound => format_err!(
-            "\nError: The manifest associated with the instance {} could not be found.\nEnsure that your package contains the manifest.\n",
-            moniker
-        ),
-        StartError::ActionError(e) => format_action_error(moniker, e),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use moniker::Moniker;
-
-    #[test]
-    fn test_format_resolve_error_package_not_found() {
-        let moniker = Moniker::parse_str("/core/foo").unwrap();
-        let err = ResolveError::PackageNotFound;
-        let formatted = format_resolve_error(&moniker, err);
-        let formatted_str = formatted.to_string();
-        assert!(formatted_str.contains("ffx repository server start"));
-        assert!(formatted_str.contains("fx serve"));
-    }
-
-    #[test]
-    fn test_format_start_error_package_not_found() {
-        let moniker = Moniker::parse_str("/core/foo").unwrap();
-        let err = StartError::PackageNotFound;
-        let formatted = format_start_error(&moniker, err);
-        let formatted_str = formatted.to_string();
-        assert!(formatted_str.contains("ffx repository server start"));
-        assert!(formatted_str.contains("fx serve"));
+        StartError::PackageNotFound => format_err!("\nError: The package associated with the instance {} could not be found.\nEnsure that your package server is running and the package is added to it.\n", moniker),
+        StartError::ManifestNotFound => format_err!("\nError: The manifest associated with the instance {} could not be found.\nEnsure that your package contains the manifest.\n", moniker),
+        StartError::ActionError(e) => format_action_error(moniker, e)
     }
 }
