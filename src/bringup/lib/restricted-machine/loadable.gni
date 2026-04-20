@@ -7,7 +7,10 @@
 # It also exports if an additional cpu is available, e.g., arm for arm64.
 
 additional_restricted_cpu = ""
-if (current_cpu == "arm64") {
+
+# https://fxbug.dev/382971270 enable lower mem allocations when under asan
+if (current_cpu == "arm64" && !is_asan) {
+  # Only arm64 supports an additional cpu.
   additional_restricted_cpu = "arm"
 }
 
