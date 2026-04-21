@@ -6,13 +6,14 @@ use std::pin::pin;
 
 use fidl::HandleBased as _;
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_device as fdevice;
+use fidl_fuchsia_hardware_pty as fpty;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _};
 use log::warn;
 use thiserror::Error;
-use {
-    fidl_fuchsia_device as fdevice, fidl_fuchsia_hardware_pty as fpty, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 use crate::error::MissingFidlFieldError;
 use crate::util::{self, ConnectToProtocolError};
@@ -158,7 +159,8 @@ async fn pty_to_socket_worker(
                 return Ok(());
             }
             Err(zx::Status::SHOULD_WAIT) => {
-                let mut on_signals = fasync::OnSignals::new(eventpair, readable | hangup).fuse();
+                let mut on_signals =
+                    pin!(fasync::OnSignals::new(eventpair, readable | hangup).fuse());
                 let signals = futures::select_biased! {
                     signals = on_signals => signals.map_err(WorkerError::PtyRead)?,
                     () = on_cancel => {

@@ -10,7 +10,7 @@ use std::pin::pin;
 
 impl Receiver {
     pub(crate) async fn handle_receiver(self, receiver_proxy: fsandbox::ReceiverProxy) {
-        let mut on_closed = receiver_proxy.on_closed();
+        let mut on_closed = pin!(receiver_proxy.on_closed());
         loop {
             match future::select(pin!(self.receive()), on_closed).await {
                 Either::Left((msg, fut)) => {
@@ -32,7 +32,7 @@ impl Receiver {
 
 impl DirReceiver {
     pub(crate) async fn handle_receiver(self, receiver_proxy: fsandbox::DirReceiverProxy) {
-        let mut on_closed = receiver_proxy.on_closed();
+        let mut on_closed = pin!(receiver_proxy.on_closed());
         loop {
             match future::select(pin!(self.receive()), on_closed).await {
                 Either::Left((payload, fut)) => {

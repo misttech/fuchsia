@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use fidl::HandleBased as _;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::FutureExt as _;
 use log::{debug, error};
+use std::pin::pin;
 use thiserror::Error;
 use zx::Task as _;
-use {fidl_fuchsia_process as fprocess, fuchsia_async as fasync};
 
 use crate::util::{self, ConnectToProtocolError};
 
@@ -103,8 +105,9 @@ impl LaunchedProcess {
 
         let mut job = Some(job);
 
-        let mut stop_future = if let Some(stopper) = stopper.as_ref() {
+        let stop_future = if let Some(stopper) = stopper.as_ref() {
             fasync::OnSignals::new(stopper, zx::Signals::EVENTPAIR_PEER_CLOSED)
+                .fuse()
                 .map(|r| match r {
                     Ok(_) => (),
                     Err(e) => {
@@ -114,12 +117,11 @@ impl LaunchedProcess {
                 .left_future()
         } else {
             futures::future::pending().right_future()
-        }
-        .fuse();
+        };
+        let mut stop_future = pin!(stop_future);
 
         let mut process_wait =
-            fasync::OnSignals::new(&process, zx::Signals::PROCESS_TERMINATED).fuse();
-
+            pin!(fasync::OnSignals::new(&process, zx::Signals::PROCESS_TERMINATED).fuse());
         let result = loop {
             futures::select! {
                 r = process_wait => break r,

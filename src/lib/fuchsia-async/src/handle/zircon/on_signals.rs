@@ -56,7 +56,7 @@ impl PacketReceiver for OnSignalsReceiver {
 pin_project_lite::pin_project! {
     /// A future that completes when some set of signals become available on a Handle.
     #[must_use = "futures do nothing unless polled"]
-    pub struct OnSignalsFuture<'a, H: AsHandleRef> {
+    pub struct OnSignals<'a, H: AsHandleRef> {
         handle: H,
         signals: zx::Signals,
         #[pin]
@@ -64,14 +64,14 @@ pin_project_lite::pin_project! {
         phantom: PhantomData<&'a H>,
     }
 
-    impl<'a, H: AsHandleRef> PinnedDrop for OnSignalsFuture<'a, H> {
+    impl<'a, H: AsHandleRef> PinnedDrop for OnSignals<'a, H> {
         fn drop(mut this: Pin<&mut Self>) {
             this.unregister();
         }
     }
 }
 
-impl<'a, H: AsHandleRef + 'a> OnSignalsFuture<'a, H> {
+impl<'a, H: AsHandleRef + 'a> OnSignals<'a, H> {
     /// Creates a new `OnSignals` object which will receive notifications when
     /// any signals in `signals` occur on `handle`.
     pub fn new(handle: H, signals: zx::Signals) -> Self {
@@ -86,7 +86,7 @@ impl<'a, H: AsHandleRef + 'a> OnSignalsFuture<'a, H> {
         // difference (and on a single-threaded executor, a notification is unlikely to be processed
         // before the first poll anyway).  The way we have it now means we don't have to register at
         // all if the signals are already set, which will be a win some of the time.
-        OnSignalsFuture {
+        OnSignals {
             handle,
             signals,
             registration: RawReceiverRegistration::new(OnSignalsReceiver {
@@ -145,7 +145,7 @@ impl<'a, H: AsHandleRef + 'a> OnSignalsFuture<'a, H> {
     }
 }
 
-impl<H: AsHandleRef> Future for OnSignalsFuture<'_, H> {
+impl<H: AsHandleRef> Future for OnSignals<'_, H> {
     type Output = Result<zx::Signals, zx::Status>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if !self.registration.is_registered() {
@@ -196,53 +196,6 @@ impl<H: AsHandleRef> Future for OnSignalsFuture<'_, H> {
     }
 }
 
-impl<H: AsHandleRef> fmt::Debug for OnSignalsFuture<'_, H> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "OnSignals")
-    }
-}
-
-impl<H: AsHandleRef> AsHandleRef for OnSignalsFuture<'_, H> {
-    fn as_handle_ref(&self) -> zx::HandleRef<'_> {
-        self.handle.as_handle_ref()
-    }
-}
-
-impl<H: AsHandleRef> AsRef<H> for OnSignalsFuture<'_, H> {
-    fn as_ref(&self) -> &H {
-        &self.handle
-    }
-}
-
-/// A future that completes when some set of signals become available on a Handle.
-#[must_use = "futures do nothing unless polled"]
-pub struct OnSignals<'a, H: AsHandleRef> {
-    future: Pin<Box<OnSignalsFuture<'a, H>>>,
-}
-
-impl<'a, H: AsHandleRef + 'a> OnSignals<'a, H> {
-    /// Creates a new `OnSignals` object which will receive notifications when
-    /// any signals in `signals` occur on `handle`.
-    pub fn new(handle: H, signals: zx::Signals) -> Self {
-        Self { future: Box::pin(OnSignalsFuture::new(handle, signals)) }
-    }
-
-    /// Takes the handle.
-    pub fn take_handle(mut self) -> H
-    where
-        H: zx::HandleBased,
-    {
-        self.future.as_mut().take_handle()
-    }
-}
-
-impl<H: AsHandleRef> Future for OnSignals<'_, H> {
-    type Output = Result<zx::Signals, zx::Status>;
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::into_inner(self).future.as_mut().poll(cx)
-    }
-}
-
 impl<H: AsHandleRef> fmt::Debug for OnSignals<'_, H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "OnSignals")
@@ -251,13 +204,13 @@ impl<H: AsHandleRef> fmt::Debug for OnSignals<'_, H> {
 
 impl<H: AsHandleRef> AsHandleRef for OnSignals<'_, H> {
     fn as_handle_ref(&self) -> zx::HandleRef<'_> {
-        self.future.as_handle_ref()
+        self.handle.as_handle_ref()
     }
 }
 
 impl<H: AsHandleRef> AsRef<H> for OnSignals<'_, H> {
     fn as_ref(&self) -> &H {
-        &self.future.handle
+        &self.handle
     }
 }
 
@@ -280,7 +233,7 @@ mod test {
             || assert!(exec.run_until_stalled(&mut pending::<()>()).is_pending());
 
         let event = zx::Event::create();
-        let mut signals = OnSignals::new(&event, zx::Signals::EVENT_SIGNALED);
+        let mut signals = pin!(OnSignals::new(&event, zx::Signals::EVENT_SIGNALED));
         let (waker, waker_count) = futures_test::task::new_count_waker();
         let cx = &mut std::task::Context::from_waker(&waker);
 
@@ -306,11 +259,12 @@ mod test {
             let ehandle = EHandle::local();
 
             let event = zx::Event::create();
-            let mut signals = OnSignals::new(&event, zx::Signals::EVENT_SIGNALED);
-            assert_eq!(futures::poll!(&mut signals), Poll::Pending);
-            let key = signals.future.registration.key().unwrap();
+            let key = {
+                let mut signals = pin!(OnSignals::new(&event, zx::Signals::EVENT_SIGNALED));
+                assert_eq!(futures::poll!(&mut signals), Poll::Pending);
+                signals.registration.key().unwrap()
+            };
 
-            std::mem::drop(signals);
             assert!(ehandle.port().cancel(key) == Err(zx::Status::NOT_FOUND));
         });
 
@@ -343,7 +297,7 @@ mod test {
 
         let (rx, tx) = zx::Channel::create();
 
-        let mut fut = OnSignals::new(rx, zx::Signals::CHANNEL_READABLE);
+        let mut fut = pin!(OnSignals::new(rx, zx::Signals::CHANNEL_READABLE));
 
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
 

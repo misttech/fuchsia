@@ -366,19 +366,23 @@ impl PressureMonitorThread {
         zircon_stall_event: zx::Event,
         rate_limiting_window: zx::MonotonicDuration,
     ) {
-        let mut should_stop = OnSignals::new(
-            self.should_stop.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            zx::Signals::EVENT_SIGNALED,
-        )
-        .fuse();
+        let mut should_stop = pin!(
+            OnSignals::new(
+                self.should_stop.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                zx::Signals::EVENT_SIGNALED,
+            )
+            .fuse()
+        );
 
         loop {
             // Wait for the Zircon event to be signaled.
-            let mut zircon_stall_event = OnSignals::new(
-                zircon_stall_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-                zx::Signals::EVENT_SIGNALED,
-            )
-            .fuse();
+            let mut zircon_stall_event = pin!(
+                OnSignals::new(
+                    zircon_stall_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                    zx::Signals::EVENT_SIGNALED,
+                )
+                .fuse()
+            );
             select! {
                 _ = zircon_stall_event => (),
                 _ = should_stop => return,

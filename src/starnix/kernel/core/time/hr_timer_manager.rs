@@ -24,6 +24,7 @@ use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
 use std::collections::{HashMap, VecDeque};
+use std::pin::pin;
 use std::sync::{Arc, OnceLock, Weak};
 use zx::{HandleBased, HandleRef};
 
@@ -402,8 +403,9 @@ async fn run_utc_timeline_monitor_internal(
     loop {
         let utc_handle = utc_handle_fn();
         // CLOCK_UPDATED is auto-cleared.
-        let mut updated_fut =
-            fasync::OnSignals::new(utc_handle.as_handle_ref(), zx::Signals::CLOCK_UPDATED).fuse();
+        let mut updated_fut = pin!(
+            fasync::OnSignals::new(utc_handle.as_handle_ref(), zx::Signals::CLOCK_UPDATED).fuse()
+        );
         let mut interest_fut = recv.next();
 
         // Note: all select! branches must allow for exit when their respective futures are

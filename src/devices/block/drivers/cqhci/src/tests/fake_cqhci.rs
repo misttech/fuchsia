@@ -32,7 +32,7 @@ use sdmmc_spec::{
     EXT_CSD_PARTITION_ACCESS_MASK, EXT_CSD_PARTITION_CONFIG, MMC_BLOCK_SIZE, MmcCommand,
     SDHCI_IS_OFFSET, SdhciInterruptStatusRegister, TransferAct, TransferBytes,
 };
-use std::pin::Pin;
+use std::pin::{Pin, pin};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
@@ -304,13 +304,12 @@ impl CommandQueueHost for TestCommandQueueHost {
                 let port = zx::Port::create_with_opts(zx::PortOptions::BIND_TO_INTERRUPT);
                 let mut exec = fasync::LocalExecutorBuilder::new().port(port).build();
                 exec.run_singlethreaded(async move {
-                    let _lifeline = virtual_irq_lifeline;
-                    let mut virtual_irq_stream = Box::pin(fasync::OnInterrupt::new(
+                    let lifeline = virtual_irq_lifeline;
+                    let mut virtual_irq_stream = pin!(fasync::OnInterrupt::new(
                         virtual_interrupt.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
                     ));
-                    let mut lifeline_waiter =
-                        fasync::OnSignals::new(&_lifeline, zx::Signals::EVENTPAIR_PEER_CLOSED)
-                            .fuse();
+                    let mut lifeline_waiter = pin!(
+                        fasync::OnSignals::new(&lifeline, zx::Signals::EVENTPAIR_PEER_CLOSED).fuse());
 
                     loop {
                         futures::select! {

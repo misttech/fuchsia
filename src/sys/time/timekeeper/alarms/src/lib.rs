@@ -34,8 +34,15 @@ use async_trait::async_trait;
 use fidl::HandleBased;
 use fidl::encoding::ProxyChannelBox;
 use fidl::endpoints::RequestStream;
+use fidl_fuchsia_driver_token as fdt;
+use fidl_fuchsia_hardware_hrtimer as ffhh;
+use fidl_fuchsia_time_alarms as fta;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
+use fuchsia_inspect as finspect;
 use fuchsia_inspect::{IntProperty, NumericProperty, Property};
+use fuchsia_runtime as fxr;
+use fuchsia_trace as trace;
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
 use futures::{StreamExt, TryStreamExt};
@@ -46,11 +53,6 @@ use std::rc::Rc;
 use std::sync::LazyLock;
 use time_pretty::{MSEC_IN_NANOS, format_duration, format_timer};
 use zx::AsHandleRef;
-use {
-    fidl_fuchsia_driver_token as fdt, fidl_fuchsia_hardware_hrtimer as ffhh,
-    fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_inspect as finspect,
-    fuchsia_runtime as fxr, fuchsia_trace as trace,
-};
 
 static DEBUG_STACK_TRACE_TOKEN: std::sync::OnceLock<zx::Event> = std::sync::OnceLock::new();
 static I64_MAX_AS_U64: LazyLock<u64> = LazyLock::new(|| i64::MAX.try_into().expect("infallible"));
@@ -1821,6 +1823,7 @@ mod tests {
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_async::TestExecutor;
     use futures::select;
+    use std::pin::pin;
     use test_case::test_case;
     use test_util::{assert_gt, assert_lt};
 
@@ -2254,7 +2257,8 @@ mod tests {
 
         assert_matches!(TestExecutor::poll_until_stalled(&mut set_task).await, Poll::Pending);
 
-        let mut setup_done_task = fasync::OnSignals::new(setup_done, zx::Signals::EVENT_SIGNALED);
+        let mut setup_done_task =
+            pin!(fasync::OnSignals::new(setup_done, zx::Signals::EVENT_SIGNALED));
         assert_matches!(
             TestExecutor::poll_until_stalled(&mut setup_done_task).await,
             Poll::Ready(Ok(_)),
@@ -2287,7 +2291,7 @@ mod tests {
             Ok(Ok(()))
         );
 
-        let mut done_task = fasync::OnSignals::new(setup_done, zx::Signals::EVENT_SIGNALED);
+        let mut done_task = pin!(fasync::OnSignals::new(setup_done, zx::Signals::EVENT_SIGNALED));
         assert_matches!(
             TestExecutor::poll_until_stalled(&mut done_task).await,
             Poll::Ready(Ok(_)),

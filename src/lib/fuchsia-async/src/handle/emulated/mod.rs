@@ -15,7 +15,7 @@ use futures::ready;
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::future::{Future, poll_fn};
-use std::marker::PhantomData;
+use std::marker::{PhantomData, PhantomPinned};
 use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -1344,9 +1344,9 @@ pub mod on_signals {
         koid: u64,
         signals: Signals,
         _lifetime: PhantomData<&'a ()>,
+        /// `OnSignalsRef` doesn't implement Unpin to match `OnSignals` on fuchsia.
+        _pin: PhantomPinned,
     }
-
-    impl Unpin for OnSignalsRef<'_> {}
 
     impl<'a> OnSignalsRef<'a> {
         /// Construct a new OnSignalsRef
@@ -1358,6 +1358,7 @@ pub mod on_signals {
                 koid: hdl.as_hdl_data().koids(side).0,
                 signals,
                 _lifetime: PhantomData,
+                _pin: PhantomPinned,
             })
         }
     }
@@ -2216,6 +2217,7 @@ mod test {
     use super::*;
     use futures::FutureExt;
     use std::mem::ManuallyDrop;
+    use std::pin::pin;
 
     /// Returns a "handle" which mimics a closed handle.
     ///
@@ -2644,54 +2646,54 @@ mod test {
     #[test]
     fn await_user_signal() {
         let (c1, _) = EventPair::create();
-        let mut on_sig = on_signals::OnSignalsRef::new(&c1, Signals::USER_0);
+        let mut on_sig = pin!(on_signals::OnSignalsRef::new(&c1, Signals::USER_0));
         let (waker, count) = futures_test::task::new_count_waker();
         let mut ctx = Context::from_waker(&waker);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
+        assert_eq!(on_sig.as_mut().poll(&mut ctx), Poll::Pending);
         assert_eq!(count, 0);
         c1.signal(Signals::empty(), Signals::USER_1).unwrap();
         assert_eq!(count, 0);
         c1.signal(Signals::empty(), Signals::USER_0).unwrap();
         assert_eq!(count, 1);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
         c1.signal(Signals::USER_0, Signals::empty()).unwrap();
-        let mut on_sig = on_signals::OnSignalsRef::new(&c1, Signals::USER_0);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
+        let mut on_sig = pin!(on_signals::OnSignalsRef::new(&c1, Signals::USER_0));
+        assert_eq!(on_sig.as_mut().poll(&mut ctx), Poll::Pending);
         assert_eq!(count, 1);
         c1.signal(Signals::empty(), Signals::USER_0).unwrap();
         assert_eq!(count, 2);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
     }
 
     #[test]
     fn await_user_signal_peer() {
         let (c1, c2) = EventPair::create();
-        let mut on_sig = on_signals::OnSignalsRef::new(&c1, Signals::USER_0);
+        let mut on_sig = pin!(on_signals::OnSignalsRef::new(&c1, Signals::USER_0));
         let (waker, count) = futures_test::task::new_count_waker();
         let mut ctx = Context::from_waker(&waker);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
+        assert_eq!(on_sig.as_mut().poll(&mut ctx), Poll::Pending);
         assert_eq!(count, 0);
         c2.signal_peer(Signals::empty(), Signals::USER_1).unwrap();
         assert_eq!(count, 0);
         c2.signal_peer(Signals::empty(), Signals::USER_0).unwrap();
         assert_eq!(count, 1);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
         c2.signal_peer(Signals::USER_0, Signals::empty()).unwrap();
-        let mut on_sig = on_signals::OnSignalsRef::new(&c1, Signals::USER_0);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
+        let mut on_sig = pin!(on_signals::OnSignalsRef::new(&c1, Signals::USER_0));
+        assert_eq!(on_sig.as_mut().poll(&mut ctx), Poll::Pending);
         assert_eq!(count, 1);
         c2.signal_peer(Signals::empty(), Signals::USER_0).unwrap();
         assert_eq!(count, 2);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
     }
 
     #[test]
     fn await_close_signal() {
         let (c1, c2) = EventPair::create();
-        let mut on_sig = on_signals::OnSignalsRef::new(&c1, Signals::OBJECT_PEER_CLOSED);
+        let mut on_sig = pin!(on_signals::OnSignalsRef::new(&c1, Signals::OBJECT_PEER_CLOSED));
         let (waker, count) = futures_test::task::new_count_waker();
         let mut ctx = Context::from_waker(&waker);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
+        assert_eq!(on_sig.as_mut().poll(&mut ctx), Poll::Pending);
         assert_eq!(count, 0);
         c1.signal(Signals::empty(), Signals::USER_1).unwrap();
         assert_eq!(count, 0);
@@ -2699,7 +2701,7 @@ mod test {
         assert_eq!(count, 0);
         std::mem::drop(c2);
         assert_eq!(count, 1);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_PEER_CLOSED)));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_PEER_CLOSED)));
     }
 
     #[test]
@@ -2741,31 +2743,31 @@ mod test {
         let waker = std::task::Waker::noop().clone();
         let mut ctx = Context::from_waker(&waker);
         let (s1, s2) = Socket::create_stream();
-        let mut on_sig = on_signals::OnSignalsRef::new(&s1, Signals::OBJECT_WRITABLE);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
-        let mut on_sig = on_signals::OnSignalsRef::new(&s2, Signals::OBJECT_WRITABLE);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
+        let on_sig = pin!(on_signals::OnSignalsRef::new(&s1, Signals::OBJECT_WRITABLE));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
+        let on_sig = pin!(on_signals::OnSignalsRef::new(&s2, Signals::OBJECT_WRITABLE));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
 
         let (s1, s2) = Socket::create_datagram();
-        let mut on_sig = on_signals::OnSignalsRef::new(&s1, Signals::OBJECT_WRITABLE);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
-        let mut on_sig = on_signals::OnSignalsRef::new(&s2, Signals::OBJECT_WRITABLE);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
+        let on_sig = pin!(on_signals::OnSignalsRef::new(&s1, Signals::OBJECT_WRITABLE));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
+        let on_sig = pin!(on_signals::OnSignalsRef::new(&s2, Signals::OBJECT_WRITABLE));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
 
         let (c1, c2) = Channel::create();
-        let mut on_sig = on_signals::OnSignalsRef::new(&c1, Signals::OBJECT_WRITABLE);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
-        let mut on_sig = on_signals::OnSignalsRef::new(&c2, Signals::OBJECT_WRITABLE);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
+        let on_sig = pin!(on_signals::OnSignalsRef::new(&c1, Signals::OBJECT_WRITABLE));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
+        let on_sig = pin!(on_signals::OnSignalsRef::new(&c2, Signals::OBJECT_WRITABLE));
+        assert_eq!(on_sig.poll(&mut ctx), Poll::Ready(Ok(Signals::OBJECT_WRITABLE)));
     }
 
     #[test]
     fn read_signal() {
         let (c1, c2) = Channel::create();
-        let mut on_sig = on_signals::OnSignalsRef::new(&c1, Signals::OBJECT_READABLE);
+        let mut on_sig = pin!(on_signals::OnSignalsRef::new(&c1, Signals::OBJECT_READABLE));
         let (waker, count) = futures_test::task::new_count_waker();
         let mut ctx = Context::from_waker(&waker);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
+        assert_eq!(on_sig.as_mut().poll(&mut ctx), Poll::Pending);
         assert_eq!(count, 0);
         assert_eq!(c2.write(b"abc", &mut []), Ok(()));
         assert_eq!(count, 1);
@@ -2792,10 +2794,10 @@ mod test {
     #[test]
     fn event_user_signal() {
         let e = Event::create();
-        let mut on_sig = on_signals::OnSignalsRef::new(&e, Signals::USER_0);
+        let mut on_sig = pin!(on_signals::OnSignalsRef::new(&e, Signals::USER_0));
         let (waker, count) = futures_test::task::new_count_waker();
         let mut ctx = Context::from_waker(&waker);
-        assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
+        assert_eq!(on_sig.as_mut().poll(&mut ctx), Poll::Pending);
         assert_eq!(count, 0);
         assert_eq!(e.signal(Signals::empty(), Signals::USER_0), Ok(()));
         assert_eq!(count, 1);

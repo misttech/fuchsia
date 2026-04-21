@@ -21,6 +21,7 @@ use futures::select;
 use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as DEFAULT_INSPECT_VMO;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::pin::pin;
 use std::rc::Rc;
 use zx::{Duration, HandleBased, Peered};
 
@@ -672,12 +673,13 @@ impl ElementRunnerHandler {
         let initial_lease_token = self.initial_lease_token.take();
         log::debug!("{debug_info} starting.");
         Task::local(async move {
-            let mut initial_lease_fut = match &initial_lease_token {
+            let initial_lease_fut = match &initial_lease_token {
                 Some(token) => futures::future::Either::Left(
-                    fuchsia_async::OnSignals::new(token, zx::Signals::EVENTPAIR_PEER_CLOSED)
+                    fuchsia_async::OnSignals::new(token, zx::Signals::EVENTPAIR_PEER_CLOSED).fuse()
                 ),
                 None => futures::future::Either::Right(futures::future::pending()),
-            }.fuse();
+            };
+            let mut initial_lease_fut = pin!(initial_lease_fut);
 
             // Listen for updates from the broker on the Element's required level, and issue
             // corresponding SetLevel calls to the ElementRunner. Continues until shutdown is

@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_starnix_runner as fstarnix;
+use fuchsia_async as fasync;
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
 use futures::task::Poll;
+use std::pin::pin;
 use zx::{HandleBased, Peered};
-use {fidl_fuchsia_starnix_runner as fstarnix, fuchsia_async as fasync};
 
 const AWAKE_SIGNAL: zx::Signals = zx::Signals::USER_0;
 const ASLEEP_SIGNAL: zx::Signals = zx::Signals::USER_1;
@@ -40,7 +42,7 @@ async fn test_register_wake_watcher() {
     // Get initial AWAKE SIGNAL.
     fasync::OnSignals::new(&wake_watcher, AWAKE_SIGNAL).await.expect("awake");
 
-    let mut signal_fut = fasync::OnSignals::new(&wake_watcher, ASLEEP_SIGNAL);
+    let mut signal_fut = pin!(fasync::OnSignals::new(&wake_watcher, ASLEEP_SIGNAL));
     assert_eq!(Poll::Pending, futures::poll!(&mut signal_fut));
 
     let suspend_fut = manager.suspend_container(fstarnix::ManagerSuspendContainerRequest {

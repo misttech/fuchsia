@@ -12,6 +12,7 @@ use replace_with::replace_with;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroU32;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::task::{Context, Poll, Waker};
@@ -332,7 +333,7 @@ type OnSignals = fasync::OnSignalsRef<'static>;
 /// `OnSignals` polls to completion we can reply to the transaction.
 struct SignalWaiter {
     tid: NonZeroU32,
-    waiter: OnSignals,
+    waiter: Pin<Box<OnSignals>>,
 }
 
 /// Information about a single handle within the [`FDomain`].
@@ -367,7 +368,7 @@ struct HandleState {
     signal_waiters: Vec<SignalWaiter>,
     /// Contains a waiter on this handle for IO reading and writing. Populated
     /// whenever we need to block on IO to service a request.
-    io_waiter: Option<OnSignals>,
+    io_waiter: Option<Pin<Box<OnSignals>>>,
 }
 
 impl HandleState {
@@ -454,10 +455,10 @@ impl HandleState {
                 } | if !self.write_queue.is_empty() { write_signals } else { fidl::Signals::NONE };
 
             if !subscribed_signals.is_empty() {
-                self.io_waiter = Some(OnSignals::new(
+                self.io_waiter = Some(Box::pin(OnSignals::new(
                     AnyHandleRef(Arc::clone(&self.handle)),
                     subscribed_signals,
-                ));
+                )));
             } else {
                 self.io_waiter = None;
                 break;
@@ -1165,7 +1166,7 @@ impl FDomain {
             let signals = fidl::Signals::from_bits_retain(request.signals);
             h.signal_waiters.push(SignalWaiter {
                 tid,
-                waiter: OnSignals::new(AnyHandleRef(Arc::clone(&h.handle)), signals),
+                waiter: Box::pin(OnSignals::new(AnyHandleRef(Arc::clone(&h.handle)), signals)),
             });
             Ok(())
         });

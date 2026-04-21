@@ -537,7 +537,7 @@ fn with_data<R>(f: impl Fn(&mut UntilStalledData) -> R) -> R {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::handle::on_signals::OnSignalsFuture;
+    use crate::handle::on_signals::OnSignals;
     use crate::{Interval, Timer, WakeupTime};
     use assert_matches::assert_matches;
     use futures::StreamExt;
@@ -605,7 +605,7 @@ mod tests {
     fn stepwise_event() {
         let mut executor = TestExecutorBuilder::new().fake_time(true).build();
         let event = zx::Event::create();
-        let mut fut = pin!(OnSignalsFuture::new(&event, zx::Signals::USER_0));
+        let mut fut = pin!(OnSignals::new(&event, zx::Signals::USER_0));
 
         let _ = executor.run_until_stalled(&mut fut);
 

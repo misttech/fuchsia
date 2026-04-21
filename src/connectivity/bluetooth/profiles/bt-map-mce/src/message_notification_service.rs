@@ -25,6 +25,7 @@ use log::{info, warn};
 use objects::Parser;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::pin::pin;
 use uuid::{Uuid, uuid};
 
 use crate::profile::transport_type_from_protocol;
@@ -177,7 +178,7 @@ impl Session {
         // Session should process the obex server task as well as notifications that we receive from the peer.
         let session_task = fasync::Task::spawn(async move {
             let mut obex_server_fut = obex_server_task.fuse();
-            let mut fidl_closed_fut = relayer_proxy.on_closed().fuse();
+            let mut fidl_closed_fut = pin!(relayer_proxy.on_closed().fuse());
             info!("MNS session task started");
             loop {
                 futures::select! {

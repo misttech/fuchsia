@@ -19,6 +19,7 @@ use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use fidl_fuchsia_process_lifecycle as fprocess_lifecycle;
 use fuchsia_async as fasync;
 use futures::{FutureExt as _, StreamExt as _};
+use std::pin::pin;
 use vfs::directory::helper::DirectlyMutable;
 
 #[fasync::run_singlethreaded]
@@ -158,9 +159,10 @@ pub async fn main() -> std::process::ExitCode {
         })
     });
 
-    let mut wait_signals =
+    let mut wait_signals = pin!(
         fasync::OnSignals::new(&netstack_process, zx::Signals::PROCESS_TERMINATED)
-            .map(|s| s.expect("failed to observe process termination signals"));
+            .map(|s| s.expect("failed to observe process termination signals"))
+    );
     let request = futures::select! {
         signals = wait_signals => {
             println!("netstack exited unexpectedly with {signals:?}");

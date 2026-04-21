@@ -45,7 +45,7 @@ pub mod net;
 pub use self::handle::{
     fifo::{Fifo, FifoEntry},
     on_interrupt::OnInterrupt,
-    on_signals::{OnSignals, OnSignalsFuture},
+    on_signals::OnSignals,
     rwhandle::{
         DefaultRWHandleSpec, RWHandle, RWHandleSpec, ReadableHandle, ReadableState, WritableHandle,
         WritableState,

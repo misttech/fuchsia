@@ -10,22 +10,18 @@ use std::task::{Context, Poll};
 
 use detect_stall::StallableRequestStream;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::channel::oneshot::{self, Canceled};
-use futures::future::FusedFuture;
-use futures::{FutureExt, Stream, StreamExt};
+use futures::{FutureExt, Stream};
 use pin_project::pin_project;
 use vfs::ToObjectRequest;
 use vfs::directory::immutable::Simple;
 use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::execution_scope::{ActiveGuard, ExecutionScope};
 use zx::MonotonicDuration;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 use super::{ServiceFs, ServiceObjTrait};
-
-/// The future type that resolves when an outgoing directory connection has stalled
-/// for a timeout or completed.
-type StalledFut = Pin<Box<dyn FusedFuture<Output = Option<zx::Channel>>>>;
 
 /// A wrapper around the base [`ServiceFs`] that streams out capability connection requests.
 /// Additionally, it will yield [`Item::Stalled`] if there is no work happening in the fs
@@ -37,6 +33,7 @@ pub struct StallableServiceFs<ServiceObjTy: ServiceObjTrait> {
     #[pin]
     fs: ServiceFs<ServiceObjTy>,
     connector: OutgoingConnector,
+    #[pin]
     state: State,
     debounce_interval: zx::MonotonicDuration,
     is_terminated: bool,
@@ -66,11 +63,17 @@ pub enum Item<Output> {
 ///   complete the stream and return the endpoint to the user. Note that the service fs might take
 ///   a while to finish even after the outgoing directory has been unbound, due to
 ///   [`ActiveGuard`]s held by the user or due to other long-running connections.
+#[pin_project(project = StateProj)]
 enum State {
-    Running { stalled: StalledFut },
+    Running {
+        stalled: StalledFut,
+    },
     // If the `channel` is `None`, the outgoing directory stream completed without stalling.
     // We just need to wait for the `ServiceFs` to finish.
-    Stalled { channel: Option<fasync::OnSignals<'static, zx::Channel>> },
+    Stalled {
+        #[pin]
+        channel: Option<fasync::OnSignals<'static, zx::Channel>>,
+    },
 }
 
 impl<ServiceObjTy: ServiceObjTrait> Stream for StallableServiceFs<ServiceObjTy> {
@@ -86,7 +89,7 @@ impl<ServiceObjTy: ServiceObjTrait> Stream for StallableServiceFs<ServiceObjTy> 
         //
         // NOTE: Normally, it isn't safe to poll a stream after it returns None, but ServiceFs
         // supports this.
-        let poll_fs = this.fs.poll_next_unpin(cx);
+        let poll_fs = this.fs.poll_next(cx);
         if let Poll::Ready(Some(request)) = poll_fs {
             // If there is some connection request, always return that to the user first.
             return match this.connector.scope.try_active_guard() {
@@ -98,15 +101,15 @@ impl<ServiceObjTy: ServiceObjTrait> Stream for StallableServiceFs<ServiceObjTy> 
         // If we get here, the underlying service fs is either finished, or pending.
         // Poll in a loop until the state no longer changes.
         loop {
-            match &mut this.state {
-                State::Running { stalled } => {
-                    let channel = std::task::ready!(stalled.as_mut().poll(cx));
+            match this.state.as_mut().project() {
+                StateProj::Running { stalled } => {
+                    let channel = std::task::ready!(stalled.poll_unpin(cx));
                     let channel = channel
                         .map(|c| fasync::OnSignals::new(c.into(), zx::Signals::CHANNEL_READABLE));
                     // The state will be polled on the next loop iteration.
-                    *this.state = State::Stalled { channel };
+                    this.state.set(State::Stalled { channel });
                 }
-                State::Stalled { channel } => {
+                StateProj::Stalled { channel } => {
                     if let Poll::Ready(None) = poll_fs {
                         // The service fs finished. Return the channel if we have it.
                         *this.is_terminated = true;
@@ -118,7 +121,10 @@ impl<ServiceObjTy: ServiceObjTrait> Stream for StallableServiceFs<ServiceObjTy> 
                         this.connector.scope.shutdown();
 
                         return Poll::Ready(
-                            channel.take().map(|wait| Item::Stalled(wait.take_handle().into())),
+                            channel
+                                .as_pin_mut()
+                                .take()
+                                .map(|wait| Item::Stalled(wait.take_handle().into())),
                         );
                     }
                     if channel.is_none() {
@@ -128,14 +134,13 @@ impl<ServiceObjTy: ServiceObjTrait> Stream for StallableServiceFs<ServiceObjTy> 
                         return Poll::Pending;
                     }
                     // Otherwise, arrange to be polled again if the channel is readable.
-                    let readable = channel.as_mut().unwrap().poll_unpin(cx);
-                    let _ = std::task::ready!(readable);
+                    let mut on_signals = channel.as_pin_mut().unwrap();
+                    let _ = std::task::ready!(on_signals.as_mut().poll(cx));
                     // Server endpoint is readable again. Restore the connection.
-                    let wait = channel.take().unwrap();
-                    let stalled =
-                        this.connector.serve(wait.take_handle().into(), *this.debounce_interval);
+                    let handle = on_signals.take_handle().into();
+                    let stalled = this.connector.serve(handle, *this.debounce_interval);
                     // The state will be polled on the next loop iteration.
-                    *this.state = State::Running { stalled };
+                    this.state.set(State::Running { stalled });
                 }
             }
         }
@@ -184,14 +189,22 @@ impl OutgoingConnector {
             )
             .await
         }));
-        Box::pin(
-            unbound_receiver
-                .map(|result| match result {
-                    Ok(maybe_channel) => maybe_channel,
-                    Err(Canceled) => None,
-                })
-                .fuse(),
-        )
+        StalledFut(unbound_receiver)
+    }
+}
+
+/// Wrapper around oneshot channel that maps the sender end being dropped into a `None`.
+struct StalledFut(oneshot::Receiver<Option<zx::Channel>>);
+
+impl Future for StalledFut {
+    type Output = Option<zx::Channel>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.0.poll_unpin(cx) {
+            Poll::Ready(Ok(maybe_channel)) => Poll::Ready(maybe_channel),
+            Poll::Ready(Err(Canceled)) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -242,8 +255,8 @@ mod tests {
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_component_directory::open_directory_async;
     use fuchsia_sync::Mutex;
-    use futures::future::BoxFuture;
-    use futures::{TryStreamExt, pin_mut, select};
+    use futures::future::{BoxFuture, FusedFuture};
+    use futures::{StreamExt, TryStreamExt, pin_mut, select};
     use std::sync::atomic::{AtomicBool, Ordering};
     use test_util::Counter;
     use zx::AsHandleRef;
@@ -592,5 +605,25 @@ mod tests {
         assert_eq!(loop_count, 25);
         assert_eq!(mock_server.call_count.get(), NUM_REQUESTS);
         assert!(mock_server.stalled.load(Ordering::SeqCst));
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn canceled_stalled_fut() {
+        // Verify that `StallableServiceFs` correctly handles cancellation of the underlying oneshot
+        // channel. The oneshot channel sender is owned by the VFS directory connection task. When
+        // we shut down the execution scope, the task is aborted and the sender is dropped,
+        // resulting in an `Err(Canceled)` on the receiver end (`StalledFut`).
+        //
+        // Since the directory connection was aborted without stalling, the connection handle is
+        // lost. `StallableServiceFs` should successfully observe this cancellation and yield `None`
+        // to terminate the stream, rather than hanging indefinitely.
+        let (_client_end, server_end) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+        let mut fs: ServiceFs<crate::ServiceObj<'_, ()>> = ServiceFs::new();
+        fs.serve_connection(server_end).unwrap();
+        let fs = fs.until_stalled(MonotonicDuration::from_nanos(1_000_000));
+
+        fs.connector.scope.shutdown();
+        let mut fs = std::pin::pin!(fs);
+        assert!(fs.next().await.is_none());
     }
 }

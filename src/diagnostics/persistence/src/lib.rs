@@ -447,7 +447,7 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
     );
 
     let mut outgoing_dir_task =
-        fs.until_stalled(BUILD_CONFIG.stall_interval).for_each_concurrent(None, move |item| {
+        pin!(fs.until_stalled(BUILD_CONFIG.stall_interval).for_each_concurrent(None, move |item| {
             let lifecycle_control_handle = lifecycle_control_handle.clone();
             let state = state.clone();
             let store = store.clone();
@@ -489,7 +489,7 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
                     }
                 }
             }
-        });
+        }));
 
     select! {
         _ = lifecycle_task => {

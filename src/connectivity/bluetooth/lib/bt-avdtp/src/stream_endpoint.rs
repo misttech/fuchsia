@@ -894,7 +894,7 @@ mod tests {
             .expect("signaling write")
             .expect("write successful");
 
-        let _ = exec.run_singlethreaded(&mut remote_transport.closed());
+        let _ = exec.run_singlethreaded(&mut std::pin::pin!(remote_transport.closed()));
 
         // We will then end up in Idle.
         while s.state() != StreamState::Idle {

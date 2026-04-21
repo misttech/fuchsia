@@ -8,13 +8,16 @@
 use crate::guest_config;
 use anyhow::{Error, anyhow};
 use fidl::endpoints::{Proxy, ServerEnd, create_proxy};
+use fidl_fuchsia_hardware_network;
 use fidl_fuchsia_net::MacAddress;
+use fidl_fuchsia_net_interfaces as ninterfaces;
 use fidl_fuchsia_virtualization::{
     GuestConfig, GuestDescriptor, GuestError, GuestInfo, GuestLifecycleMarker, GuestLifecycleProxy,
     GuestManagerConnectResponder, GuestManagerError, GuestManagerForceShutdownResponder,
     GuestManagerGetInfoResponder, GuestManagerLaunchResponder, GuestManagerRequest,
     GuestManagerRequestStream, GuestMarker, GuestStatus, NetSpec,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_channel_to_protocol, connect_to_protocol};
 use futures::stream::{FuturesUnordered, SelectAll, try_unfold};
 use futures::{FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt, future, select_biased};
@@ -22,10 +25,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::{fmt, fs};
-use {
-    fidl_fuchsia_hardware_network, fidl_fuchsia_net_interfaces as ninterfaces,
-    fuchsia_async as fasync,
-};
 
 // This is a locally administered MAC address (first byte 0x02) mixed with the
 // Google Organizationally Unique Identifier (00:1a:11). The host gets ff:ff:ff
@@ -167,7 +166,7 @@ impl GuestManager {
         mut lifecycle: GuestLifecycleProxy,
         request_streams: St,
     ) -> Result<(), Error> {
-        let mut on_closed = lifecycle.on_closed().fuse();
+        let mut on_closed = Box::pin(lifecycle.on_closed().fuse());
 
         let mut request_streams = request_streams.fuse();
         let mut connections = SelectAll::new();
@@ -189,7 +188,7 @@ impl GuestManager {
                     // lifecycle channel.
                     drop(on_closed);
                     lifecycle = connect_to_protocol::<GuestLifecycleMarker>()?;
-                    on_closed = lifecycle.on_closed().fuse();
+                    on_closed = Box::pin(lifecycle.on_closed().fuse());
 
                     // Any pending run future is now invalid.
                     run_futures.clear();

@@ -7,6 +7,7 @@ use fidl::{HandleRef, Signals};
 use fidl_fuchsia_overnet_protocol::{SignalUpdate, Signals as WireSignals};
 use fuchsia_async::OnSignalsRef;
 use futures::FutureExt;
+use std::pin::Pin;
 use std::task::{Context, Poll};
 use zx_status;
 
@@ -23,7 +24,7 @@ const POLLED_SIGNALS: Signals = Signals::from_bits_truncate(
 
 #[derive(Default)]
 pub(crate) struct Collector<'a> {
-    on_signals: Option<OnSignalsRef<'a>>,
+    on_signals: Option<Pin<Box<OnSignalsRef<'a>>>>,
     shutdown: bool,
 }
 
@@ -52,7 +53,7 @@ impl<'h> Collector<'h> {
                 let mut on_signals = self
                     .on_signals
                     .take()
-                    .unwrap_or_else(|| OnSignalsRef::new(hdl.clone(), signals));
+                    .unwrap_or_else(|| Box::pin(OnSignalsRef::new(hdl.clone(), signals)));
                 match on_signals.poll_unpin(ctx) {
                     Poll::Ready(Ok(mut signals)) => {
                         self.shutdown =

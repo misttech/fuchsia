@@ -41,12 +41,13 @@ impl Default for DropNotifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::pin::pin;
 
     #[fuchsia::test]
     async fn check_notifier() {
         let notifier = DropNotifier::default();
         let waiter = notifier.waiter();
-        let mut on_closed = waiter.on_closed();
+        let mut on_closed = pin!(waiter.on_closed());
         assert!(futures::poll!(&mut on_closed).is_pending());
         assert!(!waiter.is_closed());
         std::mem::drop(notifier);

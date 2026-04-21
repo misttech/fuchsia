@@ -10,6 +10,7 @@ use futures::FutureExt;
 use log::warn;
 use std::cell::RefCell;
 use std::mem::MaybeUninit;
+use std::pin::pin;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -87,16 +88,20 @@ async fn start_proxy(
 
     'outer: loop {
         // Wait on messages from both the container and remote channel endpoints.
-        let mut container_wait = fasync::OnSignals::new(
-            proxy.container_channel.as_handle_ref(),
-            zx::Signals::CHANNEL_READABLE | zx::Signals::CHANNEL_PEER_CLOSED,
-        )
-        .fuse();
-        let mut remote_wait = fasync::OnSignals::new(
-            proxy.remote_channel.as_handle_ref(),
-            zx::Signals::CHANNEL_READABLE | zx::Signals::CHANNEL_PEER_CLOSED,
-        )
-        .fuse();
+        let mut container_wait = pin!(
+            fasync::OnSignals::new(
+                proxy.container_channel.as_handle_ref(),
+                zx::Signals::CHANNEL_READABLE | zx::Signals::CHANNEL_PEER_CLOSED,
+            )
+            .fuse()
+        );
+        let mut remote_wait = pin!(
+            fasync::OnSignals::new(
+                proxy.remote_channel.as_handle_ref(),
+                zx::Signals::CHANNEL_READABLE | zx::Signals::CHANNEL_PEER_CLOSED,
+            )
+            .fuse()
+        );
 
         let (signals, finished_wait) = {
             trace_duration("starnix_runner:start_proxy:wait_for_messages", proxy_name);
