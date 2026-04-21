@@ -144,6 +144,10 @@ uint8_t* TestSession::buffer(uint64_t offset) {
   return reinterpret_cast<uint8_t*>(data_.start()) + offset;
 }
 
+zx_status_t TestSession::WaitRxAvailable(zx::time deadline) const {
+  return fifos_.rx.wait_one(ZX_FIFO_READABLE, deadline, nullptr);
+}
+
 zx_status_t TestSession::FetchRx(uint16_t* descriptors, size_t count, size_t* actual) const {
   return fifos_.rx.read(sizeof(uint16_t), descriptors, count, actual);
 }

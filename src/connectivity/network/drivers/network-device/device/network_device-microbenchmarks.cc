@@ -289,7 +289,7 @@ bool LatencyTest(perftest::RepeatState* state, const uint16_t buffer_count) {
   Session session;
   fidl::WireSyncClient client{std::move(device_endpoints.client)};
   zx_status_t status =
-      session.Open(client, "session", network::netdev::wire::SessionFlags::kPrimary, buffer_count);
+      session.Open(client, "session", network::netdev::wire::SessionFlags(), buffer_count);
   ZX_ASSERT_OK(status, "failed to open session");
   status = session.AttachPort(port_id, {network::netdev::wire::FrameType::kEthernet});
   ZX_ASSERT_OK(status, "failed to attach port");

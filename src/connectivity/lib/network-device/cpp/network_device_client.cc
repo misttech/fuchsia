@@ -151,7 +151,6 @@ SessionConfig NetworkDeviceClient::DefaultSessionConfig(const DeviceInfo& dev_in
       .tx_tail_length = dev_info.min_tx_buffer_tail,
       .rx_descriptor_count = dev_info.rx_depth,
       .tx_descriptor_count = dev_info.tx_depth,
-      .options = netdev::wire::SessionFlags::kPrimary,
   };
 }
 

@@ -46,7 +46,6 @@ func TestMakeSessionConfig(t *testing.T) {
 				TxTailLength:      baseInfo.MinTxBufferTail,
 				RxDescriptorCount: baseInfo.TxDepth,
 				TxDescriptorCount: baseInfo.RxDepth,
-				Options:           network.SessionFlagsPrimary,
 			},
 		},
 		{
@@ -62,7 +61,6 @@ func TestMakeSessionConfig(t *testing.T) {
 				TxTailLength:      baseInfo.MinTxBufferTail,
 				RxDescriptorCount: baseInfo.TxDepth,
 				TxDescriptorCount: baseInfo.RxDepth,
-				Options:           network.SessionFlagsPrimary,
 			},
 		},
 		{
@@ -78,7 +76,6 @@ func TestMakeSessionConfig(t *testing.T) {
 				TxTailLength:      baseInfo.MinTxBufferTail,
 				RxDescriptorCount: baseInfo.TxDepth,
 				TxDescriptorCount: baseInfo.RxDepth,
-				Options:           network.SessionFlagsPrimary,
 			},
 		},
 		{
@@ -95,7 +92,6 @@ func TestMakeSessionConfig(t *testing.T) {
 				TxTailLength:      baseInfo.MinTxBufferTail,
 				RxDescriptorCount: baseInfo.TxDepth,
 				TxDescriptorCount: baseInfo.RxDepth,
-				Options:           network.SessionFlagsPrimary,
 			},
 		},
 		{
@@ -113,7 +109,6 @@ func TestMakeSessionConfig(t *testing.T) {
 				TxTailLength:      baseInfo.MinTxBufferTail,
 				RxDescriptorCount: baseInfo.TxDepth,
 				TxDescriptorCount: baseInfo.RxDepth,
-				Options:           network.SessionFlagsPrimary,
 			},
 		},
 	}

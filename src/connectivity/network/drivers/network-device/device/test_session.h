@@ -20,7 +20,7 @@ class TestSession {
   TestSession() = default;
 
   zx_status_t Open(fidl::WireSyncClient<netdev::Device>& netdevice, const char* name,
-                   netdev::wire::SessionFlags flags = netdev::wire::SessionFlags::kPrimary,
+                   netdev::wire::SessionFlags flags = netdev::wire::SessionFlags(),
                    uint16_t num_descriptors = kDefaultDescriptorCount,
                    uint64_t buffer_size = kDefaultBufferLength);
 
@@ -39,6 +39,7 @@ class TestSession {
   buffer_descriptor_t& descriptor(uint16_t index);
   uint8_t* buffer(uint64_t offset);
 
+  zx_status_t WaitRxAvailable(zx::time deadline = zx::time::infinite()) const;
   zx_status_t FetchRx(uint16_t* descriptors, size_t count, size_t* actual) const;
   zx_status_t FetchTx(uint16_t* descriptors, size_t count, size_t* actual) const;
   zx_status_t SendRx(const uint16_t* descriptor, size_t count, size_t* actual) const;

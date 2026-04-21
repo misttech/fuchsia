@@ -304,33 +304,32 @@ void DevicePort::GetMac(GetMacRequestView request, GetMacCompleter::Sync& _compl
 
 void DevicePort::SessionAttached() {
   fbl::AutoLock lock(&lock_);
-  NotifySessionCount(++attached_sessions_count_);
+  ZX_ASSERT(!has_session_attached_);
+  has_session_attached_ = true;
+  ApplyPortStatus();
 }
 
 void DevicePort::SessionDetached() {
   fbl::AutoLock lock(&lock_);
-  ZX_ASSERT_MSG(attached_sessions_count_ > 0, "detached the same port twice");
-  NotifySessionCount(--attached_sessions_count_);
+  ZX_ASSERT_MSG(has_session_attached_, "detached the same port twice");
+  has_session_attached_ = false;
+  ApplyPortStatus();
 }
 
-void DevicePort::NotifySessionCount(size_t new_count) {
+void DevicePort::ApplyPortStatus() {
   if (teardown_started_) {
     // Skip all notifications if tearing down.
     return;
   }
-  // Port active changes whenever the new count on session attaching or detaching edges away from
-  // zero.
-  if (new_count <= 1) {
-    // Always post notifications for later on dispatcher so the port implementation can safely call
-    // back into the core device with no risk of deadlocks.
-    async::PostTask(dispatcher_, [this, active = new_count != 0]() {
-      fdf::Arena arena('NETD');
-      fidl::OneWayStatus result = port_.buffer(arena)->SetActive(active);
-      if (!result.ok()) {
-        LOGF_ERROR("SetActive failed with error: %s", result.FormatDescription().c_str());
-      }
-    });
-  }
+  // Always post notifications for later on dispatcher so the port implementation can safely call
+  // back into the core device with no risk of deadlocks.
+  async::PostTask(dispatcher_, [this, active = has_session_attached_]() {
+    fdf::Arena arena('NETD');
+    fidl::OneWayStatus result = port_.buffer(arena)->SetActive(active);
+    if (!result.ok()) {
+      LOGF_ERROR("SetActive failed with error: %s", result.FormatDescription().c_str());
+    }
+  });
 }
 
 bool DevicePort::IsValidRxFrameType(netdev::wire::FrameType frame_type) const {

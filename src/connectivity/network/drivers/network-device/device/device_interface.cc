@@ -216,14 +216,8 @@ zx::result<std::unique_ptr<DeviceInterface>> DeviceInterface::Create(
 }
 
 DeviceInterface::~DeviceInterface() {
-  ZX_ASSERT_MSG(primary_session_ == nullptr,
-                "can't destroy DeviceInterface with active primary session. (%s)",
-                primary_session_->name());
-  ZX_ASSERT_MSG(sessions_.is_empty(), "can't destroy DeviceInterface with %ld pending session(s).",
-                sessions_.size());
-  ZX_ASSERT_MSG(dead_sessions_.is_empty(),
-                "can't destroy DeviceInterface with %ld pending dead session(s).",
-                dead_sessions_.size());
+  ZX_ASSERT_MSG(session_ == nullptr, "can't destroy DeviceInterface with active session. (%s)",
+                session_->name());
   ZX_ASSERT_MSG(bindings_.is_empty(), "can't destroy device interface with %ld attached bindings.",
                 bindings_.size());
   size_t active_ports = std::count_if(ports_.begin(), ports_.end(),
@@ -600,11 +594,16 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
                                   OpenSessionCompleter::Sync& completer) {
   zx::result sync_result = [this, &request]()
       -> zx::result<std::tuple<netdev::wire::DeviceOpenSessionResponse, uint8_t, zx::vmo>> {
+    fbl::AutoLock rx_lock(&rx_lock_);
     fbl::AutoLock tx_lock(&tx_lock_);
     fbl::AutoLock lock(&control_lock_);
     // We're currently tearing down and can't open any new sessions.
     if (teardown_state_ != TeardownState::RUNNING) {
       return zx::error(ZX_ERR_UNAVAILABLE);
+    }
+
+    if (session_) {
+      return zx::error(ZX_ERR_ALREADY_EXISTS);
     }
 
     zx::result endpoints = fidl::CreateEndpoints<netdev::Session>();
@@ -648,16 +647,11 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
     session->InstallTx();
     session->Bind(std::move(endpoints->server));
 
-    if (session->ShouldTakeOverPrimary(primary_session_.get())) {
-      // Set this new session as the primary session.
-      std::swap(primary_session_, session);
-      rx_queue_->TriggerSessionChanged();
-    }
-    if (session) {
-      // Add the new session (or the primary session if it the new session just took over) to
-      // the list of sessions.
-      sessions_.push_back(std::move(session));
-    }
+    session_ = std::move(session);
+    rx_queue_->AssertParentRxLocked(*this);
+    rx_queue_->SetSession(session_.get());
+    rx_queue_->TriggerSessionChanged();
+
     return zx::ok(std::make_tuple(
         netdev::wire::DeviceOpenSessionResponse{
             .session = std::move(endpoints->client),
@@ -758,85 +752,13 @@ uint16_t DeviceInterface::tx_fifo_depth() const {
   return TransformFifoDepth(device_info_.tx_depth().value_or(0));
 }
 
-void DeviceInterface::SessionStarted(Session& session) {
-  bool should_start = false;
-  if (session.IsListen()) {
-    has_listen_sessions_.store(true, std::memory_order_relaxed);
-  }
-  if (session.IsPrimary()) {
-    active_primary_sessions_++;
-    if (session.ShouldTakeOverPrimary(primary_session_.get())) {
-      // Push primary session to sessions list if we have one.
-      if (primary_session_) {
-        sessions_.push_back(std::move(primary_session_));
-      }
-      // Find the session in the list and promote it to primary.
-      primary_session_ = sessions_.erase(session);
-      ZX_ASSERT(primary_session_);
-      // Notify rx queue of primary session change.
-      rx_queue_->TriggerSessionChanged();
-    }
-    should_start = active_primary_sessions_ != 0;
-  }
-
-  if (should_start) {
-    // Start the device if we haven't done so already.
-    // NB: StartDeviceLocked releases the control lock.
-    StartDeviceLocked();
-  } else {
-    control_lock_.Release();
-  }
-
-  evt_session_started_.Trigger(session.name());
+void DeviceInterface::SessionStarted() {
+  const char* session_name = session_->name();
+  StartDeviceLocked();
+  evt_session_started_.Trigger(session_name);
 }
 
-bool DeviceInterface::SessionStoppedInner(Session& session) {
-  if (session.IsListen()) {
-    bool any = primary_session_ && primary_session_->IsListen() && !primary_session_->IsPaused();
-    for (auto& s : sessions_) {
-      any |= s.IsListen() && !s.IsPaused();
-    }
-    has_listen_sessions_.store(any, std::memory_order_relaxed);
-  }
-
-  if (!session.IsPrimary()) {
-    return false;
-  }
-
-  ZX_ASSERT(active_primary_sessions_ > 0);
-  if (&session == primary_session_.get()) {
-    // If this was the primary session, offer all other sessions to take over:
-    Session* primary_candidate = &session;
-    for (auto& i : sessions_) {
-      primary_candidate->AssertParentControlLockShared(*this);
-      if (primary_candidate->IsDying() || i.ShouldTakeOverPrimary(primary_candidate)) {
-        primary_candidate = &i;
-      }
-    }
-    // If we found a candidate to take over primary...
-    if (primary_candidate != primary_session_.get()) {
-      // ...promote it.
-      sessions_.push_back(std::move(primary_session_));
-      primary_session_ = sessions_.erase(*primary_candidate);
-      ZX_ASSERT(primary_session_);
-    }
-    if (teardown_state_ == TeardownState::RUNNING) {
-      rx_queue_->TriggerSessionChanged();
-    }
-  }
-
-  active_primary_sessions_--;
-  return active_primary_sessions_ == 0;
-}
-
-void DeviceInterface::SessionStopped(Session& session) {
-  if (SessionStoppedInner(session)) {
-    // Stop the device, no more sessions are running.
-    StopDevice();
-  } else {
-    control_lock_.Release();
-  }
-}
+void DeviceInterface::SessionStopped() { StopDevice(); }
 
 void DeviceInterface::StartDevice() {
   LOGF_TRACE("%s", __FUNCTION__);
@@ -896,17 +818,12 @@ void DeviceInterface::StartDeviceInner() {
         ZX_PANIC("unexpected start pending while starting already");
         break;
     }
-    if (this->primary_session_) {
-      LOGF_ERROR("killing session '%s' because device failed to start",
-                 this->primary_session_->name());
-      this->primary_session_->Kill();
-    }
-    for (auto& s : this->sessions_) {
-      LOGF_ERROR("killing session '%s' because device failed to start", s.name());
-      s.Kill();
+    if (this->session_) {
+      LOGF_ERROR("killing session '%s' because device failed to start", this->session_->name());
+      this->session_->Kill();
     }
     // We have effectively shut down the device, so finish tearing it down.
-    this->ContinueTeardown(TeardownState::SESSIONS);
+    this->ContinueTeardown(TeardownState::SESSION);
   });
 }
 
@@ -976,7 +893,7 @@ void DeviceInterface::DeviceStopped() {
   control_lock_.Acquire();
 
   PendingDeviceOperation pending_op = SetDeviceStatus(DeviceStatus::STOPPED);
-  if (ContinueTeardown(TeardownState::SESSIONS)) {
+  if (ContinueTeardown(TeardownState::SESSION)) {
     return;
   }
   switch (pending_op) {
@@ -1064,41 +981,25 @@ bool DeviceInterface::ContinueTeardown(network::internal::DeviceInterface::Teard
                         [](const PortSlot& port) { return static_cast<bool>(port.port); })) {
           return nullptr;
         }
-        teardown_state_ = TeardownState::SESSIONS;
-        LOGF_TRACE("teardown state is SESSIONS (primary=%s) (alive=%ld) (dead=%ld)",
-                   primary_session_ ? "true" : "false", sessions_.size(), dead_sessions_.size());
-        if (primary_session_ || !sessions_.is_empty()) {
+        teardown_state_ = TeardownState::SESSION;
+        LOGF_TRACE("teardown state is SESSION");
+        if (session_) {
           // If we have any sessions, signal all of them to stop their threads callback. Each
           // session that finishes operating will go through the `NotifyDeadSession` machinery. The
           // teardown is only complete when all sessions are destroyed.
           LOG_TRACE("teardown: sessions are running, scheduling teardown");
-          if (primary_session_) {
-            primary_session_->Kill();
+          if (session_->AssertParentControlLock(*this), !session_->IsDying()) {
+            session_->Kill();
           }
-          for (auto& s : sessions_) {
-            s.Kill();
-          }
-          // We won't check for dead sessions here, since all the sessions we just called `Kill` on
-          // will go into the dead state asynchronously. Any sessions that are already in the dead
-          // state will also get checked in `PruneDeadSessions` at a later time.
-          return nullptr;
-        }
-        // No sessions are alive. Now check if we have any dead sessions that are waiting to reclaim
-        // buffers.
-        if (!dead_sessions_.is_empty()) {
-          LOG_TRACE("teardown: dead sessions pending, waiting for teardown");
-          // We need to wait for the device to safely give us all the buffers back before completing
-          // the teardown.
           return nullptr;
         }
         // We can teardown immediately, let it fall through
         __FALLTHROUGH;
       }
-      case TeardownState::SESSIONS: {
+      case TeardownState::SESSION: {
         // Condition to finish teardown: no more sessions exists (dead or alive) and the device
         // state is STOPPED.
-        if (sessions_.is_empty() && !primary_session_ && dead_sessions_.is_empty() &&
-            device_status_ == DeviceStatus::STOPPED) {
+        if (!session_ && device_status_ == DeviceStatus::STOPPED) {
           teardown_state_ = TeardownState::DEVICE_IMPL;
           LOG_TRACE("teardown: async teardown of device");
           if (device_impl_.is_valid()) {
@@ -1188,17 +1089,10 @@ void DeviceInterface::OnPortTeardownComplete(DevicePort& port) {
 
   control_lock_.Acquire();
   bool stop_device = false;
-  // Go over the non-primary sessions first, so we don't mess with the primary session.
-  for (auto& session : sessions_) {
-    session.AssertParentControlLock(*this);
-    if (session.OnPortDestroyed(port.id().base)) {
-      stop_device |= SessionStoppedInner(session);
-    }
-  }
-  if (primary_session_) {
-    primary_session_->AssertParentControlLock(*this);
-    if (primary_session_->OnPortDestroyed(port.id().base)) {
-      stop_device |= SessionStoppedInner(*primary_session_);
+  if (session_) {
+    session_->AssertParentControlLock(*this);
+    if (session_->OnPortDestroyed(port.id().base)) {
+      stop_device = true;
     }
   }
   ports_[port.id().base].port = nullptr;
@@ -1209,15 +1103,15 @@ void DeviceInterface::OnPortTeardownComplete(DevicePort& port) {
   }
 }
 
-void DeviceInterface::ReleaseVmo(Session& session, fit::callback<void()>&& on_complete) {
+void DeviceInterface::ReleaseVmo(fit::callback<void()>&& on_complete) {
   uint8_t vmo;
-  vmo = session.ClearDataVmo();
+  vmo = session_->ClearDataVmo();
   zx::result result = vmo_store_.Unregister(vmo);
   if (result.is_error()) {
     // Avoid notifying the device implementation if unregistration fails.
-    // A non-ok return here means we're either attempting to double-release a VMO or the sessions
+    // A non-ok return here means we're either attempting to double-release a VMO or the session
     // didn't have a registered VMO.
-    LOGF_WARN("%s: Failed to unregister VMO %d: %s", session.name(), vmo, result.status_string());
+    LOGF_WARN("%s: Failed to unregister VMO %d: %s", session_->name(), vmo, result.status_string());
     return;
   }
 
@@ -1232,10 +1126,14 @@ void DeviceInterface::ReleaseVmo(Session& session, fit::callback<void()>&& on_co
       });
 }
 
-fbl::RefPtr<RefCountedFifo> DeviceInterface::primary_rx_fifo() {
+fbl::RefPtr<RefCountedFifo> DeviceInterface::rx_fifo() {
   SharedAutoLock lock(&control_lock_);
-  if (primary_session_) {
-    return primary_session_->rx_fifo();
+  if (!session_) {
+    return nullptr;
+  }
+  session_->AssertParentControlLockShared(*this);
+  if (!session_->IsDying()) {
+    return session_->rx_fifo();
   }
   return nullptr;
 }
@@ -1247,7 +1145,7 @@ void DeviceInterface::NotifyTxReturned(bool was_full) {
   if (was_full) {
     NotifyTxQueueAvailable();
   }
-  PruneDeadSessions();
+  PruneDeadSession();
 }
 
 void DeviceInterface::QueueRxSpace(cpp20::span<netdriver::wire::RxSpaceBuffer> rx) {
@@ -1274,136 +1172,85 @@ void DeviceInterface::QueueTx(cpp20::span<netdriver::wire::TxBuffer> tx) {
   }
 }
 
-void DeviceInterface::NotifyDeadSession(Session& dead_session) {
-  LOGF_TRACE("%s('%s')", __FUNCTION__, dead_session.name());
-  // First of all, stop all data-plane operations with stopped session.
-  if (!dead_session.IsPaused()) {
+void DeviceInterface::NotifyDeadSession() {
+  control_lock_.Acquire();
+  LOGF_TRACE("%s('%s')", __FUNCTION__, session_->name());
+  bool paused = session_->IsPaused();
+  const char* session_name = session_->name();
+  if (!paused) {
     // Stop the session.
     // NB: SessionStopped releases the control lock.
-    control_lock_.Acquire();
-    SessionStopped(dead_session);
-  }
-
-  if (dead_session.IsPrimary()) {
-    // Tell rx queue this session can't be used anymore.
-    rx_queue_->PurgeSession(dead_session);
-  }
-
-  // Now find it in sessions and remove it.
-  std::unique_ptr<Session> session_ptr;
-  fbl::AutoLock lock(&control_lock_);
-  if (&dead_session == primary_session_.get()) {
-    // Nullify primary session.
-    session_ptr = std::move(primary_session_);
-    rx_queue_->TriggerSessionChanged();
+    SessionStopped();
   } else {
-    session_ptr = sessions_.erase(dead_session);
+    control_lock_.Release();
   }
 
-  // Add the session to the list of dead sessions so we can wait for buffers to be returned and
-  // ReleaseVmo to complete before destroying it.
+  // Tell rx queue this session can't be used anymore.
+  rx_queue_->PurgeSession();
+
+  rx_queue_->TriggerSessionChanged();
+
   LOGF_TRACE("%s('%s') session is dead, waiting for buffers to be reclaimed", __FUNCTION__,
-             session_ptr->name());
-  dead_sessions_.push_back(std::move(session_ptr));
+             session_name);
   // The session may also be eligible for immediate destruction if all buffers are already returned.
-  // Let PruneDeadSessions do the checking and cleanup work.
-  PruneDeadSessions();
+  // Let PruneDeadSession do the checking and cleanup work.
+  SharedAutoLock lock(&control_lock_);
+  PruneDeadSession();
 }
 
-void DeviceInterface::PruneDeadSessions() __TA_REQUIRES_SHARED(control_lock_) {
-  for (auto& session : dead_sessions_) {
-    if (session.ShouldDestroy()) {
-      // Schedule for destruction.
-      //
-      // Destruction must happen later because we currently hold shared access to the control lock
-      // and we need an exclusive lock to erase items from the dead sessions list.
-      //
-      // ShouldDestroy should only return true once in the lifetime of a session, which guarantees
-      // that postponing the destruction on the dispatcher is always safe.
-      async::PostTask(dispatchers_.impl_->async_dispatcher(), [&session, this]() {
-        fbl::AutoLock lock(&control_lock_);
-        LOGF_TRACE("destroying %s", session.name());
-        // The callback for ReleaseVmo is never called inline. Otherwise this would deadlock as the
-        // control lock is held when this is called.
-        ReleaseVmo(session, [&session, this] {
-          const std::string session_name = session.name();
-          control_lock_.Acquire();
-          dead_sessions_.erase(session);
-          evt_session_died_.Trigger(session_name.c_str());
-          ContinueTeardown(TeardownState::SESSIONS);
-        });
-      });
-    } else {
-      LOGF_TRACE("%s: %s still pending", __FUNCTION__, session.name());
-    }
-  }
-}
-
-void DeviceInterface::CommitAllSessions() {
-  if (primary_session_) {
-    primary_session_->AssertParentRxLock(*this);
-    primary_session_->CommitRx();
-  }
-  for (auto& session : sessions_) {
-    session.AssertParentRxLock(*this);
-    session.CommitRx();
-  }
-  PruneDeadSessions();
-}
-
-void DeviceInterface::CopySessionData(const Session& owner, const RxFrameInfo& frame_info) {
-  if (primary_session_ && primary_session_.get() != &owner) {
-    primary_session_->AssertParentRxLock(*this);
-    primary_session_->AssertParentControlLockShared(*this);
-    primary_session_->CompleteRxWith(owner, frame_info);
-  }
-
-  for (auto& session : sessions_) {
-    if (&session != &owner) {
-      session.AssertParentRxLock(*this);
-      session.AssertParentControlLockShared(*this);
-      session.CompleteRxWith(owner, frame_info);
-    }
-  }
-}
-
-// TODO(https://fxbug.dev/440082820): Enable thread safety analysis when the underlying issue is
-// resolved.
-// TODO(https://fxbug.dev/371574128): Delete this function when we remove LISTEN sessions.
-void DeviceInterface::ListenSessionData(
-    const Session& owner, cpp20::span<const uint16_t> descriptors) __TA_NO_THREAD_SAFETY_ANALYSIS {
-  if (!has_listen_sessions_.load(std::memory_order_relaxed)) {
-    // Avoid walking through sessions and acquiring Rx lock if we know no listen sessions are
-    // attached.
+void DeviceInterface::PruneDeadSession() __TA_REQUIRES_SHARED(control_lock_) {
+  if (!session_) {
     return;
   }
-  fbl::AutoLock rx_lock(&rx_lock_);
-  SharedAutoLock control(&control_lock_);
-  bool copied = false;
-  for (const uint16_t& descriptor : descriptors) {
-    if (primary_session_ && primary_session_.get() != &owner && primary_session_->IsListen()) {
-      primary_session_->AssertParentRxLock(*this);
-      primary_session_->AssertParentControlLockShared(*this);
-      copied |= primary_session_->ListenFromTx(owner, descriptor);
-    }
-    for (auto& s : sessions_) {
-      if (&s != &owner && s.IsListen()) {
-        s.AssertParentRxLock(*this);
-        s.AssertParentControlLockShared(*this);
-        copied |= s.ListenFromTx(owner, descriptor);
+  session_->AssertParentControlLockShared(*this);
+  if (!session_->IsDying()) {
+    return;
+  }
+  if (!session_->ShouldDestroy()) {
+    LOGF_TRACE("%s: %s still pending", __FUNCTION__, session_->name());
+    return;
+  }
+
+  // Schedule for destruction.
+  //
+  // Destruction must happen later because we currently hold shared access to the control lock
+  // and we need an exclusive lock to release the VMO.
+  //
+  // ShouldDestroy should only return true once in the lifetime of a session, which guarantees
+  // that postponing the destruction on the dispatcher is always safe.
+  async::PostTask(dispatchers_.impl_->async_dispatcher(), [this]() {
+    fbl::AutoLock lock(&control_lock_);
+    LOGF_TRACE("destroying %s", session_->name());
+    // The callback for ReleaseVmo is never called inline. Otherwise this would deadlock as the
+    // control lock is held when this is called.
+    ReleaseVmo([this] {
+      {
+        fbl::AutoLock rx_lock(&rx_lock_);
+        rx_queue_->AssertParentRxLocked(*this);
+        rx_queue_->SetSession(nullptr);
       }
-    }
+      control_lock_.Acquire();
+      std::string session_name = session_->name();
+      session_ = nullptr;
+      evt_session_died_.Trigger(session_name.c_str());
+      ContinueTeardown(TeardownState::SESSION);
+    });
+  });
+}
+
+void DeviceInterface::CommitSession() {
+  if (session_) {
+    session_->AssertParentRxLock(*this);
+    session_->CommitRx();
   }
-  if (copied) {
-    CommitAllSessions();
-  }
+  PruneDeadSession();
 }
 
 zx_status_t DeviceInterface::LoadRxDescriptors(RxSessionTransaction& transact) {
-  if (!primary_session_) {
+  if (!session_) {
     return ZX_ERR_BAD_STATE;
   }
-  return primary_session_->LoadRxDescriptors(transact);
+  return session_->LoadRxDescriptors(transact);
 }
 
 bool DeviceInterface::IsDataPlaneOpen() { return device_status_ == DeviceStatus::STARTED; }
@@ -1449,10 +1296,9 @@ void DeviceInterface::TryDelegateRxLease(uint64_t completed_frame_index) {
     return;
   }
 
-  if (primary_session_ && primary_session_->AllowRxLeaseDelegation()) {
-    primary_session_->AssertParentControlLockShared(*this);
-    primary_session_->AssertParentRxLock(*this);
-    primary_session_->DelegateRxLease(std::move(pending));
+  if (session_ && session_->AllowRxLeaseDelegation()) {
+    session_->AssertParentRxLock(*this);
+    session_->DelegateRxLease(std::move(pending));
   } else {
     DropDelegatedRxLease(std::move(pending));
   }

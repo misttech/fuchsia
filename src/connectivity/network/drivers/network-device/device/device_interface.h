@@ -31,7 +31,6 @@ class TxQueue;
 
 class Session;
 class AttachedPort;
-using SessionList = fbl::SizedDoublyLinkedList<std::unique_ptr<Session>>;
 
 struct RefCountedFifo : public fbl::RefCounted<RefCountedFifo> {
   zx::fifo fifo;
@@ -105,32 +104,20 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   fbl::Mutex& tx_lock() __TA_RETURN_CAPABILITY(tx_lock_) { return tx_lock_; }
   const netdriver::DeviceImplInfo& info() { return device_info_; }
 
-  // Loads rx path descriptors from the primary session into a session transaction.
+  // Loads rx path descriptors from the session into a session transaction.
   zx_status_t LoadRxDescriptors(RxSessionTransaction& transact) __TA_REQUIRES_SHARED(control_lock_);
 
-  // Operates workflow for when a session is started. If the session is eligible to take over the
-  // primary spot, it'll be elected the new primary session. If there was no primary session before,
-  // the data path will be started BEFORE the new session is elected as primary,
-  void SessionStarted(Session& session) __TA_RELEASE(control_lock_);
-  // Operates workflow for when a session is stopped. If there's another session that is eligible to
-  // take over the primary spot, it'll be elected the new primary session. Otherwise, the data path
-  // will be stopped.
-  void SessionStopped(Session& session) __TA_RELEASE(control_lock_);
+  // Operates workflow for when the session is started. The data path will be started.
+  void SessionStarted() __TA_RELEASE(control_lock_);
+  // Operates workflow for when the session is stopped. The data path will be stopped.
+  void SessionStopped() __TA_RELEASE(control_lock_);
 
-  // If a primary session exists, primary_rx_fifo returns a reference-counted pointer to the primary
+  // If a live session exists, rx_fifo returns a reference-counted pointer to the
   // session's Rx FIFO. Otherwise, the returned pointer is null.
-  fbl::RefPtr<RefCountedFifo> primary_rx_fifo();
+  fbl::RefPtr<RefCountedFifo> rx_fifo();
 
-  // Commits all pending rx buffers in all active sessions.
-  void CommitAllSessions() __TA_REQUIRES_SHARED(control_lock_) __TA_REQUIRES(rx_lock_);
-  // Copies the received data described by `buff` to all sessions other than `owner`.
-  void CopySessionData(const Session& owner, const RxFrameInfo& frame_info)
-      __TA_REQUIRES_SHARED(control_lock_) __TA_REQUIRES(rx_lock_);
-  // Notifies all listening sessions of a new tx transaction from session `owner` and descriptor
-  // `owner_index`.
-  void ListenSessionData(const Session& owner, cpp20::span<const uint16_t> descriptors)
-      __TA_REQUIRES(tx_lock_) __TA_EXCLUDES(control_lock_, rx_lock_);
-
+  // Commits all pending rx buffers in the active session.
+  void CommitSession() __TA_REQUIRES_SHARED(control_lock_) __TA_REQUIRES(rx_lock_);
   // Notifies that a batch of Tx frames has been returned.
   //
   // If was_full is true, all active sessions are notified that device tx space has freed up.
@@ -144,10 +131,10 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
       __TA_EXCLUDES(control_lock_, rx_lock_, tx_lock_);
   bool IsDataPlaneOpen() __TA_REQUIRES_SHARED(control_lock_);
 
-  // Called by sessions when they're no longer running. If the dead session has any outstanding
-  // buffers with the device implementation, it'll be kept in `dead_sessions_` until all the buffers
+  // Called by the session when it's no longer running. If the dead session has any outstanding
+  // buffers with the device implementation, it'll be kept until all the buffers
   // are safely returned and we own all the buffers again.
-  void NotifyDeadSession(Session& dead_session);
+  void NotifyDeadSession();
 
   // FIDL protocol implementation.
   void GetInfo(GetInfoCompleter::Sync& completer) override;
@@ -190,12 +177,12 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
 
   static void DropDelegatedRxLease(netdev::DelegatedRxLease lease);
 
-  // Delegates a pending lease to the primary session.
+  // Delegates a pending lease to the session.
   //
   // The lease is delegated if |completed_frame_index| is larger than the lease's
   // hold_until_frame value.
   //
-  // The primary session receives the lease if one exists _and_ the session is
+  // The session receives the lease if one exists _and_ the session is
   // opted in to receive leases. Drops the pending lease immediately otherwise.
   void TryDelegateRxLease(uint64_t completed_frame_index) __TA_REQUIRES_SHARED(control_lock_)
       __TA_REQUIRES(rx_lock_);
@@ -222,7 +209,7 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
     BINDINGS,
     PORT_WATCHERS,
     PORTS,
-    SESSIONS,
+    SESSION,
     DEVICE_IMPL,
     IFC_BINDING,
     BINDER,
@@ -245,10 +232,6 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   void StartDeviceInner() __TA_EXCLUDES(control_lock_);
   // Stops the device implementation with `DeviceStopped` as its callback.
   void StopDeviceInner() __TA_EXCLUDES(control_lock_);
-  // Helper inner function to stop a session.
-  //
-  // Returns true if the device should be stopped.
-  bool SessionStoppedInner(Session& session) __TA_REQUIRES(control_lock_);
 
   // Callback given to the device implementation for the `Start` call. The data path is considered
   // open only once the device is started.
@@ -264,8 +247,7 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   // Notifies the device implementation that the VMO used by the provided session will no longer be
   // used. It is called right before sessions are destroyed.
   // ReleaseVMO acquires the vmos_lock_ internally, so we mark it as excluding the vmos_lock_.
-  void ReleaseVmo(Session& session, fit::callback<void()>&& on_complete)
-      __TA_REQUIRES(control_lock_);
+  void ReleaseVmo(fit::callback<void()>&& on_complete) __TA_REQUIRES(control_lock_);
 
   // Continues a teardown process, if one is running.
   //
@@ -295,8 +277,8 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   }
   void OnPortTeardownComplete(DevicePort& port);
 
-  // Destroys all dead sessions that report they can be destroyed through `Session::CanDestroy`.
-  void PruneDeadSessions() __TA_REQUIRES_SHARED(control_lock_);
+  // Destroys the dead session if it reports it can be destroyed through `Session::CanDestroy`.
+  void PruneDeadSession() __TA_REQUIRES_SHARED(control_lock_);
   // Notifies all sessions that the transmit queue has available spots to take in transmit frames.
   void NotifyTxQueueAvailable() __TA_REQUIRES_SHARED(control_lock_);
 
@@ -312,17 +294,13 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   std::array<netdev::wire::RxAcceleration, netdev::wire::kMaxAccelFlags> accel_rx_;
   std::array<netdev::wire::TxAcceleration, netdev::wire::kMaxAccelFlags> accel_tx_;
 
-  std::unique_ptr<Session> primary_session_ __TA_GUARDED(control_lock_);
-  SessionList sessions_ __TA_GUARDED(control_lock_);
-  uint32_t active_primary_sessions_ __TA_GUARDED(control_lock_) = 0;
+  std::unique_ptr<Session> session_ __TA_GUARDED(control_lock_);
 
   struct PortSlot {
     std::unique_ptr<DevicePort> port;
     uint8_t salt;
   };
   std::array<PortSlot, netdev::wire::kMaxPorts> ports_ __TA_GUARDED(control_lock_);
-
-  SessionList dead_sessions_ __TA_GUARDED(control_lock_);
 
   // We don't need to keep any data associated with the VMO ids, we use the slab to guarantee
   // non-overlapping unique identifiers within a set of valid IDs.
@@ -334,7 +312,6 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
   fit::callback<void()> teardown_callback_ __TA_GUARDED(control_lock_);
 
   PendingDeviceOperation pending_device_op_ = PendingDeviceOperation::NONE;
-  std::atomic_bool has_listen_sessions_ = false;
 
   std::unique_ptr<TxQueue> tx_queue_;
   std::unique_ptr<RxQueue> rx_queue_;

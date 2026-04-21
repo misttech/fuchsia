@@ -87,8 +87,7 @@ class AttachedPort {
 //
 // It is invalid to destroy a Session that has outstanding buffers, that is, buffers that are
 // currently owned by the interface's Rx or Tx queues.
-class Session : public fbl::DoublyLinkedListable<std::unique_ptr<Session>>,
-                public fidl::WireServer<netdev::Session> {
+class Session : public fidl::WireServer<netdev::Session> {
  public:
   ~Session() override;
   // Creates a new session with the provided parameters.
@@ -103,13 +102,8 @@ class Session : public fbl::DoublyLinkedListable<std::unique_ptr<Session>>,
   static zx::result<std::pair<std::unique_ptr<Session>, netdev::wire::Fifos>> Create(
       async_dispatcher_t* dispatcher, netdev::wire::SessionInfo& info, fidl::StringView name,
       DeviceInterface* parent);
-  bool IsPrimary() const;
-  bool IsListen() const;
   bool IsPaused() const;
   bool AllowRxLeaseDelegation() const;
-  // Checks if this session is eligible to take over the primary session from `current_primary`.
-  // `current_primary` can be null, meaning there's no current primary session.
-  bool ShouldTakeOverPrimary(const Session* current_primary) const;
 
   // Installs session tx listeners. Panics if called twice.
   void InstallTx() __TA_REQUIRES(parent_->tx_lock());
@@ -167,19 +161,9 @@ class Session : public fbl::DoublyLinkedListable<std::unique_ptr<Session>>,
   // Returns true if the buffers comprising `frame_info` can immediately be reused.
   bool CompleteRx(const RxFrameInfo& frame_info) __TA_REQUIRES_SHARED(parent_->control_lock())
       __TA_REQUIRES(parent_->rx_lock());
-  // Completes rx by copying the data from another session into one of this session's available rx
-  // buffers.
-  //
-  // Returns true iff the frame information was enqueued in the session rx queue.
-  bool CompleteRxWith(const Session& owner, const RxFrameInfo& frame_info)
-      __TA_REQUIRES_SHARED(parent_->control_lock()) __TA_REQUIRES(parent_->rx_lock());
   // Marks a single rx space buffer as complete, but does not consume it as it was unfulfilled.
   // Returns true iff the session is active and space buffers can be reused.
   bool CompleteUnfulfilledRx() __TA_REQUIRES(parent_->rx_lock());
-  // Copies data from a tx frame from another session into one of this session's available rx
-  // buffers.
-  bool ListenFromTx(const Session& owner, uint16_t owner_index) __TA_REQUIRES(parent_->rx_lock())
-      __TA_REQUIRES_SHARED(parent_->control_lock());
   // Commits pending rx buffers, sending them back to the session client.
   void CommitRx() __TA_REQUIRES(parent_->rx_lock());
   // Returns true iff the session is subscribed to frame_type on port.
@@ -310,7 +294,7 @@ class Session : public fbl::DoublyLinkedListable<std::unique_ptr<Session>>,
   std::atomic<size_t> in_flight_tx_ = 0;
   std::atomic<size_t> in_flight_rx_ = 0;
   std::atomic<bool> scheduled_destruction_ = false;
-  std::optional<TxQueue::SessionKey> tx_ticket_ __TA_GUARDED(parent_->tx_lock());
+  bool tx_installed_ __TA_GUARDED(parent_->tx_lock()) = false;
 
   fbl::Mutex rx_lease_lock_;
   std::optional<netdev::DelegatedRxLease> rx_lease_pending_ __TA_GUARDED(rx_lease_lock_);

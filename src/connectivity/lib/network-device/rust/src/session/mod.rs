@@ -429,8 +429,6 @@ pub struct DeviceInfo {
 pub struct DerivableConfig {
     /// The desired default buffer length for the session.
     pub default_buffer_length: usize,
-    /// Create a primary session.
-    pub primary: bool,
     /// Enable rx lease watching.
     pub watch_rx_leases: bool,
 }
@@ -444,11 +442,8 @@ impl DerivableConfig {
     /// This is the value of the buffer length in the `Default` impl.
     pub const DEFAULT_BUFFER_LENGTH: usize = 2048;
     /// The value returned by the `Default` impl.
-    pub const DEFAULT: Self = Self {
-        default_buffer_length: Self::DEFAULT_BUFFER_LENGTH,
-        primary: true,
-        watch_rx_leases: false,
-    };
+    pub const DEFAULT: Self =
+        Self { default_buffer_length: Self::DEFAULT_BUFFER_LENGTH, watch_rx_leases: false };
 }
 
 impl Default for DerivableConfig {
@@ -494,7 +489,7 @@ impl DeviceInfo {
             )));
         }
 
-        let DerivableConfig { default_buffer_length, primary, watch_rx_leases } = config;
+        let DerivableConfig { default_buffer_length, watch_rx_leases } = config;
 
         let num_rx_buffers =
             NonZeroU16::new(*rx_depth).ok_or_else(|| Error::Config("no RX buffers".to_owned()))?;
@@ -592,7 +587,6 @@ impl DeviceInfo {
         };
 
         let mut options = netdev::SessionFlags::empty();
-        options.set(netdev::SessionFlags::PRIMARY, primary);
         options.set(netdev::SessionFlags::RECEIVE_RX_POWER_LEASES, watch_rx_leases);
 
         Ok(Config {

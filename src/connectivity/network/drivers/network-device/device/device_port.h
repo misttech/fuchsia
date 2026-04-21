@@ -56,12 +56,12 @@ class DevicePort : public fidl::WireServer<netdev::Port> {
   void Teardown();
   // Notifies the port a session attached to it.
   //
-  // When sessions attach to a port, the port will notify the network port implementation that the
-  // port is active.
+  // When the session attaches to a port, the port will notify the network port implementation that
+  // the port is active.
   void SessionAttached();
   // Notifies the port a session detached from it.
   //
-  // When all sessions are detached from a port, the port will notify the network port
+  // When the session is detached from a port, the port will notify the network port
   // implementation that the port is inactive.
   void SessionDetached();
 
@@ -123,12 +123,8 @@ class DevicePort : public fidl::WireServer<netdev::Port> {
   // Returns true if teardown callback was dispatched.
   // Callers must assume the port is destroyed immediately if this function returns true.
   bool MaybeFinishTeardown() __TA_REQUIRES(lock_);
-  // Implements session attachment and detachment.
-  //
-  // Notifies network port implementation that the port is active when `new_count` is 1.
-  // Notifies network port implementation that the port is inactive when `new_count` is 0.
-  // No-op otherwise.
-  void NotifySessionCount(size_t new_count) __TA_REQUIRES(lock_);
+  // Applies the current port status to the network port implementation.
+  void ApplyPortStatus() __TA_REQUIRES(lock_);
 
   DeviceInterface* const parent_;  // Pointer to parent device. Not owned.
   async_dispatcher_t* const dispatcher_;
@@ -148,7 +144,7 @@ class DevicePort : public fidl::WireServer<netdev::Port> {
   StatusWatcherList watchers_ __TA_GUARDED(lock_);
   TeardownCallback on_teardown_ __TA_GUARDED(lock_);
   bool teardown_started_ __TA_GUARDED(lock_) = false;
-  size_t attached_sessions_count_ __TA_GUARDED(lock_) = 0;
+  bool has_session_attached_ __TA_GUARDED(lock_) = false;
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(DevicePort);
 };

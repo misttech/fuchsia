@@ -286,8 +286,7 @@ class SimpleClient {
     session_info.set_descriptor_length(
         static_cast<uint8_t>(sizeof(buffer_descriptor_t) / sizeof(uint64_t)));
     session_info.set_descriptor_count(descriptor_count_);
-    session_info.set_options(fuchsia_hardware_network::wire::SessionFlags::kPrimary |
-                             fuchsia_hardware_network::wire::SessionFlags::kReceiveRxPowerLeases);
+    session_info.set_options(fuchsia_hardware_network::wire::SessionFlags::kReceiveRxPowerLeases);
 
     zx::vmo data;
     if ((status = data_vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &data)) != ZX_OK) {

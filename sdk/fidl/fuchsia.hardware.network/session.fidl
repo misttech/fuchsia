@@ -91,24 +91,6 @@ closed protocol Session {
 /// Additional session options.
 @available(added=HEAD)
 type SessionFlags = strict bits : uint16 {
-    /// Attach as primary session.
-    ///
-    /// Sessions marked with the `PRIMARY` bit get the following different
-    /// treatment:
-    /// - If no PRIMARY sessions are attached, the device will *not* serve rx
-    ///   frames to non-PRIMARY sessions.
-    /// - If there's only one PRIMARY session active, it may get a zero-copy
-    ///   data path from the the backing hardware, if the underlying
-    ///   implementation supports it.
-    PRIMARY = 0x0001;
-    /// Listen for outgoing frames.
-    ///
-    /// `LISTEN_TX` sessions receive any outgoing frames (from all sessions) on
-    /// its rx path. Can be used for snooping traffic. Sessions marked with
-    /// `LISTEN_TX` may also send frames, but they should keep in mind that
-    /// they'll ALWAYS receive those frames back on their rx path (no origin
-    /// session filtering is performed).
-    LISTEN_TX = 0x0002;
     /// Receive invalid rx frames.
     ///
     /// Sessions marked with `REPORT_INVALID_RX` are interested in receiving
@@ -119,12 +101,12 @@ type SessionFlags = strict bits : uint16 {
     /// simply drops the frame and doesn't expose it to the software stack.
     /// Sessions NOT marked with `REPORT_INVALID_RX`, in contrast, will NEVER
     /// receive an rx frame with the `RX_VALIDATION_ERROR` flag set.
-    REPORT_INVALID_RX = 0x0004;
+    REPORT_INVALID_RX = 0x0001;
     /// Receive rx power leases.
     ///
     /// Sessions marked with `RECEIVE_RX_POWER_LEASES` receive
     /// [`DelegatedRxLease`]s through [`Session.WatchDelegatedRxLease`] calls.
-    RECEIVE_RX_POWER_LEASES = 0x0008;
+    RECEIVE_RX_POWER_LEASES = 0x0002;
 };
 
 /// Data-plane FIFOs.

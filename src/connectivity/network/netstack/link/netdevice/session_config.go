@@ -60,7 +60,6 @@ func (c *SimpleSessionConfigFactory) MakeSessionConfig(deviceInfo network.Device
 		TxTailLength:      deviceInfo.BaseInfo.MinTxBufferTail,
 		RxDescriptorCount: deviceInfo.BaseInfo.RxDepth,
 		TxDescriptorCount: deviceInfo.BaseInfo.TxDepth,
-		Options:           network.SessionFlagsPrimary,
 	}
 	align := deviceInfo.BaseInfo.BufferAlignment
 	if config.BufferStride%align != 0 {

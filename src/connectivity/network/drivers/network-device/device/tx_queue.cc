@@ -80,16 +80,15 @@ fuchsia_hardware_network_driver::wire::TxBuffer* TxQueue::SessionTransaction::Ge
 
 void TxQueue::SessionTransaction::Push(uint16_t descriptor) {
   ZX_ASSERT(available_ != 0);
-  session_->TxTaken();
-  buffers_[queued_].id = queue_->Enqueue(session_, descriptor);
+  queue_->session_->session->TxTaken();
+  buffers_[queued_].id = queue_->Enqueue(descriptor);
   available_--;
   queued_++;
 }
 
 TxQueue::SessionTransaction::SessionTransaction(
-    cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers, TxQueue* parent,
-    Session* session)
-    : buffers_(buffers), queue_(parent), session_(session), queued_(0) {
+    cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers, TxQueue* parent)
+    : buffers_(buffers), queue_(parent), queued_(0) {
   // only get available slots after lock is acquired:
   // 0 available slots if parent is not enabled.
   available_ = queue_->parent_->IsDataPlaneOpen() ? queue_->in_flight_->available() : 0;
@@ -204,7 +203,7 @@ void TxQueue::Thread(cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer
         }
         break;
       case ZX_PKT_TYPE_SIGNAL_ONE:
-        if (zx_status_t status = HandleFifoSignal(buffers, packet.key, packet.signal.observed);
+        if (zx_status_t status = HandleFifoSignal(buffers, packet.signal.observed);
             status != ZX_OK) {
           LOGF_ERROR("failed to handle FIFO signal: %s", zx_status_get_string(status));
           return;
@@ -218,59 +217,58 @@ void TxQueue::Thread(cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer
 
 zx_status_t TxQueue::UpdateFifoWatches() {
   fbl::AutoLock lock(&parent_->tx_lock());
-  for (auto it = sessions_.begin(); it != sessions_.end(); it++) {
-    SessionWaiter& waiter = *it;
-    Session& session = *waiter.session;
-
-    if (session.IsPaused()) {
-      if (!waiter.wait_installed) {
-        continue;
-      }
-      zx_status_t status = port_.cancel_key(0u, it.key());
-      switch (status) {
-        case ZX_OK:
-          waiter.wait_installed = false;
-          continue;
-        default:
-          LOGF_ERROR("failed to cancel FIFO wait for session %s: %s", session.name(),
-                     zx_status_get_string(status));
-          return status;
-      }
-    }
-
-    if (waiter.wait_installed) {
-      continue;
-    }
-
-    if (zx_status_t status = session.tx_fifo().wait_async(
-            port_, it.key(), ZX_FIFO_PEER_CLOSED | ZX_FIFO_READABLE, 0);
-        status != ZX_OK) {
-      LOGF_ERROR("failed to start FIFO wait for session %s: %s", session.name(),
-                 zx_status_get_string(status));
-      return status;
-    }
-
-    waiter.wait_installed = true;
+  if (!session_.has_value()) {
+    return ZX_OK;
   }
 
+  SessionWaiter& waiter = *session_;
+  Session& session = *waiter.session;
+
+  if (session.IsPaused()) {
+    if (!waiter.wait_installed) {
+      return ZX_OK;
+    }
+    zx_status_t status = port_.cancel_key(0u, 0u);
+    switch (status) {
+      case ZX_OK:
+        waiter.wait_installed = false;
+        return ZX_OK;
+      default:
+        LOGF_ERROR("failed to cancel FIFO wait for session %s: %s", session.name(),
+                   zx_status_get_string(status));
+        return status;
+    }
+  }
+
+  if (waiter.wait_installed) {
+    return ZX_OK;
+  }
+
+  if (zx_status_t status =
+          session.tx_fifo().wait_async(port_, 0u, ZX_FIFO_PEER_CLOSED | ZX_FIFO_READABLE, 0);
+      status != ZX_OK) {
+    LOGF_ERROR("failed to start FIFO wait for session %s: %s", session.name(),
+               zx_status_get_string(status));
+    return status;
+  }
+
+  waiter.wait_installed = true;
   return ZX_OK;
 }
 
 zx_status_t TxQueue::HandleFifoSignal(
-    cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers, SessionKey key,
-    zx_signals_t signals) {
+    cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers, zx_signals_t signals) {
   fbl::AutoLock lock(&parent_->tx_lock());
-  SessionWaiter* find_session = sessions_.Get(key);
   // Session already removed from Tx queue, packet was lingering in the port.
-  if (find_session == nullptr) {
+  if (!session_.has_value()) {
     return ZX_OK;
   }
 
-  SessionWaiter& waiter = *find_session;
+  SessionWaiter& waiter = session_.value();
   waiter.wait_installed = false;
   Session& session = *waiter.session;
   const zx::fifo& fifo = session.tx_fifo();
-  SessionTransaction transaction(buffers, this, &session);
+  SessionTransaction transaction(buffers, this);
 
   // TA really doesn't like defers or its interplay with AutoLock.
   auto defer = fit::defer([&transaction, &lock]() __TA_NO_THREAD_SAFETY_ANALYSIS {
@@ -306,7 +304,7 @@ zx_status_t TxQueue::HandleFifoSignal(
     return ZX_OK;
   }
 
-  if (zx_status_t status = fifo.wait_async(port_, key, ZX_FIFO_PEER_CLOSED | ZX_FIFO_READABLE, 0);
+  if (zx_status_t status = fifo.wait_async(port_, 0u, ZX_FIFO_PEER_CLOSED | ZX_FIFO_READABLE, 0);
       status != ZX_OK) {
     LOGF_ERROR("failed to start FIFO wait for session %s: %s", session.name(),
                zx_status_get_string(status));
@@ -328,8 +326,8 @@ void TxQueue::Resume() {
   }
 }
 
-uint32_t TxQueue::Enqueue(Session* session, uint16_t descriptor) {
-  return in_flight_->Push(InFlightBuffer(session, ZX_OK, descriptor));
+uint32_t TxQueue::Enqueue(uint16_t descriptor) {
+  return in_flight_->Push(InFlightBuffer(ZX_OK, descriptor));
 }
 
 bool TxQueue::ReturnBuffers() {
@@ -339,29 +337,20 @@ bool TxQueue::ReturnBuffers() {
   ZX_ASSERT(return_queue_->count() <= kMaxFifoDepth);
 
   uint16_t* descs = desc_buffer;
-  Session* cur_session = nullptr;
-  // record if the queue was full, meaning that sessions may have halted fetching tx frames due
+  // record if the queue was full, meaning that the session may have halted fetching tx frames due
   // to overruns:
   bool was_full = in_flight_->available() == 0;
   while (return_queue_->count()) {
     auto& buff = in_flight_->Get(return_queue_->Peek());
-    if (cur_session != nullptr && buff.session != cur_session) {
-      // dispatch accumulated to session. This should only happen if we have outstanding
-      // return buffers from different sessions.
-      cur_session->ReturnTxDescriptors(desc_buffer, count);
-      count = 0;
-      descs = desc_buffer;
-    }
-    cur_session = buff.session;
-    cur_session->MarkTxReturnResult(buff.descriptor_index, buff.result);
+    session_->session->MarkTxReturnResult(buff.descriptor_index, buff.result);
     *descs++ = buff.descriptor_index;
     count++;
     // pop from return queue and free space in in_flight queue:
     in_flight_->Free(return_queue_->Pop());
   }
 
-  if (cur_session && count != 0) {
-    cur_session->ReturnTxDescriptors(desc_buffer, count);
+  if (count != 0) {
+    session_->session->ReturnTxDescriptors(desc_buffer, count);
   }
 
   return was_full;
@@ -380,28 +369,19 @@ void TxQueue::CompleteTxList(
   parent_->NotifyTxComplete();
 }
 
-TxQueue::SessionKey TxQueue::AddSession(Session* session) {
-  sessions_.Grow();
-  std::optional new_key = sessions_.Push(SessionWaiter{
-      .session = session,
-      .wait_installed = false,
-  });
-  // We grew the slab before pushing, we must have space.
-  ZX_ASSERT(new_key.has_value());
-
-  TxQueue::SessionKey key = new_key.value();
-
-  if (zx_status_t status = EnqueueUserPacket(kResumeKey); status != ZX_OK) {
-    LOGF_ERROR("failed to notify of new session %s with key %ld: %s", session->name(), key,
-               zx_status_get_string(status));
+void TxQueue::SetSession(Session* session) {
+  if (session == nullptr) {
+    session_.reset();
+  } else {
+    ZX_ASSERT_MSG(!session_.has_value(), "Session already installed");
+    session_ = SessionWaiter{.session = session, .wait_installed = false};
+    if (zx_status_t status = EnqueueUserPacket(kResumeKey); status != ZX_OK) {
+      LOGF_ERROR("failed to notify of new session %s: %s", session->name(),
+                 zx_status_get_string(status));
+    }
   }
-
-  return key;
 }
 
-void TxQueue::RemoveSession(SessionKey key) {
-  std::optional s = sessions_.Erase(key);
-  ZX_ASSERT_MSG(s.has_value(), "attempted to remove unknown session %ld", key);
-}
+bool TxQueue::HasSession() { return session_.has_value(); }
 
 }  // namespace network::internal

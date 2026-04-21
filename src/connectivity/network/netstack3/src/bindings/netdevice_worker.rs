@@ -143,7 +143,6 @@ impl NetdeviceWorker {
                 "netstack3",
                 netdevice_client::DerivableConfig {
                     default_buffer_length: DEFAULT_BUFFER_LENGTH,
-                    primary: true,
                     watch_rx_leases,
                 },
             )

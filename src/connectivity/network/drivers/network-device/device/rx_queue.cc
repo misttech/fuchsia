@@ -21,6 +21,7 @@ RxQueue::~RxQueue() {
   // running_ is tied to the lifetime of the watch thread, it's cleared in`RxQueue::JoinThread`.
   // This assertion protects us from destruction paths where `RxQueue::JoinThread` is not called.
   ZX_ASSERT_MSG(!running_, "RxQueue destroyed without disposing of port and thread first.");
+  ZX_ASSERT_MSG(!session_, "RxQueue destroyed without detaching session");
 }
 
 zx::result<std::unique_ptr<RxQueue>> RxQueue::Create(DeviceInterface* parent) {
@@ -144,19 +145,14 @@ void RxQueue::JoinThread() {
   }
 }
 
-void RxQueue::PurgeSession(Session& session) {
+void RxQueue::PurgeSession() {
   fbl::AutoLock lock(&parent_->rx_lock());
   // Get rid of all available buffers that belong to the session and stop its rx path.
-  session.AssertParentRxLock(*parent_);
-  session.StopRx();
+  session_->AssertParentRxLock(*parent_);
+  session_->StopRx();
   for (auto nu = available_queue_->count(); nu > 0; nu--) {
     auto b = available_queue_->Pop();
-    if (in_flight_->Get(b).session == &session) {
-      in_flight_->Free(b);
-    } else {
-      // Push back to the end of the queue.
-      available_queue_->Push(b);
-    }
+    in_flight_->Free(b);
   }
 }
 
@@ -179,9 +175,9 @@ std::tuple<RxQueue::InFlightBuffer*, uint32_t> RxQueue::GetBuffer() {
     default:
       LOGF_ERROR("failed to load rx buffer descriptors: %s", zx_status_get_string(status));
       __FALLTHROUGH;
-    case ZX_ERR_PEER_CLOSED:  // Primary FIFO closed.
+    case ZX_ERR_PEER_CLOSED:  // FIFO closed.
     case ZX_ERR_SHOULD_WAIT:  // No Rx buffers available in FIFO.
-    case ZX_ERR_BAD_STATE:    // Primary session stopped or paused.
+    case ZX_ERR_BAD_STATE:    // Session stopped or paused.
       return std::make_tuple(nullptr, 0);
   }
   // LoadRxDescriptors can't return OK if it couldn't load any descriptors.
@@ -196,17 +192,16 @@ zx_status_t RxQueue::PrepareBuff(fuchsia_hardware_network_driver::wire::RxSpaceB
   }
 
   buff->id = index;
-  if (zx_status_t status =
-          session_buffer->session->FillRxSpace(session_buffer->descriptor_index, buff);
+  if (zx_status_t status = session_->FillRxSpace(session_buffer->descriptor_index, buff);
       status != ZX_OK) {
     // If the session can't fill Rx for any reason, kill it.
-    session_buffer->session->Kill();
+    session_->Kill();
     // Put the index back at the end of the available queue.
     available_queue_->Push(index);
     return status;
   }
 
-  session_buffer->session->RxTaken();
+  session_->RxTaken();
   device_buffer_count_++;
   return ZX_OK;
 }
@@ -214,11 +209,13 @@ zx_status_t RxQueue::PrepareBuff(fuchsia_hardware_network_driver::wire::RxSpaceB
 void RxQueue::CompleteRxList(
     const fidl::VectorView<::fuchsia_hardware_network_driver::wire::RxBuffer>& rx_buffer_list) {
   fbl::AutoLock lock(&parent_->rx_lock());
+  ZX_ASSERT_MSG(session_ != nullptr,
+                "Session should not be null while we still have inflight buffers");
   SharedAutoLock control_lock(&parent_->control_lock());
   device_buffer_count_ -= rx_buffer_list.size();
   for (const auto& rx_buffer : rx_buffer_list.get()) {
-    // Always increment frame index for anything the device sends us. Sessions
-    // get their local indices for frames that make their way through.
+    // Always increment frame index for anything the device sends us. The session
+    // gets its local index for frames that make their way through.
     rx_completed_frame_index_++;
     ZX_ASSERT_MSG(rx_buffer.data.size() <= netdriver::wire::kMaxBufferParts,
                   "too many buffer parts in rx buffer: %ld", rx_buffer.data.size());
@@ -227,8 +224,13 @@ void RxQueue::CompleteRxList(
     bool drop_frame = false;
     uint32_t total_length = 0;
 
-    Session* primary_session = nullptr;
     cpp20::span rx_parts = rx_buffer.data.get();
+    if (rx_parts.size() == 0) {
+      // Buffer contained no parts.
+      LOG_WARN("attempted to return an rx buffer with no parts");
+      continue;
+    }
+
     for (const fuchsia_hardware_network_driver::wire::RxBufferPart& rx_part : rx_parts) {
       InFlightBuffer& in_flight_buffer = in_flight_->Get(rx_part.id);
 
@@ -238,36 +240,13 @@ void RxQueue::CompleteRxList(
           .offset = rx_part.offset,
           .length = rx_part.length,
       };
-
-      if (primary_session && in_flight_buffer.session != primary_session) {
-        // Received buffers from different sessions, meaning the primary session just changed and
-        // the device chained things together.
-        // If we don't want to drop this frame, we'd need to figure out which one is the new primary
-        // session, try and allocate buffers from it and copy things.
-        // That's complicated enough and this is unexpected enough that the current decision is to
-        // drop the frame on the floor.
-        LOGF_WARN(
-            "dropping chained frame with %ld buffers spanning different sessions: "
-            "%s, %s",
-            rx_buffer.data.size(), primary_session->name(), in_flight_buffer.session->name());
-        drop_frame = true;
-      }
-      ZX_DEBUG_ASSERT(in_flight_buffer.session != nullptr);
-      primary_session = in_flight_buffer.session;
-    }
-
-    if (!primary_session) {
-      // Buffer contained no parts.
-      LOG_WARN("attempted to return an rx buffer with no parts");
-      continue;
     }
 
     // Drop any frames containing no data or where inconsistencies were found above.
     if (total_length == 0 || drop_frame) {
       for (const fuchsia_hardware_network_driver::wire::RxBufferPart& rx_part : rx_parts) {
-        InFlightBuffer& in_flight_buffer = in_flight_->Get(rx_part.id);
-        in_flight_buffer.session->AssertParentRxLock(*parent_);
-        if (in_flight_buffer.session->CompleteUnfulfilledRx()) {
+        session_->AssertParentRxLock(*parent_);
+        if (session_->CompleteUnfulfilledRx()) {
           // Make buffer available again for reuse if session is still valid.
           available_queue_->Push(rx_part.id);
         } else {
@@ -278,7 +257,7 @@ void RxQueue::CompleteRxList(
       continue;
     }
 
-    primary_session->AssertParentControlLockShared(*parent_);
+    session_->AssertParentControlLockShared(*parent_);
     parent_->NotifyPortRxFrame(rx_buffer.meta.port, total_length);
     const RxFrameInfo frame_info = {
         .meta = rx_buffer.meta,
@@ -286,8 +265,8 @@ void RxQueue::CompleteRxList(
         .buffers = cpp20::span(session_parts.begin(), session_parts_iter),
         .total_length = total_length,
     };
-    primary_session->AssertParentRxLock(*parent_);
-    if (primary_session->CompleteRx(frame_info)) {
+    session_->AssertParentRxLock(*parent_);
+    if (session_->CompleteRx(frame_info)) {
       std::for_each(rx_parts.begin(), rx_parts.end(),
                     [this](const fuchsia_hardware_network_driver::wire::RxBufferPart& rx)
                         __TA_REQUIRES(parent_->rx_lock()) { available_queue_->Push(rx.id); });
@@ -297,7 +276,7 @@ void RxQueue::CompleteRxList(
                         __TA_REQUIRES(parent_->rx_lock()) { in_flight_->Free(rx.id); });
     }
   }
-  parent_->CommitAllSessions();
+  parent_->CommitSession();
   if (device_buffer_count_ <= parent_->rx_notify_threshold()) {
     TriggerRxWatch();
   }
@@ -332,14 +311,14 @@ int RxQueue::WatchThread(
             }
             waiting_on_fifo = false;
           }
-          observed_fifo = parent_->primary_rx_fifo();
-          LOGF_TRACE("RxQueue primary FIFO changed, valid=%d", static_cast<bool>(observed_fifo));
+          observed_fifo = parent_->rx_fifo();
+          LOGF_TRACE("RxQueue FIFO changed, valid=%d", static_cast<bool>(observed_fifo));
           break;
         case kFifoWatchKey:
           if ((packet.signal.observed & ZX_FIFO_PEER_CLOSED) || packet.status != ZX_OK) {
             // If observing the FIFO fails, we're assuming that the session is being closed. We're
             // just going to dispose of our reference to the observed FIFO and wait for
-            // `DeviceInterface` to signal us that a new primary session is available when that
+            // `DeviceInterface` to signal us that a new session is available when that
             // happens.
             observed_fifo.reset();
             LOGF_TRACE("RxQueue fifo closed or bad status %s", zx_status_get_string(packet.status));
@@ -400,7 +379,7 @@ int RxQueue::WatchThread(
       // on the fifo later.
       if (should_wait_on_fifo) {
         if (!observed_fifo) {
-          // This can happen if we get triggered to fetch more buffers, but the primary session is
+          // This can happen if we get triggered to fetch more buffers, but the session is
           // already tearing down, it's fine to just proceed.
           LOG_TRACE("RxQueue::WatchThread Should wait but no FIFO is here");
         } else if (!waiting_on_fifo) {
@@ -437,7 +416,7 @@ void RxQueue::SessionTransaction::Push(Session* session, uint16_t descriptor)
   // NB: __TA_REQUIRES here is just encoding that a SessionTransaction always holds a lock for
   // its parent queue, the protection from misuse comes from the annotations on
   // `SessionTransaction`'s constructor and destructor.
-  uint32_t idx = queue_->in_flight_->Push(InFlightBuffer(session, descriptor));
+  uint32_t idx = queue_->in_flight_->Push(InFlightBuffer(descriptor));
   queue_->available_queue_->Push(idx);
 }
 

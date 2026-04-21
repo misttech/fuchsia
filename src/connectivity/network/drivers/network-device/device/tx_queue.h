@@ -15,9 +15,7 @@
 #include <fbl/mutex.h>
 
 #include "data_structs.h"
-#include "definitions.h"
 #include "device_interface.h"
-#include "src/lib/vmo_store/growable_slab.h"
 
 namespace network::internal {
 
@@ -26,7 +24,6 @@ class Session;
 class TxQueue {
  public:
   static zx::result<std::unique_ptr<TxQueue>> Create(DeviceInterface* parent);
-  using SessionKey = size_t;
 
   ~TxQueue();
   // Terminates and join the |TxQueue| worker thread.
@@ -43,19 +40,17 @@ class TxQueue {
     ZX_DEBUG_ASSERT(parent_ == &parent);
   }
 
-  // Adds a session to the Tx queue. The session's tx fifo will be observed and
+  // Sets the session for this TxQueue. The session's tx fifo will be observed and
   // the session is notified when data is available to be fetched and sent to
   // the device through |Session::FetchTx|.
-  SessionKey AddSession(Session* session) __TA_REQUIRES(parent_->tx_lock());
-  // Removes a session with previously assigned |key|. Panics if |key| is
-  // invalid or points to a not installed session.
-  void RemoveSession(SessionKey key) __TA_REQUIRES(parent_->tx_lock());
+  void SetSession(Session* session) __TA_REQUIRES(parent_->tx_lock());
+  bool HasSession() __TA_REQUIRES(parent_->tx_lock());
 
-  // Helper class to handle Tx transactions from sessions.
+  // Helper class to handle Tx transactions from the session.
   class SessionTransaction {
    public:
     SessionTransaction(cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers,
-                       TxQueue* parent, Session* session) __TA_REQUIRES(parent->parent_->tx_lock());
+                       TxQueue* parent) __TA_REQUIRES(parent->parent_->tx_lock());
     void Commit() __TA_EXCLUDES(queue_->parent_->tx_lock());
 
     uint32_t available() const { return available_; }
@@ -72,14 +67,12 @@ class TxQueue {
     cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers_;
     //  Pointer to queue over which transaction is opened, not owned.
     TxQueue* const queue_;
-    // Pointer to session that opened the transaction, not owned.
-    Session* const session_;
     uint32_t available_;
     uint32_t queued_;
     DISALLOW_COPY_ASSIGN_AND_MOVE(SessionTransaction);
   };
 
-  // Marks all buffers in tx as complete, returning them to their respective sessions.
+  // Marks all buffers in tx as complete, returning them to the session.
   void CompleteTxList(const fidl::VectorView<fuchsia_hardware_network_driver::wire::TxResult>& tx)
       __TA_EXCLUDES(parent_->tx_lock());
 
@@ -91,18 +84,17 @@ class TxQueue {
   zx_status_t UpdateFifoWatches();
 
   zx_status_t HandleFifoSignal(cpp20::span<fuchsia_hardware_network_driver::wire::TxBuffer> buffers,
-                               SessionKey session, zx_signals_t signals);
+                               zx_signals_t signals);
 
   struct InFlightBuffer {
     InFlightBuffer() = default;
-    InFlightBuffer(Session* session, zx_status_t result, uint16_t descriptor_index)
-        : session(session), result(result), descriptor_index(descriptor_index) {}
-    Session* session;
+    InFlightBuffer(zx_status_t result, uint16_t descriptor_index)
+        : result(result), descriptor_index(descriptor_index) {}
     zx_status_t result;
     uint16_t descriptor_index;
   };
 
-  // Wrapper struct to keep track of ongoing sessions with associated
+  // Wrapper struct to keep track of the session with associated
   // information on whether we have an async wait installed on |port_| for tx
   // FIFOs.
   struct SessionWaiter {
@@ -111,10 +103,10 @@ class TxQueue {
   };
 
   // Adds the provided session:descriptor tuple to the queue and returns the buffer id.
-  uint32_t Enqueue(Session* session, uint16_t descriptor) __TA_REQUIRES(parent_->tx_lock());
-  // Returns all outstanding completed buffers to their respective sessions.
+  uint32_t Enqueue(uint16_t descriptor) __TA_REQUIRES(parent_->tx_lock());
+  // Returns all outstanding completed buffers to the session.
   //
-  // Returns true if device buffers were full and sessions should be notified.
+  // Returns true if device buffers were full and the session should be notified.
   [[nodiscard]] bool ReturnBuffers() __TA_REQUIRES(parent_->tx_lock());
 
   static constexpr uint64_t kResumeKey = 1;
@@ -125,7 +117,7 @@ class TxQueue {
 
   std::unique_ptr<RingQueue<uint32_t>> return_queue_ __TA_GUARDED(parent_->tx_lock());
   std::unique_ptr<IndexedSlab<InFlightBuffer>> in_flight_ __TA_GUARDED(parent_->tx_lock());
-  vmo_store::GrowableSlab<SessionWaiter, SessionKey> sessions_ __TA_GUARDED(parent_->tx_lock());
+  std::optional<SessionWaiter> session_ __TA_GUARDED(parent_->tx_lock());
 
   zx::port port_;
   fdf::Dispatcher dispatcher_;

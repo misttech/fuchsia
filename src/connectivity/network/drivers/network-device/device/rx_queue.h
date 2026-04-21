@@ -43,21 +43,22 @@ class RxQueue {
   void Reclaim() __TA_REQUIRES(parent_->rx_lock());
   // Drops all queued buffers attributed to the given session, and marks the session as rx-disabled.
   // Called by the DeviceInterface parent when the session is marked as dead.
-  void PurgeSession(Session& session);
+  void PurgeSession();
   // Returns rx buffers to their respective sessions.
   void CompleteRxList(
       const fidl::VectorView<::fuchsia_hardware_network_driver::wire::RxBuffer>& rx_buffer_list)
       __TA_EXCLUDES(parent_->rx_lock());
-  // Notifies watcher thread that the primary session changed.
+  // Notifies watcher thread that the session changed.
   void TriggerSessionChanged();
   // Poke watcher thread to try to fetch more rx descriptors.
   void TriggerRxWatch();
   // Kills and joins the watcher thread.
   void JoinThread();
   // Helper function to verify if a pending rx lease can be delegated to the
-  // primary session.
+  // session.
   void MaybeDelegateRxLease() __TA_REQUIRES(parent_->rx_lock())
       __TA_REQUIRES_SHARED(parent_->control_lock());
+  void SetSession(Session* session) __TA_REQUIRES(parent_->rx_lock()) { session_ = session; }
   uint64_t rx_completed_frame_index() const __TA_REQUIRES(parent_->rx_lock()) {
     return rx_completed_frame_index_;
   }
@@ -85,9 +86,7 @@ class RxQueue {
 
   struct InFlightBuffer {
     InFlightBuffer() = default;
-    InFlightBuffer(Session* session, uint16_t descriptor_index)
-        : session(session), descriptor_index(descriptor_index) {}
-    Session* session;
+    explicit InFlightBuffer(uint16_t descriptor_index) : descriptor_index(descriptor_index) {}
     uint16_t descriptor_index;
   };
   // Get a single buffer from the queue, along with its identifier. On success, the buffer is popped
@@ -104,6 +103,7 @@ class RxQueue {
 
   // pointer to parent device, not owned.
   DeviceInterface* const parent_;
+  Session* session_ __TA_GUARDED(parent_->rx_lock()) = nullptr;
   std::unique_ptr<IndexedSlab<InFlightBuffer>> in_flight_ __TA_GUARDED(parent_->rx_lock());
   std::unique_ptr<RingQueue<uint32_t>> available_queue_ __TA_GUARDED(parent_->rx_lock());
   size_t device_buffer_count_ __TA_GUARDED(parent_->rx_lock()) = 0;

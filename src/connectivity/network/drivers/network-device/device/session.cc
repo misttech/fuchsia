@@ -35,38 +35,10 @@ bool IsValidFrameType(fuchsia_hardware_network::FrameType type) {
 }
 }  // namespace
 
-bool Session::IsListen() const {
-  return static_cast<bool>(flags_ & netdev::wire::SessionFlags::kListenTx);
-}
-
-bool Session::IsPrimary() const {
-  return static_cast<bool>(flags_ & netdev::wire::SessionFlags::kPrimary);
-}
-
 bool Session::IsPaused() const { return paused_; }
 
 bool Session::AllowRxLeaseDelegation() const {
   return static_cast<bool>(flags_ & netdev::wire::SessionFlags::kReceiveRxPowerLeases);
-}
-
-bool Session::ShouldTakeOverPrimary(const Session* current_primary) const {
-  if ((!IsPrimary()) || current_primary == this) {
-    // If we're not a primary session, or the primary is already ourselves, then we don't
-    // want to take over.
-    return false;
-  }
-  if (!current_primary) {
-    // Always request to take over if there is no current primary session.
-    return true;
-  }
-  if (current_primary->IsPaused() && !IsPaused()) {
-    // If the current primary session is paused, but we aren't we can take it over.
-    return true;
-  }
-  // Otherwise, the heuristic to apply here is that we want to use the
-  // session that has the largest number of descriptors defined, as that relates to having more
-  // buffers available for us.
-  return descriptor_count_ > current_primary->descriptor_count_;
 }
 
 zx::result<std::pair<std::unique_ptr<Session>, netdev::wire::Fifos>> Session::Create(
@@ -117,7 +89,7 @@ Session::Session(async_dispatcher_t* dispatcher, netdev::wire::SessionInfo& info
 
 Session::~Session() {
   // Ensure session has removed itself from the tx queue.
-  ZX_ASSERT(!tx_ticket_.has_value());
+  ZX_ASSERT(!tx_installed_);
   ZX_ASSERT(in_flight_rx_ == 0);
   ZX_ASSERT(in_flight_tx_ == 0);
   ZX_ASSERT(vmo_id_ == netdriver::wire::kMaxVmos);
@@ -251,7 +223,7 @@ void Session::OnUnbind(fidl::UnbindInfo info, fidl::ServerEnd<netdev::Session> c
   // NOTE: the parent may destroy the session synchronously in
   // NotifyDeadSession, this is the last thing we can do safely with this
   // session object.
-  parent_->NotifyDeadSession(*this);
+  parent_->NotifyDeadSession();
 }
 
 void Session::DelegateRxLease(netdev::DelegatedRxLease lease) {
@@ -274,18 +246,22 @@ void Session::DelegateRxLease(netdev::DelegatedRxLease lease) {
 }
 
 void Session::InstallTx() {
-  ZX_ASSERT(!tx_ticket_.has_value());
+  ZX_ASSERT(!tx_installed_);
   TxQueue& tx_queue = parent_->tx_queue();
   tx_queue.AssertParentTxLocked(*parent_);
-  tx_ticket_ = tx_queue.AddSession(this);
+  tx_queue.SetSession(this);
+  tx_installed_ = true;
 }
 
 void Session::UninstallTx() {
-  if (tx_ticket_.has_value()) {
-    TxQueue& tx_queue = parent_->tx_queue();
-    tx_queue.AssertParentTxLocked(*parent_);
-    tx_queue.RemoveSession(std::exchange(tx_ticket_, std::nullopt).value());
+  if (!tx_installed_) {
+    return;
   }
+  TxQueue& tx_queue = parent_->tx_queue();
+  tx_queue.AssertParentTxLocked(*parent_);
+  ZX_ASSERT_MSG(tx_queue.HasSession(), "Session %s not installed", name());
+  tx_queue.SetSession(nullptr);
+  tx_installed_ = false;
 }
 
 zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
@@ -305,9 +281,6 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
   }
 
   cpp20::span descriptors(fetch_buffer, read);
-  // Let other sessions know of tx data.
-  transaction.AssertParentTxLock(*parent_);
-  parent_->ListenSessionData(*this, descriptors);
 
   uint16_t req_header_length = parent_->info().tx_head_length().value_or(0);
   uint16_t req_tail_length = parent_->info().tx_tail_length().value_or(0);
@@ -425,6 +398,7 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
     bool add_head_space = buffer->head_length != 0;
     buffer_descriptor_t* part_iter = desc_ptr;
     uint32_t total_length = 0;
+    transaction.AssertParentTxLock(*parent_);
     for (;;) {
       buffer_descriptor_t& part_desc = *part_iter;
       auto* cur = &buffer->data.data()[buffer->data.size()];
@@ -553,7 +527,7 @@ zx_status_t Session::AttachPort(const netdev::wire::PortId& port_id,
   if (attached_count == 1) {
     paused_.store(false);
     // NB: SessionStarted releases the control lock.
-    parent_->SessionStarted(*this);
+    parent_->SessionStarted();
     parent_->tx_queue().Resume();
   } else {
     parent_->control_lock().Release();
@@ -575,7 +549,7 @@ zx_status_t Session::DetachPort(const netdev::wire::PortId& port_id) {
   if (stop_session) {
     paused_.store(true);
     // NB: SessionStopped releases the control lock.
-    parent_->SessionStopped(*this);
+    parent_->SessionStopped();
   } else {
     parent_->control_lock().Release();
   }
@@ -799,13 +773,8 @@ zx_status_t Session::FillRxSpace(uint16_t descriptor_index,
 }
 
 bool Session::CompleteRx(const RxFrameInfo& frame_info) {
-  ZX_ASSERT(IsPrimary());
-
   // Always mark buffers as returned upon completion.
   auto defer = fit::defer([this, &frame_info]() { RxReturned(frame_info.buffers.size()); });
-
-  // Copy session data to other sessions (if any) even if this session is paused.
-  parent_->CopySessionData(*this, frame_info);
 
   // Allow the buffer to be reused as long as our rx path is still valid.
   bool allow_reuse = rx_valid_;
@@ -831,212 +800,9 @@ bool Session::CompleteRx(const RxFrameInfo& frame_info) {
   return allow_reuse;
 }
 
-bool Session::CompleteRxWith(const Session& owner, const RxFrameInfo& frame_info) {
-  // Shouldn't call CompleteRxWith where owner is self. Assertion enforces that
-  // DeviceInterface::CopySessionData does the right thing.
-  ZX_ASSERT(&owner != this);
-  if (!IsSubscribedToFrameType(frame_info.meta.port,
-                               static_cast<netdev::wire::FrameType>(frame_info.meta.frame_type)) ||
-      IsPaused()) {
-    if (!IsValidFrameType(frame_info.meta.frame_type)) {
-      // Help parent driver authors to debug common contract violation.
-      LOGF_WARN("%s: rx frame has unspecified frame type, dropping frame", name());
-    }
-    // Don't do anything if we're paused or not subscribed to this frame type.
-    return false;
-  }
-
-  // Allocate enough descriptors to fit all the data that we want to copy from the other session.
-  std::array<SessionRxBuffer, netdriver::wire::kMaxBufferParts> parts_storage;
-  auto parts_iter = parts_storage.begin();
-  uint16_t* rx_queue_pick = &rx_avail_queue_[rx_avail_queue_count_];
-  uint32_t remaining = frame_info.total_length;
-  bool attempted_fetch = false;
-  while (remaining != 0) {
-    if (parts_iter == parts_storage.end()) {
-      // Chained too many parts, this session is not providing buffers large enough.
-      LOGF_WARN(
-          "%s: failed to allocate %d bytes with %ld buffer parts (%d bytes "
-          "remaining); frame dropped",
-          name(), frame_info.total_length, parts_storage.size(), remaining);
-      return false;
-    }
-    if (rx_avail_queue_count_ == 0) {
-      // We allow a fetch attempt only once, which gives the session a chance to have returned
-      // enough descriptors for this chained case.
-      if (attempted_fetch) {
-        return false;
-      }
-      attempted_fetch = true;
-
-      // Can't do much if we can't fetch more descriptors. We have to drop this frame.
-      // We intentionally don't log here because this becomes too noisy.
-      // TODO(https://fxbug.dev/42154117): Log here sparingly as part of "no buffers available"
-      // strategy.
-      if (FetchRxDescriptors() != ZX_OK) {
-        return false;
-      }
-
-      // FetchRxDescriptors modifies the available rx queue, we need to build the parts again.
-      remaining = frame_info.total_length;
-      parts_iter = parts_storage.begin();
-      rx_queue_pick = &rx_avail_queue_[rx_avail_queue_count_];
-      continue;
-    }
-    SessionRxBuffer& session_buffer = *parts_iter++;
-    session_buffer.descriptor = *(--rx_queue_pick);
-    buffer_descriptor_t* desc_ptr = checked_descriptor(session_buffer.descriptor);
-    if (!desc_ptr) {
-      LOGF_TRACE("%s: descriptor %d out of range %d", name(), session_buffer.descriptor,
-                 descriptor_count_);
-      Kill();
-      return false;
-    }
-    buffer_descriptor_t& desc = *desc_ptr;
-    uint32_t desc_length = desc.data_length + desc.head_length + desc.tail_length;
-    session_buffer.offset = 0;
-    session_buffer.length = std::min(desc_length, remaining);
-    remaining -= session_buffer.length;
-  }
-
-  cpp20::span<const SessionRxBuffer> parts(parts_storage.begin(), parts_iter);
-  zx_status_t status = LoadRxInfo(RxFrameInfo{
-      .meta = frame_info.meta,
-      .port_id_salt = frame_info.port_id_salt,
-      .buffers = parts,
-      .total_length = frame_info.total_length,
-  });
-  // LoadRxInfo only fails if we can't fulfill the total length with the given buffer parts. It
-  // shouldn't fail here because we hand crafted the parts above to fulfill the total frame length.
-  ZX_ASSERT_MSG(status == ZX_OK, "failed to load frame information to copy session: %s",
-                zx_status_get_string(status));
-  rx_avail_queue_count_ -= parts.size();
-
-  const uint16_t first_descriptor = parts.begin()->descriptor;
-
-  // Copy the data from the owner VMO into our own.
-  // We can assume that the owner descriptor is valid, because the descriptor was validated when
-  // passing it down to the device.
-  // Also, we know that our own descriptor is valid, because we already pre-loaded the
-  // information by calling LoadRxInfo above.
-  // The rx information from the owner session has not yet been loaded into its descriptor at this
-  // point; iteration over buffer parts and offset/length information must be retrieved from
-  // |frame_info|. The owner's descriptors provides only the original vmo offset to use, dictated by
-  // the owner session's client.
-  auto owner_rx_iter = frame_info.buffers.begin();
-  auto get_vmo_owner_offset = [&owner](uint16_t index) -> uint64_t {
-    const buffer_descriptor_t& desc = owner.descriptor(index);
-    return desc.offset + desc.head_length;
-  };
-  uint64_t owner_vmo_offset = get_vmo_owner_offset(owner_rx_iter->descriptor);
-
-  buffer_descriptor_t* desc_iter = &descriptor(first_descriptor);
-
-  remaining = frame_info.total_length;
-  uint32_t owner_off = 0;
-  uint32_t self_off = 0;
-  for (;;) {
-    buffer_descriptor_t& desc = *desc_iter;
-    const SessionRxBuffer& owner_rx_buffer = *owner_rx_iter;
-    uint32_t owner_len = owner_rx_buffer.length - owner_off;
-    uint32_t self_len = desc.data_length - self_off;
-    uint32_t copy_len = owner_len >= self_len ? self_len : owner_len;
-    cpp20::span target = data_at(desc.offset + desc.head_length + self_off, copy_len);
-    cpp20::span src =
-        owner.data_at(owner_vmo_offset + owner_rx_buffer.offset + owner_off, copy_len);
-    std::copy_n(src.begin(), std::min(target.size(), src.size()), target.begin());
-
-    owner_off += copy_len;
-    self_off += copy_len;
-    ZX_ASSERT(owner_off <= owner_rx_iter->length);
-    ZX_ASSERT(self_off <= desc.data_length);
-
-    remaining -= copy_len;
-    if (remaining == 0) {
-      return true;
-    }
-
-    if (self_off == desc.data_length) {
-      desc_iter = &descriptor(desc.nxt);
-      self_off = 0;
-    }
-    if (owner_off == owner_rx_buffer.length) {
-      owner_vmo_offset = get_vmo_owner_offset((++owner_rx_iter)->descriptor);
-      owner_off = 0;
-    }
-  }
-}
-
 bool Session::CompleteUnfulfilledRx() {
   RxReturned(1);
   return rx_valid_;
-}
-
-bool Session::ListenFromTx(const Session& owner, uint16_t owner_index) {
-  ZX_ASSERT(&owner != this);
-  if (IsPaused()) {
-    // Do nothing if we're paused.
-    return false;
-  }
-
-  // NB: This method is called before the tx frame is operated on for regular tx flow. We can't
-  // assume that descriptors have already been validated.
-  const buffer_descriptor_t* owner_desc_iter = owner.checked_descriptor(owner_index);
-  if (!owner_desc_iter) {
-    // Stop the listen short, validation will happen again on regular tx flow.
-    return false;
-  }
-  const buffer_descriptor_t& owner_desc = *owner_desc_iter;
-  // Bail early if not interested in frame type.
-  if (!IsSubscribedToFrameType(owner_desc.port_id.base,
-                               static_cast<netdev::wire::FrameType>(owner_desc.frame_type))) {
-    return false;
-  }
-
-  BufferParts<SessionRxBuffer> parts;
-  auto parts_iter = parts.begin();
-  uint32_t total_length = 0;
-  for (;;) {
-    const buffer_descriptor_t& owner_part = *owner_desc_iter;
-    *parts_iter++ = {
-        .descriptor = owner_index,
-        .length = owner_part.data_length,
-    };
-    total_length += owner_part.data_length;
-    if (owner_part.chain_length == 0) {
-      break;
-    }
-    owner_desc_iter = owner.checked_descriptor(owner_part.nxt);
-    if (!owner_desc_iter) {
-      // Let regular tx validation punish the owner session.
-      return false;
-    }
-  }
-
-  auto info_type = static_cast<netdev::wire::InfoType>(owner_desc.info_type);
-  switch (info_type) {
-    case netdev::wire::InfoType::kNoInfo:
-      break;
-    default:
-      LOGF_ERROR("%s: info type (%d) not recognized, discarding information", name(),
-                 owner_desc.info_type);
-      info_type = netdev::wire::InfoType::kNoInfo;
-      break;
-  }
-  // Build frame information as if this had been received from any other session and call into
-  // common routine to commit the descriptor.
-  const fuchsia_hardware_network_driver::wire::BufferMetadata frame_meta = {
-      .port = owner_desc.port_id.base,
-      .flags = static_cast<uint32_t>(netdev::wire::RxFlags::kRxEchoedTx),
-      .frame_type = static_cast<fuchsia_hardware_network::wire::FrameType>(owner_desc.frame_type),
-  };
-
-  return CompleteRxWith(owner, RxFrameInfo{
-                                   .meta = frame_meta,
-                                   .port_id_salt = parent_->GetPortSalt(frame_meta.port),
-                                   .buffers = cpp20::span(parts.begin(), parts_iter),
-                                   .total_length = total_length,
-                               });
 }
 
 zx_status_t Session::LoadRxInfo(const RxFrameInfo& info) {
