@@ -39,6 +39,7 @@ func main() {
 		"readme":    true,
 		"project":   true,
 		"policy":    true,
+		"allowlist": true,
 		"copyright": true,
 		"classify":  true,
 		"help":      true,

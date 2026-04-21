@@ -36,6 +36,7 @@ if (is_host) {
 if (is_host) {
   go_library("main") {
     sources = [
+      "allowlist.go",
       "classify.go",
       "config.go",
       "copyright.go",
@@ -75,6 +76,7 @@ if (is_host) {
 if (is_host) {
   go_test("cmd_test") {
     sources = [
+      "allowlist_test.go",
       "classify_test.go",
       "config_test.go",
       "copyright_test.go",
