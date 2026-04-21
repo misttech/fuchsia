@@ -6,35 +6,26 @@ use assert_matches::assert_matches;
 use blob_writer::BlobWriter;
 use crypt_policy as _;
 use delivery_blob::{CompressionMode, Type1Blob};
-use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker as _};
 use fidl_fuchsia_fs_startup::VolumeMarker as FsStartupVolumeMarker;
-use fidl_fuchsia_fshost::AdminProxy;
+use fidl_fuchsia_fshost::{AdminProxy, RecoveryProxy};
 use fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy};
-use fidl_fuchsia_storage_block::{BlockMarker, VolumeManagerMarker};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block as fpartition;
+use fidl_fuchsia_storage_block::BlockMarker;
+use fidl_fuchsia_storage_partitions as fpartitions;
 use fidl_fuchsia_update_verify::HealthStatus;
-use fs_management::DATA_TYPE_GUID;
-use fs_management::format::constants::DATA_PARTITION_LABEL;
-use fs_management::partition::{PartitionMatcher, find_partition_in};
 use fshost_test_fixture::disk_builder::{
     BLOBFS_MAX_BYTES, DataSpec, Disk, DiskBuilder, TEST_DISK_BLOCK_SIZE, VolumesSpec,
 };
 use fshost_test_fixture::{
-    BlockDeviceConfig, BlockDeviceIdentifiers, BlockDeviceParent, TestFixture, VFS_TYPE_FXFS,
-    VFS_TYPE_MEMFS, VFS_TYPE_MINFS, round_down,
+    BlockDeviceConfig, BlockDeviceIdentifiers, BlockDeviceParent, TestFixture, VFS_TYPE_MEMFS,
+    round_down,
 };
-
-use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
-
-use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
+use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 use futures::FutureExt as _;
 use regex::Regex;
-
-#[cfg(feature = "storage-host")]
-use {
-    fidl::endpoints::ServiceMarker as _, fidl_fuchsia_fshost::RecoveryProxy,
-    fidl_fuchsia_storage_block as fpartition, fidl_fuchsia_storage_partitions as fpartitions,
-};
 
 pub mod config;
 
@@ -225,14 +216,6 @@ async fn ramdisk_data_ignores_non_ramdisk() {
         .format_data(DataSpec { zxcrypt: false, ..data_fs_spec() });
     let fixture = builder.build().await;
 
-    // Make sure fvm is bound/launched when we expect
-    // TODO(https://fxbug.dev/397770032): Once we support recovery mode for storage-host, it should
-    // also wait for fvm to appear.
-    if cfg!(not(any(feature = "storage-host", feature = "fxblob"))) {
-        let ramdisk_dir = fixture.ramdisks[0].as_dir().expect("invalid dir proxy");
-        device_watcher::recursive_wait(ramdisk_dir, "fvm/data-p-2/block").await.unwrap();
-    }
-
     // There isn't really a good way to tell that something is not mounted, but at this point we
     // would be pretty close to it, so a timeout of a couple seconds should safeguard against
     // potential issues.
@@ -249,85 +232,6 @@ async fn ramdisk_data_ignores_non_ramdisk() {
     fixture.tear_down().await;
 }
 
-// There is an equivalent test for storage-host below (they are almost entirely different so it's
-// not worth having them in the same test)
-#[cfg_attr(any(feature = "fxblob", feature = "storage-host"), ignore)]
-#[fuchsia::test]
-async fn partition_max_size_set() {
-    let mut builder = new_builder();
-    builder
-        .fshost()
-        .set_config_value("data_max_bytes", data_max_bytes())
-        .set_config_value("blob_max_bytes", BLOBFS_MAX_BYTES);
-    builder.with_disk().format_volumes(volumes_spec()).format_data(data_fs_spec());
-    let fixture = builder.build().await;
-
-    fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_fs_type("data", data_fs_type()).await;
-
-    // Get the blobfs instance guid.
-    // TODO(https://fxbug.dev/42072287): Remove hardcoded paths
-    let volume_proxy = connect_to_named_protocol_at_dir_root::<BlockMarker>(
-        &fixture.dir("dev-topological", fio::Flags::empty()),
-        "sys/platform/ram-disk/ramctl/ramdisk-0/block/fvm/blobfs-p-1/block",
-    )
-    .unwrap();
-    let (status, blobfs_instance_guid) = volume_proxy.get_instance_guid().await.unwrap();
-    zx::Status::ok(status).unwrap();
-
-    let data_matcher = PartitionMatcher {
-        type_guids: Some(vec![DATA_TYPE_GUID]),
-        labels: Some(vec![DATA_PARTITION_LABEL.to_string()]),
-        ignore_if_path_contains: Some("zxcrypt/unsealed".to_string()),
-        ..Default::default()
-    };
-
-    let dev = fixture.dir("dev-topological/class/block", fio::Flags::empty());
-    let data_partition_controller =
-        find_partition_in(&dev, data_matcher, zx::MonotonicDuration::from_seconds(10))
-            .await
-            .expect("failed to find data partition");
-
-    // Get the data instance guid.
-    let (volume_proxy, volume_server_end) = fidl::endpoints::create_proxy::<BlockMarker>();
-    data_partition_controller.connect_to_device_fidl(volume_server_end.into_channel()).unwrap();
-
-    let (status, data_instance_guid) = volume_proxy.get_instance_guid().await.unwrap();
-    zx::Status::ok(status).unwrap();
-
-    // TODO(https://fxbug.dev/42072287): Remove hardcoded paths
-    let fvm_proxy = connect_to_named_protocol_at_dir_root::<VolumeManagerMarker>(
-        &fixture.dir("dev-topological", fio::Flags::empty()),
-        "sys/platform/ram-disk/ramctl/ramdisk-0/block/fvm",
-    )
-    .unwrap();
-
-    // blobfs max size check
-    let (status, blobfs_slice_count) =
-        fvm_proxy.get_partition_limit(blobfs_instance_guid.as_ref().unwrap()).await.unwrap();
-    zx::Status::ok(status).unwrap();
-    assert_eq!(blobfs_slice_count, (BLOBFS_MAX_BYTES + fvm_slice_size() - 1) / fvm_slice_size());
-
-    // data max size check
-    let (status, data_slice_count) =
-        fvm_proxy.get_partition_limit(data_instance_guid.as_ref().unwrap()).await.unwrap();
-    zx::Status::ok(status).unwrap();
-    // The expected size depends on whether we are using zxcrypt or not.
-    // When wrapping in zxcrypt the data partition size is the same, but the physical disk
-    // commitment is one slice bigger.
-    let mut expected_slices = (data_max_bytes() + fvm_slice_size() - 1) / fvm_slice_size();
-    if data_fs_zxcrypt() && data_fs_type() != VFS_TYPE_FXFS {
-        log::info!("Adding an extra expected data slice for zxcrypt");
-        expected_slices += 1;
-    }
-    assert_eq!(data_slice_count, expected_slices);
-
-    fixture.tear_down().await;
-}
-
-// For fxblob and all storage-host configurations, volume limits are set via the
-// fuchsia.fs.startup.Volume protocol.
-#[cfg_attr(not(any(feature = "fxblob", feature = "storage-host")), ignore)]
 #[fuchsia::test]
 async fn set_volume_limit() {
     let mut builder = new_builder();
@@ -424,14 +328,6 @@ async fn ramdisk_image_set() {
     builder.with_disk().format_volumes(volumes_spec());
     let fixture = builder.build().await;
 
-    // Make sure fvm is bound/launched when we expect
-    // TODO(https://fxbug.dev/397770032): Once we support recovery mode for storage-host, it should
-    // also wait for fvm to appear.
-    if cfg!(not(any(feature = "storage-host", feature = "fxblob"))) {
-        let ramdisk_dir = fixture.ramdisks[0].as_dir().expect("invalid dir proxy");
-        device_watcher::recursive_wait(ramdisk_dir, "fvm/data-p-2/block").await.unwrap();
-    }
-
     // Use the same approach as ramdisk_data_ignores_non_ramdisk() to ensure that
     // neither blobfs nor data were mounted using a timeout
     futures::select! {
@@ -462,15 +358,7 @@ async fn ramdisk_image_serves_zbi_ramdisk_contents_with_unformatted_data() {
 }
 
 #[fuchsia::test]
-#[cfg_attr(
-    not(any(
-        feature = "f2fs",
-        feature = "minfs-no-zxcrypt",
-        all(not(feature = "storage-host"), feature = "minfs"),
-    )),
-    ignore
-)]
-
+#[cfg_attr(not(any(feature = "f2fs", feature = "minfs-no-zxcrypt")), ignore)]
 async fn shred_data_volume_not_supported() {
     let mut builder = new_builder();
     builder.with_disk().format_volumes(volumes_spec());
@@ -493,15 +381,7 @@ async fn shred_data_volume_not_supported() {
 }
 
 #[fuchsia::test]
-#[cfg_attr(
-    any(
-        feature = "f2fs",
-        feature = "minfs-no-zxcrypt",
-        all(not(feature = "storage-host"), feature = "minfs"),
-    ),
-    ignore
-)]
-
+#[cfg_attr(any(feature = "f2fs", feature = "minfs-no-zxcrypt"), ignore)]
 async fn shred_data_volume_when_mounted() {
     let mut builder = new_builder();
     builder.with_disk().format_volumes(volumes_spec());
@@ -548,15 +428,7 @@ async fn shred_data_volume_when_mounted() {
 }
 
 #[fuchsia::test]
-#[cfg_attr(
-    any(
-        feature = "f2fs",
-        feature = "minfs-no-zxcrypt",
-        all(not(feature = "storage-host"), feature = "minfs"),
-    ),
-    ignore
-)]
-
+#[cfg_attr(any(feature = "f2fs", feature = "minfs-no-zxcrypt"), ignore)]
 async fn shred_data_volume_from_recovery() {
     let mut builder = new_builder();
     builder.with_disk().with_gpt().format_volumes(volumes_spec());
@@ -633,28 +505,10 @@ async fn disable_block_watcher() {
 }
 
 async fn assert_volumes_are_expected(fixture: &TestFixture) {
-    let (volumes_dir, expected) = if cfg!(feature = "fxblob") {
-        // This includes fxblob in storage-host and non-storage-host configurations
+    let (volumes_dir, expected) = if cfg!(feature = "fxfs") {
         (fixture.dir("volumes", fio::Flags::empty()), vec![r"^blob$", r"^data$", r"^unencrypted$"])
-    } else if cfg!(feature = "storage-host") {
-        (fixture.dir("volumes", fio::Flags::empty()), vec![r"^blobfs$", r"^data$"])
     } else {
-        (
-            fuchsia_fs::directory::open_directory(
-                &fixture.dir("dev-topological", fio::Flags::empty()),
-                "sys/platform/ram-disk/ramctl/ramdisk-0/block/fvm",
-                fio::Flags::empty(),
-            )
-            .await
-            .expect("Failed to open the fvm"),
-            vec![
-                r"^blobfs",
-                r"data",
-                r"^device_controller$",
-                r"^device_protocol$",
-                r"^device_topology$",
-            ],
-        )
+        (fixture.dir("volumes", fio::Flags::empty()), vec![r"^blobfs$", r"^data$"])
     };
 
     let mut expected: Vec<_> = expected.into_iter().map(|r| Regex::new(r).unwrap()).collect();
@@ -722,79 +576,6 @@ async fn reset_volumes_no_existing_data_volume() {
 
     assert_volumes_are_expected(&fixture).await;
 
-    fixture.tear_down().await;
-}
-
-// Toggle migration mode
-#[cfg_attr(any(feature = "fxblob", feature = "storage-host"), ignore)]
-#[fuchsia::test]
-async fn migration_toggle() {
-    let mut builder = new_builder();
-    builder
-        .fshost()
-        .set_config_value("data_max_bytes", data_max_bytes())
-        .set_config_value("use_disk_migration", true);
-    builder
-        .with_disk()
-        .data_volume_size(data_max_bytes())
-        .format_volumes(volumes_spec())
-        .format_data(DataSpec { format: Some("minfs"), zxcrypt: true, ..Default::default() })
-        .set_fs_switch("toggle");
-    let fixture = builder.build().await;
-
-    fixture.check_fs_type("data", VFS_TYPE_FXFS).await;
-    fixture.check_test_data_file().await;
-
-    let disk = fixture.tear_down().await.unwrap();
-
-    let mut builder = new_builder().with_disk_from(disk);
-    builder.fshost().set_config_value("data_max_bytes", data_max_bytes());
-    let fixture = builder.build().await;
-
-    fixture.check_fs_type("data", VFS_TYPE_MINFS).await;
-    fixture.check_test_data_file().await;
-    fixture.tear_down().await;
-}
-
-#[cfg_attr(any(feature = "fxblob", feature = "storage-host"), ignore)]
-#[fuchsia::test]
-async fn migration_to_fxfs() {
-    let mut builder = new_builder();
-    builder
-        .fshost()
-        .set_config_value("data_max_bytes", data_max_bytes())
-        .set_config_value("use_disk_migration", true);
-    builder
-        .with_disk()
-        .data_volume_size(round_down(data_max_bytes(), fvm_slice_size()))
-        .format_volumes(volumes_spec())
-        .format_data(DataSpec { format: Some("minfs"), zxcrypt: true, ..Default::default() })
-        .set_fs_switch("fxfs");
-    let fixture = builder.build().await;
-
-    fixture.check_fs_type("data", VFS_TYPE_FXFS).await;
-    fixture.check_test_data_file().await;
-    fixture.tear_down().await;
-}
-
-#[cfg_attr(any(feature = "fxblob", feature = "storage-host"), ignore)]
-#[fuchsia::test]
-async fn migration_to_minfs() {
-    let mut builder = new_builder();
-    builder
-        .fshost()
-        .set_config_value("data_max_bytes", data_max_bytes())
-        .set_config_value("use_disk_migration", true);
-    builder
-        .with_disk()
-        .data_volume_size(round_down(data_max_bytes(), fvm_slice_size()))
-        .format_volumes(volumes_spec())
-        .format_data(DataSpec { format: Some("fxfs"), zxcrypt: false, ..Default::default() })
-        .set_fs_switch("minfs");
-    let fixture = builder.build().await;
-
-    fixture.check_fs_type("data", VFS_TYPE_MINFS).await;
-    fixture.check_test_data_file().await;
     fixture.tear_down().await;
 }
 
@@ -877,30 +658,12 @@ async fn data_persists() {
     fixture.tear_down().await;
 }
 
-#[cfg(feature = "storage-host")]
 async fn gpt_num_partitions(fixture: &TestFixture) -> usize {
     let partitions = fixture.dir(
         fidl_fuchsia_storage_partitions::PartitionServiceMarker::SERVICE_NAME,
         fuchsia_fs::PERM_READABLE,
     );
     fuchsia_fs::directory::readdir(&partitions).await.expect("Failed to read partitions").len()
-}
-
-#[cfg(not(feature = "storage-host"))]
-async fn gpt_num_partitions(fixture: &TestFixture) -> usize {
-    let gpt_dir = fuchsia_fs::directory::open_directory(
-        &fixture.dir("dev-topological", fio::Flags::empty()),
-        "sys/platform/ram-disk/ramctl/ramdisk-0/block",
-        fio::Flags::empty(),
-    )
-    .await
-    .expect("Failed to open the gpt device");
-    fuchsia_fs::directory::readdir(&gpt_dir)
-        .await
-        .expect("Failed to read partitions")
-        .into_iter()
-        .filter(|entry| entry.name.starts_with("part-"))
-        .count()
 }
 
 #[fuchsia::test]
@@ -934,7 +697,6 @@ async fn uninitialized_gpt() {
     fixture.tear_down().await;
 }
 
-#[cfg(feature = "storage-host")]
 #[fuchsia::test]
 async fn reset_uninitialized_gpt() {
     let mut builder = new_builder().with_uninitialized_disk();
@@ -964,7 +726,6 @@ async fn reset_uninitialized_gpt() {
     fixture.tear_down().await;
 }
 
-#[cfg(feature = "storage-host")]
 #[fuchsia::test]
 async fn reset_initialized_gpt() {
     let mut builder = new_builder();
@@ -1096,7 +857,6 @@ async fn expose_unmanaged_block_devices() {
 }
 
 // Regression test for https://fxbug.dev/408423972.
-#[cfg(feature = "storage-host")]
 #[fuchsia::test]
 async fn fuse_gpt_once_container_found() {
     let mut builder = new_builder();
@@ -1203,35 +963,32 @@ async fn device_config() {
     let metadata = volume.get_metadata().await.unwrap().unwrap();
     assert_eq!(metadata.num_blocks, Some(1));
 
-    #[cfg(feature = "storage-host")]
-    {
-        // Once partitions have been enumerated, the volume service instance for their containing
-        // device should also be registered.
+    // Once partitions have been enumerated, the volume service instance for their containing
+    // device should also be registered.
+    let service_dir = fixture.dir(
+        fshost_test_fixture::FSHOST_VOLUME_SERVICE_DIR_NAME,
+        fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY,
+    );
+    let instances = fuchsia_fs::directory::readdir(&service_dir)
+        .await
+        .expect("readdir service dir failed")
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect::<Vec<_>>();
+    assert_eq!(instances.len(), 1);
+    let service_instance_dir =
+        fuchsia_fs::directory::open_directory(&service_dir, &instances[0], fio::PERM_READABLE)
+            .await
+            .expect("open instance failed");
+    let service_instance_dir_entries = fuchsia_fs::directory::readdir(&service_instance_dir)
+        .await
+        .expect("readdir instance dir failed")
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect::<std::collections::HashSet<_>>();
+    assert!(service_instance_dir_entries.contains("volume"));
+    assert!(service_instance_dir_entries.contains("node"));
 
-        let service_dir = fixture.dir(
-            fshost_test_fixture::FSHOST_VOLUME_SERVICE_DIR_NAME,
-            fio::PERM_READABLE | fio::Flags::PROTOCOL_DIRECTORY,
-        );
-        let instances = fuchsia_fs::directory::readdir(&service_dir)
-            .await
-            .expect("readdir service dir failed")
-            .into_iter()
-            .map(|entry| entry.name)
-            .collect::<Vec<_>>();
-        assert_eq!(instances.len(), 1);
-        let service_instance_dir =
-            fuchsia_fs::directory::open_directory(&service_dir, &instances[0], fio::PERM_READABLE)
-                .await
-                .expect("open instance failed");
-        let service_instance_dir_entries = fuchsia_fs::directory::readdir(&service_instance_dir)
-            .await
-            .expect("readdir instance dir failed")
-            .into_iter()
-            .map(|entry| entry.name)
-            .collect::<std::collections::HashSet<_>>();
-        assert!(service_instance_dir_entries.contains("volume"));
-        assert!(service_instance_dir_entries.contains("node"));
-    }
     fixture.tear_down().await;
 }
 
@@ -1314,7 +1071,6 @@ async fn expose_system_gpt() {
     fixture.tear_down().await;
 }
 
-#[cfg(feature = "storage-host")]
 #[fuchsia::test]
 async fn block_relay() {
     let builder = new_builder().with_device_config(vec![BlockDeviceConfig {
@@ -1415,7 +1171,7 @@ mod fxblob {
     use diagnostics_reader::ArchiveReader;
     use fidl::endpoints::Proxy;
     use fidl_fuchsia_fshost::StarnixVolumeProviderProxy;
-    use fshost_test_fixture::STARNIX_VOLUME_NAME;
+    use fshost_test_fixture::{STARNIX_VOLUME_NAME, VFS_TYPE_FXFS};
 
     fn keymint_data_fs_spec() -> fshost_test_fixture::disk_builder::DataSpec {
         fshost_test_fixture::disk_builder::DataSpec {
@@ -1904,7 +1660,6 @@ mod fxblob {
     // GPT will be formatted "super" (which contains Fxfs) and "userdata" (which is unformatted),
     // and it is expected that fshost sees a merged "fxfs" partition. The test only works on fxfs,
     // because fxfs supports mounting on a larger partition than it was formatted with.
-    #[cfg(feature = "storage-host")]
     #[fuchsia::test]
     async fn merge_super_and_userdata() {
         use fidl_fuchsia_storage_partitions::{OverlayPartitionMarker, PartitionInfo};
@@ -2276,7 +2031,6 @@ mod fxblob {
         fixture.tear_down().await;
     }
 
-    #[cfg(feature = "storage-host")]
     #[fuchsia::test]
     async fn test_provision_fxfs() {
         let mut builder = new_builder();
@@ -2299,6 +2053,7 @@ mod fxblob {
 
         fixture.tear_down().await;
     }
+
     #[fuchsia::test]
     async fn set_volume_bytes_limit() {
         let mut builder = new_builder();

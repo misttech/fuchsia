@@ -74,21 +74,19 @@ pub struct TestFixtureBuilder {
     extra_disks: Vec<Disk>,
     fshost: fshost_testing::FshostBuilder,
     zbi_ramdisk: Option<disk_builder::DiskBuilder>,
-    storage_host: bool,
     force_fxfs_provisioner_failure: bool,
     keymint: std::sync::Arc<FakeKeymint>,
     crypt_policy: crypt_policy::Policy,
 }
 
 impl TestFixtureBuilder {
-    pub fn new(fshost_component_name: &'static str, storage_host: bool) -> Self {
+    pub fn new(fshost_component_name: &'static str) -> Self {
         Self {
             no_fuchsia_boot: false,
             disk: None,
             extra_disks: Vec::new(),
             fshost: fshost_testing::FshostBuilder::new(fshost_component_name),
             zbi_ramdisk: None,
-            storage_host,
             force_fxfs_provisioner_failure: false,
             keymint: std::sync::Arc::new(FakeKeymint::default()),
             crypt_policy: crypt_policy::Policy::Null,
@@ -307,7 +305,6 @@ impl TestFixtureBuilder {
             main_disk: None,
             crash_reports,
             torn_down: TornDown(false),
-            storage_host: self.storage_host,
         };
 
         log::info!(
@@ -370,7 +367,6 @@ pub struct TestFixture {
     pub main_disk: Option<Disk>,
     pub crash_reports: mpsc::Receiver<ffeedback::CrashReport>,
     torn_down: TornDown,
-    storage_host: bool,
 }
 
 impl TestFixture {
@@ -518,14 +514,10 @@ impl TestFixture {
     }
 
     async fn add_ramdisk(&mut self, vmo: zx::Vmo, type_guid: Option<[u8; 16]>) {
-        let mut ramdisk_builder = if self.storage_host {
-            RamdiskClientBuilder::new_with_vmo(vmo, Some(512)).use_v2().publish().ramdisk_service(
-                self.dir(framdisk::ServiceMarker::SERVICE_NAME, fio::Flags::empty()),
-            )
-        } else {
-            RamdiskClientBuilder::new_with_vmo(vmo, Some(512))
-                .dev_root(self.dir("dev-topological", fio::Flags::empty()))
-        };
+        let mut ramdisk_builder = RamdiskClientBuilder::new_with_vmo(vmo, Some(512))
+            .use_v2()
+            .publish()
+            .ramdisk_service(self.dir(framdisk::ServiceMarker::SERVICE_NAME, fio::Flags::empty()));
         if let Some(guid) = type_guid {
             ramdisk_builder = ramdisk_builder.guid(guid);
         }

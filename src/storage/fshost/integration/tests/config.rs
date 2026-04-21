@@ -19,7 +19,7 @@ pub const DATA_FILESYSTEM_FORMAT: &'static str = std::env!("DATA_FILESYSTEM_FORM
 pub const DATA_FILESYSTEM_VARIANT: &'static str = std::env!("DATA_FILESYSTEM_VARIANT");
 
 pub fn new_builder() -> TestFixtureBuilder {
-    TestFixtureBuilder::new(FSHOST_COMPONENT_NAME, cfg!(feature = "storage-host"))
+    TestFixtureBuilder::new(FSHOST_COMPONENT_NAME)
 }
 
 pub fn blob_fs_type() -> u32 {
