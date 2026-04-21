@@ -100,13 +100,6 @@ namespace intel_display {
 
 namespace {
 
-constexpr std::array<display::ImageTilingType, 4> kImageTilingTypes = {
-    display::ImageTilingType::kLinear,
-    display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED),
-    display::ImageTilingType(IMAGE_TILING_TYPE_Y_LEGACY_TILED),
-    display::ImageTilingType(IMAGE_TILING_TYPE_YF_TILED),
-};
-
 constexpr std::array<display::PixelFormat, 2> kPixelFormatTypes = {
     display::PixelFormat::kB8G8R8A8,
     display::PixelFormat::kR8G8B8A8,
@@ -800,9 +793,8 @@ display::EngineInfo Controller::CompleteCoordinatorConnection() {
   });
 }
 
-static bool ConvertPixelFormatToTilingType(
-    fuchsia_sysmem2::wire::ImageFormatConstraints constraints,
-    display::ImageTilingType* image_tiling_type_out) {
+static bool IsSupportedPixelFormatForLinearTiling(
+    fuchsia_sysmem2::wire::ImageFormatConstraints constraints) {
   const auto& format = constraints.pixel_format();
   if (format != fuchsia_images2::wire::PixelFormat::kB8G8R8A8 &&
       format != fuchsia_images2::wire::PixelFormat::kR8G8B8A8) {
@@ -813,26 +805,7 @@ static bool ConvertPixelFormatToTilingType(
     return false;
   }
 
-  switch (constraints.pixel_format_modifier()) {
-    case fuchsia_images2::wire::PixelFormatModifier::kIntelI915XTiled:
-      *image_tiling_type_out = display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED);
-      return true;
-
-    case fuchsia_images2::wire::PixelFormatModifier::kIntelI915YTiled:
-      *image_tiling_type_out = display::ImageTilingType(IMAGE_TILING_TYPE_Y_LEGACY_TILED);
-      return true;
-
-    case fuchsia_images2::wire::PixelFormatModifier::kIntelI915YfTiled:
-      *image_tiling_type_out = display::ImageTilingType(IMAGE_TILING_TYPE_YF_TILED);
-      return true;
-
-    case fuchsia_images2::wire::PixelFormatModifier::kLinear:
-      *image_tiling_type_out = display::ImageTilingType::kLinear;
-      return true;
-
-    default:
-      return false;
-  }
+  return true;
 }
 
 zx::result<> Controller::ImportBufferCollection(
@@ -887,11 +860,7 @@ zx::result<display::DriverImageId> Controller::ImportImage(
   }
   const fidl::WireSyncClient<fuchsia_sysmem2::BufferCollection>& collection = it->second;
 
-  if (!(image_metadata.tiling_type() == display::ImageTilingType::kLinear ||
-        image_metadata.tiling_type() == display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED) ||
-        image_metadata.tiling_type() ==
-            display::ImageTilingType(IMAGE_TILING_TYPE_Y_LEGACY_TILED) ||
-        image_metadata.tiling_type() == display::ImageTilingType(IMAGE_TILING_TYPE_YF_TILED))) {
+  if (image_metadata.tiling_type() != display::ImageTilingType::kLinear) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -954,15 +923,10 @@ zx::result<display::DriverImageId> Controller::ImportImage(
                   collection_info.settings().image_format_constraints().pixel_format() !=
                       fuchsia_images2::wire::PixelFormat::kNv12);
 
-  display::ImageTilingType image_tiling_type = display::ImageTilingType::kLinear;
-  if (!ConvertPixelFormatToTilingType(collection_info.settings().image_format_constraints(),
-                                      &image_tiling_type)) {
+  ZX_DEBUG_ASSERT(image_metadata.tiling_type() == display::ImageTilingType::kLinear);
+  if (!IsSupportedPixelFormatForLinearTiling(
+          collection_info.settings().image_format_constraints())) {
     fdf::error("Invalid pixel format modifier");
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-  if (image_metadata.tiling_type() != image_tiling_type) {
-    fdf::error("Incompatible image type from image {} and sysmem {}", image_metadata.tiling_type(),
-               image_tiling_type);
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
@@ -999,16 +963,10 @@ zx::result<display::DriverImageId> Controller::ImportImage(
                                                 image_metadata.dimensions().height()) *
                                 get_tile_byte_size(image_metadata.tiling_type()));
 
-  uint32_t align;
-  if (image_metadata.tiling_type() == display::ImageTilingType::kLinear) {
-    align = registers::PlaneSurface::kLinearAlignment;
-  } else if (image_metadata.tiling_type() == display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED)) {
-    align = registers::PlaneSurface::kXTilingAlignment;
-  } else {
-    align = registers::PlaneSurface::kYTilingAlignment;
-  }
+  ZX_DEBUG_ASSERT(image_metadata.tiling_type() == display::ImageTilingType::kLinear);
+  static constexpr uint32_t kPlaneSurfaceAlignment = registers::PlaneSurface::kLinearAlignment;
   std::unique_ptr<GttRegionImpl> gtt_region;
-  zx_status_t status = gtt_.AllocRegion(length, align, &gtt_region);
+  zx_status_t status = gtt_.AllocRegion(length, kPlaneSurfaceAlignment, &gtt_region);
   if (status != ZX_OK) {
     fdf::error("Failed to allocate GTT region, status {}", zx::make_result(status));
     return zx::error(status);
@@ -1017,7 +975,7 @@ zx::result<display::DriverImageId> Controller::ImportImage(
   // The vsync logic requires that images not have base == 0
   if (gtt_region->base() == 0) {
     std::unique_ptr<GttRegionImpl> alt_gtt_region;
-    zx_status_t status = gtt_.AllocRegion(length, align, &alt_gtt_region);
+    zx_status_t status = gtt_.AllocRegion(length, kPlaneSurfaceAlignment, &alt_gtt_region);
     if (status != ZX_OK) {
       return zx::error(status);
     }
@@ -1143,45 +1101,14 @@ bool Controller::CalculateMinimumAllocations(
         continue;
       }
       display::DriverLayer layer = std::move(layer_maybe).value();
+      ZX_DEBUG_ASSERT_MSG(layer.image_metadata().tiling_type() == display::ImageTilingType::kLinear,
+                          "Unsupported tiling type: %" PRIu32,
+                          layer.image_metadata().tiling_type().ValueForLogging());
 
       ZX_ASSERT(layer.image_source().width() != 0);
       ZX_ASSERT(layer.image_source().height() != 0);
 
-      if (layer.image_metadata().tiling_type() == display::ImageTilingType::kLinear ||
-          layer.image_metadata().tiling_type() ==
-              display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED)) {
-        min_allocs[pipe_id][plane_num] = 8;
-      } else {
-        uint32_t plane_source_width;
-        uint32_t min_scan_lines;
-
-        // TODO(https://fxbug.dev/42076788): Currently we assume only RGBA/BGRA formats
-        // are supported and hardcode the bytes-per-pixel value to avoid pixel
-        // format check and stride calculation (which requires holding the GTT
-        // lock). This may change when we need to support non-RGBA/BGRA images.
-        //
-        // There is currently no good way to enforce this by assertions,
-        // because the image handle provided in `banjo_display_config` can be
-        // invalid or obsolete when `CheckConfiguration()` calls this method.
-        static constexpr int bytes_per_pixel = 4;
-
-        if (layer.image_source_transformation() == display::CoordinateTransformation::kIdentity ||
-            layer.image_source_transformation() ==
-                display::CoordinateTransformation::kRotateCcw180) {
-          plane_source_width = layer.image_source().width();
-          min_scan_lines = 8;
-        } else {
-          plane_source_width = layer.image_source().height();
-          min_scan_lines = 32 / bytes_per_pixel;
-        }
-        min_allocs[pipe_id][plane_num] = static_cast<uint16_t>(
-            ((fbl::round_up(4u * plane_source_width * bytes_per_pixel, 512u) / 512u) *
-             (min_scan_lines / 4)) +
-            3);
-        if (min_allocs[pipe_id][plane_num] < 8) {
-          min_allocs[pipe_id][plane_num] = 8;
-        }
-      }
+      min_allocs[pipe_id][plane_num] = 8;
       total += min_allocs[pipe_id][plane_num];
     }
 
@@ -1615,18 +1542,12 @@ display::ConfigCheckResult Controller::CheckConfiguration(
   for (const display::DriverLayer& layer : layers) {
     if (layer.image_metadata().dimensions().width() != 0 &&
         layer.image_metadata().dimensions().height() != 0) {
-      if (layer.image_source_transformation() == display::CoordinateTransformation::kRotateCcw90 ||
-          layer.image_source_transformation() == display::CoordinateTransformation::kRotateCcw270) {
-        // Linear and x tiled images don't support 90/270 rotation
-        if (layer.image_metadata().tiling_type() == display::ImageTilingType::kLinear ||
-            layer.image_metadata().tiling_type() ==
-                display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED)) {
-          return display::ConfigCheckResult::kUnsupportedConfig;
-        }
+      if (layer.image_source_transformation() != display::CoordinateTransformation::kIdentity) {
+        // Image rotation is not supported.
+        return display::ConfigCheckResult::kUnsupportedConfig;
       }
-      if (layer.image_source_transformation() != display::CoordinateTransformation::kIdentity &&
-          layer.image_source_transformation() != display::CoordinateTransformation::kRotateCcw180) {
-        // Cover unsupported rotations
+      if (layer.image_metadata().tiling_type() != display::ImageTilingType::kLinear) {
+        // Only linear tiling is supported.
         return display::ConfigCheckResult::kUnsupportedConfig;
       }
 
@@ -1635,15 +1556,9 @@ display::ConfigCheckResult Controller::CheckConfiguration(
 
       // If the plane is too wide, force the client to do all composition
       // and just give us a simple configuration.
-      uint32_t max_width;
-      if (layer.image_metadata().tiling_type() == display::ImageTilingType::kLinear ||
-          layer.image_metadata().tiling_type() ==
-              display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED)) {
-        max_width = 8192;
-      } else {
-        max_width = 4096;
-      }
-      if (src_width > max_width) {
+      ZX_DEBUG_ASSERT(layer.image_metadata().tiling_type() == display::ImageTilingType::kLinear);
+      static constexpr uint32_t kLinearLayerMaxWidth = 8192;
+      if (src_width > kLinearLayerMaxWidth) {
         return display::ConfigCheckResult::kUnsupportedConfig;
       }
 
@@ -1815,6 +1730,9 @@ void Controller::SubmitConfiguration(display::DisplayId display_id, display::Mod
 zx::result<> Controller::SetBufferCollectionConstraints(
     const display::ImageBufferUsage& usage,
     display::DriverBufferCollectionId driver_buffer_collection_id) {
+  ZX_DEBUG_ASSERT_MSG(usage.tiling_type() == display::ImageTilingType::kLinear,
+                      "Unsupported tiling type: %" PRIu32, usage.tiling_type().ValueForLogging());
+
   const auto it = buffer_collections_.find(driver_buffer_collection_id);
   if (it == buffer_collections_.end()) {
     fdf::error("SetBufferCollectionConstraints: Cannot find imported buffer collection (id=%lu)",
@@ -1829,46 +1747,19 @@ zx::result<> Controller::SetBufferCollectionConstraints(
   // an image format constraints for each unless the config is asking for a specific
   // format or type.
   std::vector<fuchsia_sysmem2::wire::ImageFormatConstraints> image_constraints_vec;
-  for (const display::ImageTilingType image_tiling_type : kImageTilingTypes) {
-    // Skip if image type was specified and different from current type. This
-    // makes it possible for a different participant to select preferred
-    // modifiers.
-    if (usage.tiling_type() != display::ImageTilingType::kLinear &&
-        usage.tiling_type() != image_tiling_type) {
-      continue;
-    }
-    for (display::PixelFormat pixel_format_type : kPixelFormatTypes) {
-      auto image_constraints = fuchsia_sysmem2::wire::ImageFormatConstraints::Builder(arena);
 
-      image_constraints.pixel_format(pixel_format_type.ToFidl());
-      if (image_tiling_type == display::ImageTilingType::kLinear) {
-        image_constraints.pixel_format_modifier(fuchsia_images2::wire::PixelFormatModifier::kLinear)
-            .bytes_per_row_divisor(64)
-            .start_offset_divisor(64);
-      } else if (image_tiling_type == display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED)) {
-        image_constraints
-            .pixel_format_modifier(fuchsia_images2::wire::PixelFormatModifier::kIntelI915XTiled)
-            .bytes_per_row_divisor(4096)
-            .start_offset_divisor(1);  // Not meaningful
-      } else if (image_tiling_type == display::ImageTilingType(IMAGE_TILING_TYPE_Y_LEGACY_TILED)) {
-        image_constraints
-            .pixel_format_modifier(fuchsia_images2::wire::PixelFormatModifier::kIntelI915YTiled)
-            .bytes_per_row_divisor(4096)
-            .start_offset_divisor(1);  // Not meaningful
-      } else if (image_tiling_type == display::ImageTilingType(IMAGE_TILING_TYPE_YF_TILED)) {
-        image_constraints
-            .pixel_format_modifier(fuchsia_images2::wire::PixelFormatModifier::kIntelI915YfTiled)
-            .bytes_per_row_divisor(4096)
-            .start_offset_divisor(1);  // Not meaningful
-      }
-      image_constraints.color_spaces(std::array{fuchsia_images2::wire::ColorSpace::kSrgb});
-      image_constraints_vec.push_back(image_constraints.Build());
-    }
+  // This assumes we only support linear tiling.
+  for (display::PixelFormat pixel_format_type : kPixelFormatTypes) {
+    auto image_constraints = fuchsia_sysmem2::wire::ImageFormatConstraints::Builder(arena);
+
+    image_constraints.pixel_format(pixel_format_type.ToFidl());
+    image_constraints.pixel_format_modifier(fuchsia_images2::wire::PixelFormatModifier::kLinear)
+        .bytes_per_row_divisor(64)
+        .start_offset_divisor(64);
+    image_constraints.color_spaces(std::array{fuchsia_images2::wire::ColorSpace::kSrgb});
+    image_constraints_vec.push_back(image_constraints.Build());
   }
-  if (image_constraints_vec.empty()) {
-    fdf::error("Config has unsupported tiling type {}", usage.tiling_type());
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
+  ZX_DEBUG_ASSERT(!image_constraints_vec.empty());
   for (unsigned i = 0; i < std::size(kYuvPixelFormatTypes); ++i) {
     auto image_constraints = fuchsia_sysmem2::wire::ImageFormatConstraints::Builder(arena);
     image_constraints.pixel_format(kYuvPixelFormatTypes[i]);

@@ -229,16 +229,6 @@ TEST(IntelDisplay, ImportImage) {
   import_result = display.ImportImage(kDisplayImageMetadata, kBufferCollectionId, kInvalidIndex);
   EXPECT_STATUS(import_result, zx::error(ZX_ERR_OUT_OF_RANGE));
 
-  // Invalid import: bad type
-  static constexpr display::ImageMetadata kInvalidTilingTypeMetadata = {{
-      .width = 32,
-      .height = 32,
-      .tiling_type = display::ImageTilingType::kCapture,
-  }};
-  import_result = display.ImportImage(kInvalidTilingTypeMetadata, kBufferCollectionId,
-                                      /*index=*/0);
-  EXPECT_STATUS(import_result, zx::error(ZX_ERR_INVALID_ARGS));
-
   // Valid import
   import_result = display.ImportImage(kDisplayImageMetadata, kBufferCollectionId, 0);
   ASSERT_OK(import_result);
@@ -277,30 +267,6 @@ TEST_F(ControllerWithFakeSysmemTest, SysmemRequirements) {
   FakeBufferCollection* collection = allocator.GetMostRecentBufferCollection();
   ASSERT_TRUE(collection);
   EXPECT_TRUE(collection->HasConstraints());
-}
-
-TEST_F(ControllerWithFakeSysmemTest, SysmemInvalidType) {
-  zx::result token_endpoints = fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>();
-  ASSERT_TRUE(token_endpoints.is_ok());
-
-  constexpr display::DriverBufferCollectionId kBufferCollectionId(1);
-  EXPECT_OK(
-      display_.ImportBufferCollection(kBufferCollectionId, std::move(token_endpoints->client)));
-
-  loop_.RunUntilIdle();
-
-  static constexpr display::ImageBufferUsage kInvalidTilingUsage({
-      .tiling_type = display::ImageTilingType(1000000),
-  });
-  EXPECT_STATUS(zx::error(ZX_ERR_INVALID_ARGS),
-                display_.SetBufferCollectionConstraints(kInvalidTilingUsage, kBufferCollectionId));
-
-  loop_.RunUntilIdle();
-
-  MockAllocator& allocator = sysmem_;
-  FakeBufferCollection* collection = allocator.GetMostRecentBufferCollection();
-  ASSERT_TRUE(collection);
-  EXPECT_FALSE(collection->HasConstraints());
 }
 
 }  // namespace

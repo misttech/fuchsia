@@ -16,27 +16,15 @@
 namespace intel_display {
 
 constexpr int get_tile_byte_width(display::ImageTilingType tiling) {
-  if (tiling == display::ImageTilingType::kLinear) {
-    return 64;
-  }
-  if (tiling == display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED)) {
-    return 512;
-  }
-  if (tiling == display::ImageTilingType(IMAGE_TILING_TYPE_Y_LEGACY_TILED)) {
-    return 128;
-  }
-  if (tiling == display::ImageTilingType(IMAGE_TILING_TYPE_YF_TILED)) {
-    // TODO(https://fxbug.dev/42076787): For 1-byte-per-pixel formats (e.g. R8), the
-    // tile width is 64. We need to check the pixel format once we support
-    // importing such formats.
-    return 128;
-  }
-  ZX_ASSERT_MSG(false, "Unsupported tiling type: %" PRIu32, tiling.ValueForLogging());
-  return 0;
+  ZX_DEBUG_ASSERT_MSG(tiling == display::ImageTilingType::kLinear,
+                      "Unsupported tiling type: %" PRIu32, tiling.ValueForLogging());
+  return 64;
 }
 
 constexpr int get_tile_byte_size(display::ImageTilingType tiling) {
-  return tiling == display::ImageTilingType::kLinear ? 64 : 4096;
+  ZX_DEBUG_ASSERT_MSG(tiling == display::ImageTilingType::kLinear,
+                      "Unsupported tiling type: %" PRIu32, tiling.ValueForLogging());
+  return 64;
 }
 
 constexpr int get_tile_px_height(display::ImageTilingType tiling) {

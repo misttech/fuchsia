@@ -116,6 +116,12 @@ class Pipe {
   registers::Platform platform() const { return platform_; }
 
  private:
+  // Configures the plane `plane_num` using the layer `primary`.
+  //
+  // If `primary` is null, the primary plane will be disabled.
+  // If `primary` is not null, it must have an Identity transformation
+  // applied to the image source, and the image in `primary` must use linear
+  // tiling.
   void ConfigurePrimaryPlane(uint32_t plane_num, const display::DriverLayer* primary,
                              bool enable_csc, bool* scaler_1_claimed,
                              registers::pipe_arming_regs* regs,

@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cinttypes>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -513,44 +514,34 @@ void Pipe::ConfigurePrimaryPlane(uint32_t plane_num, const display::DriverLayer*
     regs->plane_surf[plane_num] = 0;
     return;
   }
+
+  ZX_DEBUG_ASSERT(primary != nullptr);
+  ZX_DEBUG_ASSERT_MSG(
+      primary->image_source_transformation() == display::CoordinateTransformation::kIdentity,
+      "Unsupported image source transformation: %" PRIu32,
+      primary->image_source_transformation().ValueForLogging());
+
+  const display::ImageMetadata& image_metadata = primary->image_metadata();
+  ZX_DEBUG_ASSERT_MSG(image_metadata.tiling_type() == display::ImageTilingType::kLinear,
+                      "Unsupported tiling type: %" PRIu32,
+                      image_metadata.tiling_type().ValueForLogging());
+
   plane_ctrl.set_decompress_render_compressed_surfaces(false)
       .set_double_buffer_update_disabling_allowed(true);
 
-  const display::ImageMetadata& image_metadata = primary->image_metadata();
   const GttRegion& region = setup_gtt_image(primary->image_metadata(), primary->image_id(),
                                             primary->image_source_transformation());
-  uint32_t base_address = static_cast<uint32_t>(region.base());
-  int32_t plane_width;
-  int32_t plane_height;
-  uint32_t stride;
-  int32_t x_offset;
-  int32_t y_offset;
-  if (primary->image_source_transformation() == display::CoordinateTransformation::kIdentity ||
-      primary->image_source_transformation() == display::CoordinateTransformation::kRotateCcw180) {
-    plane_width = primary->image_source().width();
-    plane_height = primary->image_source().height();
-    stride =
-        [&]() {
-          uint64_t stride =
-              region.bytes_per_row() / get_tile_byte_width(image_metadata.tiling_type());
-          ZX_DEBUG_ASSERT_MSG(stride <= std::numeric_limits<uint32_t>::max(),
-                              "%lu overflows uint32_t", stride);
-          return static_cast<uint32_t>(stride);
-        }(),
-    y_offset = primary->image_source().y();
-    x_offset = primary->image_source().x();
-  } else {
-    uint32_t tile_height =
-        height_in_tiles(image_metadata.tiling_type(), image_metadata.dimensions().height());
-    uint32_t tile_px_height = get_tile_px_height(image_metadata.tiling_type());
-    uint32_t total_height = tile_height * tile_px_height;
-
-    plane_width = primary->image_source().height();
-    plane_height = primary->image_source().width();
-    stride = tile_height;
-    x_offset = total_height - primary->image_source().y() - primary->image_source().height();
-    y_offset = primary->image_source().x();
-  }
+  const uint32_t base_address = static_cast<uint32_t>(region.base());
+  const int32_t plane_width = primary->image_source().width();
+  const int32_t plane_height = primary->image_source().height();
+  const uint32_t stride = [&]() {
+    uint64_t stride = region.bytes_per_row() / get_tile_byte_width(image_metadata.tiling_type());
+    ZX_DEBUG_ASSERT_MSG(stride <= std::numeric_limits<uint32_t>::max(), "%lu overflows uint32_t",
+                        stride);
+    return static_cast<uint32_t>(stride);
+  }();
+  const int32_t y_offset = primary->image_source().y();
+  const int32_t x_offset = primary->image_source().x();
 
   if (plane_width == primary->display_destination().width() &&
       plane_height == primary->display_destination().height()) {
@@ -687,34 +678,8 @@ void Pipe::ConfigurePrimaryPlane(uint32_t plane_num, const display::DriverLayer*
                     static_cast<uint32_t>(pixel_format.pixel_format));
   }
 
-  if (image_metadata.tiling_type() == display::ImageTilingType::kLinear) {
-    plane_ctrl.set_surface_tiling(registers::PlaneControl::SurfaceTiling::kLinear);
-  } else if (image_metadata.tiling_type() == display::ImageTilingType(IMAGE_TILING_TYPE_X_TILED)) {
-    plane_ctrl.set_surface_tiling(registers::PlaneControl::SurfaceTiling::kTilingX);
-  } else if (image_metadata.tiling_type() ==
-             display::ImageTilingType(IMAGE_TILING_TYPE_Y_LEGACY_TILED)) {
-    plane_ctrl.set_surface_tiling(registers::PlaneControl::SurfaceTiling::kTilingYLegacy);
-  } else {
-    ZX_ASSERT(image_metadata.tiling_type() == display::ImageTilingType(IMAGE_TILING_TYPE_YF_TILED));
-    if (platform_ == registers::Platform::kTigerLake) {
-      // TODO(https://fxbug.dev/42062668): Remove this warning or turn it into an error.
-      fdf::error("The Tiger Lake display engine may not support YF tiling.");
-    }
-    plane_ctrl.set_surface_tiling(registers::PlaneControl::SurfaceTiling::kTilingYFKabyLake);
-  }
-  if (primary->image_source_transformation() == display::CoordinateTransformation::kIdentity) {
-    plane_ctrl.set_rotation(registers::PlaneControl::Rotation::kIdentity);
-  } else if (primary->image_source_transformation() ==
-             display::CoordinateTransformation::kRotateCcw90) {
-    plane_ctrl.set_rotation(registers::PlaneControl::Rotation::k90degrees);
-  } else if (primary->image_source_transformation() ==
-             display::CoordinateTransformation::kRotateCcw180) {
-    plane_ctrl.set_rotation(registers::PlaneControl::Rotation::k180degrees);
-  } else {
-    ZX_ASSERT(primary->image_source_transformation() ==
-              display::CoordinateTransformation::kRotateCcw270);
-    plane_ctrl.set_rotation(registers::PlaneControl::Rotation::k270degrees);
-  }
+  plane_ctrl.set_surface_tiling(registers::PlaneControl::SurfaceTiling::kLinear);
+  plane_ctrl.set_rotation(registers::PlaneControl::Rotation::kIdentity);
   plane_ctrl.WriteTo(mmio_space_);
 
   auto plane_surface = pipe_regs.PlaneSurface(plane_num).ReadFrom(mmio_space_);
