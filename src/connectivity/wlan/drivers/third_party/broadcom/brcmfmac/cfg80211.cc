@@ -740,6 +740,7 @@ void brcmf_enable_mpc(struct brcmf_if* ifp, int mpc) {
 
 static void brcmf_signal_scan_end(struct net_device* ndev, uint64_t txn_id,
                                   fuchsia_wlan_fullmac_wire::WlanScanResult scan_result_code) {
+  std::shared_lock<std::shared_mutex> guard(ndev->if_proto_lock);
   if (!ndev->if_proto.is_valid()) {
     BRCMF_IFDBG(WLANIF, ndev, "interface stopped-- skipping signal scan end callback ");
     return;
@@ -754,7 +755,6 @@ static void brcmf_signal_scan_end(struct net_device* ndev, uint64_t txn_id,
       fuchsia_wlan_fullmac_wire::WlanFullmacImplIfcOnScanEndRequest::Builder(*arena);
   scan_end_builder.txn_id(txn_id);
   scan_end_builder.code(scan_result_code);
-  std::shared_lock<std::shared_mutex> guard(ndev->if_proto_lock);
   BRCMF_DBG(SCAN, "Signaling on_scan_end with txn_id %ld and code %d", txn_id, scan_result_code);
   BRCMF_IFDBG(
       WLANIF, ndev,
