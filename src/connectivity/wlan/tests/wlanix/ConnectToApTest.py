@@ -17,16 +17,29 @@ from typing import Any
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import wlanix_testing.base_test as base_test
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
     AP_SSID_LENGTH_2G,
 )
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
-from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from fuchsia_controller_py import Channel
 from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true
+from mobly_controller.openwrt_access_point import OpenWrtAP
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+)
+from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 
 class ConnectToApTest(base_test.ConnectionBaseTestClass):
@@ -35,36 +48,50 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
             test_logic=self._test_logic,
             name_func=self.name_func,
             arg_sets=[
-                (Security(security_mode=SecurityMode.OPEN),),
-                (
-                    Security(
-                        security_mode=SecurityMode.WPA2,
-                        password=generate_random_password(),
-                    ),
-                ),
-                (
-                    Security(
-                        security_mode=SecurityMode.WPA3,
-                        password=generate_random_password(),
-                    ),
-                ),
+                (Security.NONE, None),
+                (Security.WPA2, AccessPointConfig.random_string()),
+                (Security.WPA3, AccessPointConfig.random_string()),
             ],
         )
 
-    def name_func(self, security: Security) -> str:
-        return f"test_successfully_connect_to_ap_{security.security_mode}"
+    def name_func(self, security: Security, password: str | None) -> str:
+        return f"test_successfully_connect_to_ap_{security}"
 
-    async def _test_logic(self, security: Security) -> None:
+    async def _test_logic(
+        self, security: Security, password: str | None
+    ) -> None:
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
-        password = getattr(security, "password", None)
 
-        setup_ap(
-            access_point=self.access_point(),
-            profile_name="whirlwind",
-            channel=AP_DEFAULT_CHANNEL_2G,
-            ssid=ssid,
-            security=security,
-        )
+        ap = self.access_point()
+        if isinstance(ap, OpenWrtAP):
+            ap.configure_wifi(
+                AccessPointConfig(
+                    radios=[
+                        RadioConfig(
+                            channel=DEFAULT_2G_CHANNEL,
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    password=password,
+                                    security=security,
+                                )
+                            ],
+                        )
+                    ]
+                )
+            )
+            ap.verify_wifi_status(band=Band.BAND_2G)
+        elif isinstance(ap, AccessPoint):
+            setup_ap(
+                access_point=ap,
+                profile_name="whirlwind",
+                channel=AP_DEFAULT_CHANNEL_2G,
+                ssid=ssid,
+                security=DeprecatedSecurity(
+                    security_mode=ConfigMapper.to_hostapd_security(security),
+                    password=password,
+                ),
+            )
 
         logger.info("Querying for IfaceIndex...")
         get_interface_message = fidl_wlanix.Nl80211Message(
@@ -173,7 +200,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 ssid=list(ssid.encode("ascii"))
             )
             if password:
-                if security.security_mode == SecurityMode.WPA3:
+                if security == Security.WPA3:
                     supplicant_sta_network_proxy.set_sae_password(
                         password=list(password.encode("ascii"))
                     )

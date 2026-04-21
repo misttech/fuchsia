@@ -15,17 +15,29 @@ from typing import Any, Iterator
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import wlanix_testing.base_test as base_test
 from antlion import utils
-from antlion.controllers.access_point import setup_ap
+from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
     AP_SSID_LENGTH_2G,
 )
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
+from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from common.utils.ies import read_ssid
 from fuchsia_controller_py import Channel
 from honeydew.utils.deadline import Deadline
 from mobly import test_runner
 from mobly.asserts import assert_equal, assert_true, fail
+from mobly_controller.openwrt_access_point import OpenWrtAP
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,14 +136,34 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
     async def test_start_sched_scan(self) -> None:
         # Setup AP
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
-        security = Security(security_mode=SecurityMode.OPEN)
-        setup_ap(
-            access_point=self.access_point(),
-            profile_name="whirlwind",
-            channel=AP_DEFAULT_CHANNEL_2G,
-            ssid=ssid,
-            security=security,
-        )
+        security = DeprecatedSecurity(security_mode=SecurityMode.OPEN)
+
+        ap = self.access_point()
+        if isinstance(ap, OpenWrtAP):
+            ap.configure_wifi(
+                AccessPointConfig(
+                    radios=[
+                        RadioConfig(
+                            channel=DEFAULT_2G_CHANNEL,
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    security=Security.NONE,
+                                )
+                            ],
+                        )
+                    ]
+                )
+            )
+            ap.verify_wifi_status(band=Band.BAND_2G)
+        elif isinstance(ap, AccessPoint):
+            setup_ap(
+                access_point=ap,
+                profile_name="whirlwind",
+                channel=AP_DEFAULT_CHANNEL_2G,
+                ssid=ssid,
+                security=security,
+            )
         logger.info("Setup AP with SSID: %s", ssid)
         ssid_bytes = ssid.encode("ascii")
 

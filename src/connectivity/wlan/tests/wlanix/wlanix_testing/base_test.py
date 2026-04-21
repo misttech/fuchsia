@@ -20,6 +20,8 @@ from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
 from mobly.asserts import assert_equal, fail
 from mobly.records import TestResultRecord
+from mobly_controller import openwrt_access_point
+from mobly_controller.openwrt_access_point import OpenWrtAP
 
 NL80211_ATTR_WIPHY = 1
 NL80211_ATTR_IFINDEX = 3
@@ -261,14 +263,14 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
 
 
 class ConnectionBaseTestClass(IfaceBaseTestClass):
-    __access_point: AccessPoint | None
+    __access_point: AccessPoint | OpenWrtAP | None
     pdu_devices: list[PduDevice] | None
     packet_capture: list[PacketCapture] | None
     packet_logger: PacketCapture | None
     packet_log_pid: dict[str, int] | None
     nl80211_proxy: fidl_wlanix.Nl80211Client
 
-    def access_point(self) -> AccessPoint:
+    def access_point(self) -> AccessPoint | OpenWrtAP:
         if self.__access_point is None:
             raise RuntimeError("Connection tests require an access point.")
         return self.__access_point
@@ -281,11 +283,20 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
         self.packet_log_pid = {}
 
         access_points = await self.register_controller(
-            controllers.access_point, min_number=1
+            controllers.access_point,
+            required=False,
         )
-        if access_points is None or len(access_points) == 0:
+        openwrt_aps = await self.register_controller(
+            openwrt_access_point,
+            required=False,
+        )
+
+        if openwrt_aps:
+            self.__access_point = openwrt_aps[0]
+        elif access_points:
+            self.__access_point = access_points[0]
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-        self.__access_point = access_points[0]
 
         self.pdu_devices = await self.register_controller(
             controllers.pdu,
@@ -306,7 +317,9 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
                 "5G", hostapd_constants.AP_DEFAULT_CHANNEL_5G
             )
 
-        self.access_point().stop_all_aps()
+        ap = self.access_point()
+        if isinstance(ap, AccessPoint):
+            ap.stop_all_aps()
 
     async def setup_test(self) -> None:
         await super().setup_test()
@@ -326,8 +339,12 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
             self.packet_log_pid = {}
 
         # Maintain the invariant that every test starts with no access points.
-        self.access_point().download_ap_logs(self.log_path)
-        self.access_point().stop_all_aps()
+        ap = self.access_point()
+        if isinstance(ap, OpenWrtAP):
+            ap.download_logs(self.log_path)
+        elif isinstance(ap, AccessPoint):
+            ap.download_ap_logs(self.log_path)
+            ap.stop_all_aps()
         # Ensure that our supplicant is fully disconnected.
         await self.supplicant_sta_iface_proxy.disconnect()
         await super().teardown_test()
@@ -348,4 +365,6 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
             self.packet_log_pid = {}
 
         # Maintain the invariant that every test starts with no access points.
-        self.access_point().stop_all_aps()
+        ap = self.access_point()
+        if isinstance(ap, AccessPoint):
+            ap.stop_all_aps()
