@@ -12,7 +12,7 @@ use regex_lite::Regex;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
-use std::sync::{Arc, mpsc as sync_mpsc};
+use std::sync::{Arc, OnceLock, mpsc as sync_mpsc};
 use zerocopy::{Immutable, IntoBytes};
 use zx::HandleBased;
 
@@ -38,9 +38,10 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
-    error, perf_event_attr, perf_event_header, perf_event_mmap_page__bindgen_ty_1,
-    perf_event_read_format_PERF_FORMAT_GROUP, perf_event_read_format_PERF_FORMAT_ID,
-    perf_event_read_format_PERF_FORMAT_LOST, perf_event_read_format_PERF_FORMAT_TOTAL_TIME_ENABLED,
+    error, from_status_like_fdio, perf_event_attr, perf_event_header,
+    perf_event_mmap_page__bindgen_ty_1, perf_event_read_format_PERF_FORMAT_GROUP,
+    perf_event_read_format_PERF_FORMAT_ID, perf_event_read_format_PERF_FORMAT_LOST,
+    perf_event_read_format_PERF_FORMAT_TOTAL_TIME_ENABLED,
     perf_event_read_format_PERF_FORMAT_TOTAL_TIME_RUNNING, tid_t, uapi,
 };
 
@@ -224,7 +225,7 @@ pub struct PerfEventFile {
     // TODO(https://fxbug.dev/460203776) Remove Arc after figuring out
     // "borrowed value does not live long enough" issue.
     _data_head_pointer: Arc<AtomicPtr<u64>>,
-    seq_lock: SeqLock<PerfMetadataHeader, PerfMetadataValue>,
+    seq_lock: OnceLock<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>,
 }
 
 // PerfEventFile object that implements FileOps.
@@ -416,14 +417,19 @@ impl FileOps for PerfEventFile {
             return error!(EINVAL);
         }
 
-        // Update metadata page now that we have new information.
-        // Also update `data_head` to indicate that this first page has finished writing.
-        let mut metadata_value: PerfMetadataValue = self.seq_lock.get();
-        let page_size = zx::system_get_page_size() as u64;
-        metadata_value.data_head = page_size;
-        metadata_value.data_size = buffer_size - page_size;
-        // Write directly to memory location (not MemoryObject).
-        self.seq_lock.set_value(metadata_value);
+        self.seq_lock
+            .get_or_init(|| {
+                let perf_event_file = self.perf_event_file.read();
+                let vmo_copy = perf_event_file
+                    .perf_data_vmo
+                    .as_handle_ref()
+                    .duplicate(zx::Rights::SAME_RIGHTS)
+                    .map_err(|status| from_status_like_fdio!(status))?;
+                // SAFETY: See safety requirements on `create_seq_lock`.
+                Ok(unsafe { create_seq_lock(&vmo_copy, buffer_size) })
+            })
+            .as_ref()
+            .map_err(|e| e.clone())?;
 
         // Write to a MemoryObject and return it (expected return type for get_memory()).
         security::check_perf_event_read_access(current_task, &self)?;
@@ -848,9 +854,11 @@ fn ping_receiver(
 // there are only atomic accesses to this memory (see seq_lock lib.rs for details).
 unsafe fn create_seq_lock(
     vmo_handle_ref: &zx::NullableHandle,
+    buffer_size: u64,
 ) -> SeqLock<PerfMetadataHeader, PerfMetadataValue> {
     // Currently we hardcode everything just to get something E2E working.
     let metadata_header = PerfMetadataHeader { version: 1, compat_version: 2 };
+    let page_size = zx::system_get_page_size() as u64;
     let metadata_value = PerfMetadataValue {
         lock: 0,
         index: 3,
@@ -872,9 +880,8 @@ unsafe fn create_seq_lock(
         // Start reading from 0; it is the user's responsibility to increment on their end.
         data_tail: 0,
         // We know the data will start after 1 page size so we can set this now.
-        data_offset: zx::system_get_page_size() as u64,
-        // We can only calculate this value when mmap() is called. Initialize to 0.
-        data_size: 0,
+        data_offset: page_size,
+        data_size: buffer_size - page_size,
         aux_head: 0,
         aux_tail: 0,
         aux_offset: 0,
@@ -1006,10 +1013,6 @@ pub fn sys_perf_event_open(
     // Pass cloned into the thread.
     let cloned_data_head_pointer = Arc::clone(&data_head_pointer);
 
-    // SAFETY: This is safe because the kernel maintains exclusive write access to this VMO and
-    // there are only atomic accesses to this memory (see seq_lock lib.rs for details).
-    let seq_lock = unsafe { create_seq_lock(vmo_handle_copy.as_ref().unwrap()) };
-
     let closure = async move |_: LockedAndTask<'_>| {
         let mut profiler_state: Option<(profiler::SessionProxy, fidl::AsyncSocket)> = None;
 
@@ -1080,7 +1083,7 @@ pub fn sys_perf_event_open(
         perf_event_file: RwLock::new(perf_event_file),
         security_state: security::perf_event_alloc(current_task),
         _data_head_pointer: data_head_pointer,
-        seq_lock: seq_lock,
+        seq_lock: OnceLock::new(),
     });
     // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
     let file_handle =

@@ -703,8 +703,8 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
     EXPECT_EQ(metadata->cap_user_time, (uint64_t)1);
     EXPECT_EQ(metadata->time_enabled, (uint64_t)0);
     EXPECT_EQ(metadata->time_running, (uint64_t)0);
-    // Verify that there is a sample to read, this must be > 0.
-    EXPECT_GE(metadata->data_head, (uint64_t)0);
+    // TODO(https://fxbug.dev/460203776): Update this EXPECT once data_head works.
+    EXPECT_EQ(metadata->data_head, (uint64_t)0);
     EXPECT_EQ(metadata->data_tail, (uint64_t)0);
     EXPECT_EQ(metadata->data_offset, (uint64_t)getpagesize());
     EXPECT_EQ(metadata->data_size, (uint64_t)data_size);
@@ -750,8 +750,8 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     EXPECT_EQ(metadata->cap_user_time, (uint64_t)1);
     EXPECT_EQ(metadata->time_enabled, (uint64_t)0);
     EXPECT_EQ(metadata->time_running, (uint64_t)0);
-    // Verify that there is a sample to read, this must be > 0.
-    EXPECT_GT(metadata->data_head, (uint64_t)0);
+    // TODO(https://fxbug.dev/460203776): Update this EXPECT once data_head works.
+    EXPECT_EQ(metadata->data_head, (uint64_t)0);
     EXPECT_EQ(metadata->data_tail, (uint64_t)0);
     EXPECT_EQ(metadata->data_offset, (uint64_t)getpagesize());
     EXPECT_EQ(metadata->data_size, data_size);
