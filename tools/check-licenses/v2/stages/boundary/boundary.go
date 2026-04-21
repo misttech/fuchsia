@@ -42,7 +42,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 		defer close(out)
 
 		var allFiles []string
-		// physicalReadmes maps an absolute directory path to its README.fuchsia or Cargo.toml
+		// physicalReadmes maps an absolute directory path to its README.fuchsia, go.mod, or Cargo.toml
 		physicalReadmes := make(map[string]string)
 
 		// PHASE 1: Consume all incoming paths
@@ -58,7 +58,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			allFiles = append(allFiles, cleanPath)
 
 			base := filepath.Base(cleanPath)
-			if base == "README.fuchsia" || base == "Cargo.toml" {
+			if base == "README.fuchsia" || base == "go.mod" || base == "Cargo.toml" {
 				dir := filepath.Dir(cleanPath)
 				physicalReadmes[dir] = cleanPath
 			}
@@ -76,25 +76,39 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 
 		// First, register every directory that has a physical/virtual README or Cargo.toml as a root
 		for dir, readmePath := range physicalReadmes {
-			if filepath.Base(readmePath) == "Cargo.toml" {
+			base := filepath.Base(readmePath)
+			if base == "Cargo.toml" {
 				// We don't parse Cargo.toml yet, just register the boundary
 				projectRoots[dir] = nil
 				continue
 			}
 
-			// Parse README.fuchsia files
-			parsedReadmes, err := readme.ParseFile(readmePath)
+			// Parse metadata sources
+			var parsedReadmes []*readme.Readme
+			var err error
+			if base == "go.mod" {
+				parsedReadmes, err = readme.ParseGoMod(readmePath)
+			} else {
+				parsedReadmes, err = readme.ParseFile(readmePath)
+			}
+
 			if err != nil || len(parsedReadmes) == 0 {
 				// Even if parsing fails, the file exists, so it is a boundary
 				projectRoots[dir] = nil
 				continue
 			}
 
-			// The primary project lives at the directory of the README
-			projectRoots[dir] = []*readme.Readme{parsedReadmes[0]}
+			// The primary project lives at the directory of the metadata file
+			if base != "go.mod" {
+				projectRoots[dir] = []*readme.Readme{parsedReadmes[0]}
+			}
 
-			// If the README defines sub-projects via DEPENDENCY DIVIDER, register them as distinct boundaries!
-			for i := 1; i < len(parsedReadmes); i++ {
+			// Register sub-projects (DEPENDENCY DIVIDER or Go Modules) as distinct boundaries!
+			startIdx := 1
+			if base == "go.mod" {
+				startIdx = 0
+			}
+			for i := startIdx; i < len(parsedReadmes); i++ {
 				subReadme := parsedReadmes[i]
 				if subReadme.Location != "" {
 					absSubProjectDir := filepath.Join(dir, subReadme.Location)

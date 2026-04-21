@@ -93,6 +93,7 @@ if (is_host) {
   go_library("v2_readme") {
     sources = [
       "v2/readme/formatter.go",
+      "v2/readme/golib.go",
       "v2/readme/locator.go",
       "v2/readme/parser.go",
       "v2/readme/types.go",
@@ -158,6 +159,7 @@ if (is_host) {
   go_test("v2_readme_test") {
     sources = [
       "v2/readme/formatter_test.go",
+      "v2/readme/golib_test.go",
       "v2/readme/parser_test.go",
     ]
     embed = [ ":v2_readme" ]
