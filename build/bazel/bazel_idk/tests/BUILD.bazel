@@ -961,6 +961,10 @@ filegroup(
         # via bindings targets. For example, by depending on this target in
         # `//build/fidl:all_fidl_ir_json_files`.
         "//sdk/fidl/fuchsia.camera2.debug:fuchsia.camera2.debug_cpp",
+        # A library with `contains_drivers = True`.
+        "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_cpp",
+        # TODO(https://fxbug.dev/454452299): Uncomment once Rust bindings are implemented.
+        # "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust",
 
         # Non-IDK targets.
         # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.
