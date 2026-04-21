@@ -1078,10 +1078,18 @@ zx_status_t BtHciBroadcom::SendVmoAsCommands(zx::vmo vmo, size_t size, bool fast
   return ZX_OK;
 }
 
+fpromise::promise<std::vector<uint8_t>, zx_status_t> BtHciBroadcom::SendHciReset() {
+  std::array<std::byte, pw::bluetooth::emboss::CommandHeader::IntrinsicSizeInBytes()> storage;
+  auto view = pw::bluetooth::emboss::MakeCommandHeaderView(&storage);
+  view.opcode().Write(pw::bluetooth::emboss::OpCode::RESET);
+  view.parameter_total_size().Write(0);
+  return SendCommand(view);
+}
+
 fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
   fdf::debug("sending initial reset command");
-  return SendCommand(&kResetCmd, sizeof(kResetCmd))
-      .and_then([this](std::vector<uint8_t>&) -> fpromise::promise<void, zx_status_t> {
+  return SendHciReset()
+      .and_then([this](const std::vector<uint8_t>&) -> fpromise::promise<void, zx_status_t> {
         if (is_uart_) {
           fdf::debug("setting baud rate to {}", kTargetBaudRate);
           // switch baud rate to TARGET_BAUD_RATE
@@ -1126,7 +1134,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
       })
       .and_then([this]() {
         fdf::debug("sending reset command");
-        return SendCommand(&kResetCmd, sizeof(kResetCmd));
+        return SendHciReset();
       })
       .and_then([this](std::vector<uint8_t>&) -> fpromise::promise<void, zx_status_t> {
         fdf::debug("Getting mac address");

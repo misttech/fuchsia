@@ -263,7 +263,8 @@ class FakeTransportDevice : public fdf::WireServer<fuchsia_hardware_serialimpl::
       }
     }
 
-    if (opcode == static_cast<uint16_t>(BroadcomOpCode::LAUNCH_RAM) || opcode == kResetCmdOpCode) {
+    if (opcode == static_cast<uint16_t>(BroadcomOpCode::LAUNCH_RAM) ||
+        opcode == static_cast<uint16_t>(pw::bluetooth::emboss::OpCode::RESET)) {
       fast_download_mode_ = false;
     }
 

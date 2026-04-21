@@ -21,7 +21,6 @@ struct HciCommandHeader {
   uint8_t parameter_total_size;
 } __PACKED;
 
-constexpr uint16_t kResetCmdOpCode = 0x0c03;
 constexpr uint16_t kReadBdaddrCmdOpCode = 0x1009;
 
 struct HciEventHeader {
@@ -87,12 +86,6 @@ constexpr size_t kChanReadBufLen =
 
 // Min event param size for a valid command complete event frame
 constexpr size_t kMinEvtParamSize = sizeof(HciCommandComplete) - sizeof(HciEventHeader);
-
-// HCI reset command
-const HciCommandHeader kResetCmd = {
-    .opcode = htole16(kResetCmdOpCode),
-    .parameter_total_size = 0,
-};
 
 // vendor command to begin firmware download
 const HciCommandHeader kStartFirmwareDownloadCmd = {

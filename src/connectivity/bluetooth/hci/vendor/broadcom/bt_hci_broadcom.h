@@ -114,6 +114,7 @@ class BtHciBroadcom final
   template <typename CmdView>
   fpromise::promise<std::vector<uint8_t>, zx_status_t> SendCommand(CmdView view);
 
+  fpromise::promise<std::vector<uint8_t>, zx_status_t> SendHciReset();
   fpromise::promise<std::vector<uint8_t>, zx_status_t> SendCommand(const void* command,
                                                                    size_t length);
 
