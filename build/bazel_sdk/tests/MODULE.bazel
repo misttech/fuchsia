@@ -124,7 +124,7 @@ register_toolchains("@prebuilt_python//:all")
 # Register an empty C++ host toolchain, because thiss test suite
 # needs to run on CI bots without GCC or Clang installed.
 empty_host_cpp_toolchain_repository = use_repo_rule(
-    "@rules_fuchsia//common:toolchains/clang/empty_toolchain.bzl",
+    "@rules_fuchsia//common:toolchains/clang/repository_utils.bzl",
     "empty_host_cpp_toolchain_repository",
 )
 
