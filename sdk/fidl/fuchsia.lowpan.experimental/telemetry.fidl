@@ -191,6 +191,68 @@ type BorderRoutingRouter = table {
     9: is_peer_br bool;
 };
 
+/// The discovered prefixes by Border Routing Manager on the infrastructure link.
+type BorderRoutingPrefixTable = table {
+    /// Information about the router advertising this prefix.
+    ///
+    /// Required.
+    1: router BorderRoutingRouter;
+
+    /// The discovered IPv6 prefix.
+    ///
+    /// Required.
+    2: prefix string:64;
+
+    /// Indicates whether the prefix is on-link or route prefix.
+    ///
+    /// Required.
+    3: is_on_link bool;
+
+    /// Duration since last update of this prefix.
+    ///
+    /// Required.
+    4: duration_since_last_update zx.Duration;
+
+    /// Valid lifetime of the prefix.
+    ///
+    /// Required.
+    5: valid_lifetime uint32;
+
+    /// Route preference when `is_on_link` is false.
+    ///
+    /// Required.
+    6: preference int8;
+
+    /// Preferred lifetime of the on-link prefix when `is_on_link` is true.
+    ///
+    /// Required.
+    7: preferred_lifetime uint32;
+};
+
+/// The discovered Recursive DNS Server (RDNSS) addresses by Border Routing
+/// Manager on the infrastructure link.
+type BorderRoutingRdnss = table {
+    /// Information about the router advertising this RDNSS address.
+    ///
+    /// Required.
+    1: router BorderRoutingRouter;
+
+    /// The DNS Server IPv6 address.
+    ///
+    /// Required.
+    2: address fuchsia.net.Ipv6Address;
+
+    /// Duration since last update of this RDNSS address.
+    ///
+    /// Required.
+    3: duration_since_last_update zx.Duration;
+
+    /// The lifetime of this RDNSS address.
+    ///
+    /// Required.
+    4: lifetime uint32;
+};
+
 /// Represents a Border Router configuration.
 ///
 /// Derived from `otBorderRouterConfig`(https://openthread.io/reference/struct/ot-border-router-config)
@@ -992,7 +1054,8 @@ type Nat64Info = table {
 
 /// Represents a group of TREL related counters in the platform layer.
 ///
-/// Derived from [`otPlatTrelCounters`](https://openthread.io/reference/struct/ot-plat-trel-counters).
+/// Derived from [`otPlatTrelCounters`]
+/// (https://openthread.io/reference/struct/ot-plat-trel-counters).
 type TrelCounters = table {
     /// Sum of size of packets received through TREL.
     1: rx_bytes uint64;
@@ -1010,6 +1073,28 @@ type TrelCounters = table {
     5: tx_packets uint64;
 };
 
+const MAX_IP6_SOCK_ADDR_STRING_SIZE uint32 = 48;
+
+/// Represents a TREL peer.
+///
+/// Derived from [`otPlatTrelCounters`](https://openthread.io/reference/struct/ot-plat-trel-counters).
+type TrelPeer = table {
+    /// The Extended MAC Address of TREL peer.
+    ///
+    /// Required.
+    1: extended_address vector<uint8>:8;
+
+    /// The Extended PAN Identifier of TREL peer.
+    ///
+    /// Required.
+    2: extended_pan_id vector<uint8>:8;
+
+    /// The IPv6 socket address of TREL peer.
+    ///
+    /// Required.
+    3: sock_address string:MAX_IP6_SOCK_ADDR_STRING_SIZE;
+};
+
 /// Represents the TREL peer related info.
 ///
 /// The info is available in OpenThread via https://openthread.io/reference/group/api-trel
@@ -1019,6 +1104,11 @@ type TrelPeersInfo = table {
     ///
     /// Required.
     1: num_trel_peers uint16;
+
+    /// Represents TREL peers of this Thread Border Router.
+    ///
+    /// Required.
+    2: trel_peers vector<TrelPeer>:MAX_NEIGHBOR_INSPECT_ENTRIES;
 };
 
 /// Represents the Upstream DNS state
@@ -1434,9 +1524,79 @@ type ThreadHistoryReport = table {
             vector<ThreadNetDataRouteInfoEntry>:MAX_THREAD_NET_DATA_ROUTE_HISTORY_ENTRIES;
 };
 
+/// Enum for the origin of an address.
+type AddressOrigin = strict enum : uint8 {
+    /// Thread assigned address (ALOC, RLOC, MLEID, etc).
+    THREAD = 0;
+
+    /// SLAAC assigned address.
+    SLAAC = 1;
+
+    /// DHCPv6 assigned address.
+    DHCPV6 = 2;
+
+    /// Manually assigned address.
+    MANUAL = 3;
+};
+
+/// Represents an IPv6 network interface unicast address.
+///
+///  Derived from `otNetifAddress`(https://openthread.io/reference/struct/ot-netif-address)
+type NetifAddress = table {
+    /// The IPv6 unicast address.
+    ///
+    /// Required.
+    1: address fuchsia.net.Ipv6Address;
+
+    /// The IPv6 unicast address prefix length.
+    ///
+    /// Required.
+    2: prefix_length uint8;
+
+    /// The IPv6 address origin.
+    ///
+    /// Required.
+    3: origin AddressOrigin;
+
+    /// Whether the address is preferred or not.
+    ///
+    /// Required.
+    4: preferred bool;
+
+    /// Whether the address is valid or not.
+    ///
+    /// Required.
+    5: valid bool;
+};
+
+/// Represents a UDP socket.
+type UdpSocket = table {
+    /// The local IPv6 socket address.
+    ///
+    /// Required.
+    1: sock_name string:MAX_IP6_SOCK_ADDR_STRING_SIZE;
+
+    /// The peer IPv6 socket address.
+    ///
+    /// Required.
+    2: peer_name string:MAX_IP6_SOCK_ADDR_STRING_SIZE;
+};
+
 /// The maximum number of entries allowed in the neighbor-related inspect
 /// dump. This prevents the inspect tree from becoming excessively large.
 const MAX_NEIGHBOR_INSPECT_ENTRIES uint32 = 64;
+
+/// The maximum number of IPv6 unicast addresses in the insepct dump. This
+/// prevents the inspect tree from becoming excessively large.
+const MAX_IPV6_UNICAST_ADDRS uint32 = 32;
+
+/// The maximum number of IPv6 multicast addresses in the insepct dump.
+/// This prevents the inspect tree from becoming excessively large.
+const MAX_IPV6_MULTICAST_ADDRS uint32 = 32;
+
+/// The maximum number of UDP sockets in the insepct dump. This prevents the
+/// tree from becoming excessively large.
+const MAX_UDP_SOCKETS uint32 = 32;
 
 /// LoWPAN Interface Telemetry Information.
 ///
@@ -1607,4 +1767,31 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     34: history_report ThreadHistoryReport;
+
+    /// IPv6 unicast address list configured on a Thread interface.
+    ///
+    /// Only present on Thread Networks.
+    35: ipaddrs vector<NetifAddress>:MAX_IPV6_UNICAST_ADDRS;
+
+    /// IPv6 multicast address list configured on a Thread interface.
+    ///
+    /// Only present on Thread Networks.
+    36: ipmaddrs vector<fuchsia.net.Ipv6Address>:MAX_IPV6_MULTICAST_ADDRS;
+
+    /// Thread Border Routing discovered prefixes by Border Routing Manager
+    /// on the infrastructure link.
+    ///
+    /// Only present on Thread networks.
+    37: border_routing_prefixes vector<BorderRoutingPrefixTable>:MAX_NEIGHBOR_INSPECT_ENTRIES;
+
+    /// Thread Border Routing discovered Recursive DNS Server (RDNSS) by Border
+    /// Routing Manager on the infrastructure link.
+    ///
+    /// Only present on Thread networks.
+    38: border_routing_rdnsses vector<BorderRoutingRdnss>:MAX_NEIGHBOR_INSPECT_ENTRIES;
+
+    /// The UDP Sockets information.
+    ///
+    /// Only present on Thread networks.
+    39: netstat vector<UdpSocket>:MAX_UDP_SOCKETS;
 };
