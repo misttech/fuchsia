@@ -2281,14 +2281,14 @@ alias(
 )
 
 alias(
-    name = "rsa-0.9.8",
-    actual = "//third_party/rust_crates/vendor/rsa-0.9.8:rsa",
+    name = "rsa-0.9.10",
+    actual = "//third_party/rust_crates/vendor/rsa-0.9.10:rsa",
     tags = ["manual"],
 )
 
 alias(
     name = "rsa",
-    actual = "//third_party/rust_crates/vendor/rsa-0.9.8:rsa",
+    actual = "//third_party/rust_crates/vendor/rsa-0.9.10:rsa",
     tags = ["manual"],
 )
 

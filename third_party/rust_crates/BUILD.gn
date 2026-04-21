@@ -1670,11 +1670,11 @@ group("roaring-0.11.3") {
 }
 
 group("rsa") {
-  public_deps = [ ":rsa-v0_9_8" ]
+  public_deps = [ ":rsa-v0_9_10" ]
 }
 
-group("rsa-0.9.8") {
-  public_deps = [ ":rsa-v0_9_8" ]
+group("rsa-0.9.10") {
+  public_deps = [ ":rsa-v0_9_10" ]
 }
 
 import("//build/icu/icu_rustc_library.gni")
@@ -12674,7 +12674,7 @@ rustc_library("num-bigint-v0_4_6") {
   applicable_licenses = [ ":num-bigint-v0_4_6.license" ]
 }
 
-license("num-bigint-dig-v0_8_4.license") {
+license("num-bigint-dig-v0_8_6.license") {
   public_package_name = "num_bigint_dig"
   license_files = [
     "//third_party/rust_crates/forks/num-bigint-dig/LICENSE-APACHE",
@@ -12682,17 +12682,16 @@ license("num-bigint-dig-v0_8_4.license") {
   ]
 }
 
-rustc_library("num-bigint-dig-v0_8_4") {
+rustc_library("num-bigint-dig-v0_8_6") {
   crate_name = "num_bigint_dig"
   source_root = "//third_party/rust_crates/forks/num-bigint-dig/src/lib.rs"
-  output_name = "num_bigint_dig-89b89b6f2b1362e"
+  output_name = "num_bigint_dig-47556d1d9a50f98d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":byteorder-v1_5_0" ]
   deps += [ ":libm-v0_2_15" ]
   deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":lazy_static-v1_5_0" ]
@@ -12706,8 +12705,8 @@ rustc_library("num-bigint-dig-v0_8_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=89b89b6f2b1362e",
-    "-Cextra-filename=-89b89b6f2b1362e",
+    "-Cmetadata=47556d1d9a50f98d",
+    "-Cextra-filename=-47556d1d9a50f98d",
     "--cfg=feature=\"i128\"",
     "--cfg=feature=\"prime\"",
     "--cfg=feature=\"rand\"",
@@ -12717,7 +12716,7 @@ rustc_library("num-bigint-dig-v0_8_4") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":num-bigint-dig-v0_8_4.license" ]
+  applicable_licenses = [ ":num-bigint-dig-v0_8_6.license" ]
 }
 
 license("num-complex-v0_4_6.license") {
@@ -16866,25 +16865,25 @@ rustc_library("roaring-v0_11_3") {
   applicable_licenses = [ ":roaring-v0_11_3.license" ]
 }
 
-license("rsa-v0_9_8.license") {
+license("rsa-v0_9_10.license") {
   public_package_name = "rsa"
   license_files = [
-    "//third_party/rust_crates/vendor/rsa-0.9.8/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rsa-0.9.8/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rsa-0.9.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rsa-0.9.10/LICENSE-MIT",
   ]
 }
 
-rustc_library("rsa-v0_9_8") {
+rustc_library("rsa-v0_9_10") {
   crate_name = "rsa"
-  source_root = "//third_party/rust_crates/vendor/rsa-0.9.8/src/lib.rs"
-  output_name = "rsa-32c9d8ef4963d2ac"
+  source_root = "//third_party/rust_crates/vendor/rsa-0.9.10/src/lib.rs"
+  output_name = "rsa-1c0fdc888344434f"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":num-bigint-dig-v0_8_4" ]
+  deps += [ ":num-bigint-dig-v0_8_6" ]
   deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":const-oid-v0_9_6" ]
   deps += [ ":digest-v0_10_7" ]
@@ -16901,16 +16900,16 @@ rustc_library("rsa-v0_9_8") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=32c9d8ef4963d2ac",
-    "-Cextra-filename=-32c9d8ef4963d2ac",
+    "-Cmetadata=1c0fdc888344434f",
+    "-Cextra-filename=-1c0fdc888344434f",
   ]
 
   aliased_deps = {
-    num_bigint = ":num-bigint-dig-v0_8_4.actual"
+    num_bigint = ":num-bigint-dig-v0_8_6.actual"
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rsa-v0_9_8.license" ]
+  applicable_licenses = [ ":rsa-v0_9_10.license" ]
 }
 
 license("rust_icu_common-v5_6_0.license") {

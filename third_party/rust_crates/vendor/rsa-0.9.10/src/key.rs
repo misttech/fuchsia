@@ -184,7 +184,7 @@ impl RsaPublicKey {
     /// Create a new public key from its components.
     pub fn new_with_max_size(n: BigUint, e: BigUint, max_size: usize) -> Result<Self> {
         let k = Self { n, e };
-        check_public_with_max_size(&k, max_size)?;
+        check_public_with_max_size(&k, Some(max_size))?;
         Ok(k)
     }
 
@@ -269,7 +269,7 @@ impl RsaPrivateKey {
             precomputed: None,
         };
 
-        // Alaways validate the key, to ensure precompute can't fail
+        // Always validate the key, to ensure precompute can't fail
         k.validate()?;
 
         // precompute when possible, ignore error otherwise.
@@ -391,7 +391,7 @@ impl RsaPrivateKey {
         let mut m = BigUint::one();
         for prime in &self.primes {
             // Any primes ≤ 1 will cause divide-by-zero panics later.
-            if *prime < BigUint::one() {
+            if *prime <= BigUint::one() {
                 return Err(Error::InvalidPrime);
             }
             m *= prime;
@@ -493,14 +493,19 @@ impl PrivateKeyParts for RsaPrivateKey {
 /// Check that the public key is well formed and has an exponent within acceptable bounds.
 #[inline]
 pub fn check_public(public_key: &impl PublicKeyParts) -> Result<()> {
-    check_public_with_max_size(public_key, RsaPublicKey::MAX_SIZE)
+    check_public_with_max_size(public_key, None)
 }
 
 /// Check that the public key is well formed and has an exponent within acceptable bounds.
 #[inline]
-fn check_public_with_max_size(public_key: &impl PublicKeyParts, max_size: usize) -> Result<()> {
-    if public_key.n().bits() > max_size {
-        return Err(Error::ModulusTooLarge);
+fn check_public_with_max_size(
+    public_key: &impl PublicKeyParts,
+    max_size: Option<usize>,
+) -> Result<()> {
+    if let Some(max_size) = max_size {
+        if public_key.n().bits() > max_size {
+            return Err(Error::ModulusTooLarge);
+        }
     }
 
     let e = public_key
@@ -533,7 +538,7 @@ mod tests {
     use crate::algorithms::rsa::{rsa_decrypt_and_check, rsa_encrypt};
 
     use hex_literal::hex;
-    use num_traits::{FromPrimitive, ToPrimitive};
+    use num_traits::{FromPrimitive, ToPrimitive, Zero};
     use pkcs8::DecodePrivateKey;
     use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -835,5 +840,20 @@ mod tests {
         assert_eq!(key.dq(), ref_key.dq());
 
         assert_eq!(key.d(), ref_key.d());
+    }
+
+    #[test]
+    fn test_key_invalid_primes() {
+        let e = RsaPrivateKey::from_components(
+            BigUint::from_u64(239).unwrap(),
+            BigUint::from_u64(185).unwrap(),
+            BigUint::zero(),
+            vec![
+                BigUint::from_u64(1).unwrap(),
+                BigUint::from_u64(239).unwrap(),
+            ],
+        )
+        .unwrap_err();
+        assert_eq!(e, Error::InvalidPrime);
     }
 }

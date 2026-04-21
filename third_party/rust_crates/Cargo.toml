@@ -207,7 +207,7 @@ regex-lite = "0.1.9"
 regex-syntax = "0.8.10"
 ring = "0.17.8"
 roaring = "0.11.3"
-rsa = { version = "0.9.8", default-features = false }
+rsa = { version = "0.9.10", default-features = false }
 rustc-hash = "1.0.1"
 rustls = { version = "0.21.12", features = ["dangerous_configuration"] }
 rustls-pemfile = "1.0.4"
@@ -761,7 +761,7 @@ env_vars = ["OUT_DIR=../../../../compat/num-bigint"]
 [gn.package.num-bigint."0.4.6".platform."cfg(target_arch = \"x86_64\")"]
 rustflags = ["--cfg=use_addcarry"]
 
-[gn.package.num-bigint-dig."0.8.4"]
+[gn.package.num-bigint-dig."0.8.6"]
 rustflags = ["--cfg=has_i128"]
 
 [gn.package.num-complex."0.4.6"]

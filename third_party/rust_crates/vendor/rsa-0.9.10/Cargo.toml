@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.65"
 name = "rsa"
-version = "0.9.8"
+version = "0.9.10"
 authors = [
     "RustCrypto Developers",
     "dignifiedquire <dignifiedquire@gmail.com>",
@@ -114,7 +114,7 @@ features = [
 default-features = false
 
 [dependencies.num-bigint]
-version = "0.8.2"
+version = "0.8.6"
 features = [
     "i128",
     "prime",
