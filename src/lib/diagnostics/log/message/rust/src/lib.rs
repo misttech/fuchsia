@@ -7,7 +7,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use diagnostics_data::{
     BuilderArgs, ExtendedMoniker, LogsData, LogsDataBuilder, LogsField, LogsProperty, Severity,
 };
-use diagnostics_log_encoding::{Argument, Record, Value};
+use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record, Value};
 use flyweights::FlyStr;
 use libc::{c_char, c_int};
 use moniker::Moniker;
@@ -53,10 +53,96 @@ pub fn from_logger(source: MonikerWithUrl, msg: LoggerMessage) -> LogsData {
     builder.build()
 }
 
-struct ExtendedMetadata {
-    moniker: ExtendedMoniker,
-    url: FlyStr,
-    rolled_out_logs: u64,
+#[derive(Clone)]
+pub struct ExtendedMetadata {
+    pub moniker: ExtendedMoniker,
+    pub url: FlyStr,
+    pub rolled_out_logs: u64,
+}
+
+pub struct MessageParser {
+    tag_map: std::collections::HashMap<u32, ExtendedMetadata>,
+}
+
+impl Default for MessageParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MessageParser {
+    pub fn new() -> Self {
+        Self { tag_map: std::collections::HashMap::new() }
+    }
+
+    pub fn parse_next<'a>(
+        &mut self,
+        bytes: &'a [u8],
+    ) -> Result<(Option<LogsData>, &'a [u8]), MessageError> {
+        if bytes.len() < 8 {
+            return Err(MessageError::ShortRead { len: bytes.len() });
+        }
+        let header_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+        let header_val = u64::from_le_bytes(header_bytes);
+        let header = Header(header_val);
+        let tag = header.tag();
+        let base_tag = tag & !LOG_CONTROL_BIT;
+        let is_archivist = (tag & LOG_CONTROL_BIT) != 0;
+
+        let (input, remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
+        // The entry is a manifest entry if the Archivist bit is set,
+        // as manifest entries aren't currently used for anything else.
+        if is_archivist {
+            let mut moniker = None;
+            let mut url = None;
+            let mut rolled_out = None;
+            for arg in &input.arguments {
+                if arg.name() == "moniker"
+                    && let Value::Text(v) = arg.value()
+                {
+                    moniker = Some(v.to_string());
+                } else if arg.name() == "url"
+                    && let Value::Text(v) = arg.value()
+                {
+                    url = Some(v.to_string());
+                } else if arg.name() == "rolled_out"
+                    && let Value::UnsignedInt(v) = arg.value()
+                {
+                    rolled_out = Some(v);
+                }
+            }
+            if let Some(count) = rolled_out {
+                let mut metadata =
+                    self.tag_map.get(&base_tag).cloned().unwrap_or_else(|| ExtendedMetadata {
+                        moniker: diagnostics_data::ExtendedMoniker::ComponentInstance(
+                            moniker::Moniker::parse_str("/UNKNOWN").unwrap(),
+                        ),
+                        url: flyweights::FlyStr::new("fuchsia-pkg://UNKNOWN"),
+                        rolled_out_logs: 0,
+                    });
+                metadata.rolled_out_logs = count;
+                let data = parse_logs_data(&input, Some(metadata))?;
+                return Ok((Some(data), remaining));
+            }
+            if let (Some(m), Some(u)) = (moniker, url)
+                && let Ok(extended_moniker) = ExtendedMoniker::parse_str(&m)
+            {
+                self.tag_map.insert(
+                    base_tag,
+                    ExtendedMetadata {
+                        moniker: extended_moniker,
+                        url: FlyStr::new(u),
+                        rolled_out_logs: 0,
+                    },
+                );
+            }
+            Ok((None, remaining))
+        } else {
+            let metadata = self.tag_map.get(&base_tag).cloned();
+            let data = parse_logs_data(&input, metadata)?;
+            Ok((Some(data), remaining))
+        }
+    }
 }
 
 #[cfg(fuchsia_api_level_less_than = "HEAD")]
@@ -104,7 +190,7 @@ fn parse_archivist_args<'a>(
     Ok((builder, archivist_argument_count))
 }
 
-fn parse_logs_data<'a>(
+pub fn parse_logs_data<'a>(
     input: &'a Record<'a>,
     source: Option<ExtendedMetadata>,
 ) -> Result<LogsData, MessageError> {
@@ -117,9 +203,8 @@ fn parse_logs_data<'a>(
 
     let mut builder = LogsDataBuilder::new(BuilderArgs {
         component_url: maybe_url,
-        moniker: maybe_moniker.unwrap_or(ExtendedMoniker::ComponentInstance(
-            Moniker::parse_str("placeholder").unwrap(),
-        )),
+        moniker: maybe_moniker
+            .unwrap_or(ExtendedMoniker::ComponentInstance(Moniker::parse_str("/UNKNOWN").unwrap())),
         severity,
         timestamp: input.timestamp,
     });

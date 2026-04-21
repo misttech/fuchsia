@@ -670,7 +670,6 @@ where
                 .aggregated_content_limit_bytes
                 .unwrap_or(FORMATTED_CONTENT_CHUNK_SIZE_TARGET),
             data,
-            performance_config.subscribe_to_manifest,
         );
         Self::new_inner(
             new_batcher(data, Arc::clone(&stats), mode),
@@ -784,7 +783,6 @@ pub struct PerformanceConfig {
     pub batch_timeout_sec: i64,
     pub aggregated_content_limit_bytes: Option<u64>,
     pub maximum_concurrent_snapshots_per_reader: u64,
-    pub subscribe_to_manifest: bool,
 }
 
 impl PerformanceConfig {
@@ -830,13 +828,10 @@ impl PerformanceConfig {
             _ => None,
         };
 
-        let subscribe_to_manifest = params.subscribe_to_manifest.unwrap_or(false);
-
         Ok(PerformanceConfig {
             batch_timeout_sec: batch_timeout.seconds(),
             aggregated_content_limit_bytes,
             maximum_concurrent_snapshots_per_reader,
-            subscribe_to_manifest,
         })
     }
 }
@@ -1158,7 +1153,7 @@ mod tests {
 
         let (batch_iterator, server_end) = fidl::endpoints::create_proxy::<BatchIteratorMarker>();
 
-        // Connect with subscribe_to_manifest = true
+        // Connect with FXT format
         assert!(
             accessor
                 .r#stream_diagnostics(
@@ -1169,7 +1164,6 @@ mod tests {
                         client_selector_configuration: Some(
                             ClientSelectorConfiguration::SelectAll(true)
                         ),
-                        subscribe_to_manifest: Some(true),
                         ..Default::default()
                     },
                     server_end

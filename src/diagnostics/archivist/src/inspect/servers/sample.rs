@@ -1521,7 +1521,6 @@ mod tests {
             aggregated_content_limit_bytes: None,
             batch_timeout_sec: 100,
             maximum_concurrent_snapshots_per_reader: 100,
-            subscribe_to_manifest: false,
         };
 
         let actual = sampler

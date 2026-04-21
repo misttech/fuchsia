@@ -7,9 +7,11 @@ use crate::logs::repository::LogsRepository;
 use crate::logs::shared_buffer::FxtMessage;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
 use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
-use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream};
+use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker};
+use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics::StreamMode;
 use fidl_fuchsia_diagnostics_types::Severity;
+use fuchsia_async as fasync;
 use futures::{AsyncWriteExt, Stream, StreamExt};
 use log::warn;
 use std::collections::HashMap;
@@ -17,7 +19,6 @@ use std::io::Cursor;
 use std::pin::pin;
 use std::sync::Arc;
 use zerocopy::{FromBytes, IntoBytes};
-use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync};
 
 #[derive(thiserror::Error, Debug)]
 enum StreamError {
@@ -68,27 +69,14 @@ impl LogStreamServer {
                         opts.mode.unwrap_or(StreamMode::SnapshotThenSubscribe),
                         Vec::new(),
                     );
-                    let opts = ExtendRecordOpts::from(opts);
-                    if opts.subscribe_to_manifest {
-                        if opts.moniker || opts.component_url || opts.rolled_out {
-                            stream.control_handle().shutdown_with_epitaph(zx::Status::INVALID_ARGS);
-                            return Ok(());
-                        }
 
-                        scope.spawn(async move {
-                            let _ = Self::stream_logs_with_manifest(
-                                fasync::Socket::from_socket(socket),
-                                logs,
-                            )
-                            .await;
-                        });
-                    } else {
-                        scope.spawn(Self::stream_logs(
+                    scope.spawn(async move {
+                        let _ = Self::stream_logs_with_manifest(
                             fasync::Socket::from_socket(socket),
                             logs,
-                            opts,
-                        ));
-                    }
+                        )
+                        .await;
+                    });
                 }
                 fdiagnostics::LogStreamRequest::_UnknownMethod {
                     ordinal,
@@ -104,25 +92,6 @@ impl LogStreamServer {
         Ok(())
     }
 
-    async fn stream_logs(
-        mut socket: fasync::Socket,
-        logs: impl Stream<Item = FxtMessage>,
-        opts: ExtendRecordOpts,
-    ) {
-        let mut logs = pin!(logs);
-        let mut buffer = Vec::new();
-        while let Some(message) = logs.next().await {
-            buffer.clear();
-            buffer.extend_from_slice(message.data());
-            extend_fxt_record(message.component_identity(), message.dropped(), &opts, &mut buffer);
-            let result = socket.write_all(&buffer).await;
-            if result.is_err() {
-                // Assume an error means the peer closed for now.
-                break;
-            }
-        }
-    }
-
     async fn stream_logs_with_manifest(
         mut socket: fasync::Socket,
         logs: impl Stream<Item = FxtMessage>,
@@ -130,6 +99,9 @@ impl LogStreamServer {
         let mut logs = pin!(logs);
         let mut sent_tags = HashMap::new();
         while let Some(message) = logs.next().await {
+            if message.dropped() > 0 {
+                Self::send_rolled_out(&mut socket, message.tag(), message.dropped()).await?;
+            }
             let tag = message.tag();
             match sent_tags.entry(tag) {
                 std::collections::hash_map::Entry::Vacant(e) => {
@@ -176,73 +148,17 @@ impl LogStreamServer {
         socket.write_all(&buffer).await?;
         Ok(())
     }
-}
 
-#[derive(Default)]
-pub struct ExtendRecordOpts {
-    pub moniker: bool,
-    pub component_url: bool,
-    pub rolled_out: bool,
-    pub subscribe_to_manifest: bool,
-}
-
-impl ExtendRecordOpts {
-    fn should_extend(&self) -> bool {
-        let Self { moniker, component_url, rolled_out, subscribe_to_manifest: _ } = self;
-        *moniker || *component_url || *rolled_out
+    async fn send_rolled_out(
+        socket: &mut fasync::Socket,
+        id: u64,
+        count: u64,
+    ) -> Result<(), std::io::Error> {
+        let buffer = crate::logs::shared_buffer::encode_rolled_out(id, count)
+            .map_err(std::io::Error::other)?;
+        socket.write_all(&buffer).await?;
+        Ok(())
     }
-}
-
-impl From<fdiagnostics::LogStreamOptions> for ExtendRecordOpts {
-    fn from(opts: fdiagnostics::LogStreamOptions) -> Self {
-        let fdiagnostics::LogStreamOptions {
-            include_moniker,
-            include_component_url,
-            include_rolled_out,
-            mode: _,
-            __source_breaking: _,
-            subscribe_to_manifest,
-        } = opts;
-        Self {
-            moniker: include_moniker.unwrap_or(false),
-            component_url: include_component_url.unwrap_or(false),
-            rolled_out: include_rolled_out.unwrap_or(false),
-            subscribe_to_manifest: subscribe_to_manifest.unwrap_or(false),
-        }
-    }
-}
-
-/// Returns zero padding for `len`.
-fn padding(len: usize) -> &'static [u8] {
-    &[0; 8][(len + 7) % 8 + 1..]
-}
-
-pub fn extend_fxt_record(
-    identity: &ComponentIdentity,
-    rolled_out: u64,
-    opts: &ExtendRecordOpts,
-    buffer: &mut Vec<u8>,
-) {
-    if !opts.should_extend() {
-        return;
-    }
-
-    let moniker = if opts.moniker { identity.moniker.as_ref() } else { "" };
-    let component_url = if opts.component_url { identity.url.as_ref() } else { "" };
-    let rolled_out_value = if opts.rolled_out { rolled_out } else { 0 };
-
-    let moniker_len = moniker.len() as u32;
-    let component_url_len = component_url.len() as u32;
-
-    buffer.extend_from_slice(&moniker_len.to_le_bytes());
-    buffer.extend_from_slice(&component_url_len.to_le_bytes());
-    buffer.extend_from_slice(&rolled_out_value.to_le_bytes());
-
-    buffer.extend_from_slice(moniker.as_bytes());
-    buffer.extend_from_slice(padding(moniker.len()));
-
-    buffer.extend_from_slice(component_url.as_bytes());
-    buffer.extend_from_slice(padding(component_url.len()));
 }
 
 #[cfg(test)]
@@ -253,7 +169,6 @@ mod tests {
     use diagnostics_log_encoding::parse::parse_record;
     use futures::AsyncReadExt;
     use moniker::ExtendedMoniker;
-    use test_case::test_case;
     use zx;
 
     #[fuchsia::test]
@@ -276,7 +191,6 @@ mod tests {
         let mut client_socket = fasync::Socket::from_socket(client_socket);
 
         let opts = fdiagnostics::LogStreamOptions {
-            subscribe_to_manifest: Some(true),
             mode: Some(StreamMode::SnapshotThenSubscribe),
             ..Default::default()
         };
@@ -364,7 +278,6 @@ mod tests {
         let mut client_socket = fasync::Socket::from_socket(client_socket);
 
         let opts = fdiagnostics::LogStreamOptions {
-            subscribe_to_manifest: Some(true),
             mode: Some(StreamMode::SnapshotThenSubscribe),
             ..Default::default()
         };
@@ -499,69 +412,5 @@ mod tests {
         // Next should be Log B
         let (log_b, _) = read_one_record(&mut client_socket, &mut buf, &mut offset).await;
         assert_eq!(log_b.arguments[2].value(), Value::Text("msg_b".into()));
-    }
-
-    #[test_case(ExtendRecordOpts::default(), "", "", 0 ; "no_additional_metadata")]
-    #[test_case(
-        ExtendRecordOpts { moniker: true, ..Default::default() },
-        "UNKNOWN",
-        "",
-        0
-        ; "with_moniker")]
-    #[test_case(
-        ExtendRecordOpts { component_url: true, ..Default::default() },
-        "",
-        "fuchsia-pkg://UNKNOWN",
-        0
-        ; "with_url")]
-    #[test_case(
-        ExtendRecordOpts { rolled_out: true, ..Default::default() },
-        "",
-        "",
-        42
-        ; "with_rolled_out")]
-    #[test_case(
-        ExtendRecordOpts { moniker: true, component_url: true, rolled_out: true, subscribe_to_manifest: false },
-        "UNKNOWN",
-        "fuchsia-pkg://UNKNOWN",
-        42
-        ; "with_all")]
-    #[fuchsia::test]
-    fn extend_record_with_metadata(
-        opts: ExtendRecordOpts,
-        expected_moniker: &str,
-        expected_url: &str,
-        expected_rolled_out: u64,
-    ) {
-        let mut buffer = Vec::new();
-        extend_fxt_record(&ComponentIdentity::unknown(), 42, &opts, &mut buffer);
-
-        if !opts.should_extend() {
-            assert!(buffer.is_empty());
-            return;
-        }
-
-        let moniker_len = u32::from_le_bytes(buffer[0..4].try_into().unwrap()) as usize;
-        let component_url_len = u32::from_le_bytes(buffer[4..8].try_into().unwrap()) as usize;
-
-        let rolled_out = u64::from_le_bytes(buffer[8..16].try_into().unwrap());
-        if opts.rolled_out {
-            assert_eq!(rolled_out, expected_rolled_out);
-        } else {
-            assert_eq!(rolled_out, 0);
-        }
-
-        let mut offset = 16;
-        let moniker = std::str::from_utf8(&buffer[offset..offset + moniker_len]).unwrap();
-        assert_eq!(moniker, expected_moniker);
-        let moniker_padded_len = (moniker_len + 7) & !7;
-        offset += moniker_padded_len;
-
-        let url = std::str::from_utf8(&buffer[offset..offset + component_url_len]).unwrap();
-        assert_eq!(url, expected_url);
-        let component_url_padded_len = (component_url_len + 7) & !7;
-        offset += component_url_padded_len;
-
-        assert_eq!(offset, buffer.len());
     }
 }
