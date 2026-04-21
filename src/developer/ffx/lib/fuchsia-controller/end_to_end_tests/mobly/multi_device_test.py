@@ -100,7 +100,7 @@ class BluetoothDevice(object):
                         res = host.addresses[0]
                         return res
                 raise RuntimeError(
-                    "No addresses found in response: {hosts_response}"
+                    f"No addresses found in response: {hosts_response}"
                 )
                 break
 

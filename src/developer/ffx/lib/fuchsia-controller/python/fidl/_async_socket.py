@@ -81,7 +81,7 @@ class AsyncSocket:
         return await self._read()
 
     async def _read(self) -> bytes:
-        _LOGGER.debug("Doing read of socket: {self.socket}")
+        _LOGGER.debug("Doing read of socket: %s", self.socket)
         with self.waker.registration(
             self.socket, name=f"AsyncSocket {self.socket}"
         ):
@@ -92,9 +92,9 @@ class AsyncSocket:
                     if e.args[0] != fc.FcTransportStatus.FC_ERR_SHOULD_WAIT:
                         raise e
                     _LOGGER.debug(
-                        "Received wait signal for socket: {self.socket}"
+                        f"Received wait signal for socket: {self.socket}"
                     )
-                _LOGGER.debug("Awaiting socket wake for socket: {self.socket}")
+                _LOGGER.debug(f"Awaiting socket wake for socket: {self.socket}")
                 await self.waker.wait_ready(self.socket)
 
     async def read_all(self) -> bytearray:
