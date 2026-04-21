@@ -37,7 +37,7 @@ const INSPECT_CONNECT_ATTEMPT_RESULTS_ID_LIMIT: usize = 32;
 const SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_TIMEOUT: zx::BootDuration =
     zx::BootDuration::from_minutes(2);
 
-#[derive(Debug, Display, EnumIter)]
+#[derive(Clone, Debug, Display, EnumIter)]
 enum ConnectionState {
     Idle(IdleState),
     Connected(ConnectedState),
@@ -45,6 +45,7 @@ enum ConnectionState {
     ConnectFailed(ConnectFailedState),
     FailedToStart(FailedToStartState),
     FailedToStop(FailedToStopState),
+    PnoScanFailedIdle(PnoScanFailedIdleState),
 }
 
 // Update the ConnectDisconnectTimeSeries BitSetMap when making changes to this enum.
@@ -58,27 +59,31 @@ impl IdEnum for ConnectionState {
             Self::Connected(_) => 3,
             Self::FailedToStart(_) => 4,
             Self::FailedToStop(_) => 5,
+            Self::PnoScanFailedIdle(_) => 6,
         }
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct IdleState {}
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct ConnectedState {}
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct DisconnectedState {}
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct ConnectFailedState {}
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct FailedToStartState {}
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct FailedToStopState {}
+
+#[derive(Clone, Debug, Default)]
+struct PnoScanFailedIdleState {}
 
 #[derive(Derivative, Unit)]
 #[derivative(PartialEq, Eq, Hash)]
@@ -449,6 +454,43 @@ impl ConnectDisconnectLogger {
         }
     }
 
+    pub async fn handle_pno_scan_failure(&self) {
+        let mut metric_events = vec![MetricEvent {
+            metric_id: metrics::PNO_SCAN_FAILURE_OCCURRENCE_METRIC_ID,
+            event_codes: vec![],
+            payload: MetricEventPayload::Count(1),
+        }];
+
+        let state = self.connection_state.lock().clone();
+        match state {
+            ConnectionState::Idle(_)
+            | ConnectionState::Disconnected(_)
+            | ConnectionState::ConnectFailed(_)
+            | ConnectionState::PnoScanFailedIdle(_) => {
+                metric_events.push(MetricEvent {
+                    metric_id: metrics::PNO_SCAN_FAILURE_WHILE_NOT_CONNECTED_OCCURRENCE_METRIC_ID,
+                    event_codes: vec![],
+                    payload: MetricEventPayload::Count(1),
+                });
+
+                // PNO scan failures while not connected indicate that the system is looking for
+                // networks to connect to but it is unable to.  In this case, we should transition
+                // to the PnoScanFailedIdle state to flag a period of potential connectivity loss.
+                self.update_connection_state(ConnectionState::PnoScanFailedIdle(
+                    PnoScanFailedIdleState {},
+                ));
+            }
+            ConnectionState::Connected(_)
+            | ConnectionState::FailedToStart(_)
+            | ConnectionState::FailedToStop(_) => {
+                // PNO scan failures while connected will not affect the current connectivity state.
+                // If WLAN has already failed to start or failed to stop, the state should remain
+                // unchanged until a different failure or successful connection occurs.
+            }
+        }
+
+        log_cobalt_batch!(self.cobalt_proxy, &metric_events, "handle_pno_scan_failure");
+    }
     pub async fn handle_client_connections_failed_to_start(&self) {
         self.update_connection_state(ConnectionState::FailedToStart(FailedToStartState {}));
     }
@@ -508,14 +550,7 @@ impl ConnectDisconnectTimeSeries {
                 LastSample::or(0),
             ),
             // Update the ConnectionState IdEnum trait when making changes to this list.
-            BitSetMap::from_ordered([
-                "idle",
-                "disconnected",
-                "connect_failed",
-                "connected",
-                "start_failure",
-                "stop_failure",
-            ]),
+            BitSetMap::from_ordered(Self::wlan_connectivity_states_bitset_map().iter().copied()),
         );
         let connected_networks = client.inspect_time_matrix_with_metadata(
             "connected_networks",
@@ -573,6 +608,20 @@ impl ConnectDisconnectTimeSeries {
             disconnect_sources,
             connect_attempt_results,
         }
+    }
+
+    // TODO(https://fxbug.dev/504712259): Update BitSetMap to accept the enum type
+    // it's associated with rather than constructing bit labels separately like this
+    fn wlan_connectivity_states_bitset_map() -> &'static [&'static str] {
+        &[
+            "idle",
+            "disconnected",
+            "connect_failed",
+            "connected",
+            "start_failure",
+            "stop_failure",
+            "pno_scan_failed",
+        ]
     }
 
     fn log_wlan_connectivity_state(&self, data: u64) {
@@ -646,11 +695,11 @@ mod tests {
     use diagnostics_assertions::{
         AnyBoolProperty, AnyBytesProperty, AnyNumericProperty, AnyStringProperty, assert_data_tree,
     };
-
     use futures::task::Poll;
     use ieee80211_testutils::{BSSID_REGEX, SSID_REGEX};
     use rand::Rng;
     use std::pin::pin;
+    use strum::IntoEnumIterator;
     use test_case::test_case;
     use windowed_stats::experimental::clock::Timed;
     use windowed_stats::experimental::inspect::TimeMatrixClient;
@@ -697,6 +746,7 @@ mod tests {
                                     "3": "connected",
                                     "4": "start_failure",
                                     "5": "stop_failure",
+                                    "6": "pno_scan_failed",
                                 },
                             },
                         },
@@ -1537,6 +1587,93 @@ mod tests {
         );
 
         assert_matches!(*logger.connection_state.lock(), ConnectionState::FailedToStop(_));
+    }
+
+    #[test_case(ConnectionState::Idle(IdleState {}))]
+    #[test_case(ConnectionState::Disconnected(DisconnectedState {}))]
+    #[test_case(ConnectionState::ConnectFailed(ConnectFailedState {}))]
+    #[test_case(ConnectionState::PnoScanFailedIdle(PnoScanFailedIdleState {}))]
+    fn test_connectivity_state_transition_on_pno_scan_failure(initial_state: ConnectionState) {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        // Transition to initial state
+        *logger.connection_state.lock() = initial_state.clone();
+
+        // Log a PNO scan failure
+        let mut test_fut = pin!(logger.handle_pno_scan_failure());
+        assert_matches!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        // Verify the metrics were logged
+        let metric_events = test_helper
+            .get_logged_metrics(metrics::PNO_SCAN_FAILURE_WHILE_NOT_CONNECTED_OCCURRENCE_METRIC_ID);
+        assert_eq!(metric_events.len(), 1);
+        assert_eq!(metric_events[0].payload, MetricEventPayload::Count(1));
+
+        let metric_events =
+            test_helper.get_logged_metrics(metrics::PNO_SCAN_FAILURE_OCCURRENCE_METRIC_ID);
+        assert_eq!(metric_events.len(), 1);
+        assert_eq!(metric_events[0].payload, MetricEventPayload::Count(1));
+
+        // Verify the time matrix shows the PNO scan failure state
+        let mut time_matrix_calls = test_helper.mock_time_matrix_client.drain_calls();
+        assert_eq!(
+            *time_matrix_calls.drain::<u64>("wlan_connectivity_states")[..].last().unwrap(),
+            TimeMatrixCall::Fold(Timed::now(1 << 6)), // PnoScanFailedIdle ID is 6 -> bit 1 << 6
+        );
+
+        // A PNO scan failure should cause a transition to PnoScanFailedIdle
+        assert_matches!(*logger.connection_state.lock(), ConnectionState::PnoScanFailedIdle(_));
+    }
+
+    #[test_case(ConnectionState::Connected(ConnectedState {}))]
+    #[test_case(ConnectionState::FailedToStart(FailedToStartState {}))]
+    #[test_case(ConnectionState::FailedToStop(FailedToStopState {}))]
+    fn test_no_connectivity_state_transition_on_pno_scan_failure(initial_state: ConnectionState) {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        // Transition to initial state
+        *logger.connection_state.lock() = initial_state.clone();
+
+        // Log a PNO scan failure
+        let mut test_fut = pin!(logger.handle_pno_scan_failure());
+        assert_matches!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        // Verify the metrics were logged
+        let metric_events =
+            test_helper.get_logged_metrics(metrics::PNO_SCAN_FAILURE_OCCURRENCE_METRIC_ID);
+        assert_eq!(metric_events.len(), 1);
+        assert_eq!(metric_events[0].payload, MetricEventPayload::Count(1));
+
+        // State should not change
+        assert_eq!(logger.connection_state.lock().to_id(), initial_state.to_id());
+    }
+
+    #[fuchsia::test]
+    fn test_wlan_connectivity_states_bitset_map_size() {
+        let enum_variant_count = ConnectionState::iter().count();
+        let bitset_map_size =
+            ConnectDisconnectTimeSeries::wlan_connectivity_states_bitset_map().len();
+        assert_eq!(enum_variant_count, bitset_map_size);
     }
 
     fn fake_disconnect_info() -> DisconnectInfo {

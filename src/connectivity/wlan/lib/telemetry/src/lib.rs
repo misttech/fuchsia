@@ -71,6 +71,7 @@ pub enum TelemetryEvent {
     SetTxPowerScenario {
         scenario: fidl_internal::TxPowerScenario,
     },
+    PnoScanFailure,
 }
 
 /// If metrics cannot be reported for extended periods of time, logging new metrics will fail and
@@ -293,6 +294,9 @@ pub fn serve_telemetry(
                         }
                         SetTxPowerScenario {scenario} => {
                             tx_power_scenario_logger.handle_set_sar(scenario).await;
+                        }
+                        PnoScanFailure => {
+                            connect_disconnect.handle_pno_scan_failure().await;
                         }
                     }
                 }
