@@ -260,9 +260,12 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
   auto function = cfg_node.GetProperty<uint64_t>(kPinFunction);
   if (function.is_ok()) {
     config.function(function.value());
+  } else if (auto function_name = cfg_node.GetProperty<std::string>(kPinFunction);
+             function_name.is_ok()) {
+    config.function_name(function_name.value());
   } else if (function.status_value() != ZX_ERR_NOT_FOUND) {
-    fdf::error("Pin controller config '{}' has invalid function: {}.", cfg_node.name(), function);
-
+    fdf::error("Pin controller config '{}' has invalid function or function name: {}.",
+               cfg_node.name(), function);
     return function.take_error();
   }
 

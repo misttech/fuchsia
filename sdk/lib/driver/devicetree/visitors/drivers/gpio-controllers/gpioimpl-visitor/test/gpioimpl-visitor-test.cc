@@ -180,7 +180,7 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   gpioB_id = *controller_metadata_b->controller_id();
 
   ASSERT_TRUE(controller_metadata_b->init_steps());
-  ASSERT_EQ((*controller_metadata_b).init_steps()->size(), 1u);
+  ASSERT_EQ((*controller_metadata_b).init_steps()->size(), 2u);
 
   // Pin controller config init steps.
   ASSERT_TRUE((*controller_metadata_b->init_steps())[0].call());
@@ -190,6 +190,12 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
             fuchsia_hardware_pinimpl::InitCall::WithPinConfig(
                 {{.pull = fuchsia_hardware_pin::Pull::kUp,
                   .drive_type = fuchsia_hardware_pin::DriveType::kPushPull}}));
+
+  ASSERT_TRUE((*controller_metadata_b->init_steps())[1].call());
+  ASSERT_EQ((*controller_metadata_b->init_steps())[1].call()->pin(),
+            static_cast<uint32_t>(GROUP5_PIN1));
+  ASSERT_EQ((*controller_metadata_b->init_steps())[1].call()->call(),
+            fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{.function_name = "spi"}}));
 
   ASSERT_EQ(1lu, gpio_tester->GetCompositeNodeSpecs("audio").size());
   auto mgr_request_audio = gpio_tester->GetCompositeNodeSpecs("audio")[0];

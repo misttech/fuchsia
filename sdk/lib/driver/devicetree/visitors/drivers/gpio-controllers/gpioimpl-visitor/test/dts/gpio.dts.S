@@ -64,6 +64,10 @@
         drive-push-pull;
       };
 
+      group5: group5 {
+        pins = <GROUP5_PIN1>;
+        function = "spi";
+      };
     };
 
     audio@ffffc000 {
@@ -77,7 +81,7 @@
     video@ffffd000 {
       compatible = "test,video";
       reg = <0x0 0xffffd000 0x0 0x1000>;
-      pinctrl-0 = <&group2 &group4>;
+      pinctrl-0 = <&group2 &group4 &group5>;
     };
 
 };
