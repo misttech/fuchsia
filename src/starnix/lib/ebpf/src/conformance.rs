@@ -743,6 +743,18 @@ pub mod test {
                     },
                     EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
                 ),
+                (
+                    HelperDefinition {
+                        index: 107,
+                        name: "with_context",
+                        signature: FunctionSignature {
+                            args: vec![Type::ContextParameter { parameter_index: 0 }],
+                            return_value: Type::UNKNOWN_SCALAR,
+                            invalidate_array_bounds: false,
+                        },
+                    },
+                    EbpfHelperImpl::<TestEbpfProgramContext>(get_zero),
+                ),
             ]
         });
 
@@ -1133,6 +1145,8 @@ pub mod test {
     #[test_case(local_test_data!("map_type_allowed.data"))]
     #[test_case(local_test_data!("map_type_prohibited.data"))]
     #[test_case(local_test_data!("write_only_helper.data"))]
+    #[test_case(local_test_data!("context_parameter.data"))]
+    #[test_case(local_test_data!("err_context_parameter.data"))]
     fn test_ebpf_conformance(content: &str) {
         let Some(mut test_case) = TestCase::parse(content) else {
             // Special case that only test the test framework.

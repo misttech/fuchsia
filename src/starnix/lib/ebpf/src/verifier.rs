@@ -316,6 +316,8 @@ pub enum Type {
     NullOrParameter(Box<Type>),
     /// A function parameter that must be a pointer to memory with the given id.
     StructParameter { id: MemoryId },
+    /// The parameter should be the same as the specified argument passed to the program.
+    ContextParameter { parameter_index: u8 },
     /// A function return value that must be passed to a method with an associated
     /// `ReleaseParameter` before the end of the program.
     ReleasableParameter { id: MemoryId, inner: Box<Type> },
@@ -601,6 +603,7 @@ impl Type {
 
     fn match_parameter_type(
         &self,
+        verification_context: &VerificationContext<'_>,
         context: &ComputationContext,
         helper_name: &str,
         parameter_type: &Type,
@@ -613,9 +616,14 @@ impl Type {
             {
                 Ok(())
             }
-            (Type::NullOrParameter(t), _) => {
-                self.match_parameter_type(context, helper_name, t, index, next)
-            }
+            (Type::NullOrParameter(t), _) => self.match_parameter_type(
+                verification_context,
+                context,
+                helper_name,
+                t,
+                index,
+                next,
+            ),
             (Type::ScalarValueParameter, Type::ScalarValue(data))
                 if data.is_fully_initialized() =>
             {
@@ -688,9 +696,25 @@ impl Type {
                 Type::Releasable { id: id2, inner: inner2 },
             ) if id2.has_parent(id1) => {
                 if next.resources.contains(id2) {
-                    inner2.match_parameter_type(context, helper_name, inner1, index, next)
+                    inner2.match_parameter_type(
+                        verification_context,
+                        context,
+                        helper_name,
+                        inner1,
+                        index,
+                        next,
+                    )
                 } else {
                     Err(format!("Resource already released for index {index}"))
+                }
+            }
+            (Type::ContextParameter { parameter_index }, arg_type) => {
+                if verification_context.calling_context.args.get(*parameter_index as usize)
+                    == Some(arg_type)
+                {
+                    Ok(())
+                } else {
+                    Err(format!("Helper expects program argument {parameter_index}"))
                 }
             }
             (Type::ReleaseParameter { id: id1 }, Type::Releasable { id: id2, .. })
@@ -702,9 +726,14 @@ impl Type {
                     Err(format!("{id2:?} Resource already released for index {index}"))
                 }
             }
-            (_, Type::Releasable { inner, .. }) => {
-                inner.match_parameter_type(context, helper_name, parameter_type, index, next)
-            }
+            (_, Type::Releasable { inner, .. }) => inner.match_parameter_type(
+                verification_context,
+                context,
+                helper_name,
+                parameter_type,
+                index,
+                next,
+            ),
             (Type::AnyParameter, _) => Ok(()),
 
             _ => Err(format!("incorrect parameter for index {index}")),
@@ -3208,7 +3237,7 @@ impl BpfVisitor for ComputationContext {
         let mut next = self.next()?;
         for (arg_index, arg) in signature.args.iter().enumerate() {
             let reg = (arg_index + 1) as u8;
-            self.reg(reg)?.match_parameter_type(self, name, arg, arg_index, &mut next)?
+            self.reg(reg)?.match_parameter_type(context, self, name, arg, arg_index, &mut next)?
         }
         // Parameters have been validated, specify the return value on return.
         if signature.invalidate_array_bounds {

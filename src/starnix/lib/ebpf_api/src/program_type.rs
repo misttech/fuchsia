@@ -405,37 +405,15 @@ static BPF_HELPERS_DEFINITIONS: LazyLock<Vec<(BpfTypeFilter, HelperDefinition)>>
                     ProgramType::SchedAct,
                     ProgramType::SchedCls,
                     ProgramType::SocketFilter,
+                    ProgramType::CgroupSock,
+                    ProgramType::CgroupSockAddr,
                 ]
                 .into(),
                 HelperDefinition {
                     index: bpf_func_id_BPF_FUNC_get_socket_cookie,
                     name: "get_socket_cookie",
                     signature: FunctionSignature {
-                        args: vec![Type::StructParameter { id: SK_BUF_ID.clone() }],
-                        return_value: Type::UNKNOWN_SCALAR,
-                        invalidate_array_bounds: false,
-                    },
-                },
-            ),
-            (
-                vec![ProgramType::CgroupSock].into(),
-                HelperDefinition {
-                    index: bpf_func_id_BPF_FUNC_get_socket_cookie,
-                    name: "get_socket_cookie",
-                    signature: FunctionSignature {
-                        args: vec![Type::StructParameter { id: BPF_SOCK_ID.clone() }],
-                        return_value: Type::UNKNOWN_SCALAR,
-                        invalidate_array_bounds: false,
-                    },
-                },
-            ),
-            (
-                vec![ProgramType::CgroupSockAddr].into(),
-                HelperDefinition {
-                    index: bpf_func_id_BPF_FUNC_get_socket_cookie,
-                    name: "get_socket_cookie",
-                    signature: FunctionSignature {
-                        args: vec![Type::StructParameter { id: BPF_SOCK_ADDR_ID.clone() }],
+                        args: vec![Type::ContextParameter { parameter_index: 0 }],
                         return_value: Type::UNKNOWN_SCALAR,
                         invalidate_array_bounds: false,
                     },
