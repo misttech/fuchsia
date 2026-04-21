@@ -8,6 +8,7 @@ rustc_test("management") {
   edition = "2024"
   output_name = "policy_management_integration_test"
   deps = [
+    "//sdk/fidl/fuchsia.device:fuchsia.device_rust",
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.dhcp:fuchsia.net.dhcp_rust",

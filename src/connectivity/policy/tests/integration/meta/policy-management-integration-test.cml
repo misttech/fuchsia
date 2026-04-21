@@ -20,5 +20,9 @@
             from: "parent",
             path: "/events/started_stopped",
         },
+        {
+            protocol: [ "fuchsia.net.tun.Control" ],
+            from: "#sandbox",
+        },
     ],
 }

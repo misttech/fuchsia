@@ -14,24 +14,27 @@ use std::pin::pin;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_dhcp as fnet_dhcp;
+use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
+use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_ext::IntoExt as _;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_masquerade as fnet_masquerade;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
+use fidl_fuchsia_netemul_network as fnetemul_network;
 use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_dhcp as fnet_dhcp, fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6,
-    fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_masquerade as fnet_masquerade,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_resources as fnet_resources, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext,
-    fidl_fuchsia_netemul_network as fnetemul_network,
-};
 
 use anyhow::Context as _;
 use assert_matches::assert_matches;
@@ -625,13 +628,53 @@ async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager, N: Nets
     // same MAC address for different devices will result in the first
     // interface being removed prior to installing the new one.
     let mac = || Some(fnet::MacAddress { octets: [2, 3, 4, 5, 6, 7] });
-    let if1 = sandbox
-        .create_endpoint_with("ep1", netemul::new_endpoint_config(netemul::DEFAULT_MTU, mac()))
-        .await
-        .expect("create ethx7");
+    let (tun_device, netdevice) = netstack_testing_common::devices::create_tun_device();
+    let (_tun_port1, _network_port1) = netstack_testing_common::devices::create_tun_port_with(
+        &tun_device,
+        1,
+        [fhardware_network::FrameType::Ethernet],
+        [fhardware_network::FrameType::Ethernet],
+        mac(),
+    )
+    .await;
+
+    let (device_proxy, server_end) =
+        fidl::endpoints::create_endpoints::<fnetemul_network::DeviceProxy_Marker>();
+    let netdevice = netdevice.into_proxy();
+    let serve_device_fut = fasync::Task::spawn(async move {
+        let stream = server_end.into_stream();
+        stream
+            .for_each_concurrent(None, move |r| {
+                let netdevice = Clone::clone(&netdevice);
+                async move {
+                    match r.expect("device proxyrequest error") {
+                        fnetemul_network::DeviceProxy_Request::ServeDevice { req, .. } => {
+                            netdevice.clone(req).expect("failed to clone network device");
+                        }
+                        fnetemul_network::DeviceProxy_Request::ServeController { req, .. } => {
+                            let stream = req.into_stream();
+                            stream
+                                .for_each(|req| async move {
+                                    match req.expect("controller request error") {
+                                        fidl_fuchsia_device::ControllerRequest::GetTopologicalPath {
+                                            responder,
+                                        } => {
+                                            responder.send(Ok("unique_topopath_for_ep1"))
+                                                .expect("send topopath response")
+                                        }
+                                        _ => panic!("unknown controller request"),
+                                }
+                                })
+                                .await
+                        }
+                    }
+                }
+            })
+            .await
+    });
+
     let endpoint_mount_path = netemul::devfs_device_path("ep1");
-    let endpoint_mount_path = endpoint_mount_path.as_path();
-    realm.add_virtual_device(&if1, endpoint_mount_path).await.unwrap_or_else(|e| {
+    realm.add_raw_device(endpoint_mount_path.as_path(), device_proxy).await.unwrap_or_else(|e| {
         panic!("add virtual device1 {}: {:?}", endpoint_mount_path.display(), e)
     });
 
@@ -644,16 +687,15 @@ async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager, N: Nets
         "first interface should use a stable name based on its MAC address"
     );
 
-    // Re add the same device (same MAC address and topological path) and wait
-    // for it to be added to the netstack. Since the device has the same naming
-    // identifier, the first interface should be removed prior to adding the
-    // second interface. The second interface should have the same name as the
-    // first.
-    let endpoint_mount_path = netemul::devfs_device_path("ep1-re-mounted");
-    let endpoint_mount_path = endpoint_mount_path.as_path();
-    realm.add_virtual_device(&if1, endpoint_mount_path).await.unwrap_or_else(|e| {
-        panic!("readd virtual device1 {}: {:?}", endpoint_mount_path.display(), e)
-    });
+    // Add another port to the same device with the same MAC.
+    let (_tun_port2, _network_port2) = netstack_testing_common::devices::create_tun_port_with(
+        &tun_device,
+        2,
+        [fhardware_network::FrameType::Ethernet],
+        [fhardware_network::FrameType::Ethernet],
+        mac(),
+    )
+    .await;
 
     let id_removed = assert_matches!(
         interfaces_stream.select_next_some().await,
@@ -699,6 +741,7 @@ async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager, N: Nets
     // NetCfg is still in the process of configuring them after adding them to
     // the Netstack, which causes spurious errors.
     realm.shutdown().await.expect("failed to shutdown realm");
+    serve_device_fut.await;
 }
 
 /// Tests that when a conflicting interface already exists with the same name,
