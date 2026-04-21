@@ -2176,6 +2176,72 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             },
                                         );
                                     }
+                                    if let Some(y) = x.neighbor_info_history {
+                                        history_tracker_child.record_child(
+                                            "neighbor_info",
+                                            |neighbor_info_child| {
+                                                for (index, info) in y.iter().enumerate() {
+                                                    neighbor_info_child.record_child(
+                                                        format!("{}", index),
+                                                        |info_node| {
+                                                            if let Some(z) = info.age {
+                                                                info_node.record_string(
+                                                                    "age",
+                                                                    format_duration_dhms_from_nano(z.try_into().unwrap()),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.is_child {
+                                                                info_node.record_bool(
+                                                                    "is_child",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.event {
+                                                                info_node.record_string(
+                                                                    "event",
+                                                                    format!("{:?}", z),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.extended_address {
+                                                                info_node.record_string(
+                                                                    "extended_address",
+                                                                    z.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.rloc16 {
+                                                                info_node.record_string(
+                                                                    "rloc",
+                                                                    format!("{:04x}", z),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.mode {
+                                                                info_node.record_child(
+                                                                    "mode",
+                                                                    |mode_child| {
+                                                                        if let Some(w) = z.rx_on_when_idle {
+                                                                            mode_child.record_bool("rx_on_when_idle", w.into());
+                                                                        }
+                                                                        if let Some(w) = z.device_type {
+                                                                            mode_child.record_bool("is_ftd", w.into());
+                                                                        }
+                                                                        if let Some(w) = z.network_data {
+                                                                            mode_child.record_bool("network_data", w.into());
+                                                                        }
+                                                                    },
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.avg_rssi {
+                                                                info_node.record_int(
+                                                                    "avg_rssi",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                        },
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
                                 },
                             );
                         }

@@ -7,6 +7,7 @@ use crate::ot::{BorderAgentEphemeralKeyState, create_ephemeral_key};
 use anyhow::Error;
 use async_trait::async_trait;
 use core::future::ready;
+use fidl_fuchsia_lowpan_experimental::HistoryTrackerNeighborEvent;
 use lowpan_driver_common::lowpan_fidl::*;
 use lowpan_driver_common::{AsyncConditionWait, Driver as LowpanDriver};
 use openthread::ot::SrpServerLeaseInfo;
@@ -1427,6 +1428,45 @@ where
                 ..Default::default()
             })
             .collect::<Vec<_>>();
+        let neighbor_info_history = ot
+            .history_tracker_neighbor_history_get_iterator()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_THREAD_NEIGHBOR_HISTORY_ENTRIES as usize)
+            .map(|(neighbor, entry_age)| {
+                fidl_fuchsia_lowpan_experimental::ThreadNeighborInfoEntry {
+                    age: Some(
+                        fuchsia_async::MonotonicDuration::from_millis(entry_age.into())
+                            .into_nanos()
+                            .try_into()
+                            .unwrap(),
+                    ),
+                    is_child: Some(neighbor.is_child()),
+                    event: Some(match neighbor.event() {
+                        openthread::ot::HistoryTrackerNeighborEvent::Added => {
+                            HistoryTrackerNeighborEvent::Added
+                        }
+                        openthread::ot::HistoryTrackerNeighborEvent::Removed => {
+                            HistoryTrackerNeighborEvent::Removed
+                        }
+                        openthread::ot::HistoryTrackerNeighborEvent::Changed => {
+                            HistoryTrackerNeighborEvent::Changed
+                        }
+                        openthread::ot::HistoryTrackerNeighborEvent::Restoring => {
+                            HistoryTrackerNeighborEvent::Restoring
+                        }
+                    }),
+                    extended_address: Some(neighbor.ext_address().into_array().to_vec()),
+                    rloc16: Some(neighbor.rloc16()),
+                    mode: Some(fidl_fuchsia_lowpan_experimental::ThreadLinkMode {
+                        rx_on_when_idle: Some(neighbor.rx_on_while_idle()),
+                        device_type: Some(neighbor.full_thread_device()),
+                        network_data: Some(neighbor.full_network_data()),
+                        ..Default::default()
+                    }),
+                    avg_rssi: Some(neighbor.avg_rssi().into()),
+                    ..Default::default()
+                }
+            })
+            .collect::<Vec<_>>();
 
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
@@ -1509,6 +1549,7 @@ where
             }),
             history_report: Some(fidl_fuchsia_lowpan_experimental::ThreadHistoryReport {
                 net_info_history: Some(net_info_history),
+                neighbor_info_history: Some(neighbor_info_history),
                 ..Default::default()
             }),
             ..Default::default()
