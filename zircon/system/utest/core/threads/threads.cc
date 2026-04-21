@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/test-exceptions/exception-catcher.h>
 #include <lib/test-exceptions/exception-handling.h>
@@ -21,6 +22,7 @@
 #include <zircon/syscalls/exception.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/syscalls/port.h>
+#include <zircon/threads.h>
 #include <zircon/types.h>
 
 #include <atomic>
@@ -2262,6 +2264,76 @@ TEST(Threads, StartRegsNoncanonicalTp) {
 
   ASSERT_EQ(zx_thread_start_regs(thread.get(), 0, 0, 0, 0, non_canonical_fsbase, 0),
             ZX_ERR_INVALID_ARGS);
+}
+#endif
+
+#if defined(__x86_64__)
+TEST(Threads, DebugRegistersWatchpointSyscallPanicRepro) {
+  // Create a VMO we are going to ask the kernel to read from.
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  // Memory location we are going to set watchpoint on and ask the kernel to access.
+  uint64_t watched_value = 42;
+
+  std::thread t([&]() {
+    // Signal that we are here.
+    EXPECT_OK(event.signal(0, ZX_USER_SIGNAL_0));
+    // Wait for the signal that the watchpoint has been setup.
+    EXPECT_OK(event.wait_one(ZX_USER_SIGNAL_1, zx::time::infinite(), nullptr));
+
+    // Read into the location where the watchpoint is, this will cause the kernel to be the one to
+    // access the address and potentially trigger the watchpoint.
+    EXPECT_OK(vmo.read(&watched_value, 0, 8));
+    // Verify that the kernel wrote the value zero into it. This should also trigger the watchpoint,
+    // but this time give us a debug exception.
+    EXPECT_EQ(watched_value, 0u);
+  });
+
+  // Wait for the thread to be ready.
+  EXPECT_OK(event.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite(), nullptr));
+
+  // Create a channel upon which we'll receive debug exceptions.
+  zx::channel exception_channel;
+  ASSERT_OK(zx::process::self()->create_exception_channel(ZX_EXCEPTION_CHANNEL_DEBUGGER,
+                                                          &exception_channel));
+
+  // Now suspend it so we can modify the debug state.
+  zx::suspend_token suspend;
+  zx::unowned<zx::thread> thread =
+      zx::unowned<zx::thread>(native_thread_get_zx_handle(t.native_handle()));
+  EXPECT_OK(thread->suspend(&suspend));
+  EXPECT_OK(thread->wait_one(ZX_THREAD_SUSPENDED, zx::time::infinite(), nullptr));
+
+  // Set debug registers
+  zx_thread_state_debug_regs_t debug_regs = {};
+  debug_regs.dr[0] = reinterpret_cast<uint64_t>(&watched_value);
+  // RW0 = 01 (write/write), LEN0 = 00 (1 byte), L0 = 1
+  debug_regs.dr7 = DR7_ZERO_MASK | (0b11ul << 16) | (0ul << 18) | 1ul;
+  EXPECT_OK(thread->write_state(ZX_THREAD_STATE_DEBUG_REGS, &debug_regs, sizeof(debug_regs)));
+
+  // Resume and signal that the thread can proceed with the read.
+  suspend.reset();
+  EXPECT_OK(event.signal(0, ZX_USER_SIGNAL_1));
+
+  // Wait for the thread to trigger the watchpoint.
+  zx::exception exception;
+  wait_thread_excp_type(thread->get(), exception_channel.get(), ZX_EXCP_HW_BREAKPOINT, 0,
+                        exception.reset_and_get_address());
+
+  // Clear the watchpoint before resuming.
+  debug_regs.dr7 = DR7_ZERO_MASK;
+  EXPECT_OK(thread->write_state(ZX_THREAD_STATE_DEBUG_REGS, &debug_regs, sizeof(debug_regs)));
+
+  // Handle the exception so that the thread continues.
+  uint32_t state = ZX_EXCEPTION_STATE_HANDLED;
+  ASSERT_OK(exception.set_property(ZX_PROP_EXCEPTION_STATE, &state, sizeof(state)));
+  exception.reset();
+
+  t.join();
 }
 #endif
 
