@@ -27,7 +27,6 @@ pub fn default_test_config() -> fshost_config::Config {
         merge_super_and_userdata: false,
         no_zxcrypt: false,
         storage_host: false,
-        use_disk_migration: false,
         starnix_volume_name: "".to_string(),
         inline_crypto: false,
         disable_automount: false,

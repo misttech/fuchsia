@@ -63,19 +63,17 @@ template("fshost_cml") {
             "//src/storage/fshost/meta/storage_host_fvm_base.shard.cml",
             "//src/storage/fshost/meta/storage_host_fvm_test.cml",
           ]
-          _include_all =
-              defined(options.use_disk_migration) && options.use_disk_migration
-          if (_include_all || options.data_filesystem_format == "minfs") {
+          if (options.data_filesystem_format == "minfs") {
             sources += [
               "//src/storage/fshost/meta/fvm_minfs_fshost_base.shard.cml",
               "//src/storage/fshost/meta/fvm_minfs_fshost_test.cml",
             ]
           }
-          if (_include_all || options.data_filesystem_format == "fxfs") {
+          if (options.data_filesystem_format == "fxfs") {
             # TODO(https://fxbug.dev/372555455): Implement if needed.
             assert(false)
           }
-          if (_include_all || options.data_filesystem_format == "f2fs") {
+          if (options.data_filesystem_format == "f2fs") {
             # TODO(https://fxbug.dev/372555455): Implement.
             assert(false)
           }
@@ -94,21 +92,19 @@ template("fshost_cml") {
             "//src/storage/fshost/meta/fvm_blobfs_fshost_test.cml",
             "//src/storage/fshost/meta/fvm_fshost.shard.cml",
           ]
-          _include_all =
-              defined(options.use_disk_migration) && options.use_disk_migration
-          if (_include_all || options.data_filesystem_format == "minfs") {
+          if (options.data_filesystem_format == "minfs") {
             sources += [
               "//src/storage/fshost/meta/fvm_minfs_fshost_base.shard.cml",
               "//src/storage/fshost/meta/fvm_minfs_fshost_test.cml",
             ]
           }
-          if (_include_all || options.data_filesystem_format == "fxfs") {
+          if (options.data_filesystem_format == "fxfs") {
             sources += [
               "//src/storage/fshost/meta/fvm_fxfs_fshost_base.shard.cml",
               "//src/storage/fshost/meta/fvm_fxfs_fshost_test.cml",
             ]
           }
-          if (_include_all || options.data_filesystem_format == "f2fs") {
+          if (options.data_filesystem_format == "f2fs") {
             sources += [
               "//src/storage/fshost/meta/fvm_f2fs_fshost_base.shard.cml",
               "//src/storage/fshost/meta/fvm_f2fs_fshost_test.cml",

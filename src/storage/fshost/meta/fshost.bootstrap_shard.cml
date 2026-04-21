@@ -95,7 +95,6 @@
                 "fuchsia.fshost.RamdiskImage",
                 "fuchsia.fshost.StarnixVolumeName",
                 "fuchsia.fshost.StorageHost",
-                "fuchsia.fshost.UseDiskMigration",
                 "fuchsia.fshost.WatchDeprecatedV1Drivers",
             ],
             from: "parent",

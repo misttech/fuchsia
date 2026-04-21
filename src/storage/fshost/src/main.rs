@@ -8,6 +8,8 @@ use crate::watcher::{DirSource, PathSource, PathSourceType, WatchSource, Watcher
 use anyhow::{Context as _, Error, format_err};
 use device::{DeviceTag, Parent};
 use fidl::prelude::*;
+use fidl_fuchsia_fshost as fshost;
+use fidl_fuchsia_io as fio;
 use fuchsia_runtime::{HandleType, take_startup_handle};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
@@ -18,10 +20,8 @@ use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 use vfs::remote::remote_dir;
 use zx::sys::zx_debug_write;
-use {fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio};
 
 mod config;
-mod copier;
 mod crypt;
 mod device;
 mod environment;

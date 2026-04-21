@@ -160,7 +160,6 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
       Config{.name = "fuchsia.fshost.RamdiskImage"},
       Config{.name = "fuchsia.fshost.StorageHost"},
       Config{.name = "fuchsia.fshost.StorageHostUrl"},
-      Config{.name = "fuchsia.fshost.UseDiskMigration"},
       Config{.name = "fuchsia.fshost.FxfsCryptUrl"},
       Config{.name = "fuchsia.fshost.StarnixVolumeName"},
       Config{.name = "fuchsia.fshost.InlineCrypto"},

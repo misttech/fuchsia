@@ -8,12 +8,14 @@ use fuchsia_component_test::{Capability, ChildOptions, ChildRef, RealmBuilder, R
 use futures::future::FutureExt as _;
 use std::collections::HashMap;
 
-use {
-    fidl_fuchsia_fshost as ffshost, fidl_fuchsia_fxfs as ffxfs,
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_io as fio,
-    fidl_fuchsia_logger as flogger, fidl_fuchsia_process as fprocess,
-    fidl_fuchsia_storage_partitions as fpartitions, fidl_fuchsia_update_verify as ffuv,
-};
+use fidl_fuchsia_fshost as ffshost;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_hardware_block_volume as fvolume;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_logger as flogger;
+use fidl_fuchsia_process as fprocess;
+use fidl_fuchsia_storage_partitions as fpartitions;
+use fidl_fuchsia_update_verify as ffuv;
 
 pub trait IntoValueSpec {
     fn into_value_spec(self) -> cm_rust::ConfigValueSpec;
@@ -168,7 +170,6 @@ impl FshostBuilder {
             ("mbr", "fuchsia.fshost.Mbr"),
             ("merge_super_and_userdata", "fuchsia.fshost.MergeSuperAndUserdata"),
             ("data", "fuchsia.fshost.Data"),
-            ("use_disk_migration", "fuchsia.fshost.UseDiskMigration"),
             ("disable_block_watcher", "fuchsia.fshost.DisableBlockWatcher"),
             ("fvm_slice_size", "fuchsia.fshost.FvmSliceSize"),
             ("blobfs_initial_inodes", "fuchsia.fshost.BlobfsInitialInodes"),

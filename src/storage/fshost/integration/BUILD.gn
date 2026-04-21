@@ -222,9 +222,6 @@ template("fshost_integration_test_package") {
   fshost_component_and_config(_fshost_target) {
     testonly = true
     options = invoker.options
-    if (!defined(options.use_disk_migration)) {
-      options.use_disk_migration = true
-    }
   }
 
   _test_packages = []
@@ -501,7 +498,6 @@ fshost_integration_test_package("fshost_integration_tests_fxfs") {
   enable_system_volume_manipulation_tests = true
   enable_shred_keys_tests = true
   options = {
-    use_disk_migration = false
     storage_host = true
   }
   extra_deps =
@@ -511,7 +507,6 @@ fshost_integration_test_package("fshost_integration_tests_fxfs") {
 fshost_integration_test_package("fshost_integration_tests_fvm_minfs") {
   options = {
     data_filesystem_format = "minfs"
-    use_disk_migration = false
     storage_host = true
     fxfs_blob = false
   }
@@ -523,7 +518,6 @@ fshost_integration_test_package(
   data_filesystem_variant = "minfs-no-zxcrypt"
   options = {
     data_filesystem_format = "minfs"
-    use_disk_migration = false
     storage_host = true
     fxfs_blob = false
     no_zxcrypt = true

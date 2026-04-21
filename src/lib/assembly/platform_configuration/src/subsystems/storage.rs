@@ -261,7 +261,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                 "fuchsia.fshost.BlobfsUseDeprecatedPaddedFormat",
                 Config::new_bool(blob_deprecated_padded),
             ),
-            ("fuchsia.fshost.UseDiskMigration", Config::new_bool(false)),
             ("fuchsia.fshost.FxfsBlob", Config::new_bool(fxfs_blob)),
             ("fuchsia.fshost.StorageHost", Config::new_bool(true)),
             ("fuchsia.fshost.FvmSliceSize", Config::new_uint64(fvm_slice_size)),
