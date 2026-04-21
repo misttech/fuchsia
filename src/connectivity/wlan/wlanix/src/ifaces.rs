@@ -1166,6 +1166,7 @@ pub mod test_utils {
         pub calls: Arc<Mutex<Vec<ClientIfaceCall>>>,
         pub connect_success: Mutex<bool>,
         pub scan_results: Mutex<Vec<fidl_sme::ScanResult>>,
+        pub start_sched_scan_success: Mutex<bool>,
     }
 
     impl TestClientIface {
@@ -1176,6 +1177,7 @@ pub mod test_utils {
                 calls: Arc::new(Mutex::new(vec![])),
                 connect_success: Mutex::new(true),
                 scan_results: Mutex::new(vec![fake_scan_result()]),
+                start_sched_scan_success: Mutex::new(true),
             }
         }
     }
@@ -1307,7 +1309,11 @@ pub mod test_utils {
             _initial_charging_status: bool,
         ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
             self.calls.lock().push(ClientIfaceCall::StartSchedScan { _request: request });
-            Ok(self.scan_results.lock().clone())
+            if *self.start_sched_scan_success.lock() {
+                Ok(self.scan_results.lock().clone())
+            } else {
+                Err(anyhow::format_err!("mocked StartSchedScan failure"))
+            }
         }
 
         async fn stop_sched_scan(&self) -> Result<(), Error> {

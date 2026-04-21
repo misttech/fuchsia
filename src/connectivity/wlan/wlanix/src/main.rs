@@ -2102,6 +2102,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
                         }
                         Err(e) => {
                             error!("Failed to run scheduled scan task: {:?}", e);
+                            telemetry_sender.send(TelemetryEvent::PnoScanFailure);
                             if let Some(proxy) = state.lock().scan_multicast_proxy.as_ref() {
                                 let _ =
                                     proxy.message(fidl_wlanix::Nl80211MulticastMessageRequest {
@@ -5175,6 +5176,45 @@ mod tests {
         assert_eq!(request.sched_scan_delay, Some(30));
         assert_eq!(request.relative_rssi, Some(5));
         assert_eq!(request.rssi_adjust, Some(15));
+    }
+
+    #[fuchsia::test]
+    fn start_sched_scan_failure() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let iface_manager = TestIfaceManager::new_with_client();
+        let client_iface = iface_manager.client_iface.lock().clone().unwrap();
+        // Mock failure
+        *client_iface.start_sched_scan_success.lock() = false;
+
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
+
+        let start_sched_scan_message = build_nl80211_message(
+            Nl80211Cmd::StartSchedScan,
+            vec![
+                Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
+                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
+                Nl80211Attr::SchedScanInterval(40),
+            ],
+        );
+        let start_scan_fut = test_values.nl80211_proxy.message_v2(&start_sched_scan_message);
+        let mut start_scan_fut = std::pin::pin!(start_scan_fut);
+        assert_matches!(
+            exec.run_until_stalled(&mut test_values.nl80211_fut),
+            std::task::Poll::Pending
+        );
+
+        let responses = deserialize(assert_matches!(
+            exec.run_until_stalled(&mut start_scan_fut),
+            std::task::Poll::Ready(Ok(Ok(r))) => r));
+        assert_eq!(responses.len(), 1);
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
+
+        // Verify telemetry event
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::PnoScanFailure))
+        );
     }
 
     #[fuchsia::test]
