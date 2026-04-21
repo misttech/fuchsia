@@ -109,9 +109,6 @@ declare_args() {
   # Include a mechanism for the kernel to sample threads and write the results to a buffer
   experimental_thread_sampler_enabled = false
 
-  # Support streaming ktrace data out of the kernel.
-  experimental_ktrace_streaming_enabled = true
-
   # Add in-kernel support for querying a per-VMO populated bytes high-water mark.
   experimental_continuous_per_vmo_attribution_enabled = false
 

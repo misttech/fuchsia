@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//zircon/kernel/params.gni")
 
 executable("bin") {
   output_name = "ktrace_provider"
