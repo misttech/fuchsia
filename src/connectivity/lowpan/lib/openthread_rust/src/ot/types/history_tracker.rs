@@ -114,3 +114,66 @@ impl HistoryTrackerNeighborInfo {
         self.0.mIsChild()
     }
 }
+
+/// Defines the events in a router info (i.e. whether router is added, removed, or changed).
+///
+/// Functional equivalent of [`otsys::otHistoryTrackerRouterEvent`](crate::otsys::otHistoryTrackerRouterEvent).
+#[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, FromPrimitive)]
+#[allow(missing_docs)]
+pub enum HistoryTrackerRouterEvent {
+    /// Functional equivalent of [`otsys::OT_HISTORY_TRACKER_ROUTER_EVENT_ADDED`](crate::otsys::OT_HISTORY_TRACKER_ROUTER_EVENT_ADDED).
+    Added = OT_HISTORY_TRACKER_ROUTER_EVENT_ADDED as isize,
+
+    /// Functional equivalent of [`otsys::OT_HISTORY_TRACKER_ROUTER_EVENT_REMOVED`](crate::otsys::OT_HISTORY_TRACKER_ROUTER_EVENT_REMOVED).
+    Removed = OT_HISTORY_TRACKER_ROUTER_EVENT_REMOVED as isize,
+
+    /// Functional equivalent of [`otsys::OT_HISTORY_TRACKER_ROUTER_EVENT_NEXT_HOP_CHANGED`](crate::otsys::OT_HISTORY_TRACKER_ROUTER_EVENT_NEXT_HOP_CHANGED).
+    NextHopChanged = OT_HISTORY_TRACKER_ROUTER_EVENT_NEXT_HOP_CHANGED as isize,
+
+    /// Functional equivalent of [`otsys::OT_HISTORY_TRACKER_ROUTER_EVENT_COST_CHANGED`](crate::otsys::OT_HISTORY_TRACKER_ROUTER_EVENT_COST_CHANGED).
+    PathCostChanged = OT_HISTORY_TRACKER_ROUTER_EVENT_COST_CHANGED as isize,
+}
+
+impl From<otHistoryTrackerRouterEvent> for HistoryTrackerRouterEvent {
+    fn from(x: otHistoryTrackerRouterEvent) -> Self {
+        use num::FromPrimitive;
+        Self::from_u32(x)
+            .unwrap_or_else(|| panic!("Unknown otHistoryTrackerRouterEvent value: {x}"))
+    }
+}
+
+/// This structure represents a router table entry event in the history tracker report.
+///
+/// Functional equivalent of [`otsys::otHistoryTrackerRouterInfo`](crate::otsys::otHistoryTrackerRouterInfo).
+#[derive(Debug, Default, Clone)]
+#[repr(transparent)]
+pub struct HistoryTrackerRouterInfo(pub otHistoryTrackerRouterInfo);
+
+impl_ot_castable!(HistoryTrackerRouterInfo, otHistoryTrackerRouterInfo);
+
+impl HistoryTrackerRouterInfo {
+    /// Returns a router table entry event (`OT_HISTORY_TRACKER_ROUTER_EVENT_*` enumeration).
+    pub fn event(&self) -> HistoryTrackerRouterEvent {
+        HistoryTrackerRouterEvent::from(self.0.mEvent() as u32)
+    }
+
+    /// Returns the Rotuer ID.
+    pub fn router_id(&self) -> u8 {
+        self.0.mRouterId()
+    }
+
+    /// Returns the next hop Router ID.
+    pub fn next_hop(&self) -> u8 {
+        self.0.mNextHop
+    }
+
+    /// Returns the old path cost (`OT_HISTORY_TRACKER_INFINITE_PATH_COST` if infinite or unknown).
+    pub fn old_path_cost(&self) -> u8 {
+        self.0.mOldPathCost()
+    }
+
+    /// Returns the new path cost (`OT_HISTORY_TRACKER_INFINITE_PATH_COST` if infinite or unknown).
+    pub fn path_cost(&self) -> u8 {
+        self.0.mPathCost()
+    }
+}

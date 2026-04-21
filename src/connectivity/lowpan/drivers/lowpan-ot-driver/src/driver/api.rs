@@ -7,7 +7,7 @@ use crate::ot::{BorderAgentEphemeralKeyState, create_ephemeral_key};
 use anyhow::Error;
 use async_trait::async_trait;
 use core::future::ready;
-use fidl_fuchsia_lowpan_experimental::HistoryTrackerNeighborEvent;
+use fidl_fuchsia_lowpan_experimental::{HistoryTrackerNeighborEvent, HistoryTrackerRouterEvent};
 use lowpan_driver_common::lowpan_fidl::*;
 use lowpan_driver_common::{AsyncConditionWait, Driver as LowpanDriver};
 use openthread::ot::SrpServerLeaseInfo;
@@ -15,6 +15,7 @@ use otsys::OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_TIMEOUT;
 use std::net::Ipv6Addr;
 
 const EPSKC_PORT: u16 = 61632;
+const ROUTER_ID_OFFSET: u8 = 10;
 
 /// Helpers for API-related tasks.
 impl<OT: Send, NI, BI: Send> OtDriver<OT, NI, BI> {
@@ -1467,6 +1468,41 @@ where
                 }
             })
             .collect::<Vec<_>>();
+        let router_info_history = ot
+            .history_tracker_router_history_get_iterator()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_THREAD_ROUTER_HISTORY_ENTRIES as usize)
+            .map(|(router, entry_age)| fidl_fuchsia_lowpan_experimental::ThreadRouterInfoEntry {
+                age: Some(
+                    fuchsia_async::MonotonicDuration::from_millis(entry_age.into())
+                        .into_nanos()
+                        .try_into()
+                        // SAFE: `entry_age` is a u32 representing milliseconds, which safely
+                        // fits within the destination i64 without any risk of overflowing.
+                        .unwrap(),
+                ),
+                event: Some(match router.event() {
+                    openthread::ot::HistoryTrackerRouterEvent::Added => {
+                        HistoryTrackerRouterEvent::Added
+                    }
+                    openthread::ot::HistoryTrackerRouterEvent::Removed => {
+                        HistoryTrackerRouterEvent::Removed
+                    }
+                    openthread::ot::HistoryTrackerRouterEvent::NextHopChanged => {
+                        HistoryTrackerRouterEvent::NextHopChanged
+                    }
+                    openthread::ot::HistoryTrackerRouterEvent::PathCostChanged => {
+                        HistoryTrackerRouterEvent::PathCostChanged
+                    }
+                }),
+                router_id: Some(router.router_id()),
+                router_rloc16: Some((router.router_id() as u16) << ROUTER_ID_OFFSET),
+                next_hop_id: Some(router.next_hop()),
+                next_hop_rloc16: Some((router.next_hop() as u16) << ROUTER_ID_OFFSET),
+                old_path_cost: Some(router.old_path_cost()),
+                new_path_cost: Some(router.path_cost()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
 
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
@@ -1550,6 +1586,7 @@ where
             history_report: Some(fidl_fuchsia_lowpan_experimental::ThreadHistoryReport {
                 net_info_history: Some(net_info_history),
                 neighbor_info_history: Some(neighbor_info_history),
+                router_info_history: Some(router_info_history),
                 ..Default::default()
             }),
             ..Default::default()

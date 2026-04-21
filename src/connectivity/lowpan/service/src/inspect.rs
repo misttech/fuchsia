@@ -2242,6 +2242,69 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             },
                                         );
                                     }
+                                    if let Some(y) = x.router_info_history {
+                                        history_tracker_child.record_child(
+                                            "router_info",
+                                            |router_info_child| {
+                                                for (index, info) in y.iter().enumerate() {
+                                                    router_info_child.record_child(
+                                                        format!("{}", index),
+                                                        |info_node| {
+                                                            if let Some(z) = info.age {
+                                                                info_node.record_string(
+                                                                    "age",
+                                                                    format_duration_dhms_from_nano(z.try_into().unwrap()),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.event {
+                                                                info_node.record_string(
+                                                                    "event",
+                                                                    format!("{:?}", z),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.router_id {
+                                                                info_node.record_uint(
+                                                                    "router_id",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.router_rloc16 {
+                                                                info_node.record_string(
+                                                                    "router_rloc",
+                                                                    format!("{:04x}", z),
+                                                                );
+                                                            }
+
+                                                            if let Some(z) = info.next_hop_id {
+                                                                info_node.record_uint(
+                                                                    "next_hop_id",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.next_hop_rloc16 {
+                                                                info_node.record_string(
+                                                                    "next_hop_rloc",
+                                                                    format!("{:04x}", z),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.old_path_cost {
+                                                                info_node.record_uint(
+                                                                    "old_path_cost",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = info.new_path_cost {
+                                                                info_node.record_uint(
+                                                                    "new_path_cost",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                        },
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
                                 },
                             );
                         }

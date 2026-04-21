@@ -38,6 +38,23 @@ impl<T: ?Sized + HistoryTracker> Iterator for HistoryTrackerNeighborIterator<'_,
     }
 }
 
+/// Represents an iterator to iterate the router info history.
+#[allow(missing_debug_implementations)]
+pub struct HistoryTrackerRouterIterator<'a, T: ?Sized> {
+    ot_instance: &'a T,
+    ot_iter: otHistoryTrackerIterator,
+}
+
+impl<T: ?Sized + HistoryTracker> Iterator for HistoryTrackerRouterIterator<'_, T> {
+    type Item = (HistoryTrackerRouterInfo, u32);
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut entry_age = 0;
+        self.ot_instance
+            .iter_next_router_history(&mut self.ot_iter, &mut entry_age)
+            .map(|info| (info, entry_age))
+    }
+}
+
 /// Methods from the [OpenThread "history-tracker" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-history-tracker
@@ -81,6 +98,24 @@ pub trait HistoryTracker {
         ot_iter: &mut otHistoryTrackerIterator,
         entry_age: &mut u32,
     ) -> Option<HistoryTrackerNeighborInfo>;
+
+    /// Get the history tracker router info history iterator instance.
+    fn history_tracker_router_history_get_iterator(
+        &self,
+    ) -> HistoryTrackerRouterIterator<'_, Self> {
+        let mut ot_iter = otHistoryTrackerIterator::default();
+        self.history_tracker_init_iterator(&mut ot_iter);
+        HistoryTrackerRouterIterator { ot_instance: self, ot_iter }
+    }
+
+    /// Functional equivalent of
+    /// [`otsys::otHistoryTrackerIterateRouterHistory`]
+    /// (crate::otsys::otHistoryTrackerIterateRouterHistory).
+    fn iter_next_router_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerRouterInfo>;
 }
 
 impl<T: HistoryTracker + Boxable> HistoryTracker for ot::Box<T> {
@@ -102,6 +137,14 @@ impl<T: HistoryTracker + Boxable> HistoryTracker for ot::Box<T> {
         entry_age: &mut u32,
     ) -> Option<HistoryTrackerNeighborInfo> {
         self.as_ref().iter_next_neighbor_history(ot_iter, entry_age)
+    }
+
+    fn iter_next_router_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerRouterInfo> {
+        self.as_ref().iter_next_router_history(ot_iter, entry_age)
     }
 }
 
@@ -139,6 +182,22 @@ impl HistoryTracker for Instance {
             );
 
             info_ptr.as_ref().map(|raw| HistoryTrackerNeighborInfo(*raw))
+        }
+    }
+
+    fn iter_next_router_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerRouterInfo> {
+        unsafe {
+            let info_ptr = otHistoryTrackerIterateRouterHistory(
+                self.as_ot_ptr(),
+                ot_iter as *mut otHistoryTrackerIterator,
+                entry_age as *mut u32,
+            );
+
+            info_ptr.as_ref().map(|raw| HistoryTrackerRouterInfo(*raw))
         }
     }
 }
