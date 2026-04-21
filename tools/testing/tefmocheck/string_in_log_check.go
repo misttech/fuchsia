@@ -696,12 +696,13 @@ func fuchsiaLogChecks() []FailureModeCheck {
 	}
 
 	ret = append(ret, &stringInLogCheck{
-		String:          "PURE_BLACK_SCREENSHOT_DETECTED: detected a pure black screenshot.",
-		Type:            swarmingOutputType,
-		SkipPassedTest:  true,
-		IgnoreFlakes:    true,
-		AttributeToTest: true,
-		AddTag:          true,
+		String:                "PURE_BLACK_SCREENSHOT_DETECTED: detected a pure black screenshot.",
+		Type:                  swarmingOutputType,
+		SkipPassedTest:        true,
+		IgnoreFlakes:          true,
+		AttributeToTest:       true,
+		AddTag:                true,
+		emitSyntheticTestCase: true,
 	})
 
 	return ret
