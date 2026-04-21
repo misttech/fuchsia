@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -143,15 +144,17 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 		if oldFormatted != newFormatted {
 			if err := os.WriteFile(readmePath, []byte(newFormatted), 0644); err != nil {
 				errs = append(errs, pipeline.ComplianceError{
-					Project:  projRoot,
-					FilePath: readmePath,
-					Issue:    fmt.Sprintf("README.fuchsia is out of date, but failed to automatically update it: %v", err),
+					CheckName: "ReadmeFuchsiaNeedsUpdate",
+					Project:   projRoot,
+					FilePath:  readmePath,
+					Issue:     fmt.Sprintf("README.fuchsia is out of date, but failed to automatically update it: %v", err),
 				})
 			} else {
 				errs = append(errs, pipeline.ComplianceError{
-					Project:  projRoot,
-					FilePath: readmePath,
-					Issue:    "README.fuchsia was out of date and has been automatically updated. Please review and commit the changes.",
+					CheckName: "ReadmeFuchsiaNeedsUpdate",
+					Project:   projRoot,
+					FilePath:  readmePath,
+					Issue:     "README.fuchsia was out of date and has been automatically updated. Please review and commit the changes.",
 				})
 			}
 		}
@@ -159,10 +162,45 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 
 	// 2. Halt on Error
 	if len(errs) > 0 {
+		sort.Slice(errs, func(i, j int) bool {
+			if errs[i].CheckName != errs[j].CheckName {
+				return errs[i].CheckName < errs[j].CheckName
+			}
+			if errs[i].Issue != errs[j].Issue {
+				return errs[i].Issue < errs[j].Issue
+			}
+			if errs[i].Project != errs[j].Project {
+				return errs[i].Project < errs[j].Project
+			}
+			return errs[i].FilePath < errs[j].FilePath
+		})
+
 		var b strings.Builder
 		b.WriteString(fmt.Sprintf("Pipeline failed with %d compliance error(s):\n", len(errs)))
+
+		lastCheckAndIssue := ""
 		for _, e := range errs {
-			b.WriteString(fmt.Sprintf("- [%s] %s: %s\n", e.Project, e.FilePath, e.Issue))
+			checkAndIssue := fmt.Sprintf("[%s] %s", e.CheckName, e.Issue)
+			if checkAndIssue != lastCheckAndIssue {
+				b.WriteString("\n" + checkAndIssue + "\n")
+				lastCheckAndIssue = checkAndIssue
+			}
+
+			relProj, err := filepath.Rel(r.FuchsiaDir, e.Project)
+			if err != nil || relProj == "." {
+				relProj = e.Project // Fallback or if it's the root directory
+			}
+
+			relFile := ""
+			if e.FilePath != "" {
+				relFile, err = filepath.Rel(r.FuchsiaDir, e.FilePath)
+				if err != nil {
+					relFile = e.FilePath
+				}
+				b.WriteString(fmt.Sprintf("- [%s] %s\n", relProj, relFile))
+			} else {
+				b.WriteString(fmt.Sprintf("- [%s]\n", relProj))
+			}
 		}
 		return fmt.Errorf(b.String())
 	}
