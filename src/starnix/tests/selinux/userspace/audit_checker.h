@@ -66,13 +66,14 @@ class AuditChecker : public testing::EmptyTestEventListener {
 
   // The main method to perform the audit check against the expectations file
   // provided in the constructor.
-  void CheckAuditExpectations(const std::string& test_name);
+  bool CheckAuditExpectations(const std::string& test_name);
 
   std::unordered_map<std::string, std::vector<AuditChecker::AuditLogEntry>> expectations_map_;
   std::vector<std::string> skipped_tests_;
   std::vector<std::string> expected_failure_tests_;
 
   std::vector<std::tuple<std::vector<std::string>, std::string>> current_test_suite_raw_logs_;
+  std::vector<std::string> current_test_raw_logs_;
 
   // Set to true to generate audit log JSON objects without audit checks.
   bool generate_json_ = false;

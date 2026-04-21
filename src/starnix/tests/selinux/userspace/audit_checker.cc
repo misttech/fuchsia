@@ -348,7 +348,7 @@ fit::result<std::string, std::vector<AuditChecker::AuditLogEntry>> AuditChecker:
     fprintf(stderr, "Did not find start sentinel\n");
   }
   if (generate_json_) {
-    current_test_suite_raw_logs_.emplace_back(raw_logs, std::string(test_name));
+    current_test_raw_logs_ = std::move(raw_logs);
   }
   return fit::ok(parsed_logs);
 }
@@ -401,18 +401,19 @@ void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
     return;
   }
   SendEndSentinel();
-  CheckAuditExpectations(test_name);
+  bool result = CheckAuditExpectations(test_name);
+  if (!result && generate_json_) {
+    // Only update the JSON file if the test fails: upon success, there are no meaningful audit
+    // updates.
+    current_test_suite_raw_logs_.emplace_back(std::move(current_test_raw_logs_), test_name);
+  }
 }
 
-void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
+bool AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   auto read_result = ReadAuditLogs(test_name);
   if (read_result.is_error()) {
     ADD_FAILURE() << read_result.error_value();
-    return;
-  }
-
-  if (generate_json_) {
-    return;
+    return false;
   }
 
   // Fetch the current expectations, if any, for `test_name`.
@@ -421,19 +422,22 @@ void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   auto actual_logs = read_result.value();
 
   // Compare the two sets of logs to determine failure.
-  bool matched_expected = actual_logs == expected_logs;
-  bool expect_fail = IsExpectedToFail(test_name);
+  bool audit_logs_match = actual_logs == expected_logs;
+  bool expect_success = !IsExpectedToFail(test_name);
 
-  if (matched_expected != expect_fail) {
-    // Whether this case matched expectations, or was expected not to match, this case is done.
-    return;
+  if (audit_logs_match == expect_success) {
+    // There are two cases:
+    // 1. We expected failure, and the logs didn't match expectations.
+    // 2. We expected success, and the logs matched expectations.
+    // In either case, the test can be marked as successful.
+    return true;
   }
 
   // Linux sometimes coalesces same-source/target/class checks for multiple permissions into a
   // single check, which is not yet the case in Starnix, so even though the actual and expected logs
   // are not identical, they may still be equivalent.
   // TODO: Remove this work-around and clean up the loop below.
-  matched_expected = true;
+  audit_logs_match = true;
 
   if (test_helper::IsStarnix()) {
     // TODO: Introduce an explicit ignore-audit-logs scope so that permissive logs can be compared.
@@ -463,14 +467,17 @@ void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
         // If the expectation is granted (whether permissive or denied) then we expect the other
         // permissions to also be checked, so just remove the matched permission.
         std::string found_perm = *actual_it->permission.begin();
-        ASSERT_EQ(expected_it->permission.erase(found_perm), 1u);
+        if (expected_it->permission.erase(found_perm) != 1u) {
+          ADD_FAILURE() << "Expected to erase exactly 1 permission, but failed.";
+          return false;
+        }
       }
       audit_diff += "\n " + actual_it->ToString();
       actual_it++;
       continue;
     }
 
-    matched_expected = false;
+    audit_logs_match = false;
 
     if (auto it = std::find_if(
             expected_it, expected_logs.end(),
@@ -490,24 +497,29 @@ void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
 
   for (; expected_it != expected_logs.end(); expected_it++) {
     audit_diff += "\n-" + expected_it->ToString();
-    matched_expected = false;
+    audit_logs_match = false;
   }
   for (; actual_it != actual_logs.end(); actual_it++) {
     audit_diff += "\n+" + actual_it->ToString();
-    matched_expected = false;
+    audit_logs_match = false;
   }
 
-  if (matched_expected != expect_fail) {
-    return;
+  if (audit_logs_match == expect_success) {
+    return true;
   }
 
-  if (expect_fail) {
+  if (generate_json_) {
+    return false;
+  }
+
+  if (!expect_success) {
     // Audit logs matched expectations, despite us expecting them to mismatch.
     ADD_FAILURE() << "Got matching audit logs, expected mismatch, for test: " << test_name;
-    return;
+    return false;
   }
 
   ADD_FAILURE() << "Audit logs mismatch. Expected " << expected_logs.size() << ", got "
                 << actual_logs.size() << "." << std::endl
                 << "Diff of observed from expected audit logs: " << audit_diff;
+  return false;
 }
