@@ -471,6 +471,7 @@ zx_status_t ChannelDispatcher::Call(zx_koid_t owner, MessagePacketPtr msg,
 
     // See Write() for an explanation of this test.
     if (owner != owner_) {
+      waiter->EndWait(reply);
       return ZX_ERR_BAD_HANDLE;
     }
 

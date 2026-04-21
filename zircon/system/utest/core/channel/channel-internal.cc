@@ -12,6 +12,7 @@
 
 #include <thread>
 
+#include <mini-process/mini-process.h>
 #include <zxtest/zxtest.h>
 
 #include "utils.h"
@@ -164,6 +165,86 @@ TEST(ChannelInternalTest, TransferChannelWithPendingCall) {
 
   if (caller_error.load() != nullptr) {
     FAIL("caller_thread encountered an error on channel::call: %s", caller_error.load());
+  }
+}
+
+// Regression test for https://fxbug.dev/503723797
+TEST(ChannelInternalTest, ChannelCallFinishAfterFailedCall) {
+  if (getenv("NO_NEW_PROCESS")) {
+    ZXTEST_SKIP("Running without the ZX_POL_NEW_PROCESS policy, skipping test case.");
+  }
+
+  // We need to trigger the case where Call returns ZX_ERR_BAD_HANDLE
+  // but BeginWait has already been called. This can happen if the
+  // channel handle is transferred to another process while Call is
+  // in progress.
+  for (int loop = 0; loop < 100; loop++) {
+    zx::channel c1, c2;
+    ASSERT_OK(zx::channel::create(0, &c1, &c2));
+
+    // Mostly prepare a process, but do not actually start it. We will do that later at the point we
+    // want to transfer the handle.
+    zx::process process;
+    zx::thread thread;
+    zx::vmar vmar;
+    ASSERT_OK(zx::process::create(*zx::job::default_job(), "", 0u, 0u, &process, &vmar));
+    ASSERT_OK(zx::thread::create(process, "", 0u, 0u, &thread));
+    uintptr_t entry;
+    ASSERT_OK(mini_process_load_vdso(process.get(), vmar.get(), nullptr, &entry));
+    uintptr_t stack_base, sp;
+    EXPECT_OK(mini_process_load_stack(vmar.get(), false, &stack_base, &sp));
+
+    std::atomic<bool> start_call{false};
+
+    std::thread t1(
+        [](std::atomic<bool>& start, zx_handle_t channel) {
+          // Signal the parent that we have started and that the race is on.
+          start.store(true);
+          char buf[64];
+          zx_channel_call_args_t args = {
+              .wr_bytes = buf,
+              .wr_handles = nullptr,
+              .rd_bytes = buf,
+              .rd_handles = nullptr,
+              .wr_num_bytes = sizeof(buf),
+              .wr_num_handles = 0,
+              .rd_num_bytes = sizeof(buf),
+              .rd_num_handles = 0,
+          };
+
+          // Perform the channel call. At the point we start this call channel is (hopefully) still
+          // valid, but its ownership changes while performing the syscall and is detected leading
+          // to a bad handle error.
+          uint32_t act_b, act_h;
+          zx_status_t status =
+              zx_channel_call(channel, 0, zx_deadline_after(ZX_USEC(10)), &args, &act_b, &act_h);
+          if (status == ZX_ERR_BAD_HANDLE) {
+            // Hopefully we got ZX_ERR_BAD_HANDLE due to the desired race of ownership change in the
+            // kernel during channel_call, and not before channel_call, either way attempt to call
+            // finish with a deadline in the past.
+            zx_channel_call_finish(0, &args, &act_b, &act_h);
+          }
+        },
+        std::ref(start_call), c1.get());
+
+    // Wait for the thread to have started and then attempt to race.
+    while (!start_call.load()) {
+      std::this_thread::yield();
+    }
+
+    // Try to race with the channel call to change the owner of c1.
+    // Start the thread in the previously prepared mini-process, and send the handle while doing so.
+    // We use this method to transfer the handle since transferring via channel has a longer kernel
+    // execution path and makes it much harder to reliably trigger the race.
+    zx_handle_t to_transfer = c1.release();
+    EXPECT_OK(zx_process_start(process.get(), thread.get(), entry, sp, to_transfer, 0));
+
+    t1.join();
+    // The vdso loaded mini process should have entered as zx_process_exit and so wait for it to
+    // finish so that everything is cleaned up for the next iteration attempt.
+    zx_signals_t signals;
+    EXPECT_OK(process.wait_one(ZX_TASK_TERMINATED, zx::deadline_after(zx::sec(1)), &signals));
+    EXPECT_EQ(signals, ZX_TASK_TERMINATED);
   }
 }
 
