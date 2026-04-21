@@ -833,6 +833,12 @@ bool continuous_attribution_tracker_merge_spurious_parent_content() {
     // There is now a spurious parent content marker.
     EXPECT_TRUE(child->DebugGetCowPages()->DebugIsParentContent(0));
 
+    // TODO(https://fxbug.dev/504652289): The continuous attribution system and the populated slots
+    // count should eventually agree here that there are zero populated slots and zero populated
+    // bytes.
+    EXPECT_EQ(1u, child->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
+    EXPECT_EQ(0u, child->GetAttributedMemory().total_bytes());
+
     // Let's drop |vmo| to trigger the hidden parent to merge into |child|. That will allow
     // |child| to have no parent while still having a spurious parent content marker.
   }
@@ -1051,6 +1057,48 @@ bool continuous_attribution_tracker_take_pages_parent() {
   END_TEST;
 }
 
+// Test that deduplicating a zero page in a hidden parent creates a persistent
+// disconnect between the child's attribution tracker and GetAttributedMemory.
+//
+// TODO(https://fxbug.dev/504652289): Update this test when the disconnect has been repaired.
+bool continuous_attribution_tracker_dedup_hidden_parent_disconnect() {
+  BEGIN_TEST;
+
+  if (should_skip_no_feature()) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable disable_scanner;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, kPageSize, &vmo));
+
+  // Ensure there is a resident (zero) page.
+  ASSERT_OK(vmo->CommitRange(0, kPageSize));
+
+  fbl::RefPtr<VmObject> clone_no_paged;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, kPageSize, false,
+                             &clone_no_paged));
+  fbl::RefPtr<VmObjectPaged> clone = DownCastVmObject<VmObjectPaged>(clone_no_paged);
+
+  fbl::RefPtr<VmCowPages> hidden_parent = vmo->DebugGetCowPages()->DebugGetParent();
+  ASSERT_NONNULL(hidden_parent);
+
+  EXPECT_EQ(1u, hidden_parent->DebugGetPopulatedSlotsCount());
+  EXPECT_EQ(kPageSize, vmo->GetAttributedMemory().total_bytes());
+
+  vm_page_t *page = hidden_parent->DebugGetPage(0);
+  ASSERT_NONNULL(page);
+  ASSERT_TRUE(hidden_parent->DedupZeroPage(page, 0));
+
+  // Note the disconnect between the continuously tracked populated slots count and
+  // GetAttributedMemory.
+  EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
+  EXPECT_EQ(0u, vmo->GetAttributedMemory().total_bytes());
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(continuous_attribution_tests)
 VM_UNITTEST(continuous_attribution_tracker_stub)
 VM_UNITTEST(continuous_attribution_tracker_create)
@@ -1079,6 +1127,7 @@ VM_UNITTEST(continuous_attribution_tracker_release_owned_self)
 VM_UNITTEST(continuous_attribution_tracker_release_owned_parent)
 VM_UNITTEST(continuous_attribution_tracker_take_pages)
 VM_UNITTEST(continuous_attribution_tracker_take_pages_parent)
+VM_UNITTEST(continuous_attribution_tracker_dedup_hidden_parent_disconnect)
 UNITTEST_END_TESTCASE(continuous_attribution_tests, "continuous_attribution",
                       "Tests for populated bytes high-water mark")
 
