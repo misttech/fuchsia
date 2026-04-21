@@ -70,6 +70,17 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 					return
 				}
 
+				if fileInfo.IsNonLicense {
+					metrics.FilesProcessed.Inc("skipped_non_license")
+					// Emit an unclassified file
+					select {
+					case <-ctx.Done():
+						return
+					case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: false}:
+					}
+					continue
+				}
+
 				// If TargetExtensions is configured, skip files that don't match.
 				// However, ALWAYS classify files that look like dedicated license files
 				// (e.g., LICENSE, NOTICE, COPYING) regardless of their extension.
@@ -88,65 +99,10 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 					}
 				}
 
-				// 1. Read the file (with truncation logic)
-				rawBytes, err := c.readFile(path, isLicense)
+				classified, err := c.ClassifyFile(path, proj.RootPath, isLicense, fileInfo.LicenseParser)
 				if err != nil {
-					fmt.Printf("Failed to read file %s: %v\n", path, err)
+					fmt.Printf("Failed to read/classify file %s: %v\n", path, err)
 					continue
-				}
-
-				// 2. Normalize text to UTF-8
-				normalizedText := forceUTF8(rawBytes)
-
-				// 3. Chunk the text based on the file-level LicenseParser
-				var chunks [][]byte
-				parser := fileInfo.LicenseParser
-				if parser == "" {
-					parser = "Single License" // Default parser behavior
-				}
-
-				switch parser {
-				case "Android":
-					chunks = parseAndroid(normalizedText)
-				case "Chromium":
-					chunks = parseChromium(normalizedText)
-				case "Flutter":
-					chunks = parseFlutter(normalizedText)
-				case "Google":
-					chunks = parseGoogle(normalizedText)
-				case "OneDelimiter":
-					chunks = parseOneDelimiter(normalizedText)
-				default:
-					chunks = [][]byte{normalizedText}
-				}
-
-				// 4. Classify each chunk and extract data
-				var matches []pipeline.LicenseMatch
-				for _, chunk := range chunks {
-					func() {
-						defer metrics.ClassifierDuration.Track()()
-						results := c.Engine.Match(chunk)
-						for _, match := range results.Matches {
-							if match.Name != "" {
-								metrics.LicenseDetected.Inc(match.Name, "unrecognized", "unrecognized")
-								matches = append(matches, pipeline.LicenseMatch{
-									SPDXID:    match.Name,
-									MatchType: match.MatchType,
-									StartLine: match.StartLine,
-									EndLine:   match.EndLine,
-									Text:      extractLines(chunk, match.StartLine, match.EndLine),
-								})
-							}
-						}
-					}()
-				}
-
-				classified := pipeline.ClassifiedFile{
-					Path:          path,
-					ProjectRoot:   proj.RootPath,
-					IsLicenseFile: isLicense,
-					AnalyzedText:  normalizedText,
-					Matches:       matches,
 				}
 
 				metrics.FilesProcessed.Inc("classified")
@@ -154,7 +110,7 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 				select {
 				case <-ctx.Done():
 					return
-				case out <- classified:
+				case out <- *classified:
 				}
 			}
 		}
@@ -205,7 +161,7 @@ func IsLicenseFilename(path string) bool {
 // to extract only the comment header at the top of the file to save CPU and memory
 // without risk of truncating mid-word.
 // Returns the extracted bytes and an error.
-func (c *Classifier) readFile(path string, isLicense bool) ([]byte, error) {
+func (c *Classifier) ReadFile(path string, isLicense bool) ([]byte, error) {
 	// Explicit license files must be read in their entirety
 	if isLicense {
 		return os.ReadFile(path)
@@ -300,4 +256,66 @@ func forceUTF8(data []byte) []byte {
 		}
 	}
 	return buf.Bytes()
+}
+
+// ClassifyFile reads a file from disk, normalizes it, chunks it, and runs the classification engine.
+func (c *Classifier) ClassifyFile(path string, projectRoot string, isLicense bool, parser string) (*pipeline.ClassifiedFile, error) {
+	// 1. Read the file (with truncation logic)
+	rawBytes, err := c.ReadFile(path, isLicense)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Normalize text to UTF-8
+	normalizedText := forceUTF8(rawBytes)
+
+	// 3. Chunk the text based on the file-level LicenseParser
+	var chunks [][]byte
+	if parser == "" {
+		parser = "Single License" // Default parser behavior
+	}
+
+	switch parser {
+	case "Android":
+		chunks = parseAndroid(normalizedText)
+	case "Chromium":
+		chunks = parseChromium(normalizedText)
+	case "Flutter":
+		chunks = parseFlutter(normalizedText)
+	case "Google":
+		chunks = parseGoogle(normalizedText)
+	case "OneDelimiter":
+		chunks = parseOneDelimiter(normalizedText)
+	default:
+		chunks = [][]byte{normalizedText}
+	}
+
+	// 4. Classify each chunk and extract data
+	var matches []pipeline.LicenseMatch
+	for _, chunk := range chunks {
+		func() {
+			defer metrics.ClassifierDuration.Track()()
+			results := c.Engine.Match(chunk)
+			for _, match := range results.Matches {
+				if match.Name != "" {
+					metrics.LicenseDetected.Inc(match.Name, "unrecognized", "unrecognized")
+					matches = append(matches, pipeline.LicenseMatch{
+						SPDXID:    match.Name,
+						MatchType: match.MatchType,
+						StartLine: match.StartLine,
+						EndLine:   match.EndLine,
+						Text:      extractLines(chunk, match.StartLine, match.EndLine),
+					})
+				}
+			}
+		}()
+	}
+
+	return &pipeline.ClassifiedFile{
+		Path:          path,
+		ProjectRoot:   projectRoot,
+		IsLicenseFile: isLicense,
+		AnalyzedText:  normalizedText,
+		Matches:       matches,
+	}, nil
 }

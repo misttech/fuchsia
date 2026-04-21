@@ -45,6 +45,11 @@ int main() { return 0; }`)
 		t.Fatal(err)
 	}
 
+	testBinaryPath := filepath.Join(tempDir, "identify_license")
+	if err := os.WriteFile(testBinaryPath, []byte("fake binary data matching a LICENSE pattern somehow"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	classifier, err := NewClassifier(0.8, []string{tempDir}, map[string]bool{".cc": true})
 	if err != nil {
 		t.Fatalf("Failed to create classifier: %v", err)
@@ -59,6 +64,7 @@ int main() { return 0; }`)
 			Files: []pipeline.FileInfo{
 				{Path: testFilePath},
 				{Path: testImgPath},
+				{Path: testBinaryPath, IsNonLicense: true},
 			},
 		},
 	}
@@ -77,25 +83,38 @@ int main() { return 0; }`)
 		results = append(results, cf)
 	}
 
-	if len(results) != 2 {
-		t.Fatalf("Expected exactly 2 classified files (one processed, one skipped), got %d", len(results))
+	if len(results) != 3 {
+		t.Fatalf("Expected exactly 3 classified files, got %d", len(results))
 	}
 
 	var res pipeline.ClassifiedFile
-	var skipped pipeline.ClassifiedFile
+	var skippedExt pipeline.ClassifiedFile
+	var skippedNonLicense pipeline.ClassifiedFile
 	for _, r := range results {
 		if r.Path == testFilePath {
 			res = r
-		} else {
-			skipped = r
+		} else if r.Path == testImgPath {
+			skippedExt = r
+		} else if r.Path == testBinaryPath {
+			skippedNonLicense = r
 		}
 	}
 
-	if skipped.Path != testImgPath {
-		t.Errorf("Expected skipped path %q, got %q", testImgPath, skipped.Path)
+	if skippedExt.Path != testImgPath {
+		t.Errorf("Expected skipped extension path %q, got %q", testImgPath, skippedExt.Path)
 	}
-	if len(skipped.AnalyzedText) > 0 {
-		t.Error("Expected skipped file to have no AnalyzedText")
+	if len(skippedExt.AnalyzedText) > 0 {
+		t.Error("Expected skipped extension file to have no AnalyzedText")
+	}
+
+	if skippedNonLicense.Path != testBinaryPath {
+		t.Errorf("Expected skipped non-license path %q, got %q", testBinaryPath, skippedNonLicense.Path)
+	}
+	if len(skippedNonLicense.AnalyzedText) > 0 {
+		t.Error("Expected skipped non-license file to have no AnalyzedText")
+	}
+	if skippedNonLicense.IsLicenseFile {
+		t.Error("Expected skipped non-license file to not be marked as IsLicenseFile")
 	}
 
 	if res.Path != testFilePath {

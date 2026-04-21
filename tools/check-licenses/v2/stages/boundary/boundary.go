@@ -128,6 +128,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			// Determine if this specific file needs a custom parser based on the parsed Readmes at this root
 			parser := ""
 			listedInReadme := false
+			isNonLicense := false
 			if readmes, ok := projectRoots[root]; ok {
 				// Check all Readme structs registered at this boundary (handles sub-projects)
 				relToReadme, _ := filepath.Rel(root, file)
@@ -147,6 +148,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 					for _, nlf := range r.NonLicenseFiles {
 						if filepath.Clean(nlf.Path) == relToReadme || filepath.Clean(nlf.Path) == relToFuchsia {
 							listedInReadme = true
+							isNonLicense = true
 							break
 						}
 					}
@@ -163,6 +165,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			projects[root].Files = append(projects[root].Files, pipeline.FileInfo{
 				Path:          file,
 				LicenseParser: parser,
+				IsNonLicense:  isNonLicense,
 			})
 		}
 
