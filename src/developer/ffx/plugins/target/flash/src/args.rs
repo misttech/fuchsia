@@ -10,7 +10,7 @@ use std::default::Default;
 use std::path::PathBuf;
 
 #[ffx_command()]
-#[derive(FfxConfigBacked, ArgsInfo, FromArgs, Default, Clone, Debug, Eq, PartialEq)]
+#[derive(FfxConfigBacked, ArgsInfo, FromArgs, Default, Clone, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "flash",
@@ -87,7 +87,7 @@ pub struct FlashCommand {
 
     #[argh(option, description = "flash timeout rate in mb/second.")]
     #[ffx_config_default(key = "fastboot.flash.timeout_rate", default = "2")]
-    pub timeout_rate: Option<u64>,
+    pub timeout_rate: Option<f64>,
 
     #[argh(
         option,
@@ -179,7 +179,7 @@ mod test {
             skip_verify: false,
             oem_stage: vec![test_staged_file],
             min_timeout_secs: Some(100),
-            timeout_rate: Some(1),
+            timeout_rate: Some(1.0),
             skip_authorized_keys: false,
         };
 

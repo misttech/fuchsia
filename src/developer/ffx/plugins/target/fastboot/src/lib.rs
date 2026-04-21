@@ -85,7 +85,7 @@ where
 {
     match &command.subcommand {
         FastbootSubcommand::Flash(cmd) => {
-            let flash_timeout_rate_mb_per_second: u64 = 5000;
+            let flash_timeout_rate_mb_per_second: f64 = 5000.0;
             let flash_min_timeout_seconds: u64 = 200;
             let (client, server) = mpsc::channel(1);
             try_join!(

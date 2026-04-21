@@ -33,7 +33,7 @@ pub struct ManifestParams {
     pub no_bootloader_reboot: bool,
     pub skip_verify: bool,
     pub op: Command,
-    pub flash_timeout_rate_mb_per_second: u64,
+    pub flash_timeout_rate_mb_per_second: f64,
     pub flash_min_timeout_seconds: u64,
 }
 
@@ -47,7 +47,7 @@ impl Default for ManifestParams {
             no_bootloader_reboot: false,
             skip_verify: false,
             op: Command::Flash,
-            flash_timeout_rate_mb_per_second: 5000,
+            flash_timeout_rate_mb_per_second: 5000.0,
             flash_min_timeout_seconds: 200,
         }
     }

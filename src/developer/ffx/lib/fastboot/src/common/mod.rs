@@ -194,7 +194,7 @@ pub async fn flash_partition<F: FileResolver + Sync, T: FastbootInterface>(
     file: &str,
     fastboot_interface: &mut T,
     min_timeout_secs: u64,
-    flash_timeout_rate_mb_per_second: u64,
+    flash_timeout_rate_mb_per_second: f64,
 ) -> Result<()> {
     let file_to_upload =
         file_resolver.get_file(file).await.context("reconciling file for upload")?;
@@ -216,7 +216,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
     file_to_upload: &str,
     fastboot_interface: &mut T,
     min_timeout_secs: u64,
-    flash_timeout_rate_mb_per_second: u64,
+    flash_timeout_rate_mb_per_second: f64,
 ) -> Result<()> {
     // If the given file to flash is bigger than what the device can download
     // at once, we need to make a sparse image out of the given file
@@ -232,8 +232,8 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
     // Calculate the flashing timeout
     let min_timeout = min_timeout_secs;
     let timeout_rate = flash_timeout_rate_mb_per_second;
-    let megabytes = (file_size / 1000000) as u64;
-    let mut timeout = megabytes / timeout_rate;
+    let megabytes = (file_size as f64) / 1_000_000.0;
+    let mut timeout = (megabytes / timeout_rate) as u64;
     timeout = std::cmp::max(timeout, min_timeout);
     let timeout = Duration::seconds(timeout as i64);
     log::debug!("Estimated timeout: {}s for {}MB", timeout, megabytes);
@@ -420,8 +420,8 @@ pub async fn flash_partitions<F: FileResolver + Sync, P: Partition, T: FastbootI
     file_resolver: &mut F,
     partitions: &Vec<P>,
     fastboot_interface: &mut T,
-    flash_timeout_rate_mb_per_second: u64,
     min_timeout_secs: u64,
+    flash_timeout_rate_mb_per_second: f64,
 ) -> Result<()> {
     for partition in partitions {
         match (partition.variable(), partition.variable_value()) {
@@ -433,8 +433,8 @@ pub async fn flash_partitions<F: FileResolver + Sync, P: Partition, T: FastbootI
                         partition.name(),
                         partition.file(),
                         fastboot_interface,
-                        flash_timeout_rate_mb_per_second,
                         min_timeout_secs,
+                        flash_timeout_rate_mb_per_second,
                     )
                     .await?;
                 }
@@ -446,8 +446,8 @@ pub async fn flash_partitions<F: FileResolver + Sync, P: Partition, T: FastbootI
                     partition.name(),
                     partition.file(),
                     fastboot_interface,
-                    flash_timeout_rate_mb_per_second,
                     min_timeout_secs,
+                    flash_timeout_rate_mb_per_second,
                 )
                 .await?
             }
