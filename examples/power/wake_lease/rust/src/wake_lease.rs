@@ -10,15 +10,12 @@ pub struct WakeLease {
 }
 
 impl WakeLease {
-    pub async fn acquire(
+    pub async fn take(
         activity_governor: &fsystem::ActivityGovernorProxy,
         name: String,
     ) -> Result<Self> {
-        let token = activity_governor
-            .acquire_wake_lease(&name)
-            .await?
-            .map_err(|e| anyhow::anyhow!("Failed to acquire wake lease: {:?}", e))?;
-        Ok(Self { _token: token })
+        let _token = activity_governor.take_wake_lease(&name).await?;
+        Ok(Self { _token })
     }
 }
 
@@ -42,7 +39,7 @@ mod tests {
                 .map(|request| request.context("failed request"))
                 .try_for_each(|request| async {
                     match request {
-                        fsystem::ActivityGovernorRequest::AcquireWakeLease {
+                        fsystem::ActivityGovernorRequest::TakeWakeLease {
                             name: _name,
                             responder,
                         } => {
@@ -63,7 +60,7 @@ mod tests {
                             })
                             .detach();
 
-                            responder.send(Ok(client_token)).context("send failed")
+                            responder.send(client_token).context("send failed")
                         }
                         _ => unreachable!(),
                     }
@@ -85,7 +82,7 @@ mod tests {
         .detach();
 
         // Create and acquire a wake lease.
-        let wake_lease = WakeLease::acquire(&client, "example_wake_lease".to_string()).await?;
+        let wake_lease = WakeLease::take(&client, "example_wake_lease".to_string()).await?;
 
         // Check that the server was notified about the acquired wake lease.
         assert!(wake_lease_active_rx.next().await.expect("server wake lease call"));

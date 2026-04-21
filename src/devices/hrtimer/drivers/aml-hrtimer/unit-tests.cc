@@ -218,6 +218,11 @@ class FakeSystemActivityGovernor
     completer.Reply(fit::ok(AcquireWakeLease()));
   }
 
+  void TakeWakeLease(TakeWakeLeaseRequest& request,
+                     TakeWakeLeaseCompleter::Sync& completer) override {
+    completer.Reply(AcquireWakeLease());
+  }
+
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
     ADD_FAILURE() << name << " is not implemented";
   }

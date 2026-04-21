@@ -6,21 +6,19 @@ use crate::shutdown_mocks::{LeaseState, Signal, new_mocks_provider};
 use anyhow::Error;
 use assert_matches::assert_matches;
 use fidl::marker::SourceBreaking;
-use fidl_fuchsia_boot as fboot;
-use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
 use fidl_fuchsia_hardware_power_statecontrol::{
     RebootReason2, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
-use fidl_fuchsia_power as fpower;
-use fidl_fuchsia_power_internal as fpower_internal;
-use fidl_fuchsia_power_system as fsystem;
-use fidl_fuchsia_sys2 as fsys;
-use fidl_fuchsia_system_state as fdevicemanager;
-use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::StreamExt;
 use futures::channel::mpsc;
 use test_case::{test_case, test_matrix};
+use {
+    fidl_fuchsia_boot as fboot, fidl_fuchsia_hardware_power_statecontrol as fstatecontrol,
+    fidl_fuchsia_power as fpower, fidl_fuchsia_power_internal as fpower_internal,
+    fidl_fuchsia_power_system as fsystem, fidl_fuchsia_sys2 as fsys,
+    fidl_fuchsia_system_state as fdevicemanager, fuchsia_async as fasync,
+};
 
 use crate::reboot_watcher_client::{
     RebootWatcherClient, ShutdownWatcherClient, TerminalStateWatcherClient,
@@ -179,7 +177,7 @@ async fn verify_shutdown_shim_common_behavior(
     is_power_framework_available: bool,
     mut recv_signals: mpsc::UnboundedReceiver<Signal>,
 ) -> Result<(), Error> {
-    // Conditionally checks the mock receives the AcquireWakeLease call
+    // Conditionally checks the mock receives the TakeWakeLease call
     if is_power_framework_available {
         assert_matches!(
             recv_signals.next().await,

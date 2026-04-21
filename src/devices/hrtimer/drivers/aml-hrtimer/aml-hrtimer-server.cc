@@ -171,13 +171,13 @@ void AmlHrtimerServer::Timer::HandleIrq(async_dispatcher_t* dispatcher, async::I
                    parent.RecordEvent(zx::clock::get_monotonic().get(), properties.id,
                                       EventType::TriggerIrqWait, last_ticks);
                    parent.lease_requests_.Add(1);
-                   auto wake_lease = (*parent.sag_)->AcquireWakeLease(std::string("aml-hrtimer"));
+                   auto wake_lease = (*parent.sag_)->TakeWakeLease(std::string("aml-hrtimer"));
                    parent.lease_replies_.Add(1);
                    if (wake_lease.is_error()) {
                      completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
                    } else {
                      completer.Reply(zx::ok(fuchsia_hardware_hrtimer::DeviceStartAndWaitResponse{
-                         {.keep_alive = std::move(wake_lease.value().token())}}));
+                         {.keep_alive = std::move(wake_lease->token())}}));
                    }
                  },
                  [&](StartAndWait2Completer::Async& completer) {
@@ -186,13 +186,13 @@ void AmlHrtimerServer::Timer::HandleIrq(async_dispatcher_t* dispatcher, async::I
                    parent.RecordEvent(zx::clock::get_monotonic().get(), properties.id,
                                       EventType::TriggerIrqWait2, last_ticks);
                    parent.lease_requests_.Add(1);
-                   auto wake_lease = (*parent.sag_)->AcquireWakeLease(std::string("aml-hrtimer"));
+                   auto wake_lease = (*parent.sag_)->TakeWakeLease(std::string("aml-hrtimer"));
                    parent.lease_replies_.Add(1);
                    if (wake_lease.is_error()) {
                      completer.Reply(zx::error(fuchsia_hardware_hrtimer::DriverError::kBadState));
                    } else {
                      completer.Reply(zx::ok(fuchsia_hardware_hrtimer::DeviceStartAndWait2Response{
-                         {.expiration_keep_alive = std::move(wake_lease.value().token())}}));
+                         {.expiration_keep_alive = std::move(wake_lease->token())}}));
                    }
                  },
                  [&](std::monostate& empty) {

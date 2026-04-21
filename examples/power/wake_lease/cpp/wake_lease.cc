@@ -14,13 +14,13 @@ namespace examples::power {
 fpromise::promise<WakeLease, Error> WakeLease::Take(
     const fidl::Client<fuchsia_power_system::ActivityGovernor>& client, const std::string& name) {
   fpromise::bridge<WakeLease, Error> bridge;
-  client->AcquireWakeLease({name}).Then(
+  client->TakeWakeLease({name}).Then(
       [completer = std::move(bridge.completer)](auto& result) mutable {
-        if (result.is_error()) {
-          completer.complete_error("Failed to acquire wake lease");
+        if (!result.is_ok()) {
+          completer.complete_error("Failed to take wake lease");
           return;
         }
-        completer.complete_ok(WakeLease(std::move(result.value().token())));
+        completer.complete_ok(WakeLease(std::move(result->token())));
       });
   return bridge.consumer.promise();
 }
