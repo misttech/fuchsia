@@ -2743,6 +2743,32 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                             };
                             inspector.root().record_string("ipmaddr", address_string);
                         }
+                        if let Some(x) = telemetry_data.netstat {
+                            inspector.root().record_child(
+                                "netstat",
+                                |netstat_child| {
+                                    for (index, socket) in x.iter().enumerate() {
+                                        netstat_child.record_child(
+                                            format!("socket_{}", index),
+                                            |socket_node| {
+                                                if let Some(y) = &socket.sock_name {
+                                                    socket_node.record_string(
+                                                        "sock_name",
+                                                        y,
+                                                    );
+                                                }
+                                                if let Some(y) = &socket.peer_name {
+                                                    socket_node.record_string(
+                                                        "peer_name",
+                                                        y,
+                                                    );
+                                                }
+                                            }
+                                        );
+                                    }
+                                }
+                            );
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

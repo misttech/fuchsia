@@ -1715,6 +1715,17 @@ where
             })
             .collect::<Vec<_>>();
 
+        // Get the list of UDP Sockets.
+        let netstat = ot
+            .udp_get_sockets()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_UDP_SOCKETS as usize)
+            .map(|socket| fidl_fuchsia_lowpan_experimental::UdpSocket {
+                sock_name: Some(socket.sock_name().to_string()),
+                peer_name: Some(socket.peer_name().to_string()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1807,6 +1818,7 @@ where
             }),
             ipaddrs: Some(ipaddrs),
             ipmaddrs: Some(ipmaddrs),
+            netstat: Some(netstat),
             ..Default::default()
         })
     }
