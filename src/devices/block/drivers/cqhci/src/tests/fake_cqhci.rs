@@ -385,6 +385,8 @@ struct FakeHardwareState {
     requests_to_fail_crypto_gce: u32,
     rpmb_active: bool,
     wake_event: event_listener::Event,
+    erase_group_start: Option<u32>,
+    erase_group_end: Option<u32>,
     tasks_in_progress: u32,
     active_partition: u32,
     valid_crypto_slots: std::collections::HashSet<u8>,
@@ -645,6 +647,8 @@ impl FakeTaskHandler {
                 requests_to_fail_crypto_gce: 0,
                 rpmb_active: false,
                 wake_event: event_listener::Event::new(),
+                erase_group_start: None,
+                erase_group_end: None,
                 tasks_in_progress: 0,
                 active_partition: EmmcPartitionId::UserDataPartition as u32,
                 valid_crypto_slots: std::collections::HashSet::new(),
@@ -767,10 +771,35 @@ impl FakeTaskHandler {
                     // We leave CQHCI_CQ_CRDCT_OFFSET untouched with 0, which will get interpreted
                     // as we want.
                 }
+                MmcCommand::EraseGroupStart => {
+                    self.state.lock().erase_group_start = Some(entry.task.cmd_arg());
+                }
+                MmcCommand::EraseGroupEnd => {
+                    self.state.lock().erase_group_end = Some(entry.task.cmd_arg());
+                }
+                MmcCommand::Erase => {
+                    let mut state = self.state.lock();
+                    if let (Some(start), Some(end)) =
+                        (state.erase_group_start.take(), state.erase_group_end.take())
+                    {
+                        let active_partition = state.active_partition;
+                        drop(state);
+                        if let Some(vmo) = self.partition_vmos.get(&active_partition)
+                            && end >= start
+                        {
+                            let start_offset = start as u64 * MMC_BLOCK_SIZE;
+                            let len = ((end - start + 1) as u64) * MMC_BLOCK_SIZE;
+                            let ones = vec![0xFF; len as usize];
+                            vmo.write(&ones, start_offset).unwrap();
+                        }
+                    } else {
+                        panic!("Erase command without erase group start/end set!");
+                    }
+                }
                 MmcCommand::QueuedTaskAddress
                 | MmcCommand::QueuedTaskParams
                 | MmcCommand::CommandQueueTaskManagement => {
-                    // This is used for DISCARD.  For now, we don't do anything with this.
+                    // We don't do anything with these.
                 }
             }
         } else {

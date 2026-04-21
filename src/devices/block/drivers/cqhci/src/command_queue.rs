@@ -31,38 +31,28 @@ use sdmmc_spec::{
     CQHCI_CQ_TCN_OFFSET, CQHCI_CQ_TDBR_OFFSET, CQHCI_CQ_TDLBA_OFFSET, CQHCI_CQ_TDLBAU_OFFSET,
     CQHCI_CQ_TDPE_OFFSET, CQHCI_CQ_TERRI_OFFSET, CQHCI_CQ_VER_OFFSET,
     CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS,
-    CQHCI_TASK_DESCRIPTOR_LIST_SIZE, CommandQueueTaskManagementArgs, CqhciCqCapsRegister,
-    CqhciCqCfgRegister, CqhciCqCtlRegister, CqhciCqInterruptCoalescingRegister,
-    CqhciCqInterruptSignalEnableRegister, CqhciCqInterruptStatusEnableRegister,
-    CqhciCqInterruptStatusRegister, CqhciCqSendStatusConfiguration2Register,
-    CqhciCqTaskErrorRegister, CqhciCryptoRegisterSnapshot, CqhciRegisterSnapshot,
-    DeviceManagementOpDiscardCmd44Args, DeviceManagementOpcode, Direction, EXT_CSD_BARRIER_EN,
-    EXT_CSD_BARRIER_ENABLED, EXT_CSD_BARRIER_SUPPORT, EXT_CSD_BARRIER_SUPPORT_MASK,
-    EXT_CSD_CACHE_CTRL, EXT_CSD_CACHE_EN_MASK, EXT_CSD_CACHE_FLUSH_POLICY,
-    EXT_CSD_CACHE_FLUSH_POLICY_FIFO, EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH,
-    EXT_CSD_GENERIC_CMD6_TIME, EXT_CSD_PARTITION_ACCESS_MASK, EXT_CSD_PARTITION_CONFIG,
-    EXT_CSD_PARTITON_SWITCH_TIME, EXT_CSD_SEC_FEATURE_SUPPORT,
-    EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN, EXT_CSD_SIZE, EmmcPartitionIndex, MMC_BLOCK_SIZE,
-    MmcCommand, MmcSendStatusResponse, SDHCI_IS_OFFSET, SDHCI_ISGE_OFFSET, SDHCI_ISTE_OFFSET,
-    SdhciInterruptSignalEnableRegister, SdhciInterruptStatusEnableRegister,
-    SdhciInterruptStatusRegister,
+    CQHCI_TASK_DESCRIPTOR_LIST_SIZE, CqhciCqCapsRegister, CqhciCqCfgRegister, CqhciCqCtlRegister,
+    CqhciCqInterruptCoalescingRegister, CqhciCqInterruptSignalEnableRegister,
+    CqhciCqInterruptStatusEnableRegister, CqhciCqInterruptStatusRegister,
+    CqhciCqSendStatusConfiguration2Register, CqhciCqTaskErrorRegister, CqhciCryptoRegisterSnapshot,
+    CqhciRegisterSnapshot, Direction, EXT_CSD_BARRIER_EN, EXT_CSD_BARRIER_ENABLED,
+    EXT_CSD_BARRIER_SUPPORT, EXT_CSD_BARRIER_SUPPORT_MASK, EXT_CSD_CACHE_CTRL,
+    EXT_CSD_CACHE_EN_MASK, EXT_CSD_CACHE_FLUSH_POLICY, EXT_CSD_CACHE_FLUSH_POLICY_FIFO,
+    EXT_CSD_FLUSH_CACHE, EXT_CSD_FLUSH_CACHE_FLUSH, EXT_CSD_GENERIC_CMD6_TIME,
+    EXT_CSD_PARTITION_ACCESS_MASK, EXT_CSD_PARTITION_CONFIG, EXT_CSD_PARTITON_SWITCH_TIME,
+    EXT_CSD_SEC_FEATURE_SUPPORT, EXT_CSD_SEC_FEATURE_SUPPORT_SEC_GB_CL_EN, EXT_CSD_SIZE,
+    MMC_BLOCK_SIZE, MMC_ERASE_DISCARD_ARG, MmcCommand, MmcSendStatusResponse, SDHCI_IS_OFFSET,
+    SDHCI_ISGE_OFFSET, SDHCI_ISTE_OFFSET, SdhciInterruptSignalEnableRegister,
+    SdhciInterruptStatusEnableRegister, SdhciInterruptStatusRegister,
 };
 use zx::HandleBased as _;
 
 use crate::dma_buffer::{ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer};
-use crate::transfer_manager::{Transfer, TransferManager, TransferOptions, TransferSlot};
+use crate::transfer_manager::{Transfer, TransferManager, TransferOptions};
 
 const IRQ_PORT_IRQ_KEY: u64 = 1;
 const IRQ_PORT_LIFELINE_KEY: u64 = 2;
 const IRQ_PORT_VIRTUAL_IRQ_ACKED_KEY: u64 = 3;
-
-fn emmc_partition_index(partition: EmmcPartitionId) -> EmmcPartitionIndex {
-    match partition {
-        EmmcPartitionId::UserDataPartition => EmmcPartitionIndex::UserDataPartition,
-        EmmcPartitionId::BootPartition1 => EmmcPartitionIndex::BootPartition1,
-        EmmcPartitionId::BootPartition2 => EmmcPartitionIndex::BootPartition2,
-    }
-}
 
 /// Trait wrapper for fuchsia.hardware.cqhci.Cqhci.
 #[async_trait]
@@ -956,68 +946,34 @@ impl CommandQueueExcl {
 
     async fn trim(
         &mut self,
-        tdl_slot: TransferSlot,
         partition: EmmcPartitionId,
         block_offset: u64,
         block_count: u32,
-        trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
-        // TODO(https://fxbug.dev/490482696): To handle larger TRIM requests, we can't use DMS, we
-        // instead have to execute the usual ERASE commands via DCMD (which is slightly less
-        // efficient because it requires a partition switch, which blocks the queue, and a queue
-        // barrier).
-        //
-        // This is OK for now, as in practice filesystems send small trims, and we don't support
-        // devices large enough to overflow u32 offsets.
+        if block_count == 0 {
+            return Ok(());
+        }
         let Ok(block_offset) = u32::try_from(block_offset) else {
             log::warn!("Trim block offset too large; CQHCI trim only supports 32-bit offsets");
             return Err(zx::Status::INVALID_ARGS);
         };
-        let Ok(block_count) = u16::try_from(block_count) else {
-            log::warn!("Trim block count too large; CQHCI trim only supports 16-bit counts");
+        let Some(end_offset) = block_offset.checked_add(block_count - 1) else {
+            log::warn!("Trim end offset overflow");
             return Err(zx::Status::INVALID_ARGS);
         };
-        debug!("Trim {block_offset:x} {block_count:x} {} {:?}", tdl_slot.raw(), partition);
-        // NOTE: This implements a DISCARD, not a TRIM.  The difference is that DISCARD does not
-        // guarantee that the data will be 0 or 1 when read back.  This is more efficient, and
-        // neither is secure anyways.
-        let mut res = self
-            .execute_dcmd(
-                MmcCommand::QueuedTaskParams,
-                DeviceManagementOpDiscardCmd44Args::new(
-                    block_count,
-                    tdl_slot.raw(),
-                    emmc_partition_index(partition),
-                )
-                .raw(),
-            )
-            .await;
-        if res.is_ok() {
-            res = self.execute_dcmd(MmcCommand::QueuedTaskAddress, block_offset).await;
+        debug!("Trim {block_offset:x} {block_count:x} {partition:?}");
+
+        if self.inner.lock().active_partition != Some(partition) {
+            let partition_config_value = self.ext_csd[EXT_CSD_PARTITION_CONFIG]
+                & EXT_CSD_PARTITION_ACCESS_MASK
+                | partition as u8;
+            self.do_switch(EXT_CSD_PARTITION_CONFIG, partition_config_value).await?;
+            self.inner.lock().active_partition = Some(partition);
         }
-        if res.is_ok() {
-            res = self
-                .execute_dcmd(
-                    MmcCommand::CommandQueueTaskManagement,
-                    CommandQueueTaskManagementArgs::new(
-                        tdl_slot.raw(),
-                        DeviceManagementOpcode::Discard,
-                    )
-                    .raw(),
-                )
-                .await;
-        }
-        let res = res.map(|_| ());
-        fuchsia_trace::duration!(
-                    "sdmmc", "cqhci::complete_trim", "status" => zx::Status::from(res).into_raw());
-        if let Some(trace_flow_id) = trace_flow_id {
-            fuchsia_trace::flow_step!(
-                "storage",
-                "cqhci::complete_trim",
-                trace_flow_id.get().into()
-            );
-        }
-        res
+
+        self.execute_dcmd(MmcCommand::EraseGroupStart, block_offset).await.map(|_| ())?;
+        self.execute_dcmd(MmcCommand::EraseGroupEnd, end_offset).await.map(|_| ())?;
+        self.execute_dcmd(MmcCommand::Erase, MMC_ERASE_DISCARD_ARG).await.map(|_| ())
     }
 
     async fn run_recovery(&mut self) -> Result<(), zx::Status> {
@@ -1517,30 +1473,26 @@ impl CommandQueue {
             fuchsia_trace::flow_step!("storage", "cqhci::submit_trim", trace_flow_id.get().into());
         }
         debug!("submit_trim");
-        loop {
-            let slot = self.transfer_manager.acquire_transfer_slot();
-            let listener = {
-                let mut inner = self.inner.lock();
-                let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
-                if inner.should_reject_tasks() {
-                    complete_request(receiver.upgrade(), request_id, zx::Status::UNAVAILABLE);
-                    break;
+        let mut inner = self.inner.lock();
+        let receiver = inner.partition_status_receivers.get(&partition).unwrap().clone();
+        inner.submit_async_task(into_async_task(
+            async move |mut cq| {
+                let result = cq.trim(partition, block_offset, block_count).await;
+                fuchsia_trace::duration!(
+                    "sdmmc", "cqhci::complete_trim", "status"
+                        => zx::Status::from(result).into_raw()
+                );
+                if let Some(trace_flow_id) = trace_flow_id {
+                    fuchsia_trace::flow_step!(
+                        "storage",
+                        "cqhci::complete_trim",
+                        trace_flow_id.get().into()
+                    );
                 }
-                if let Some(tdl_slot) = slot {
-                    inner.submit_async_task(into_async_task(
-                        async move |mut cq| {
-                            cq.trim(tdl_slot, partition, block_offset, block_count, trace_flow_id)
-                                .await
-                        },
-                        move |result| receiver.complete(request_id, zx::Status::from(result)),
-                    ));
-                    break;
-                } else {
-                    inner.event.listen()
-                }
-            };
-            listener.wait();
-        }
+                result
+            },
+            move |result| receiver.complete(request_id, zx::Status::from(result)),
+        ));
     }
 
     pub async fn get_rpmb_info(&self) -> Result<rpmb::natural::DeviceInfo, zx::Status> {

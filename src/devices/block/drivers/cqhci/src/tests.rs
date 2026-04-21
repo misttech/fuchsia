@@ -116,6 +116,38 @@ async fn test_io() {
 }
 
 #[fuchsia::test]
+async fn test_trim() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let block_client = connect_block_client(&started_driver, "user").await;
+
+    let buf = vec![0xAAu8; 512];
+    block_client.write_at(BufferSlice::from(&buf[..]), 0).await.expect("write failed");
+
+    block_client.trim(0..0).await.expect_err("zero-length trim should fail");
+
+    // Read back and ensure it's still 0xAA (not trimmed)
+    let mut read_buf = vec![0u8; 512];
+    block_client
+        .read_at(MutableBufferSlice::from(&mut read_buf[..]), 0)
+        .await
+        .expect("read failed");
+    assert_eq!(read_buf, buf);
+
+    // Now test a real trim.
+    block_client.trim(0..512).await.expect("trim failed");
+    let mut read_buf2 = vec![0u8; 512];
+    block_client
+        .read_at(MutableBufferSlice::from(&mut read_buf2[..]), 0)
+        .await
+        .expect("read failed");
+    assert_eq!(read_buf2, vec![0xFFu8; 512]);
+
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
 async fn test_switch_partition() {
     let (_fixture, mut harness) = FakeCqhci::new(None);
     let started_driver = harness.start_driver().await.expect("failed to start driver");
