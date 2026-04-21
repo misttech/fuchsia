@@ -56,6 +56,26 @@ impl<'a> Iterator for NetifAddressIterator<'a> {
     }
 }
 
+/// Iterates over the [`NetifMulticastAddress`] structs from [`Ip6::ip6_get_multicast_addresses()`].
+#[derive(Default, Debug, Clone)]
+pub struct NetifMulticastAddressIterator<'a>(Option<&'a NetifMulticastAddress>);
+
+impl<'a> Iterator for NetifMulticastAddressIterator<'a> {
+    type Item = &'a NetifMulticastAddress;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(addr_ref) = self.0 {
+            // SAFETY: The `otNetifMulticastAddress` pointer used here comes
+            //         from `otIp6GetMulticastAddresses`, which is guaranteed
+            //         to have valid values for `mNext`.
+            self.0 = unsafe { NetifMulticastAddress::ref_from_ot_ptr(addr_ref.0.mNext) };
+            Some(addr_ref)
+        } else {
+            None
+        }
+    }
+}
+
 /// Methods from the [OpenThread "IPv6" Module](https://openthread.io/reference/group/api-ip6).
 pub trait Ip6 {
     /// Functional equivalent of [`otsys::otIp6Send`](crate::otsys::otIp6Send).
@@ -143,6 +163,10 @@ pub trait Ip6 {
     /// Functional equivalent of
     /// [`otsys::otIp6GetUnicastAddresses`](crate::otsys::otIp6GetUnicastAddresses).
     fn ip6_get_unicast_addresses(&self) -> NetifAddressIterator<'_>;
+
+    /// Functional equivalent of
+    /// [`otsys::otIp6GetMulticastAddresses`](crate::otsys::otIp6GetMulticastAddresses).
+    fn ip6_get_multicast_addresses(&self) -> NetifMulticastAddressIterator<'_>;
 }
 
 impl<T: Ip6 + ot::Boxable> Ip6 for ot::Box<T> {
@@ -226,6 +250,10 @@ impl<T: Ip6 + ot::Boxable> Ip6 for ot::Box<T> {
 
     fn ip6_get_unicast_addresses(&self) -> NetifAddressIterator<'_> {
         self.as_ref().ip6_get_unicast_addresses()
+    }
+
+    fn ip6_get_multicast_addresses(&self) -> NetifMulticastAddressIterator<'_> {
+        self.as_ref().ip6_get_multicast_addresses()
     }
 }
 
@@ -412,6 +440,12 @@ impl Ip6 for Instance {
     fn ip6_get_unicast_addresses(&self) -> NetifAddressIterator<'_> {
         NetifAddressIterator(unsafe {
             NetifAddress::ref_from_ot_ptr(otIp6GetUnicastAddresses(self.as_ot_ptr()))
+        })
+    }
+
+    fn ip6_get_multicast_addresses(&self) -> NetifMulticastAddressIterator<'_> {
+        NetifMulticastAddressIterator(unsafe {
+            NetifMulticastAddress::ref_from_ot_ptr(otIp6GetMulticastAddresses(self.as_ot_ptr()))
         })
     }
 }

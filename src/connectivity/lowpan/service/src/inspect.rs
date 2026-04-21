@@ -2492,6 +2492,17 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 }
                             );
                         }
+                        if let Some(x) = telemetry_data.ipmaddrs {
+                            let address_string = if x.is_empty() {
+                                "none".to_string()
+                            } else {
+                                x.iter()
+                                 .map(|a| {format!("{}", Ipv6Addr::from(a.addr)) })
+                                 .collect::<Vec<_>>()
+                                 .join(", ")
+                            };
+                            inspector.root().record_string("ipmaddr", address_string);
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

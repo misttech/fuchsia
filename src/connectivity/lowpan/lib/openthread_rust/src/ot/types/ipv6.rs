@@ -421,6 +421,35 @@ impl NetifAddress {
     }
 }
 
+/// Data type representing IPv6 multicast address from a network interface.
+/// Functional equivalent of [`otsys::otNetifMulticastAddress`]
+/// (crate::otsys::otNetifMulticastAddress).
+#[derive(Default, Clone, Copy)]
+#[repr(transparent)]
+pub struct NetifMulticastAddress(pub(crate) otNetifMulticastAddress);
+
+impl_ot_castable!(NetifMulticastAddress, otNetifMulticastAddress);
+
+impl Debug for NetifMulticastAddress {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.addr().fmt(f)?;
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for NetifMulticastAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
+impl NetifMulticastAddress {
+    /// Returns a reference to the IPv6 address.
+    pub fn addr(&self) -> &Ip6Address {
+        Ip6Address::ref_from_ot_ref(&self.0.mAddress)
+    }
+}
+
 /// IPv6 subnet prefix with an arbitrary prefix length.
 /// Functional equivalent of [`otsys::otIp6Prefix`](crate::otsys::otIp6Prefix).
 #[derive(Default, Clone, Copy)]

@@ -1602,6 +1602,13 @@ where
             })
             .collect::<Vec<_>>();
 
+        // Get the list of IPv6 multicast addresses assigned to the Thread interface.
+        let ipmaddrs = ot
+            .ip6_get_multicast_addresses()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_IPV6_MULTICAST_ADDRS as usize)
+            .map(|addr| fidl_fuchsia_net::Ipv6Address { addr: addr.addr().octets() })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1690,6 +1697,7 @@ where
                 ..Default::default()
             }),
             ipaddrs: Some(ipaddrs),
+            ipmaddrs: Some(ipmaddrs),
             ..Default::default()
         })
     }
