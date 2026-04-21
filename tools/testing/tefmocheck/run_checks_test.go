@@ -5,9 +5,12 @@
 package tefmocheck
 
 import (
+	"bytes"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,7 +222,16 @@ func (c syntheticCheck) FailureReason() string {
 	return "synthetic failure"
 }
 
-func TestRunChecks_EmitSyntheticTestCase(t *testing.T) {
+type targetedCheck struct {
+	syntheticCheck
+	testName string
+}
+
+func (c targetedCheck) TestName() string {
+	return c.testName
+}
+
+func TestRunChecks_TargetedSyntheticTestCase(t *testing.T) {
 	summary := runtests.TestSummary{
 		Tests: []runtests.TestDetails{
 			{
@@ -230,10 +242,78 @@ func TestRunChecks_EmitSyntheticTestCase(t *testing.T) {
 				},
 			},
 			{
-				Name:   "failing_test",
+				Name:   "failing_test_1",
 				Status: runtests.TestFailure,
 				TestResult: runtests.TestResult{
 					Cases: []runtests.TestCaseResult{},
+				},
+			},
+			{
+				Name:   "failing_test_2",
+				Status: runtests.TestFailure,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{},
+				},
+			},
+		},
+	}
+	to := TestingOutputs{
+		TestSummary: &summary,
+	}
+	outputsDir := t.TempDir()
+
+	// This check should only be attributed to "failing_test_1".
+	check := targetedCheck{testName: "failing_test_1"}
+
+	_, err := RunChecks([]FailureModeCheck{check}, &to, outputsDir)
+	if err != nil {
+		t.Fatalf("RunChecks() failed: %v", err)
+	}
+
+	// Passing test should have NO synthetic case.
+	if got := len(summary.Tests[0].Cases); got != 0 {
+		t.Errorf("summary.Tests[0].Cases length = %d, want 0", got)
+	}
+
+	// failing_test_1 should have ONE synthetic case (Targeted attribution).
+	if got := len(summary.Tests[1].Cases); got != 1 {
+		t.Errorf("summary.Tests[1].Cases length = %d, want 1", got)
+	}
+
+	// failing_test_2 should have ZERO synthetic cases.
+	if got := len(summary.Tests[2].Cases); got != 0 {
+		t.Errorf("summary.Tests[2].Cases length = %d, want 0", got)
+	}
+}
+
+func TestRunChecks_GlobalSyntheticTestCase(t *testing.T) {
+	summary := runtests.TestSummary{
+		Tests: []runtests.TestDetails{
+			{
+				Name:   "passing_test",
+				Status: runtests.TestSuccess,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{},
+				},
+			},
+			{
+				Name:   "failing_test_1",
+				Status: runtests.TestFailure,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{},
+				},
+			},
+			{
+				Name:   "failing_test_2",
+				Status: runtests.TestFailure,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{
+						{
+							CaseName:   "failing_test_2_test-case-name",
+							Status:     runtests.TestFailure,
+							FailReason: "failing_test_2_test-case-failure-reason",
+						},
+					},
 				},
 			},
 		},
@@ -254,7 +334,7 @@ func TestRunChecks_EmitSyntheticTestCase(t *testing.T) {
 		t.Errorf("summary.Tests[0].Cases length = %d, want 0", got)
 	}
 
-	// Failing test should have exactly ONE synthetic case.
+	// Failing tests with no test cases should have exactly ONE synthetic case.
 	if got := len(summary.Tests[1].Cases); got != 1 {
 		t.Errorf("summary.Tests[1].Cases length = %d, want 1", got)
 	} else {
@@ -269,4 +349,77 @@ func TestRunChecks_EmitSyntheticTestCase(t *testing.T) {
 			t.Errorf("TestCase.FailReason = %q, want %q", tc.FailReason, check.FailureReason())
 		}
 	}
+
+	// Failing tests with test cases should have exactly ONE synthetic case (one more test case than before).
+	if got := len(summary.Tests[2].Cases); got != 2 {
+		t.Errorf("summary.Tests[2].Cases length = %d, want 2", got)
+	} else {
+		tc := summary.Tests[2].Cases[1] // The last test case is the synthetic one.
+		if tc.SuiteName != "tefmocheck" {
+			t.Errorf("TestCase.SuiteName = %q, want %q", tc.SuiteName, "tefmocheck")
+		}
+		if tc.CaseName != check.Name() {
+			t.Errorf("TestCase.CaseName = %q, want %q", tc.CaseName, check.Name())
+		}
+		if tc.FailReason != check.FailureReason() {
+			t.Errorf("TestCase.FailReason = %q, want %q", tc.FailReason, check.FailureReason())
+		}
+	}
+}
+
+func TestRunChecks_TargetedSyntheticTestCase_NotFound(t *testing.T) {
+	summary := runtests.TestSummary{
+		Tests: []runtests.TestDetails{
+			{
+				Name:   "failing_test_1",
+				Status: runtests.TestFailure,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{},
+				},
+			},
+			{
+				Name:   "passing_test",
+				Status: runtests.TestSuccess,
+				TestResult: runtests.TestResult{
+					Cases: []runtests.TestCaseResult{},
+				},
+			},
+		},
+	}
+	to := TestingOutputs{
+		TestSummary: &summary,
+	}
+	outputsDir := t.TempDir()
+
+	t.Run("not_in_summary", func(t *testing.T) {
+		check := targetedCheck{testName: "non_existent_test"}
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+		defer log.SetOutput(os.Stderr)
+
+		_, err := RunChecks([]FailureModeCheck{check}, &to, outputsDir)
+		if err != nil {
+			t.Fatalf("RunChecks() failed: %v", err)
+		}
+		wantLog := "Warning: targeted check synthetic_check attributed to test \"non_existent_test\" but test not found in summary"
+		if !strings.Contains(buf.String(), wantLog) {
+			t.Errorf("Log output %q does not contain expected warning %q", buf.String(), wantLog)
+		}
+	})
+
+	t.Run("passing_test_in_summary", func(t *testing.T) {
+		check := targetedCheck{testName: "passing_test"}
+		var buf bytes.Buffer
+		log.SetOutput(&buf)
+		defer log.SetOutput(os.Stderr)
+
+		_, err := RunChecks([]FailureModeCheck{check}, &to, outputsDir)
+		if err != nil {
+			t.Fatalf("RunChecks() failed: %v", err)
+		}
+		wantLog := "Warning: targeted check synthetic_check attributed to test \"passing_test\" but test not found in summary"
+		if !strings.Contains(buf.String(), wantLog) {
+			t.Errorf("Log output %q does not contain expected warning %q", buf.String(), wantLog)
+		}
+	})
 }

@@ -59,8 +59,14 @@ type FailureModeCheck interface {
 	// FailureReason is the human-readable error message.
 	FailureReason() string
 	// EmitSyntheticTestCase is true if the check should add a synthetic
-	// test case to every failed test.
+	// test case to every failed test. If testName is set, the synthetic test case
+	// will be added to the specified test instead of every failed test.
 	EmitSyntheticTestCase() bool
+	// TestName returns the name of the test this check is attributed to,
+	// or an empty string if the check is global (not attributed to a specific test).
+	// When combined with EmitSyntheticTestCase(), it'll cause the synthetic test case
+	// to be added to the specified test instead of every failed test where possible.
+	TestName() string
 }
 
 // baseCheck provides default implementations of the FailureModeCheck interface.
@@ -102,4 +108,8 @@ func (c baseCheck) FailureReason() string {
 
 func (c baseCheck) EmitSyntheticTestCase() bool {
 	return false
+}
+
+func (c baseCheck) TestName() string {
+	return ""
 }

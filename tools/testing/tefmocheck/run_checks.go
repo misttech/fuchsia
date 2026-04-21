@@ -6,6 +6,7 @@ package tefmocheck
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -40,22 +41,36 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 		// Some checks are difficult to attribute to a single test (e.g. syslogs and serial logs).
 		// However, we would still like the check's FailureReason to be associated with a top-level
 		// test's FailureReason.
-		// By emitting a synthetic test case for every failed test, we can attempt to attribute
+		// By emitting synthetic test case(s) for failed test(s), we can attempt to attribute
 		// potential failures to specific failure modes in our tracking systems (e.g. ResultDB),
 		// making it easier to group and route failures.
-		// See https://fxbug.dev/488476740 for context.
-		if check.EmitSyntheticTestCase() && to.TestSummary != nil {
+		// There are two modes supported:
+		// 1. **Targeted:** If the check is attributed to a specific test (via TestName()), we add
+		//    the synthetic test case ONLY to that specific test. (See https://fxbug.dev/496991183)
+		// 2. **Global:** If the check is not attributed to a specific test (e.g., broad syslog or
+		//    serial log parse failures), we add it to ALL failed tests in the task. (See https://fxbug.dev/488476740)
+		if check.EmitSyntheticTestCase() && to != nil && to.TestSummary != nil {
+			attributedTestName := check.TestName()
+			foundMatch := false
 			for i := range to.TestSummary.Tests {
 				test := &to.TestSummary.Tests[i]
 				if runtests.IsFailure(test.Status) {
-					test.Cases = append(test.Cases, runtests.TestCaseResult{
-						DisplayName: "tefmocheck: " + check.Name(),
-						SuiteName:   "tefmocheck",
-						CaseName:    check.Name(),
-						Status:      runtests.TestFailure,
-						FailReason:  check.FailureReason(),
-					})
+					if attributedTestName == "" || test.Name == attributedTestName {
+						if attributedTestName != "" {
+							foundMatch = true
+						}
+						test.Cases = append(test.Cases, runtests.TestCaseResult{
+							DisplayName: "tefmocheck: " + check.Name(),
+							SuiteName:   "tefmocheck",
+							CaseName:    check.Name(),
+							Status:      runtests.TestFailure,
+							FailReason:  check.FailureReason(),
+						})
+					}
 				}
+			}
+			if attributedTestName != "" && !foundMatch {
+				log.Printf("Warning: targeted check %s attributed to test %q but test not found in summary", check.Name(), attributedTestName)
 			}
 		}
 

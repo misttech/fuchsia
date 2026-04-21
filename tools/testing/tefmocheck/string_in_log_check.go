@@ -67,7 +67,9 @@ type stringInLogCheck struct {
 	AddTag bool
 	// InfraFailure is true if the check is related to infra.
 	InfraFailure bool
-	// If true, add a synthetic test case to every failed test.
+	// If true, add a synthetic test case to every failed test. If AttributeToTest is
+	// set, the synthetic test case will be added to the specified test instead
+	// of every failed test.
 	emitSyntheticTestCase bool
 
 	swarmingResult *SwarmingRpcsTaskResult
@@ -327,6 +329,10 @@ func (c *stringInLogCheck) FailureReason() string {
 
 func (c *stringInLogCheck) EmitSyntheticTestCase() bool {
 	return c.emitSyntheticTestCase
+}
+
+func (c *stringInLogCheck) TestName() string {
+	return c.testName
 }
 
 // StringInLogsChecks returns checks to detect bad strings in certain logs.
