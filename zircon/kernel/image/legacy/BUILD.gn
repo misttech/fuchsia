@@ -4,6 +4,8 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/zircon/levels.gni")
+import("//build/zbi/kernel_cmdline.gni")
 import("//zircon/kernel/kernel_image.gni")
 import("//zircon/kernel/kernel_package.gni")
 
@@ -21,4 +23,23 @@ kernel_image("legacy") {
     ":zircon",
     "//zircon/kernel/phys:physboot",
   ]
+}
+
+kernel_cmdline("legacy.test-data-deps") {
+  testonly = true
+  visibility = [ "//zircon/kernel/image/*" ]
+
+  args = []
+
+  # Only add this switch if we're building with ZX_DEBUG_ASSERT enabled
+  # in the kernel, or we'll trigger a panic on kernel start. Some kernel
+  # code asserts that this switch is only set for a debug configuration.
+  if (zx_assert_level > 1) {
+    args += [
+      "kernel.pmm.alloc-random-should-wait=true",
+      "kernel.compression.random-debug-compress=true",
+    ]
+  }
+
+  deps = [ "//zircon/kernel/image:common-test-boot-options" ]
 }

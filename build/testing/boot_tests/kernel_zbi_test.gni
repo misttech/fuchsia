@@ -202,11 +202,11 @@ template("kernel_zbi_test") {
 
     zbi_test(zbi_test_target) {
       assert(current_cpu != "")
-      deps = []
       data_deps = []
       forward_variables_from(invoker,
                              "*",
                              [
+                               "deps",
                                "generate_cuckoo",
                                "visibility",
                              ])
@@ -214,7 +214,17 @@ template("kernel_zbi_test") {
       if (defined(visibility)) {
         visibility += [ ":* " ]
       }
-      deps += [ "//zircon/kernel/image/$image" ]
+
+      # Order matters: whe deliberately append the invoker's deps after the
+      # image-specific test data deps, as the invoker may intend to override
+      # certain settings.
+      deps = [
+        "//zircon/kernel/image/$image",
+        "//zircon/kernel/image/$image:$image.test-data-deps",
+      ]
+      if (defined(invoker.deps)) {
+        deps += invoker.deps
+      }
     }
 
     main_deps += [ ":$zbi_test_target" ]

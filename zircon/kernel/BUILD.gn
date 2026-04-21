@@ -72,10 +72,7 @@ if (!is_efi_toolchain) {
   template("kernel_unittests_boot_test") {
     kernel_shell_script_test(target_name) {
       environments = kernel_test_environments
-      deps = [
-        ":kernel($default_test_kernel_switchset)",
-        "//zircon/system/utest/core:core-tests-standalone.args",
-      ]
+      deps = [ "//zircon/kernel/image/${default_kernel_test_image}" ]
       script = [
         "ut all",
         "and ut -r 10 timer",

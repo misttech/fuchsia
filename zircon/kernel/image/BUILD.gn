@@ -4,6 +4,8 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/zbi/kernel_cmdline.gni")
+
 #
 # Any targets common to multiple images may be put here.
 #
@@ -16,5 +18,22 @@ group("common-package-items") {
     "//zircon/kernel/lib/userabi/userboot",
     "//zircon/kernel/lib/userabi/vdso",
     "//zircon/kernel/lib/version:version-string.txt",
+  ]
+}
+
+# The current set of kernel boot options common to all images when under test.
+kernel_cmdline("common-test-boot-options") {
+  testonly = true
+  args = [
+    "kernel.vdso.always_use_next=true",
+    "kernel.enable-debugging-syscalls=true",
+    "kernel.test.ram.reserve=0x8000",
+    "kernel.compression.strategy=lz4",
+    "kernel.compression.storage-strategy=slot",
+    "kernel.compression.reclaim_anonymous=true",
+    "kernel.compression.reclaim_zero_forks=true",
+    "kernel.ppb.borrow-on-mru=true",
+    "kernel.ppb.loan=true",
+    "kernel.stack.canary-percent-free=10",
   ]
 }

@@ -247,9 +247,6 @@ if (is_fuchsia) {
 
     deps += all_bootfs_tests + unified_only
 
-    # These arguments are always needed in the ZBI to run this executable.
-    data_deps = [ ":core-tests-standalone.args" ]
-
     # LTO for this target requires a massive amount of memory.
     # Remotely: run on a bigger RBE worker
     # Locally: run in a lower-concurrency pool
@@ -259,31 +256,6 @@ if (is_fuchsia) {
       _concurrent_jobs = concurrent_jobs.link_highmem
       configs += _concurrent_jobs.configs
       forward_variables_from(_concurrent_jobs.vars, "*")
-    }
-  }
-
-  kernel_cmdline("core-tests-standalone.args") {
-    args = [
-      "kernel.vdso.always_use_next=true",
-      "kernel.enable-debugging-syscalls=true",
-      "kernel.test.ram.reserve=0x8000",
-      "kernel.compression.strategy=lz4",
-      "kernel.compression.storage-strategy=slot",
-      "kernel.compression.reclaim_anonymous=true",
-      "kernel.compression.reclaim_zero_forks=true",
-      "kernel.ppb.borrow-on-mru=true",
-      "kernel.ppb.loan=true",
-      "kernel.stack.canary-percent-free=10",
-    ]
-
-    # Only add this switch if we're building with ZX_DEBUG_ASSERT enabled
-    # in the kernel, or we'll trigger a panic on kernel start. Some kernel
-    # code asserts that this switch is only set for a debug configuration.
-    if (zx_assert_level > 1) {
-      args += [
-        "kernel.pmm.alloc-random-should-wait=true",
-        "kernel.compression.random-debug-compress=true",
-      ]
     }
   }
 
@@ -320,8 +292,6 @@ core_tests("core-tests") {
   environments = kernel_test_environments
 }
 
-# Override the earlier one from core-tests-standalone.args (above)
-# by adding this later.
 kernel_cmdline("stable-vdso.args") {
   args = [ "kernel.vdso.always_use_next=false" ]
 }

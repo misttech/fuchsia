@@ -12,3 +12,9 @@ group("eng") {
   testonly = true
   public_deps = [ "//zircon/kernel/image/legacy" ]
 }
+
+# TODO(https://fxbug.dev/371568912): Ditto for this target.
+group("eng.test-data-deps") {
+  testonly = true
+  deps = [ "//zircon/kernel/image/legacy:legacy.test-data-deps" ]
+}
