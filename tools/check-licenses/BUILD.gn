@@ -92,6 +92,7 @@ if (is_host) {
 if (is_host) {
   go_library("v2_readme") {
     sources = [
+      "v2/readme/dart.go",
       "v2/readme/formatter.go",
       "v2/readme/golib.go",
       "v2/readme/locator.go",
@@ -104,6 +105,7 @@ if (is_host) {
     deps = [
       ":v2_pipeline",
       "//third_party/golibs:github.com/BurntSushi/toml",
+      "//third_party/golibs:gopkg.in/yaml.v2",
     ]
   }
 }
@@ -162,6 +164,7 @@ if (is_host) {
 if (is_host) {
   go_test("v2_readme_test") {
     sources = [
+      "v2/readme/dart_test.go",
       "v2/readme/formatter_test.go",
       "v2/readme/golib_test.go",
       "v2/readme/parser_test.go",

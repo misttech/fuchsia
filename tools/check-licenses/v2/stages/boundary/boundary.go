@@ -58,7 +58,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			allFiles = append(allFiles, cleanPath)
 
 			base := filepath.Base(cleanPath)
-			if base == "README.fuchsia" || base == "go.mod" || base == "Cargo.toml" {
+			if base == "README.fuchsia" || base == "go.mod" || base == "Cargo.toml" || base == "pubspec.yaml" {
 				dir := filepath.Dir(cleanPath)
 				// Prioritize README.fuchsia if multiple metadata files exist
 				if existing, ok := physicalReadmes[dir]; !ok || filepath.Base(existing) != "README.fuchsia" {
@@ -88,6 +88,8 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 				parsedReadmes, err = readme.ParseGoMod(readmePath)
 			} else if base == "Cargo.toml" {
 				parsedReadmes, err = readme.ParseCargoToml(readmePath)
+			} else if base == "pubspec.yaml" {
+				parsedReadmes, err = readme.ParsePubspecYaml(readmePath)
 			} else {
 				parsedReadmes, err = readme.ParseFile(readmePath)
 			}

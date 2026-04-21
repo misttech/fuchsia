@@ -90,6 +90,7 @@ go_library(
 go_library(
     name = "v2_readme",
     srcs = [
+        "v2/readme/dart.go",
         "v2/readme/formatter.go",
         "v2/readme/golib.go",
         "v2/readme/locator.go",
@@ -104,6 +105,7 @@ go_library(
     deps = [
         ":v2_pipeline",
         "//third_party/golibs:github.com/BurntSushi/toml",
+        "//third_party/golibs:gopkg.in/yaml.v2",
     ],
 )
 
@@ -181,6 +183,7 @@ go_test(
 go_test(
     name = "v2_readme_test",
     srcs = [
+        "v2/readme/dart_test.go",
         "v2/readme/formatter_test.go",
         "v2/readme/golib_test.go",
         "v2/readme/parser_test.go",
