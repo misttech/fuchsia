@@ -172,6 +172,9 @@
                 // TODO(https://fxbug.dev/322875215): Requires correct superblock MS_RDONLY support.
                 "MountTest.RemountReadOnlyToReadWriteIgnored",
                 "MountTest/ProcMountinfoSuperblockFlagsTest.FlagReporting/MS_RDONLY",
+
+                // TODO(https://fxbug.dev/503425074): Fix and re-enable.
+                "ScmCredentialsTest.ForgeryNonExistingPid",
             ],
         },
     ],

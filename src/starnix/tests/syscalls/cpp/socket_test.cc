@@ -1322,52 +1322,57 @@ class ScmCredentialsTest : public testing::Test {
     bool has_cap_setgid = false;
   };
 
+  struct Outcome {
+    bool success = false;
+    int error;
+  };
+
   void TestForgery(std::optional<pid_t> forged_pid, uid_t forged_uid, gid_t forged_gid,
-                   SenderCredentials sender, Caps caps, bool expect_success) {
+                   SenderCredentials sender, Caps caps, Outcome expected_outcome) {
     test_helper::ForkHelper helper;
-    helper.RunInForkedProcess(
-        [this, forged_pid, forged_uid, forged_gid, sender, caps, expect_success] {
-          ASSERT_EQ(0, prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0));
+    helper.RunInForkedProcess([this, forged_pid, forged_uid, forged_gid, sender, caps,
+                               expected_outcome] {
+      ASSERT_EQ(0, prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0));
 
-          ASSERT_THAT(setresgid(sender.gid, sender.egid, sender.sgid), SyscallSucceeds());
-          ASSERT_THAT(setresuid(sender.uid, sender.euid, sender.suid), SyscallSucceeds());
+      ASSERT_THAT(setresgid(sender.gid, sender.egid, sender.sgid), SyscallSucceeds());
+      ASSERT_THAT(setresuid(sender.uid, sender.euid, sender.suid), SyscallSucceeds());
 
-          if (caps.has_cap_sys_admin) {
-            test_helper::SetCapabilityEffective(CAP_SYS_ADMIN);
-          } else {
-            test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
-          }
+      if (caps.has_cap_sys_admin) {
+        test_helper::SetCapabilityEffective(CAP_SYS_ADMIN);
+      } else {
+        test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+      }
 
-          if (caps.has_cap_setuid) {
-            test_helper::SetCapabilityEffective(CAP_SETUID);
-          } else {
-            test_helper::UnsetCapabilityEffective(CAP_SETUID);
-          }
+      if (caps.has_cap_setuid) {
+        test_helper::SetCapabilityEffective(CAP_SETUID);
+      } else {
+        test_helper::UnsetCapabilityEffective(CAP_SETUID);
+      }
 
-          if (caps.has_cap_setgid) {
-            test_helper::SetCapabilityEffective(CAP_SETGID);
-          } else {
-            test_helper::UnsetCapabilityEffective(CAP_SETGID);
-          }
+      if (caps.has_cap_setgid) {
+        test_helper::SetCapabilityEffective(CAP_SETGID);
+      } else {
+        test_helper::UnsetCapabilityEffective(CAP_SETGID);
+      }
 
-          struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg_);
-          cmsg->cmsg_level = SOL_SOCKET;
-          cmsg->cmsg_type = SCM_CREDENTIALS;
-          cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+      struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg_);
+      cmsg->cmsg_level = SOL_SOCKET;
+      cmsg->cmsg_type = SCM_CREDENTIALS;
+      cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
 
-          struct ucred cred;
-          cred.pid = forged_pid.value_or(getpid());
-          cred.uid = forged_uid;
-          cred.gid = forged_gid;
+      struct ucred cred;
+      cred.pid = forged_pid.value_or(getpid());
+      cred.uid = forged_uid;
+      cred.gid = forged_gid;
 
-          fbl::UnalignedStore(CMSG_DATA(cmsg), cred);
+      fbl::UnalignedStore(CMSG_DATA(cmsg), cred);
 
-          if (expect_success) {
-            EXPECT_THAT(sendmsg(sv_[0].get(), &msg_, 0), SyscallSucceeds());
-          } else {
-            EXPECT_THAT(sendmsg(sv_[0].get(), &msg_, 0), SyscallFailsWithErrno(EPERM));
-          }
-        });
+      if (expected_outcome.success) {
+        EXPECT_THAT(sendmsg(sv_[0].get(), &msg_, 0), SyscallSucceeds());
+      } else {
+        EXPECT_THAT(sendmsg(sv_[0].get(), &msg_, 0), SyscallFailsWithErrno(expected_outcome.error));
+      }
+    });
     ASSERT_TRUE(helper.WaitForChildren());
   }
 
@@ -1384,10 +1389,32 @@ TEST_F(ScmCredentialsTest, ForgeryPid) {
       .uid = 100, .euid = 100, .suid = 100, .gid = 200, .egid = 200, .sgid = 200};
 
   // PID mismatch rejected
-  TestForgery(1, 100, 200, sender, no_caps, false);
+  TestForgery(1, 100, 200, sender, no_caps, {.error = EPERM});
 
   // PID mismatch allowed by CAP_SYS_ADMIN
-  TestForgery(1, 100, 200, sender, {.has_cap_sys_admin = true}, true);
+  TestForgery(1, 100, 200, sender, {.has_cap_sys_admin = true}, {.success = true});
+}
+
+TEST_F(ScmCredentialsTest, ForgeryNonExistingPid) {
+  Caps no_caps = {};
+  SenderCredentials sender = {
+      .uid = 100, .euid = 100, .suid = 100, .gid = 200, .egid = 200, .sgid = 200};
+
+  // PID of a process that has already exited.
+  pid_t dead_pid;
+  {
+    test_helper::ForkHelper helper;
+    dead_pid = helper.RunInForkedProcess([] {});
+    ASSERT_TRUE(helper.WaitForChildren());
+  }
+
+  // Nonexisting PID not allowed
+  TestForgery(-1, 100, 200, sender, no_caps, {.error = EPERM});
+  TestForgery(dead_pid, 100, 200, sender, no_caps, {.error = EPERM});
+
+  // Nonexisting PID not allowed even if we have CAP_SYS_ADMIN
+  TestForgery(-1, 100, 200, sender, {.has_cap_sys_admin = true}, {.error = ESRCH});
+  TestForgery(dead_pid, 100, 200, sender, {.has_cap_sys_admin = true}, {.error = ESRCH});
 }
 
 TEST_F(ScmCredentialsTest, ForgeryUid) {
@@ -1396,15 +1423,15 @@ TEST_F(ScmCredentialsTest, ForgeryUid) {
       .uid = 100, .euid = 101, .suid = 102, .gid = 200, .egid = 200, .sgid = 200};
 
   // UID mismatch (matches none of ruid, euid, suid) rejected
-  TestForgery(std::nullopt, 103, 200, sender, no_caps, false);
+  TestForgery(std::nullopt, 103, 200, sender, no_caps, {.error = EPERM});
 
   // UID mismatch allowed by CAP_SETUID
-  TestForgery(std::nullopt, 103, 200, sender, {.has_cap_setuid = true}, true);
+  TestForgery(std::nullopt, 103, 200, sender, {.has_cap_setuid = true}, {.success = true});
 
   // Success if at least one UID matches
-  TestForgery(std::nullopt, 100, 200, sender, no_caps, true);
-  TestForgery(std::nullopt, 101, 200, sender, no_caps, true);
-  TestForgery(std::nullopt, 102, 200, sender, no_caps, true);
+  TestForgery(std::nullopt, 100, 200, sender, no_caps, {.success = true});
+  TestForgery(std::nullopt, 101, 200, sender, no_caps, {.success = true});
+  TestForgery(std::nullopt, 102, 200, sender, no_caps, {.success = true});
 }
 
 TEST_F(ScmCredentialsTest, ForgeryGid) {
@@ -1413,13 +1440,13 @@ TEST_F(ScmCredentialsTest, ForgeryGid) {
       .uid = 100, .euid = 100, .suid = 100, .gid = 200, .egid = 201, .sgid = 202};
 
   // GID mismatch (matches none of rgid, egid, sgid) rejected
-  TestForgery(std::nullopt, 100, 203, sender, no_caps, false);
+  TestForgery(std::nullopt, 100, 203, sender, no_caps, {.error = EPERM});
 
   // GID mismatch allowed by CAP_SETGID
-  TestForgery(std::nullopt, 100, 203, sender, {.has_cap_setgid = true}, true);
+  TestForgery(std::nullopt, 100, 203, sender, {.has_cap_setgid = true}, {.success = true});
 
   // Success if at least one GID matches
-  TestForgery(std::nullopt, 100, 200, sender, no_caps, true);
-  TestForgery(std::nullopt, 100, 201, sender, no_caps, true);
-  TestForgery(std::nullopt, 100, 202, sender, no_caps, true);
+  TestForgery(std::nullopt, 100, 200, sender, no_caps, {.success = true});
+  TestForgery(std::nullopt, 100, 201, sender, no_caps, {.success = true});
+  TestForgery(std::nullopt, 100, 202, sender, no_caps, {.success = true});
 }
