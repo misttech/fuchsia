@@ -40,11 +40,13 @@ class LuisPartitioner : public DevicePartitioner {
   zx::result<> OnStop() const override { return zx::ok(); }
 
  private:
-  explicit LuisPartitioner(std::unique_ptr<GptDevicePartitioner> gpt) : gpt_(std::move(gpt)) {}
+  LuisPartitioner(std::unique_ptr<GptDevicePartitioner> gpt, BlockDevices non_gpt_devices)
+      : gpt_(std::move(gpt)), non_gpt_devices_(std::move(non_gpt_devices)) {}
 
   zx::result<std::unique_ptr<PartitionClient>> GetBootloaderPartitionClient() const;
 
   std::unique_ptr<GptDevicePartitioner> gpt_;
+  BlockDevices non_gpt_devices_;
 };
 
 class LuisPartitionerFactory : public DevicePartitionerFactory {

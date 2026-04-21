@@ -1158,16 +1158,24 @@ class LuisPartitionerTests : public GptDevicePartitionerTests {
  protected:
   LuisPartitionerTests() : GptDevicePartitionerTests("luis", 512, "_a") {}
 
+  IsolatedDevmgr::Args BaseDevmgrArgs() override {
+    IsolatedDevmgr::Args args = GptDevicePartitionerTests::BaseDevmgrArgs();
+    args.enable_storage_host = true;
+    return args;
+  }
+
   // Create a DevicePartition for a device.
   zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(
-      fidl::ClientEnd<fuchsia_device::Controller> device = {}) {
-    fidl::ClientEnd<fuchsia_io::Directory> svc_root = RealmExposedDir();
+      BlockDevice* gpt = nullptr) {
     zx::result devices = CreateBlockDevices();
+    if (devices.is_error()) {
+      return devices.take_error();
+    }
     auto paver_config = paver::PaverConfig{
         .arch = paver::Arch::kArm64,
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
-    return paver::LuisPartitioner::Initialize(*devices, svc_root, paver_config, std::move(device));
+    return paver::LuisPartitioner::Initialize(*devices, RealmExposedDir(), paver_config, {});
   }
 };
 
@@ -1175,7 +1183,7 @@ TEST_F(LuisPartitionerTests, InitializeWithoutGptFails) {
   std::unique_ptr<BlockDevice> gpt_dev;
   ASSERT_NO_FATAL_FAILURE(CreateDisk(&gpt_dev));
 
-  ASSERT_NOT_OK(CreatePartitioner({}));
+  ASSERT_NOT_OK(CreatePartitioner());
 }
 
 TEST_F(LuisPartitionerTests, InitializeWithoutFvmFails) {
@@ -1208,7 +1216,7 @@ TEST_F(LuisPartitionerTests, FindPartition) {
                             {GPT_FVM_NAME, Uuid(kDummyType), 0xe0400, 0x10000},
                         }));
 
-  zx::result status = CreatePartitioner(gpt_dev->ConnectToLegacyController());
+  zx::result status = CreatePartitioner(gpt_dev.get());
   ASSERT_OK(status);
   std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
 
@@ -1265,7 +1273,7 @@ TEST_F(LuisPartitionerTests, SupportsPartition) {
                             {GPT_DURABLE_BOOT_NAME, Uuid(kDurableBootType), 0x10400, 0x10000},
                             {GPT_FVM_NAME, Uuid(kNewFvmType), 0x20400, 0x10000},
                         }));
-  zx::result status = CreatePartitioner(gpt_dev->ConnectToLegacyController());
+  zx::result status = CreatePartitioner(gpt_dev.get());
   ASSERT_OK(status);
   std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
 
