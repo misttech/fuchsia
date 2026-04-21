@@ -17,6 +17,9 @@ rustc_library("block_protocol") {
 }
 
 source_set("block_fifo") {
-  sources = [ "block-fifo.h" ]
+  sources = [
+    "block-fifo.h",
+    "types.h",
+  ]
   public_deps = [ "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp" ]
 }

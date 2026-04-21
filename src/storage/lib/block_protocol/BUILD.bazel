@@ -6,7 +6,10 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "block_fifo",
-    hdrs = ["block-fifo.h"],
+    hdrs = [
+        "block-fifo.h",
+        "types.h",
+    ],
     include_prefix = "lib/driver/mock-mmio/cpp",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = ["@fuchsia_sdk//fidl/fuchsia.storage.block:fuchsia.storage.block_cpp"],
