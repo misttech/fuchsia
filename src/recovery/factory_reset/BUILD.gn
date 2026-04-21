@@ -29,11 +29,6 @@ source_set("lib") {
     "//sdk/lib/fdio",
     "//sdk/lib/syslog/cpp",
     "//src/security/lib/kms-stateless",
-    "//src/security/lib/zxcrypt:zxcrypt-client",
-    "//src/storage/lib/block_client/cpp",
-    "//src/storage/lib/fs_management",
-    "//zircon/system/ulib/fdio-caller",
-    "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
   ]
 
@@ -114,15 +109,9 @@ test("factory_reset_unittests") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
-    "//src/devices/testing/driver-integration-test-shim",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
-    "//src/lib/uuid",
-    "//src/security/lib/fcrypto",
-    "//src/security/lib/zxcrypt:zxcrypt-client",
     "//src/storage/lib/block_client/cpp",
-    "//src/storage/lib/fs_management",
-    "//src/storage/lib/ramdevice_client/cpp",
     "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fdio-caller",
@@ -140,15 +129,7 @@ fuchsia_unittest_package("factory_reset_tests_pkg") {
     }
   }
 
-  deps = [
-    ":factory_reset_unittests",
-    "//src/devices/block/drivers/core",
-    "//src/devices/block/drivers/ftl",
-    "//src/devices/block/drivers/ramdisk",
-    "//src/devices/block/drivers/zxcrypt",
-    "//src/devices/bus/drivers/platform",
-    "//src/storage/fvm/driver",
-  ]
+  deps = [ ":factory_reset_unittests" ]
 }
 
 group("factory_reset_tests") {
