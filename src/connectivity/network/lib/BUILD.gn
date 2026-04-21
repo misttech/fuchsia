@@ -10,6 +10,7 @@ group("tests") {
     "net_interfaces:tests",
     "netfilter:tests",
     "oneshot-sync:tests",
+    "pcap:tests",
     "sockaddr:tests",
     "todo_unused:tests",
   ]
