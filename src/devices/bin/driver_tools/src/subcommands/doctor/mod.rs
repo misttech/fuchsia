@@ -396,6 +396,25 @@ fn diagnose_composite_match<P: DiagnosableParent>(
             }
         }
     }
+
+    let mut unmatched_parents = Vec::new();
+    for p_idx in 0..parents.len() {
+        if !matched_parents.contains(&p_idx) {
+            unmatched_parents.push(p_idx);
+        }
+    }
+
+    if !unmatched_parents.is_empty() {
+        writeln!(
+            writer,
+            "\n  ERROR: Driver bind rules missing matches for {} parents in the spec.",
+            unmatched_parents.len()
+        )?;
+        for p_idx in unmatched_parents {
+            writeln!(writer, "  Parent {} is unmatched.", p_idx)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -1543,5 +1562,83 @@ mod tests {
         assert_eq!(keys.len(), 2);
         assert!(keys.contains(&PropertyKey::NumberKey(1)));
         assert!(keys.contains(&PropertyKey::StringKey("key_str".to_string())));
+    }
+
+    #[test]
+    fn test_diagnose_composite_match_missing_parents() {
+        struct MockParent {
+            properties: DeviceProperties,
+        }
+
+        impl DiagnosableParent for MockParent {
+            fn to_properties(&self) -> DeviceProperties {
+                self.properties.clone()
+            }
+            fn evaluate_bind_rules(&self, _properties: &DeviceProperties) -> Vec<Diagnostic> {
+                vec![]
+            }
+            fn is_fuzzy_match(&self, _properties: &DeviceProperties) -> bool {
+                true
+            }
+        }
+
+        let symbol_table = HashMap::new();
+
+        // Primary parent instructions: property 1 == 100
+        let mut primary_instructions = vec![RawOp::EqualCondition as u8];
+        primary_instructions.push(RawValueType::NumberValue as u8);
+        primary_instructions.extend_from_slice(&1u32.to_le_bytes());
+        primary_instructions.push(RawValueType::NumberValue as u8);
+        primary_instructions.extend_from_slice(&100u32.to_le_bytes());
+
+        // Additional parent instructions: property 2 == 200
+        let mut additional_instructions = vec![RawOp::EqualCondition as u8];
+        additional_instructions.push(RawValueType::NumberValue as u8);
+        additional_instructions.extend_from_slice(&2u32.to_le_bytes());
+        additional_instructions.push(RawValueType::NumberValue as u8);
+        additional_instructions.extend_from_slice(&200u32.to_le_bytes());
+
+        let rules = DecodedCompositeBindRules {
+            symbol_table,
+            device_name_id: 0,
+            primary_parent: bind::interpreter::decode_bind_rules::Parent {
+                name_id: 0,
+                instructions: primary_instructions,
+                decoded_instructions: vec![],
+            },
+            additional_parents: vec![bind::interpreter::decode_bind_rules::Parent {
+                name_id: 0,
+                instructions: additional_instructions,
+                decoded_instructions: vec![],
+            }],
+            optional_parents: vec![],
+            debug_info: None,
+        };
+
+        let mut props1 = HashMap::new();
+        props1.insert(PropertyKey::NumberKey(1), Symbol::NumberValue(100));
+
+        let mut props2 = HashMap::new();
+        props2.insert(PropertyKey::NumberKey(2), Symbol::NumberValue(200));
+
+        let mut props3 = HashMap::new();
+        props3.insert(PropertyKey::NumberKey(3), Symbol::NumberValue(300));
+
+        let parents = vec![
+            MockParent { properties: props1 },
+            MockParent { properties: props2 },
+            MockParent { properties: props3 }, // This one should be unmatched
+        ];
+
+        let mut output = Vec::new();
+        let result = diagnose_composite_match(&rules, &parents, &mut output);
+        assert!(result.is_ok());
+
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(
+            output_str
+                .contains("ERROR: Driver bind rules missing matches for 1 parents in the spec.")
+        );
+        assert!(output_str.contains("Parent 2 is unmatched."));
     }
 }
