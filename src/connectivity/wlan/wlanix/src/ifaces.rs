@@ -1350,6 +1350,7 @@ pub mod test_utils {
         mock_create_client_iface_result: Result<u16, Error>,
         mock_destroy_client_iface_result: Result<(), Error>,
         mock_power_up_result: Result<(), Error>,
+        mock_power_down_result: Result<(), Error>,
         mock_reset_tx_power_scenario_result: Result<(), Error>,
         mock_set_tx_power_scenario_result: Result<(), Error>,
         mock_reset_phy_result: Result<(), Error>,
@@ -1367,6 +1368,7 @@ pub mod test_utils {
                 mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
                 mock_destroy_client_iface_result: Ok(()),
                 mock_power_up_result: Ok(()),
+                mock_power_down_result: Ok(()),
                 mock_reset_tx_power_scenario_result: Ok(()),
                 mock_set_tx_power_scenario_result: Ok(()),
                 mock_reset_phy_result: Ok(()),
@@ -1424,6 +1426,10 @@ pub mod test_utils {
 
         pub fn mock_power_up_failure(self) -> Self {
             Self { mock_power_up_result: Err(format_err!("mocked PowerUp failure")), ..self }
+        }
+
+        pub fn mock_power_down_failure(self) -> Self {
+            Self { mock_power_down_result: Err(format_err!("mocked PowerDown failure")), ..self }
         }
 
         pub fn mock_reset_tx_power_scenario_failure(self) -> Self {
@@ -1555,8 +1561,13 @@ pub mod test_utils {
 
         async fn power_down(&self, phy_id: u16) -> Result<(), Error> {
             self.calls.lock().push(IfaceManagerCall::PowerDown(phy_id));
-            *self.power_state.lock() = false;
-            Ok(())
+            match &self.mock_power_down_result {
+                Ok(()) => {
+                    *self.power_state.lock() = false;
+                    Ok(())
+                }
+                Err(e) => bail!("{e}"),
+            }
         }
 
         async fn power_up(&self, phy_id: u16) -> Result<(), Error> {

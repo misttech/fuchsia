@@ -662,6 +662,7 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
                         );
                         driver_stopped = false;
                         result = Err(zx::sys::ZX_ERR_BAD_STATE);
+                        telemetry_sender.send(TelemetryEvent::ChipPowerDownFailure);
                     }
                 } else {
                     warn!("Phy {} already stopped", phy_id);
@@ -6542,5 +6543,27 @@ mod tests {
 
         let iface_calls = test_helper.iface_manager.get_iface_call_history();
         assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::ReadApfPacketFilterData);
+    }
+
+    #[fuchsia::test]
+    fn test_wifi_stop_failure_logs_telemetry() {
+        let iface_manager = TestIfaceManager::new().mock_power_down_failure();
+        let (mut test_helper, mut test_fut) = setup_wifi_test_with_iface_manager(iface_manager);
+
+        let stop_fut = test_helper.wifi_proxy.stop();
+        let mut stop_fut = pin!(stop_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut stop_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut stop_fut),
+            Poll::Ready(Ok(response)) => response
+        );
+        assert_matches!(response, Err(_));
+
+        assert_matches!(
+            test_helper.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ChipPowerDownFailure))
+        );
     }
 }
