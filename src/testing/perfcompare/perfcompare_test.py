@@ -426,17 +426,17 @@ class StatisticsTest(TempDirTestCase):
         # sizes do not match the "--expected_sample_size" argument.
         error = (
             "^The following metrics had an unexpected sample size"
-            " \(expected <=3\):\n"
-            "  example_suite: ExampleTest \(got 4\)\n"
-            "  example_suite: ExampleTest \(got 5\)$"
+            r" \(expected <=3\):\n"
+            r"  example_suite: ExampleTest \(got 4\)\n"
+            r"  example_suite: ExampleTest \(got 5\)$"
         )
         with self.assertRaisesRegex(AssertionError, error):
             ComparePerf([dir1_path, dir2_path], expected_sample_size=3)
         # We should get a similar error if we pass only one directory.
         error = (
             "^The following metrics had an unexpected sample size"
-            " \(expected <=3\):\n"
-            "  example_suite: ExampleTest \(got 4\)$"
+            r" \(expected <=3\):\n"
+            r"  example_suite: ExampleTest \(got 4\)$"
         )
         with self.assertRaisesRegex(AssertionError, error):
             ComparePerf([dir1_path], expected_sample_size=3)
