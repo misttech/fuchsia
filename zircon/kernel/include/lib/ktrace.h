@@ -655,7 +655,6 @@ class KTrace {
   // The meaning of the options changes based on the action. If the action is to start tracing,
   // then the options field functions as the group mask.
   zx_status_t Control(uint32_t action, uint32_t options) TA_EXCL(lock_) {
-    Guard<Mutex> guard{&lock_};
     switch (action) {
       case KTRACE_ACTION_START:
       case KTRACE_ACTION_START_CIRCULAR:
@@ -973,20 +972,17 @@ class KTrace {
   // should be a no-op. This should only be called from the InitHook.
   void Init(uint32_t bufsize, uint32_t initial_grpmask) TA_EXCL(lock_);
 
-  // Allocate our per-CPU buffers.
-  zx_status_t Allocate() TA_REQ(lock_);
-
   // Start collecting trace data.
   // `action` must be one of KTRACE_ACTION_START or KTRACE_ACTION_START_CIRCULAR.
   // `categories` is the set of categories to trace. Cannot be zero.
   // TODO(https://fxbug.dev/404539312): The `action` argument is unnecessary once we switch to
   // the per-CPU streaming implementation by default.
-  zx_status_t Start(uint32_t action, uint32_t categories) TA_REQ(lock_);
+  zx_status_t Start(uint32_t action, uint32_t categories) TA_EXCL(lock_);
   // Stop collecting trace data.
-  zx_status_t Stop() TA_REQ(lock_);
+  zx_status_t Stop() TA_EXCL(lock_);
   // Rewinds the buffer, meaning that all contained trace data is dropped and the buffer is reset
   // to its initial state.
-  zx_status_t Rewind() TA_REQ(lock_);
+  zx_status_t Rewind() TA_EXCL(lock_);
 
   // Returns true if the given category is enabled for tracing.
   bool IsCategoryEnabled(const fxt::InternedCategory& category) const {

@@ -27,6 +27,7 @@ sampler::ThreadSampler gThreadSampler{};
 }  // namespace sampler
 
 zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
+  fbl::Array<sampler::internal::PerCpuState> per_cpu_state;
   Guard<Mutex> guard(ThreadSamplerLock::Get());
   SamplingState state = State();
   if (state != SamplingState::Unallocated && state != SamplingState::Allocated) {
@@ -34,32 +35,52 @@ zx::result<> sampler::ThreadSampler::SetUp(const zx_sampler_config_t& config) {
   }
 
   const size_t num_cpus = percpu::processor_count();
-
   if (!per_cpu_state_) {
-    fbl::AllocChecker ac;
-    fbl::Array<sampler::internal::PerCpuState> per_cpu_state =
-        fbl::MakeArray<sampler::internal::PerCpuState>(&ac, num_cpus);
-    if (!ac.check()) {
-      return zx::error(ZX_ERR_NO_MEMORY);
-    }
-
-    // Even though the buffer is per_cpu, we are fine to set up each cpu state here on a single cpu.
-    // When we start sampling, we call mp_sync_exec which will synchronize the written
-    // per_cpu_states.
-    for (unsigned i = 0; i < num_cpus; i++) {
-      if (zx::result<> setup_result = per_cpu_state[i].SetUp(config, i); setup_result.is_error()) {
-        return setup_result.take_error();
+    // Perform the allocations for the state without the lock held as this may potentially block
+    // waiting for memory.
+    zx::result<> result;
+    guard.CallUnlocked([&]() {
+      fbl::AllocChecker ac;
+      per_cpu_state = fbl::MakeArray<sampler::internal::PerCpuState>(&ac, num_cpus);
+      if (!ac.check()) {
+        result = zx::error(ZX_ERR_NO_MEMORY);
+        return;
       }
-    }
 
-    per_cpu_state_ = ktl::move(per_cpu_state);
-  } else {
+      // Even though the buffer is per_cpu, we are fine to set up each cpu state here on a single
+      // cpu. When we start sampling, we call mp_sync_exec which will synchronize the written
+      // per_cpu_states.
+      for (unsigned i = 0; i < num_cpus; i++) {
+        if (zx::result<> setup_result = per_cpu_state[i].SetUp(config, i);
+            setup_result.is_error()) {
+          result = setup_result.take_error();
+          return;
+        }
+      }
+    });
+    // Propagate any errors.
+    if (result.is_error()) {
+      return result;
+    }
+    // Reload and check state again as it may have changed while the lock was dropped.
+    state = State();
+    if (state != SamplingState::Unallocated && state != SamplingState::Allocated) {
+      return zx::error(ZX_ERR_ALREADY_EXISTS);
+    }
+  }
+  // Re-check whether there is per_cpu_state_ as this may have changed while the lock was dropped.
+  // If we raced and someone else allocated state before us this is fine and we will just drop the
+  // local allocation.
+  if (per_cpu_state_) {
     // We don't have a method of atomically tracking outstanding sample request, so it's possible
     // that an outstanding sample has a reference to the per_cpu_states. Instead, we Clear the
     // buffers which is safe as we use a lockless spsc buffer.
     for (unsigned i = 0; i < num_cpus; i++) {
       per_cpu_state_[i].Drain();
     }
+  } else {
+    ASSERT(per_cpu_state);
+    per_cpu_state_ = ktl::move(per_cpu_state);
   }
 
   SetState(SamplingState::Configured);

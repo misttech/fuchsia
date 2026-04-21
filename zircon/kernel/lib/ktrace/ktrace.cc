@@ -79,40 +79,6 @@ void SetupCategoryBits() {
 
 KTrace KTrace::instance_;
 
-zx_status_t KTrace::Allocate() {
-  if (percpu_buffers_) {
-    return ZX_OK;
-  }
-
-  // The number of buffers to initialize and their size should be set before this method is called.
-  DEBUG_ASSERT(num_buffers_ != 0);
-  DEBUG_ASSERT(buffer_size_ != 0);
-
-  // Allocate the per-CPU SPSC buffer data structures.
-  // Initially, store the unique pointer in a local variable. This will ensure that the buffers are
-  // destructed upon initialization below.
-  fbl::AllocChecker ac;
-  ktl::unique_ptr buffers = ktl::make_unique<percpu_writer::Buffer[]>(&ac, num_buffers_);
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
-
-  // Initialize each per-CPU buffer by allocating the storage used to back it.
-  for (uint32_t i = 0; i < num_buffers_; i++) {
-    const zx_status_t status =
-        buffers[i].Init(buffer_size_, "ktrace", cpu_context_map_.GetCpuRef(i));
-    if (status != ZX_OK) {
-      // Any allocated buffers will be destructed when we return.
-      DiagsPrintf(INFO, "ktrace: cannot alloc buffer %u: %d\n", i, status);
-      return ZX_ERR_NO_MEMORY;
-    }
-  }
-
-  // Take ownership of the newly created per-CPU buffers.
-  percpu_buffers_ = ktl::move(buffers);
-  return ZX_OK;
-}
-
 zx::result<KTrace::Reservation> KTrace::Reserve(uint64_t header) {
   DEBUG_ASSERT(arch_ints_disabled());
 
@@ -174,11 +140,48 @@ void KTrace::ReportMetadata() {
   ktrace_report_live_threads();
 }
 
-zx_status_t KTrace::Start(uint32_t, uint32_t categories) {
-  // Allocate the buffers. This will be a no-op if the buffers are already initialized.
-  if (zx_status_t status = Allocate(); status != ZX_OK) {
-    return status;
+zx_status_t KTrace::Start(uint32_t action, uint32_t categories) {
+  Guard<Mutex> guard{&lock_};
+
+  if (!percpu_buffers_) {
+    // Perform the allocations of the buffers here in the stack without any locks held as the
+    // allocation process may need to block waiting for memory.
+    uint32_t num_buffers = num_buffers_;
+    uint32_t buffer_size = buffer_size_;
+    zx_status_t status = ZX_OK;
+    ktl::unique_ptr<percpu_writer::Buffer[]> buffers;
+    guard.CallUnlocked([&]() {
+      fbl::AllocChecker ac;
+      buffers = ktl::make_unique<percpu_writer::Buffer[]>(&ac, num_buffers);
+      if (!ac.check()) {
+        status = ZX_ERR_NO_MEMORY;
+        return;
+      }
+
+      // Initialize each per-CPU buffer by allocating the storage used to back it.
+      for (uint32_t i = 0; i < num_buffers; i++) {
+        const zx_status_t init_status =
+            buffers[i].Init(buffer_size, "ktrace", cpu_context_map_.GetCpuRef(i));
+        if (init_status != ZX_OK) {
+          // Any allocated buffers will be destructed when we return.
+          DiagsPrintf(INFO, "ktrace: cannot alloc buffer %u: %d\n", i, init_status);
+          status = ZX_ERR_NO_MEMORY;
+          return;
+        }
+      }
+    });
+    // Propagate any errors.
+    if (status != ZX_OK) {
+      return status;
+    }
+    // May have raced with another call to Start, in which case we'll just drop the buffers we
+    // allocated and use the new ones we found.
+    if (!percpu_buffers_) {
+      percpu_buffers_ = ktl::move(buffers);
+    }
   }
+
+  ASSERT(percpu_buffers_);
 
   // If writes are already enabled, then a trace session is already in progress and all we need to
   // do is set the categories bitmask and return.
@@ -208,18 +211,20 @@ zx_status_t KTrace::Start(uint32_t, uint32_t categories) {
 }
 
 void KTrace::Init(uint32_t bufsize, uint32_t initial_grpmask) {
-  Guard<Mutex> guard{&lock_};
+  {
+    Guard<Mutex> guard{&lock_};
 
-  ASSERT_MSG(buffer_size_ == 0, "KTrace::Init called twice");
-  // Allocate the KOIDs used to annotate CPU trace records.
-  cpu_context_map_.Init();
+    ASSERT_MSG(buffer_size_ == 0, "KTrace::Init called twice");
+    // Allocate the KOIDs used to annotate CPU trace records.
+    cpu_context_map_.Init();
 
-  // Compute the per-CPU buffer size, ensuring that the resulting value is a power of two.
-  num_buffers_ = arch_max_num_cpus();
-  const uint32_t raw_percpu_bufsize = bufsize / num_buffers_;
-  DEBUG_ASSERT(raw_percpu_bufsize > 0);
-  const int leading_zeros = __builtin_clz(raw_percpu_bufsize);
-  buffer_size_ = 1u << (31 - leading_zeros);
+    // Compute the per-CPU buffer size, ensuring that the resulting value is a power of two.
+    num_buffers_ = arch_max_num_cpus();
+    const uint32_t raw_percpu_bufsize = bufsize / num_buffers_;
+    DEBUG_ASSERT(raw_percpu_bufsize > 0);
+    const int leading_zeros = __builtin_clz(raw_percpu_bufsize);
+    buffer_size_ = 1u << (31 - leading_zeros);
+  }
 
   // If the initial_grpmask was zero, then we can delay allocation of the KTrace buffer.
   if (initial_grpmask == 0) {
@@ -230,6 +235,8 @@ void KTrace::Init(uint32_t bufsize, uint32_t initial_grpmask) {
 }
 
 zx_status_t KTrace::Stop() {
+  Guard<Mutex> guard{&lock_};
+
   // Calling Stop on an uninitialized KTrace buffer is a no-op.
   if (!percpu_buffers_) {
     return ZX_OK;
@@ -260,6 +267,8 @@ zx_status_t KTrace::Stop() {
 }
 
 zx_status_t KTrace::Rewind() {
+  Guard<Mutex> guard{&lock_};
+
   // Calling Rewind on an uninitialized KTrace buffer is a no-op.
   if (!percpu_buffers_) {
     return ZX_OK;
