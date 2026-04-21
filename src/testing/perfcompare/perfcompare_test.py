@@ -866,6 +866,20 @@ class LocalWorkflowTest(TempDirTestCase):
         with open(self.state_file, "w") as f:
             json.dump(state_data, f)
 
+        # Patch the code for finding the "bb" and "cas" tools so that the
+        # test does not depend on the FUCHSIA_DIR env var being set and the
+        # tools being present.
+        self.enterContext(
+            unittest.mock.patch(
+                "local_workflow._find_bb_tool", lambda: "bb_for_testing"
+            )
+        )
+        self.enterContext(
+            unittest.mock.patch(
+                "local_workflow._find_cas_tool", lambda: "cas_for_testing"
+            )
+        )
+
     @staticmethod
     def _make_cas_download_fake(
         content: str,
