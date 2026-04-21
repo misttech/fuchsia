@@ -1,0 +1,80 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+package readme
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/BurntSushi/toml"
+)
+
+type cargoToml struct {
+	Package   *cargoPackage   `toml:"package"`
+	Workspace *cargoWorkspace `toml:"workspace"`
+}
+
+type cargoPackage struct {
+	Name        string `toml:"name"`
+	Version     string `toml:"version"`
+	Description string `toml:"description"`
+	License     string `toml:"license"`
+	Repository  string `toml:"repository"`
+	Homepage    string `toml:"homepage"`
+}
+
+type cargoWorkspace struct {
+	Members []string `toml:"members"`
+}
+
+// ParseCargoToml reads a Cargo.toml file and returns a slice of synthetic Readme structs.
+func ParseCargoToml(path string) ([]*Readme, error) {
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cargo cargoToml
+	if _, err := toml.Decode(string(bytes), &cargo); err != nil {
+		return nil, err
+	}
+
+	var readmes []*Readme
+
+	// 1. Handle standalone package
+	if cargo.Package != nil {
+		url := cargo.Package.Repository
+		if url == "" {
+			url = cargo.Package.Homepage
+		}
+		if url == "" && cargo.Package.Name != "" {
+			url = "https://crates.io/crates/" + cargo.Package.Name
+		}
+
+		readmes = append(readmes, &Readme{
+			Name:    cargo.Package.Name,
+			Version: cargo.Package.Version,
+			URL:     url,
+			// Standalone Cargo.toml describes the project at its own directory
+			Location: ".",
+		})
+	}
+
+	// 2. Handle workspace members
+	if cargo.Workspace != nil {
+		for _, member := range cargo.Workspace.Members {
+			// We only handle simple member paths for now.
+			// Full glob support would requires more logic.
+			if !filepath.IsAbs(member) {
+				readmes = append(readmes, &Readme{
+					Name:     filepath.Base(member),
+					Location: member,
+				})
+			}
+		}
+	}
+
+	return readmes, nil
+}

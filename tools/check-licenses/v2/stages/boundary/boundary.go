@@ -60,7 +60,10 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			base := filepath.Base(cleanPath)
 			if base == "README.fuchsia" || base == "go.mod" || base == "Cargo.toml" {
 				dir := filepath.Dir(cleanPath)
-				physicalReadmes[dir] = cleanPath
+				// Prioritize README.fuchsia if multiple metadata files exist
+				if existing, ok := physicalReadmes[dir]; !ok || filepath.Base(existing) != "README.fuchsia" {
+					physicalReadmes[dir] = cleanPath
+				}
 			}
 		}
 
@@ -77,17 +80,14 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 		// First, register every directory that has a physical/virtual README or Cargo.toml as a root
 		for dir, readmePath := range physicalReadmes {
 			base := filepath.Base(readmePath)
-			if base == "Cargo.toml" {
-				// We don't parse Cargo.toml yet, just register the boundary
-				projectRoots[dir] = nil
-				continue
-			}
 
 			// Parse metadata sources
 			var parsedReadmes []*readme.Readme
 			var err error
 			if base == "go.mod" {
 				parsedReadmes, err = readme.ParseGoMod(readmePath)
+			} else if base == "Cargo.toml" {
+				parsedReadmes, err = readme.ParseCargoToml(readmePath)
 			} else {
 				parsedReadmes, err = readme.ParseFile(readmePath)
 			}
@@ -103,14 +103,14 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 				projectRoots[dir] = []*readme.Readme{parsedReadmes[0]}
 			}
 
-			// Register sub-projects (DEPENDENCY DIVIDER or Go Modules) as distinct boundaries!
+			// Register sub-projects (DEPENDENCY DIVIDER, Go Modules, or Rust Members) as distinct boundaries!
 			startIdx := 1
-			if base == "go.mod" {
+			if base == "go.mod" || (base == "Cargo.toml" && parsedReadmes[0].Location != ".") {
 				startIdx = 0
 			}
 			for i := startIdx; i < len(parsedReadmes); i++ {
 				subReadme := parsedReadmes[i]
-				if subReadme.Location != "" {
+				if subReadme.Location != "" && subReadme.Location != "." {
 					absSubProjectDir := filepath.Join(dir, subReadme.Location)
 
 					// It's possible multiple sub-projects share a directory. We append them.

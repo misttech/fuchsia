@@ -96,11 +96,15 @@ if (is_host) {
       "v2/readme/golib.go",
       "v2/readme/locator.go",
       "v2/readme/parser.go",
+      "v2/readme/rust.go",
       "v2/readme/types.go",
       "v2/readme/update.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
-    deps = [ ":v2_pipeline" ]
+    deps = [
+      ":v2_pipeline",
+      "//third_party/golibs:github.com/BurntSushi/toml",
+    ]
   }
 }
 if (is_host) {
@@ -161,6 +165,7 @@ if (is_host) {
       "v2/readme/formatter_test.go",
       "v2/readme/golib_test.go",
       "v2/readme/parser_test.go",
+      "v2/readme/rust_test.go",
     ]
     embed = [ ":v2_readme" ]
   }
