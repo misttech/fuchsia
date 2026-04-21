@@ -2,13 +2,39 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 import asyncio
 import sys
 
 import package_server
 
 
-async def main(args: list[str] = sys.argv[1:]) -> int:
+async def main(args: list[str] | None = None) -> int:
+    args = sys.argv[1:] if args is None else args
+    parser = argparse.ArgumentParser(
+        description="Fuchsia Debugging Wrapper", add_help=False
+    )
+    parser.add_argument(
+        "command", nargs="?", help="Command to run (e.g., 'cli')"
+    )
+
+    parsed_args, fallback_args = parser.parse_known_args(args)
+
+    if parsed_args.command == "cli":
+        from cli.cli import main as cli_main
+
+        return await cli_main(fallback_args)
+
+    if args and args[0] in ("-h", "--help"):
+        print("Fuchsia Debugging Wrapper")
+        print("Usage:")
+        print("  fx debug cli [command]  : Use the machine-friendly CLI")
+        print(
+            "  fx debug [args...]      : Start interactive zxdb session with args"
+            " (see ffx debug connect --help"
+        )
+        return 0
+
     async with package_server.ensure_running():
         # TODO(https://fxbug.dev/464692993): Refactor `//scripts/fxtest/python/debugger.py` into a
         # shared library and use it here.

@@ -9,11 +9,29 @@ if (is_host) {
   python_binary("debug") {
     main_source = "main.py"
 
-    deps = [ "//scripts/lib/package_server" ]
+    deps = [
+      "//scripts/debug/cli:cli_lib",
+      "//scripts/lib/package_server",
+    ]
   }
 
-  install_python_tool("install") {
+  install_python_tool("install-debug") {
     name = "debug"
     binary = ":debug"
+  }
+
+  group("tests") {
+    testonly = true
+    deps = [
+      "cli:cli_test",
+      "daemon:daemon_test",
+    ]
+  }
+
+  group("install") {
+    deps = [
+      ":install-debug",
+      "daemon:install",
+    ]
   }
 }
