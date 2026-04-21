@@ -3678,6 +3678,7 @@
   ]
   submitted: '2026-02-02'
   reviewed: '2026-03-10'
+
 - name: 'RFC-0280'
   title: 'VMO reference and slice attribution'
   short_description: 'Proposes a change in memory attribution for reference and slice children of VMOs.'
@@ -3690,3 +3691,16 @@
   reviewers: ['etiennej@google.com', 'rashaeqbal@google.com', 'jamesr@google.com']
   submitted: '2026-03-31'
   reviewed: '2026-03-31'
+
+- name: 'RFC-0281'
+  title: 'Architectural Exceptions and Job Debugger Exception Channels'
+  short_description: 'Proposes updates to the Job Debugger exception channel to receive architectural and policy exception types while continuing to allow many clients'
+  authors: ['jruthe@google.com']
+  file: '0281_architectural_exceptions_and_job_debugger_exception_channels.md'
+  area: ['Developer']
+  issue: ['425322064']
+  gerrit_change_id: ['1519676']
+  status: 'Accepted'
+  reviewers: ['mcgrathr@google.com', 'maniscalco@google.com', 'lindkvist@google.com', 'jamesr@google.com']
+  submitted: '2026-04-21'
+  reviewed: '2026-04-21'

@@ -578,3 +578,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0279_support_for_product-specific_blob_formats.md
   - title: "RFC-0280: VMO reference and slice attribution"
     path: /docs/contribute/governance/rfcs/0280_vmo_reference_and_slice_attribution.md
+  - title: "RFC-0281: Architectural Exceptions and Job Debugger Exception Channels"
+    path: /docs/contribute/governance/rfcs/0281_architectural_exceptions_and_job_debugger_exception_channels.md
