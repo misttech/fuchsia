@@ -76,8 +76,16 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 	var bestMatch *Readme
 	bestPrefixLength := -1
 
-	// Path of the file relative to the README's directory
-	relToFile, err := filepath.Rel(filepath.Dir(foundReadmePath), absPath)
+	// Path of the file relative to the README's logical directory
+	logicalDir := filepath.Dir(foundReadmePath)
+	for logPath, physPath := range outOfTreeReadmes {
+		if physPath == foundReadmePath {
+			logicalDir = filepath.Join(fuchsiaDir, logPath)
+			break
+		}
+	}
+
+	relToFile, err := filepath.Rel(logicalDir, absPath)
 	if err != nil {
 		return nil, "", err
 	}
