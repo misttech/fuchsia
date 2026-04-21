@@ -19,6 +19,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.hardware.pin/Configuration.function_name",
+        "ordinal": "8",
+        "type": "string:32"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.hardware.pin/Configuration.power_source",
         "ordinal": "5",
         "type": "uint64"
@@ -137,6 +143,12 @@
         "name": "fuchsia.hardware.pin/DriveType",
         "strictness": "flexible",
         "type": "uint32"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.hardware.pin/MAX_FUNCTION_NAME_LEN",
+        "type": "uint32",
+        "value": "32"
     },
     {
         "kind": "const",
