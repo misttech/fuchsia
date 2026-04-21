@@ -75,9 +75,9 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
                     // Wire type
                     match ty.non_canonical() {
                         "ObjType" => {
-                            return write!(f, "::fidl_next::wire::fuchsia::WireObjectType");
+                            return write!(f, "::fidl_next::wire::fuchsia::ObjectType");
                         }
-                        "Rights" => return write!(f, "::fidl_next::wire::fuchsia::WireRights"),
+                        "Rights" => return write!(f, "::fidl_next::wire::fuchsia::Rights"),
                         _ => (),
                     }
                 }
