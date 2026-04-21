@@ -299,12 +299,13 @@ class TestWorkspace(unittest.TestCase):
                 return_value=Path("foo"),
             ), patch.object(
                 workspace.Workspace, "lock_file", new_callable=PropertyMock
-            ) as mock_lock_file:
+            ) as mock_lock_file, patch(
+                "workspace.snapshotter.snapshot_workspace",
+                side_effect=mock_snapshot_workspace,
+            ):
                 mock_lock_file.return_value = fs.cog_dir / "test.lock"
                 with ws.lock():
-                    ws.init_cartfs_workspace_snapshot(
-                        snapshot_function=mock_snapshot_workspace,
-                    )
+                    ws.init_cartfs_workspace(snapshot=True)
 
                 self.assertTrue(
                     fs.full_path(
@@ -317,9 +318,14 @@ class TestWorkspace(unittest.TestCase):
     def test_init_cartfs_workspace_snapshot_no_previous_instance(
         self,
     ) -> None:
-        """Test that nothing happens when no previous instance is found."""
+        """Test that empty workspace is created when no previous instance is found."""
         with mock_fs.FileSystemTestHelper() as fs:
             cartfs_instance = MagicMock()
+            cartfs_instance.mount_point = fs.cartfs_dir
+            suggested_directory_name = "new_cartfs_dir"
+            cartfs_instance.suggest_cartfs_dir_name.return_value = (
+                suggested_directory_name
+            )
             ws = workspace.Workspace(
                 repo_dir=fs.repo_dir,
                 cartfs_instance=cartfs_instance,
@@ -331,15 +337,20 @@ class TestWorkspace(unittest.TestCase):
             ) as mock_lock_file:
                 mock_lock_file.return_value = fs.cog_dir / "test.lock"
                 with ws.lock():
-                    ws.init_cartfs_workspace_snapshot()
+                    ws.init_cartfs_workspace(snapshot=True)
 
                 symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
-                self.assertFalse(symlink_path.exists())
+                self.assertTrue(symlink_path.is_symlink())
 
     def test_init_cartfs_workspace_snapshot_snapshot_error(self) -> None:
-        """Test that nothing happens when snapshotting raises a ValueError."""
+        """Test that empty workspace is created when snapshotting raises an error."""
         with mock_fs.FileSystemTestHelper() as fs:
             cartfs_instance = MagicMock()
+            cartfs_instance.mount_point = fs.cartfs_dir
+            suggested_directory_name = "new_cartfs_dir"
+            cartfs_instance.suggest_cartfs_dir_name.return_value = (
+                suggested_directory_name
+            )
             ws = workspace.Workspace(
                 repo_dir=fs.repo_dir,
                 cartfs_instance=cartfs_instance,
@@ -361,12 +372,14 @@ class TestWorkspace(unittest.TestCase):
                     raise ValueError("test error")
 
                 with ws.lock():
-                    ws.init_cartfs_workspace_snapshot(
-                        snapshot_function=mock_snapshot_workspace
-                    )
+                    with patch(
+                        "workspace.snapshotter.snapshot_workspace",
+                        side_effect=mock_snapshot_workspace,
+                    ):
+                        ws.init_cartfs_workspace(snapshot=True)
 
                 symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
-                self.assertFalse(symlink_path.exists())
+                self.assertTrue(symlink_path.is_symlink())
 
     def test_init_cartfs_workspace_empty(self) -> None:
         """Test that an empty cartfs workspace directory is created and linked."""
@@ -387,7 +400,7 @@ class TestWorkspace(unittest.TestCase):
             ) as mock_lock_file:
                 mock_lock_file.return_value = fs.cog_dir / "test.lock"
                 with ws.lock():
-                    ws.init_cartfs_workspace_empty()
+                    ws.init_cartfs_workspace(snapshot=False)
 
             expected_dir = (
                 Path(cartfs_instance.mount_point) / suggested_directory_name
@@ -395,6 +408,37 @@ class TestWorkspace(unittest.TestCase):
             self.assertTrue(expected_dir.is_dir())
             symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
             self.assertTrue(symlink_path.is_symlink())
+
+    def test_init_cartfs_workspace_local_mock_cartfs(self) -> None:
+        """Test that snapshotting is skipped when using local mock cartfs."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            cartfs_instance = MagicMock()
+            cartfs_instance.mount_point = fs.cartfs_dir
+            cartfs_instance.use_local_mock_cartfs = True
+            suggested_directory_name = "new_cartfs_dir"
+            cartfs_instance.suggest_cartfs_dir_name.return_value = (
+                suggested_directory_name
+            )
+            ws = workspace.Workspace(
+                repo_dir=fs.repo_dir,
+                cartfs_instance=cartfs_instance,
+            )
+
+            with patch.object(
+                workspace.Workspace, "lock_file", new_callable=PropertyMock
+            ) as mock_lock_file, patch.object(
+                ws, "_init_cartfs_workspace_snapshot"
+            ) as mock_snapshot:
+                mock_lock_file.return_value = fs.cog_dir / "test.lock"
+                with ws.lock():
+                    ws.init_cartfs_workspace(snapshot=True)
+
+                mock_snapshot.assert_not_called()
+
+            expected_dir = (
+                Path(cartfs_instance.mount_point) / suggested_directory_name
+            )
+            self.assertTrue(expected_dir.is_dir())
 
     def test_link_to_cartfs(self) -> None:
         """Test that the workspace can be linked to a cartfs directory."""

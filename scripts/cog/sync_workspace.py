@@ -55,15 +55,16 @@ class WorkspaceSyncService:
             )
 
         self.workspace = workspace.Workspace.create()
-        if not self.workspace.has_cartfs_dir:
-            raise workspace.WorkspaceError(
-                "No associated CartFS workspace found. "
-                "Please run `//scripts/cog/setup_cog_workspace.py` first."
-            )
         self.cog_root = self.workspace.workspace_root
-        self.cartfs_root = self.workspace.cartfs_dir
         logger.log_info(f"Cog root: {self.cog_root}")
-        logger.log_info(f"CartFS root: {self.cartfs_root}")
+        if self.workspace.has_cartfs_dir:
+            logger.log_info(f"CartFS root: {self.cartfs_root}")
+        else:
+            logger.log_info("CartFS checkout is not initialized.")
+
+    @property
+    def cartfs_root(self) -> Path:
+        return self.workspace.cartfs_dir
 
     @property
     def _config(self) -> dict[str, Any]:
@@ -303,13 +304,23 @@ class WorkspaceSyncService:
     @workspace.lock
     def sync_cog_to_cartfs(self) -> SyncResult:
         """Syncs changes from Cog to CartFS."""
-        if not self.workspace.is_checkout_uptodate():
-            logger.log_warn(
-                "CartFS checkout is not up to date, updating CartFS checkout..."
-            )
+        if not self.workspace.has_cartfs_dir:
             with logger.set_level(min(logger.get_log_level(), logging.INFO)):
+                logger.log_info(
+                    "CartFS workspace is not initialized yet, initializing now..."
+                )
+                self.workspace.init_cartfs_workspace()
+                logger.log_info("CartFS workspace initialized.")
+
+        if not self.workspace.is_checkout_uptodate():
+            with logger.set_level(min(logger.get_log_level(), logging.INFO)):
+                logger.log_info(
+                    "CartFS checkout is not up to date, updating CartFS checkout..."
+                )
                 self.workspace.checkout_cartfs_to_cog_revisions()
-                logger.log_info("CartFS checkout updated, resuming sync...")
+                logger.log_info(
+                    "CartFS checkout updated, resuming execution..."
+                )
         cog_affected_files = self.affected_files(WorkspaceType.COG)
         cartfs_affected_files = self.affected_files(WorkspaceType.CARTFS)
         all_affected_files = cog_affected_files | cartfs_affected_files
@@ -340,6 +351,15 @@ class WorkspaceSyncService:
         self, diff_against_previous_cog_to_cartfs_sync: bool
     ) -> SyncResult:
         """Syncs changes from CartFS to Cog."""
+        # Coherence check: We should not be running `sync_workspace.py --from-cartfs-to-cog` with an
+        # uninitialized CartFS workspace.
+        if not self.workspace.has_cartfs_dir:
+            raise workspace.WorkspaceError(
+                "No associated CartFS workspace found. "
+                "Please initiate a Sync in the opposite direction "
+                "or run `//scripts/cog/setup_cog_workspace.py` first."
+            )
+
         if diff_against_previous_cog_to_cartfs_sync:
             previous_transfer_file_hashes = {
                 self._cog_path(path): hash_val
@@ -372,8 +392,8 @@ class WorkspaceSyncService:
 
 
 class SyncDirection(enum.Enum):
-    FROM_COG_TO_CARTFS = 1
-    FROM_CARTFS_TO_COG = 2
+    FROM_COG_TO_CARTFS = "from cog to cartfs"
+    FROM_CARTFS_TO_COG = "from cartfs to cog"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -499,7 +519,7 @@ def main() -> int:
                 )
     except Exception as e:
         logger.log_error(
-            f"An unexpected error occurred when syncing changes from {args.src} to {args.dest}."
+            f"An unexpected error occurred when syncing changes {args.sync_direction.value}."
         )
         logger.log_exception(e)
         return 1

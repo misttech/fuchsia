@@ -36,24 +36,6 @@ def try_create_workspace(
         return None
 
 
-def init_cartfs(
-    workspace_instance: workspace.Workspace, snapshot: bool
-) -> None:
-    """Initializes CartFS."""
-    # Attempt to snapshot the cartfs workspace from a previous instance.
-    if (
-        snapshot
-        and not workspace_instance.cartfs_instance.use_local_mock_cartfs
-    ):
-        logger.emit_status("Attempting to snapshot CartFS workspace...")
-        workspace_instance.init_cartfs_workspace_snapshot()
-
-    # Initialize an empty cartfs workspace directory.
-    if not workspace_instance.has_cartfs_dir:
-        logger.emit_status("Creating an empty CartFS workspace...")
-        workspace_instance.init_cartfs_workspace_empty()
-
-
 def _parse_args() -> argparse.Namespace:
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -118,31 +100,33 @@ def main() -> int:
         logger.log_error("Please run 'gcert' and try again.")
         return 1
 
-    workspace_instance = try_create_workspace(args.use_local_mock_cartfs)
-    if not workspace_instance:
+    ws = try_create_workspace(args.use_local_mock_cartfs)
+    if not ws:
         logger.log_warn("Could not create workspace instance.")
         return 1
 
-    logger.log_debug(f"Found repository: {workspace_instance.repo_dir}")
-    logger.log_debug(
-        f"CartFS mount point: {workspace_instance.cartfs_instance.mount_point}"
-    )
+    logger.log_debug(f"Found repository: {ws.repo_dir}")
+    logger.log_debug(f"CartFS mount point: {ws.cartfs_instance.mount_point}")
 
-    with workspace_instance.lock():
-        if workspace_instance.has_cartfs_dir:
+    with ws.lock():
+        if ws.has_cartfs_dir and ws.is_checkout_uptodate():
+            logger.log_warn("No work to do, workspace is already bootstrapped.")
+            return 0
+
+        if ws.has_cartfs_dir:
             logger.log_info(
-                f"Workspace is already linked to cartfs: {workspace_instance.cartfs_dir}"
+                f"Workspace is already linked to cartfs: {ws.cartfs_dir}"
             )
         else:
             logger.log_info("Workspace is not linked to cartfs.")
-            init_cartfs(workspace_instance, args.snapshot)
+            ws.init_cartfs_workspace(args.snapshot)
 
-        if workspace_instance.is_checkout_uptodate():
+        if ws.is_checkout_uptodate():
             logger.log_info(
-                "CartFS checkout is up to date, skipping cartfs initialization."
+                "CartFS checkout is up to date, skipping cartfs checkout update."
             )
         else:
-            workspace_instance.checkout_cartfs_to_cog_revisions()
+            ws.checkout_cartfs_to_cog_revisions()
     return 0
 
 

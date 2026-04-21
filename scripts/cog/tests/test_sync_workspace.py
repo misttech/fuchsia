@@ -1175,6 +1175,7 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
             mock_ws.workspace_root = fs.repo_dir
             mock_ws.cartfs_dir = fs.cartfs_dir
             mock_ws.cartfs_root = fs.cartfs_dir
+            mock_ws.has_cartfs_dir = True
             mock_ws.is_checkout_uptodate.return_value = False
             mock_ws.config = {
                 "repo": {
@@ -1236,6 +1237,33 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
 
                 hashes = json.loads(hashes_file.read_text())
                 self.assertIn("fuchsia/foo.txt", hashes)
+
+    def test_sync_cog_to_cartfs_auto_init(self) -> None:
+        """Test that sync auto-initializes cartfs if missing."""
+        with mock_fs.FileSystemTestHelper() as fs:
+            mock_ws = MagicMock()
+            mock_ws.workspace_root = fs.repo_dir
+            mock_ws.cartfs_dir = fs.cartfs_dir
+            mock_ws.cartfs_root = fs.cartfs_dir
+            mock_ws.has_cartfs_dir = False
+            mock_ws.is_checkout_uptodate.return_value = False
+            mock_ws.config = {"repo": {"ignored": [], "fuchsia": "fuchsia"}}
+
+            with (
+                patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
+                patch.object(
+                    workspace.Workspace, "create", return_value=mock_ws
+                ),
+            ):
+                service = sync_workspace.WorkspaceSyncService()
+
+                with patch.object(
+                    service, "affected_files", return_value=set()
+                ):
+                    service.sync_cog_to_cartfs()
+
+                mock_ws.init_cartfs_workspace.assert_called_once()
+                mock_ws.checkout_cartfs_to_cog_revisions.assert_called_once()
 
     def test_sync_cog_to_cartfs_noop(self) -> None:
         """Test sync when no files are modified."""
