@@ -27,6 +27,7 @@ func main() {
 	commander.Register(&ValidateCommand{}, "")
 	commander.Register(&ReadmeCommand{}, "")
 	commander.Register(&ProjectCommand{}, "")
+	commander.Register(&PolicyCommand{}, "")
 	commander.Register(&CopyrightCommand{}, "")
 	commander.Register(&ClassifyCommand{}, "")
 
@@ -37,6 +38,7 @@ func main() {
 		"validate":  true,
 		"readme":    true,
 		"project":   true,
+		"policy":    true,
 		"copyright": true,
 		"classify":  true,
 		"help":      true,

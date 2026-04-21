@@ -41,6 +41,7 @@ if (is_host) {
       "copyright.go",
       "generate.go",
       "main.go",
+      "policy.go",
       "project.go",
       "project_check.go",
       "project_list_info.go",
@@ -77,6 +78,7 @@ if (is_host) {
       "classify_test.go",
       "config_test.go",
       "copyright_test.go",
+      "policy_test.go",
       "project_test.go",
       "readme_test.go",
     ]
