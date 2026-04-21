@@ -181,6 +181,54 @@ TEST_fx-run_from_different_version() {
   BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "${line2} ${BT_TEMP_DIR}"
 }
 
+# executes a simple fx command from foreign fuchsia checkout using
+# .jiri_root/bin/fx, which we expect to be in the `$PATH`.
+# Since we redirect the `fx` commandline invocation to the foreign
+# fuchsia checkout's `fx`, this is allowed.
+TEST_fx-run_from_foreign_checkout_from_path() {
+  local output
+
+  # Initialize the fake primary checkout with ".jiri_root/bin/fx".
+  local primary_checkout="${BT_TEMP_DIR}"
+  mkdir -p "${primary_checkout}/.jiri_root/bin"
+  ln -sf "../../scripts/fx" "${primary_checkout}/.jiri_root/bin/fx"
+
+  # Create a fake foreign checkout directory.
+  local foreign_checkout="$(mktemp -d)"
+  mkdir -p "${foreign_checkout}/scripts"
+  mkdir -p "${foreign_checkout}/some_dir"
+  touch "${foreign_checkout}/.fx-root"
+
+  # Create a mock fx script in the foreign checkout that we expect to be executed.
+  cat > "${foreign_checkout}/scripts/fx" <<'EOF'
+#!/bin/bash
+echo "Running from foreign checkout"
+echo "Args: $@"
+echo "Cwd: $(pwd)"
+EOF
+  chmod +x "${foreign_checkout}/scripts/fx"
+
+  # cd into some subdirectory of the foreign checkout.
+  cd "${foreign_checkout}/some_dir"
+
+  # Invoke the fx script from $PATH.
+  output="$(PATH="${primary_checkout}/.jiri_root/bin:${PATH}" fx help arg1 arg2 2>&1)"
+
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "Running from foreign checkout"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "Args: help arg1 arg2"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "Cwd: ${foreign_checkout}/some_dir"
+
+  # Invoke the fx script directly.
+  output="$(${primary_checkout}/scripts/fx help arg1 arg2 2>&1)"
+  BT_EXPECT_EQ $? 1
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "ERROR: You are executing fx from outside of the current source tree"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "    'fx' was executed from:"
+
+  # Clean up the separate temp directory.
+  rm -rf "${foreign_checkout}"
+}
+
 # Tests that `fx -d` errors out with an appropariate error message.
 TEST_fx-deprecated-target-flag-test() {
   local subcommand="mycommand1"

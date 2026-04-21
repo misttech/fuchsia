@@ -54,7 +54,7 @@ TEST_fx-cog-env-trigger() {
 
   cog_path="${_FX_COG_PATH_PREFIX}user/workspace/fuchsia"
   mkdir -p "${cog_path}"
-  mkdir -p "${cog_path}/.jiri_root"
+  touch "${cog_path}/.fx-root"
 
   # Place fx in the mock Cog checkout
   mkdir -p "${cog_path}/scripts"
@@ -138,7 +138,7 @@ TEST_fx-cog-out-symlink() {
   cartfs_out="${BT_TEMP_DIR}/cartfs/out"
 
   mkdir -p "${cog_path}"
-  mkdir -p "${cog_path}/.jiri_root"
+  touch "${cog_path}/.fx-root"
   mkdir -p "${cartfs_out}"
 
   # Create symlink out -> cartfs_out
@@ -204,8 +204,8 @@ TEST_fx-cog-superproject-symlink() {
   vendor_target="${_FX_COG_PATH_PREFIX}chandarren/superproject/vendor/company"
 
   mkdir -p "${fuchsia_dir}"
-  mkdir -p "${fuchsia_dir}/.jiri_root"
   mkdir -p "${vendor_target}"
+  touch "${fuchsia_dir}/.fx-root"
 
   # Create symlink in fuchsia_dir pointing to vendor_target
   mkdir -p "${fuchsia_dir}/vendor"
@@ -264,7 +264,7 @@ TEST_fx-cog-sync-fail-on-forward() {
 
   cog_path="${_FX_COG_PATH_PREFIX}user/workspace/fuchsia"
   mkdir -p "${cog_path}"
-  mkdir -p "${cog_path}/.jiri_root"
+  touch "${cog_path}/.fx-root"
 
   # Place fx in the mock Cog checkout
   mkdir -p "${cog_path}/scripts"
@@ -314,7 +314,7 @@ TEST_fx-cog-sync-fail-on-reverse() {
 
   cog_path="${_FX_COG_PATH_PREFIX}user/workspace/fuchsia"
   mkdir -p "${cog_path}"
-  mkdir -p "${cog_path}/.jiri_root"
+  touch "${cog_path}/.fx-root"
 
   # Place fx in the mock Cog checkout
   mkdir -p "${cog_path}/scripts"
@@ -374,7 +374,7 @@ TEST_fx-cog-missing-cartfs-fx() {
 
   cog_path="${_FX_COG_PATH_PREFIX}user/workspace/fuchsia"
   mkdir -p "${cog_path}"
-  mkdir -p "${cog_path}/.jiri_root"
+  touch "${cog_path}/.fx-root"
 
   # Place fx in the mock Cog checkout
   mkdir -p "${cog_path}/scripts"
@@ -408,6 +408,68 @@ EOF
 
   # Run fx and expect failure
   BT_EXPECT_FAIL ${fx} help 2>&1 > /dev/null
+}
+
+# executes a simple fx command from foreign fuchsia checkout using
+# .jiri_root/bin/fx, which we expect to be in the `$PATH`.
+# Since we redirect the `fx` commandline invocation to the foreign
+# fuchsia checkout's `fx`, this is allowed.
+TEST_fx-cog-run_from_foreign_checkout_from_path() {
+  local output
+
+  # Create a fake Cog checkout OUTSIDE of the primary checkout directory.
+  local cog_prefix="$(mktemp -d)"
+  export _FX_COG_PATH_PREFIX="${cog_prefix}/"
+
+  local cog_path="${_FX_COG_PATH_PREFIX}user/workspace/fuchsia"
+  mkdir -p "${cog_path}"
+  touch "${cog_path}/.fx-root"
+
+  # Place fx in the mock Cog checkout
+  mkdir -p "${cog_path}/scripts"
+  cp "${fx}" "${cog_path}/scripts/fx"
+
+  # cd into the Cog checkout.
+  cd "${cog_path}"
+
+  # Mock sync_workspace.py
+  mkdir -p "${cog_path}/scripts/cog"
+  cat >"${cog_path}/scripts/cog/sync_workspace.py" <<EOF
+#!/bin/bash
+if [[ "\$1" == "--from-cog-to-cartfs" ]]; then
+  echo "Syncing from Cog"
+  report_file="\$3"
+  echo "export CARTFS_CWD=\"${BT_TEMP_DIR}/cartfs/cwd\"" > "\${report_file}"
+  echo "export CARTFS_FUCHSIA_DIR=\"${BT_TEMP_DIR}/cartfs/fuchsia\"" >> "\${report_file}"
+  exit 0
+fi
+exit 0
+EOF
+  chmod u+x "${cog_path}/scripts/cog/sync_workspace.py"
+
+  # Mock CartFS directory and fx
+  mkdir -p "${BT_TEMP_DIR}/cartfs/cwd"
+  mkdir -p "${BT_TEMP_DIR}/cartfs/fuchsia/scripts"
+  cat >"${BT_TEMP_DIR}/cartfs/fuchsia/scripts/fx-env.sh" <<EOF
+fx-update-path() { return 0; }
+export FUCHSIA_DIR="\${CARTFS_FUCHSIA_DIR}"
+EOF
+  cat >"${BT_TEMP_DIR}/cartfs/fuchsia/scripts/fx" <<EOF
+#!/bin/bash
+echo "Running in CartFS"
+EOF
+  chmod u+x "${BT_TEMP_DIR}/cartfs/fuchsia/scripts/fx"
+
+  # Invoke the fx script from $PATH (pointing to primary checkout).
+  # Primary checkout is BT_TEMP_DIR, which has .jiri_root/bin/fx created by btf::setup_fx.
+  output="$(PATH="${BT_TEMP_DIR}/.jiri_root/bin:${PATH}" fx help 2>&1)"
+
+  BT_EXPECT_EQ $? 0
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "Syncing from Cog"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "Running in CartFS"
+
+  # Clean up the separate temp directory.
+  rm -rf "${cog_prefix}"
 }
 
 BT_RUN_TESTS "$@"

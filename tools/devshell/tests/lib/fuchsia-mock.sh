@@ -21,6 +21,7 @@ btf::setup_fx() {
   BT_ASSERT_FILE_EXISTS "${_FX}"
   mkdir -p "${_FUCHSIA_DIR}/.ssh" "${_FUCHSIA_DIR}/.jiri_root/bin"
   ln -s "${_FX}" "${_FUCHSIA_DIR}/.jiri_root/bin/fx"
+  touch "${_FUCHSIA_DIR}/.fx-root"
 
   # Fake fuchsia dir configuration.
   BT_ASSERT_FILE_EXISTS "${_FUCHSIA_DIR}/tools/devshell/lib/vars.sh"

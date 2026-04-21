@@ -13,6 +13,8 @@ TEST_DIR="$PWD"
 get_jiri_root() {
   local root_dir=""
   root_dir="${SCRIPT_SRC_DIR}"
+  # TODO(https://fxbug.dev/505045726): Migrate off of `.jiri_root` as a marker for the root of a
+  # fuchsia checkout.
   while [[ ! -d "${root_dir}/.jiri_root" ]]; do
     root_dir="$(dirname "${root_dir}")"
     if [[ ${#root_dir} -eq 1 ]]; then

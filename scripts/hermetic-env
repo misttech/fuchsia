@@ -26,12 +26,15 @@ if [[ -n "${FUCHSIA_DIR}" ]]; then
   fi
 fi
 
+# LINT.IfChange
 function find_tree_root {
   local parent="$1"
   if [[ ! -d "$parent" ]]; then
     return 1
   fi
-  while [[ ! -d "${parent}/.jiri_root" ]]; do
+  # TODO(https://fxbug.dev/505045726): Migrate off of `.jiri_root` as a marker for the root of a
+  # fuchsia checkout.
+  while [[ ! -f "${parent}/.fx-root" && ! -d "${parent}/.jiri_root" ]]; do
     parent="$(dirname "${parent}")"
     if [[ "$parent" == "/" ]]; then
       return 1
@@ -42,17 +45,13 @@ function find_tree_root {
 
 # Mimic `fx` behavior to set up a consistent root and get prebuilt paths.
 #
-# We walk the parent directories looking for .jiri_root rather than using
+# We walk the parent directories looking for //.fx-root rather than using
 # BASH_SOURCE so that we find the fuchsia_dir enclosing the current working
 # directory instead of the one containing this file in case the user has
 # multiple source trees and is picking up this file from another one.
 #
 # NOTE: The FUCHSIA_DIR environment variable is ignored here because it
 # could point to a different Fuchsia checkout in some developer setups.
-#
-# This logic is replicated in //scripts/fx, //scripts/hermetic_env,
-# //scripts/zsh_completion/_fx, and //src/developer/ffx/scripts. For
-# consistency, copy any changes here to those files as well.
 if ! fuchsia_dir="$(find_tree_root "$(pwd)")"; then
   echo >&2 "ERROR: Cannot find the Platform Source Tree in a parent of the current directory: $(pwd)"
   exit 1
@@ -60,15 +59,27 @@ fi
 
 script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
-if [[ "${script_dir}" != "${fuchsia_dir}"* ]]; then
-  echo >&2 "ERROR: You are executing fx from outside of the current source tree"
+# NOTE: This check MUST be executed immediately after `fuchsia_dir` is set.
+# Do NOT add any metric gathering or other setup before this block, as this
+# `hermetic-env` instance may be run in a foreign fuchsia checkout.
+if [[ "${script_dir}/" != "${fuchsia_dir}/"* ]]; then
+  # When running `hermetic-env` from `$PATH` within a foreign fuchsia checkout
+  # that is owned by the current user, run the version of `hermetic-env` from
+  # the foreign checkout instead.
+  if [[ "$0" == *"/.jiri_root/bin/"* ]] && \
+     [[ -O "${fuchsia_dir}" ]] && \
+     [[ -x "${fuchsia_dir}/scripts/hermetic-env" ]]; then
+    exec "${fuchsia_dir}/scripts/hermetic-env" "$@"
+  fi
+
+  echo >&2 "ERROR: You are executing hermetic-env from outside of the current source tree"
   echo >&2 "ERROR: This is not supported as fx does not have a stable internal API"
   echo >&2
   echo >&2 "    'hermetic-env' was executed from: ${BASH_SOURCE[0]}"
   echo >&2 "    'fuchsia directory' resolved to: ${fuchsia_dir}"
   echo >&2 "    'script_dir' resolved to: ${script_dir}"
   echo >&2
-  echo >&2 "To run a command in the current Fuchsia directory, run fx from:"
+  echo >&2 "To run a command in the current Fuchsia directory, run hermetic-env from:"
   echo >&2 "  ${fuchsia_dir}/scripts/hermetic-env"
   echo >&2 "Or, if you use fx-env.sh, source fx-env from the current fuchsia dir:"
   echo >&2 "  source ${fuchsia_dir}/scripts/fx-env.sh"
@@ -76,6 +87,11 @@ if [[ "${script_dir}" != "${fuchsia_dir}"* ]]; then
   echo >&2 "  source ${fuchsia_dir}/scripts/fx-env.sh && fx-update-path"
   exit 1
 fi
+# LINT.ThenChange(
+#   //scripts/fx,
+#   //scripts/zsh-completion/_fx,
+#   //src/developer/ffx/scripts/ffx,
+# )
 
 export FUCHSIA_DIR="${fuchsia_dir}"
 declare -r platform_sh="${fuchsia_dir}/tools/devshell/lib/platform.sh"
