@@ -97,12 +97,6 @@ zx::result<std::unique_ptr<VolumeConnector>> OpenSkipBlockPartition(
   return devices.WaitForPartition(cb, timeout, kSkipBlockDevPath);
 }
 
-bool HasSkipBlockDevice(const paver::BlockDevices& devices) {
-  // Our proxy for detected a skip-block device is by checking for the
-  // existence of a device enumerated under the skip-block class.
-  return OpenSkipBlockPartition(devices, GUID_ZIRCON_A_VALUE, ZX_SEC(1)).is_ok();
-}
-
 zx::result<std::string> GetBoardName(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {
   zx::result status =
       component::ConnectAt<fuchsia_sysinfo::SysInfo>(svc_root, "fuchsia.sysinfo.SysInfo");

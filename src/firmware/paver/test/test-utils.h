@@ -88,14 +88,6 @@ class BlockDevice {
                             const std::vector<PartitionDescription>& init_partitions,
                             std::unique_ptr<BlockDevice>* device);
 
-  static void CreateLegacy(std::unique_ptr<BlockDevice>* device, const fbl::unique_fd& devfs_root,
-                           const uint8_t* guid, uint64_t block_count = kBlockCount,
-                           uint32_t block_size = kBlockSize);
-
-  static void CreateLegacyFromVmo(std::unique_ptr<BlockDevice>* device,
-                                  const fbl::unique_fd& devfs_root, const uint8_t* guid,
-                                  zx::vmo vmo, uint32_t block_size = kBlockSize);
-
   fidl::ClientEnd<fuchsia_storage_block::Block> Connect() const {
     zx::result result = ramdisk_.ConnectBlock();
     ZX_ASSERT(result.status_value() == ZX_OK);
@@ -103,16 +95,6 @@ class BlockDevice {
   }
 
   std::unique_ptr<paver::VolumeConnector> GetConnector() const;
-
-  fidl::ClientEnd<fuchsia_device::Controller> ConnectToLegacyController() const {
-    fidl::ClientEnd<fuchsia_device::Controller> controller;
-    zx::result controller_server = fidl::CreateEndpoints(&controller);
-    ZX_ASSERT(controller_server.is_ok());
-    fidl::OneWayStatus status = fidl::WireCall(ramdisk_.LegacyController())
-                                    ->ConnectToController(std::move(*controller_server));
-    ZX_ASSERT(status.status() == ZX_OK);
-    return controller;
-  }
 
   // Block count and block size of this device.
   uint64_t block_count() const { return block_count_; }

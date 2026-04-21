@@ -108,43 +108,6 @@ void BlockDevice::Create(std::unique_ptr<BlockDevice>* device, const fbl::unique
   device->reset(new BlockDevice(std::move(*ramdisk), std::move(volume), block_count, block_size));
 }
 
-void BlockDevice::CreateLegacy(std::unique_ptr<BlockDevice>* device,
-                               const fbl::unique_fd& devfs_root, const uint8_t* guid,
-                               uint64_t block_count, uint32_t block_size) {
-  ramdevice_client::Ramdisk::Options options;
-  if (guid) {
-    options.type_guid = {{}};
-    std::copy(guid, guid + ZBI_PARTITION_GUID_LEN, options.type_guid->begin());
-  }
-  zx::result ramdisk =
-      ramdevice_client::Ramdisk::CreateLegacy(block_size, block_count, devfs_root.get(), options);
-  ASSERT_OK(ramdisk);
-  zx::result block = ramdisk->ConnectBlock();
-  ASSERT_OK(block);
-  fidl::ClientEnd<fuchsia_storage_block::Block> volume(std::move(block)->TakeChannel());
-  device->reset(new BlockDevice(std::move(*ramdisk), std::move(volume), block_count, block_size));
-}
-
-void BlockDevice::CreateLegacyFromVmo(std::unique_ptr<BlockDevice>* device,
-                                      const fbl::unique_fd& devfs_root, const uint8_t* guid,
-                                      zx::vmo vmo, uint32_t block_size) {
-  uint64_t block_count;
-  ASSERT_OK(vmo.get_size(&block_count));
-  block_count /= block_size;
-  ramdevice_client::Ramdisk::Options options;
-  if (guid) {
-    options.type_guid = {{}};
-    std::copy(guid, guid + ZBI_PARTITION_GUID_LEN, options.type_guid->begin());
-  }
-  zx::result ramdisk = ramdevice_client::Ramdisk::CreateLegacyWithVmo(std::move(vmo), block_size,
-                                                                      devfs_root.get(), options);
-  ASSERT_OK(ramdisk);
-  zx::result block = ramdisk->ConnectBlock();
-  ASSERT_OK(block);
-  fidl::ClientEnd<fuchsia_storage_block::Block> volume(std::move(block)->TakeChannel());
-  device->reset(new BlockDevice(std::move(*ramdisk), std::move(volume), block_count, block_size));
-}
-
 void BlockDevice::CreateFromVmo(std::unique_ptr<BlockDevice>* device,
                                 const fbl::unique_fd& svc_root, const uint8_t* guid, zx::vmo vmo,
                                 uint32_t block_size) {

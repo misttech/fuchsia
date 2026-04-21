@@ -201,9 +201,6 @@ constexpr PartitionScheme kFixedDevicePartitionScheme = PartitionScheme::kLegacy
 
 zx::result<std::unique_ptr<DevicePartitioner>> FixedDevicePartitioner::Initialize(
     const paver::BlockDevices& devices, fidl::ClientEnd<fuchsia_io::Directory> svc_root) {
-  if (HasSkipBlockDevice(devices)) {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
   LOG("Successfully initialized FixedDevicePartitioner Device Partitioner\n");
   return zx::ok(new FixedDevicePartitioner(devices.Duplicate(), std::move(svc_root)));
 }

@@ -37,8 +37,6 @@ zx::result<std::unique_ptr<VolumeConnector>> OpenBlockPartition(
 zx::result<std::unique_ptr<VolumeConnector>> OpenSkipBlockPartition(
     const paver::BlockDevices& devices, const uuid::Uuid& type_guid, zx_duration_t timeout);
 
-bool HasSkipBlockDevice(const paver::BlockDevices& devices);
-
 zx::result<std::string> GetBoardName(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root);
 zx::result<> IsBoard(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
                      std::string_view board_name);
