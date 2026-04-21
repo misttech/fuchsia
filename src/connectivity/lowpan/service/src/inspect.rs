@@ -1337,6 +1337,38 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 if let Some(y) = x.num_trel_peers {
                                     trel_peers_node.record_uint("num_trel_peers", y.into());
                                 }
+                                if let Some(y) = x.trel_peers {
+                                    trel_peers_node.record_child(
+                                        "trel_peers",
+                                        |trel_peers_child| {
+                                            for (index, peer) in y.iter().enumerate() {
+                                                trel_peers_child.record_child(
+                                                    format!("peer_{}", index),
+                                                    |peer_node| {
+                                                        if let Some(z) = &peer.extended_address {
+                                                            peer_node.record_string(
+                                                                "extended_address",
+                                                                 z.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                                                            );
+                                                        }
+                                                        if let Some(z) = &peer.extended_pan_id {
+                                                            peer_node.record_string(
+                                                                "extended_pan_id",
+                                                                z.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                                                            );
+                                                        }
+                                                        if let Some(z) = &peer.sock_address {
+                                                            peer_node.record_string(
+                                                                "sock_address",
+                                                                z,
+                                                            );
+                                                        }
+                                                    }
+                                                );
+                                            }
+                                        }
+                                    );
+                                }
                             });
                         }
                         if let Some(x) = telemetry_data.upstream_dns_info {

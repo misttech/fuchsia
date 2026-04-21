@@ -1703,6 +1703,18 @@ where
             .map(|addr| fidl_fuchsia_net::Ipv6Address { addr: addr.addr().octets() })
             .collect::<Vec<_>>();
 
+        // Get the list of TREL peers of the Thread border router.
+        let trel_peers = ot
+            .trel_peer_get_iterator()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_NEIGHBOR_INSPECT_ENTRIES as usize)
+            .map(|peer| fidl_fuchsia_lowpan_experimental::TrelPeer {
+                extended_address: Some(peer.ext_address().into_array().to_vec()),
+                extended_pan_id: Some(peer.ext_pan_id().into_array().to_vec()),
+                sock_address: Some(peer.sock_address().to_string()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1738,6 +1750,7 @@ where
             trel_counters: ot.trel_get_counters().map(|x| x.into_ext()),
             trel_peers_info: Some(fidl_fuchsia_lowpan_experimental::TrelPeersInfo {
                 num_trel_peers: Some(ot.trel_get_number_of_peers()),
+                trel_peers: Some(trel_peers),
                 ..Default::default()
             }),
             nat64_info: Some(nat64_info),
