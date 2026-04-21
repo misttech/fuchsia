@@ -16,7 +16,7 @@ import sys
 import tarfile
 
 import local_workflow
-import scipy.stats
+import stats
 
 # For comparing results from a performance test, we calculate
 # confidence intervals for the mean running times of the test.  If the
@@ -152,7 +152,7 @@ class Stats(object):
             self.interval = None
         else:
             self._offset = (
-                -scipy.stats.t.ppf(ALPHA / 2, self.sample_size - 1)
+                -stats.t_ppf(ALPHA / 2, self.sample_size - 1)
                 * stddev
                 / math.sqrt(self.sample_size)
             )

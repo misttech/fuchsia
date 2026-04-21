@@ -649,10 +649,12 @@ class PerfCompareTest(TempDirTestCase):
 
     def test_factor_range_formatting(self):
         # Construct an interval pair of the same type used in the
-        # software-under-test, checking that the interval is well-formed.
+        # software-under-test, in order to ensure that this test case is
+        # realistic.  (Earlier versions used numpy.float64.)  Also check
+        # that the interval is well-formed.
         def Interval(min_val, max_val):
             assert min_val <= max_val
-            return (numpy.float64(min_val), numpy.float64(max_val))
+            return (float(min_val), float(max_val))
 
         # Check that the values are of the same type as in the
         # software-under-test.
