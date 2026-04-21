@@ -16,7 +16,12 @@ import (
 // It also matches the specific file to the correct sub-project (DEPENDENCY DIVIDER)
 // defined within that README.
 func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]string) (*Readme, string, error) {
-	dir := filepath.Dir(absPath)
+	var dir string
+	if stat, err := os.Stat(absPath); err == nil && stat.IsDir() {
+		dir = absPath
+	} else {
+		dir = filepath.Dir(absPath)
+	}
 	var foundReadmePath string
 
 	for {

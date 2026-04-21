@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/google/subcommands"
@@ -116,7 +117,64 @@ func (c *ProjectCommand) executeInfo(ctx context.Context, args []string, config 
 	if isVirtual {
 		virtualStr = " (Virtual)"
 	}
-	fmt.Printf("Readme Path:  %s%s\n\n", readmePath, virtualStr)
+	fmt.Printf("Readme Path:  %s%s\n", readmePath, virtualStr)
+
+	activePolicies := make(map[string]v2config.RuleMetadata)
+	var activePolicyNames []string
+	for policyName, paths := range config.PolicyExceptions {
+		for p, meta := range paths {
+			cleanP := strings.TrimPrefix(p, "//")
+			if cleanP == relRoot || strings.HasPrefix(cleanP, relRoot+string(filepath.Separator)) || strings.HasPrefix(relRoot, cleanP+string(filepath.Separator)) {
+				activePolicies[policyName] = meta
+				activePolicyNames = append(activePolicyNames, policyName)
+				break
+			}
+		}
+	}
+	sort.Strings(activePolicyNames)
+
+	allowedLicenses := make(map[string]v2config.RuleMetadata)
+	var allowedLicenseNames []string
+	for licenseID, paths := range config.AllowedLicenses {
+		for p, meta := range paths {
+			cleanP := strings.TrimPrefix(p, "//")
+			if cleanP == relRoot || strings.HasPrefix(cleanP, relRoot+string(filepath.Separator)) || strings.HasPrefix(relRoot, cleanP+string(filepath.Separator)) {
+				allowedLicenses[licenseID] = meta
+				allowedLicenseNames = append(allowedLicenseNames, licenseID)
+				break
+			}
+		}
+	}
+	sort.Strings(allowedLicenseNames)
+
+	if len(activePolicyNames) > 0 {
+		fmt.Println("\nPolicy Overrides:")
+		for _, name := range activePolicyNames {
+			meta := activePolicies[name]
+			fmt.Printf("  - %s\n", name)
+			if meta.Bug != "" {
+				fmt.Printf("      Bug: %s\n", meta.Bug)
+			}
+			if meta.Description != "" {
+				fmt.Printf("      Description: %s\n", meta.Description)
+			}
+		}
+	}
+
+	if len(allowedLicenseNames) > 0 {
+		fmt.Println("\nAllowed Licenses:")
+		for _, name := range allowedLicenseNames {
+			meta := allowedLicenses[name]
+			fmt.Printf("  - %s\n", name)
+			if meta.Bug != "" {
+				fmt.Printf("      Bug: %s\n", meta.Bug)
+			}
+			if meta.Description != "" {
+				fmt.Printf("      Description: %s\n", meta.Description)
+			}
+		}
+	}
+	fmt.Println()
 
 	fmt.Println("--- Parsed README.fuchsia Content ---")
 	fmt.Println(readme.Format([]*readme.Readme{r}))

@@ -32,6 +32,7 @@ import (
 	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 	v2readme "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	v2classify "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
 	v2report "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
 )
 
@@ -342,6 +343,12 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 	// Reporter generates artifacts but skips virtual diff (verifyReadmes=false) since this is the fast path
 	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, true, config.OutOfTreeReadmes)
 
+	patternsDir := filepath.Join(p.fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
+	classifier, err := v2classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
+	if err != nil {
+		return fmt.Errorf("failed to initialize classifier: %w", err)
+	}
+
 	cFilesChan := make(chan pipeline.ClassifiedFile)
 	errChan := make(chan pipeline.ComplianceError)
 
@@ -383,7 +390,10 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 
 				dir := filepath.Dir(path)
 				for _, r := range readmes {
-					for _, lf := range r.LicenseFiles {
+					entries := append([]v2readme.LicenseEntry{}, r.LicenseFiles...)
+					entries = append(entries, r.SourceFiles...)
+
+					for _, lf := range entries {
 						if lf.Path == "" {
 							continue
 						}
@@ -395,29 +405,29 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 							continue
 						}
 
-						// Read license text
-						text, _ := os.ReadFile(absLicensePath)
+						// Use the classifier to securely extract the license block without leaking source code
+						isLicenseFile := v2classify.IsLicenseFilename(absLicensePath)
+						classified, err := classifier.ClassifyFile(absLicensePath, filepath.Join(dir, r.Location), isLicenseFile, lf.LicenseType)
+						if err != nil {
+							continue
+						}
 
-						// Parse licenses
-						spdxIDs := strings.Split(lf.License, ",")
-						var matches []pipeline.LicenseMatch
-						for _, id := range spdxIDs {
-							id = strings.TrimSpace(id)
-							if id != "" {
-								matches = append(matches, pipeline.LicenseMatch{
-									SPDXID: id,
-									Text:   text,
-								})
+						// If the classifier didn't find a match, but the user explicitly stated
+						// the license in the README, use the whole extracted text.
+						if len(classified.Matches) == 0 && lf.License != "" {
+							spdxIDs := strings.Split(lf.License, ",")
+							for _, id := range spdxIDs {
+								id = strings.TrimSpace(id)
+								if id != "" {
+									classified.Matches = append(classified.Matches, pipeline.LicenseMatch{
+										SPDXID: id,
+										Text:   classified.AnalyzedText,
+									})
+								}
 							}
 						}
 
-						cFilesChan <- pipeline.ClassifiedFile{
-							Path:          absLicensePath,
-							ProjectRoot:   filepath.Join(dir, r.Location),
-							IsLicenseFile: true,
-							AnalyzedText:  text,
-							Matches:       matches,
-						}
+						cFilesChan <- *classified
 					}
 				}
 			}
@@ -433,7 +443,10 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 			absLogPath := filepath.Join(p.fuchsiaDir, logPath)
 
 			for _, r := range readmes {
-				for _, lf := range r.LicenseFiles {
+				entries := append([]v2readme.LicenseEntry{}, r.LicenseFiles...)
+				entries = append(entries, r.SourceFiles...)
+
+				for _, lf := range entries {
 					if lf.Path == "" {
 						continue
 					}
@@ -442,25 +455,30 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 					if len(validFiles) > 0 && !validFiles[absLicensePath] {
 						continue
 					}
-					text, _ := os.ReadFile(absLicensePath)
-					spdxIDs := strings.Split(lf.License, ",")
-					var matches []pipeline.LicenseMatch
-					for _, id := range spdxIDs {
-						id = strings.TrimSpace(id)
-						if id != "" {
-							matches = append(matches, pipeline.LicenseMatch{
-								SPDXID: id,
-								Text:   text,
-							})
+
+					// Use the classifier to securely extract the license block without leaking source code
+					isLicenseFile := v2classify.IsLicenseFilename(absLicensePath)
+					classified, err := classifier.ClassifyFile(absLicensePath, filepath.Join(absLogPath, r.Location), isLicenseFile, lf.LicenseType)
+					if err != nil {
+						continue
+					}
+
+					// If the classifier didn't find a match, but the user explicitly stated
+					// the license in the README, use the whole extracted text.
+					if len(classified.Matches) == 0 && lf.License != "" {
+						spdxIDs := strings.Split(lf.License, ",")
+						for _, id := range spdxIDs {
+							id = strings.TrimSpace(id)
+							if id != "" {
+								classified.Matches = append(classified.Matches, pipeline.LicenseMatch{
+									SPDXID: id,
+									Text:   classified.AnalyzedText,
+								})
+							}
 						}
 					}
-					cFilesChan <- pipeline.ClassifiedFile{
-						Path:          absLicensePath,
-						ProjectRoot:   filepath.Join(absLogPath, r.Location),
-						IsLicenseFile: true,
-						AnalyzedText:  text,
-						Matches:       matches,
-					}
+
+					cFilesChan <- *classified
 				}
 			}
 		}
