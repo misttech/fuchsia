@@ -17,7 +17,6 @@ import unittest
 import unittest.mock
 from typing import Any, Callable, Dict, List, Tuple, Union
 
-import numpy
 import perfcompare
 
 Behavior = Union[
@@ -268,12 +267,12 @@ class FormatConfidenceIntervalTest(unittest.TestCase):
         self.assertEqual(Format(12345.6789, -1), "12345.7 +/- -1")
 
         # Corner cases: infinity and NaN.
-        self.assertEqual(Format(12345.6789, numpy.inf), "12345.7 +/- inf")
-        self.assertEqual(Format(12345.6789, -numpy.inf), "12345.7 +/- -inf")
-        self.assertEqual(Format(12345.6789, numpy.nan), "12345.7 +/- nan")
-        self.assertEqual(Format(numpy.inf, 0.1234), "inf +/- 0.12")
-        self.assertEqual(Format(-numpy.inf, 0.1234), "-inf +/- 0.12")
-        self.assertEqual(Format(numpy.nan, 0.1234), "nan +/- 0.12")
+        self.assertEqual(Format(12345.6789, float("inf")), "12345.7 +/- inf")
+        self.assertEqual(Format(12345.6789, -float("inf")), "12345.7 +/- -inf")
+        self.assertEqual(Format(12345.6789, float("nan")), "12345.7 +/- nan")
+        self.assertEqual(Format(float("inf"), 0.1234), "inf +/- 0.12")
+        self.assertEqual(Format(-float("inf"), 0.1234), "-inf +/- 0.12")
+        self.assertEqual(Format(float("nan"), 0.1234), "nan +/- 0.12")
 
 
 # Generate some example perf test data, allowing variation at each level of
