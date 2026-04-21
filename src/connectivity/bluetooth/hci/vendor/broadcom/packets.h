@@ -21,8 +21,6 @@ struct HciCommandHeader {
   uint8_t parameter_total_size;
 } __PACKED;
 
-constexpr uint16_t kReadBdaddrCmdOpCode = 0x1009;
-
 struct HciEventHeader {
   uint8_t event_code;
   uint8_t parameter_total_size;
@@ -38,11 +36,6 @@ struct HciCommandComplete {
 constexpr uint8_t kHciEvtCommandCompleteEventCode = 0x0e;
 
 constexpr size_t kMacAddrLen = 6;
-
-struct ReadBdaddrCommandComplete {
-  HciCommandComplete header;
-  uint8_t bdaddr[kMacAddrLen];
-} __PACKED;
 
 // Vendor HCI definitions:
 
@@ -90,12 +83,6 @@ constexpr size_t kMinEvtParamSize = sizeof(HciCommandComplete) - sizeof(HciEvent
 // vendor command to begin firmware download
 const HciCommandHeader kStartFirmwareDownloadCmd = {
     .opcode = htole16(kStartFirmwareDownloadCmdOpCode),
-    .parameter_total_size = 0,
-};
-
-// HCI command to read BDADDR from controller
-const HciCommandHeader kReadBdaddrCmd = {
-    .opcode = htole16(kReadBdaddrCmdOpCode),
     .parameter_total_size = 0,
 };
 
