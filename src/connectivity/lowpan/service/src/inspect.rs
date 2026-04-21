@@ -1696,6 +1696,99 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             )
                         }
+                        if let Some(x) = telemetry_data.border_routing_rdnsses {
+                            inspector.root().record_child(
+                                "border_routing_rdnsses",
+                                |br_rdnsses_child| {
+                                    for (index, br_rdnss) in x.iter().enumerate() {
+                                        br_rdnsses_child.record_child(
+                                            format!("rdnss_{}", index),
+                                            |br_rdnss_node| {
+                                                if let Some(y) = &br_rdnss.router {
+                                                    br_rdnss_node.record_child(
+                                                        "router",
+                                                        |router_node| {
+                                                            if let Some(z) = &y.address {
+                                                                router_node.record_string(
+                                                                    "address",
+                                                                    z,
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.duration_since_last_update {
+                                                                router_node.record_uint(
+                                                                    "duration_since_last_update",
+                                                                    z.try_into().unwrap_or(0),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.age {
+                                                                router_node.record_uint(
+                                                                    "age",
+                                                                    z.try_into().unwrap_or(0),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.managed_address_config_flag {
+                                                                router_node.record_bool(
+                                                                    "managed_address_config_flag",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.other_config_flag {
+                                                                router_node.record_bool(
+                                                                    "other_config_flag",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.snac_router_flag {
+                                                                router_node.record_bool(
+                                                                    "snac_router_flag",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.is_local_device {
+                                                                router_node.record_bool(
+                                                                    "is_local_device",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.is_reachable {
+                                                                router_node.record_bool(
+                                                                    "is_reachable",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.is_peer_br {
+                                                                router_node.record_bool(
+                                                                    "is_peer_br",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                        }
+                                                    );
+                                                }
+                                                if let Some(y) = &br_rdnss.address {
+                                                    br_rdnss_node.record_string(
+                                                        "address",
+                                                        format!("{}", Ipv6Addr::from(y.addr)),
+                                                    );
+                                                }
+                                                if let Some(y) = br_rdnss.duration_since_last_update {
+                                                    br_rdnss_node.record_uint(
+                                                        "duration_since_last_update",
+                                                        y.try_into().unwrap_or(0),
+                                                    );
+                                                }
+                                                if let Some(y) = br_rdnss.lifetime {
+                                                    br_rdnss_node.record_uint(
+                                                        "lifetime",
+                                                        y.into(),
+                                                    );
+                                                }
+                                            }
+                                        );
+                                    }
+                                },
+                            )
+                        }
                         if let Some(x) = telemetry_data.active_dataset {
                             inspector.root().record_child(
                                 "active_dataset",

@@ -70,6 +70,7 @@ rustc_library("openthread") {
     "src/ot/types/border_router_config.rs",
     "src/ot/types/border_routing_counters.rs",
     "src/ot/types/border_routing_peer.rs",
+    "src/ot/types/border_routing_rdnss.rs",
     "src/ot/types/border_routing_router.rs",
     "src/ot/types/castable.rs",
     "src/ot/types/channel_mask.rs",

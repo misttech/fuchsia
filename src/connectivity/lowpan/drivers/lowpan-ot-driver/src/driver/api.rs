@@ -1302,6 +1302,50 @@ where
             })
             .collect::<Vec<_>>();
 
+        // Get the list of discovered Recursive DNS Server (RDNSS) addresses by Border Routing
+        // Manager on the infrastructure link.
+        let border_routing_rdnsses = ot
+            .border_routing_rdnss_get_iterator()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_NEIGHBOR_INSPECT_ENTRIES as usize)
+            .map(|rdnss| fidl_fuchsia_lowpan_experimental::BorderRoutingRdnss {
+                router: Some(fidl_fuchsia_lowpan_experimental::BorderRoutingRouter {
+                    address: Some(Ipv6Addr::from(rdnss.router().address().octets()).to_string()),
+                    duration_since_last_update: Some(
+                        fuchsia_async::MonotonicDuration::from_millis(
+                            rdnss.router().msec_since_last_update().into(),
+                        )
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                    ),
+                    age: Some(
+                        fuchsia_async::MonotonicDuration::from_seconds(rdnss.router().age().into())
+                            .into_nanos()
+                            .try_into()
+                            .unwrap(),
+                    ),
+                    managed_address_config_flag: Some(rdnss.router().managed_address_config_flag()),
+                    other_config_flag: Some(rdnss.router().other_config_flag()),
+                    snac_router_flag: Some(rdnss.router().snac_router_flag()),
+                    is_local_device: Some(rdnss.router().is_local_device()),
+                    is_reachable: Some(rdnss.router().is_reachable()),
+                    is_peer_br: Some(rdnss.router().is_peer_br()),
+                    ..Default::default()
+                }),
+                address: Some(fidl_fuchsia_net::Ipv6Address { addr: rdnss.address().octets() }),
+                duration_since_last_update: Some(
+                    fuchsia_async::MonotonicDuration::from_millis(
+                        rdnss.msec_since_last_update().into(),
+                    )
+                    .into_nanos()
+                    .try_into()
+                    .unwrap(),
+                ),
+                lifetime: Some(rdnss.lifetime()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         // Get the active dataset.
         let mut active_dataset = fidl_fuchsia_lowpan_experimental::OperationalDataset::default();
         let mut operational_dataset = Default::default();
@@ -1717,6 +1761,7 @@ where
             border_routing_peers: Some(border_routing_peers),
             border_routing_routers: Some(border_routing_routers),
             border_routing_prefixes: Some(border_routing_prefixes),
+            border_routing_rdnsses: Some(border_routing_rdnsses),
             active_dataset: Some(active_dataset),
             multiradio_neighbor_info: Some(multiradio_neighbor_info),
             router_info: Some(router_info),

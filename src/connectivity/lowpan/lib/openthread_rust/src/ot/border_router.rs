@@ -80,6 +80,20 @@ impl<T: ?Sized + BorderRouter> Iterator for BorderRoutingPrefixTableIterator<'_,
     }
 }
 
+/// Iterator type for border routing the Recursive DNS Server (RDNSS) address.
+#[allow(missing_debug_implementations)]
+pub struct BorderRoutingRdnssIterator<'a, T: ?Sized> {
+    ot_instance: &'a T,
+    ot_iter: otBorderRoutingPrefixTableIterator,
+}
+
+impl<T: ?Sized + BorderRouter> Iterator for BorderRoutingRdnssIterator<'_, T> {
+    type Item = BorderRoutingRdnss;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.ot_instance.iter_next_border_routing_rdnss(&mut self.ot_iter)
+    }
+}
+
 /// Methods from the [OpenThread "Border Router" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-border-router
@@ -121,7 +135,8 @@ pub trait BorderRouter {
     fn border_routing_dhcp6_pd_get_state(&self) -> BorderRoutingDhcp6PdState;
 
     /// Functional equivalent of
-    /// [`otsys::otBorderRoutingDhcp6PdSetRequestCallback`](crate::otsys::otBorderRoutingDhcp6PdSetRequestCallback).
+    /// [`otsys::otBorderRoutingDhcp6PdSetRequestCallback`]
+    /// (crate::otsys::otBorderRoutingDhcp6PdSetRequestCallback).
     fn border_routing_dhcp6_pd_set_request_fn<'a, F>(&'a self, f: Option<F>)
     where
         F: FnMut(BorderRoutingDhcp6PdState) + 'a;
@@ -143,19 +158,23 @@ pub trait BorderRouter {
     fn border_routing_get_on_link_prefix(&self) -> Result<ot::Ip6Prefix>;
 
     /// Functional equivalent of
-    /// [`otsys::otPlatBorderRoutingProcessIcmp6Ra`](crate::otsys::otPlatBorderRoutingProcessIcmp6Ra).
+    /// [`otsys::otPlatBorderRoutingProcessIcmp6Ra`]
+    /// (crate::otsys::otPlatBorderRoutingProcessIcmp6Ra).
     fn border_routing_process_icmp6_ra(&self, message: &[u8]) -> Result<(), WrongSize>;
 
     /// Functional equivalent of
-    /// [`otsys::otBorderRoutingGetPdProcessedRaInfo`](crate::otsys::otBorderRoutingGetPdProcessedRaInfo).
+    /// [`otsys::otBorderRoutingGetPdProcessedRaInfo`]
+    /// (crate::otsys::otBorderRoutingGetPdProcessedRaInfo).
     fn border_routing_get_pd_processed_ra_info(&self) -> PdProcessedRaInfo;
 
     /// Functional equivalent of
-    /// [`otsys::otBorderRoutingIsMultiAilDetected`](crate::otsys::otBorderRoutingIsMultiAilDetected).
+    /// [`otsys::otBorderRoutingIsMultiAilDetected`]
+    /// (crate::otsys::otBorderRoutingIsMultiAilDetected).
     fn border_routing_is_multi_ail_detected(&self) -> bool;
 
     /// Functional equivalent of
-    /// [`otsys::otBorderRoutingPrefixTableInitIterator`](crate::otsys::otBorderRoutingPrefixTableInitIterator).
+    /// [`otsys::otBorderRoutingPrefixTableInitIterator`]
+    /// (crate::otsys::otBorderRoutingPrefixTableInitIterator).
     fn border_routing_prefix_table_init_iterator(
         &self,
         iter: &mut otBorderRoutingPrefixTableIterator,
@@ -184,6 +203,13 @@ pub trait BorderRouter {
         BorderRoutingPrefixTableIterator { ot_instance: self, ot_iter }
     }
 
+    /// Get the border routing rdnss iterator instance.
+    fn border_routing_rdnss_get_iterator(&self) -> BorderRoutingRdnssIterator<'_, Self> {
+        let mut ot_iter = otBorderRoutingPrefixTableIterator::default();
+        self.border_routing_prefix_table_init_iterator(&mut ot_iter);
+        BorderRoutingRdnssIterator { ot_instance: self, ot_iter }
+    }
+
     /// Functional equivalent of
     /// [`otsys::otBorderRouterGetNextRoute`](crate::otsys::otBorderRouterGetNextRoute).
     // TODO: Determine if the underlying implementation of
@@ -197,7 +223,8 @@ pub trait BorderRouter {
     ) -> Option<ExternalRouteConfig>;
 
     /// Functional equivalent of
-    /// [`otsys::otBorderRouterGetNextOnMeshPrefix`](crate::otsys::otBorderRouterGetNextOnMeshPrefix).
+    /// [`otsys::otBorderRouterGetNextOnMeshPrefix`]
+    /// (crate::otsys::otBorderRouterGetNextOnMeshPrefix).
     // TODO: Determine if the underlying implementation of
     //       this method has undefined behavior when network data
     //       is being mutated while iterating. If it is undefined,
@@ -209,14 +236,16 @@ pub trait BorderRouter {
     ) -> Option<BorderRouterConfig>;
 
     /// Functional equivalent of
-    /// [`otsys::otBorderRoutingGetNextPeerBrEntry`](crate::otsys::otBorderRoutingGetNextPeerBrEntry).
+    /// [`otsys::otBorderRoutingGetNextPeerBrEntry`]
+    /// (crate::otsys::otBorderRoutingGetNextPeerBrEntry).
     fn iter_next_border_routing_peer(
         &self,
         ot_iter: &mut otBorderRoutingPrefixTableIterator,
     ) -> Option<BorderRoutingPeer>;
 
     /// Functional equivalent of
-    /// [`otsys::otBorderRoutingGetNextRouterEntry`](crate::otsys::otBorderRoutingGetNextRouterEntry).
+    /// [`otsys::otBorderRoutingGetNextRouterEntry`]
+    /// (crate::otsys::otBorderRoutingGetNextRouterEntry).
     fn iter_next_border_routing_router(
         &self,
         ot_iter: &mut otBorderRoutingPrefixTableIterator,
@@ -229,6 +258,14 @@ pub trait BorderRouter {
         &self,
         ot_iter: &mut otBorderRoutingPrefixTableIterator,
     ) -> Option<BorderRoutingPrefixTableEntry>;
+
+    /// Functional equivalent of
+    /// [`otsys::otBorderRoutingGetNextRdnssAddrEntry`]
+    /// (crate::otsys::otBorderRoutingGetNextRdnssAddrEntry).
+    fn iter_next_border_routing_rdnss(
+        &self,
+        ot_iter: &mut otBorderRoutingPrefixTableIterator,
+    ) -> Option<BorderRoutingRdnss>;
 
     /// Returns an iterator for iterating over external routes.
     fn iter_local_external_routes(&self) -> LocalExternalRouteIterator<'_, Self> {
@@ -355,6 +392,13 @@ impl<T: BorderRouter + Boxable> BorderRouter for ot::Box<T> {
         ot_iter: &mut otBorderRoutingPrefixTableIterator,
     ) -> Option<BorderRoutingPrefixTableEntry> {
         self.as_ref().iter_next_border_routing_prefix_table(ot_iter)
+    }
+
+    fn iter_next_border_routing_rdnss(
+        &self,
+        ot_iter: &mut otBorderRoutingPrefixTableIterator,
+    ) -> Option<BorderRoutingRdnss> {
+        self.as_ref().iter_next_border_routing_rdnss(ot_iter)
     }
 }
 
@@ -614,6 +658,26 @@ impl BorderRouter for Instance {
                 Error::None => Some(ret),
                 err => {
                     panic!("Unexpected error from otBorderRoutingGetNextPrefixTableEntry: {err:?}")
+                }
+            }
+        }
+    }
+
+    fn iter_next_border_routing_rdnss(
+        &self,
+        ot_iter: &mut otBorderRoutingPrefixTableIterator,
+    ) -> Option<BorderRoutingRdnss> {
+        unsafe {
+            let mut ret = BorderRoutingRdnss::default();
+            match Error::from(otBorderRoutingGetNextRdnssAddrEntry(
+                self.as_ot_ptr(),
+                ot_iter as *mut otBorderRoutingPrefixTableIterator,
+                ret.as_ot_mut_ptr(),
+            )) {
+                Error::NotFound => None,
+                Error::None => Some(ret),
+                err => {
+                    panic!("Unexpected error from otBorderRoutingGetNextRdnssAddrEntry: {err:?}")
                 }
             }
         }
