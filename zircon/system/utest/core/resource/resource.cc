@@ -439,3 +439,27 @@ TEST(Resource, MexecPagerPanic) {
 }
 
 #endif  // defined(__x86_64__)
+
+// Regression test for https://fxbug.dev/503716683
+TEST(Resource, MexecZeroSizedVmo) {
+  // This test requires the MEXEC resource.
+  zx::unowned_resource system_resource = standalone::GetSystemResource();
+  if (!system_resource->is_valid()) {
+    ZXTEST_SKIP("System resource not available");
+  }
+
+  zx::result<zx::resource> mexec_rsrc_result =
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_MEXEC_BASE);
+
+  if (mexec_rsrc_result.is_error()) {
+    ZXTEST_SKIP("MEXEC resource not available or failed to derive");
+  }
+  zx::resource mexec_resource = std::move(mexec_rsrc_result.value());
+
+  zx::vmo vmo1, vmo2;
+  ASSERT_OK(zx::vmo::create(0, 0, &vmo1));
+  ASSERT_OK(zx::vmo::create(0, 0, &vmo2));
+
+  // Zero sized kernel or bootimage is never valid.
+  EXPECT_EQ(zx_system_mexec(mexec_resource.get(), vmo1.get(), vmo2.get()), ZX_ERR_BAD_STATE);
+}

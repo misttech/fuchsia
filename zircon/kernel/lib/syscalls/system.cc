@@ -267,6 +267,12 @@ static zx_status_t vmo_coalesce_pages(zx_handle_t vmo_hdl, const size_t extra_by
 
   const size_t vmo_size = vmo->size();
 
+  if (vmo_size == 0) {
+    // Zero sized data, for either kernel or bootimage does not make sense and for simplicity of the
+    // rest of the logic here we consider this case an error.
+    return ZX_ERR_BAD_STATE;
+  }
+
   const size_t num_pages = RoundUpPageSize(vmo_size + extra_bytes) / kPageSize;
 
   paddr_t base_addr;
