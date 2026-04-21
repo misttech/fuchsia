@@ -55,6 +55,23 @@ impl<T: ?Sized + HistoryTracker> Iterator for HistoryTrackerRouterIterator<'_, T
     }
 }
 
+/// Represents an iterator to iterate the NetData on-mesh prefix info history.
+#[allow(missing_debug_implementations)]
+pub struct HistoryTrackerOnMeshPrefixIterator<'a, T: ?Sized> {
+    ot_instance: &'a T,
+    ot_iter: otHistoryTrackerIterator,
+}
+
+impl<T: ?Sized + HistoryTracker> Iterator for HistoryTrackerOnMeshPrefixIterator<'_, T> {
+    type Item = (HistoryTrackerOnMeshPrefixInfo, u32);
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut entry_age = 0;
+        self.ot_instance
+            .iter_next_on_mesh_prefix_history(&mut self.ot_iter, &mut entry_age)
+            .map(|info| (info, entry_age))
+    }
+}
+
 /// Methods from the [OpenThread "history-tracker" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-history-tracker
@@ -116,6 +133,24 @@ pub trait HistoryTracker {
         ot_iter: &mut otHistoryTrackerIterator,
         entry_age: &mut u32,
     ) -> Option<HistoryTrackerRouterInfo>;
+
+    /// Get the history tracker netdata on-mesh prefix info history iterator instance.
+    fn history_tracker_on_mesh_prefix_history_get_iterator(
+        &self,
+    ) -> HistoryTrackerOnMeshPrefixIterator<'_, Self> {
+        let mut ot_iter = otHistoryTrackerIterator::default();
+        self.history_tracker_init_iterator(&mut ot_iter);
+        HistoryTrackerOnMeshPrefixIterator { ot_instance: self, ot_iter }
+    }
+
+    /// Functional equivalent of
+    /// [`otsys::otHistoryTrackerIterateOnMeshPrefixHistory`]
+    /// (crate::otsys::otHistoryTrackerIterateOnMeshPrefixHistory).
+    fn iter_next_on_mesh_prefix_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerOnMeshPrefixInfo>;
 }
 
 impl<T: HistoryTracker + Boxable> HistoryTracker for ot::Box<T> {
@@ -145,6 +180,14 @@ impl<T: HistoryTracker + Boxable> HistoryTracker for ot::Box<T> {
         entry_age: &mut u32,
     ) -> Option<HistoryTrackerRouterInfo> {
         self.as_ref().iter_next_router_history(ot_iter, entry_age)
+    }
+
+    fn iter_next_on_mesh_prefix_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerOnMeshPrefixInfo> {
+        self.as_ref().iter_next_on_mesh_prefix_history(ot_iter, entry_age)
     }
 }
 
@@ -198,6 +241,22 @@ impl HistoryTracker for Instance {
             );
 
             info_ptr.as_ref().map(|raw| HistoryTrackerRouterInfo(*raw))
+        }
+    }
+
+    fn iter_next_on_mesh_prefix_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerOnMeshPrefixInfo> {
+        unsafe {
+            let info_ptr = otHistoryTrackerIterateOnMeshPrefixHistory(
+                self.as_ot_ptr(),
+                ot_iter as *mut otHistoryTrackerIterator,
+                entry_age as *mut u32,
+            );
+
+            info_ptr.as_ref().map(|raw| HistoryTrackerOnMeshPrefixInfo(*raw))
         }
     }
 }

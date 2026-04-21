@@ -7,7 +7,9 @@ use crate::ot::{BorderAgentEphemeralKeyState, create_ephemeral_key};
 use anyhow::Error;
 use async_trait::async_trait;
 use core::future::ready;
-use fidl_fuchsia_lowpan_experimental::{HistoryTrackerNeighborEvent, HistoryTrackerRouterEvent};
+use fidl_fuchsia_lowpan_experimental::{
+    HistoryTrackerNeighborEvent, HistoryTrackerNetDataEvent, HistoryTrackerRouterEvent,
+};
 use lowpan_driver_common::lowpan_fidl::*;
 use lowpan_driver_common::{AsyncConditionWait, Driver as LowpanDriver};
 use openthread::ot::SrpServerLeaseInfo;
@@ -1503,6 +1505,47 @@ where
                 ..Default::default()
             })
             .collect::<Vec<_>>();
+        let prefix_info_history = ot
+            .history_tracker_on_mesh_prefix_history_get_iterator()
+            .take(
+                fidl_fuchsia_lowpan_experimental::MAX_THREAD_NET_DATA_PREFIX_HISTORY_ENTRIES
+                    as usize,
+            )
+            .map(|(prefix, entry_age)| {
+                fidl_fuchsia_lowpan_experimental::ThreadNetDataPrefixInfoEntry {
+                    age: Some(
+                        fuchsia_async::MonotonicDuration::from_millis(entry_age.into())
+                            .into_nanos()
+                            .try_into()
+                            .unwrap(),
+                    ),
+                    event: Some(match prefix.event() {
+                        openthread::ot::HistoryTrackerNetDataEvent::Added => {
+                            HistoryTrackerNetDataEvent::Added
+                        }
+                        openthread::ot::HistoryTrackerNetDataEvent::Removed => {
+                            HistoryTrackerNetDataEvent::Removed
+                        }
+                    }),
+                    on_mesh_prefix: Some(fidl_fuchsia_lowpan_experimental::BorderRouterConfig {
+                        prefix: Some(prefix.prefix().prefix().to_string()),
+                        preference: Some(prefix.prefix().preference() as i8),
+                        preferred: Some(prefix.prefix().is_preferred()),
+                        slaac: Some(prefix.prefix().is_slaac()),
+                        dhcp: Some(prefix.prefix().is_dhcp()),
+                        configure: Some(prefix.prefix().is_configure()),
+                        default_route: Some(prefix.prefix().is_default_route()),
+                        on_mesh: Some(prefix.prefix().is_on_mesh()),
+                        stable: Some(prefix.prefix().is_stable()),
+                        nd_dns: Some(prefix.prefix().is_nd_dns()),
+                        dp: Some(prefix.prefix().is_domain_prefix()),
+                        rloc16: Some(prefix.prefix().rloc16()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }
+            })
+            .collect::<Vec<_>>();
 
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
@@ -1587,6 +1630,7 @@ where
                 net_info_history: Some(net_info_history),
                 neighbor_info_history: Some(neighbor_info_history),
                 router_info_history: Some(router_info_history),
+                prefix_info_history: Some(prefix_info_history),
                 ..Default::default()
             }),
             ..Default::default()

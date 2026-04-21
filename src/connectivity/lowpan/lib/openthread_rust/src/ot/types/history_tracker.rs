@@ -177,3 +177,54 @@ impl HistoryTrackerRouterInfo {
         self.0.mPathCost()
     }
 }
+
+/// Defines the events for a Network Data entry (i.e., whether an entry is added or removed).
+///
+/// Functional equivalent of [`otsys::otHistoryTrackerNetDataEvent`](crate::otsys::otHistoryTrackerNetDataEvent).
+#[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, FromPrimitive)]
+#[allow(missing_docs)]
+pub enum HistoryTrackerNetDataEvent {
+    /// Functional equivalent of [`otsys::OT_HISTORY_TRACKER_NET_DATA_ENTRY_ADDED`](crate::otsys::OT_HISTORY_TRACKER_NET_DATA_ENTRY_ADDED).
+    Added = OT_HISTORY_TRACKER_ROUTER_EVENT_ADDED as isize,
+
+    /// Functional equivalent of [`otsys::OT_HISTORY_TRACKER_NET_DATA_ENTRY_REMOVED`](crate::otsys::OT_HISTORY_TRACKER_NET_DATA_ENTRY_REMOVED).
+    Removed = OT_HISTORY_TRACKER_NET_DATA_ENTRY_REMOVED as isize,
+}
+
+impl From<otHistoryTrackerNetDataEvent> for HistoryTrackerNetDataEvent {
+    fn from(x: otHistoryTrackerNetDataEvent) -> Self {
+        use num::FromPrimitive;
+        Self::from_u32(x)
+            .unwrap_or_else(|| panic!("Unknown otHistoryTrackerNetDataEvent value: {x}"))
+    }
+}
+
+/// This structure represents a NetData on-mesh prefix info in the history tracker report.
+///
+/// Functional equivalent of [`otsys::otHistoryTrackerOnMeshPrefixInfo`](crate::otsys::otHistoryTrackerOnMeshPrefixInfo).
+#[derive(Default, Clone)]
+#[repr(transparent)]
+pub struct HistoryTrackerOnMeshPrefixInfo(pub otHistoryTrackerOnMeshPrefixInfo);
+
+impl_ot_castable!(HistoryTrackerOnMeshPrefixInfo, otHistoryTrackerOnMeshPrefixInfo);
+
+impl HistoryTrackerOnMeshPrefixInfo {
+    /// Returns the on-mesh prefix entry.
+    pub fn prefix(&self) -> BorderRouterConfig {
+        BorderRouterConfig(self.0.mPrefix)
+    }
+
+    /// Returns the NetData on-mesh prefix event (added/removed).
+    pub fn event(&self) -> HistoryTrackerNetDataEvent {
+        HistoryTrackerNetDataEvent::from(self.0.mEvent)
+    }
+}
+
+impl std::fmt::Debug for HistoryTrackerOnMeshPrefixInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("HistoryTrackerOnMeshPrefixInfo");
+        ds.field("on-mesh prefix", &self.prefix());
+        ds.field("event", &self.event());
+        ds.finish()
+    }
+}
