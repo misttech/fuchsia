@@ -22,6 +22,8 @@
 
 #include <fbl/unique_fd.h>
 
+namespace {
+
 // Returns true if all modules were loaded successfully.
 bool LoadModules(const std::string& modules_dir) {
   DIR* dir = opendir(modules_dir.c_str());
@@ -68,6 +70,42 @@ bool LoadModules(const std::string& modules_dir) {
   return modules.empty();
 }
 
+bool SetupConsole() {
+  // Create /dev/hvc0 if it doesn't exist.
+  if (mknod("/dev/hvc0", S_IFCHR | 0600, makedev(229, 0)) < 0) {
+    if (errno != EEXIST) {
+      perror("mknod /dev/hvc0 failed");
+      return false;
+    }
+  }
+
+  // Redirect stdout and stderr to /dev/hvc0.
+  // We use a polling loop because the kernel does asynchronous work in the
+  // background.
+  int fd = -1;
+  for (int i = 0; i < 100; i++) {
+    fd = open("/dev/hvc0", O_RDWR);
+    if (fd >= 0) {
+      break;
+    }
+    usleep(100000);  // Wait 0.1s
+  }
+
+  if (fd < 0) {
+    perror("open /dev/hvc0 failed");
+    return false;
+  }
+
+  dup2(fd, STDOUT_FILENO);
+  dup2(fd, STDERR_FILENO);
+  close(fd);
+  setbuf(stdout, NULL);
+  setbuf(stderr, NULL);
+  return true;
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
   auto reboot_before_exit = fit::defer([] { reboot(RB_POWER_OFF); });
 
@@ -77,24 +115,9 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Create /dev/hvc0 if it doesn't exist.
-  if (mknod("/dev/hvc0", S_IFCHR | 0600, makedev(229, 0)) < 0) {
-    if (errno != EEXIST) {
-      perror("mknod /dev/hvc0 failed");
-    }
-  }
-
-  // Redirect stdout/stderr to /dev/hvc0
-  int fd = open("/dev/hvc0", O_RDWR);
-
-  if (fd >= 0) {
-    dup2(fd, STDOUT_FILENO);
-    dup2(fd, STDERR_FILENO);
-    close(fd);
-    setbuf(stdout, NULL);
-    setbuf(stderr, NULL);
-  } else {
-    perror("open /dev/hvc0 failed");
+  if (!SetupConsole()) {
+    perror("Failed to setup console");
+    return 1;
   }
 
   pid_t child_pid = fork();
