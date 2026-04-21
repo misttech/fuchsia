@@ -513,6 +513,11 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			String: "QBG-D: Exit QBG",
 			Type:   syslogType,
 		},
+		// For https://fxbug.dev/504722922
+		&stringInLogCheck{
+			String: "CRASH: process driver-host-#battery",
+			Type:   syslogType,
+		},
 		// For https://fxbug.dev/437357219
 		&stringInLogCheck{
 			// LINT.IfChange(failed_to_probe_irremovable_device)
