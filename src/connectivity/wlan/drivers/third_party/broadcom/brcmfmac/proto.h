@@ -137,6 +137,9 @@ static inline void brcmf_proto_add_tdls_peer(struct brcmf_pub* drvr, int ifidx,
 }
 
 static inline zx_status_t brcmf_proto_reset(struct brcmf_pub* drvr) {
+  if (drvr->proto == nullptr) {
+    return ZX_ERR_BAD_STATE;
+  }
   if (!drvr->proto->reset) {
     return ZX_OK;
   }
