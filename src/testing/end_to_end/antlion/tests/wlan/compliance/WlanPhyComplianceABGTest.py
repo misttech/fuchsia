@@ -8,7 +8,7 @@ from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
 

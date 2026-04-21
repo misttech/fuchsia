@@ -15,8 +15,8 @@ from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
     WlanPolicyControllerError,
 )
-from antlion.test_utils.wifi import base_test
 from antlion.utils import rand_ascii_str, rand_hex_str
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )

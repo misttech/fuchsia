@@ -29,7 +29,7 @@ from antlion.test_utils.abstract_devices.wlan_device import (
     SupportsWLAN,
     create_wlan_device,
 )
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectivityMode,
     OperatingBand,

@@ -13,7 +13,7 @@ from antlion.controllers.ap_lib import (
     hostapd_constants,
     hostapd_security,
 )
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectionState,
     SecurityType,

@@ -24,7 +24,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord

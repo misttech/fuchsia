@@ -22,7 +22,7 @@ from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )

@@ -15,8 +15,8 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
-from antlion.test_utils.wifi import base_test
 from antlion.utils import rand_ascii_str
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )

@@ -17,8 +17,8 @@ from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.test_utils.wifi import base_test
 from antlion.utils import rand_ascii_str
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
 from mobly_controller.openwrt_access_point.lib.access_point_config import (

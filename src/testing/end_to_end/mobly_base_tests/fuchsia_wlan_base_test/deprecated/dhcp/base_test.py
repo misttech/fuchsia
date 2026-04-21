@@ -22,7 +22,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
 )
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals
 from mobly.config_parser import TestRunConfig
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
@@ -249,11 +249,14 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
 
     def get_dhcp_logs(self) -> str:
         if self.openwrt_ap:
-            return self.openwrt_ap.dhcp.get_dhcp_logs_since_last_dhcp_start()
+            val = self.openwrt_ap.dhcp.get_dhcp_logs_since_last_dhcp_start()
+            assert isinstance(val, str)
+            return val
         elif self.access_point:
             dhcp_logs = self.access_point.get_dhcp_logs()
             if dhcp_logs is None:
                 raise signals.TestFailure("No DHCP logs")
+            assert isinstance(dhcp_logs, str)
             return dhcp_logs
         else:
             raise signals.TestFailure("No access point found")

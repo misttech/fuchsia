@@ -7,7 +7,7 @@
 import random
 from dataclasses import dataclass
 
-from antlion.test_utils.dhcp import base_test
+from fuchsia_wlan_base_test.deprecated.dhcp import base_test
 from mobly import asserts, test_runner
 
 OPT_NUM_DOMAIN_SEARCH = 119

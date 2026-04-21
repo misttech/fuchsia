@@ -26,7 +26,7 @@ from antlion.controllers.ap_lib.wireless_network_management import (
 )
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
 

@@ -23,7 +23,7 @@ from antlion.controllers.iperf_client import (
 )
 from antlion.controllers.iperf_server import IPerfResult, IPerfServerOverSsh
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig

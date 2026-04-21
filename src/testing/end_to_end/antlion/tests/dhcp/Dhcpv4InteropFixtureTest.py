@@ -6,7 +6,7 @@
 
 
 from antlion.controllers.ap_lib import dhcp_config
-from antlion.test_utils.dhcp import base_test
+from fuchsia_wlan_base_test.deprecated.dhcp import base_test
 from mobly import asserts, signals, test_runner
 
 

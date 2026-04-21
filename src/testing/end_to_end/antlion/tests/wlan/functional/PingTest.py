@@ -18,8 +18,8 @@ from antlion import utils
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
-from antlion.test_utils.wifi import base_test
 from antlion.utils import PingResult, rand_ascii_str
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,

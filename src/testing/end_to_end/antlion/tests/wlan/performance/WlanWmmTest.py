@@ -18,7 +18,7 @@ from antlion.test_utils.abstract_devices.wlan_device import (
     create_wlan_device,
 )
 from antlion.test_utils.fuchsia import wmm_test_cases
-from antlion.test_utils.wifi import base_test
+from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, test_runner
 
 DEFAULT_N_CAPABILITIES_20_MHZ = [
