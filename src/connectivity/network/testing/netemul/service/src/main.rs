@@ -49,6 +49,7 @@ const DEVFS_CAPABILITY: &str = "dev-topological";
 const CUSTOM_ARTIFACTS_PATH: &str = "/custom_artifacts";
 const CUSTOM_ARTIFACTS_CAPABILITY: &str = "custom_artifacts";
 const HWNETWORK_SERVICE_MEMBER_NAME: &str = "device";
+const DEVICE_TOPOLOGY_MEMBER_NAME: &str = "device_topology";
 
 #[derive(Error, Debug)]
 enum CreateRealmError {
@@ -781,6 +782,17 @@ async fn add_hwnetwork_service(
     hwnetwork_service.add_entry(&instance_name, instance_dir.clone()).inspect_err(|err| {
         error!("failed to create service for {instance_name}: {err:?}");
     })?;
+    let (device_controller, device_controller_server_end) = fidl::endpoints::create_proxy();
+    device_proxy.serve_controller(device_controller_server_end).map_err(|err| {
+        error!(
+            "failed to serve controller on path svc/{}/{}/{}: {:?}",
+            fhwnet::ServiceMarker::SERVICE_NAME,
+            instance_name,
+            DEVICE_TOPOLOGY_MEMBER_NAME,
+            err
+        );
+        zx::Status::INTERNAL
+    })?;
     instance_dir
         .add_entry(
             HWNETWORK_SERVICE_MEMBER_NAME,
@@ -800,6 +812,42 @@ async fn add_hwnetwork_service(
             }),
         )
         .expect("adding the member service should always succeed");
+    // TODO(https://fxbug.dev/501161302): Remove or replace once netcfg no
+    // longer needs topo path.
+    instance_dir
+        .add_entry(
+            DEVICE_TOPOLOGY_MEMBER_NAME,
+            vfs::service::host::<fidl_fuchsia_device_fs::TopologicalPathRequestStream, _, _>(
+                move |requests| {
+                    requests
+                        .try_for_each({
+                            let device_controller = device_controller.clone();
+                            move |request| {
+                                let device_controller = device_controller.clone();
+                                async move {
+                                    use fidl_fuchsia_device_fs::TopologicalPathRequest;
+                                    match request {
+                                        TopologicalPathRequest::GetTopologicalPath {
+                                            responder,
+                                        } => {
+                                            match device_controller.get_topological_path().await? {
+                                                Ok(path) => responder.send(Ok(&path)),
+                                                Err(err) => responder.send(Err(err)),
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        })
+                        .map(|result| {
+                            result.unwrap_or_else(|err| {
+                                error!("error while serving device_topology: {err:?}");
+                            })
+                        })
+                },
+            ),
+        )
+        .expect("adding the device topology should always succeed");
     Ok(())
 }
 
@@ -2694,9 +2742,18 @@ mod tests {
         // Verify we can connect to the members of the service.
         let instance =
             service.connect_to_instance(TEST_DEVICE_NAME).expect("connect to instance failed");
-        let device = instance.connect_to_device().expect("connect to device failed");
-        // Make sure the device channel is working by calling get_info on it.
-        let _info = device.get_info().await.expect("get_info failed");
+        let _device = instance.connect_to_device().expect("connect to device failed");
+        let device_topology =
+            instance.connect_to_device_topology().expect("connect to device topology failed");
+
+        // Verify topology works by calling get_topological_path
+        let topo_path = device_topology
+            .get_topological_path()
+            .await
+            .expect("get_topological_path failed")
+            .expect("get_topological_path returned error");
+        assert!(!topo_path.is_empty());
+        assert!(topo_path.contains(TEST_DEVICE_NAME));
 
         // Adding the "test" device again causes an error.
         let result = realm

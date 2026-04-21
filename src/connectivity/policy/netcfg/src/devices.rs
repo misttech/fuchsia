@@ -4,7 +4,6 @@
 
 use std::fmt::Display;
 
-use fidl_fuchsia_device as fdev;
 use fidl_fuchsia_hardware_network as fhwnet;
 
 use anyhow::Context as _;
@@ -76,17 +75,30 @@ impl std::fmt::Debug for NetworkDeviceInstance {
 }
 
 impl NetworkDeviceInstance {
-    pub const PATH: &'static str = "/dev/class/network";
-
     pub async fn get_instance_stream(
         installer: &fidl_fuchsia_net_interfaces_admin::InstallerProxy,
-        path: &std::path::PathBuf,
+        service: fhwnet::ServiceProxy,
     ) -> Result<impl futures::Stream<Item = Result<Self, errors::Error>> + use<>, errors::Error>
     {
-        let (topological_path, _file_path, device) =
-            get_topo_path_and_device::<fhwnet::DeviceMarker>(path)
-                .await
-                .with_context(|| format!("open netdevice at {:?}", path))?;
+        let device = service
+            .connect_to_device()
+            .context("cannot connect to device")
+            .map_err(errors::Error::NonFatal)?;
+        // TODO(https://fxbug.dev/501161302): Use
+        // `fuchsia.driver.token.NodeBusTopology`.
+        let device_topology = service
+            .connect_to_device_topology()
+            .context("cannot connect to device_topology")
+            .map_err(errors::Error::NonFatal)?;
+
+        let topological_path = device_topology
+            .get_topological_path()
+            .await
+            .context("error sending get topological path request")
+            .map_err(errors::Error::NonFatal)?
+            .map_err(zx::Status::from_raw)
+            .context("error getting topological path")
+            .map_err(errors::Error::NonFatal)?;
 
         let (port_watcher, port_watcher_server_end) =
             fidl::endpoints::create_proxy::<fhwnet::PortWatcherMarker>();
@@ -238,41 +250,4 @@ impl NetworkDeviceInstance {
         })?;
         Ok((interface_id, control))
     }
-}
-
-/// Returns the topological path for a device located at `filepath`, `filepath`
-/// converted to `String`, and a proxy to `S`.
-///
-/// It is expected that the node at `filepath` implements `S`,
-/// and that the node at `filepath` + `/device_controller` implements `fuchsia.device/Controller`.
-async fn get_topo_path_and_device<S: fidl::endpoints::ProtocolMarker>(
-    filepath: &std::path::PathBuf,
-) -> Result<(String, String, S::Proxy), errors::Error> {
-    let filepath = filepath
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("failed to convert {:?} to str", filepath))
-        .map_err(errors::Error::NonFatal)?;
-
-    // Get the topological path using `fuchsia.device/Controller`.
-    let (controller, req) = fidl::endpoints::create_proxy::<fdev::ControllerMarker>();
-    let controller_path = format!("{filepath}/device_controller");
-    fdio::service_connect(&controller_path, req.into_channel().into())
-        .with_context(|| format!("error calling fdio::service_connect({})", controller_path))
-        .map_err(errors::Error::NonFatal)?;
-    let topological_path = controller
-        .get_topological_path()
-        .await
-        .context("error sending get topological path request")
-        .map_err(errors::Error::NonFatal)?
-        .map_err(zx::Status::from_raw)
-        .context("error getting topological path")
-        .map_err(errors::Error::NonFatal)?;
-
-    // Now connect to the device channel.
-    let (device, req) = fidl::endpoints::create_proxy::<S>();
-    fdio::service_connect(filepath, req.into_channel().into())
-        .with_context(|| format!("error calling fdio::service_connect({})", filepath))
-        .map_err(errors::Error::NonFatal)?;
-
-    Ok((topological_path, filepath.to_string(), device))
 }

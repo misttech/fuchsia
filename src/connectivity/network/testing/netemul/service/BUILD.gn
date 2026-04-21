@@ -16,6 +16,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
     "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+    "//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_rust",
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",

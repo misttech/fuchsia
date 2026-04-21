@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.hardware.network;
 
+using fuchsia.device.fs;
 using zx;
 
 /// Maximum numbers of supported frame types for rx or tx.
@@ -160,6 +161,9 @@ closed protocol Device {
 @available(added=HEAD)
 service Service {
     device client_end:Device;
+    // TODO(https://issues.fuchsia.dev/issues/501161302): Use the new
+    // `fuchsia.driver.token.NodeBusTopology` instead.
+    device_topology client_end:fuchsia.device.fs.TopologicalPath;
 };
 
 /// Provides iteration over and updates for ports attached to a device.

@@ -31,7 +31,6 @@ use fidl_fuchsia_net_ext::{self as fnet_ext, DisplayExt as _, IpExt as _};
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _};
 use fuchsia_component::client::{clone_namespace_svc, new_protocol_connector_in_dir};
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
-use fuchsia_fs::directory as fvfs_watcher;
 
 use crate::network::PropertyUpdate;
 
@@ -171,11 +170,6 @@ impl From<Metric> for u32 {
         u
     }
 }
-
-/// A node that represents the directory it is in.
-///
-/// `/dir` and `/dir/.` point to the same directory.
-const THIS_DIRECTORY: &str = ".";
 
 /// The prefix length for the address assigned to a WLAN AP interface.
 const WLAN_AP_PREFIX_LEN: PrefixLength<Ipv4> = prefix_length_v4!(29);
@@ -2469,84 +2463,57 @@ impl<'a> NetCfg<'a> {
         anyhow::Error,
     > {
         let installer = self.installer.clone();
-        let directory = fuchsia_fs::directory::open_in_namespace(
-            devices::NetworkDeviceInstance::PATH,
-            fio::PERM_READABLE,
-        )
-        .with_context(|| format!("error opening netdevice directory"))?;
-        let stream_of_streams = fvfs_watcher::Watcher::new(&directory)
-            .await
-            .with_context(|| {
-                format!("creating watcher for {}", devices::NetworkDeviceInstance::PATH)
-            })?
-            .err_into()
-            .try_filter_map(move |fvfs_watcher::WatchMessage { event, filename }| {
-                let installer = installer.clone();
-                async move {
-                    trace!("got {:?} event for {}", event, filename.display());
-
-                    if filename.to_str() == Some(THIS_DIRECTORY) {
-                        debug!("skipping device w/ filename = {}", filename.display());
-                        return Ok(None);
-                    }
-
-                    match event {
-                        fvfs_watcher::WatchEvent::ADD_FILE | fvfs_watcher::WatchEvent::EXISTING => {
-                            let filepath = path::Path::new(devices::NetworkDeviceInstance::PATH)
-                                .join(filename);
-                            info!("found new network device at {:?}", filepath);
-                            match devices::NetworkDeviceInstance::get_instance_stream(
-                                &installer, &filepath,
-                            )
-                            .await
-                            .context("create instance stream")
-                            {
-                                Ok(stream) => Ok(Some(
-                                    stream
-                                        .filter_map(move |r| {
-                                            futures::future::ready(match r {
-                                                Ok(instance) => Some(Ok(instance)),
-                                                Err(errors::Error::NonFatal(nonfatal)) => {
-                                                    error!(
-                                        "non-fatal error operating device stream for {:?}: {:?}",
-                                        filepath,
-                                        nonfatal
-                                    );
-                                                    None
-                                                }
-                                                Err(errors::Error::Fatal(fatal)) => {
-                                                    Some(Err(fatal))
-                                                }
-                                            })
+        let stream_of_streams =
+            fuchsia_component::client::Service::open(fidl_fuchsia_hardware_network::ServiceMarker)
+                .context("cannot open fuchsia.hardware.network.Service")?
+                .watch()
+                .await
+                .context("cannot watch for devices")?
+                .err_into()
+                .try_filter_map(move |service: fidl_fuchsia_hardware_network::ServiceProxy| {
+                    let installer = installer.clone();
+                    async move {
+                        let name = service.instance_name().to_string();
+                        info!("found new network device {name}");
+                        match devices::NetworkDeviceInstance::get_instance_stream(
+                            &installer, service,
+                        )
+                        .await
+                        .context("create instance stream")
+                        {
+                            Ok(stream) => Ok(Some(
+                                stream
+                                    .filter_map(move |r| {
+                                        futures::future::ready(match r {
+                                            Ok(instance) => Some(Ok(instance)),
+                                            Err(errors::Error::NonFatal(nonfatal)) => {
+                                                error!(
+                                                    "non-fatal error operating device stream \
+                                                    for {name:?}: {nonfatal:?}"
+                                                );
+                                                None
+                                            }
+                                            Err(errors::Error::Fatal(fatal)) => Some(Err(fatal)),
                                         })
-                                        // Need to box the stream to combine it
-                                        // with flatten_unordered because it's
-                                        // not Unpin.
-                                        .boxed(),
-                                )),
-                                Err(errors::Error::NonFatal(nonfatal)) => {
-                                    error!(
-                                        "non-fatal error fetching device stream for {:?}: {:?}",
-                                        filepath, nonfatal
-                                    );
-                                    Ok(None)
-                                }
-                                Err(errors::Error::Fatal(fatal)) => Err(fatal),
+                                    })
+                                    // Need to box the stream to combine it
+                                    // with flatten_unordered because it's
+                                    // not Unpin.
+                                    .boxed(),
+                            )),
+                            Err(errors::Error::NonFatal(nonfatal)) => {
+                                error!(
+                                    "non-fatal error fetching device stream for {:?}: {:?}",
+                                    name, nonfatal
+                                );
+                                Ok(None)
                             }
+                            Err(errors::Error::Fatal(fatal)) => Err(fatal),
                         }
-                        fvfs_watcher::WatchEvent::IDLE | fvfs_watcher::WatchEvent::REMOVE_FILE => {
-                            Ok(None)
-                        }
-                        event => Err(anyhow::anyhow!(
-                            "unrecognized event {:?} for device filename {}",
-                            event,
-                            filename.display()
-                        )),
                     }
-                }
-            })
-            .fuse()
-            .try_flatten_unordered(None);
+                })
+                .fuse()
+                .try_flatten_unordered(None);
         Ok(stream_of_streams)
     }
 

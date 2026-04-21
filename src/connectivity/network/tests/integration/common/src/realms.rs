@@ -607,9 +607,13 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                                 >(
                                     constants::netstack::COMPONENT_NAME,
                                 )),
-                                fnetemul::Capability::NetemulDevfs(fnetemul::DevfsDep {
-                                    name: Some(constants::netcfg::DEV_CLASS_NETWORK.to_string()),
-                                    subdir: Some(constants::netcfg::CLASS_NETWORK_PATH.to_string()),
+                                fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                                    name: Some(
+                                        fnetemul::NETEMUL_SERVICES_COMPONENT_NAME.to_string(),
+                                    ),
+                                    capability: Some(fnetemul::ExposedCapability::Service(
+                                        fhwnet::ServiceMarker::SERVICE_NAME.to_string(),
+                                    )),
                                     ..Default::default()
                                 }),
                                 fnetemul::Capability::StorageDep(fnetemul::StorageDep {
