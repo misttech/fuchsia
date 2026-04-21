@@ -99,20 +99,22 @@ void Device::Shutdown(fit::callback<void()> on_shutdown_complete) {
     brcmf_pub_->default_wq.Shutdown();
   }
 
-  on_netdev_shutdown_complete_ = [on_shutdown_complete = std::move(on_shutdown_complete),
-                                  this]() mutable {
-    if (netdev_dispatcher_.get()) {
-      netdev_dispatcher_.ShutdownAsync();
-      netdev_dispatcher_shutdown_.Wait();
-      netdev_dispatcher_.close();
-    }
-    on_shutdown_complete();
-  };
+  DestroyAllIfaces([on_shutdown_complete = std::move(on_shutdown_complete), this]() mutable {
+    on_netdev_shutdown_complete_ = [on_shutdown_complete = std::move(on_shutdown_complete),
+                                    this]() mutable {
+      if (netdev_dispatcher_.get()) {
+        netdev_dispatcher_.ShutdownAsync();
+        netdev_dispatcher_shutdown_.Wait();
+        netdev_dispatcher_.close();
+      }
+      on_shutdown_complete();
+    };
 
-  if (!network_device_.Remove()) {
-    // No removal needed, immediately call on_netdev_shutdown_complete to signal we're done
-    on_netdev_shutdown_complete_();
-  }
+    if (!network_device_.Remove()) {
+      // No removal needed, immediately call on_netdev_shutdown_complete to signal we're done
+      on_netdev_shutdown_complete_();
+    }
+  });
 }
 
 zx_status_t Device::AddWlanPhyImplService() {
