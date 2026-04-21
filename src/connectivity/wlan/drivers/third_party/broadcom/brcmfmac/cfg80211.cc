@@ -7588,6 +7588,9 @@ static zx_status_t brcmf_notify_mic_status(struct brcmf_if* ifp, const struct br
 static zx_status_t brcmf_notify_vif_event(struct brcmf_if* ifp, const struct brcmf_event_msg* e,
                                           void* data) {
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
+  if (cfg == nullptr) {
+    return ZX_ERR_BAD_STATE;
+  }
   struct brcmf_if_event* ifevent = (struct brcmf_if_event*)data;
   struct brcmf_cfg80211_vif_event* event = &cfg->vif_event;
   struct brcmf_cfg80211_vif* vif;
@@ -8136,6 +8139,9 @@ bool brcmf_get_vif_state_any(struct brcmf_cfg80211_info* cfg, brcmf_vif_status_b
 
 void brcmf_cfg80211_arm_vif_event(struct brcmf_cfg80211_info* cfg, struct brcmf_cfg80211_vif* vif,
                                   uint8_t pending_action) {
+  if (cfg == nullptr) {
+    return;
+  }
   struct brcmf_cfg80211_vif_event* event = &cfg->vif_event;
 
   mtx_lock(&event->vif_event_lock);
@@ -8147,6 +8153,9 @@ void brcmf_cfg80211_arm_vif_event(struct brcmf_cfg80211_info* cfg, struct brcmf_
 }
 
 void brcmf_cfg80211_disarm_vif_event(struct brcmf_cfg80211_info* cfg) {
+  if (cfg == nullptr) {
+    return;
+  }
   struct brcmf_cfg80211_vif_event* event = &cfg->vif_event;
 
   mtx_lock(&event->vif_event_lock);
@@ -8156,6 +8165,9 @@ void brcmf_cfg80211_disarm_vif_event(struct brcmf_cfg80211_info* cfg) {
 }
 
 bool brcmf_cfg80211_vif_event_armed(struct brcmf_cfg80211_info* cfg) {
+  if (cfg == nullptr) {
+    return false;
+  }
   struct brcmf_cfg80211_vif_event* event = &cfg->vif_event;
   bool armed;
 
@@ -8167,6 +8179,9 @@ bool brcmf_cfg80211_vif_event_armed(struct brcmf_cfg80211_info* cfg) {
 }
 
 zx_status_t brcmf_cfg80211_wait_vif_event(struct brcmf_cfg80211_info* cfg, zx_duration_t timeout) {
+  if (cfg == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
   struct brcmf_cfg80211_vif_event* event = &cfg->vif_event;
 
   return sync_completion_wait(&event->vif_event_wait, timeout);
@@ -8323,6 +8338,9 @@ void brcmf_cfg80211_detach(struct brcmf_cfg80211_info* cfg) {
   BRCMF_DBG(TEMP, "* * Would have called wiphy_unregister(cfg->wiphy);");
   brcmf_deinit_cfg(cfg);
   brcmf_clear_assoc_ies(cfg);
+  if (cfg->pub != nullptr) {
+    cfg->pub->config = nullptr;
+  }
   free(cfg);
 }
 
