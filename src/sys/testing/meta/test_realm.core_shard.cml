@@ -660,6 +660,11 @@
             from: "#network",
             to: "#testing",
         },
+        {
+            service: "fuchsia.hardware.network.Service",
+            from: "parent",
+            to: "#testing",
+        },
 
         // Required by ctf tests
         {

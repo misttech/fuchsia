@@ -8,16 +8,20 @@ use assert_matches::assert_matches;
 use fidl_fuchsia_hardware_network as fhardware_network;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_debug as fnet_debug;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fidl_fuchsia_net_root as fnet_root;
-use futures::TryStreamExt as _;
+use futures::{StreamExt as _, TryStreamExt as _};
 use net_declare::fidl_mac;
 use netstack_testing_common::devices::{
     add_pure_ip_interface, create_ip_tun_port, create_tun_device, install_device,
 };
-use netstack_testing_common::realms::{Netstack, TestRealmExt as _, TestSandboxExt as _};
+use netstack_testing_common::realms::{
+    Netstack, Netstack3, TestRealmExt as _, TestSandboxExt as _,
+};
 use netstack_testing_macros::netstack_test;
+use std::collections::HashMap;
 
 async fn get_loopback_id(realm: &netemul::TestRealm<'_>) -> u64 {
     let fnet_interfaces_ext::Properties { id, .. } =
@@ -232,4 +236,49 @@ async fn get_process_handle_for_inspection<N: Netstack>(name: &str) {
         diagnostics.get_process_handle_for_inspection().await.expect("call get_process_handle");
     let zx::HandleBasicInfo { rights, .. } = process.basic_info().expect("get process basic info");
     assert_eq!(rights.bits(), zx::sys::ZX_RIGHT_INSPECT);
+}
+
+#[netstack_test]
+async fn close_backing_session(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let debug_interfaces =
+        realm.connect_to_protocol::<fnet_debug::InterfacesMarker>().expect("connect to protocol");
+
+    let (tun_device, network_device) = create_tun_device();
+    let (_tun_port1, network_port1) = create_ip_tun_port(&tun_device, 1).await;
+    let (_tun_port2, network_port2) = create_ip_tun_port(&tun_device, 2).await;
+
+    let admin_device_control = install_device(&realm, network_device);
+
+    let _control1 = add_pure_ip_interface(&network_port1, &admin_device_control, "port1").await;
+    let _control2 = add_pure_ip_interface(&network_port2, &admin_device_control, "port2").await;
+
+    let id1 = _control1.get_id().await.expect("get id");
+    let id2 = _control2.get_id().await.expect("get id");
+
+    let interfaces_state =
+        realm.connect_to_protocol::<fnet_interfaces::StateMarker>().expect("connect to protocol");
+    let mut stream = std::pin::pin!(
+        fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
+            &interfaces_state,
+            Default::default()
+        )
+        .expect("create event stream")
+    );
+
+    let mut if_map = HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new();
+    fnet_interfaces_ext::wait_interface(stream.by_ref(), &mut if_map, |if_map| {
+        (if_map.contains_key(&id1) && if_map.contains_key(&id2)).then_some(())
+    })
+    .await
+    .expect("wait for interfaces to be added");
+
+    assert_matches!(debug_interfaces.close_backing_session(id1).await.expect("FIDL error"), Ok(()));
+
+    fnet_interfaces_ext::wait_interface(stream.by_ref(), &mut if_map, |if_map| {
+        (!if_map.contains_key(&id1) && !if_map.contains_key(&id2)).then_some(())
+    })
+    .await
+    .expect("wait for interfaces to be removed");
 }

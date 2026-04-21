@@ -23,7 +23,7 @@ use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::future::{Future, poll_fn};
 use futures::task::{Context, Poll};
-use futures::{Stream, ready};
+use futures::{Stream, StreamExt as _, ready};
 
 use crate::error::{Error, Result};
 use buffer::pool::{Pool, RxLeaseWatcher};
@@ -181,6 +181,21 @@ impl Session {
             watcher.wait_until(hold_until_frame).await;
             Ok(Some((handle, (inner, watcher))))
         })
+    }
+
+    /// Closes the session.
+    pub async fn close(&self) -> Result<()> {
+        self.inner.proxy.close()?;
+        // Synchronize by waiting for the channel to be closed.
+        let mut event_stream = self.inner.proxy.take_event_stream();
+        while let Some(event) = event_stream.next().await {
+            match event {
+                Err(fidl::Error::ClientChannelClosed { .. }) => break,
+                Ok(_) => {} // Ignore other events.
+                Err(e) => return Err(Error::Fidl(e)),
+            }
+        }
+        Ok(())
     }
 }
 

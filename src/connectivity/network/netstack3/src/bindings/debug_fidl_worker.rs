@@ -21,14 +21,56 @@ pub(crate) async fn serve_interfaces(
     rs: fnet_debug::InterfacesRequestStream,
 ) -> Result<(), fidl::Error> {
     rs.try_for_each(|req| {
-        futures::future::ready(match req {
-            fnet_debug::InterfacesRequest::GetPort { id, port, control_handle: _ } => {
-                handle_get_port(ctx.bindings_ctx(), id, port);
-                Ok(())
+        let ctx = ctx.clone();
+        async move {
+            match req {
+                fnet_debug::InterfacesRequest::GetPort { id, port, control_handle: _ } => {
+                    handle_get_port(ctx.bindings_ctx(), id, port);
+                    Ok(())
+                }
+                fnet_debug::InterfacesRequest::CloseBackingSession { id, responder } => {
+                    handle_close_backing_session(ctx, id, responder).await
+                }
             }
-        })
+        }
     })
     .await
+}
+
+async fn handle_close_backing_session(
+    ctx: crate::bindings::Ctx,
+    interface_id: u64,
+    responder: fnet_debug::InterfacesCloseBackingSessionResponder,
+) -> Result<(), fidl::Error> {
+    let binding_id = BindingId::new(interface_id);
+    let result = if let Some(binding_id) = binding_id {
+        let core_id = ctx.bindings_ctx().devices.get_core_id(binding_id);
+        if let Some(core_id) = core_id {
+            let port_handler = match core_id.external_state() {
+                DeviceSpecificInfo::Ethernet(info) => Ok(&info.netdevice.handler),
+                DeviceSpecificInfo::PureIp(info) => Ok(&info.netdevice.handler),
+                DeviceSpecificInfo::Loopback(_) | DeviceSpecificInfo::Blackhole(_) => {
+                    Err(fnet_debug::CloseSessionError::NotSupported)
+                }
+            };
+            match port_handler {
+                Ok(handler) => match handler.close_session().await {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        warn!("failed to close session: {:?}", e);
+                        Err(fnet_debug::CloseSessionError::NotSupported)
+                    }
+                },
+                Err(e) => Err(e),
+            }
+        } else {
+            Err(fnet_debug::CloseSessionError::InterfaceNotFound)
+        }
+    } else {
+        Err(fnet_debug::CloseSessionError::InterfaceNotFound)
+    };
+    let _ = responder.send(result);
+    Ok(())
 }
 
 fn handle_get_port(

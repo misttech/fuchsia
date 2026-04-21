@@ -34,5 +34,10 @@
             from: "parent",
             to: [ "#netstack-tests" ],
         },
+        {
+            service: "fuchsia.hardware.network.Service",
+            from: "parent",
+            to: [ "#netstack-tests" ],
+        },
     ],
 }

@@ -87,11 +87,7 @@ closed protocol Controller {
 
     /// Stops any running hermetic network realm.
     ///
-    /// All components in the hermetic network realm will be stopped. Similarly,
-    /// any interfaces that were previously disabled on the system's Netstack
-    /// will be re-enabled on a best-effort basis. That is, a failure to
-    /// re-enable an interface will not result in this method returning an
-    /// error.
+    /// All components in the hermetic network realm will be stopped.
     ///
     /// * error `HERMETIC_NETWORK_REALM_NOT_RUNNING` if a hermetic network realm
     ///     is not running.
@@ -101,8 +97,9 @@ closed protocol Controller {
 
     /// Attaches an interface to the hermetic Netstack.
     ///
-    /// The interface that corresponds to `mac_address` will disabled on the
-    /// system's Netstack, but enabled on the hermetic Netstack.
+    /// The interface that corresponds to `mac_address` will have its session
+    /// closed. As a result, the interface is removed from the system's
+    /// Netstack so that it can be installed on the hermetic Netstack.
     ///
     /// + request `mac_address` address of the interface to be added to the
     ///     hermetic Netstack.

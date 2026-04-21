@@ -18,7 +18,6 @@ import (
 
 	"fidl/fuchsia/hardware/network"
 	"fidl/fuchsia/net/debug"
-
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -49,6 +48,10 @@ func (ci *debugInterfacesImpl) GetPort(_ fidl.Context, nicid uint64, request net
 
 	ifs.controller.ConnectPort(request)
 	return nil
+}
+
+func (ci *debugInterfacesImpl) CloseBackingSession(_ fidl.Context, id uint64) (debug.InterfacesCloseBackingSessionResult, error) {
+	return debug.InterfacesCloseBackingSessionResultWithErr(debug.CloseSessionErrorNotSupported), nil
 }
 
 var _ debug.DiagnosticsWithCtx = (*debugDiagnosticsImpl)(nil)

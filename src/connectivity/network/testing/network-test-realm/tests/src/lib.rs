@@ -216,6 +216,10 @@ async fn add_interface_to_netstack<'a>(
         )
         .await
         .expect("failed to create endpoint");
+    realm
+        .add_virtual_device(&endpoint, netemul::devfs_device_path(name).as_path())
+        .await
+        .expect("failed to add virtual device");
     // Note that calling `install_endpoint` also enables the interface.
     realm
         .install_endpoint(
@@ -284,6 +288,13 @@ async fn join_network_with_hermetic_netstack<'a>(
         )
         .await
         .expect("join_network failed");
+    realm
+        .add_virtual_device(
+            interface.endpoint(),
+            netemul::devfs_device_path(interface_name).as_path(),
+        )
+        .await
+        .expect("failed to add the device");
 
     network_test_realm
         .add_interface(&mac_address, interface_name, /* wait_any_ip_address= */ false)
@@ -356,19 +367,6 @@ async fn start_hermetic_network_realm_replaces_existing_realm(
         .await
         .expect("start_hermetic_network_realm failed")
         .expect("start_hermetic_network_realm error");
-
-    let system_state_proxy = realm
-        .connect_to_protocol::<fnet_interfaces::StateMarker>()
-        .expect("failed to connect to state");
-
-    // The interface on the system's Netstack should be re-enabled (it was
-    // disabled when an interface was added above).
-    wait_interface_online_status(
-        INTERFACE1_NAME,
-        true, /* expected_online_status */
-        &system_state_proxy,
-    )
-    .await;
 
     let hermetic_network_state_proxy =
         connect_to_hermetic_network_realm_protocol::<fnet_interfaces::StateMarker>(&realm).await;
@@ -444,19 +442,6 @@ async fn add_interface(
             iface
         );
     }
-
-    let system_state_proxy = realm
-        .connect_to_protocol::<fnet_interfaces::StateMarker>()
-        .expect("failed to connect to state");
-
-    // The corresponding interface on the system's Netstack should be disabled
-    // when an interface is added to the hermetic Netstack.
-    wait_interface_online_status(
-        INTERFACE1_NAME,
-        false, /* expected_online_status */
-        &system_state_proxy,
-    )
-    .await;
 
     // An interface with a name of `EXPECTED_INTERFACE_NAME` should be enabled and
     // present in the hermetic Netstack.
@@ -635,16 +620,6 @@ async fn stop_hermetic_network_realm(name: &str, sub_name: &str, netstack: fntr:
         .expect("stop_hermetic_network_realm failed")
         .expect("stop_hermetic_network_realm error");
 
-    let system_state_proxy = realm
-        .connect_to_protocol::<fnet_interfaces::StateMarker>()
-        .expect("failed to connect to state");
-
-    wait_interface_online_status(
-        INTERFACE1_NAME,
-        true, /* expected_online_status */
-        &system_state_proxy,
-    )
-    .await;
     assert!(!has_hermetic_network_realm(&realm).await);
 }
 
@@ -1359,6 +1334,13 @@ async fn ping(
         .await
         .expect("join_network failed for base realm");
     system_ep.apply_nud_flake_workaround().await.expect("nud flake workaround");
+    realm
+        .add_virtual_device(
+            system_ep.endpoint(),
+            netemul::devfs_device_path(INTERFACE1_NAME).as_path(),
+        )
+        .await
+        .expect("failed to add virtual device");
 
     let network_test_realm = realm
         .connect_to_protocol::<fntr::ControllerMarker>()

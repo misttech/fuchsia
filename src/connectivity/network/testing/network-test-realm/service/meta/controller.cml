@@ -34,6 +34,9 @@
                 "fuchsia.net.routes.admin.RouteTableV4",
             ],
         },
+        {
+            service: [ "fuchsia.hardware.network.Service" ],
+        },
     ],
     expose: [
         {

@@ -835,6 +835,11 @@ impl PortHandler {
         let Self { inner: Inner { session, .. }, .. } = self;
         session.wait_tx_idle().await;
     }
+
+    pub(crate) async fn close_session(&self) -> Result<(), netdevice_client::Error> {
+        let Self { inner: Inner { session, .. }, .. } = self;
+        session.close().await
+    }
 }
 
 impl std::fmt::Debug for PortHandler {

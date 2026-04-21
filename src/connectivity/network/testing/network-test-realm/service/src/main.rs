@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error, Result};
-use fidl::prelude::*;
+use assert_matches::assert_matches;
+use async_utils::hanging_get::client::HangingGetStream;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_hardware_network as fhwnet;
+use fidl_fuchsia_hardware_network::{self as fhwnet};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_net_dhcp as fnet_dhcp;
 use fidl_fuchsia_net_dhcp_ext::{self as fnet_dhcp_ext, ClientProviderExt};
 use fidl_fuchsia_net_dhcpv6 as fnet_dhcpv6;
@@ -24,6 +24,7 @@ use fidl_fuchsia_net_test_realm as fntr;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_posix_socket_ext as fposix_socket_ext;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
+use fuchsia_component::client::Service;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use futures_lite::FutureExt as _;
 use log::{error, info, warn};
@@ -73,28 +74,33 @@ impl<T, E: std::fmt::Debug> ResultExt<T> for Result<T, E> {
 
 /// Installs a netdevice with the provided `name` on the hermetic Netstack.
 ///
-/// The `port_id` and `device_proxy` correspond to a system netdevice.
+/// The `port_proxy` corresponds to a system netdevice.
 async fn install_netdevice(
     name: &str,
-    port_id: fhwnet::PortId,
-    device_proxy: fhwnet::DeviceProxy,
+    port_proxy: fhwnet::PortProxy,
     wait_any_ip_address: bool,
     connector: &HermeticNetworkConnector,
 ) -> Result<(), fntr::Error> {
+    let port_id = port_proxy
+        .get_info()
+        .await
+        .map_err(|e| {
+            error!("failed to get port id: {:?}", e);
+            fntr::Error::Internal
+        })?
+        .id
+        .expect("must have a PortId");
     let installer = connector.connect_to_protocol::<fnet_interfaces_admin::InstallerMarker>()?;
     let (device_control, device_control_server_end) =
         fidl::endpoints::create_proxy::<fnet_interfaces_admin::DeviceControlMarker>();
 
-    let channel = fidl::endpoints::ClientEnd::<fhwnet::DeviceMarker>::new(
-        device_proxy
-            .into_channel()
-            .map_err(|e| {
-                error!("into_channel failed: {:?}", e);
-                fntr::Error::Internal
-            })?
-            .into_zx_channel(),
-    );
-    installer.install_device(channel, device_control_server_end).map_err(|e| {
+    let (device, device_server_end) = fidl::endpoints::create_endpoints();
+    port_proxy.get_device(device_server_end).map_err(|e| {
+        error!("failed to get device: {:?}", e);
+        fntr::Error::Internal
+    })?;
+
+    installer.install_device(device, device_control_server_end).map_err(|e| {
         error!("install_device failed: {:?}", e);
         fntr::Error::Internal
     })?;
@@ -174,53 +180,6 @@ async fn install_netdevice(
     })
 }
 
-/// Adds an interface with the provided `name` to the hermetic Netstack.
-///
-/// If an interface with `interface_id` cannot be found in the system Netstack,
-/// then an `fntr::Error::InterfaceNotFound` error is returned. Errors
-/// installing the interface may also be propagated.
-async fn install_interface(
-    name: &str,
-    interface_id: u64,
-    wait_any_ip_address: bool,
-    connector: &HermeticNetworkConnector,
-) -> Result<(), fntr::Error> {
-    let debug_interfaces_proxy =
-        SystemConnector.connect_to_protocol::<fnet_debug::InterfacesMarker>()?;
-    let (port_proxy, port_server_end) = fidl::endpoints::create_proxy::<fhwnet::PortMarker>();
-    debug_interfaces_proxy.get_port(interface_id, port_server_end).map_err(|e| {
-        error!("get_port failure: {:?}", e);
-        fntr::Error::Internal
-    })?;
-    let (device_proxy, device_server_end) = fidl::endpoints::create_proxy::<fhwnet::DeviceMarker>();
-    let fhwnet::PortInfo { id, .. } = port_proxy
-        .get_info()
-        .and_then(|port_info| {
-            futures::future::ready(port_proxy.get_device(device_server_end).map(|()| port_info))
-        })
-        .await
-        .map_err(|e| match e {
-            fidl::Error::ClientChannelClosed { status, .. }
-                // NOT_FOUND indicates there was no interface at the interface
-                // id, and NOT_SUPPORTED indicates that there is an interface
-                // but it is not backed by a fuchsia.hardware.network/Port. In
-                // both cases, there is not an installable netdevice interface.
-                if status == zx::Status::NOT_FOUND || status == zx::Status::NOT_SUPPORTED =>
-            {
-                fntr::Error::InterfaceNotFound
-            }
-            e => {
-                error!("get_device failure: {:?}", e);
-                fntr::Error::Internal
-            }
-        })?;
-    let port_id = id.ok_or_else(|| {
-        error!("port info missing port id");
-        fntr::Error::Internal
-    })?;
-    install_netdevice(name, port_id, device_proxy, wait_any_ip_address, connector).await
-}
-
 async fn wait_for_any_ip_address(
     id: u64,
     connector: &HermeticNetworkConnector,
@@ -249,16 +208,16 @@ async fn wait_for_any_ip_address(
     Ok(())
 }
 
-/// Returns the id and the enabled/disabled status for the interface that
-/// matches `mac_address`.
+/// Stops the device session on the system Netstack that corresponds to the
+/// interface with the provided `mac_address`. As a result of stopping the
+/// session, the interface(s) will be removed.
 ///
-/// If an interface matching `mac_address` is not found, then an error is
-/// returned.
-async fn find_interface_id_and_status(
-    expected_mac_address: fnet_ext::MacAddress,
-    connector: &impl Connector,
-) -> Result<(u64, bool), fntr::Error> {
-    let state_proxy = connector.connect_to_protocol::<fnet_interfaces::StateMarker>()?;
+/// If an interface with the wanted MAC is not found on the system netstack,
+/// then there would be no conflicting sessions, the function returns `Ok`.
+async fn stop_device_session_on_system_netstack(
+    expected_mac_address: &fnet_ext::MacAddress,
+) -> Result<(), fntr::Error> {
+    let state_proxy = SystemConnector.connect_to_protocol::<fnet_interfaces::StateMarker>()?;
     let stream =
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &state_proxy,
@@ -279,13 +238,14 @@ async fn find_interface_id_and_status(
         fntr::Error::Internal
     })?;
 
-    let root_interfaces_proxy = connector.connect_to_protocol::<fnet_root::InterfacesMarker>()?;
+    let root_interfaces_proxy =
+        SystemConnector.connect_to_protocol::<fnet_root::InterfacesMarker>()?;
 
     let interfaces_stream = futures::stream::iter(interfaces.into_values());
 
     let results = interfaces_stream.filter_map(
         |fnet_interfaces_ext::PropertiesAndState {
-             properties: fnet_interfaces_ext::Properties { id, online, .. },
+             properties: fnet_interfaces_ext::Properties { id, .. },
              state: _,
          }| {
             let root_interfaces_proxy = &root_interfaces_proxy;
@@ -303,7 +263,7 @@ async fn find_interface_id_and_status(
                         }
                         Ok(mac_address) => mac_address.and_then(|mac_address| {
                             (mac_address.octets == expected_mac_address.octets)
-                                .then(move || (id.get(), online))
+                                .then(move || id.get())
                         }),
                     },
                 }
@@ -313,7 +273,89 @@ async fn find_interface_id_and_status(
 
     let mut results = pin!(results);
 
-    results.next().await.ok_or(fntr::Error::InterfaceNotFound)
+    let Some(interface_id) = results.next().await else {
+        return Ok(());
+    };
+
+    let debug_interfaces =
+        SystemConnector.connect_to_protocol::<fidl_fuchsia_net_debug::InterfacesMarker>()?;
+    debug_interfaces
+        .close_backing_session(interface_id)
+        .await
+        .map_err(|err| {
+            error!("fidl error for removing backing device: {err:?}");
+            fntr::Error::Internal
+        })?
+        .map_err(|err| {
+            error!("cannot remove the backing device: {err:?}");
+            fntr::Error::Internal
+        })
+}
+
+/// Returns the first port that has `mac_address`.
+///
+/// If a port matching `mac_address` is not found, then an error is
+/// returned.
+async fn find_port(
+    expected_mac_address: &fnet_ext::MacAddress,
+) -> Result<fhwnet::PortProxy, fntr::Error> {
+    let service = Service::open(fhwnet::ServiceMarker).map_err(|e| {
+        error!("failed to open service: {:?}", e);
+        fntr::Error::Internal
+    })?;
+    for instance in service.enumerate().await.map_err(|e| {
+        error!("failed to enumerate devices: {:?}", e);
+        fntr::Error::Internal
+    })? {
+        let device = instance.connect_to_device().map_err(|e| {
+            error!("failed to connect to device: {:?}", e);
+            fntr::Error::Internal
+        })?;
+        let (port_watcher, port_watcher_server_end) =
+            fidl::endpoints::create_proxy::<fhwnet::PortWatcherMarker>();
+        device.get_port_watcher(port_watcher_server_end).map_err(|e| {
+            error!("failed to get port watcher: {:?}", e);
+            fntr::Error::Internal
+        })?;
+        let port_stream = HangingGetStream::new(port_watcher, fhwnet::PortWatcherProxy::watch);
+        let port_ids = port_stream
+            .try_take_while(|event| {
+                futures::future::ready(Ok(!matches!(event, fhwnet::DevicePortEvent::Idle(_))))
+            })
+            .map_ok(|event| {
+                assert_matches!(event,
+                    fhwnet::DevicePortEvent::Existing(port_id) => port_id)
+            })
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(|e| {
+                error!("cannot get existing ports on device: {e:?}");
+                fntr::Error::Internal
+            })?;
+
+        for port_id in port_ids {
+            let (port_proxy, port_proxy_server_end) =
+                fidl::endpoints::create_proxy::<fhwnet::PortMarker>();
+            device.get_port(&port_id, port_proxy_server_end).map_err(|e| {
+                error!("failed to get port: {:?}", e);
+                fntr::Error::Internal
+            })?;
+            let (mac_addressing_proxy, mac_addressing_server_end) =
+                fidl::endpoints::create_proxy::<fhwnet::MacAddressingMarker>();
+            port_proxy.get_mac(mac_addressing_server_end).map_err(|e| {
+                error!("failed to get mac addressing: {:?}", e);
+                fntr::Error::Internal
+            })?;
+            let mac = mac_addressing_proxy.get_unicast_address().await.map_err(|e| {
+                error!("failed to get unicast address: {:?}", e);
+                fntr::Error::Internal
+            })?;
+            if mac.octets == expected_mac_address.octets {
+                return Ok(port_proxy);
+            }
+        }
+    }
+    return Err(fntr::Error::InterfaceNotFound);
 }
 
 /// Returns a `fnet_interfaces_admin::ControlProxy` that can be used to
@@ -333,41 +375,6 @@ async fn connect_to_interface_admin_control(
         fntr::Error::Internal
     })?;
     Ok(control)
-}
-
-/// Enables the interface with `id` using the provided `root_interfaces_proxy`.
-async fn enable_interface(id: u64, connector: &impl Connector) -> Result<(), fntr::Error> {
-    let control_proxy = connect_to_interface_admin_control(id, connector).await?;
-    let _did_enable: bool = control_proxy
-        .enable()
-        .await
-        .map_err(|e| {
-            error!("enable interface id: {} failure: {:?}", id, e);
-            fntr::Error::Internal
-        })?
-        .map_err(|e| {
-            error!("enable interface id: {} error: {:?}", id, e);
-            fntr::Error::Internal
-        })?;
-    Ok(())
-}
-
-/// Disables the interface with `id` using the provided
-/// `root_interfaces_proxy`.
-async fn disable_interface(id: u64, connector: &impl Connector) -> Result<(), fntr::Error> {
-    let control_proxy = connect_to_interface_admin_control(id, connector).await?;
-    let _did_disable: bool = control_proxy
-        .disable()
-        .await
-        .map_err(|e| {
-            error!("disable interface id: {} failure: {:?}", id, e);
-            fntr::Error::Internal
-        })?
-        .map_err(|e| {
-            error!("disable interface id: {} error: {:?}", id, e);
-            fntr::Error::Internal
-        })?;
-    Ok(())
 }
 
 fn create_child_decl(child_name: &str, url: &str) -> fdecl::Child {
@@ -768,9 +775,6 @@ async fn get_or_insert_socket<'a>(
 /// (via the "hermetic-network" parent) while remaining isolated from the rest
 /// of the system.
 struct Controller {
-    /// Interface IDs that have been mutated on the system's Netstack.
-    mutated_interface_ids: Vec<u64>,
-
     /// Connector to access protocols within the hermetic-network realm. If the
     /// hermetic-network realm does not exist, then this will be `None`.
     hermetic_network_connector: Option<HermeticNetworkConnector>,
@@ -800,7 +804,6 @@ struct Controller {
 impl Controller {
     fn new() -> Self {
         Self {
-            mutated_interface_ids: Vec::<u64>::new(),
             hermetic_network_connector: None,
             multicast_v4_socket: None,
             multicast_v6_socket: None,
@@ -921,7 +924,6 @@ impl Controller {
         id: Option<u64>,
     ) -> Result<(), fntr::Error> {
         let Self {
-            mutated_interface_ids: _,
             hermetic_network_connector,
             multicast_v4_socket: _,
             multicast_v6_socket: _,
@@ -962,7 +964,6 @@ impl Controller {
 
     async fn stop_dhcpv4_out_of_stack(&mut self, id: Option<u64>) -> Result<(), fntr::Error> {
         let Self {
-            mutated_interface_ids: _,
             hermetic_network_connector: _,
             multicast_v4_socket: _,
             multicast_v6_socket: _,
@@ -1327,8 +1328,8 @@ impl Controller {
     ///
     /// An interface will only be added if the system has an interface with a
     /// matching `mac_address`. The added interface will have the provided
-    /// `name`. Additionally, the matching interface will be disabled on the
-    /// system's Netstack.
+    /// `name`. Additionally, the backing session of the matching interface will
+    /// be closed on the system's Netstack, resulting in its removal.
     async fn add_interface(
         &mut self,
         mac_address: fnet_ext::MacAddress,
@@ -1342,24 +1343,13 @@ impl Controller {
             .as_ref()
             .ok_or(fntr::Error::HermeticNetworkRealmNotRunning)?;
 
-        let (interface_id, enabled) =
-            find_interface_id_and_status(mac_address, &SystemConnector).await?;
-        install_interface(name, interface_id, wait_any_ip_address, hermetic_network_connector)
-            .await?;
-
-        if enabled {
-            // Disable the matching interface on the system's Netstack.
-            disable_interface(interface_id, &SystemConnector).await?;
-            self.mutated_interface_ids.push(interface_id);
-        }
+        stop_device_session_on_system_netstack(&mac_address).await?;
+        let port = find_port(&mac_address).await?;
+        install_netdevice(name, port, wait_any_ip_address, hermetic_network_connector).await?;
         Ok(())
     }
 
     /// Tears down the "hermetic-network" realm.
-    ///
-    /// Any interfaces that were previously disabled by the controller on the
-    /// system's Netstack will be re-enabled. Returns an error if there is not
-    /// a running "hermetic-network" realm.
     async fn stop_hermetic_network_realm(&mut self) -> Result<(), fntr::Error> {
         destroy_child(
             network_test_realm::create_hermetic_network_realm_child_ref(),
@@ -1374,17 +1364,6 @@ impl Controller {
             DestroyChildError::Internal => fntr::Error::Internal,
         })?;
 
-        // Attempt to re-enable all previously disabled interfaces on the
-        // system's Netstack. If the controller fails to re-enable any of them,
-        // then an error is logged but not returned. Re-enabling interfaces is
-        // done on a best-effort basis.
-        futures::stream::iter(self.mutated_interface_ids.drain(..))
-            .for_each_concurrent(None, |id| async move {
-                enable_interface(id, &SystemConnector).await.unwrap_or_else(|e| {
-                    warn!("failed to re-enable interface id: {} with error: {:?}", id, e)
-                })
-            })
-            .await;
         self.hermetic_network_connector = None;
         self.multicast_v4_socket = None;
         self.multicast_v6_socket = None;
