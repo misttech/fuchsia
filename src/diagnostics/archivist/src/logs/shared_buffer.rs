@@ -8,7 +8,7 @@ pub use cursor::{FilterCursor, FilterCursorStream, FxtMessage};
 
 use crate::identity::ComponentIdentity;
 use crate::logs::repository::ARCHIVIST_MONIKER;
-use crate::logs::stats::LogStreamStats;
+use crate::logs::stats::{LogStreamStats, SaturationCurve};
 use derivative::Derivative;
 use diagnostics_log_encoding::encode::add_dropped_count;
 use diagnostics_log_encoding::{Header, TRACING_FORMAT_LOG_RECORD_TYPE};
@@ -16,6 +16,7 @@ use fidl_fuchsia_diagnostics::{ComponentSelector, StreamMode};
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_async as fasync;
 use fuchsia_async::condition::{Condition, ConditionGuard};
+use fuchsia_inspect::Node;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use log::debug;
@@ -75,6 +76,9 @@ pub struct SharedBuffer {
     // The task responsible for monitoring the space in the IOBuffer and popping messages when it
     // gets full. It will also wake cursors whenever new data arrives.
     _buffer_monitor_task: fasync::Task<()>,
+
+    /// Metric for tracking buffer saturation.
+    pub(crate) saturation_curve: Arc<SaturationCurve>,
 }
 
 struct InnerGuard<'a> {
@@ -161,11 +165,13 @@ pub struct SharedBufferOptions {
     // To reduce how often Archivist wakes when new messages are written, Archivist will sleep for
     // this time. This will impact how quickly messages show up via the cursors.
     pub sleep_time: Duration,
+    /// The size of the circular buffer for the saturation curve.
+    pub saturation_curve_size: usize,
 }
 
 impl Default for SharedBufferOptions {
     fn default() -> Self {
-        Self { sleep_time: DEFAULT_SLEEP_TIME }
+        Self { sleep_time: DEFAULT_SLEEP_TIME, saturation_curve_size: 254 }
     }
 }
 
@@ -175,7 +181,10 @@ impl SharedBuffer {
         ring_buffer: ring_buffer::Reader,
         on_inactive: OnInactive,
         options: SharedBufferOptions,
+        inspect_node: &Node,
     ) -> Arc<Self> {
+        let saturation_curve =
+            Arc::new(SaturationCurve::new(inspect_node, options.saturation_curve_size));
         let this = Arc::new_cyclic(|weak: &Weak<Self>| Self {
             inner: Condition::new(Inner {
                 ring_buffer: Arc::clone(&ring_buffer),
@@ -193,6 +202,7 @@ impl SharedBuffer {
             port: zx::Port::create(),
             event: zx::Event::create(),
             socket_thread: Mutex::default(),
+            saturation_curve,
             _buffer_monitor_task: fasync::Task::spawn(Self::buffer_monitor_task(
                 Weak::clone(weak),
                 ring_buffer,
@@ -644,6 +654,11 @@ impl<'a> InnerGuard<'a> {
             self.last_scanned_message_id += 1;
             self.wake = true;
         }
+        if self.wake {
+            let boot_time = zx::BootInstant::get().into_nanos();
+            let count = self.last_scanned_message_id - self.tail_message_id;
+            self.buffer.saturation_curve.record(boot_time, count);
+        }
     }
 
     /// Ensures the buffer keeps the required amount of space.
@@ -1072,6 +1087,7 @@ mod tests {
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         );
         let container_buffer =
             buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
@@ -1089,6 +1105,7 @@ mod tests {
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         );
 
         let container_buffer =
@@ -1104,6 +1121,7 @@ mod tests {
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         );
         let container_buffer =
             buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
@@ -1118,6 +1136,7 @@ mod tests {
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         );
         let container_buffer =
             buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
@@ -1132,7 +1151,8 @@ mod tests {
         let buffer = SharedBuffer::new(
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
-            SharedBufferOptions { sleep_time: Duration::ZERO },
+            SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
+            &fuchsia_inspect::Node::default(),
         );
         let container_buffer =
             buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
@@ -1198,7 +1218,8 @@ mod tests {
                     assert_eq!(i, identity);
                     on_inactive.fetch_add(1, Ordering::Relaxed);
                 }),
-                SharedBufferOptions { sleep_time: Duration::ZERO },
+                SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
+                &fuchsia_inspect::Node::default(),
             ))
         };
         let container_a = buffer.new_container_buffer(identity, Arc::default());
@@ -1226,7 +1247,8 @@ mod tests {
         let buffer = SharedBuffer::new(
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
-            SharedBufferOptions { sleep_time: Duration::ZERO },
+            SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
+            &fuchsia_inspect::Node::default(),
         );
 
         // terminate when buffer has no logs.
@@ -1269,6 +1291,7 @@ mod tests {
                 create_ring_buffer(MAX_MESSAGE_SIZE),
                 Box::new(|_| {}),
                 Default::default(),
+                &fuchsia_inspect::Node::default(),
             );
             let container =
                 Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
@@ -1321,6 +1344,7 @@ mod tests {
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         );
         let container =
             Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
@@ -1354,6 +1378,7 @@ mod tests {
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         );
         let container =
             Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
@@ -1374,7 +1399,8 @@ mod tests {
         let buffer = Arc::new(SharedBuffer::new(
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
-            SharedBufferOptions { sleep_time: Duration::ZERO },
+            SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
+            &fuchsia_inspect::Node::default(),
         ));
         let container_a =
             Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
@@ -1413,6 +1439,7 @@ mod tests {
             create_ring_buffer(65536),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         ));
         let container_a = Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), stats));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
@@ -1496,6 +1523,7 @@ mod tests {
             create_ring_buffer(MAX_MESSAGE_SIZE),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         ));
         let container_a =
             Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
@@ -1540,7 +1568,8 @@ mod tests {
                     on_inactive.fetch_add(1, Ordering::Relaxed);
                 })
             },
-            SharedBufferOptions { sleep_time: Duration::ZERO },
+            SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
+            &fuchsia_inspect::Node::default(),
         ));
         let container_a = Arc::new(buffer.new_container_buffer(a_identity, Arc::default()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
@@ -1581,6 +1610,7 @@ mod tests {
             create_ring_buffer(1024 * 1024),
             Box::new(|_| {}),
             Default::default(),
+            &fuchsia_inspect::Node::default(),
         ));
         let container_a = Arc::new(buffer.new_container_buffer(a_identity, Arc::default()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));

@@ -387,6 +387,7 @@ mod tests {
             create_ring_buffer(1024 * 1024),
             Box::new(|_| {}),
             Default::default(),
+            inspect::component::inspector().root(),
         );
         let buffer = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::clone(&stats));
         let container = Arc::new(LogsArtifactsContainer::new(

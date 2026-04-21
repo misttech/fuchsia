@@ -343,8 +343,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn cursor_basic() {
-        let buffer =
-            SharedBuffer::new(create_ring_buffer(65536), Box::new(|_| {}), Default::default());
+        let buffer = SharedBuffer::new(
+            create_ring_buffer(65536),
+            Box::new(|_| {}),
+            Default::default(),
+            &fuchsia_inspect::Node::default(),
+        );
         let container = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
         container.push_back(msg.bytes());
@@ -359,8 +363,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn cursor_filter() {
-        let buffer =
-            SharedBuffer::new(create_ring_buffer(65536), Box::new(|_| {}), Default::default());
+        let buffer = SharedBuffer::new(
+            create_ring_buffer(65536),
+            Box::new(|_| {}),
+            Default::default(),
+            &fuchsia_inspect::Node::default(),
+        );
         let container_a = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
         let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default());
 
@@ -378,8 +386,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn cursor_subscribe() {
-        let buffer =
-            SharedBuffer::new(create_ring_buffer(65536), Box::new(|_| {}), Default::default());
+        let buffer = SharedBuffer::new(
+            create_ring_buffer(65536),
+            Box::new(|_| {}),
+            Default::default(),
+            &fuchsia_inspect::Node::default(),
+        );
         let container = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
 
         let cursor = buffer.cursor(StreamMode::Subscribe, vec![]);
@@ -395,8 +407,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn cursor_snapshot_then_subscribe() {
-        let buffer =
-            SharedBuffer::new(create_ring_buffer(65536), Box::new(|_| {}), Default::default());
+        let buffer = SharedBuffer::new(
+            create_ring_buffer(65536),
+            Box::new(|_| {}),
+            Default::default(),
+            &fuchsia_inspect::Node::default(),
+        );
         let container = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
 
         container.push_back(make_message("msg1", None, zx::BootInstant::from_nanos(1)).bytes());
@@ -420,7 +436,8 @@ mod tests {
         let buffer = SharedBuffer::new(
             create_ring_buffer(65536),
             Box::new(|_| {}),
-            SharedBufferOptions { sleep_time: Duration::ZERO },
+            SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
+            &fuchsia_inspect::Node::default(),
         );
         let container_a = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
         let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default());
@@ -469,7 +486,8 @@ mod tests {
         let buffer = SharedBuffer::new(
             create_ring_buffer(65536),
             Box::new(|_| {}),
-            SharedBufferOptions { sleep_time: Duration::from_secs(10) },
+            SharedBufferOptions { sleep_time: Duration::from_secs(10), ..Default::default() },
+            &fuchsia_inspect::Node::default(),
         );
         let cursor = pin!(FilterCursorStream::<LogsData>::from(
             buffer.cursor(StreamMode::SnapshotThenSubscribe, vec![])

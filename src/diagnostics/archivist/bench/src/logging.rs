@@ -53,6 +53,7 @@ fn bench_fill(b: &mut criterion::Bencher, size: usize) {
         create_ring_buffer(RING_BUFFER_SIZE),
         Box::new(|_| {}),
         Default::default(),
+        &fuchsia_inspect::Node::default(),
     ));
     let msg =
         make_message(std::str::from_utf8(&[65; 100]).unwrap(), zx::BootInstant::from_nanos(1));
@@ -79,6 +80,7 @@ fn bench_iterate_concurrent(b: &mut criterion::Bencher, args: IterateArgs) {
         create_ring_buffer(200 * args.size),
         Box::new(|_| {}),
         Default::default(),
+        &fuchsia_inspect::Node::default(),
     ));
     let msg = Arc::new(make_message(
         std::str::from_utf8(&[65; 100]).unwrap(),

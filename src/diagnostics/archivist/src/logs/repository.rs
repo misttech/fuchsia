@@ -8,7 +8,7 @@ use crate::identity::ComponentIdentity;
 use crate::logs::container::LogsArtifactsContainer;
 use crate::logs::debuglog::{DebugLog, DebugLogBridge, KERNEL_IDENTITY};
 use crate::logs::shared_buffer::{FilterCursorStream, FxtMessage, SharedBuffer};
-use crate::logs::stats::LogStreamStats;
+use crate::logs::stats::{GlobalAnalytics, LogStreamStats};
 use anyhow::format_err;
 use diagnostics_data::{LogsData, Severity};
 use fidl_fuchsia_diagnostics::{
@@ -127,6 +127,7 @@ impl LogsRepository {
                     }
                 }),
                 Default::default(),
+                mutable_state.global_analytics.logs_node(),
             );
             if let Some(m) = ARCHIVIST_MONIKER.get() {
                 let archivist_container = mutable_state.create_log_container(
@@ -313,6 +314,7 @@ impl EventConsumer for LogsRepository {
 pub struct LogsRepositoryState {
     logs_data_store: HashMap<Arc<ComponentIdentity>, Arc<LogsArtifactsContainer>>,
     inspect_node: inspect::Node,
+    global_analytics: GlobalAnalytics,
 
     /// Interest registrations that we have received through fuchsia.logger.Log/ListWithSelectors
     /// or through fuchsia.logger.LogSettings/SetInterest.
@@ -345,6 +347,7 @@ impl LogsRepositoryState {
                 })
                 .collect(),
             scope: Some(scope),
+            global_analytics: GlobalAnalytics::new(parent),
         }
     }
 
