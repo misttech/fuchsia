@@ -14,7 +14,6 @@
         compat: "driver/nelson-brownout-protection.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         allowed_scheduler_roles: [ "fuchsia.devices.power.drivers.nelson-brownout-protection" ],
-        fallback: "false",
     },
     use: [
         {

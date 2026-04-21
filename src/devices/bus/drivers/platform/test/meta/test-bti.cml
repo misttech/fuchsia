@@ -13,7 +13,6 @@
         colocate: "false",
         compat: "driver/test-bti.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
         host_restart_on_crash: "true",
     },
     use: [

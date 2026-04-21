@@ -12,7 +12,6 @@
         bind: "meta/bind/aml-g12-tdm-dai.bindbc",
         compat: "driver/aml-g12-tdm-dai.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.platform.device.Service" },

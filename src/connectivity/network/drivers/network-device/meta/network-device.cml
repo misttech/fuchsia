@@ -16,7 +16,6 @@
             "fuchsia.devices.network.core.rx",
             "fuchsia.devices.network.core.tx",
         ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.network.driver.Service" },

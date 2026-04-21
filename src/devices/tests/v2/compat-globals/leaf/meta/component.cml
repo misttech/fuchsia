@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/compat-globals-leaf.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [],
 }

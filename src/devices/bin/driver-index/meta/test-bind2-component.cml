@@ -12,7 +12,6 @@
         bind: "meta/bind/test-bind2.bindbc",
         compat: "driver/fake-driver2.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [],
 }

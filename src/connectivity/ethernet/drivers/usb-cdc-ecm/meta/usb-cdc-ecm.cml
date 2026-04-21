@@ -23,7 +23,6 @@
                 subcategory: "ethernet",
             },
         ],
-        fallback: "false",
     },
     use: [],
 }

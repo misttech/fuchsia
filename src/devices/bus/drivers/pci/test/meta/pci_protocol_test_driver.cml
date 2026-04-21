@@ -12,7 +12,6 @@
         bind: "meta/bind/pci_protocol_test_driver_bind.bindbc",
         colocate: "false",
         compat: "driver/pci_protocol_test_driver.so",
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.pci.Service" },

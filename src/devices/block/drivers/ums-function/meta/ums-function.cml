@@ -12,7 +12,6 @@
         bind: "meta/bind/ums-function.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.driver.compat.Service" },

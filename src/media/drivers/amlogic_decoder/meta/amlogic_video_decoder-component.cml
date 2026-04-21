@@ -22,7 +22,6 @@
             "fuchsia.media.drivers.amlogic-decoder.vp9-input-processing",
             "fuchsia.media.drivers.amlogic-decoder.vp9-stream-control",
         ],
-        fallback: "false",
     },
     use: [
         { protocol: "fuchsia.scheduler.RoleManager" },

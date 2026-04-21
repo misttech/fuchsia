@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/parent-drv.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.driver.transport.test.Service" },

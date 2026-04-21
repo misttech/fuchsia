@@ -12,7 +12,6 @@
         binary: "driver/aml-nna.so",
         bind: "meta/bind/aml-nna.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.platform.device.Service" },

@@ -10,9 +10,7 @@
         runner: "driver",
         binary: "driver/test.so",
         bind: "meta/bind/test_bind.bindbc",
-        fallback: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [],
 }

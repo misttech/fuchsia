@@ -10,7 +10,6 @@
     program: {
         runner: "driver",
         bind: "meta/bind/parent-driver.bindbc",
-        fallback: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         compat: "driver/driver_transport_parent_v1.so",
         colocate: "true",

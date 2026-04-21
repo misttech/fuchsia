@@ -12,7 +12,6 @@
         bind: "meta/bind/two_endpoint_hid_bind.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.usb.function.UsbFunctionService" },

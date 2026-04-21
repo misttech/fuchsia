@@ -15,7 +15,6 @@
             "fuchsia.graphics.drivers.msd-vsi-vip.device",
             "fuchsia.graphics.drivers.msd-vsi-vip.vsi-interrupt",
         ],
-        fallback: "false",
     },
     capabilities: [
         {

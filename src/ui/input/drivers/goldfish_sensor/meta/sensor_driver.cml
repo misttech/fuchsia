@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/goldfish_sensor.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.goldfish.pipe.Service" },

@@ -10,7 +10,6 @@
         runner: "driver",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         {

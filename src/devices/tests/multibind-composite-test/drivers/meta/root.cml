@@ -12,7 +12,6 @@
         bind: "meta/bind/root-driver.bindbc",
         compat: "driver/multibind-root-driver.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [],
 }

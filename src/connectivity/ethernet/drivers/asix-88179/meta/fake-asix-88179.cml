@@ -12,7 +12,6 @@
         bind: "meta/bind/fake_usb_ax88179_bind.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.ax88179.Service" },
@@ -30,5 +29,5 @@
             service: [ "fuchsia.hardware.ax88179.Service" ],
             from: "self",
         },
-    ]
+    ],
 }

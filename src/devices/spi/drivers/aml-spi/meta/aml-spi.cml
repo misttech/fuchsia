@@ -10,7 +10,6 @@
         runner: "driver",
         binary: "driver/aml-spi.so",
         bind: "meta/bind/aml-spi.bindbc",
-        fallback: "false",
         colocate: "true",
     },
     capabilities: [

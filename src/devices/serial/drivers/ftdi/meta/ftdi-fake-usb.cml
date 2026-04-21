@@ -12,7 +12,6 @@
         bind: "meta/bind/ftdi_function_bind.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.i2cimpl.Service" },

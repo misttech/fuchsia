@@ -10,7 +10,6 @@
     program: {
         runner: "driver",
         bind: "meta/bind/leaf-driver.bindbc",
-        fallback: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         compat: "driver/runtime-composite-leaf-driver.so",
         colocate: "true",

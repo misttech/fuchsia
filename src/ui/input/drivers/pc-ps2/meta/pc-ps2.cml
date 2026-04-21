@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/pc-ps2.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         {

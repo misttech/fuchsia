@@ -12,7 +12,6 @@
         bind: "meta/bind/bt-transport-uart.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
         default_dispatcher_scheduler_role: "fuchsia.devices.bt.drivers.bt-transport-uart",
     },
     capabilities: [

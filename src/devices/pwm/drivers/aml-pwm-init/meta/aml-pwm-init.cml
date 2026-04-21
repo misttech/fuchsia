@@ -13,7 +13,6 @@
         bind: "meta/bind/aml-pwm-init.bindbc",
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.clock.Service" },

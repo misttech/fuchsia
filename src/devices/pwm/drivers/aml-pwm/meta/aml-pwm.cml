@@ -13,7 +13,6 @@
         bind: "meta/bind/aml-pwm.bindbc",
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.pwm.PwmChannelsMetadata" },

@@ -13,7 +13,6 @@
         colocate: "false",
         compat: "driver/aml-rawnand.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.boot.metadata.PartitionMap" },

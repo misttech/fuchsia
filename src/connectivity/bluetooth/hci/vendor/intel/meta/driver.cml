@@ -13,7 +13,6 @@
         bind: "meta/bind/bt_hci_intel_bind.bindbc",
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.bluetooth.HciService" },

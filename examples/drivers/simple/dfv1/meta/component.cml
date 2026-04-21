@@ -10,7 +10,6 @@
     program: {
         runner: "driver",
         bind: "meta/bind/simple_driver.bindbc",
-        fallback: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         compat: "driver/simple_dfv1.so",
         colocate: "true",

@@ -12,7 +12,6 @@
         binary: "driver/test-parent-sys.so",
         bind: "meta/bind/test-parent-bind.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [],
 }

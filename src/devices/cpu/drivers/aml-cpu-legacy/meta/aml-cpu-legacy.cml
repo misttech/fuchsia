@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/aml-cpu-legacy.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.cpu.ctrl.Service" },

@@ -12,7 +12,6 @@
         bind: "meta/bind/inspect-test-bind.bindbc",
         compat: "driver/inspect-test.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [],
 }

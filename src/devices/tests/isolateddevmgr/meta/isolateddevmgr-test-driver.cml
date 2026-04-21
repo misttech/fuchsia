@@ -12,7 +12,6 @@
         bind: "meta/bind/metadata-test-bind.bindbc",
         compat: "driver/isolateddevmgr-test-driver.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.platform.device.Service" },

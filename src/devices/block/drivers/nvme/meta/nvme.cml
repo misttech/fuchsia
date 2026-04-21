@@ -13,7 +13,6 @@
         bind: "meta/bind/nvme_bind.bindbc",
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.pci.Service" },

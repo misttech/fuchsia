@@ -13,7 +13,6 @@
         bind: "meta/bind/goldfish-display-bind.bindbc",
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.display.engine.Service" },

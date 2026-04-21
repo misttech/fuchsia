@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/aml-spinand.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.hardware.platform.device.Service" },

@@ -13,7 +13,6 @@
         bind: "meta/bind/aml-sdmmc.bindbc",
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
         suspend_enabled: "true",
     },
     capabilities: [

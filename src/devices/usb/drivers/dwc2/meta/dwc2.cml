@@ -12,7 +12,6 @@
         binary: "driver/dwc2.so",
         bind: "meta/bind/dwc2.bindbc",
         allowed_scheduler_roles: [ "fuchsia.devices.usb.drivers.dwc2.interrupt" ],
-        fallback: "false",
     },
     capabilities: [
         { protocol: "fuchsia.hardware.usb.endpoint.Endpoint" },

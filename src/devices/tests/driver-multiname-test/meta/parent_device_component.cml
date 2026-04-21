@@ -12,7 +12,6 @@
         bind: "meta/bind/parent_device.bindbc",
         compat: "driver/parent_device.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [],
 }

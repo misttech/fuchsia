@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/child-driver.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     use: [
         { service: "fuchsia.device.runtime.test.Service" },

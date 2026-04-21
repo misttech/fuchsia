@@ -10,7 +10,6 @@
         runner: "driver",
         binary: "driver/dw-spi.so",
         bind: "meta/bind/dw-spi-bind.bindbc",
-        fallback: "false",
         colocate: "true",
     },
     capabilities: [

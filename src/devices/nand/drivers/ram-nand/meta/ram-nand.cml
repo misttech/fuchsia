@@ -13,7 +13,6 @@
         bind: "meta/bind/ram-nand-bind.bindbc",
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.boot.metadata.PartitionMap" },

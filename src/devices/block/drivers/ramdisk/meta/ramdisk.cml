@@ -12,6 +12,5 @@
         bind: "meta/bind/ramdisk.bindbc",
         compat: "driver/ramdisk.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
 }

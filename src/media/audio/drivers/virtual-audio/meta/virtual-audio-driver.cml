@@ -12,6 +12,5 @@
         binary: "driver/virtual-audio-driver.so",
         bind: "meta/bind/virtual-audio-bind.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
 }

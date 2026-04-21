@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/hidctl.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.hidbus.Service" },

@@ -13,7 +13,6 @@
         colocate: "true",
         compat: "driver/usb-cdc-acm.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        fallback: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.serialimpl.Service" },
