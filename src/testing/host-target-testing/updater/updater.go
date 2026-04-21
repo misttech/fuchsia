@@ -256,58 +256,72 @@ func updateCheckNow(
 
 		ch := c.DisconnectionListener()
 
-		if err := c.SetUpdateChannel(ctx, ffxTool, target, "trigger-ota"); err != nil {
-			logger.Warningf(ctx, "update channel set via ffx failed: %v. The device may be running an old version of system-update-checker or incompatible RCS.", err)
-			logger.Warningf(ctx, "retrying with /bin/update")
-			cmd := []string{
-				"/bin/update",
-				"channel",
-				"set",
-				"trigger-ota",
-			}
-			if err := c.Run(ctx, cmd, os.Stdout, os.Stderr); err != nil {
-				logger.Warningf(ctx, "update channel set failed: %v.", err)
+		{
+			// Older versions of ffx may randomly stuck on setting the update channel.
+			// The root cause is very unclear, but we cannot fix old ffx, so we just
+			// work around the problem by falling back to /bin/update.
+			childCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			if err := c.SetUpdateChannel(childCtx, ffxTool, target, "trigger-ota"); err != nil {
+				logger.Warningf(ctx, "update channel set via ffx failed: %v. The device may be running an old version of system-update-checker or incompatible RCS.", err)
+				logger.Warningf(ctx, "retrying with /bin/update")
+				cmd := []string{
+					"/bin/update",
+					"channel",
+					"set",
+					"trigger-ota",
+				}
+				if err := c.Run(ctx, cmd, os.Stdout, os.Stderr); err != nil {
+					logger.Warningf(ctx, "update channel set failed: %v.", err)
+				}
 			}
 		}
 
-		stdout, err := c.MonitorUpdate(ctx, ffxTool, target)
-		if err != nil {
-			logger.Warningf(ctx, "update monitoring via ffx failed: %v. Retrying via /bin/update.", err)
-			cmd := []string{
-				"/bin/update",
-				"check-now",
-				"--monitor",
-			}
-			var stdout_target bytes.Buffer
-			err = c.Run(ctx, cmd, &stdout_target, os.Stderr)
-			stdout = stdout_target.String()
+		{
+			// Same to SetUpdateChannel, older versions of ffx may randomly stuck on
+			// monitoring the update.
+			childCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			stdout, err := c.MonitorUpdate(childCtx, ffxTool, target)
 			if err != nil {
-				// tefmocheck checks for the string "remote command exited without
-				// exit status or exit signal" and will mark the test as failed if
-				// it sees it. However it's normal for us to get that error since
-				// ssh might get disconnected before the update command completes.
-				var errExitMissing *ssh.ExitMissingError
-				if errors.As(err, &errExitMissing) {
-					logger.Warningf(ctx, "update monitoring via /bin/update failed: ssh exited without status or signal")
-				} else {
-					logger.Warningf(ctx, "update monitoring via /bin/update failed: %v.", err)
+				logger.Warningf(ctx, "update monitoring via ffx failed: %v. Retrying via /bin/update.", err)
+				cmd := []string{
+					"/bin/update",
+					"check-now",
+					"--monitor",
+				}
+				var stdout_target bytes.Buffer
+				err = c.Run(ctx, cmd, &stdout_target, os.Stderr)
+				stdout = stdout_target.String()
+				if err != nil {
+					// tefmocheck checks for the string "remote command exited without
+					// exit status or exit signal" and will mark the test as failed if
+					// it sees it. However it's normal for us to get that error since
+					// ssh might get disconnected before the update command completes.
+					var errExitMissing *ssh.ExitMissingError
+					if errors.As(err, &errExitMissing) {
+						logger.Warningf(ctx, "update monitoring via /bin/update failed: ssh exited without status or signal")
+					} else {
+						logger.Warningf(ctx, "update monitoring via /bin/update failed: %v.", err)
+					}
 				}
 			}
-		}
-		logger.Debugf(ctx, "Output from check-now monitor: %s", stdout)
-		if err == nil && checkForUnkownFirmware {
-			// FIXME(https://fxbug.dev/42077484): We wouldn't have to ignore disconnects
-			// if we could trigger an update without it automatically rebooting.
-			err = checkSyslogForUnknownFirmware(ctx, c)
-		}
+			logger.Debugf(ctx, "Output from check-now monitor: %s", stdout)
 
-		for _, line := range strings.Split(stdout, "\n") {
-			if strings.Contains(line, "InstallationDeferredByPolicy") {
-				logger.Debugf(ctx, "InstallationDeferredByPolicy state detected, forcing reboot")
-				if err := c.RunReboot(ctx); err != nil {
-					return fmt.Errorf("failed to reboot the device after InstallationDeferredByPolicy state: %w", err)
+			if err == nil && checkForUnkownFirmware {
+				// FIXME(https://fxbug.dev/42077484): We wouldn't have to ignore disconnects
+				// if we could trigger an update without it automatically rebooting.
+				err = checkSyslogForUnknownFirmware(ctx, c)
+			}
+
+			for _, line := range strings.Split(stdout, "\n") {
+				if strings.Contains(line, "InstallationDeferredByPolicy") {
+					logger.Debugf(ctx, "InstallationDeferredByPolicy state detected, forcing reboot")
+					if err := c.RunReboot(ctx); err != nil {
+						return fmt.Errorf("failed to reboot the device after InstallationDeferredByPolicy state: %w", err)
+					}
+					break
 				}
-				break
 			}
 		}
 
