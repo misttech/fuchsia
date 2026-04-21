@@ -46,6 +46,9 @@
 
 static zx_status_t brcmf_proto_bcdc_msg(struct brcmf_pub* drvr, int ifidx, uint cmd, void* buf,
                                         uint buflen, bool set) {
+  if (drvr->proto == nullptr || drvr->proto->pd == nullptr) {
+    return ZX_ERR_BAD_STATE;
+  }
   struct brcmf_bcdc* bcdc = static_cast<struct brcmf_bcdc*>(drvr->proto->pd);
   uint cmdlen = buflen;
   uint32_t flags;
@@ -105,6 +108,9 @@ static zx_status_t brcmf_proto_bcdc_msg(struct brcmf_pub* drvr, int ifidx, uint 
 static zx_status_t brcmf_proto_bcdc_cmplt(struct brcmf_pub* drvr, uint32_t id, uint32_t len,
                                           int* rxbuflen) {
   zx_status_t ret;
+  if (drvr->proto == nullptr || drvr->proto->pd == nullptr) {
+    return ZX_ERR_BAD_STATE;
+  }
   struct brcmf_bcdc* bcdc = static_cast<struct brcmf_bcdc*>(drvr->proto->pd);
   int rxlen_out = 0;
 
@@ -136,6 +142,9 @@ static zx_status_t brcmf_proto_bcdc_cmplt(struct brcmf_pub* drvr, uint32_t id, u
 
 static zx_status_t brcmf_proto_bcdc_query_dcmd(struct brcmf_pub* drvr, int ifidx, uint cmd,
                                                void* buf, uint len, bcme_status_t* fwerr) {
+  if (drvr->proto == nullptr || drvr->proto->pd == nullptr) {
+    return ZX_ERR_BAD_STATE;
+  }
   struct brcmf_bcdc* bcdc = static_cast<struct brcmf_bcdc*>(drvr->proto->pd);
   struct brcmf_proto_bcdc_dcmd* msg = &bcdc->msg;
   void* info;
@@ -197,6 +206,9 @@ done:
 
 static zx_status_t brcmf_proto_bcdc_set_dcmd(struct brcmf_pub* drvr, int ifidx, uint cmd, void* buf,
                                              uint len, bcme_status_t* fwerr) {
+  if (drvr->proto == nullptr || drvr->proto->pd == nullptr) {
+    return ZX_ERR_BAD_STATE;
+  }
   struct brcmf_bcdc* bcdc = static_cast<struct brcmf_bcdc*>(drvr->proto->pd);
   struct brcmf_proto_bcdc_dcmd* msg = &bcdc->msg;
   zx_status_t ret;
@@ -399,7 +411,7 @@ void brcmf_proto_bcdc_detach(struct brcmf_pub* drvr) {
 }
 
 zx_status_t brcmf_proto_bcdc_reset(struct brcmf_pub* drvr) {
-  if (drvr->proto == nullptr) {
+  if (drvr->proto == nullptr || drvr->proto->pd == nullptr) {
     BRCMF_ERR("No protocol for driver now.");
     return ZX_ERR_BAD_STATE;
   }
