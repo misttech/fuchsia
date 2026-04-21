@@ -11,7 +11,7 @@ use futures::channel::mpsc as future_mpsc;
 use regex_lite::Regex;
 use std::collections::HashMap;
 use std::error::Error;
-use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, mpsc as sync_mpsc};
 use zerocopy::{Immutable, IntoBytes};
 use zx::HandleBased;
@@ -179,9 +179,6 @@ struct PerfEventFileState {
     // Handle to blob that stores all the perf data that a user may want.
     // At the moment it only stores some metadata and backtraces (bts).
     perf_data_vmo: zx::Vmo,
-    // Remember to increment this offset as the number of pages increases.
-    // Currently we just have a bound of 1 page_size of information.
-    vmo_write_offset: u64,
     // Channel used to send IoctlOps to start/stop sampling.
     ioctl_sender: future_mpsc::Sender<(IoctlOp, sync_mpsc::Sender<()>)>,
 }
@@ -195,7 +192,6 @@ impl PerfEventFileState {
         disabled: u64,
         sample_type: u64,
         perf_data_vmo: zx::Vmo,
-        vmo_write_offset: u64,
         ioctl_sender: future_mpsc::Sender<(IoctlOp, sync_mpsc::Sender<()>)>,
     ) -> PerfEventFileState {
         PerfEventFileState {
@@ -209,7 +205,6 @@ impl PerfEventFileState {
             disabled,
             sample_type,
             perf_data_vmo,
-            vmo_write_offset,
             ioctl_sender,
         }
     }
@@ -221,11 +216,7 @@ pub struct PerfEventFile {
     perf_event_file: RwLock<PerfEventFileState>,
     // The security state for this PerfEventFile.
     pub security_state: security::PerfEventState,
-    // Pointer to the perf_event_mmap_page metadata's data_head.
-    // TODO(https://fxbug.dev/460203776) Remove Arc after figuring out
-    // "borrowed value does not live long enough" issue.
-    _data_head_pointer: Arc<AtomicPtr<u64>>,
-    seq_lock: OnceLock<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>,
+    seq_lock: Arc<OnceLock<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>>,
 }
 
 // PerfEventFile object that implements FileOps.
@@ -490,7 +481,6 @@ impl FileOps for PerfEventFile {
 fn write_record_to_vmo(
     perf_record_sample: PerfRecordSample,
     perf_data_vmo: &zx::Vmo,
-    _data_head_pointer: &AtomicPtr<u64>,
     sample_type: u64,
     sample_id: u64,
     sample_period: u64,
@@ -507,7 +497,14 @@ fn write_record_to_vmo(
         size: PERF_EVENT_HEADER_SIZE,
     };
 
-    match perf_data_vmo.write(&perf_event_header.as_bytes(), offset) {
+    // Total data offset. This is where the record should start getting written.
+    // The first page is reserved for metadata, so we need to add the page size.
+    // Example:
+    //  You're writing the first record (size 100). Start writing at 0 + 4096.
+    //  You're writing the second record. Start writing at 100 + 4096.
+    let data_offset = offset + (zx::system_get_page_size() as u64);
+
+    match perf_data_vmo.write(&perf_event_header.as_bytes(), data_offset) {
         Ok(_) => (),
         Err(e) => log_warn!("Failed to write perf_event_header: {}", e),
     }
@@ -551,18 +548,12 @@ fn write_record_to_vmo(
     }
     // The remaining data are not defined for now.
 
-    match perf_data_vmo.write(&sample, offset + (std::mem::size_of::<perf_event_header>() as u64)) {
+    match perf_data_vmo
+        .write(&sample, data_offset + (std::mem::size_of::<perf_event_header>() as u64))
+    {
         Ok(_) => {
             let bytes_written: u64 =
                 (std::mem::size_of::<perf_event_header>() + sample.len()) as u64;
-
-            // TODO(http://fuchsia.dev/460203776) implement this better before enabling
-            // any setting of data_head value.
-            // Update data_head because we have now written to the VMO.
-            // Ordering::Release pushes update that this (and, transitively, the sample
-            // too) has updated.
-            // data_head_pointer.fetch_add(bytes_written, Ordering::Release);
-
             // Return the total size we wrote (header + sample) so that we can
             // increment offset counter.
             return bytes_written;
@@ -694,14 +685,23 @@ async fn set_up_profiler(
 async fn stop_and_collect_samples(
     session_proxy: profiler::SessionProxy,
     mut client: fidl::AsyncSocket,
+    seq_lock: &OnceLock<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>,
     perf_data_vmo: &zx::Vmo,
-    data_head_pointer: &AtomicPtr<u64>,
     sample_type: u64,
     sample_id: u64,
     sample_period: u64,
-    vmo_write_offset: u64,
+    vmo_write_offset: &mut u64,
 ) -> Result<(), Errno> {
     let stats = session_proxy.stop().await;
+
+    let seq_lock_wrapper = match seq_lock.get() {
+        Some(Ok(l)) => l,
+        // Initialization failed in a previous mmap() call. Propagate the error.
+        Some(Err(e)) => return Err(e.clone()),
+        // Not initialized yet (i.e. mmap() hasn't been called). Skip updating metadata.
+        None => return Ok(()),
+    };
+
     let samples_collected = match stats {
         Ok(stats) => stats.samples_collected.unwrap(),
         Err(e) => return error!(EINVAL, e),
@@ -744,15 +744,21 @@ async fn stop_and_collect_samples(
                         let pid = Some(backtrace.process.0 as u32);
                         let tid = Some(backtrace.thread.0 as u32);
                         let perf_record_sample = PerfRecordSample { pid, tid, ips };
-                        write_record_to_vmo(
+                        let bytes_written = write_record_to_vmo(
                             perf_record_sample,
                             perf_data_vmo,
-                            data_head_pointer,
                             sample_type,
                             sample_id,
                             sample_period,
-                            vmo_write_offset,
+                            *vmo_write_offset,
                         );
+                        // Update data_head after writing sample.
+                        if bytes_written > 0 {
+                            *vmo_write_offset += bytes_written;
+                            let mut metadata = seq_lock_wrapper.get();
+                            metadata.data_head = *vmo_write_offset;
+                            seq_lock_wrapper.set_value(metadata);
+                        }
                     }
                     Ok(_) => {
                         // Ignore other records.
@@ -790,15 +796,21 @@ async fn stop_and_collect_samples(
                         if let Some(perf_record_sample) =
                             parse_perf_record_sample_format(received_data)
                         {
-                            write_record_to_vmo(
+                            let bytes_written = write_record_to_vmo(
                                 perf_record_sample,
                                 perf_data_vmo,
-                                data_head_pointer,
                                 sample_type,
                                 sample_id,
                                 sample_period,
-                                vmo_write_offset,
+                                *vmo_write_offset,
                             );
+                            // Update data_head after writing sample.
+                            if bytes_written > 0 {
+                                *vmo_write_offset += bytes_written;
+                                let mut metadata = seq_lock_wrapper.get();
+                                metadata.data_head = *vmo_write_offset;
+                                seq_lock_wrapper.set_value(metadata);
+                            }
                         }
                     }
                     Err(e) => {
@@ -876,6 +888,7 @@ unsafe fn create_seq_lock(
         time_cycles: 0,
         time_mask: 0,
         __reserved: [0; 928usize],
+        // This first page (metadata) has finished writing. Start data_head at 0.
         data_head: 0,
         // Start reading from 0; it is the user's responsibility to increment on their end.
         data_tail: 0,
@@ -941,14 +954,12 @@ pub fn sys_perf_event_open(
     // quick succession (instead of something lower).
     let (sender, mut receiver) = future_mpsc::channel(8);
 
-    let page_size = zx::system_get_page_size() as u64;
     let mut perf_event_file = PerfEventFileState::new(
         perf_event_attrs,
         0,
         perf_event_attrs.disabled(),
         perf_event_attrs.sample_type,
         zx::Vmo::create(ESTIMATED_MMAP_BUFFER_SIZE).unwrap(),
-        page_size, // Start with this amount of offset, we can increment as we write.
         sender,
     );
 
@@ -1009,9 +1020,11 @@ pub fn sys_perf_event_open(
     // 1 nanosecond per tick. Convert this duration into zx::duration.
     let zx_sample_period = zx::MonotonicDuration::from_nanos(sample_period_in_ticks as i64);
 
-    let data_head_pointer = Arc::new(AtomicPtr::new(std::ptr::null_mut::<u64>()));
-    // Pass cloned into the thread.
-    let cloned_data_head_pointer = Arc::clone(&data_head_pointer);
+    // SeqLock does not get instantiated with metadata values until mmap() is called.
+    let seq_lock =
+        Arc::new(OnceLock::<Result<SeqLock<PerfMetadataHeader, PerfMetadataValue>, Errno>>::new());
+    let cloned_seq_lock = Arc::clone(&seq_lock);
+    let mut vmo_write_offset = 0;
 
     let closure = async move |_: LockedAndTask<'_>| {
         let mut profiler_state: Option<(profiler::SessionProxy, fidl::AsyncSocket)> = None;
@@ -1052,12 +1065,12 @@ pub fn sys_perf_event_open(
                         if let Err(e) = stop_and_collect_samples(
                             session_proxy,
                             client,
+                            &cloned_seq_lock,
                             &zx::Vmo::from(handle),
-                            &*cloned_data_head_pointer,
                             perf_event_file.sample_type,
                             perf_event_file.sample_id,
                             sample_period_in_ticks,
-                            perf_event_file.vmo_write_offset,
+                            &mut vmo_write_offset,
                         )
                         .await
                         {
@@ -1082,8 +1095,7 @@ pub fn sys_perf_event_open(
         _cpu: cpu,
         perf_event_file: RwLock::new(perf_event_file),
         security_state: security::perf_event_alloc(current_task),
-        _data_head_pointer: data_head_pointer,
-        seq_lock: OnceLock::new(),
+        seq_lock: seq_lock,
     });
     // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
     let file_handle =
