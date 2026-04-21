@@ -186,5 +186,50 @@ TEST(LibcVmarTests, GuardedPageBlock) {
   }
 }
 
+TEST(LibcVmarTests, GuardedPageBlockTooLarge) {
+  const PageRoundedSize kOnePage{1};
+  const PageRoundedSize kTwoPages = kOnePage + kOnePage;
+  constexpr PageRoundedSize kNoGuard{};
+
+  zx::vmar child_vmar;
+  uintptr_t child_base;
+  ASSERT_OK(AllocationVmar()->allocate(ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0, kOnePage.get(),
+                                       &child_vmar, &child_base));
+  auto cleanup_child = fit::defer([&child_vmar] { child_vmar.destroy(); });
+
+  zx::result<AllocationVmo> vmo = AllocationVmo::New(kTwoPages);
+  ASSERT_TRUE(vmo.is_ok()) << vmo.status_string();
+
+  GuardedPageBlock block;
+  // Try to allocate 2 pages in a 1 page VMAR.
+  zx::result result = block.Allocate(child_vmar.borrow(), *vmo, kTwoPages, kNoGuard, kNoGuard);
+  EXPECT_EQ(result.status_value(), ZX_ERR_NO_RESOURCES);
+}
+
+TEST(LibcVmarTests, GuardedPageBlockVmarFull) {
+  const PageRoundedSize kOnePage{1};
+  constexpr PageRoundedSize kNoGuard{};
+
+  zx::vmar child_vmar;
+  uintptr_t child_base;
+  ASSERT_OK(AllocationVmar()->allocate(ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0, kOnePage.get(),
+                                       &child_vmar, &child_base));
+  auto cleanup_child = fit::defer([&child_vmar] { child_vmar.destroy(); });
+
+  zx::result<AllocationVmo> vmo = AllocationVmo::New(kOnePage);
+  ASSERT_TRUE(vmo.is_ok()) << vmo.status_string();
+
+  GuardedPageBlock block1;
+  zx::result result1 = block1.Allocate(child_vmar.borrow(), *vmo, kOnePage, kNoGuard, kNoGuard);
+  ASSERT_TRUE(result1.is_ok()) << result1.status_string();
+
+  GuardedPageBlock block2;
+  zx::result result2 = block2.Allocate(child_vmar.borrow(), *vmo, kOnePage, kNoGuard, kNoGuard);
+
+  EXPECT_EQ(result2.status_value(), ZX_ERR_NO_RESOURCES)
+      << "Expected ZX_ERR_NO_RESOURCES when the allocation vmar is full: "
+      << result2.status_string();
+}
+
 }  // namespace
 }  // namespace LIBC_NAMESPACE_DECL

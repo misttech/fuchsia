@@ -32,6 +32,12 @@ zx::result<std::span<std::byte>> GuardedPageBlock::Allocate<std::byte>(  //
   if (zx::result result = zx::make_result(
           allocate_from->allocate(kVmarOptions, 0, vmar_size.get(), &vmar, &start_));
       result.is_error()) {
+    // zx_vmar_allocate will return ZX_ERR_INVALID_ARGS if the requested size
+    // is larger than the parent VMAR size. Translate this to ZX_ERR_NO_RESOURCES
+    // since this represents resource exhaustion.
+    if (result.error_value() == ZX_ERR_INVALID_ARGS) {
+      return zx::error{ZX_ERR_NO_RESOURCES};
+    }
     return result.take_error();
   }
 

@@ -626,6 +626,14 @@ TEST_F(LibcThreadTests, ThreadStorageStackTooSmall) {
   }
 }
 
+TEST_F(LibcThreadTests, ThreadStorageSizeLargerThanVmar) {
+  ThreadStorage storage;
+  const PageRoundedSize vmar_size = PageRoundedSize::Page() * 10;
+  const PageRoundedSize large_stack = PageRoundedSize::Page() * 20;
+  auto result = storage.Allocate(CreateHandles(vmar_size), kVmoName, large_stack, kOnePage);
+  EXPECT_EQ(result.status_value(), ZX_ERR_NO_RESOURCES);
+}
+
 }  // namespace
 
 // This is defined in the non-test code to get the real layout from the dynamic

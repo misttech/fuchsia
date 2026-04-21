@@ -163,6 +163,7 @@ constexpr int C11ThreadError(zx_status_t status) {
     case ZX_OK:
       return thrd_success;
     case ZX_ERR_NO_MEMORY:
+    case ZX_ERR_NO_RESOURCES:
       return thrd_nomem;
     case ZX_ERR_TIMED_OUT:
       return thrd_timedout;
@@ -183,6 +184,7 @@ constexpr int PthreadError(zx_status_t status) {
     case ZX_ERR_TIMED_OUT:
       return ETIMEDOUT;
     case ZX_ERR_NO_MEMORY:
+    case ZX_ERR_NO_RESOURCES:
       return EAGAIN;
     case ZX_ERR_NOT_FOUND:
       // These two are possible in pthread_create due to thrd_set_zx_process.
