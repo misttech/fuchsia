@@ -103,20 +103,25 @@ void sampler::ThreadSampler::StopLocked() {
 
   // Some timers may not have not been able to be canceled, so we need to wait for any samples that
   // have already started to finish.
-  zx_instant_mono_t deadline = zx_time_add_duration(current_mono_time(), ZX_SEC(30));
+  constexpr zx_duration_t warn_duration = ZX_SEC(30);
+  zx_duration_t sleep_duration = ZX_MSEC(1);
+  zx_instant_mono_t next_warn_time = zx_time_add_duration(current_mono_time(), warn_duration);
+  int64_t warn_events = 0;
+  constexpr zx_duration_t max_sleep_duration = ZX_SEC(1);
   for (const sampler::internal::PerCpuState& i : per_cpu_state_) {
-    bool pending_timers;
-    bool pending_writes;
-    do {
-      pending_timers = i.PendingTimer();
-      pending_writes = i.PendingWrites();
-      if (pending_timers || pending_writes) {
-        Thread::Current::SleepRelative(ZX_MSEC(1));
+    while (i.PendingTimer() || i.PendingWrites()) {
+      // Warn if we have spend an 'unreasonable' amount of time waiting.
+      if (current_mono_time() > next_warn_time) {
+        warn_events++;
+        printf("WARNING: Waited more than %ld seconds for sampling to finish\n",
+               (warn_events * warn_duration) / ZX_SEC(1));
+        next_warn_time = zx_time_add_duration(next_warn_time, warn_duration);
       }
-    } while ((pending_writes || pending_timers) && (current_mono_time() < deadline));
-    // We'll wait an unreasonable amount of time for the timer to finish. If the timer really
-    // haven't finished by this point, something has gone terribly wrong.
-    ZX_ASSERT(!pending_writes || !pending_timers);
+      Thread::Current::SleepRelative(sleep_duration);
+      // Scale up the sleep duration to balance being initially responsive and not consuming
+      // excessive CPU.
+      sleep_duration = ktl::min(sleep_duration * 2, max_sleep_duration);
+    }
   }
 
   // At this point, there are no longer pending writes. There may still be threads:
