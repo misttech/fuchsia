@@ -217,9 +217,6 @@ impl PackageManifest {
         let meta_contents = meta_far.read_file(MetaContents::PATH)?;
         let meta_contents = MetaContents::deserialize(meta_contents.as_slice())?.into_contents();
 
-        // The meta contents are unordered, so sort them to keep things consistent.
-        let meta_contents = meta_contents.into_iter().collect::<BTreeMap<_, _>>();
-
         let meta_package = meta_far.read_file(MetaPackage::PATH)?;
         let meta_package = MetaPackage::deserialize(meta_package.as_slice())?;
 
@@ -282,7 +279,7 @@ impl PackageManifest {
             size: meta_far_size,
         });
 
-        for (blob_path, merkle) in meta_contents.into_iter() {
+        for (blob_path, merkle) in &meta_contents {
             let source_path = blobs_dir.join(merkle.to_string());
 
             if !source_path.exists() {
@@ -307,12 +304,12 @@ impl PackageManifest {
             builder = builder.add_blob(BlobInfo {
                 source_path: source_path.into_os_string().into_string().map_err(|source_path| {
                     PackageManifestError::InvalidBlobPath {
-                        merkle,
+                        merkle: *merkle,
                         source_path: source_path.into(),
                     }
                 })?,
-                path: blob_path,
-                merkle,
+                path: blob_path.to_string(),
+                merkle: *merkle,
                 size,
             });
         }

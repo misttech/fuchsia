@@ -25,5 +25,7 @@ ffx_plugin("ffx_package_archive_list") {
     "//third_party/rust_crates:argh",
   ]
 
+  test_deps = [ "//src/sys/pkg/lib/fuchsia-pkg" ]
+
   sources = [ "src/lib.rs" ]
 }

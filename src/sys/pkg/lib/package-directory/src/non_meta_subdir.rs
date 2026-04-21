@@ -74,7 +74,7 @@ impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for No
             path.as_ref().strip_suffix('/').unwrap_or_else(|| path.as_ref())
         );
 
-        if let Some(blob) = self.root_dir.non_meta_files.get(&file_path) {
+        if let Some(blob) = self.root_dir.non_meta_files.get(file_path.as_str()) {
             if path.is_dir() {
                 return Err(zx::Status::NOT_DIR);
             }
@@ -97,10 +97,7 @@ impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for No
         zx::Status,
     > {
         vfs::directory::read_dirents::read_dirents(
-            &crate::get_dir_children(
-                self.root_dir.non_meta_files.keys().map(|s| s.as_str()),
-                &self.path,
-            ),
+            &crate::get_dir_children(self.root_dir.non_meta_files.keys(), &self.path),
             pos,
             sink,
         )

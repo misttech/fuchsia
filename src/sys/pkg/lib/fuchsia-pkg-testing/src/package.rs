@@ -308,7 +308,7 @@ impl Package {
             if merkle != &actual_merkle {
                 return Err(VerificationError::DifferentFileData { path: path.to_owned() });
             }
-            expected_paths.insert(path.clone());
+            expected_paths.insert(path.to_owned());
         }
 
         // Verify all entries in the meta FAR exist and have the correct contents.

@@ -5,7 +5,7 @@
 use crate::errors::MetaContentsError;
 use buf_read_ext::BufReadExt;
 use fuchsia_merkle::Hash;
-use std::collections::HashMap;
+use packed::PackedMap;
 use std::io;
 use std::str::FromStr;
 
@@ -15,7 +15,7 @@ use std::str::FromStr;
 /// with "meta/".
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MetaContents {
-    contents: HashMap<String, Hash>,
+    contents: PackedMap<str, Hash>,
 }
 
 impl MetaContents {
@@ -34,9 +34,9 @@ impl MetaContents {
     /// ```
     /// # use fuchsia_merkle::Hash;
     /// # use fuchsia_pkg::MetaContents;
-    /// # use std::collections::HashMap;
+    /// # use packed::PackedMap;
     /// # use std::str::FromStr;
-    /// let map = HashMap::from([
+    /// let map = PackedMap::from([
     ///     ("bin/my_prog".to_string(),
     ///         Hash::from_str(
     ///             "0000000000000000000000000000000000000000000000000000000000000000")
@@ -47,7 +47,7 @@ impl MetaContents {
     ///         .unwrap()),
     /// ]);
     /// let meta_contents = MetaContents::from_map(map).unwrap();
-    pub fn from_map(map: HashMap<String, Hash>) -> Result<Self, MetaContentsError> {
+    pub fn from_map(map: PackedMap<str, Hash>) -> Result<Self, MetaContentsError> {
         for resource_path in map.keys() {
             fuchsia_url::Resource::validate_str(resource_path).map_err(|e| {
                 MetaContentsError::InvalidResourcePath { cause: e, path: resource_path.to_string() }
@@ -68,15 +68,40 @@ impl MetaContents {
         Ok(MetaContents { contents: map })
     }
 
+    /// Creates an empty `MetaContents`.
+    pub fn new() -> Self {
+        Self { contents: PackedMap::new() }
+    }
+
+    /// Returns the Merkle root for the given resource path, if present.
+    pub fn get(&self, path: &str) -> Option<&Hash> {
+        self.contents.get(path)
+    }
+
+    /// Returns an iterator over the package paths.
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.contents.keys()
+    }
+
+    /// Returns an iterator over the package hashes.
+    pub fn values(&self) -> impl Iterator<Item = &Hash> {
+        self.contents.values()
+    }
+
+    /// Returns an iterator over the entries of the map, sorted by key.
+    pub fn iter(&self) -> packed::Iter<'_, str, Hash> {
+        self.contents.iter()
+    }
+
     /// Serializes a "meta/contents" file to `writer`.
     ///
     /// # Examples
     /// ```
     /// # use fuchsia_merkle::Hash;
     /// # use fuchsia_pkg::MetaContents;
-    /// # use std::collections::HashMap;
+    /// # use packed::PackedMap;
     /// # use std::str::FromStr;
-    /// let map: PackedMap<str, Hash> = HashMap::from([
+    /// let map = PackedMap::from([
     ///     ("bin/my_prog".to_string(),
     ///         Hash::from_str(
     ///             "0000000000000000000000000000000000000000000000000000000000000000")
@@ -94,9 +119,7 @@ impl MetaContents {
     /// assert_eq!(bytes.as_slice(), expected.as_bytes());
     /// ```
     pub fn serialize(&self, writer: &mut impl io::Write) -> io::Result<()> {
-        let mut entries = self.contents.iter().collect::<Vec<_>>();
-        entries.sort();
-        for (path, hash) in entries {
+        for (path, hash) in self.contents.iter() {
             writeln!(writer, "{path}={hash}")?;
         }
         Ok(())
@@ -108,12 +131,12 @@ impl MetaContents {
     /// ```
     /// # use fuchsia_merkle::Hash;
     /// # use fuchsia_pkg::MetaContents;
-    /// # use std::collections::HashMap;
+    /// # use packed::PackedMap;
     /// # use std::str::FromStr;
     /// let bytes = "bin/my_prog=0000000000000000000000000000000000000000000000000000000000000000\n\
     ///              lib/mylib.so=1111111111111111111111111111111111111111111111111111111111111111\n".as_bytes();
     /// let meta_contents = MetaContents::deserialize(bytes).unwrap();
-    /// let expected_contents = HashMap::from([
+    /// let expected_contents = PackedMap::from([
     ///     ("bin/my_prog".to_string(),
     ///         Hash::from_str(
     ///             "0000000000000000000000000000000000000000000000000000000000000000")
@@ -126,7 +149,7 @@ impl MetaContents {
     /// assert_eq!(meta_contents.contents(), &expected_contents);
     /// ```
     pub fn deserialize(mut reader: impl io::BufRead) -> Result<Self, MetaContentsError> {
-        let mut contents = HashMap::new();
+        let mut builder = PackedMap::builder();
         let mut lines = reader.lending_lines();
         while let Some(line) = lines.next() {
             let line = line?;
@@ -135,31 +158,23 @@ impl MetaContents {
             })?;
 
             let hash = Hash::from_str(&line[i + 1..])?;
-            let path = line[..i].to_string();
+            let path = &line[..i];
 
-            use std::collections::hash_map::Entry;
-            match contents.entry(path) {
-                Entry::Vacant(entry) => {
-                    entry.insert(hash);
-                }
-                Entry::Occupied(entry) => {
-                    return Err(MetaContentsError::DuplicateResourcePath {
-                        path: entry.key().clone(),
-                    });
-                }
+            if builder.insert(path, hash).is_some() {
+                return Err(MetaContentsError::DuplicateResourcePath { path: path.to_string() });
             }
         }
-        contents.shrink_to_fit();
-        Self::from_map(contents)
+
+        Self::from_map(builder.build())
     }
 
     /// Get the map from blob resource paths to Merkle Tree root hashes.
-    pub fn contents(&self) -> &HashMap<String, Hash> {
+    pub fn contents(&self) -> &PackedMap<str, Hash> {
         &self.contents
     }
 
     /// Take the map from blob resource paths to Merkle Tree root hashes.
-    pub fn into_contents(self) -> HashMap<String, Hash> {
+    pub fn into_contents(self) -> PackedMap<str, Hash> {
         self.contents
     }
 
@@ -167,6 +182,40 @@ impl MetaContents {
     /// duplicates.
     pub fn into_hashes_undeduplicated(self) -> impl Iterator<Item = Hash> {
         self.contents.into_values()
+    }
+}
+
+impl Default for MetaContents {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> IntoIterator for &'a MetaContents {
+    type Item = (&'a str, &'a Hash);
+    type IntoIter = packed::Iter<'a, str, Hash>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.contents.iter()
+    }
+}
+
+impl<T, const N: usize> From<[(T, Hash); N]> for MetaContents
+where
+    T: AsRef<str>,
+{
+    fn from(items: [(T, Hash); N]) -> Self {
+        MetaContents::from_iter(items)
+    }
+}
+
+impl<T> std::iter::FromIterator<(T, Hash)> for MetaContents
+where
+    T: AsRef<str>,
+{
+    fn from_iter<I: IntoIterator<Item = (T, Hash)>>(iter: I) -> Self {
+        let map = PackedMap::from_iter(iter);
+        MetaContents::from_map(map).expect("invalid meta/contents entries")
     }
 }
 
@@ -178,6 +227,7 @@ mod tests {
     use fuchsia_url::ResourcePathError;
     use fuchsia_url::test::*;
     use proptest::prelude::*;
+    use std::collections::HashMap;
 
     fn zeros_hash() -> Hash {
         Hash::from_str("0000000000000000000000000000000000000000000000000000000000000000").unwrap()
@@ -191,18 +241,18 @@ mod tests {
     fn deserialize_empty_file() {
         let empty = Vec::new();
         let meta_contents = MetaContents::deserialize(empty.as_slice()).unwrap();
-        assert_eq!(meta_contents.contents(), &HashMap::new());
-        assert_eq!(meta_contents.into_contents(), HashMap::new());
+        assert_eq!(meta_contents.contents(), &PackedMap::new());
+        assert_eq!(meta_contents.into_contents(), PackedMap::new());
     }
 
     #[test]
     fn deserialize_known_file() {
         let bytes =
             "a-host/path=0000000000000000000000000000000000000000000000000000000000000000\n\
-             other/host/path=1111111111111111111111111111111111111111111111111111111111111111\n"
+              other/host/path=1111111111111111111111111111111111111111111111111111111111111111\n"
                 .as_bytes();
         let meta_contents = MetaContents::deserialize(bytes).unwrap();
-        let expected_contents = HashMap::from([
+        let expected_contents = PackedMap::from([
             ("a-host/path".to_string(), zeros_hash()),
             ("other/host/path".to_string(), ones_hash()),
         ]);
@@ -214,7 +264,7 @@ mod tests {
     fn from_map_rejects_meta_file() {
         let map = HashMap::from([("meta".to_string(), zeros_hash())]);
         assert_matches!(
-            MetaContents::from_map(map),
+            MetaContents::from_map(map.into_iter().collect()),
             Err(MetaContentsError::ExternalContentInMetaDirectory { path }) if path == "meta"
         );
     }
@@ -245,7 +295,7 @@ mod tests {
             ),
         ] {
             assert_matches!(
-                MetaContents::from_map(map),
+                MetaContents::from_map(map.into_iter().collect()),
                 Err(MetaContentsError::FileDirectoryCollision { path }) if path == expected_path
             );
         }
@@ -268,7 +318,7 @@ mod tests {
                 (invalid_path.clone(), Hash::from_str(hex.as_str()).unwrap()),
             ]);
             assert_matches!(
-                MetaContents::from_map(map),
+                MetaContents::from_map(map.into_iter().collect()),
                 Err(MetaContentsError::InvalidResourcePath {
                     cause: ResourcePathError::PathEndsWithSlash,
                     path }) if path == invalid_path
@@ -285,7 +335,7 @@ mod tests {
                 (invalid_path.clone(), Hash::from_str(hex.as_str()).unwrap()),
             ]);
             assert_matches!(
-                MetaContents::from_map(map),
+                MetaContents::from_map(map.into_iter().collect()),
                 Err(MetaContentsError::ExternalContentInMetaDirectory { path }) if path == invalid_path
             );
         }
@@ -302,7 +352,7 @@ mod tests {
                 (path0.clone(), Hash::from_str(hex0.as_str()).unwrap()),
                 (path1.clone(), Hash::from_str(hex1.as_str()).unwrap()),
             ]);
-            let meta_contents = MetaContents::from_map(map);
+            let meta_contents = MetaContents::from_map(map.into_iter().collect());
             prop_assume!(meta_contents.is_ok());
             let meta_contents = meta_contents.unwrap();
             let mut bytes = Vec::new();
@@ -328,7 +378,7 @@ mod tests {
             contents in prop::collection::hash_map(
                 random_external_resource_path(), random_hash(), 0..4)
         ) {
-            let meta_contents = MetaContents::from_map(contents);
+            let meta_contents = MetaContents::from_map(contents.into_iter().collect());
             prop_assume!(meta_contents.is_ok());
             let meta_contents = meta_contents.unwrap();
             let mut serialized = Vec::new();

@@ -586,14 +586,9 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
-        let mut contents: Vec<String> = contents.into_contents().into_keys().collect();
-        contents.sort();
-        let expected_contents: Vec<String> =
-            vec!["board", "epoch.json", "images.json", "packages.json", "version"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-        assert_eq!(expected_contents, contents);
+        let contents = contents.keys().collect::<Vec<_>>();
+        let expected_contents = &["board", "epoch.json", "images.json", "packages.json", "version"];
+        assert_eq!(&expected_contents[..], &contents[..]);
 
         let far_path = outdir.join("update_images_fuchsia.far");
         let mut far_reader = Utf8Reader::new(File::open(&far_path).unwrap()).unwrap();
@@ -602,9 +597,9 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
-        let contents: Vec<String> = contents.into_contents().into_keys().collect();
-        let expected_contents: Vec<String> = vec!["zbi".to_string()];
-        assert_eq!(expected_contents, contents);
+        let contents = contents.keys().collect::<Vec<_>>();
+        let expected_contents = &["zbi"];
+        assert_eq!(&expected_contents[..], &contents[..]);
 
         let far_path = outdir.join("update_images_recovery.far");
         let mut far_reader = Utf8Reader::new(File::open(&far_path).unwrap()).unwrap();
@@ -613,8 +608,7 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let expected_contents = "\
-        "
-        .to_string();
+        ";
         assert_eq!(expected_contents, contents);
 
         let far_path = outdir.join("update_images_firmware.far");
@@ -624,9 +618,9 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
-        let contents: Vec<String> = contents.into_contents().into_keys().collect();
-        let expected_contents = vec!["firmware_tpl".to_string()];
-        assert_eq!(expected_contents, contents);
+        let contents = contents.keys().collect::<Vec<_>>();
+        let expected_contents = &["firmware_tpl"];
+        assert_eq!(&expected_contents[..], &contents[..]);
 
         // Ensure the expected package fars/manifests were generated.
         assert!(outdir.join("update.far").exists());
@@ -771,14 +765,9 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
-        let mut contents: Vec<String> = contents.into_contents().into_keys().collect();
-        contents.sort();
-        let expected_contents: Vec<String> =
-            vec!["board", "epoch.json", "images.json", "packages.json", "version"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-        assert_eq!(expected_contents, contents);
+        let contents = contents.keys().collect::<Vec<_>>();
+        let expected_contents = &["board", "epoch.json", "images.json", "packages.json", "version"];
+        assert_eq!(&expected_contents[..], &contents[..]);
 
         let far_path = outdir.join("update_images_fuchsia.far");
         let mut far_reader = Utf8Reader::new(File::open(&far_path).unwrap()).unwrap();
@@ -787,9 +776,9 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
-        let contents: Vec<String> = contents.into_contents().into_keys().collect();
-        let expected_contents = vec!["zbi".to_string()];
-        assert_eq!(expected_contents, contents);
+        let contents = contents.keys().collect::<Vec<_>>();
+        let expected_contents = &["zbi"];
+        assert_eq!(&expected_contents[..], &contents[..]);
 
         let far_path = outdir.join("update_images_recovery.far");
         let mut far_reader = Utf8Reader::new(File::open(&far_path).unwrap()).unwrap();
@@ -798,10 +787,9 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
-        let mut contents: Vec<String> = contents.into_contents().into_keys().collect();
-        contents.sort();
-        let expected_contents = vec!["vbmeta".to_string(), "zbi".to_string()];
-        assert_eq!(expected_contents, contents);
+        let contents = contents.keys().collect::<Vec<_>>();
+        let expected_contents = &["vbmeta", "zbi"];
+        assert_eq!(&expected_contents[..], &contents[..]);
 
         let far_path = outdir.join("update_images_firmware.far");
         let mut far_reader = Utf8Reader::new(File::open(&far_path).unwrap()).unwrap();
@@ -810,11 +798,9 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
-        let mut contents: Vec<String> = contents.into_contents().into_keys().collect();
-        contents.sort();
-        let expected_contents =
-            vec!["dtbo".to_string(), "firmware_tpl".to_string(), "vbmeta_system".to_string()];
-        assert_eq!(expected_contents, contents);
+        let contents = contents.keys().collect::<Vec<_>>();
+        let expected_contents = &["dtbo", "firmware_tpl", "vbmeta_system"];
+        assert_eq!(&expected_contents[..], &contents[..]);
 
         // Ensure the expected package fars/manifests were generated.
         assert!(outdir.join("update.far").exists());
@@ -941,10 +927,9 @@ mod tests {
         let contents = far_reader.read_file("meta/contents").unwrap();
         let contents = std::str::from_utf8(&contents).unwrap();
         let contents = MetaContents::deserialize(std::io::Cursor::new(contents)).unwrap();
-        let mut contents: Vec<String> = contents.into_contents().into_keys().collect();
-        contents.sort();
-        let expected_contents = vec!["recovery_vbmeta".to_string(), "recovery_zbi".to_string()];
-        assert_eq!(expected_contents, contents);
+        let contents = contents.keys().collect::<Vec<_>>();
+        let expected_contents = &["recovery_vbmeta", "recovery_zbi"];
+        assert_eq!(&expected_contents[..], &contents[..]);
 
         // Ensure the expected package fars/manifests were generated.
         assert!(outdir.join("update.far").exists());

@@ -35,7 +35,7 @@ impl From<Utf8Entry<'_>> for ArchiveEntry {
 #[automock]
 pub trait FarListReader {
     fn list_contents(&self) -> Result<Vec<ArchiveEntry>>;
-    fn list_meta_contents(&mut self) -> Result<(Vec<ArchiveEntry>, HashMap<String, Hash>)>;
+    fn list_meta_contents(&mut self) -> Result<(Vec<ArchiveEntry>, MetaContents)>;
     fn read_entry(&mut self, entry: &ArchiveEntry) -> Result<Vec<u8>>;
 }
 
@@ -64,7 +64,7 @@ impl FarListReader for FarArchiveReader {
         return Ok(self.archive.list().map(|e| e.into()).collect());
     }
 
-    fn list_meta_contents(&mut self) -> Result<(Vec<ArchiveEntry>, HashMap<String, Hash>)> {
+    fn list_meta_contents(&mut self) -> Result<(Vec<ArchiveEntry>, MetaContents)> {
         let (meta_entries, meta_contents) = match self.archive.read_file("meta.far") {
             Ok(meta_far_blob) => {
                 let meta_cursor = Cursor::new(meta_far_blob);
@@ -72,11 +72,10 @@ impl FarListReader for FarArchiveReader {
                 let meta_entries = meta_archive.list().map(|e| e.into()).collect();
 
                 let contents_blob = meta_archive.read_file(MetaContents::PATH)?;
-                let meta_contents =
-                    MetaContents::deserialize(contents_blob.as_slice())?.into_contents();
+                let meta_contents = MetaContents::deserialize(contents_blob.as_slice())?;
                 (meta_entries, meta_contents)
             }
-            Err(Error::PathNotPresent(_)) => (vec![], HashMap::new()),
+            Err(Error::PathNotPresent(_)) => (vec![], MetaContents::new()),
             Err(e) => bail!("Error reading meta.far: {:#}", e),
         };
         Ok((meta_entries, meta_contents))
@@ -111,7 +110,7 @@ pub fn read_file_entries(reader: &mut dyn FarListReader) -> Result<Vec<ArchiveEn
     // blob entry in the archive. If it is missing, mark the length
     // and offset as zero.
     let mut used_archive_entries = HashSet::new();
-    for (name, hash) in meta_contents {
+    for (name, hash) in &meta_contents {
         if let Some(mut blob) = archive_entries.get(&hash.to_string()).cloned() {
             used_archive_entries.insert(hash.to_string());
             blob.name = name.to_string();
@@ -199,11 +198,11 @@ pub mod test_utils {
                         length: Some(55),
                     },
                 ],
-                HashMap::from([
-                    (RUN_ME_PATH.into(), Hash::from_str(RUN_ME_BLOB)?),
-                    (LIB_RUN_SO_PATH.into(), Hash::from_str(LIB_RUN_SO_BLOB)?),
-                    (DATA_SOME_FILE_PATH.into(), Hash::from_str(DATA_SOME_FILE_BLOB)?),
-                    (MISSING_BLOB_PATH.into(), Hash::from_str(MISSING_BLOB)?),
+                MetaContents::from([
+                    (RUN_ME_PATH, Hash::from_str(RUN_ME_BLOB)?),
+                    (LIB_RUN_SO_PATH, Hash::from_str(LIB_RUN_SO_BLOB)?),
+                    (DATA_SOME_FILE_PATH, Hash::from_str(DATA_SOME_FILE_BLOB)?),
+                    (MISSING_BLOB_PATH, Hash::from_str(MISSING_BLOB)?),
                 ]),
             ))
         });
@@ -237,9 +236,9 @@ mod tests {
         mockreader.expect_list_meta_contents().returning(|| {
             Ok((
                 vec![],
-                HashMap::from([
-                    ("first-copy".into(), BLOB1.parse().unwrap()),
-                    ("second-copy".into(), BLOB1.parse().unwrap()),
+                MetaContents::from([
+                    ("first-copy", BLOB1.parse().unwrap()),
+                    ("second-copy", BLOB1.parse().unwrap()),
                 ]),
             ))
         });
@@ -262,7 +261,7 @@ mod tests {
         let mut mockreader = MockFarListReader::new();
         mockreader.expect_list_contents().returning(|| Ok(vec![]));
         mockreader.expect_list_meta_contents().returning(|| {
-            Ok((vec![], HashMap::from([("missing-blob".into(), BLOB1.parse().unwrap())])))
+            Ok((vec![], MetaContents::from([("missing-blob", BLOB1.parse().unwrap())])))
         });
 
         let entries = read_file_entries(&mut mockreader).unwrap();

@@ -10,6 +10,7 @@ lib_deps = [
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
   "//sdk/rust/zx-status",
   "//src/lib/buf-read-ext",
+  "//src/lib/collections/packed",
   "//src/lib/fidl/rust/fidl",
   "//src/lib/fuchsia-fs",
   "//src/lib/fuchsia-url",

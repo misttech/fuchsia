@@ -35,7 +35,7 @@ impl<S: crate::NonMetaStorage> vfs::node::Node for MetaSubdir<S> {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, zx::Status> {
-        let size = crate::usize_to_u64_safe(self.root_dir.meta_files.len());
+        let size = crate::usize_to_u64_safe(self.root_dir.meta_files.element_len());
         Ok(immutable_attributes!(
             requested_attributes,
             Immutable {
@@ -104,10 +104,7 @@ impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for Me
         zx::Status,
     > {
         vfs::directory::read_dirents::read_dirents(
-            &crate::get_dir_children(
-                self.root_dir.meta_files.keys().map(|s| s.as_str()),
-                &self.path,
-            ),
+            &crate::get_dir_children(self.root_dir.meta_files.keys(), &self.path),
             pos,
             sink,
         )

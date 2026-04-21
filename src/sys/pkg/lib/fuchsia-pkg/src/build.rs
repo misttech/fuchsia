@@ -456,7 +456,6 @@ mod test_build_with_file_system {
             let actual_external_contents: HashSet<&str> = meta_contents
                 .contents()
                 .keys()
-                .map(|s| s.as_str())
                 .collect();
             let expected_external_contents: HashSet<&str> =
                 HashSet::from_iter(

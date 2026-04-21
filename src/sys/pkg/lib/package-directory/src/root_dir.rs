@@ -9,7 +9,7 @@ use crate::{Error, NonMetaStorageError, usize_to_u64_safe};
 use fidl_fuchsia_io as fio;
 use fuchsia_pkg::MetaContents;
 use log::error;
-use std::collections::HashMap;
+use packed::PackedMap;
 use std::sync::Arc;
 use vfs::directory::entry::{EntryInfo, OpenRequest};
 use vfs::directory::immutable::connection::ImmutableConnection;
@@ -24,9 +24,9 @@ pub struct RootDir<S> {
     pub(crate) non_meta_storage: S,
     pub(crate) hash: fuchsia_hash::Hash,
     // The keys are object relative path expressions.
-    pub(crate) meta_files: HashMap<String, MetaFileLocation>,
+    pub(crate) meta_files: PackedMap<str, MetaFileLocation>,
     // The keys are object relative path expressions.
-    pub(crate) non_meta_files: HashMap<String, fuchsia_hash::Hash>,
+    pub(crate) non_meta_files: PackedMap<str, fuchsia_hash::Hash>,
     pub(crate) meta_far_vmo: zx::Vmo,
     dropper: Option<Box<dyn crate::OnRootDirDrop>>,
 }
@@ -171,10 +171,10 @@ impl<S: crate::NonMetaStorage> RootDir<S> {
     /// Creates and returns a `MetaSubdir` if one exists at `path`. `path` must end in '/'.
     pub(crate) fn get_meta_subdir(self: &Arc<Self>, path: String) -> Option<Arc<MetaSubdir<S>>> {
         debug_assert!(path.ends_with("/"));
-        for k in self.meta_files.keys() {
-            if k.starts_with(&path) {
-                return Some(MetaSubdir::new(self.clone(), path));
-            }
+        if let Some((k, _)) = self.meta_files.range(path.as_str()..).next()
+            && k.starts_with(&path)
+        {
+            return Some(MetaSubdir::new(self.clone(), path));
         }
         None
     }
@@ -185,10 +185,10 @@ impl<S: crate::NonMetaStorage> RootDir<S> {
         path: String,
     ) -> Option<Arc<NonMetaSubdir<S>>> {
         debug_assert!(path.ends_with("/"));
-        for k in self.non_meta_files.keys() {
-            if k.starts_with(&path) {
-                return Some(NonMetaSubdir::new(self.clone(), path));
-            }
+        if let Some((k, _)) = self.non_meta_files.range(path.as_str()..).next()
+            && k.starts_with(&path)
+        {
+            return Some(NonMetaSubdir::new(self.clone(), path));
         }
         None
     }
@@ -337,10 +337,7 @@ impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for Ro
     > {
         vfs::directory::read_dirents::read_dirents(
             // Add "meta/placeholder" file so the "meta" dir is included in the results
-            &crate::get_dir_children(
-                self.non_meta_files.keys().map(|s| s.as_str()).chain(["meta/placeholder"]),
-                "",
-            ),
+            &crate::get_dir_children(self.non_meta_files.keys().chain(["meta/placeholder"]), ""),
             pos,
             sink,
         )
@@ -362,7 +359,7 @@ impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for Ro
 #[allow(clippy::type_complexity)]
 fn load_package_metadata(
     meta_far_vmo: &zx::Vmo,
-) -> Result<(HashMap<String, MetaFileLocation>, HashMap<String, fuchsia_hash::Hash>), Error> {
+) -> Result<(PackedMap<str, MetaFileLocation>, PackedMap<str, fuchsia_hash::Hash>), Error> {
     let stream =
         zx::Stream::create(zx::StreamOptions::MODE_READ, meta_far_vmo, 0).map_err(|e| {
             Error::OpenMetaFar(NonMetaStorageError::ReadBlob(
@@ -371,12 +368,19 @@ fn load_package_metadata(
         })?;
 
     let mut reader = fuchsia_archive::Reader::new(stream).map_err(Error::ArchiveReader)?;
+    let mut meta_files = {
+        let reader_list = reader.list();
+        PackedMap::<str, MetaFileLocation>::with_capacity(
+            reader_list.len(),
+            reader_list.map(|entry| entry.path().len()).sum(),
+        )
+    };
     let reader_list = reader.list();
-    let mut meta_files = HashMap::with_capacity(reader_list.len());
+    // FAR files guarantee that entries are sorted by path, so we can use
+    // `append_or_update` directly to avoid `PackedMapBuilder`'s sorting overhead.
     for entry in reader_list {
         let path = std::str::from_utf8(entry.path())
-            .map_err(|source| Error::NonUtf8MetaEntry { source, path: entry.path().to_owned() })?
-            .to_owned();
+            .map_err(|source| Error::NonUtf8MetaEntry { source, path: entry.path().to_owned() })?;
         if path.starts_with("meta/") {
             for (i, _) in path.match_indices('/').skip(1) {
                 if meta_files.contains_key(&path[..i]) {
@@ -384,16 +388,24 @@ fn load_package_metadata(
                 }
             }
             meta_files
-                .insert(path, MetaFileLocation { offset: entry.offset(), length: entry.length() });
+                .append_or_update(
+                    path,
+                    MetaFileLocation { offset: entry.offset(), length: entry.length() },
+                )
+                .expect("FAR entries are sorted");
         }
     }
 
     let meta_contents_bytes =
         reader.read_file(b"meta/contents").map_err(Error::ReadMetaContents)?;
 
-    let non_meta_files = MetaContents::deserialize(&meta_contents_bytes[..])
+    let mut non_meta_files = MetaContents::deserialize(&meta_contents_bytes[..])
         .map_err(Error::DeserializeMetaContents)?
         .into_contents();
+
+    // We'll be keeping these packed files around for a while, so shrink to fit
+    // to avoid using too much memory.
+    non_meta_files.shrink_to_fit();
 
     Ok((meta_files, non_meta_files))
 }
@@ -487,35 +499,29 @@ mod tests {
     async fn new_initializes_maps() {
         let (_env, root_dir) = TestEnv::with_subpackages(None).await;
 
-        let meta_files = HashMap::from([
-            (String::from("meta/contents"), MetaFileLocation { offset: 4096, length: 148 }),
-            (String::from("meta/package"), MetaFileLocation { offset: 20480, length: 39 }),
-            (String::from("meta/file"), MetaFileLocation { offset: 12288, length: 14 }),
-            (String::from("meta/dir/file"), MetaFileLocation { offset: 8192, length: 14 }),
-            (
-                String::from("meta/fuchsia.abi/abi-revision"),
-                MetaFileLocation { offset: 16384, length: 8 },
-            ),
+        let meta_files = PackedMap::from([
+            ("meta/contents", MetaFileLocation { offset: 4096, length: 148 }),
+            ("meta/package", MetaFileLocation { offset: 20480, length: 39 }),
+            ("meta/file", MetaFileLocation { offset: 12288, length: 14 }),
+            ("meta/dir/file", MetaFileLocation { offset: 8192, length: 14 }),
+            ("meta/fuchsia.abi/abi-revision", MetaFileLocation { offset: 16384, length: 8 }),
         ]);
         assert_eq!(root_dir.meta_files, meta_files);
 
-        let non_meta_files: HashMap<String, fuchsia_hash::Hash> = [
+        let non_meta_files = PackedMap::from([
             (
-                String::from("resource"),
+                "resource",
                 "bd905f783ceae4c5ba8319703d7505ab363733c2db04c52c8405603a02922b15"
                     .parse::<fuchsia_hash::Hash>()
                     .unwrap(),
             ),
             (
-                String::from("dir/file"),
+                "dir/file",
                 "5f615dd575994fcbcc174974311d59de258d93cd523d5cb51f0e139b53c33201"
                     .parse::<fuchsia_hash::Hash>()
                     .unwrap(),
             ),
-        ]
-        .iter()
-        .cloned()
-        .collect();
+        ]);
         assert_eq!(root_dir.non_meta_files, non_meta_files);
     }
 

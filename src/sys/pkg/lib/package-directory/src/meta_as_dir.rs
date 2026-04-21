@@ -38,8 +38,8 @@ impl<S: crate::NonMetaStorage> vfs::node::Node for MetaAsDir<S> {
             Immutable {
                 protocols: fio::NodeProtocolKinds::DIRECTORY,
                 abilities: crate::DIRECTORY_ABILITIES,
-                content_size: usize_to_u64_safe(self.root_dir.meta_files.len()),
-                storage_size: usize_to_u64_safe(self.root_dir.meta_files.len()),
+                content_size: usize_to_u64_safe(self.root_dir.meta_files.element_len()),
+                storage_size: usize_to_u64_safe(self.root_dir.meta_files.element_len()),
                 id: 1,
             }
         ))
@@ -104,7 +104,7 @@ impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for Me
         zx::Status,
     > {
         vfs::directory::read_dirents::read_dirents(
-            &crate::get_dir_children(self.root_dir.meta_files.keys().map(|s| s.as_str()), "meta/"),
+            &crate::get_dir_children(self.root_dir.meta_files.keys(), "meta/"),
             pos,
             sink,
         )

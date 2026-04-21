@@ -101,14 +101,14 @@ mod test {
     use ffx_package_archive_utils::MockFarListReader;
     use ffx_package_archive_utils::test_utils::create_mockreader;
     use ffx_writer::{Format, TestBuffers};
-    use std::collections::HashMap;
+    use fuchsia_pkg::MetaContents;
     use std::path::PathBuf;
 
     #[test]
     fn test_list_empty() -> Result<()> {
         let mut mockreader = MockFarListReader::new();
         mockreader.expect_list_contents().returning(|| Ok(vec![]));
-        mockreader.expect_list_meta_contents().returning(|| Ok((vec![], HashMap::new())));
+        mockreader.expect_list_meta_contents().returning(|| Ok((vec![], MetaContents::new())));
 
         let cmd = ListCommand { archive: PathBuf::from("some_empty.far"), long_format: false };
 
@@ -144,7 +144,7 @@ mod test {
                 },
             ])
         });
-        mockreader.expect_list_meta_contents().returning(|| Ok((vec![], HashMap::new())));
+        mockreader.expect_list_meta_contents().returning(|| Ok((vec![], MetaContents::new())));
 
         let cmd = ListCommand { archive: PathBuf::from("just_meta.far"), long_format: false };
 

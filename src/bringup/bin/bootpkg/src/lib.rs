@@ -5,10 +5,10 @@
 pub mod args;
 
 use crate::args::{Args, ShowCommand, SubCommand};
-use anyhow::{format_err, Result};
+use anyhow::{Result, format_err};
 use fidl_fuchsia_io as fio;
 use fuchsia_pkg::MetaContents;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Cursor, Read};
 
@@ -19,8 +19,6 @@ pub fn bootpkg(boot_dir: File, args: Args) -> Result<()> {
     }
 }
 
-type PackageList = HashMap<String, fuchsia_merkle::Hash>;
-
 fn read_file(boot_dir: &File, path: &str) -> Result<Vec<u8>> {
     let mut file = fdio::open_fd_at(boot_dir, path, fio::PERM_READABLE)?;
     let mut buffer = Vec::new();
@@ -28,16 +26,14 @@ fn read_file(boot_dir: &File, path: &str) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
-fn get_package_list(boot_dir: &File) -> Result<PackageList> {
+fn get_package_list(boot_dir: &File) -> Result<MetaContents> {
     let contents = read_file(boot_dir, "data/bootfs_packages")?;
-    Ok(MetaContents::deserialize(&contents[..])?.into_contents())
+    Ok(MetaContents::deserialize(&contents[..])?)
 }
 
 fn list(boot_dir: &File) -> Result<()> {
     let package_list = get_package_list(boot_dir)?;
-    let mut package_list = package_list.iter().map(|(name, _)| name).collect::<Vec<_>>();
-    package_list.sort();
-    for name in package_list {
+    for name in package_list.keys() {
         println!("{name}");
     }
 
@@ -71,7 +67,8 @@ fn show(boot_dir: &File, package_name: &str) -> Result<()> {
 
     let mut files = meta_files
         .iter()
-        .chain(non_meta_files.iter().map(|(name, _)| name).filter(|name| *name != "/0"))
+        .map(|s| s.as_str())
+        .chain(non_meta_files.keys().filter(|name| *name != "/0"))
         .collect::<Vec<_>>();
     files.sort();
 
@@ -88,7 +85,6 @@ mod test {
     use fidl::endpoints::Proxy as _;
     use fuchsia_async as fasync;
     use fuchsia_merkle::Hash;
-    use maplit::hashmap;
     use std::collections::BTreeMap;
     use std::io::Read;
     use std::str::FromStr;
@@ -98,15 +94,23 @@ mod test {
     #[fasync::run_singlethreaded(test)]
     async fn list_test() {
         // prep boot directory.
-        let contents = hashmap! {
-            "foo".to_string() =>
-                Hash::from_str("b21b34f8370687249a9cd9d4b306dee4c81f1f854f84de4626dc00c000c902fe").unwrap(),
-            "bar".to_string() =>
-                Hash::from_str("d0ff2aa87c938862d56fff76c9fe362240d2d51699506753e5840e05d41a3bf2").unwrap(),
-            "baz".to_string() =>
-                Hash::from_str("d0ff2aa87c938862d56fff76c9fe362240d2d51699506753e5840e05d41a3bf2").unwrap(),
-        };
-        let contents = MetaContents::from_map(contents).unwrap();
+        let contents = MetaContents::from([
+            (
+                "foo",
+                Hash::from_str("b21b34f8370687249a9cd9d4b306dee4c81f1f854f84de4626dc00c000c902fe")
+                    .unwrap(),
+            ),
+            (
+                "bar",
+                Hash::from_str("d0ff2aa87c938862d56fff76c9fe362240d2d51699506753e5840e05d41a3bf2")
+                    .unwrap(),
+            ),
+            (
+                "baz",
+                Hash::from_str("d0ff2aa87c938862d56fff76c9fe362240d2d51699506753e5840e05d41a3bf2")
+                    .unwrap(),
+            ),
+        ]);
         let mut data = Vec::new();
         contents.serialize(&mut data).unwrap();
 
@@ -127,15 +131,23 @@ mod test {
     #[fasync::run_singlethreaded(test)]
     async fn show_test() {
         // prep boot directory.
-        let contents = hashmap! {
-            "foo".to_string() =>
-                Hash::from_str("b21b34f8370687249a9cd9d4b306dee4c81f1f854f84de4626dc00c000c902fe").unwrap(),
-            "bar".to_string() =>
-                Hash::from_str("d0ff2aa87c938862d56fff76c9fe362240d2d51699506753e5840e05d41a3bf2").unwrap(),
-            "baz".to_string() =>
-                Hash::from_str("d0ff2aa87c938862d56fff76c9fe362240d2d51699506753e5840e05d41a3bf2").unwrap(),
-        };
-        let contents = MetaContents::from_map(contents).unwrap();
+        let contents = MetaContents::from([
+            (
+                "foo",
+                Hash::from_str("b21b34f8370687249a9cd9d4b306dee4c81f1f854f84de4626dc00c000c902fe")
+                    .unwrap(),
+            ),
+            (
+                "bar",
+                Hash::from_str("d0ff2aa87c938862d56fff76c9fe362240d2d51699506753e5840e05d41a3bf2")
+                    .unwrap(),
+            ),
+            (
+                "baz",
+                Hash::from_str("d0ff2aa87c938862d56fff76c9fe362240d2d51699506753e5840e05d41a3bf2")
+                    .unwrap(),
+            ),
+        ]);
         let mut data = Vec::new();
         contents.serialize(&mut data).unwrap();
 
