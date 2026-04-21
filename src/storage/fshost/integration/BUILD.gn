@@ -170,9 +170,6 @@ template("fshost_integration_test_component") {
 # Generates an fshost integration test package. Includes the fshost component on which the test is
 # executed.
 #
-#   enable_migration_tests (default: true)
-#     [bool] Include migration tests in the integration test package.
-#
 #   enable_corruption_tests (default: true)
 #     [bool] Include corruption tests in the integration test package.
 #
@@ -207,9 +204,6 @@ template("fshost_integration_test_package") {
   fshost_options = invoker.options
   if (!defined(invoker.data_filesystem_variant)) {
     invoker.data_filesystem_variant = fshost_options.data_filesystem_format
-  }
-  if (!defined(invoker.enable_migration_tests)) {
-    invoker.enable_migration_tests = true
   }
   if (!defined(invoker.enable_corruption_tests)) {
     invoker.enable_corruption_tests = true
@@ -295,21 +289,6 @@ template("fshost_integration_test_package") {
         "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
         "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
       ]
-    }
-  }
-
-  #
-  # Migration Tests
-  #
-  if (invoker.enable_migration_tests) {
-    _migration_component_target = "${target_name}_migration"
-    _test_components += [ ":$_migration_component_target" ]
-    fshost_integration_test_component(_migration_component_target) {
-      fshost_target = _fshost_target
-      data_filesystem_format = fshost_options.data_filesystem_format
-      data_filesystem_variant = invoker.data_filesystem_variant
-      extra_features = _extra_features
-      source_root = "tests/migration.rs"
     }
   }
 
@@ -526,6 +505,7 @@ template("fshost_integration_test_package") {
       "//src/storage/blobfs/bin:component",
       "//src/storage/f2fs/bin:f2fs-component",
       "//src/storage/fxfs:fxfs_component",
+      "//src/storage/gpt/component",
       "//src/storage/minfs/bin:minfs-component",
     ]
   }
@@ -537,21 +517,6 @@ template("fshost_integration_test_package") {
 }
 
 fshost_integration_test_package("fshost_integration_tests_fxfs") {
-  # TODO(https://fxbug.dev/394970436): The corruption tests are flaky on devfs. Once we are fully on
-  # storage host, we can remove this todo and the storage-host requirement, because the flaky
-  # configuration will no longer exist.
-  enable_corruption_tests = false
-  enable_migration_tests = false
-  enable_shred_keys_tests = true
-  data_filesystem_variant = "fxblob"
-  options = {
-  }
-  extra_deps =
-      [ "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust" ]
-}
-
-fshost_integration_test_package("fshost_integration_tests_storage_host_fxfs") {
-  enable_migration_tests = false
   data_filesystem_variant = "fxblob"
   enable_bad_provision_fxfs_tests = true
   enable_system_volume_manipulation_tests = true
@@ -560,34 +525,22 @@ fshost_integration_test_package("fshost_integration_tests_storage_host_fxfs") {
     use_disk_migration = false
     storage_host = true
   }
-  extra_deps = [
-    "//src/storage/gpt/component",
-    "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust",
-  ]
+  extra_deps =
+      [ "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust" ]
 }
 
-fshost_integration_test_package(
-    "fshost_integration_tests_storage_host_fvm_minfs") {
-  # TODO(https://fxbug.dev/339491886): Support these components in storage-host
-  enable_migration_tests = false
-
+fshost_integration_test_package("fshost_integration_tests_fvm_minfs") {
   options = {
     data_filesystem_format = "minfs"
     use_disk_migration = false
     storage_host = true
     fxfs_blob = false
   }
-  extra_deps = [
-    "//src/storage/fvm:fvm-component",
-    "//src/storage/gpt/component",
-  ]
+  extra_deps = [ "//src/storage/fvm:fvm-component" ]
 }
 
 fshost_integration_test_package(
-    "fshost_integration_tests_storage_host_fvm_minfs_no_zxcrypt") {
-  # TODO(https://fxbug.dev/339491886): Support these components in storage-host
-  enable_migration_tests = false
-
+    "fshost_integration_tests_fvm_minfs_no_zxcrypt") {
   data_filesystem_variant = "minfs-no-zxcrypt"
   options = {
     data_filesystem_format = "minfs"
@@ -596,82 +549,14 @@ fshost_integration_test_package(
     fxfs_blob = false
     no_zxcrypt = true
   }
-  extra_deps = [
-    "//src/storage/fvm:fvm-component",
-    "//src/storage/gpt/component",
-  ]
-}
-
-fshost_integration_test_package("fshost_integration_tests_fxfs_no_fxblob") {
-  # TODO(https://fxbug.dev/394970436): The corruption tests are flaky on devfs. Once we are fully on
-  # storage host, we can remove this todo and the storage-host requirement, because the flaky
-  # configuration will no longer exist.
-  enable_corruption_tests = false
-  options = {
-    data_filesystem_format = "fxfs"
-    fxfs_blob = false
-  }
-}
-
-fshost_integration_test_package("fshost_integration_tests_f2fs") {
-  # TODO(https://fxbug.dev/394970436): The corruption tests are flaky on devfs. Once we are fully on
-  # storage host, we can remove this todo and the storage-host requirement, because the flaky
-  # configuration will no longer exist.
-  enable_corruption_tests = false
-  options = {
-    data_filesystem_format = "f2fs"
-    fxfs_blob = false
-  }
-}
-
-fshost_integration_test_package("fshost_integration_tests_minfs") {
-  # TODO(https://fxbug.dev/394970436): The corruption tests are flaky on devfs. Once we are fully on
-  # storage host, we can remove this todo and the storage-host requirement, because the flaky
-  # configuration will no longer exist.
-  enable_corruption_tests = false
-  options = {
-    data_filesystem_format = "minfs"
-    fxfs_blob = false
-  }
-}
-
-fshost_integration_test_package("fshost_integration_tests_f2fs_no_zxcrypt") {
-  # TODO(https://fxbug.dev/394970436): The corruption tests are flaky on devfs. Once we are fully on
-  # storage host, we can remove this todo and the storage-host requirement, because the flaky
-  # configuration will no longer exist.
-  enable_corruption_tests = false
-  data_filesystem_variant = "f2fs-no-zxcrypt"
-  options = {
-    no_zxcrypt = true
-    data_filesystem_format = "f2fs"
-    fxfs_blob = false
-  }
-}
-
-fshost_integration_test_package("fshost_integration_tests_minfs_no_zxcrypt") {
-  # TODO(https://fxbug.dev/394970436): The corruption tests are flaky on devfs. Once we are fully on
-  # storage host, we can remove this todo and the storage-host requirement, because the flaky
-  # configuration will no longer exist.
-  enable_corruption_tests = false
-  data_filesystem_variant = "minfs-no-zxcrypt"
-  options = {
-    no_zxcrypt = true
-    data_filesystem_format = "minfs"
-    fxfs_blob = false
-  }
+  extra_deps = [ "//src/storage/fvm:fvm-component" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
-    ":fshost_integration_tests_f2fs",
-    ":fshost_integration_tests_f2fs_no_zxcrypt",
+    ":fshost_integration_tests_fvm_minfs",
+    ":fshost_integration_tests_fvm_minfs_no_zxcrypt",
     ":fshost_integration_tests_fxfs",
-    ":fshost_integration_tests_fxfs_no_fxblob",
-    ":fshost_integration_tests_minfs",
-    ":fshost_integration_tests_minfs_no_zxcrypt",
-    ":fshost_integration_tests_storage_host_fvm_minfs",
-    ":fshost_integration_tests_storage_host_fvm_minfs_no_zxcrypt",
-    ":fshost_integration_tests_storage_host_fxfs",
   ]
 }
