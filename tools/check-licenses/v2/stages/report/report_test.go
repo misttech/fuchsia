@@ -17,7 +17,7 @@ import (
 
 func TestReporter_RunSuccess(t *testing.T) {
 	outDir := t.TempDir()
-	reporter := NewReporter(t.TempDir(), outDir, true, true, nil)
+	reporter := NewReporter(t.TempDir(), outDir, true, true, true, nil)
 
 	filesChan := make(chan pipeline.ClassifiedFile, 3)
 	errorsChan := make(chan pipeline.ComplianceError, 1) // no errors sent
@@ -78,7 +78,7 @@ func TestReporter_RunSuccess(t *testing.T) {
 }
 
 func TestReporter_RunFailure(t *testing.T) {
-	reporter := NewReporter(t.TempDir(), "", true, false, nil) // dry run
+	reporter := NewReporter(t.TempDir(), "", true, false, false, nil) // dry run
 
 	filesChan := make(chan pipeline.ClassifiedFile, 1)
 	errorsChan := make(chan pipeline.ComplianceError, 2)
@@ -110,7 +110,7 @@ func TestReporter_RunFailure(t *testing.T) {
 }
 
 func TestReporter_RunFailure_MissingLicense(t *testing.T) {
-	reporter := NewReporter(t.TempDir(), "", true, false, nil) // dry run
+	reporter := NewReporter(t.TempDir(), "", true, false, false, nil) // dry run
 
 	filesChan := make(chan pipeline.ClassifiedFile, 1)
 	errorsChan := make(chan pipeline.ComplianceError, 1)

@@ -123,7 +123,7 @@ type FixerRenderer struct {
 func (r *FixerRenderer) Run(ctx context.Context, files <-chan v2pipeline.ClassifiedFile, errors <-chan v2pipeline.ComplianceError) error {
 	// We need to run the standard Reporter logic to update READMEs
 	// but we'll wrap it so we can capture what it does.
-	reporter := v2report.NewReporter(r.FuchsiaDir, "", true, false, nil)
+	reporter := v2report.NewReporter(r.FuchsiaDir, "", true, true, false, nil)
 
 	// We'll collect all errors first
 	var errs []v2pipeline.ComplianceError
