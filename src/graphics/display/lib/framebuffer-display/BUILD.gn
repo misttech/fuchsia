@@ -4,6 +4,11 @@
 
 import("//build/components.gni")
 import("//build/test.gni")
+import("//tools/cmc/build/expect_includes.gni")
+
+expect_includes("framebuffer-pci-boot-display-driver-shard") {
+  includes = [ "meta/framebuffer-pci-boot-display-driver.shard.cml" ]
+}
 
 source_set("framebuffer-display") {
   sources = [

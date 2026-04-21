@@ -310,6 +310,7 @@
 //src/graphics/display/drivers/aml-canvas:aml-canvas-driver
 //src/graphics/display/drivers/amlogic-display:amlogic-display-driver
 //src/graphics/display/drivers/coordinator:coordinator-driver
+//src/graphics/display/drivers/framebuffer-amd-display:driver
 //src/graphics/display/drivers/framebuffer-bochs-display:driver
 //src/graphics/display/drivers/framebuffer-intel-display:driver
 //src/graphics/display/drivers/goldfish-display:goldfish-display-driver

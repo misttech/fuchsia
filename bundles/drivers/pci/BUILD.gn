@@ -17,6 +17,7 @@ group("pci") {
     "//src/devices/misc/drivers/virtio-socket:virtio_socket",
     "//src/devices/serial/drivers/virtio-console:virtio_console",
     "//src/devices/usb/drivers/xhci",
+    "//src/graphics/display/drivers/framebuffer-amd-display",
     "//src/graphics/display/drivers/framebuffer-bochs-display",
     "//src/graphics/display/drivers/framebuffer-intel-display",
     "//src/graphics/display/drivers/intel-display",

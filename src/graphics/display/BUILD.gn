@@ -10,6 +10,7 @@ group("drivers") {
     "drivers/aml-canvas",
     "drivers/amlogic-display",
     "drivers/coordinator",
+    "drivers/framebuffer-amd-display",
     "drivers/framebuffer-bochs-display",
     "drivers/framebuffer-intel-display",
     "drivers/goldfish-display",
