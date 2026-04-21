@@ -2448,6 +2448,50 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             );
                         }
+                        if let Some(x) = telemetry_data.ipaddrs {
+                            inspector.root().record_child(
+                                "ipaddr",
+                                |ipaddr_child| {
+                                    for (index, addr) in x.iter().enumerate() {
+                                        ipaddr_child.record_child(
+                                            format!("{}", index),
+                                            |addr_node| {
+                                                if let Some(y) = &addr.address {
+                                                    addr_node.record_string(
+                                                        "address",
+                                                        format!("{}", Ipv6Addr::from(y.addr)),
+                                                    );
+                                                }
+                                                if let Some(y) = addr.prefix_length {
+                                                    addr_node.record_uint(
+                                                        "prefix_length",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = &addr.origin {
+                                                    addr_node.record_string(
+                                                        "origin",
+                                                        format!("{:?}", y),
+                                                    );
+                                                }
+                                                if let Some(y) = addr.preferred {
+                                                    addr_node.record_bool(
+                                                        "preferred",
+                                                        y.into(),
+                                                    );
+                                                }
+                                                if let Some(y) = addr.valid {
+                                                    addr_node.record_bool(
+                                                        "valid",
+                                                        y.into(),
+                                                    );
+                                                }
+                                            }
+                                        );
+                                    }
+                                }
+                            );
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

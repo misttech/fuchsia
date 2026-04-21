@@ -8,7 +8,8 @@ use anyhow::Error;
 use async_trait::async_trait;
 use core::future::ready;
 use fidl_fuchsia_lowpan_experimental::{
-    HistoryTrackerNeighborEvent, HistoryTrackerNetDataEvent, HistoryTrackerRouterEvent,
+    AddressOrigin, HistoryTrackerNeighborEvent, HistoryTrackerNetDataEvent,
+    HistoryTrackerRouterEvent,
 };
 use lowpan_driver_common::lowpan_fidl::*;
 use lowpan_driver_common::{AsyncConditionWait, Driver as LowpanDriver};
@@ -1581,6 +1582,26 @@ where
             })
             .collect::<Vec<_>>();
 
+        // Get the list of IPv6 unicast addresses assigned to the Thread interface.
+        let ipaddrs = ot
+            .ip6_get_unicast_addresses()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_IPV6_UNICAST_ADDRS as usize)
+            .map(|addr| fidl_fuchsia_lowpan_experimental::NetifAddress {
+                address: Some(fidl_fuchsia_net::Ipv6Address { addr: addr.addr().octets() }),
+                prefix_length: Some(addr.prefix_len()),
+                origin: match addr.address_origin() {
+                    openthread::ot::AddressOrigin::THREAD => Some(AddressOrigin::Thread),
+                    openthread::ot::AddressOrigin::SLAAC => Some(AddressOrigin::Slaac),
+                    openthread::ot::AddressOrigin::DHCPV6 => Some(AddressOrigin::Dhcpv6),
+                    openthread::ot::AddressOrigin::MANUAL => Some(AddressOrigin::Manual),
+                    _ => None,
+                },
+                preferred: Some(addr.is_preferred()),
+                valid: Some(addr.is_valid()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1668,6 +1689,7 @@ where
                 route_info_history: Some(route_info_history),
                 ..Default::default()
             }),
+            ipaddrs: Some(ipaddrs),
             ..Default::default()
         })
     }
