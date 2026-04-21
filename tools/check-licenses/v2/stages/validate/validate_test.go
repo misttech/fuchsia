@@ -11,24 +11,25 @@ import (
 	"testing"
 	"time"
 
+	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 )
 
 func TestValidator_Run(t *testing.T) {
 	fuchsiaDir := t.TempDir()
 
-	policyExceptions := map[string]map[string]bool{
+	policyExceptions := map[string]map[string]v2config.RuleMetadata{
 		"AllLicenseTextsMustBeRecognized": {
-			"third_party/foo/LICENSE": true,
+			"third_party/foo/LICENSE": v2config.RuleMetadata{Bug: "test", Description: "test"},
 		},
 		"AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders": {
-			"src/legacy/old.cc": true,
+			"src/legacy/old.cc": v2config.RuleMetadata{Bug: "test", Description: "test"},
 		},
 	}
 
-	allowedLicenses := map[string]map[string]bool{
+	allowedLicenses := map[string]map[string]v2config.RuleMetadata{
 		"GPL-2.0": {
-			"third_party/legacy_gpl/LICENSE": true,
+			"third_party/legacy_gpl/LICENSE": v2config.RuleMetadata{Bug: "test", Description: "test"},
 		},
 	}
 

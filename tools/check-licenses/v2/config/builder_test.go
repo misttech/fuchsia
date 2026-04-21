@@ -91,7 +91,7 @@ func TestBuilder_Assemble(t *testing.T) {
 		t.Errorf("Expected OutOfTreeReadmes[%q] = %q, got %q", logicalPath, readmePath, config.OutOfTreeReadmes[logicalPath])
 	}
 
-	if !config.PolicyExceptions["AllProjectsMustHaveALicense"]["vendor/google/secret_project"] {
+	if _, ok := config.PolicyExceptions["AllProjectsMustHaveALicense"]["vendor/google/secret_project"]; !ok {
 		t.Errorf("Expected vendor project to be in the policy exceptions list")
 	}
 }

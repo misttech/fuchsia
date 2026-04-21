@@ -167,7 +167,10 @@ if (is_host) {
   go_test("v2_stages_validate_test") {
     sources = [ "v2/stages/validate/validate_test.go" ]
     embed = [ ":v2_stages_validate" ]
-    deps = [ ":v2_pipeline" ]
+    deps = [
+      ":v2_config",
+      ":v2_pipeline",
+    ]
   }
 }
 if (is_host) {

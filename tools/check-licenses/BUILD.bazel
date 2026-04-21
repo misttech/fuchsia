@@ -193,6 +193,7 @@ go_test(
     embed = [":v2_stages_validate"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
+        ":v2_config",
         ":v2_pipeline",
     ],
 )

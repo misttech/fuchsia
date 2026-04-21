@@ -16,6 +16,7 @@ type RawPath struct {
 type FileInfo struct {
 	Path          string
 	LicenseParser string // e.g., "Android", "Chromium", or "" (default)
+	IsNonLicense  bool
 }
 
 // Project represents the output of the Project Boundary Stage (Grouper).
@@ -53,9 +54,10 @@ type ClassifiedFile struct {
 
 // ComplianceError represents a violation found during the Validation Stage (Policy Engine).
 type ComplianceError struct {
-	Project  string
-	FilePath string
-	Issue    string
+	CheckName string
+	Project   string
+	FilePath  string
+	Issue     string
 }
 
 // Discoverer defines the contract for Stage 1: Filesystem Crawler.

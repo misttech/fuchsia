@@ -41,10 +41,15 @@ type MasterConfig struct {
 	// --- Injected into Validator (Stage 5) ---
 
 	// PolicyExceptions maps a Policy Check Name (e.g., "AllProjectsMustHaveALicense") to a set of allowed project paths.
-	PolicyExceptions map[string]map[string]bool
+	PolicyExceptions map[string]map[string]RuleMetadata
 
 	// AllowedLicenses maps a highly restricted SPDX ID (e.g., "GPL-2.0", "FTL") to a set of allowed project paths.
-	AllowedLicenses map[string]map[string]bool
+	AllowedLicenses map[string]map[string]RuleMetadata
+}
+
+type RuleMetadata struct {
+	Bug         string
+	Description string
 }
 
 // NewMasterConfig initializes an empty configuration ready to be populated by the builder.
@@ -55,8 +60,8 @@ func NewMasterConfig() *MasterConfig {
 		TargetExtensions: make(map[string]bool),
 		BarrierPaths:     make([]string, 0),
 		OutOfTreeReadmes: make(map[string]string),
-		PolicyExceptions: make(map[string]map[string]bool),
-		AllowedLicenses:  make(map[string]map[string]bool),
+		PolicyExceptions: make(map[string]map[string]RuleMetadata),
+		AllowedLicenses:  make(map[string]map[string]RuleMetadata),
 	}
 }
 
