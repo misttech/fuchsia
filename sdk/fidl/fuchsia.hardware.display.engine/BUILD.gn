@@ -41,6 +41,8 @@ fidl("fuchsia.hardware.display.engine") {
   ]
   sdk_area = "Graphics"
   contains_drivers = true
+  enable_rust = true
+  enable_rust_next = true
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.display.types",

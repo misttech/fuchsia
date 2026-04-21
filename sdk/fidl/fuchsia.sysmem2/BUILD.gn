@@ -50,6 +50,7 @@ fidl("fuchsia.sysmem2") {
   enable_cpp = true
   enable_hlcpp = true
   enable_rust = true
+  enable_rust_next = true
   stable = true
   visibility = [ "*" ]
   public_deps = [

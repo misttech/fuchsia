@@ -20,6 +20,8 @@ fidl_library(
         "vsync-ack-cookie.fidl",
     ],
     api_area = "Graphics",
+    enable_rust = True,
+    enable_rust_next = True,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.hardware.display.types",

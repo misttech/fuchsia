@@ -14,6 +14,8 @@ fidl_library(
     api_area = "Media",  # Also Graphics.
     category = "partner",
     enable_hlcpp = True,
+    enable_rust = True,
+    enable_rust_next = True,
     stable = True,
     visibility = ["//visibility:public"],
     deps = ["//sdk/fidl/fuchsia.math"],

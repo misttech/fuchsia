@@ -5,6 +5,8 @@
 import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.hardware.pci") {
+  enable_rust = true
+  enable_rust_next = true
   sdk_category = "partner"
   stable = true
   sdk_area = "Drivers"
