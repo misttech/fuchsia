@@ -9,10 +9,17 @@ use crate::load_driver::*;
 use crate::resolved_driver::ResolvedDriver;
 use anyhow::{Context, Result, anyhow};
 use driver_index_config::Config;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
 use fidl_fuchsia_driver_index::{
     DevelopmentManagerRequest, DevelopmentManagerRequestStream, DriverIndexRequest,
     DriverIndexRequestStream,
 };
+use fidl_fuchsia_driver_registrar as fdr;
+use fidl_fuchsia_process_lifecycle as flifecycle;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
@@ -21,12 +28,6 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
 use zx::Status;
-use {
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_registrar as fdr, fidl_fuchsia_process_lifecycle as flifecycle,
-    fuchsia_async as fasync,
-};
 
 mod composite_helper;
 mod composite_node_spec_manager;
@@ -339,10 +340,10 @@ async fn run_index_server_with_timeout(
 
 async fn run_load_base_drivers(
     should_load_base_drivers: bool,
-    index: &Rc<Indexer>,
-    base_drivers: &Vec<String>,
+    index: Rc<Indexer>,
+    base_drivers: Vec<String>,
     eager_drivers: HashSet<cm_types::Url>,
-    disabled_drivers: &HashSet<cm_types::Url>,
+    disabled_drivers: HashSet<cm_types::Url>,
 ) -> Result<()> {
     if should_load_base_drivers {
         let base_resolver = client::connect_to_protocol_at_path::<fresolution::ResolverMarker>(
@@ -350,11 +351,11 @@ async fn run_load_base_drivers(
         )
         .context("Failed to connect to base component resolver")?;
         let res = load_base_drivers(
-            index.clone(),
+            index,
             &base_drivers,
             &base_resolver,
             &eager_drivers,
-            disabled_drivers,
+            &disabled_drivers,
         )
         .await
         .context("Error loading base packages")
@@ -604,23 +605,27 @@ async fn main() -> Result<()> {
     // The driver index task does not complete unless the idle timeout is reached.
     // Therefore the join of these two does not complete unless the index task completes when idle
     // timeout is reached.
-    let main_tasks = futures::future::join(
-        run_load_base_drivers(
+    let index_clone = index.clone();
+    let load_base_task = fasync::Task::local(async move {
+        let _ = run_load_base_drivers(
             should_load_base_drivers,
-            &index,
-            &base_driver_list,
+            index_clone,
+            base_driver_list,
             eager_drivers,
-            &disabled_drivers,
-        ),
-        run_driver_index(
-            &index,
-            idle_timeout,
-            full_resolver,
-            lifecycle_control_handle,
-            capability_store,
-            id_gen,
-            dict_id,
-        ),
+            disabled_drivers,
+        )
+        .await;
+    });
+    load_base_task.detach();
+
+    let main_task = run_driver_index(
+        &index,
+        idle_timeout,
+        full_resolver,
+        lifecycle_control_handle,
+        capability_store,
+        id_gen,
+        dict_id,
     )
     .fuse();
 
@@ -628,19 +633,15 @@ async fn main() -> Result<()> {
     // unless it receives a stop request.
     let stop_watcher = run_stop_watcher(lifecycle_request_stream).fuse();
 
-    futures::pin_mut!(main_tasks);
+    futures::pin_mut!(main_task);
     futures::pin_mut!(stop_watcher);
 
-    // We select between the main tasks and the stop watcher. Either the main tasks completes,
+    // We select between the main task and the stop watcher. Either the main task completes,
     // which indicates the idle timeout has been reached, or the stop watcher completes which
     // indicates a stop request came in from the Component Framework.
     futures::select! {
-        (base_drivers_result, index_result) = main_tasks => {
+        index_result = main_task => {
             log::info!("driver-index stopping because it is idle.");
-
-            if base_drivers_result.is_err() {
-                return base_drivers_result;
-            }
 
             if index_result.is_err() {
                 return index_result;
@@ -665,12 +666,13 @@ mod tests {
     use bind::interpreter::decode_bind_rules::DecodedRules;
     use bind::parser::bind_library::ValueType;
     use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, Proxy};
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_data as fdata;
+    use fidl_fuchsia_driver_framework as fdf;
+    use fidl_fuchsia_driver_index as fdi;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_mem as fmem;
     use std::collections::HashMap;
-    use {
-        fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_data as fdata,
-        fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_index as fdi,
-        fidl_fuchsia_io as fio, fidl_fuchsia_mem as fmem,
-    };
 
     fn create_driver_info(
         url: String,
