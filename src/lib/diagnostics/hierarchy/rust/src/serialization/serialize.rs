@@ -16,13 +16,14 @@ where
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut s = serializer.serialize_map(Some(1))?;
         let name = self.name.clone();
-        s.serialize_entry(&name, &SerializableHierarchyFields { hierarchy: self })?;
+        s.serialize_entry(&name, &SerializableHierarchyFields { hierarchy: self, moniker: None })?;
         s.end()
     }
 }
 
 pub struct SerializableHierarchyFields<'a, Key> {
-    pub(crate) hierarchy: &'a DiagnosticsHierarchy<Key>,
+    pub hierarchy: &'a DiagnosticsHierarchy<Key>,
+    pub moniker: Option<&'a str>,
 }
 
 fn get_name<'a, K: AsRef<str>>(
@@ -49,9 +50,9 @@ where
             .chain(self.hierarchy.children.iter().map(Either::Right));
         while let Some(val) = it.next() {
             if it.clone().any(|a| get_name(&a) == get_name(&val)) {
-                let name = get_name(&val);
                 log::warn!(
-                    name:?;
+                    item_name:? = get_name(&val),
+                    emitting_component:? = self.moniker;
                     "Encountered duplicate names while serializing Inspect"
                 );
             }
@@ -96,7 +97,7 @@ where
                 }
                 Either::Right(child) => s.serialize_entry(
                     &child.name,
-                    &SerializableHierarchyFields { hierarchy: child },
+                    &SerializableHierarchyFields { hierarchy: child, moniker: self.moniker },
                 )?,
             }
         }

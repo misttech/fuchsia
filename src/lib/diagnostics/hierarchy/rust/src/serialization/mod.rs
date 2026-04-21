@@ -24,4 +24,5 @@
 
 mod deserialize;
 mod serialize;
+pub use serialize::SerializableHierarchyFields;
 pub(crate) use serialize::maybe_condense_histogram;

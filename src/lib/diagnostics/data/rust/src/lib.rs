@@ -422,7 +422,7 @@ impl LogsMetadata {
 }
 
 /// An instance of diagnostics data with typed metadata and an optional nested payload.
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 pub struct Data<D: DiagnosticsData> {
     /// The source of the data.
     #[serde(default)]
@@ -448,19 +448,70 @@ pub struct Data<D: DiagnosticsData> {
     pub version: u64,
 }
 
+struct MonikerWrapper<'a>(&'a ExtendedMoniker);
+
+impl Serialize for MonikerWrapper<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self.0)
+    }
+}
+
+struct RootHierarchyWrapper<'a, Key> {
+    hierarchy: &'a DiagnosticsHierarchy<Key>,
+    moniker: Option<&'a str>,
+}
+
+impl<Key> Serialize for RootHierarchyWrapper<'_, Key>
+where
+    Key: AsRef<str>,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut s = serializer.serialize_map(Some(1))?;
+        s.serialize_entry(
+            self.hierarchy.name.as_str(),
+            &diagnostics_hierarchy::serialization::SerializableHierarchyFields {
+                hierarchy: self.hierarchy,
+                moniker: self.moniker,
+            },
+        )?;
+        s.end()
+    }
+}
+
+impl<D: DiagnosticsData> Serialize for Data<D> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("Data", 5)?;
+        s.serialize_field("data_source", &self.data_source)?;
+        s.serialize_field("metadata", &self.metadata)?;
+        s.serialize_field("moniker", &MonikerWrapper(&self.moniker))?;
+        s.serialize_field("version", &self.version)?;
+
+        let payload_wrapper = self
+            .payload
+            .as_ref()
+            .map(|h| RootHierarchyWrapper { hierarchy: h, moniker: Some(self.moniker.as_ref()) });
+        s.serialize_field("payload", &payload_wrapper)?;
+        s.end()
+    }
+}
+
 fn moniker_deserialize<'de, D>(deserializer: D) -> Result<ExtendedMoniker, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let moniker_str = String::deserialize(deserializer)?;
     ExtendedMoniker::parse_str(&moniker_str).map_err(serde::de::Error::custom)
-}
-
-fn moniker_serialize<S>(moniker: &ExtendedMoniker, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    s.collect_str(moniker)
 }
 
 impl<D> Data<D>
