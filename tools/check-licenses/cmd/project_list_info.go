@@ -117,7 +117,8 @@ func (c *ProjectCommand) executeInfo(ctx context.Context, args []string, config 
 	if isVirtual {
 		virtualStr = " (Virtual)"
 	}
-	fmt.Printf("Readme Path:  %s%s\n", readmePath, virtualStr)
+	relReadme, _ := filepath.Rel(c.fuchsiaDir, readmePath)
+	fmt.Printf("Readme Path:  %s%s\n", relReadme, virtualStr)
 
 	activePolicies := make(map[string]v2config.RuleMetadata)
 	var activePolicyNames []string
