@@ -1546,6 +1546,40 @@ where
                 }
             })
             .collect::<Vec<_>>();
+        let route_info_history = ot
+            .history_tracker_external_route_history_get_iterator()
+            .take(
+                fidl_fuchsia_lowpan_experimental::MAX_THREAD_NET_DATA_ROUTE_HISTORY_ENTRIES
+                    as usize,
+            )
+            .map(|(route, entry_age)| {
+                fidl_fuchsia_lowpan_experimental::ThreadNetDataRouteInfoEntry {
+                    age: Some(
+                        fuchsia_async::MonotonicDuration::from_millis(entry_age.into())
+                            .into_nanos()
+                            .try_into()
+                            .unwrap(),
+                    ),
+                    event: Some(match route.event() {
+                        openthread::ot::HistoryTrackerNetDataEvent::Added => {
+                            HistoryTrackerNetDataEvent::Added
+                        }
+                        openthread::ot::HistoryTrackerNetDataEvent::Removed => {
+                            HistoryTrackerNetDataEvent::Removed
+                        }
+                    }),
+                    external_route: Some(fidl_fuchsia_lowpan_experimental::ExternalRouteConfig {
+                        prefix: Some(route.route().prefix().to_string()),
+                        rloc16: Some(route.route().rloc16()),
+                        preference: Some(route.route().route_preference() as i8),
+                        nat64: Some(route.route().is_nat64()),
+                        stable: Some(route.route().is_stable()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }
+            })
+            .collect::<Vec<_>>();
 
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
@@ -1631,6 +1665,7 @@ where
                 neighbor_info_history: Some(neighbor_info_history),
                 router_info_history: Some(router_info_history),
                 prefix_info_history: Some(prefix_info_history),
+                route_info_history: Some(route_info_history),
                 ..Default::default()
             }),
             ..Default::default()

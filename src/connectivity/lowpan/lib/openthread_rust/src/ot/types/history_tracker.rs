@@ -228,3 +228,33 @@ impl std::fmt::Debug for HistoryTrackerOnMeshPrefixInfo {
         ds.finish()
     }
 }
+
+/// This structure represents a NetData external route info in the history tracker report.
+///
+/// Functional equivalent of [`otsys::otHistoryTrackerExternalRouteInfo`](crate::otsys::otHistoryTrackerExternalRouteInfo).
+#[derive(Default, Clone)]
+#[repr(transparent)]
+pub struct HistoryTrackerExternalRouteInfo(pub otHistoryTrackerExternalRouteInfo);
+
+impl_ot_castable!(HistoryTrackerExternalRouteInfo, otHistoryTrackerExternalRouteInfo);
+
+impl HistoryTrackerExternalRouteInfo {
+    /// Returns the external route entry.
+    pub fn route(&self) -> ExternalRouteConfig {
+        ExternalRouteConfig(self.0.mRoute)
+    }
+
+    /// Returns the NetData external route event (added/removed).
+    pub fn event(&self) -> HistoryTrackerNetDataEvent {
+        HistoryTrackerNetDataEvent::from(self.0.mEvent)
+    }
+}
+
+impl std::fmt::Debug for HistoryTrackerExternalRouteInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("HistoryTrackerExternalRouteInfo");
+        ds.field("external route", &self.route());
+        ds.field("event", &self.event());
+        ds.finish()
+    }
+}

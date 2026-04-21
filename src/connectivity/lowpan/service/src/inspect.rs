@@ -2396,6 +2396,55 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                             },
                                         );
                                     }
+                                    if let Some(y) = x.route_info_history {
+                                        history_tracker_child.record_child(
+                                            "external_route_info",
+                                            |route_info_child| {
+                                                for (index, info) in y.iter().enumerate() {
+                                                    route_info_child.record_child(
+                                                        format!("{}", index),
+                                                        |info_node| {
+                                                            if let Some(z) = info.age {
+                                                                info_node.record_string(
+                                                                    "age",
+                                                                    format_duration_dhms_from_nano(z.try_into().unwrap()),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.event {
+                                                                info_node.record_string(
+                                                                    "event",
+                                                                    format!("{:?}", z),
+                                                                );
+                                                            }
+                                                            if let Some(z) = &info.external_route {
+                                                                if let Some(w) = &z.prefix {
+                                                                    info_node.record_string("route", w);
+                                                                }
+                                                                if let Some(w) = z.preference {
+                                                                    info_node.record_int("preference", w.into());
+                                                                }
+                                                                if let Some(w) = z.rloc16 {
+                                                                    info_node.record_string("rloc", format!("{:04x}", w));
+                                                                }
+                                                                if let Some(w) = z.nat64 {
+                                                                    info_node.record_bool(
+                                                                        "nat64",
+                                                                        w.into(),
+                                                                    );
+                                                                }
+                                                                if let Some(w) = z.stable {
+                                                                    info_node.record_bool(
+                                                                        "stable",
+                                                                        w.into(),
+                                                                    );
+                                                                }
+                                                            }
+                                                        },
+                                                    );
+                                                }
+                                            },
+                                        );
+                                    }
                                 },
                             );
                         }

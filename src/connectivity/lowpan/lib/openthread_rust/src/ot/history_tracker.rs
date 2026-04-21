@@ -72,6 +72,23 @@ impl<T: ?Sized + HistoryTracker> Iterator for HistoryTrackerOnMeshPrefixIterator
     }
 }
 
+/// Represents an iterator to iterate the NetData external route info history.
+#[allow(missing_debug_implementations)]
+pub struct HistoryTrackerExternalRouteIterator<'a, T: ?Sized> {
+    ot_instance: &'a T,
+    ot_iter: otHistoryTrackerIterator,
+}
+
+impl<T: ?Sized + HistoryTracker> Iterator for HistoryTrackerExternalRouteIterator<'_, T> {
+    type Item = (HistoryTrackerExternalRouteInfo, u32);
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut entry_age = 0;
+        self.ot_instance
+            .iter_next_external_route_history(&mut self.ot_iter, &mut entry_age)
+            .map(|info| (info, entry_age))
+    }
+}
+
 /// Methods from the [OpenThread "history-tracker" Module][1].
 ///
 /// [1]: https://openthread.io/reference/group/api-history-tracker
@@ -151,6 +168,24 @@ pub trait HistoryTracker {
         ot_iter: &mut otHistoryTrackerIterator,
         entry_age: &mut u32,
     ) -> Option<HistoryTrackerOnMeshPrefixInfo>;
+
+    /// Get the history tracker netdata external route info history iterator instance.
+    fn history_tracker_external_route_history_get_iterator(
+        &self,
+    ) -> HistoryTrackerExternalRouteIterator<'_, Self> {
+        let mut ot_iter = otHistoryTrackerIterator::default();
+        self.history_tracker_init_iterator(&mut ot_iter);
+        HistoryTrackerExternalRouteIterator { ot_instance: self, ot_iter }
+    }
+
+    /// Functional equivalent of
+    /// [`otsys::otHistoryTrackerIterateExternalRouteHistory`]
+    /// (crate::otsys::otHistoryTrackerIterateExternalRouteHistory).
+    fn iter_next_external_route_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerExternalRouteInfo>;
 }
 
 impl<T: HistoryTracker + Boxable> HistoryTracker for ot::Box<T> {
@@ -188,6 +223,14 @@ impl<T: HistoryTracker + Boxable> HistoryTracker for ot::Box<T> {
         entry_age: &mut u32,
     ) -> Option<HistoryTrackerOnMeshPrefixInfo> {
         self.as_ref().iter_next_on_mesh_prefix_history(ot_iter, entry_age)
+    }
+
+    fn iter_next_external_route_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerExternalRouteInfo> {
+        self.as_ref().iter_next_external_route_history(ot_iter, entry_age)
     }
 }
 
@@ -257,6 +300,22 @@ impl HistoryTracker for Instance {
             );
 
             info_ptr.as_ref().map(|raw| HistoryTrackerOnMeshPrefixInfo(*raw))
+        }
+    }
+
+    fn iter_next_external_route_history(
+        &self,
+        ot_iter: &mut otHistoryTrackerIterator,
+        entry_age: &mut u32,
+    ) -> Option<HistoryTrackerExternalRouteInfo> {
+        unsafe {
+            let info_ptr = otHistoryTrackerIterateExternalRouteHistory(
+                self.as_ot_ptr(),
+                ot_iter as *mut otHistoryTrackerIterator,
+                entry_age as *mut u32,
+            );
+
+            info_ptr.as_ref().map(|raw| HistoryTrackerExternalRouteInfo(*raw))
         }
     }
 }
