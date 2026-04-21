@@ -38,17 +38,8 @@ pub fn service_def_difference(
     current: &Vec<ServiceDefinition>,
     new: &Vec<ServiceDefinition>,
 ) -> Vec<ServiceDefinition> {
-    // TODO(b/327758656): This is not ideal as we're looping through both lists O(N^2).
-    // Probably not a big deal since both lists will typically be <5 definitions. Can improve by
-    // implementing Hash for `ServiceDefinition`.
-    let mut out = Vec::new();
-    for definition in new {
-        let mut current_iter = current.iter();
-        if current_iter.find(|&s| s == definition).is_none() {
-            out.push(definition.clone());
-        }
-    }
-    out
+    let current_set: std::collections::HashSet<&ServiceDefinition> = current.iter().collect();
+    new.iter().filter(|&definition| !current_set.contains(definition)).cloned().collect()
 }
 
 /// Returns true if the provided `service` requests RFCOMM.

@@ -267,7 +267,7 @@ pub fn combine_channel_parameters(
 /// Corresponds directly to the FIDL `DataElement` definition - with the extra
 /// properties of Clone and PartialEq.
 /// See [fuchsia.bluetooth.bredr.DataElement] for more documentation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataElement {
     Int8(i8),
     Int16(i16),
@@ -283,6 +283,28 @@ pub enum DataElement {
     Bool(bool),
     Sequence(Vec<Box<DataElement>>),
     Alternatives(Vec<Box<DataElement>>),
+}
+
+impl std::hash::Hash for DataElement {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            DataElement::Int8(x) => x.hash(state),
+            DataElement::Int16(x) => x.hash(state),
+            DataElement::Int32(x) => x.hash(state),
+            DataElement::Int64(x) => x.hash(state),
+            DataElement::Uint8(x) => x.hash(state),
+            DataElement::Uint16(x) => x.hash(state),
+            DataElement::Uint32(x) => x.hash(state),
+            DataElement::Uint64(x) => x.hash(state),
+            DataElement::Str(x) => x.hash(state),
+            DataElement::Url(x) => x.hash(state),
+            DataElement::Uuid(x) => x.value.hash(state),
+            DataElement::Bool(x) => x.hash(state),
+            DataElement::Sequence(x) => x.hash(state),
+            DataElement::Alternatives(x) => x.hash(state),
+        }
+    }
 }
 
 impl TryFrom<&fidl_bredr::DataElement> for DataElement {
@@ -409,7 +431,7 @@ generate_data_element_conversion!(Bool, bool);
 /// Corresponds directly to the FIDL `ProtocolDescriptor` definition - with the extra
 /// properties of Clone and PartialEq.
 /// See [fuchsia.bluetooth.bredr.ProtocolDescriptor] for more documentation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ProtocolDescriptor {
     pub protocol: fidl_bredr::ProtocolIdentifier,
     pub params: Vec<DataElement>,
@@ -461,7 +483,7 @@ pub fn l2cap_connect_parameters(
 /// Corresponds directly to the FIDL `Attribute` definition - with the extra
 /// properties of Clone and PartialEq.
 /// See [fuchsia.bluetooth.bredr.Attribute] for more documentation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Attribute {
     pub id: u16,
     pub element: DataElement,
@@ -496,7 +518,7 @@ impl From<&Attribute> for fidl_bredr::Attribute {
 /// Corresponds directly to the FIDL `Information` definition - with the extra
 /// properties of Clone and PartialEq.
 /// See [fuchsia.bluetooth.bredr.Information] for more documentation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Information {
     pub language: String,
     pub name: Option<String>,
@@ -552,6 +574,24 @@ pub struct ServiceDefinition {
     pub profile_descriptors: Vec<fidl_bredr::ProfileDescriptor>,
     pub information: Vec<Information>,
     pub additional_attributes: Vec<Attribute>,
+}
+
+impl Eq for ServiceDefinition {}
+
+impl std::hash::Hash for ServiceDefinition {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.service_class_uuids.hash(state);
+        self.protocol_descriptor_list.hash(state);
+        self.additional_protocol_descriptor_lists.hash(state);
+        // Hash profile_descriptors manually as FIDL table doesn't derive Hash
+        for desc in &self.profile_descriptors {
+            desc.profile_id.hash(state);
+            desc.major_version.hash(state);
+            desc.minor_version.hash(state);
+        }
+        self.information.hash(state);
+        self.additional_attributes.hash(state);
+    }
 }
 
 impl ServiceDefinition {
@@ -856,6 +896,8 @@ impl Inspect for &mut ValidScoConnectionParameters {
 mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
 
     #[test]
     fn test_find_descriptors_fails_with_no_descriptors() {
@@ -1768,5 +1810,89 @@ mod tests {
             ..Default::default()
         });
         assert!(channel_number_from_parameters(&l2cap_invalid).is_err());
+    }
+
+    fn calculate_hash<T: Hash>(t: &T) -> u64 {
+        let mut s = DefaultHasher::new();
+        t.hash(&mut s);
+        s.finish()
+    }
+
+    #[test]
+    fn test_data_element_hash() {
+        // Hash of same item
+        let elem1 = DataElement::Int8(5);
+        let elem2 = elem1.clone();
+        assert_eq!(calculate_hash(&elem1), calculate_hash(&elem2));
+
+        // Different variant but same underlying value has different hash
+        let elem3 = DataElement::Uint8(5);
+        assert_ne!(calculate_hash(&elem1), calculate_hash(&elem3));
+
+        // Same variant but different value has different hash
+        let elem4 = DataElement::Int8(6);
+        assert_ne!(calculate_hash(&elem1), calculate_hash(&elem4));
+
+        // Sequence elements in different orders have different hash
+        let seq1 = DataElement::Sequence(vec![
+            Box::new(DataElement::Int8(1)),
+            Box::new(DataElement::Int8(2)),
+        ]);
+        let seq2 = DataElement::Sequence(vec![
+            Box::new(DataElement::Int8(2)),
+            Box::new(DataElement::Int8(1)),
+        ]);
+        assert_ne!(calculate_hash(&seq1), calculate_hash(&seq2));
+
+        // Sequence of sequences with same values but different grouping.
+        // [[1, 2], [3]] != [[1], [2, 3]]
+        let seq_seq1 = DataElement::Sequence(vec![
+            Box::new(DataElement::Sequence(vec![
+                Box::new(DataElement::Int8(1)),
+                Box::new(DataElement::Int8(2)),
+            ])),
+            Box::new(DataElement::Sequence(vec![Box::new(DataElement::Int8(3))])),
+        ]);
+        let seq_seq2 = DataElement::Sequence(vec![
+            Box::new(DataElement::Sequence(vec![Box::new(DataElement::Int8(1))])),
+            Box::new(DataElement::Sequence(vec![
+                Box::new(DataElement::Int8(2)),
+                Box::new(DataElement::Int8(3)),
+            ])),
+        ]);
+        assert_ne!(calculate_hash(&seq_seq1), calculate_hash(&seq_seq2));
+    }
+
+    #[test]
+    fn test_service_definition_hash() {
+        let def1 = ServiceDefinition {
+            service_class_uuids: vec![Uuid::new16(0x1101)],
+            ..Default::default()
+        };
+        let def2 = def1.clone();
+
+        // Same service definition has the same hash
+        assert_eq!(calculate_hash(&def1), calculate_hash(&def2));
+
+        // Different UUID has different hash
+        let def3 =
+            ServiceDefinition { service_class_uuids: vec![Uuid::new16(0x1102)], ..def1.clone() };
+        assert_ne!(calculate_hash(&def1), calculate_hash(&def3));
+
+        // Different ProfileDescriptor has different hash (manual hash impl)
+        let def4 = ServiceDefinition {
+            profile_descriptors: vec![fidl_bredr::ProfileDescriptor {
+                profile_id: Some(fidl_bredr::ServiceClassProfileIdentifier::SerialPort),
+                major_version: Some(1),
+                minor_version: Some(0),
+                ..Default::default()
+            }],
+            ..def1.clone()
+        };
+        assert_ne!(calculate_hash(&def1), calculate_hash(&def4));
+
+        let mut def5 = def4.clone();
+        def5.profile_descriptors[0].minor_version = Some(1);
+        assert_ne!(calculate_hash(&def4), calculate_hash(&def5));
     }
 }
