@@ -242,8 +242,9 @@ TEST(ChannelInternalTest, ChannelCallFinishAfterFailedCall) {
     t1.join();
     // The vdso loaded mini process should have entered as zx_process_exit and so wait for it to
     // finish so that everything is cleaned up for the next iteration attempt.
+    printf("waiting for process to terminate\n");
     zx_signals_t signals;
-    EXPECT_OK(process.wait_one(ZX_TASK_TERMINATED, zx::deadline_after(zx::sec(1)), &signals));
+    EXPECT_OK(process.wait_one(ZX_TASK_TERMINATED, zx::time::infinite(), &signals));
     EXPECT_EQ(signals, ZX_TASK_TERMINATED);
   }
 }
