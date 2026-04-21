@@ -1741,10 +1741,10 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                         }
                         if let Some(x) = telemetry_data.router_info {
                             inspector.root().record_child(
-                                "router_info",
-                                |router_info_child| {
+                                "router_table",
+                                |router_table_child| {
                                     for (index, router) in x.iter().enumerate() {
-                                        router_info_child.record_child(
+                                        router_table_child.record_child(
                                             format!("{}", index),
                                             |router_node| {
                                                 if let Some(y) = &router.extended_address {
