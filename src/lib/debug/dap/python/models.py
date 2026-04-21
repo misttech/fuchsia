@@ -15,28 +15,22 @@ class MessageType(str, Enum):
     EVENT = "event"
 
 
-def to_camel(snake_str: str) -> str:
-    components = snake_str.split("_")
-    return components[0] + "".join(x.title() for x in components[1:])
-
-
-def camel_case_factory(items: List[Tuple[str, Any]]) -> Dict[str, Any]:
-    return {to_camel(k): v for k, v in items if v is not None}
+def verbatim_factory(items: List[Tuple[str, Any]]) -> Dict[str, Any]:
+    return {k: v for k, v in items if v is not None}
 
 
 def dataclass_to_dict(obj: Any) -> Dict[str, Any]:
-    return asdict(obj, dict_factory=camel_case_factory)
+    return asdict(obj, dict_factory=verbatim_factory)
 
 
 def from_dict(cls: Type[Any], data: Dict[str, Any]) -> Any:
-    """Creates a dataclass instance from a dictionary with camelCase keys."""
+    """Creates a dataclass instance from a dictionary with spec-cased keys."""
     if not hasattr(cls, "__dataclass_fields__"):
         return data
     kwargs = {}
     for field_name, field in cls.__dataclass_fields__.items():
-        camel_name = to_camel(field_name)
-        if camel_name in data:
-            value = data[camel_name]
+        if field_name in data:
+            value = data[field_name]
             origin = getattr(field.type, "__origin__", None)
             args = getattr(field.type, "__args__", None)
 
@@ -128,14 +122,14 @@ class InitializeArguments:
     """Arguments for `initialize` request.
 
     Attributes:
-        adapter_id: The ID of the debug adapter.
-        supports_invalidated_event: Client supports the `invalidated` event.
-        supports_run_in_terminal_request: Client supports the `runInTerminal` request.
+        adapterID: The ID of the debug adapter.
+        supportsInvalidatedEvent: Client supports the `invalidated` event.
+        supportsRunInTerminalRequest: Client supports the `runInTerminal` request.
     """
 
-    adapter_id: str
-    supports_invalidated_event: Optional[bool] = None
-    supports_run_in_terminal_request: Optional[bool] = None
+    adapterID: str
+    supportsInvalidatedEvent: Optional[bool] = None
+    supportsRunInTerminalRequest: Optional[bool] = None
 
 
 @dataclass
@@ -143,10 +137,10 @@ class DisconnectArguments:
     """Arguments for `disconnect` request.
 
     Attributes:
-        terminate_debuggee: Indicates whether the debuggee should be terminated when the debugger is disconnected.
+        terminateDebuggee: Indicates whether the debuggee should be terminated when the debugger is disconnected.
     """
 
-    terminate_debuggee: Optional[bool] = None
+    terminateDebuggee: Optional[bool] = None
 
 
 @dataclass
@@ -154,10 +148,10 @@ class StackTraceResponse:
     """Response to `stackTrace` request.
 
     Attributes:
-        stack_frames: The stack frames of the thread.
+        stackFrames: The stack frames of the thread.
     """
 
-    stack_frames: List[StackFrame]
+    stackFrames: List[StackFrame]
 
 
 @dataclass
@@ -165,10 +159,10 @@ class ContinueResponseBody:
     """Response to `continue` request.
 
     Attributes:
-        all_threads_continued: Indicates whether all threads were continued.
+        allThreadsContinued: Indicates whether all threads were continued.
     """
 
-    all_threads_continued: bool
+    allThreadsContinued: bool
 
 
 @dataclass
@@ -187,13 +181,13 @@ class StackTraceArguments:
     """Arguments for `stackTrace` request.
 
     Attributes:
-        thread_id: Retrieve the stacktrace for this thread.
-        start_frame: The index of the first frame to return; if omitted frames start at 0.
+        threadId: Retrieve the stacktrace for this thread.
+        startFrame: The index of the first frame to return; if omitted frames start at 0.
         levels: The maximum number of frames to return. If levels is not specified or 0, all frames are returned.
     """
 
-    thread_id: int
-    start_frame: Optional[int] = None
+    threadId: int
+    startFrame: Optional[int] = None
     levels: Optional[int] = None
 
 
@@ -202,12 +196,12 @@ class ContinueArguments:
     """Arguments for `continue` request.
 
     Attributes:
-        thread_id: Specifies the active thread.
-        single_thread: If this flag is true, execution is resumed only for the thread with given `threadId`.
+        threadId: Specifies the active thread.
+        singleThread: If this flag is true, execution is resumed only for the thread with given `threadId`.
     """
 
-    thread_id: int
-    single_thread: Optional[bool] = None
+    threadId: int
+    singleThread: Optional[bool] = None
 
 
 @dataclass
@@ -215,7 +209,7 @@ class PauseArguments:
     """Arguments for `pause` request.
 
     Attributes:
-        thread_id: Pause execution for this thread.
+        threadId: Pause execution for this thread.
     """
 
-    thread_id: int
+    threadId: int

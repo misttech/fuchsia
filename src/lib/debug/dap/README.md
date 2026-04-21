@@ -34,7 +34,7 @@ async def run():
     reader, writer = await asyncio.open_connection("127.0.0.1", 12345)
 
     # Send initialize request
-    args = InitializeArguments(adapter_id="test")
+    args = InitializeArguments(adapterID="test")
 
     # We create a task to send the request
     # In a full implementation, you would also have a task reading from 'reader'
@@ -45,6 +45,12 @@ async def run():
 asyncio.run(run())
 ```
 
+
+## Naming Convention
+
+To ensure exact compliance with the DAP specification and simplify serialization, this library uses the **specification casing** for all dataclass field names. This means that fields use `camelCase` or specific acronym casing (e.g., `adapterID`) as defined in the official protocol, rather than standard Python `snake_case`.
+
+When instantiating dataclasses, always use the field names with the casing specified by the protocol. For example, use `adapterID` instead of `adapter_id`.
 
 ## Extensibility
 

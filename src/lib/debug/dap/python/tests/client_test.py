@@ -85,7 +85,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = InitializeArguments(adapter_id="test")
+        args = InitializeArguments(adapterID="test")
         send_task = asyncio.create_task(
             client.initialize(writer, args)  # type: ignore
         )
@@ -117,7 +117,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = DisconnectArguments(terminate_debuggee=True)
+        args = DisconnectArguments(terminateDebuggee=True)
         send_task = asyncio.create_task(
             client.disconnect(writer, args)  # type: ignore
         )
@@ -149,7 +149,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = StackTraceArguments(thread_id=1)
+        args = StackTraceArguments(threadId=1)
         send_task = asyncio.create_task(
             client.stack_trace(writer, args)  # type: ignore
         )
@@ -174,7 +174,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertEqual(resp.stack_frames, [])
+        self.assertEqual(resp.stackFrames, [])
 
     async def test_continue_thread(self) -> None:
         from pydap.models import ContinueArguments
@@ -182,7 +182,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = ContinueArguments(thread_id=1)
+        args = ContinueArguments(threadId=1)
         send_task = asyncio.create_task(
             client.continue_thread(writer, args)  # type: ignore
         )
@@ -215,7 +215,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = PauseArguments(thread_id=1)
+        args = PauseArguments(threadId=1)
         send_task = asyncio.create_task(
             client.pause_thread(writer, args)  # type: ignore
         )
