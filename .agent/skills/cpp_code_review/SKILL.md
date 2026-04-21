@@ -1,5 +1,5 @@
 ---
-name: cpp_code_review
+name: cpp-code-review
 description: How to do a code review of Fuchsia C++ code
 ---
 
