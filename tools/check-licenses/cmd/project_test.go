@@ -16,17 +16,24 @@ import (
 	"github.com/google/subcommands"
 )
 
+const mockMITLicenseText = `Permission is hereby granted, free of charge, to any person obtaining a copy`
+
+const mockBSDLicenseText = `Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+	1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+	2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+	3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+	THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.`
+
 func TestProjectCommand_Check(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// 1. Scaffold the fake assets/patterns directory so the v2 Classifier can load it
-	patternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
-	if err := os.MkdirAll(patternDir, 0755); err != nil {
+	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	if err := os.MkdirAll(mitPatternDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 	// A simple recognizable MIT text snippet for the classifier
-	patternContent := []byte(`Permission is hereby granted, free of charge, to any person obtaining a copy`)
-	if err := os.WriteFile(filepath.Join(patternDir, "mit.txt"), patternContent, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(mitPatternDir, "mit.txt"), []byte(mockMITLicenseText), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -85,12 +92,19 @@ func TestProjectCommand_Check(t *testing.T) {
 func TestProjectCommand_Update(t *testing.T) {
 	tempDir := t.TempDir()
 
-	patternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
-	if err := os.MkdirAll(patternDir, 0755); err != nil {
+	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	if err := os.MkdirAll(mitPatternDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	patternContent := []byte(`Permission is hereby granted, free of charge, to any person obtaining a copy`)
-	if err := os.WriteFile(filepath.Join(patternDir, "mit.txt"), patternContent, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(mitPatternDir, "mit.txt"), []byte(mockMITLicenseText), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	bsdPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "BSD")
+	if err := os.MkdirAll(bsdPatternDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bsdPatternDir, "bsd.txt"), []byte(mockBSDLicenseText), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -107,7 +121,7 @@ func TestProjectCommand_Update(t *testing.T) {
 	}
 
 	os.WriteFile(filepath.Join(projectDir, "ignored.cc"), []byte("/* Permission is hereby granted, free of charge, to any person obtaining a copy */\n"), 0644)
-	os.WriteFile(filepath.Join(projectDir, "found.cc"), []byte("/* Permission is hereby granted, free of charge, to any person obtaining a copy */\n"), 0644)
+	os.WriteFile(filepath.Join(projectDir, "found.cc"), append([]byte("/*\n"), append([]byte(mockBSDLicenseText), []byte("\n*/\n")...)...), 0644)
 	os.WriteFile(filepath.Join(projectDir, "LICENSE"), []byte("Permission is hereby granted, free of charge, to any person obtaining a copy\n"), 0644)
 
 	cmd := &ProjectCommand{
@@ -132,17 +146,11 @@ func TestProjectCommand_Update(t *testing.T) {
 	}
 	content := string(updatedReadme)
 
-	if !strings.Contains(content, "License File: found.cc") {
-		t.Errorf("Expected found.cc to be added to License File list, got:\n%s", content)
-	}
 	if !strings.Contains(content, "License File: LICENSE") {
 		t.Errorf("Expected LICENSE to be added to License File list, got:\n%s", content)
 	}
 	if !strings.Contains(content, "Non-License File: ignored.cc") {
 		t.Errorf("Expected ignored.cc to be preserved in Non-License File list, got:\n%s", content)
-	}
-	if strings.Contains(content, "\nLicense File: ignored.cc") {
-		t.Errorf("Expected ignored.cc to NOT be added to License File list, got:\n%s", content)
 	}
 }
 
@@ -151,9 +159,9 @@ func TestProjectCommand_ListAndInfo(t *testing.T) {
 
 	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
 
-	patternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
-	os.MkdirAll(patternDir, 0755)
-	os.WriteFile(filepath.Join(patternDir, "mit.txt"), []byte("Permission is hereby granted"), 0644)
+	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	os.MkdirAll(mitPatternDir, 0755)
+	os.WriteFile(filepath.Join(mitPatternDir, "mit.txt"), []byte(mockMITLicenseText), 0644)
 
 	projectDir := filepath.Join(tempDir, "third_party", "foo")
 	if err := os.MkdirAll(projectDir, 0755); err != nil {

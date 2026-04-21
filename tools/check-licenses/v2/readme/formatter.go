@@ -34,7 +34,7 @@ func formatSingle(r *Readme) string {
 	writeField(&b, "Location", r.Location)
 	writeField(&b, "Upstream Git", r.UpstreamGit)
 
-	hasLicenses := len(r.LicenseFiles) > 0 || r.LicenseFile != "" || len(r.NonLicenseFiles) > 0
+	hasLicenses := len(r.LicenseFiles) > 0 || r.LicenseFile != "" || len(r.SourceFiles) > 0 || len(r.NonLicenseFiles) > 0
 	if hasLicenses {
 		b.WriteString("\n")
 	}
@@ -51,12 +51,33 @@ func formatSingle(r *Readme) string {
 			if lf.LicenseType != "" && lf.LicenseType != "Single License" {
 				b.WriteString("  License Type: " + lf.LicenseType + "\n")
 			}
+			if lf.LicenseFileURL != "" {
+				b.WriteString("  License File URL: " + lf.LicenseFileURL + "\n")
+			}
+		}
+	}
+
+	for i, sf := range r.SourceFiles {
+		if sf.Path != "" {
+			if i > 0 || len(r.LicenseFiles) > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString("Source File: " + sf.Path + "\n")
+			if sf.License != "" {
+				b.WriteString("  License: " + sf.License + "\n")
+			}
+			if sf.LicenseType != "" && sf.LicenseType != "Single License" {
+				b.WriteString("  License Type: " + sf.LicenseType + "\n")
+			}
+			if sf.LicenseFileURL != "" {
+				b.WriteString("  License File URL: " + sf.LicenseFileURL + "\n")
+			}
 		}
 	}
 
 	for i, nlf := range r.NonLicenseFiles {
 		if nlf.Path != "" {
-			if i > 0 || len(r.LicenseFiles) > 0 {
+			if i > 0 || len(r.LicenseFiles) > 0 || len(r.SourceFiles) > 0 {
 				b.WriteString("\n")
 			}
 			b.WriteString("Non-License File: " + nlf.Path + "\n")
@@ -68,7 +89,7 @@ func formatSingle(r *Readme) string {
 
 	// Fallback to legacy single file if LicenseFiles array is empty
 	if len(r.LicenseFiles) == 0 && r.LicenseFile != "" {
-		if len(r.NonLicenseFiles) > 0 {
+		if len(r.NonLicenseFiles) > 0 || len(r.SourceFiles) > 0 {
 			b.WriteString("\n")
 		}
 		b.WriteString("License File: " + r.LicenseFile + "\n")

@@ -20,6 +20,10 @@ type Readme struct {
 	// This represents the hierarchical "License File: foo \n -> License: bar" structure.
 	LicenseFiles []LicenseEntry
 
+	// SourceFiles contains the file-level metadata for source files with differing licenses.
+	// This represents the hierarchical "Source File: foo \n -> License: bar" structure.
+	SourceFiles []LicenseEntry
+
 	// UnknownFields captures any "Key: Value" pair that the parser didn't
 	// explicitly recognize. This ensures the formatter doesn't delete data,
 	// while allowing strict tools (like SHAC) to flag them as errors.
@@ -33,9 +37,10 @@ type Readme struct {
 // LicenseEntry represents a single "License File:" entry and its associated
 // indented metadata fields (e.g., "-> License:").
 type LicenseEntry struct {
-	Path        string // The value of "License File:"
-	License     string // The value of "-> License:" (e.g. "MIT")
-	LicenseType string // The value of "-> License Type:" (e.g. "Chromium")
+	Path           string // The value of "License File:"
+	License        string // The value of "  License:" (e.g. "MIT")
+	LicenseType    string // The value of "  License Type:" (e.g. "Chromium")
+	LicenseFileURL string // The value of "  License File URL:"
 }
 
 // NonLicenseEntry represents a single "Non-License File:" entry and its explanation.

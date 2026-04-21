@@ -68,6 +68,12 @@ func (c *ProjectCommand) checkFile(ctx context.Context, absPath string, config *
 			break
 		}
 	}
+	for _, sf := range r.SourceFiles {
+		if filepath.Clean(sf.Path) == relToReadme || filepath.Clean(sf.Path) == relToFuchsia {
+			isDeclared = true
+			break
+		}
+	}
 	for _, nlf := range r.NonLicenseFiles {
 		if filepath.Clean(nlf.Path) == relToReadme || filepath.Clean(nlf.Path) == relToFuchsia {
 			isDeclared = true
@@ -76,7 +82,7 @@ func (c *ProjectCommand) checkFile(ctx context.Context, absPath string, config *
 	}
 
 	if !isDeclared {
-		return fmt.Errorf("file contains license texts (%s) but is NOT declared in %s as a 'License File' or 'Non-License File'", strings.Join(unexpectedMatches, ", "), readmePath)
+		return fmt.Errorf("file contains license texts (%s) but is NOT declared in %s as a 'License File', 'Source File', or 'Non-License File'", strings.Join(unexpectedMatches, ", "), readmePath)
 	}
 
 	return nil

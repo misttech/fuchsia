@@ -30,6 +30,7 @@ var knownDirectives = map[string]bool{
 	"Security Critical":   true,
 	"Location":            true,
 	"License File":        true,
+	"Source File":         true,
 	"Non-License File":    true,
 	"Upstream Git":        true,
 	"Description":         true,
@@ -41,6 +42,7 @@ var knownDirectives = map[string]bool{
 var knownFileDirectives = map[string]bool{
 	"License":                      true,
 	"License Type":                 true,
+	"License File URL":             true,
 	"Non-License File Explanation": true,
 }
 
@@ -59,6 +61,7 @@ func Parse(data []byte) ([]*Readme, error) {
 	for _, block := range blocks {
 		readme := &Readme{}
 		var currentLicenseEntry *LicenseEntry
+		var currentSourceEntry *LicenseEntry
 		var currentNonLicenseEntry *NonLicenseEntry
 
 		var currentKey string
@@ -91,6 +94,18 @@ func Parse(data []byte) ([]*Readme, error) {
 								currentLicenseEntry.License = value
 							case "License Type":
 								currentLicenseEntry.LicenseType = value
+							case "License File URL":
+								currentLicenseEntry.LicenseFileURL = value
+							}
+						} else if currentSourceEntry != nil {
+							value := strings.TrimSpace(parts[1])
+							switch key {
+							case "License":
+								currentSourceEntry.License = value
+							case "License Type":
+								currentSourceEntry.LicenseType = value
+							case "License File URL":
+								currentSourceEntry.LicenseFileURL = value
 							}
 						} else if currentNonLicenseEntry != nil {
 							value := strings.TrimSpace(parts[1])
@@ -118,31 +133,30 @@ func Parse(data []byte) ([]*Readme, error) {
 				if knownDirectives[key] {
 					isRootDirective = true
 
-					if key == "License File" {
+					if key == "License File" || key == "Source File" || key == "Non-License File" {
 						if currentLicenseEntry != nil {
 							readme.LicenseFiles = append(readme.LicenseFiles, *currentLicenseEntry)
+							currentLicenseEntry = nil
+						}
+						if currentSourceEntry != nil {
+							readme.SourceFiles = append(readme.SourceFiles, *currentSourceEntry)
+							currentSourceEntry = nil
 						}
 						if currentNonLicenseEntry != nil {
 							readme.NonLicenseFiles = append(readme.NonLicenseFiles, *currentNonLicenseEntry)
 							currentNonLicenseEntry = nil
 						}
-						currentLicenseEntry = &LicenseEntry{Path: value}
-						if readme.LicenseFile == "" {
-							readme.LicenseFile = value
-						}
-						currentKey = "" // reset multi-line tracking
-						continue
-					}
 
-					if key == "Non-License File" {
-						if currentLicenseEntry != nil {
-							readme.LicenseFiles = append(readme.LicenseFiles, *currentLicenseEntry)
-							currentLicenseEntry = nil
+						if key == "License File" {
+							currentLicenseEntry = &LicenseEntry{Path: value}
+							if readme.LicenseFile == "" {
+								readme.LicenseFile = value
+							}
+						} else if key == "Source File" {
+							currentSourceEntry = &LicenseEntry{Path: value}
+						} else if key == "Non-License File" {
+							currentNonLicenseEntry = &NonLicenseEntry{Path: value}
 						}
-						if currentNonLicenseEntry != nil {
-							readme.NonLicenseFiles = append(readme.NonLicenseFiles, *currentNonLicenseEntry)
-						}
-						currentNonLicenseEntry = &NonLicenseEntry{Path: value}
 						currentKey = "" // reset multi-line tracking
 						continue
 					}
@@ -242,12 +256,15 @@ func Parse(data []byte) ([]*Readme, error) {
 		if currentLicenseEntry != nil {
 			readme.LicenseFiles = append(readme.LicenseFiles, *currentLicenseEntry)
 		}
+		if currentSourceEntry != nil {
+			readme.SourceFiles = append(readme.SourceFiles, *currentSourceEntry)
+		}
 		if currentNonLicenseEntry != nil {
 			readme.NonLicenseFiles = append(readme.NonLicenseFiles, *currentNonLicenseEntry)
 		}
 
 		// Only append if we actually parsed something useful (ignores empty trailing blocks)
-		if readme.Name != "" || len(readme.LicenseFiles) > 0 || len(readme.NonLicenseFiles) > 0 {
+		if readme.Name != "" || len(readme.LicenseFiles) > 0 || len(readme.SourceFiles) > 0 || len(readme.NonLicenseFiles) > 0 {
 			readmes = append(readmes, readme)
 		}
 	}
