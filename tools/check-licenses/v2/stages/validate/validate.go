@@ -91,9 +91,10 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 					if !allowed {
 						metrics.ValidationErrors.Inc("AllLicenseTextsMustBeRecognized")
 						err := pipeline.ComplianceError{
-							Project:  cf.ProjectRoot,
-							FilePath: cf.Path,
-							Issue:    "Unrecognized license text: no SPDX ID could be matched",
+							CheckName: "AllLicenseTextsMustBeRecognized",
+							Project:   cf.ProjectRoot,
+							FilePath:  cf.Path,
+							Issue:     "Unrecognized license text: no SPDX ID could be matched",
 						}
 						select {
 						case <-ctx.Done():
@@ -137,9 +138,10 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 						if isSourceCodeExt(ext) {
 							metrics.ValidationErrors.Inc("AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders")
 							err := pipeline.ComplianceError{
-								Project:  cf.ProjectRoot,
-								FilePath: cf.Path,
-								Issue:    "Missing Fuchsia copyright header in first-party source file",
+								CheckName: "AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders",
+								Project:   cf.ProjectRoot,
+								FilePath:  cf.Path,
+								Issue:     "Missing Fuchsia copyright header in first-party source file",
 							}
 							select {
 							case <-ctx.Done():
@@ -183,6 +185,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 							metrics.ValidationErrors.Inc("UnapprovedLicenseUsage")
 							err := pipeline.ComplianceError{
 								CheckName: "AllLicensePatternUsagesMustBeApproved",
+								LicenseID: match.SPDXID,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
 								Issue:     fmt.Sprintf("File was not approved to use license pattern %s (Type: %s)", match.SPDXID, match.MatchType),

@@ -47,58 +47,63 @@ func (c *AllowlistCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 	licenseName := f.Arg(1)
 	projectPath := filepath.Clean(f.Arg(2))
 
-	if c.fuchsiaDir == "" {
-		c.fuchsiaDir = "."
+	if err := AddAllowlistEntry(c.fuchsiaDir, licenseName, projectPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
 	}
-	absFuchsiaDir, err := filepath.Abs(c.fuchsiaDir)
+
+	return subcommands.ExitSuccess
+}
+
+// AddAllowlistEntry adds an allowed license exception for a given project path.
+func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath string) error {
+	if fuchsiaDir == "" {
+		fuchsiaDir = "."
+	}
+	absFuchsiaDir, err := filepath.Abs(fuchsiaDir)
 	if err == nil {
-		c.fuchsiaDir = absFuchsiaDir
+		fuchsiaDir = absFuchsiaDir
 	}
 
 	// Make sure the project path is relative to FuchsiaDir
 	if filepath.IsAbs(projectPath) {
-		rel, err := filepath.Rel(c.fuchsiaDir, projectPath)
+		rel, err := filepath.Rel(fuchsiaDir, projectPath)
 		if err == nil && !strings.HasPrefix(rel, "..") {
 			projectPath = rel
 		}
 	}
 
 	// Check if this project already has an exception for this license
-	builder := v2config.NewBuilder(c.fuchsiaDir)
+	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to assemble config: %v\n", err)
 	} else {
 		if list, ok := builder.Config.AllowedLicenses[licenseName]; ok {
 			if _, exists := list[projectPath]; exists {
 				fmt.Printf("Project '%s' already has an allowlist entry for '%s'. Nothing to do.\n", projectPath, licenseName)
-				return subcommands.ExitSuccess
+				return nil
 			}
 		}
 	}
 
 	// Determine if this is a private project
 	isPrivate := false
-	if strings.HasPrefix(projectPath, "vendor/") {
+	if builder.Config != nil {
+		isPrivate = builder.Config.IsPrivateProject(projectPath)
+	} else if strings.HasPrefix(projectPath, "vendor/") {
 		isPrivate = true
-	} else if builder.Config != nil {
-		if physicalPath, ok := builder.Config.OutOfTreeReadmes[projectPath]; ok {
-			if strings.Contains(filepath.ToSlash(physicalPath), "/vendor/") {
-				isPrivate = true
-			}
-		}
 	}
 
 	// Find the license category by scanning both public and private allowed_licenses dirs
-	category := findLicenseCategory(c.fuchsiaDir, licenseName)
+	category := findLicenseCategory(fuchsiaDir, licenseName)
 
-	configDir := filepath.Join(c.fuchsiaDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
+	configDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
 	if isPrivate {
-		configDir = filepath.Join(c.fuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
+		configDir = filepath.Join(fuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
 	}
 
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create config directory %s: %v\n", configDir, err)
-		return subcommands.ExitFailure
+		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
 	baseName := filepath.Base(projectPath)
@@ -125,14 +130,12 @@ func (c *AllowlistCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 
 	outData, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal JSON: %v\n", err)
-		return subcommands.ExitFailure
+		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 	outData = append(outData, '\n')
 
 	if err := os.WriteFile(destFile, outData, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write config file %s: %v\n", destFile, err)
-		return subcommands.ExitFailure
+		return fmt.Errorf("failed to write config file %s: %w", destFile, err)
 	}
 
 	fmt.Printf("✅ Added Allowlist Entry:\n")
@@ -143,7 +146,7 @@ func (c *AllowlistCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 	fmt.Printf("You must file a bug with the TQ-OSRB component explaining why this project needs to use this license.\n")
 	fmt.Printf("Once filed, update the 'bug' field in %s with the bug number.\n", destFile)
 
-	return subcommands.ExitSuccess
+	return nil
 }
 
 func findLicenseCategory(fuchsiaDir, licenseName string) string {

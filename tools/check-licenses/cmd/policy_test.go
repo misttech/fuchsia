@@ -17,6 +17,11 @@ import (
 func TestPolicyCommand_Execute(t *testing.T) {
 	tempDir := t.TempDir()
 
+	// Scaffold the recursive config system
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	os.MkdirAll(filepath.Dir(seedConfig), 0755)
+	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets"]}`), 0644)
+
 	// Create command
 	cmd := &PolicyCommand{
 		fuchsiaDir: tempDir,

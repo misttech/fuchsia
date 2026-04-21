@@ -18,6 +18,7 @@ import (
 type Builder struct {
 	FuchsiaDir string
 	Config     *MasterConfig
+	seen       map[string]bool
 }
 
 // NewBuilder creates a new config assembler.
@@ -25,36 +26,28 @@ func NewBuilder(fuchsiaDir string) *Builder {
 	return &Builder{
 		FuchsiaDir: fuchsiaDir,
 		Config:     NewMasterConfig(),
+		seen:       make(map[string]bool),
 	}
 }
 
-// Assemble walks the standard open-source and proprietary vendor paths,
-// merging any configuration JSON files it finds into the internal MasterConfig.
+// Assemble starts the recursive configuration discovery from the root v2 config file,
+// merging all found JSON files into the internal MasterConfig.
 func (b *Builder) Assemble() error {
-	// Standard open-source assets
-	osAssets := filepath.Join(b.FuchsiaDir, "tools", "check-licenses", "assets")
-	if err := b.walkAssetDir(osAssets); err != nil {
-		return fmt.Errorf("failed to assemble open-source configs: %w", err)
+	seedFile := filepath.Join(b.FuchsiaDir, "tools", "check-licenses", "v2", "config.json")
+	if _, err := os.Stat(seedFile); os.IsNotExist(err) {
+		// Fallback for tests or environments where the seed file doesn't exist
+		return nil
 	}
-
-	// Proprietary vendor assets (may not exist in all checkouts)
-	vendorAssets := filepath.Join(b.FuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets")
-	if _, err := os.Stat(vendorAssets); err == nil {
-		if err := b.walkAssetDir(vendorAssets); err != nil {
-			return fmt.Errorf("failed to assemble vendor configs: %w", err)
-		}
-	}
-
-	return nil
+	return b.parseConfigFile(seedFile)
 }
 
-func (b *Builder) walkAssetDir(baseDir string) error {
+func (b *Builder) walkDir(baseDir string) error {
 	return filepath.WalkDir(baseDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err // Cannot access path
+			return err
 		}
 		if d.IsDir() {
-			return nil // Skip directories
+			return nil
 		}
 
 		relPath, err := filepath.Rel(baseDir, path)
@@ -62,24 +55,24 @@ func (b *Builder) walkAssetDir(baseDir string) error {
 			return err
 		}
 		parts := strings.Split(relPath, string(os.PathSeparator))
-		if len(parts) < 2 {
-			return nil // File directly in assets/, skip for now
+		if len(parts) == 0 {
+			return nil
 		}
 
+		// Backward compatibility logic for the "assets" directory structure
 		category := parts[0]
-
 		if category == "readmes" && filepath.Base(path) == "README.fuchsia" {
-			if len(parts) > 2 {
-				logicalParts := parts[1 : len(parts)-1] // strip "readmes" and "README.fuchsia"
+			if len(parts) > 1 {
+				logicalParts := parts[1 : len(parts)-1]
 				logicalPath := filepath.Join(logicalParts...)
 				b.Config.OutOfTreeReadmes[logicalPath] = path
 			}
 			return nil
 		}
 
-		if category == "configs" && filepath.Ext(path) == ".json" {
-			if filepath.Base(path) == "template.json" {
-				return nil // Never parse template files
+		if (category == "configs" || filepath.Ext(path) == ".json") && filepath.Ext(path) == ".json" {
+			if filepath.Base(path) == "template.json" || filepath.Base(path) == "config.json" {
+				return nil
 			}
 			return b.parseConfigFile(path)
 		}
@@ -89,6 +82,15 @@ func (b *Builder) walkAssetDir(baseDir string) error {
 }
 
 func (b *Builder) parseConfigFile(path string) error {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if b.seen[path] {
+		return nil
+	}
+	b.seen[path] = true
+
 	bytes, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -96,6 +98,29 @@ func (b *Builder) parseConfigFile(path string) error {
 	var f ConfigFile
 	if err := json.Unmarshal(bytes, &f); err != nil {
 		return fmt.Errorf("failed to parse config file %q: %w", path, err)
+	}
+
+	// 0. Process Includes
+	for _, include := range f.Includes {
+		absInclude := include
+		if !filepath.IsAbs(include) {
+			absInclude = filepath.Join(b.FuchsiaDir, include)
+		}
+
+		info, err := os.Stat(absInclude)
+		if err != nil {
+			continue
+		}
+
+		if info.IsDir() {
+			if err := b.walkDir(absInclude); err != nil {
+				return err
+			}
+		} else {
+			if err := b.parseConfigFile(absInclude); err != nil {
+				return err
+			}
+		}
 	}
 
 	// 1. Process Skips

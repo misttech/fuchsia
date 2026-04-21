@@ -85,7 +85,6 @@ found in the LICENSE file.`)
 
 func TestCopyrightCommand_CommentPrefixes(t *testing.T) {
 	tempDir := t.TempDir()
-	cmd := &CopyrightCommand{}
 
 	tests := []struct {
 		name        string
@@ -111,7 +110,7 @@ func TestCopyrightCommand_CommentPrefixes(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			newBytes, err := cmd.addCopyright(filePath)
+			newBytes, err := addCopyright(filePath)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error for extension %s, got nil", tt.ext)

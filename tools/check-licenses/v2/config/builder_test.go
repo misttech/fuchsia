@@ -16,6 +16,11 @@ func TestBuilder_Assemble(t *testing.T) {
 	// Create a mock fuchsia directory
 	fuchsiaDir := t.TempDir()
 
+	// Scaffold the recursive config system
+	seedConfig := filepath.Join(fuchsiaDir, "tools", "check-licenses", "v2", "config.json")
+	os.MkdirAll(filepath.Dir(seedConfig), 0755)
+	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets", "vendor/google/tools/check-licenses/assets"]}`), 0644)
+
 	// 1. Setup mock open-source assets
 	osAssets := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets")
 	osConfigs := filepath.Join(osAssets, "configs")

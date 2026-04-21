@@ -89,9 +89,10 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 		if !hasLicense {
 			// We emit this directly into the error slice so it fails the build
 			errs = append(errs, pipeline.ComplianceError{
-				Project:  proj,
-				FilePath: "",
-				Issue:    "Project has no recognized license files (AllProjectsMustHaveALicense)",
+				CheckName: "AllProjectsMustHaveALicense",
+				Project:   proj,
+				FilePath:  "",
+				Issue:     "Project has no recognized license files",
 			})
 		}
 	}
@@ -180,7 +181,11 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 
 		lastCheckAndIssue := ""
 		for _, e := range errs {
-			checkAndIssue := fmt.Sprintf("[%s] %s", e.CheckName, e.Issue)
+			checkAndIssue := e.Issue
+			if e.CheckName != "" {
+				checkAndIssue = fmt.Sprintf("[%s] %s", e.CheckName, e.Issue)
+			}
+
 			if checkAndIssue != lastCheckAndIssue {
 				b.WriteString("\n" + checkAndIssue + "\n")
 				lastCheckAndIssue = checkAndIssue
@@ -197,9 +202,9 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 				if err != nil {
 					relFile = e.FilePath
 				}
-				b.WriteString(fmt.Sprintf("- [%s] %s\n", relProj, relFile))
+				b.WriteString(fmt.Sprintf("- %s (%s)\n", relProj, relFile))
 			} else {
-				b.WriteString(fmt.Sprintf("- [%s]\n", relProj))
+				b.WriteString(fmt.Sprintf("- %s\n", relProj))
 			}
 		}
 		return fmt.Errorf(b.String())

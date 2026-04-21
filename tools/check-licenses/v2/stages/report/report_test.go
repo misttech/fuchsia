@@ -86,9 +86,10 @@ func TestReporter_RunFailure(t *testing.T) {
 	close(filesChan) // no files needed
 
 	errorsChan <- pipeline.ComplianceError{
-		Project:  "third_party/bad",
-		FilePath: "third_party/bad/LICENSE",
-		Issue:    "Unallowed license GPL-2.0",
+		CheckName: "UnallowedLicense",
+		Project:   "third_party/bad",
+		FilePath:  "third_party/bad/LICENSE",
+		Issue:     "Unallowed license GPL-2.0",
 	}
 	close(errorsChan)
 
@@ -134,7 +135,7 @@ func TestReporter_RunFailure_MissingLicense(t *testing.T) {
 	if !strings.Contains(err.Error(), "1 compliance error") {
 		t.Errorf("Expected error to contain error count, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Project has no recognized license files (AllProjectsMustHaveALicense)") {
+	if !strings.Contains(err.Error(), "Project has no recognized license files") {
 		t.Errorf("Expected error to contain missing license issue description, got: %v", err)
 	}
 }

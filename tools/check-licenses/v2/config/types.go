@@ -4,6 +4,11 @@
 
 package config
 
+import (
+	"path/filepath"
+	"strings"
+)
+
 // MasterConfig is the fully assembled configuration injected into the pipeline stages.
 // It is constructed by the ConfigBuilder during the Assembly Phase by merging all
 // scattered JSON files from the open-source and proprietary assets directories.
@@ -47,6 +52,20 @@ type MasterConfig struct {
 	AllowedLicenses map[string]map[string]RuleMetadata
 }
 
+// IsPrivateProject returns true if the project path belongs to a proprietary/private
+// repository. It prevents open-source compliance configs from being contaminated.
+func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
+	if strings.HasPrefix(projectPath, "vendor/") {
+		return true
+	}
+	if physicalPath, ok := c.OutOfTreeReadmes[projectPath]; ok {
+		if strings.Contains(filepath.ToSlash(physicalPath), "/vendor/") {
+			return true
+		}
+	}
+	return false
+}
+
 type RuleMetadata struct {
 	Bug         string
 	Description string
@@ -71,6 +90,7 @@ func NewMasterConfig() *MasterConfig {
 // of these fields, allowing configuration to be organized by project or by theme.
 
 type ConfigFile struct {
+	Includes         []string                    `json:"includes,omitempty"`
 	Skips            []SkipEntry                 `json:"skips,omitempty"`
 	TargetExtensions *ExtensionEntry             `json:"target_extensions,omitempty"`
 	Barriers         []BarrierEntry              `json:"barriers,omitempty"`

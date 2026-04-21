@@ -25,6 +25,7 @@ func main() {
 	// Register our tool's commands
 	commander.Register(&GenerateCommand{}, "")
 	commander.Register(&ValidateCommand{}, "")
+	commander.Register(&FixCommand{}, "")
 	commander.Register(&ReadmeCommand{}, "")
 	commander.Register(&ProjectCommand{}, "")
 	commander.Register(&PolicyCommand{}, "")
@@ -36,6 +37,7 @@ func main() {
 	knownCommands := map[string]bool{
 		"generate":  true,
 		"validate":  true,
+		"fix":       true,
 		"readme":    true,
 		"project":   true,
 		"policy":    true,

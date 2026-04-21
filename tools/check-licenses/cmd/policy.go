@@ -47,56 +47,60 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	checkName := f.Arg(1)
 	projectPath := filepath.Clean(f.Arg(2))
 
-	if p.fuchsiaDir == "" {
-		p.fuchsiaDir = "."
+	if err := AddPolicyException(p.fuchsiaDir, checkName, projectPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
 	}
-	absFuchsiaDir, err := filepath.Abs(p.fuchsiaDir)
+
+	return subcommands.ExitSuccess
+}
+
+// AddPolicyException adds a policy exception for a given project path.
+func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
+	if fuchsiaDir == "" {
+		fuchsiaDir = "."
+	}
+	absFuchsiaDir, err := filepath.Abs(fuchsiaDir)
 	if err == nil {
-		p.fuchsiaDir = absFuchsiaDir
+		fuchsiaDir = absFuchsiaDir
 	}
 
 	// Make sure the project path is relative to FuchsiaDir
 	if filepath.IsAbs(projectPath) {
-		rel, err := filepath.Rel(p.fuchsiaDir, projectPath)
+		rel, err := filepath.Rel(fuchsiaDir, projectPath)
 		if err == nil && !strings.HasPrefix(rel, "..") {
 			projectPath = rel
 		}
 	}
 
 	// Check if this project already has an exception
-	builder := v2config.NewBuilder(p.fuchsiaDir)
+	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to assemble config: %v\n", err)
 	} else {
 		if list, ok := builder.Config.PolicyExceptions[checkName]; ok {
 			if _, exists := list[projectPath]; exists {
 				fmt.Printf("Project '%s' already has a policy exception for '%s'. Nothing to do.\n", projectPath, checkName)
-				return subcommands.ExitSuccess
+				return nil
 			}
 		}
 	}
 
 	// Determine if this is a private project
 	isPrivate := false
-	if strings.HasPrefix(projectPath, "vendor/") {
+	if builder.Config != nil {
+		isPrivate = builder.Config.IsPrivateProject(projectPath)
+	} else if strings.HasPrefix(projectPath, "vendor/") {
 		isPrivate = true
-	} else if builder.Config != nil {
-		// Check out-of-tree readmes
-		if physicalPath, ok := builder.Config.OutOfTreeReadmes[projectPath]; ok {
-			if strings.Contains(filepath.ToSlash(physicalPath), "/vendor/") {
-				isPrivate = true
-			}
-		}
 	}
 
-	configDir := filepath.Join(p.fuchsiaDir, "tools", "check-licenses", "assets", "configs", "policy_exceptions", checkName)
+	configDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "configs", "policy_exceptions", checkName)
 	if isPrivate {
-		configDir = filepath.Join(p.fuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "policy_exceptions", checkName)
+		configDir = filepath.Join(fuchsiaDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "policy_exceptions", checkName)
 	}
 
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create config directory %s: %v\n", configDir, err)
-		return subcommands.ExitFailure
+		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
 	// We'll write to a file named after the project base name
@@ -119,7 +123,7 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	// Append
 	entry := v2config.AllowlistEntry{
 		Bug:         "TODO: File bug with TQ-OSRB",
-		Description: "TODO: Provide a brief description why this policy override is necessary.",
+		Description: "Auto-generated exception",
 		Paths:       []string{projectPath},
 	}
 	cfg.PolicyExceptions[checkName] = append(cfg.PolicyExceptions[checkName], entry)
@@ -127,14 +131,12 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	// Write back
 	outData, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to marshal JSON: %v\n", err)
-		return subcommands.ExitFailure
+		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 	outData = append(outData, '\n') // POSIX standard
 
 	if err := os.WriteFile(destFile, outData, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write config file %s: %v\n", destFile, err)
-		return subcommands.ExitFailure
+		return fmt.Errorf("failed to write config file %s: %w", destFile, err)
 	}
 
 	fmt.Printf("✅ Added Policy Exception:\n")
@@ -145,5 +147,5 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	fmt.Printf("You must file a bug with the TQ-OSRB component explaining why this project needs a policy exception.\n")
 	fmt.Printf("Once filed, update the 'bug' field in %s with the bug number.\n", destFile)
 
-	return subcommands.ExitSuccess
+	return nil
 }

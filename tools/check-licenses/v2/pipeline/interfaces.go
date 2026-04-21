@@ -55,6 +55,7 @@ type ClassifiedFile struct {
 // ComplianceError represents a violation found during the Validation Stage (Policy Engine).
 type ComplianceError struct {
 	CheckName string
+	LicenseID string
 	Project   string
 	FilePath  string
 	Issue     string
