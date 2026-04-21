@@ -612,7 +612,7 @@ impl_ot_castable!(BorderRoutingPrefixTableEntry, otBorderRoutingPrefixTableEntry
 impl Debug for BorderRoutingPrefixTableEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("otBorderRoutingPrefixTableEntry")
-            .field("router_address", &self.router_address())
+            .field("router", &self.router())
             .field("prefix", &self.prefix())
             .field("is_on_link", &self.is_on_link())
             .field("msec_since_last_update", &self.msec_since_last_update())
@@ -631,8 +631,8 @@ impl std::fmt::Display for BorderRoutingPrefixTableEntry {
 
 impl BorderRoutingPrefixTableEntry {
     /// Returns a reference to the IPv6 address.
-    pub fn router_address(&self) -> &Ip6Address {
-        Ip6Address::ref_from_ot_ref(&self.0.mRouter.mAddress)
+    pub fn router(&self) -> BorderRoutingRouter {
+        BorderRoutingRouter(self.0.mRouter)
     }
 
     /// Returns the prefix.
@@ -662,7 +662,7 @@ impl BorderRoutingPrefixTableEntry {
 
     /// Returns the route preference
     pub fn route_preference(&self) -> RoutePreference {
-        RoutePreference::from_isize(self.0.mPreferredLifetime as isize)
+        RoutePreference::from_isize(self.0.mRoutePreference as isize)
             .unwrap_or(RoutePreference::Medium)
     }
 }

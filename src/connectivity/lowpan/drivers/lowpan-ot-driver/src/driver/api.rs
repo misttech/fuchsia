@@ -1252,6 +1252,56 @@ where
             })
             .collect::<Vec<_>>();
 
+        // Get the list of discovered prefixes by Border Routing Manager on the infrastructure link.
+        let border_routing_prefixes = ot
+            .border_routing_prefix_table_get_iterator()
+            .take(fidl_fuchsia_lowpan_experimental::MAX_NEIGHBOR_INSPECT_ENTRIES as usize)
+            .map(|prefix| fidl_fuchsia_lowpan_experimental::BorderRoutingPrefixTable {
+                router: Some(fidl_fuchsia_lowpan_experimental::BorderRoutingRouter {
+                    address: Some(Ipv6Addr::from(prefix.router().address().octets()).to_string()),
+                    duration_since_last_update: Some(
+                        fuchsia_async::MonotonicDuration::from_millis(
+                            prefix.router().msec_since_last_update().into(),
+                        )
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                    ),
+                    age: Some(
+                        fuchsia_async::MonotonicDuration::from_seconds(
+                            prefix.router().age().into(),
+                        )
+                        .into_nanos()
+                        .try_into()
+                        .unwrap(),
+                    ),
+                    managed_address_config_flag: Some(
+                        prefix.router().managed_address_config_flag(),
+                    ),
+                    other_config_flag: Some(prefix.router().other_config_flag()),
+                    snac_router_flag: Some(prefix.router().snac_router_flag()),
+                    is_local_device: Some(prefix.router().is_local_device()),
+                    is_reachable: Some(prefix.router().is_reachable()),
+                    is_peer_br: Some(prefix.router().is_peer_br()),
+                    ..Default::default()
+                }),
+                prefix: Some(prefix.prefix().to_string()),
+                is_on_link: Some(prefix.is_on_link()),
+                duration_since_last_update: Some(
+                    fuchsia_async::MonotonicDuration::from_millis(
+                        prefix.msec_since_last_update().into(),
+                    )
+                    .into_nanos()
+                    .try_into()
+                    .unwrap(),
+                ),
+                valid_lifetime: Some(prefix.valid_lifetime()),
+                preference: Some(prefix.route_preference() as i8),
+                preferred_lifetime: Some(prefix.preferred_lifetime()),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
         // Get the active dataset.
         let mut active_dataset = fidl_fuchsia_lowpan_experimental::OperationalDataset::default();
         let mut operational_dataset = Default::default();
@@ -1666,6 +1716,7 @@ where
             extended_pan_id: Some(extended_pan_id),
             border_routing_peers: Some(border_routing_peers),
             border_routing_routers: Some(border_routing_routers),
+            border_routing_prefixes: Some(border_routing_prefixes),
             active_dataset: Some(active_dataset),
             multiradio_neighbor_info: Some(multiradio_neighbor_info),
             router_info: Some(router_info),

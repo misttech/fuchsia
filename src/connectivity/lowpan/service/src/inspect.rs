@@ -1581,6 +1581,121 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             )
                         }
+                        if let Some(x) = telemetry_data.border_routing_prefixes {
+                            inspector.root().record_child(
+                                "border_routing_prefixes",
+                                |br_prefixes_child| {
+                                    for (index, br_prefix) in x.iter().enumerate() {
+                                        br_prefixes_child.record_child(
+                                            format!("prefix_{}", index),
+                                            |br_prefix_node| {
+                                                if let Some(y) = &br_prefix.router {
+                                                    br_prefix_node.record_child(
+                                                        "router",
+                                                        |router_node| {
+                                                            if let Some(z) = &y.address {
+                                                                router_node.record_string(
+                                                                    "address",
+                                                                    z,
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.duration_since_last_update {
+                                                                router_node.record_uint(
+                                                                    "duration_since_last_update",
+                                                                    z.try_into().unwrap_or(0),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.age {
+                                                                router_node.record_uint(
+                                                                    "age",
+                                                                    z.try_into().unwrap_or(0),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.managed_address_config_flag {
+                                                                router_node.record_bool(
+                                                                    "managed_address_config_flag",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.other_config_flag {
+                                                                router_node.record_bool(
+                                                                    "other_config_flag",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.snac_router_flag {
+                                                                router_node.record_bool(
+                                                                    "snac_router_flag",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.is_local_device {
+                                                                router_node.record_bool(
+                                                                    "is_local_device",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.is_reachable {
+                                                                router_node.record_bool(
+                                                                    "is_reachable",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                            if let Some(z) = y.is_peer_br {
+                                                                router_node.record_bool(
+                                                                    "is_peer_br",
+                                                                    z.into(),
+                                                                );
+                                                            }
+                                                        }
+                                                    );
+                                                }
+                                                if let Some(y) = &br_prefix.prefix {
+                                                    br_prefix_node.record_string(
+                                                        "prefix",
+                                                        y,
+                                                    );
+                                                }
+                                                if let Some(y) = br_prefix.is_on_link {
+                                                    br_prefix_node.record_bool(
+                                                        "is_on_link",
+                                                        y.into(),
+                                                    );
+
+                                                    if y {
+                                                        if let Some(y) = br_prefix.preferred_lifetime {
+                                                            br_prefix_node.record_uint(
+                                                                "preferred_lifetime",
+                                                                y.into(),
+                                                            );
+                                                        }
+                                                    } else {
+                                                        if let Some(y) = br_prefix.preference {
+                                                            br_prefix_node.record_int(
+                                                                "preference",
+                                                                y.into(),
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                if let Some(y) = br_prefix.duration_since_last_update {
+                                                    br_prefix_node.record_uint(
+                                                        "duration_since_last_update",
+                                                        y.try_into().unwrap_or(0),
+                                                    );
+                                                }
+                                                if let Some(y) = br_prefix.valid_lifetime {
+                                                    br_prefix_node.record_uint(
+                                                        "valid_lifetime",
+                                                        y.into(),
+                                                    );
+                                                }
+                                            }
+                                        );
+                                    }
+                                },
+                            )
+                        }
                         if let Some(x) = telemetry_data.active_dataset {
                             inspector.root().record_child(
                                 "active_dataset",
