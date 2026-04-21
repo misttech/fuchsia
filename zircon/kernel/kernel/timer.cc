@@ -328,14 +328,14 @@ void Timer::Set(const Deadline& deadline, Callback callback, void* arg) {
   DEBUG_ASSERT(deadline.slack().mode() <= TIMER_SLACK_LATE);
   DEBUG_ASSERT(deadline.slack().amount() >= 0);
 
-  if (InContainer()) {
-    panic("timer %p already in list\n", this);
-  }
-
   const zx_time_t latest_deadline = deadline.latest();
   const zx_time_t earliest_deadline = deadline.earliest();
 
   Guard<MonitoredSpinLock, IrqSave> guard{TimerLock::Get(), SOURCE_TAG};
+
+  if (InContainer()) {
+    panic("timer %p already in list\n", this);
+  }
 
   cpu_num_t cpu = arch_curr_cpu_num();
   cpu_num_t active_cpu = active_cpu_.load_locked();
