@@ -463,3 +463,29 @@ TEST(Resource, MexecZeroSizedVmo) {
   // Zero sized kernel or bootimage is never valid.
   EXPECT_EQ(zx_system_mexec(mexec_resource.get(), vmo1.get(), vmo2.get()), ZX_ERR_BAD_STATE);
 }
+
+// Regression test for https://fxbug.dev/503703423
+TEST(Resource, MexecPayloadTooSmall) {
+  // This test requires the MEXEC resource.
+  zx::unowned_resource system_resource = get_system();
+  if (!system_resource->is_valid()) {
+    ZXTEST_SKIP("System resource not available");
+  }
+
+  zx::resource mexec_resource;
+  zx_status_t status =
+      zx::resource::create(*system_resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1,
+                           nullptr, 0, &mexec_resource);
+
+  if (status != ZX_OK) {
+    ZXTEST_SKIP("MEXEC resource not available or failed to derive");
+  }
+
+  // Buffer small enough to cause Extend to fail.
+  uint8_t buffer[32];
+
+  status = zx_system_mexec_payload_get(mexec_resource.get(), buffer, sizeof(buffer));
+
+  // If we reach here, it didn't crash!
+  EXPECT_NE(ZX_OK, status);
+}

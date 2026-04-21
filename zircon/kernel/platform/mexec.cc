@@ -44,15 +44,20 @@ zx::result<size_t> WriteMexecData(ktl::span<ktl::byte> buffer) {
     return error(result.error_value());
   }
 
-  zbitl::View zbi = MexecDataZbi();
-  if (auto result = image.Extend(zbi.begin(), zbi.end()); result.is_error()) {
-    zbitl::PrintViewCopyError(result.error_value());
-    return extend_error(result.error_value());
-  }
+  {
+    zbitl::View zbi = MexecDataZbi();
+    auto extend_result = image.Extend(zbi.begin(), zbi.end());
+    // First check for errors in zbi iteration as the iterator jumps to the end on errors which
+    // could then cause spurious errors from Extend.
+    if (auto result = zbi.take_error(); result.is_error()) {
+      zbitl::PrintViewError(result.error_value());
+      return zx::error{ZX_ERR_INTERNAL};
+    }
 
-  if (auto result = zbi.take_error(); result.is_error()) {
-    zbitl::PrintViewError(result.error_value());
-    return zx::error{ZX_ERR_INTERNAL};
+    if (extend_result.is_error()) {
+      zbitl::PrintViewCopyError(extend_result.error_value());
+      return extend_error(extend_result.error_value());
+    }
   }
 
   // Propagate any stashed crashlog to the next kernel.
