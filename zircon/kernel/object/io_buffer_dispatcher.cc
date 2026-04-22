@@ -70,8 +70,8 @@ zx::result<fbl::Array<IoBufferDispatcher::IobRegionVariant>> IoBufferDispatcher:
         }
         VmObjectDispatcher::CreateStats stats = parse_result.value();
 
-        if (zx_status_t status =
-                VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, stats.flags, stats.size, &vmo);
+        if (zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY | PMM_ALLOC_FLAG_CAN_WAIT,
+                                                       stats.flags, stats.size, &vmo);
             status != ZX_OK) {
           return zx::error(status);
         }

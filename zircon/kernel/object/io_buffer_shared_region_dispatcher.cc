@@ -14,8 +14,8 @@
 zx_status_t IoBufferSharedRegionDispatcher::Create(
     uint64_t size, KernelHandle<IoBufferSharedRegionDispatcher>* handle, zx_rights_t* rights) {
   fbl::RefPtr<VmObjectPaged> vmo;
-  if (zx_status_t status =
-          VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kAlwaysPinned, size, &vmo);
+  if (zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY | PMM_ALLOC_FLAG_CAN_WAIT,
+                                                 VmObjectPaged::kAlwaysPinned, size, &vmo);
       status != ZX_OK) {
     return status;
   }
