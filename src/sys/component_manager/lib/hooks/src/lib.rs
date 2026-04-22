@@ -25,9 +25,8 @@ pub trait HasEventType {
 
 /// Transfers any move-only state out of self into a new event that is otherwise
 /// a clone.
-#[async_trait]
-pub trait TransferEvent {
-    async fn transfer(&self) -> Self;
+pub trait TransferEvent: Send + Sync {
+    fn transfer(&self) -> impl std::future::Future<Output = Self> + Send;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -206,12 +205,13 @@ impl CapabilityReceiver {
     }
 }
 
-#[async_trait]
 impl TransferEvent for CapabilityReceiver {
-    async fn transfer(&self) -> Self {
-        let receiver = self.take();
-        let inner = Arc::new(Mutex::new(receiver));
-        Self { inner }
+    fn transfer(&self) -> impl std::future::Future<Output = Self> + Send {
+        async move {
+            let receiver = self.take();
+            let inner = Arc::new(Mutex::new(receiver));
+            Self { inner }
+        }
     }
 }
 
@@ -230,7 +230,7 @@ pub enum EventPayload {
     },
     Unresolved,
     Started {
-        runtime: RuntimeInfo,
+        runtime: Box<RuntimeInfo>,
     },
     Stopped {
         status: zx::Status,
@@ -317,18 +317,19 @@ impl Event {
     }
 }
 
-#[async_trait]
 impl TransferEvent for EventPayload {
-    async fn transfer(&self) -> Self {
-        match self {
-            EventPayload::CapabilityRequested { source_moniker, name, receiver } => {
-                EventPayload::CapabilityRequested {
-                    source_moniker: source_moniker.clone(),
-                    name: name.to_string(),
-                    receiver: receiver.transfer().await,
+    fn transfer(&self) -> impl std::future::Future<Output = Self> + Send {
+        async move {
+            match self {
+                EventPayload::CapabilityRequested { source_moniker, name, receiver } => {
+                    EventPayload::CapabilityRequested {
+                        source_moniker: source_moniker.clone(),
+                        name: name.to_string(),
+                        receiver: receiver.transfer().await,
+                    }
                 }
+                result => result.clone(),
             }
-            result => result.clone(),
         }
     }
 }
@@ -339,14 +340,15 @@ impl HasEventType for Event {
     }
 }
 
-#[async_trait]
 impl TransferEvent for Event {
-    async fn transfer(&self) -> Self {
-        Self {
-            target_moniker: self.target_moniker.clone(),
-            component_url: self.component_url.clone(),
-            payload: self.payload.transfer().await,
-            timestamp: self.timestamp,
+    fn transfer(&self) -> impl std::future::Future<Output = Self> + Send {
+        async move {
+            Self {
+                target_moniker: self.target_moniker.clone(),
+                component_url: self.component_url.clone(),
+                payload: self.payload.transfer().await,
+                timestamp: self.timestamp,
+            }
         }
     }
 }

@@ -475,7 +475,7 @@ impl Hook for ComponentTreeStats<DiagnosticsTask> {
         match event.event_type() {
             EventType::Started => {
                 if let EventPayload::Started { runtime, .. } = &event.payload {
-                    self.on_component_started(target_moniker, runtime);
+                    self.on_component_started(target_moniker, &**runtime);
                 }
             }
             _ => {}
@@ -562,8 +562,8 @@ mod tests {
 
             let moniker = Moniker::try_from([format!("moniker-{}", i).as_ref()]).unwrap();
             let fake_runtime =
-                FakeRuntime::new(FakeDiagnosticsContainer::new(component_task, None));
-            stats.on_component_started(&moniker, &fake_runtime);
+                Box::new(FakeRuntime::new(FakeDiagnosticsContainer::new(component_task, None)));
+            stats.on_component_started(&moniker, &*fake_runtime);
 
             loop {
                 let current = stats.tree.lock().len();
@@ -796,8 +796,8 @@ mod tests {
 
             let moniker = Moniker::try_from([format!("moniker-{}", i).as_ref()]).unwrap();
             let fake_runtime =
-                FakeRuntime::new(FakeDiagnosticsContainer::new(component_task, None));
-            stats.on_component_started(&moniker, &fake_runtime);
+                Box::new(FakeRuntime::new(FakeDiagnosticsContainer::new(component_task, None)));
+            stats.on_component_started(&moniker, &*fake_runtime);
 
             loop {
                 let current = stats.tree.lock().len();
@@ -1170,17 +1170,17 @@ mod tests {
             ],
         );
 
-        let fake_runtime = FakeRuntime::new_with_start_times(
+        let fake_runtime = Box::new(FakeRuntime::new_with_start_times(
             FakeDiagnosticsContainer::new(parent_task.clone(), None),
             IncrementingFakeTime::new(3, std::time::Duration::from_nanos(5)),
-        );
-        stats.on_component_started(&Moniker::try_from(["parent"]).unwrap(), &fake_runtime);
+        ));
+        stats.on_component_started(&Moniker::try_from(["parent"]).unwrap(), &*fake_runtime);
 
-        let fake_runtime = FakeRuntime::new_with_start_times(
+        let fake_runtime = Box::new(FakeRuntime::new_with_start_times(
             FakeDiagnosticsContainer::new(component_task, Some(parent_task)),
             IncrementingFakeTime::new(8, std::time::Duration::from_nanos(5)),
-        );
-        stats.on_component_started(&Moniker::try_from(["child"]).unwrap(), &fake_runtime);
+        ));
+        stats.on_component_started(&Moniker::try_from(["child"]).unwrap(), &*fake_runtime);
 
         // Wait for diagnostics data to be received since it's done in a non-blocking way on
         // started.
@@ -1250,13 +1250,15 @@ mod tests {
             }],
         );
         let fake_parent_runtime =
-            FakeRuntime::new(FakeDiagnosticsContainer::new(parent_task.clone(), None));
-        stats.on_component_started(&Moniker::try_from(["parent"]).unwrap(), &fake_parent_runtime);
+            Box::new(FakeRuntime::new(FakeDiagnosticsContainer::new(parent_task.clone(), None)));
+        stats.on_component_started(&Moniker::try_from(["parent"]).unwrap(), &*fake_parent_runtime);
 
         let child_moniker = Moniker::try_from(["child"]).unwrap();
-        let fake_runtime =
-            FakeRuntime::new(FakeDiagnosticsContainer::new(component_task, Some(parent_task)));
-        stats.on_component_started(&child_moniker, &fake_runtime);
+        let fake_runtime = Box::new(FakeRuntime::new(FakeDiagnosticsContainer::new(
+            component_task,
+            Some(parent_task),
+        )));
+        stats.on_component_started(&child_moniker, &*fake_runtime);
 
         // Wait for diagnostics data to be received since it's done in a non-blocking way on
         // started.

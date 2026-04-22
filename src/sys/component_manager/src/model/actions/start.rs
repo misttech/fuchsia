@@ -438,12 +438,10 @@ async fn start_component(
     //
     component
         .hooks
-        .dispatch(
-            &component.new_event_with_timestamp(
-                EventPayload::Started { runtime: runtime_info },
-                timestamp,
-            ),
-        )
+        .dispatch(&component.new_event_with_timestamp(
+            EventPayload::Started { runtime: Box::new(runtime_info) },
+            timestamp,
+        ))
         .await;
     component
         .hooks
