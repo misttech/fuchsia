@@ -8,6 +8,8 @@
 toc:
 - title: "Run Fuchsia tests"
   path: /docs/development/testing/run_fuchsia_tests.md
+- title: "Test Metadata"
+  path: /docs/development/testing/test_metadata.md
 # TODO(https://fxbug.dev/42139030)
 # - title: "Test with Diagnostics"
 #   path: /docs/development/testing/diagnostics.md
