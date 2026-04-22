@@ -81,8 +81,6 @@ class EscherFlatland {
   // Hanging-get on GetStatus on the ParentViewportWatcher.
   void GetStatus(OnStatusFn on_status);
 
-  zx::eventpair GetActivityLease();
-
   zx::eventpair GetWakeLease();
 
   // Enables or interrupts RenderLoopWithWakingDelay.

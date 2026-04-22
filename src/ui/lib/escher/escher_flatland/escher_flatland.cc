@@ -194,8 +194,8 @@ zx::eventpair escher::EscherFlatland::ConnectPowerResources() {
   FX_CHECK(sag_client_end.is_ok());
   sag_ = fidl::SyncClient(std::move(*sag_client_end));
 
-  // Hold onto an activity lease to stop going to suspend mode before running CPU and GPU commands.
-  return GetActivityLease();
+  // Hold onto a wake lease to stop going to suspend mode before running CPU and GPU commands.
+  return GetWakeLease();
 }
 
 void escher::EscherFlatland::ConnectTimerResources() {
@@ -216,9 +216,8 @@ void escher::EscherFlatland::RenderLoopWithWakingDelay(RenderFrameFn render_fram
   FX_CHECK(sag_) << "Missing SAG. Make sure to \"ConnectPowerResources\" first.";
   FX_CHECK(wake_alarms_) << "Missing wake alarms. Make sure to \"ConnectTimerResources\" first.";
 
-  // The wake_lease given from the prior call is not enough to start GPU.
-  // Get a new activity lease to wake GPU for render work.
-  auto activity_lease = GetActivityLease();
+  // Get a wake lease to wake GPU for render work.
+  auto activity_lease = GetWakeLease();
   RenderFrame(render_frame);
 
   // TODO(https://fxbug.dev/376925106): This delay is a workaround, because we need to
@@ -251,19 +250,6 @@ void escher::EscherFlatland::RenderLoopWithWakingDelay(RenderFrameFn render_fram
 
 void escher::EscherFlatland::GetStatus(OnStatusFn on_status) {
   parent_viewport_watcher_->GetStatus().Then(on_status);
-}
-
-zx::eventpair escher::EscherFlatland::GetActivityLease() {
-  FX_CHECK(sag_) << "Missing SAG. Make sure to \"ConnectPowerResources\" first.";
-  // Activity lease allows for running GPU work which is necessary.
-  auto take_activity_lease_result = sag_->TakeApplicationActivityLease(name_);
-  if (take_activity_lease_result.is_ok()) {
-    return std::move(take_activity_lease_result->token());
-  } else {
-    FX_LOGS(ERROR) << "TakeApplicationActivityLease failed: "
-                   << take_activity_lease_result.error_value();
-    return zx::eventpair();
-  }
 }
 
 zx::eventpair escher::EscherFlatland::GetWakeLease() {
@@ -409,7 +395,7 @@ EscherFlatland::EscherFlatland(async_dispatcher_t* dispatcher, std::string name)
   if (!set_content_result.is_ok()) {
     FX_LOGS(FATAL) << "SetContent failed: " << set_content_result.error_value();
   }
-  fuchsia_ui_composition ::PresentArgs present_args;
+  fuchsia_ui_composition::PresentArgs present_args;
   const auto& present_result = flatland_->Present({{.args = std::move(present_args)}});
   if (!present_result.is_ok()) {
     FX_LOGS(FATAL) << "Present failed: " << present_result.error_value();
