@@ -206,6 +206,7 @@ regex = "1.7.3"
 regex-lite = "0.1.9"
 regex-syntax = "0.8.10"
 ring = "0.17.8"
+rkyv = "0.8.15"
 roaring = "0.11.3"
 rsa = { version = "0.9.10", default-features = false }
 rustc-hash = "1.0.1"

@@ -2269,6 +2269,18 @@ alias(
 )
 
 alias(
+    name = "rkyv-0.8.15",
+    actual = "//third_party/rust_crates/vendor/rkyv-0.8.15:rkyv",
+    tags = ["manual"],
+)
+
+alias(
+    name = "rkyv",
+    actual = "//third_party/rust_crates/vendor/rkyv-0.8.15:rkyv",
+    tags = ["manual"],
+)
+
+alias(
     name = "roaring-0.11.3",
     actual = "//third_party/rust_crates/vendor/roaring-0.11.3:roaring",
     tags = ["manual"],
