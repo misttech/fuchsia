@@ -387,32 +387,13 @@ Process Debugger exception channel as specified in [RFC-0261][rfc-0261]. Only
 after the Process Debugger channel finishes its business with the exception,
 and leaves the exception unhandled, will the thread be kicked out of restricted
 mode and into normal mode for handling via a special in-thread exception handler
-for restricted mode in particular. No further exception channels will witness
-the exception, and there are no second-chance exceptions as described in
-[Exception Propagation from Restricted Mode](#restricted-mode-exception-propagation).
+for restricted mode. No further exception channels will witness the exception,
+and there are no second-chance exceptions as described in [Exception Propagation
+from Restricted Mode](#restricted-mode-exception-propagation).
 
-In aligning the Job Debugger exception channel as closely as possible with the
-Process Debugger exception channel, the Job Debugger exception channel should
-also be delivered the exception while the thread is still in restricted mode.
-
-The new delivery order for exceptions for exceptions originating in restricted
-mode is then:
-
-| Step | Channel | Delivery Type |
-| :---- | :---- | :---- |
-| 1 | Process Debugger | First-chance |
-| 2 | Job Debugger | First-chance, N times |
-| 3 | In-thread | First-chance |
-| 4 | N/A | N/A |
-
-The walk order is again terminated after the thread is kicked back into normal
-mode. There is no opportunity for second-chance exceptions for either the
-Process Debugger or Job Debugger channels. Exception handlers that are
-registered with the Job Debugger exception channel must be aware that even if an
-exception is marked with `ZX_PROP_EXCEPTION_STRATEGY` as
-`ZX_EXCEPTION_STRATEGY_SECOND_CHANCE`, they will never receive the exception
-again after releasing the handle to the first chance exception handle they
-receive, the same as the existing Process Debugger exception channel logic.
+This RFC proposes no changes to restricted mode exception handling. It is left
+to later RFCs to detail this process and how it will interact with the Job
+Debugger exception channel.
 
 #### Handling Logic
 
