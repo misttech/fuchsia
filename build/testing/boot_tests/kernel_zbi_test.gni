@@ -27,11 +27,10 @@ declare_args() {
   extra_kernel_test_images = []
 }
 
-# TODO(https://fxbug.dev/371568912): Pick an appropriate unconditionally "debug"
-# switchset when available.
-default_test_kernel_switchset =
-    "//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy"
+# The kernel switchset with the most development options enabled.
+default_test_kernel_switchset = "//zircon/kernel/switch/set/lk_debug_level_2:kernel_${current_cpu}.lk_debug_level_2"
 
+# The kernel image with the most development options enabled.
 default_kernel_test_image = "eng"
 
 template("_cuckoo_product_bundle") {
