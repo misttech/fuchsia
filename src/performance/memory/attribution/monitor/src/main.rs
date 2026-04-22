@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
     };
     let fast_attribution_data_provider = attribution_data_provider.clone().with_muted_principal(
         Some(PrincipalDescription::Component(
-            "core/session-manager/session:session/elements:main/container".to_string(),
+            "core/session-manager/session:session/container".to_string(),
         )),
     );
 
