@@ -52,6 +52,7 @@ if (current_toolchain == default_toolchain) {
     depfile = "${output_file}.d"
 
     outputs = [ output_file ]
+    check_for_output_dir_leaks = false
 
     args = [
       "--fuchsia-dir",
