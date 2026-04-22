@@ -179,7 +179,7 @@ fuchsia::math::SizeU DisplayInfoDelegate::GetDisplayDimensions() {
 
 App::App(std::unique_ptr<sys::ComponentContext> app_context,
          fidl::ClientEnd<fuchsia_io::Directory> pkg_dir,
-         fidl::ServerEnd<fuchsia_io::Directory> out_dir, zx::vmo config, inspect::Node inspect_node,
+         fidl::ServerEnd<fuchsia_io::Directory> out_dir, zx::vmo config, inspect::Node& root_node,
          fpromise::promise<::display::CoordinatorClientChannels, zx_status_t> dc_handles_promise,
          fit::closure quit_callback)
     : executor_(async_get_default_dispatcher()),
@@ -193,7 +193,7 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context,
       metrics_logger_(async_get_default_dispatcher(),
                       fidl::ClientEnd<fuchsia_io::Directory>(
                           app_context_->svc()->CloneChannel().TakeChannel())),
-      inspect_node_(std::move(inspect_node)),
+      inspect_node_(root_node.CreateChild("scenic")),
       frame_scheduler_(
           std::make_unique<scheduling::WindowedFramePredictor>(
               zx::usec(config_values_.frame_scheduler_min_predicted_frame_duration_in_us()),
@@ -222,7 +222,8 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context,
       focus_manager_(inspect_node_.CreateChild("FocusManager")),
       geometry_provider_(),
       observer_registry_(geometry_provider_),
-      scoped_observer_registry_(geometry_provider_) {
+      scoped_observer_registry_(geometry_provider_),
+      health_inspector_(display_manager_, display_power_manager_, root_node) {
   pkg_dir_.Bind(std::move(pkg_dir));
   fpromise::bridge<escher::EscherUniquePtr> escher_bridge;
   fpromise::bridge<std::shared_ptr<display::Display>> display_bridge;

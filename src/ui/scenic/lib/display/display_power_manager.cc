@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/display/display_power_manager.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
+#include <lib/zx/clock.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
 
@@ -103,27 +104,36 @@ void DisplayPowerManager::SetPowerMode(PowerMode power_mode,
   }
 
   FX_LOGS(INFO) << "Successfully set display power mode: " << ToString(power_mode);
+  current_power_mode_ = power_mode;
+  last_power_change_time_ = zx::clock::get_monotonic();
+
   AddSetPowerModeInspectValues(power_mode, ZX_OK);
   completer(fit::ok());
 }
 
 void DisplayPowerManager::AddSetPowerModeInspectValues(PowerMode power_mode, zx_status_t status) {
-  inspect_display_power_events_.CreateEntry([power_mode, status](inspect::Node& n) {
-    std::string power_mode_str = ToString(power_mode);
-    if (status != ZX_OK) {
-      power_mode_str = power_mode_str + "_ERROR_" + zx_status_get_string(status);
-    }
+  const auto boot_now = zx::clock::get_boot();
+  const auto mono_now = zx::clock::get_monotonic();
 
-    // Fencing the "boot_ns" timestamps around a mono value allows us to note if
-    // suspend interfered. It takes a few tens of ns to look up all these timestamps.
-    n.RecordInt(std::format("{}_before_boot_ns", power_mode_str), zx_clock_get_boot());
-    // TODO(b/475953032): Remove when this is no longer used directly.
-    const zx::time_monotonic now_mono{zx_clock_get_monotonic()};
-    // Keep the old metric value here.
-    n.RecordInt(power_mode_str, now_mono.get());
-    n.RecordInt(std::format("{}_mono_ns", power_mode_str), now_mono.get());
-    n.RecordInt(std::format("{}_after_boot_ns", power_mode_str), zx_clock_get_boot());
-  });
+  inspect_display_power_events_.CreateEntry(
+      [power_mode, status, boot_now, mono_now](inspect::Node& n) {
+        std::string power_mode_str = ToString(power_mode);
+        if (status != ZX_OK) {
+          power_mode_str = power_mode_str + "_ERROR_" + zx_status_get_string(status);
+        }
+
+        // TODO(b/475953032): Remove unsuffixed `power_mode_str` when it is no longer used directly.
+        n.RecordInt(power_mode_str, mono_now.get());
+        n.RecordInt(std::format("{}_mono_ns", power_mode_str), mono_now.get());
+
+        // Detect potential inaccuracy in the monotonic clock reading.  This instructs the
+        // consumer to take this timestamp with a grain of salt.
+        const zx::duration boot_diff = zx::clock::get_boot() - boot_now;
+        constexpr auto kBootDiffThreshold = zx::usec(100);
+        if (boot_diff >= kBootDiffThreshold) {
+          n.RecordInt("timestamp_inaccuracy_range_us", boot_diff.to_usecs());
+        }
+      });
 }
 
 }  // namespace display

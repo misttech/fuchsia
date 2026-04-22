@@ -27,6 +27,9 @@ class DisplayPowerManager : public fidl::Server<fuchsia_ui_display_singleton::Di
   void SetPowerMode(fuchsia_ui_display_singleton::PowerMode power_mode,
                     fit::function<void(fit::result<zx_status_t>)> completer);
 
+  fuchsia_ui_display_singleton::PowerMode current_power_mode() const { return current_power_mode_; }
+  zx::time_monotonic last_power_change_time() const { return last_power_change_time_; }
+
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_ui_display_singleton::DisplayPower> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {
@@ -44,6 +47,9 @@ class DisplayPowerManager : public fidl::Server<fuchsia_ui_display_singleton::Di
   DisplayManager& display_manager_;
   inspect::BoundedListNode inspect_display_power_events_;
   fidl::ServerBindingGroup<fuchsia_ui_display_singleton::DisplayPower> bindings_;
+  fuchsia_ui_display_singleton::PowerMode current_power_mode_ =
+      fuchsia_ui_display_singleton::PowerMode::kOn;
+  zx::time_monotonic last_power_change_time_ = zx::time_monotonic::infinite_past();
 
   FXL_DISALLOW_COPY_AND_ASSIGN(DisplayPowerManager);
 };

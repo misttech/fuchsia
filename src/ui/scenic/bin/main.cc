@@ -61,11 +61,10 @@ int main(int argc, const char** argv) {
   zx::vmo config{config_handle};
 
   // Instantiate Scenic app.
-  scenic_impl::App app(std::move(app_context),
-                       fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
-                       fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
-                       std::move(config), inspector.root().CreateChild("scenic"),
-                       std::move(display_coordinator_promise), [&loop] { loop.Quit(); });
+  scenic_impl::App app(
+      std::move(app_context), fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
+      fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)), std::move(config),
+      inspector.root(), std::move(display_coordinator_promise), [&loop] { loop.Quit(); });
 
   // Apply the scheduler role defined for Scenic.
   const zx_status_t thread_status = fuchsia_scheduler::SetRoleForThisThread("fuchsia.scenic.main");

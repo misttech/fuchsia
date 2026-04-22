@@ -96,7 +96,7 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
                                          fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
                                          fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
                                          std::move(config),
-                                         inspector->root().CreateChild("scenic"),
+                                         inspector->root(),
                                          std::move(display_coordinator_promise),
                                          [lifecycle = std::move(lifecycle), inspector]() mutable {
                                            delete inspector;

@@ -14,6 +14,7 @@
 #include "src/graphics/display/lib/coordinator-getter/client.h"
 #include "src/lib/fsl/io/device_watcher.h"
 #include "src/ui/lib/escher/escher.h"
+#include "src/ui/scenic/bin/health_inspector.h"
 #include "src/ui/scenic/lib/allocation/allocator.h"
 #include "src/ui/scenic/lib/display/color_converter.h"
 #include "src/ui/scenic/lib/display/display_manager.h"
@@ -67,7 +68,7 @@ class App {
  public:
   App(std::unique_ptr<sys::ComponentContext> app_context,
       fidl::ClientEnd<fuchsia_io::Directory> pkg_dir,
-      fidl::ServerEnd<fuchsia_io::Directory> out_dir, zx::vmo config, inspect::Node inspect_node,
+      fidl::ServerEnd<fuchsia_io::Directory> out_dir, zx::vmo config, inspect::Node& root_node,
       fpromise::promise<::display::CoordinatorClientChannels, zx_status_t> dc_handles_promise,
       fit::closure quit_callback);
 
@@ -136,6 +137,10 @@ class App {
   uint64_t skipped_frame_count_ = 0;
 
   const bool enable_snapshot_dump_ = false;
+
+  // Must be last to ensure it is destroyed before the members it references
+  // (e.g., display_manager_, display_power_manager_).
+  HealthInspector health_inspector_;
 };
 
 }  // namespace scenic_impl

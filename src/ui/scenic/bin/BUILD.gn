@@ -8,6 +8,8 @@ _scenic_bin = {
   sources = [
     "app.cc",
     "app.h",
+    "health_inspector.cc",
+    "health_inspector.h",
   ]
 
   deps = [
