@@ -150,10 +150,10 @@ size_t write_inferior_memory(zx_handle_t proc, uintptr_t vaddr, const void* buf,
   return len;
 }
 
-void setup_inferior(const char* name, springboard_t** out_sb, zx_handle_t* out_inferior,
-                    zx_handle_t* out_channel) {
+void setup_inferior(const char* name, zx_handle_t job, springboard_t** out_sb,
+                    zx_handle_t* out_inferior, zx_handle_t* out_channel) {
   zx_handle_t channel1, channel2;
-  ASSERT_EQ(zx_channel_create(0, &channel1, &channel2), ZX_OK);
+  ASSERT_OK(zx_channel_create(0, &channel1, &channel2));
 
   const char* test_child_path = g_program_path;
   const char* const argv[] = {test_child_path, name};
@@ -162,16 +162,18 @@ void setup_inferior(const char* name, springboard_t** out_sb, zx_handle_t* out_i
   // Only pass stdout and stderr.
   zx_handle_t handles[3];
   uint32_t handle_ids[3];
-  ASSERT_EQ(fdio_fd_clone(STDOUT_FILENO, &handles[0]), ZX_OK);
+  ASSERT_OK(fdio_fd_clone(STDOUT_FILENO, &handles[0]));
   handle_ids[0] = PA_HND(PA_FD, STDOUT_FILENO);
-  ASSERT_EQ(fdio_fd_clone(STDERR_FILENO, &handles[1]), ZX_OK);
+  ASSERT_OK(fdio_fd_clone(STDERR_FILENO, &handles[1]));
   handle_ids[1] = PA_HND(PA_FD, STDERR_FILENO);
   handles[2] = channel2;
   handle_ids[2] = PA_USER0;
 
+  ASSERT_NE(job, ZX_HANDLE_INVALID);
+
   printf("Creating process \"%s\"\n", name);
-  springboard_t* sb = tu_launch_init(zx_job_default(), name, std::size(argv), argv, std::size(envp),
-                                     envp, std::size(handles), handles, handle_ids);
+  springboard_t* sb = tu_launch_init(job, name, std::size(argv), argv, std::size(envp), envp,
+                                     std::size(handles), handles, handle_ids);
 
   // Note: |inferior| is a borrowed handle here.
   zx_handle_t inferior = springboard_get_process_handle(sb);
@@ -181,7 +183,12 @@ void setup_inferior(const char* name, springboard_t** out_sb, zx_handle_t* out_i
   zx_status_t status = zx_object_get_info(inferior, ZX_INFO_HANDLE_BASIC, &process_info,
                                           sizeof(process_info), nullptr, nullptr);
   ASSERT_EQ(status, ZX_OK);
-  printf("Inferior pid = %llu\n", (long long)process_info.koid);
+
+  zx_info_handle_basic_t job_info;
+  ASSERT_OK(
+      zx_object_get_info(job, ZX_INFO_HANDLE_BASIC, &job_info, sizeof(job_info), nullptr, nullptr));
+
+  printf("Inferior pid = %lu in job koid = %lu\n", process_info.koid, job_info.koid);
 
   *out_sb = sb;
   *out_inferior = inferior;
@@ -194,7 +201,7 @@ void setup_inferior(const char* name, springboard_t** out_sb, zx_handle_t* out_i
 // |max_threads| is the maximum number of threads the process is expected
 // to have in its lifetime. A real debugger would be more flexible of course.
 
-inferior_data_t* attach_inferior(zx_handle_t inferior, zx_handle_t port, size_t max_threads) {
+inferior_data_t* watch_inferior(zx_handle_t inferior, zx_handle_t port, size_t max_threads) {
   // Fetch all current threads and attach async-waiters to them.
   // N.B. We assume threads aren't being created as we're running.
   // This is just a testcase so we can assume that. A real debugger
@@ -216,14 +223,7 @@ inferior_data_t* attach_inferior(zx_handle_t inferior, zx_handle_t port, size_t 
   data->threads = reinterpret_cast<thread_data_t*>(calloc(max_threads, sizeof(data->threads[0])));
   data->inferior = inferior;
   data->port = port;
-  status = zx_task_create_exception_channel(inferior, ZX_EXCEPTION_CHANNEL_DEBUGGER,
-                                            &data->exception_channel);
-  ZX_ASSERT(status == ZX_OK);
   data->max_num_threads = max_threads;
-
-  // We don't need to listen for ZX_CHANNEL_PEER_CLOSED here because
-  // ZX_PROCESS_TERMINATED already tells us when the process terminates.
-  tu_object_wait_async(data->exception_channel, port, ZX_CHANNEL_READABLE);
 
   // Notification of thread termination and suspension is delivered by
   // signals. So that we can continue to only have to wait on |port|
@@ -253,11 +253,42 @@ inferior_data_t* attach_inferior(zx_handle_t inferior, zx_handle_t port, size_t 
   return data;
 }
 
+void claim_exception_channel(zx_handle_t task, zx_handle_t port, zx_handle_t* channel,
+                             int options) {
+  zx_status_t status = zx_task_create_exception_channel(task, options, channel);
+  ASSERT_OK(status, "status was %d", status);
+  tu_object_wait_async(*channel, port, ZX_CHANNEL_READABLE);
+}
+
 void expect_debugger_attached_eq(zx_handle_t inferior, bool expected, const char* msg) {
-  zx_info_process_t info;
-  // ZX_ASSERT returns false if the check fails.
-  ASSERT_EQ(zx_object_get_info(inferior, ZX_INFO_PROCESS, &info, sizeof(info), NULL, NULL), ZX_OK);
-  ASSERT_EQ((info.flags & ZX_INFO_PROCESS_FLAG_DEBUGGER_ATTACHED) != 0, expected, "%s", msg);
+  zx_info_handle_basic_t basic;
+  ASSERT_OK(
+      zx_object_get_info(inferior, ZX_INFO_HANDLE_BASIC, &basic, sizeof(basic), nullptr, nullptr));
+
+  ASSERT_TRUE(basic.type == ZX_OBJ_TYPE_PROCESS || basic.type == ZX_OBJ_TYPE_JOB);
+
+  switch (basic.type) {
+    case ZX_OBJ_TYPE_JOB: {
+      zx_info_job_t info;
+      // ZX_ASSERT returns false if the check fails.
+      ASSERT_EQ(zx_object_get_info(inferior, ZX_INFO_JOB, &info, sizeof(info), nullptr, nullptr),
+                ZX_OK);
+      ASSERT_EQ(info.debugger_attached, expected, "%s", msg);
+      break;
+    }
+    case ZX_OBJ_TYPE_PROCESS: {
+      zx_info_process_t info;
+      // ZX_ASSERT returns false if the check fails.
+      ASSERT_EQ(
+          zx_object_get_info(inferior, ZX_INFO_PROCESS, &info, sizeof(info), nullptr, nullptr),
+          ZX_OK);
+      ASSERT_EQ((info.flags & ZX_INFO_PROCESS_FLAG_DEBUGGER_ATTACHED) != 0, expected, "%s", msg);
+      break;
+    }
+    default:
+      FAIL("unexpected handle type: 0x%x", basic.type);
+      __UNREACHABLE;
+  }
 }
 
 void detach_inferior(inferior_data_t* data, bool close_exception_channel) {

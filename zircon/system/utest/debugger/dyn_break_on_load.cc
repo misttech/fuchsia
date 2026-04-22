@@ -145,7 +145,8 @@ void dyn_break_on_load_test_handler(inferior_data_t* data, const zx_port_packet_
 TEST(DynBreakOnLoadTests, DynBreakOnLoadTest) {
   springboard_t* sb;
   zx_handle_t inferior, channel;
-  ASSERT_NO_FATAL_FAILURE(setup_inferior(kTestDynBreakOnLoad, &sb, &inferior, &channel));
+  ASSERT_NO_FATAL_FAILURE(
+      setup_inferior(kTestDynBreakOnLoad, zx_job_default(), &sb, &inferior, &channel));
 
   dyn_break_on_load_state_t test_state = {};
   test_state.process_handle = inferior;
@@ -163,7 +164,9 @@ TEST(DynBreakOnLoadTests, DynBreakOnLoadTest) {
   zx_handle_t port = ZX_HANDLE_INVALID;
   EXPECT_EQ(zx_port_create(0, &port), ZX_OK);
   size_t max_threads = 2;
-  inferior_data_t* inferior_data = attach_inferior(inferior, port, max_threads);
+  inferior_data_t* inferior_data = watch_inferior(inferior, port, max_threads);
+  claim_exception_channel(inferior_data->inferior, port, &inferior_data->exception_channel,
+                          ZX_EXCEPTION_CHANNEL_DEBUGGER);
 
   thrd_t wait_inf_thread =
       start_wait_inf_thread(inferior_data, dyn_break_on_load_test_handler, &test_state);

@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef ZIRCON_SYSTEM_UTEST_DEBUGGER_INFERIOR_CONTROL_H_
+#define ZIRCON_SYSTEM_UTEST_DEBUGGER_INFERIOR_CONTROL_H_
 
+#include <lib/zx/exception.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/debug.h>
 #include <zircon/syscalls/exception.h>
 
-#include <lib/zx/exception.h>
 #include <test-utils/test-utils.h>
 
 struct thread_data_t {
@@ -20,7 +20,7 @@ struct thread_data_t {
   zx_handle_t handle;
 };
 
-// Result of |attach_inferior()|.
+// Result of |watch_inferior()|.
 struct inferior_data_t {
   // Koid of the inferior process.
   zx_koid_t pid;
@@ -51,21 +51,23 @@ size_t read_inferior_memory(zx_handle_t proc, uintptr_t vaddr, void* buf, size_t
 
 size_t write_inferior_memory(zx_handle_t proc, uintptr_t vaddr, const void* buf, size_t len);
 
-void setup_inferior(const char* name, springboard_t** out_sb, zx_handle_t* out_inferior,
-                    zx_handle_t* out_channel);
+void setup_inferior(const char* name, zx_handle_t job, springboard_t** out_sb,
+                    zx_handle_t* out_inferior, zx_handle_t* out_channel);
 
-// Attaches to |inferior| process.
+// Starts watching |inferior| process.
 //
-// Creates a debug exception channel on |inferior| and uses wait_async() to
-// route the following signals through |port|:
+// Uses wait_async() to route the following signals through |port|:
 //   * process TERMINATED
-//   * exception channel READABLE
 //   * child thread TERMINATED, RUNNING, and SUSPENDED
 // Packet keys are the corresponding object KOIDs.
 //
 // Returns a newly allocated inferior_data_t, which must be destroyed by
 // calling detach_inferior(). On failure, exits the process.
-inferior_data_t* attach_inferior(zx_handle_t inferior, zx_handle_t port, size_t max_threads);
+inferior_data_t* watch_inferior(zx_handle_t inferior, zx_handle_t port, size_t max_threads);
+
+// Claims the exception channel of |task| and uses wait_async() to route the READABLE signal through
+// |port|. |options| are passed directly to the zx_task_create_exception_channel syscall.
+void claim_exception_channel(zx_handle_t task, zx_handle_t port, zx_handle_t* channel, int options);
 
 void expect_debugger_attached_eq(zx_handle_t inferior, bool expected, const char* msg);
 
@@ -102,3 +104,5 @@ thrd_t start_wait_inf_thread(inferior_data_t* inferior_data,
                              wait_inferior_exception_handler_t* handler, void* handler_arg);
 
 void join_wait_inf_thread(thrd_t wait_inf_thread);
+
+#endif  // ZIRCON_SYSTEM_UTEST_DEBUGGER_INFERIOR_CONTROL_H_

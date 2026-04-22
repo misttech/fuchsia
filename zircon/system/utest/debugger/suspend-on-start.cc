@@ -64,14 +64,17 @@ void suspend_on_start_test_handler(inferior_data_t* data, const zx_port_packet_t
 TEST(SuspendOnStartTests, SuspendOnStartTest) {
   springboard_t* sb;
   zx_handle_t inferior, channel;
-  ASSERT_NO_FATAL_FAILURE(setup_inferior(kTestSuspendOnStart, &sb, &inferior, &channel));
+  ASSERT_NO_FATAL_FAILURE(
+      setup_inferior(kTestSuspendOnStart, zx_job_default(), &sb, &inferior, &channel));
 
   // Attach to the inferior now because we want to see thread starting
   // exceptions.
   zx_handle_t port = ZX_HANDLE_INVALID;
   EXPECT_EQ(zx_port_create(0, &port), ZX_OK);
   size_t max_threads = 2;
-  inferior_data_t* inferior_data = attach_inferior(inferior, port, max_threads);
+  inferior_data_t* inferior_data = watch_inferior(inferior, port, max_threads);
+  claim_exception_channel(inferior_data->inferior, port, &inferior_data->exception_channel,
+                          ZX_EXCEPTION_CHANNEL_DEBUGGER);
 
   suspend_on_start_test_state_t test_state = {};
   thrd_t wait_inf_thread =

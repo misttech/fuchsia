@@ -28,7 +28,6 @@
 #include "crash-and-recover.h"
 #include "inferior-control.h"
 #include "inferior.h"
-#include "src/lib/debug/backtrace-request.h"
 #include "utils.h"
 
 namespace {
@@ -129,7 +128,8 @@ void debugger_test_exception_handler(inferior_data_t* data, const zx_port_packet
 TEST(DebuggerTests, DebuggerTest) {
   springboard_t* sb;
   zx_handle_t inferior, channel;
-  ASSERT_NO_FATAL_FAILURE(setup_inferior(kTestInferiorChildName, &sb, &inferior, &channel));
+  ASSERT_NO_FATAL_FAILURE(
+      setup_inferior(kTestInferiorChildName, zx_job_default(), &sb, &inferior, &channel));
 
   std::atomic<int> segv_count;
 
@@ -137,7 +137,9 @@ TEST(DebuggerTests, DebuggerTest) {
   zx_handle_t port = ZX_HANDLE_INVALID;
   EXPECT_EQ(zx_port_create(0, &port), ZX_OK);
   size_t max_threads = 10;
-  inferior_data_t* inferior_data = attach_inferior(inferior, port, max_threads);
+  inferior_data_t* inferior_data = watch_inferior(inferior, port, max_threads);
+  claim_exception_channel(inferior_data->inferior, port, &inferior_data->exception_channel,
+                          ZX_EXCEPTION_CHANNEL_DEBUGGER);
   thrd_t wait_inf_thread =
       start_wait_inf_thread(inferior_data, debugger_test_exception_handler, &segv_count);
   EXPECT_NE(port, ZX_HANDLE_INVALID);
@@ -168,15 +170,90 @@ TEST(DebuggerTests, DebuggerTest) {
   zx_handle_close(inferior);
 }
 
+// This test is identical to the above, but instead spawns |inferior| under a new job for which we
+// have the (non-debugger) exception channel.
+TEST(DebuggerTests, JobChannelTest) {
+  zx_handle_t parent_job;
+  ASSERT_OK(zx_job_create(zx_job_default(), 0, &parent_job));
+
+  springboard_t* sb;
+  zx_handle_t inferior, channel;
+  ASSERT_NO_FATAL_FAILURE(
+      setup_inferior(kTestInferiorChildName, parent_job, &sb, &inferior, &channel));
+
+  std::atomic<int> segv_count;
+
+  // Unfortunately since we are not using the Job Debugger channel we cannot use
+  // zx_object_get_info to assert that we are actually attached from Zircon's perspective, but we
+  // can still assert that we are never attached to the inferior's process debugger exception
+  // channel.
+
+  expect_debugger_attached_eq(inferior, false, "debugger should never appear attached to inferior");
+  zx_handle_t port = ZX_HANDLE_INVALID;
+  EXPECT_EQ(zx_port_create(0, &port), ZX_OK);
+  size_t max_threads = 10;
+  inferior_data_t* inferior_data = watch_inferior(inferior, port, max_threads);
+  claim_exception_channel(parent_job, port, &inferior_data->exception_channel, 0);
+  expect_debugger_attached_eq(inferior, false, "debugger should never appear attached to inferior");
+
+  thrd_t wait_inf_thread =
+      start_wait_inf_thread(inferior_data, debugger_test_exception_handler, &segv_count);
+  EXPECT_NE(port, ZX_HANDLE_INVALID);
+  expect_debugger_attached_eq(inferior, false, "debugger should never appear attached to inferior");
+
+  ASSERT_NO_FATAL_FAILURE(start_inferior(sb));
+  ASSERT_NO_FATAL_FAILURE(verify_inferior_running(channel));
+
+  segv_count.store(0);
+  send_simple_request(channel, RQST_CRASH_AND_RECOVER_TEST);
+  recv_simple_response(channel, RESP_RECOVERED_FROM_CRASH);
+  EXPECT_EQ(segv_count.load(), 4, "segv tests terminated prematurely");
+
+  expect_debugger_attached_eq(inferior, false, "debugger should never appear attached to inferior");
+
+  ASSERT_NO_FATAL_FAILURE(shutdown_inferior(channel, inferior));
+
+  zx_signals_t signals = ZX_JOB_NO_PROCESSES;
+  zx_signals_t pending;
+  zx_status_t status = zx_object_wait_one(parent_job, signals, ZX_TIME_INFINITE, &pending);
+  ASSERT_OK(status);
+  ASSERT_TRUE(pending & ZX_JOB_NO_PROCESSES);
+
+  // When a process terminates it closes its exception channels. This does not change the state of
+  // the job's exception channels.
+  expect_debugger_attached_eq(inferior, false, "debugger should never appear attached to inferior");
+
+  // Stop the waiter thread before closing the port that it's waiting on.
+  join_wait_inf_thread(wait_inf_thread);
+  detach_inferior(inferior_data, true);
+  zx_handle_close(inferior);
+
+  // The inferior is completely torn down now, so we can kill the job.
+  ASSERT_OK(zx_task_kill(parent_job));
+
+  signals = ZX_JOB_TERMINATED;
+  pending = 0;
+  status = zx_object_wait_one(parent_job, signals, ZX_TIME_INFINITE, &pending);
+  ASSERT_OK(status);
+  ASSERT_TRUE(pending & ZX_JOB_TERMINATED);
+
+  zx_handle_close(port);
+  zx_handle_close(channel);
+  zx_handle_close(parent_job);
+}
+
 TEST(DebuggerTests, DebuggerThreadListTest) {
   springboard_t* sb;
   zx_handle_t inferior, channel;
-  ASSERT_NO_FATAL_FAILURE(setup_inferior(kTestInferiorChildName, &sb, &inferior, &channel));
+  ASSERT_NO_FATAL_FAILURE(
+      setup_inferior(kTestInferiorChildName, zx_job_default(), &sb, &inferior, &channel));
 
   zx_handle_t port = ZX_HANDLE_INVALID;
   EXPECT_EQ(zx_port_create(0, &port), ZX_OK);
   size_t max_threads = 10;
-  inferior_data_t* inferior_data = attach_inferior(inferior, port, max_threads);
+  inferior_data_t* inferior_data = watch_inferior(inferior, port, max_threads);
+  claim_exception_channel(inferior_data->inferior, port, &inferior_data->exception_channel,
+                          ZX_EXCEPTION_CHANNEL_DEBUGGER);
   thrd_t wait_inf_thread =
       start_wait_inf_thread(inferior_data, debugger_test_exception_handler, NULL);
   EXPECT_NE(port, ZX_HANDLE_INVALID);

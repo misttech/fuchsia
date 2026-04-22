@@ -271,14 +271,17 @@ int capture_regs_thread_func(void* arg) {
 TEST(ThreadStartTests, StoppedInThreadStartingRegAccessTest) {
   springboard_t* sb;
   zx_handle_t inferior, channel;
-  ASSERT_NO_FATAL_FAILURE(setup_inferior(kTestInferiorChildName, &sb, &inferior, &channel));
+  ASSERT_NO_FATAL_FAILURE(
+      setup_inferior(kTestInferiorChildName, zx_job_default(), &sb, &inferior, &channel));
 
   // Attach to the inferior now because we want to see thread starting
   // exceptions.
   zx_handle_t port = ZX_HANDLE_INVALID;
   EXPECT_EQ(zx_port_create(0, &port), ZX_OK);
   size_t max_threads = 10;
-  inferior_data_t* inferior_data = attach_inferior(inferior, port, max_threads);
+  inferior_data_t* inferior_data = watch_inferior(inferior, port, max_threads);
+  claim_exception_channel(inferior_data->inferior, port, &inferior_data->exception_channel,
+                          ZX_EXCEPTION_CHANNEL_DEBUGGER);
 
   // State we need to maintain across the handling of the various exceptions.
   reg_access_test_state_t test_state{};
