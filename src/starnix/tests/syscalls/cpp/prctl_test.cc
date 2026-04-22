@@ -70,6 +70,77 @@ TEST(PrctlTest, SecureBits) {
   });
 }
 
+// Test that setreuid(-1,-1) does not spuriously update saved_uid.
+// Bug: Starnix compared prev.uid against the raw euid argument (u32::MAX)
+// instead of checking euid != -1 first, causing saved_uid to be set to
+// the current euid on every setreuid(-1,-1) call.
+TEST(PrctlTest, SetreuidNoopDoesNotCorruptSavedUid) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    // Setup: uid=1000, euid=0, saved_uid=1000 (like a setuid-root binary)
+    ASSERT_EQ(setresuid(1000, 0, 1000), 0);
+
+    uid_t ruid, euid, suid;
+    ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
+    ASSERT_EQ(ruid, 1000u);
+    ASSERT_EQ(euid, 0u);
+    ASSERT_EQ(suid, 1000u);
+
+    // setreuid(-1, -1) should be a complete no-op
+    ASSERT_EQ(setreuid(-1, -1), 0);
+    ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
+
+    EXPECT_EQ(ruid, 1000u) << "setreuid(-1,-1) should not change ruid";
+    EXPECT_EQ(euid, 0u) << "setreuid(-1,-1) should not change euid";
+    EXPECT_EQ(suid, 1000u) << "setreuid(-1,-1) should not change saved_uid";
+  });
+}
+
+// Full chain: setreuid(-1,-1) corrupts saved_uid → privilege escalation.
+// Scenario: setuid-root binary with uid=1000, euid=0, saved_uid=1000
+// calls setreuid(-1,-1) → saved_uid becomes 0 → drop euid → regain root.
+TEST(PrctlTest, SetreuidNoopToPrivilegeEscalation) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    uid_t ruid, euid, suid;
+
+    // Step 1: Setuid-root binary state
+    ASSERT_EQ(setresuid(1000, 0, 1000), 0);
+    ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
+    ASSERT_EQ(ruid, 1000u);
+    ASSERT_EQ(euid, 0u);
+    ASSERT_EQ(suid, 1000u);
+
+    // Step 2: No-op call — should NOT corrupt saved_uid
+    ASSERT_EQ(setreuid(-1, -1), 0);
+    ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
+    ASSERT_EQ(ruid, 1000u);
+    ASSERT_EQ(euid, 0u);
+    ASSERT_EQ(suid, 1000u);
+
+    // Step 3: Drop euid
+    ASSERT_EQ(seteuid(1000), 0);
+    ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
+    ASSERT_EQ(ruid, 1000u);
+    ASSERT_EQ(euid, 1000u);
+    ASSERT_EQ(suid, 1000u);
+
+    // Step 4: Try to regain root — must fail
+    seteuid(0);
+    ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
+
+    EXPECT_NE(euid, 0u) << "Should not regain root after privilege drop";
+  });
+}
+
 TEST(PrctlTest, Argv0SniffingIsUndetectableInUserspace) {
   test_helper::ForkHelper helper;
 

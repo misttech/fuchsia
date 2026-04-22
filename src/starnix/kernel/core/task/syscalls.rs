@@ -610,17 +610,20 @@ pub fn sys_setreuid(
 
     let mut creds = Credentials::clone(&current_task.current_creds());
     let prev = creds.copy_user_credentials();
-    let mut is_ruid_set = false;
-    if ruid != u32::MAX {
+    let is_ruid_set = ruid != u32::MAX;
+    if is_ruid_set {
         creds.uid = ruid;
-        is_ruid_set = true;
     }
-    if euid != u32::MAX {
+    let is_euid_set = euid != u32::MAX;
+    if is_euid_set {
         creds.euid = euid;
         creds.fsuid = euid;
     }
 
-    if is_ruid_set || prev.uid != euid {
+    // If the real user ID is set (i.e., ruid is not -1) or the effective
+    // user ID is set to a value not equal to the previous real user ID,
+    // the saved set-user-ID will be set to the new effective user ID.
+    if is_ruid_set || (is_euid_set && euid != prev.uid) {
         creds.saved_uid = creds.euid;
     }
 
@@ -642,17 +645,20 @@ pub fn sys_setregid(
 
     let mut creds = Credentials::clone(&current_task.current_creds());
     let previous_rgid = creds.gid;
-    let mut is_rgid_set = false;
-    if rgid != u32::MAX {
+    let is_rgid_set = rgid != u32::MAX;
+    if is_rgid_set {
         creds.gid = rgid;
-        is_rgid_set = true;
     }
-    if egid != u32::MAX {
+    let is_egid_set = egid != u32::MAX;
+    if is_egid_set {
         creds.egid = egid;
         creds.fsgid = egid;
     }
 
-    if is_rgid_set || previous_rgid != egid {
+    // If the real group ID is set (i.e., rgid is not -1) or the effective
+    // group ID is set to a value not equal to the previous real group ID,
+    // the saved set-group-ID will be set to the new effective group ID.
+    if is_rgid_set || (is_egid_set && egid != previous_rgid) {
         creds.saved_gid = creds.egid;
     }
 
