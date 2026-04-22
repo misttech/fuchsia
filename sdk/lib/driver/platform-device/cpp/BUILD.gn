@@ -18,6 +18,7 @@ sdk_source_set("cpp") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
+    "//sdk/lib/driver/incoming/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/power/cpp",
     "//zircon/system/ulib/zx",

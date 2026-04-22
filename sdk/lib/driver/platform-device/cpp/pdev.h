@@ -6,6 +6,7 @@
 #define LIB_DRIVER_PLATFORM_DEVICE_CPP_PDEV_H_
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
+#include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/power/cpp/power-support.h>
 #include <lib/driver/power/cpp/types.h>
@@ -30,6 +31,12 @@ class PDev {
 
   PDev() = default;
   explicit PDev(fidl::ClientEnd<fuchsia_hardware_platform_device::Device> client);
+
+  // Connect to the platform device in the given namespace.
+  //
+  // If the fragment_name is not provided, it will be set to the default value of `pdev`.
+  static zx::result<PDev> Connect(const std::shared_ptr<Namespace>& incoming,
+                                  std::string_view instance = kFragmentName);
 
   fidl::UnownedClientEnd<fuchsia_hardware_platform_device::Device> borrow();
 

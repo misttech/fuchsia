@@ -116,14 +116,11 @@ zx::result<> DwSpiDriver::Start() {
   fdf::info("Starting dw-spi driver");
 
   // Connect to platform device
-  zx::result pdev_client =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
-  if (pdev_client.is_error()) {
-    fdf::error("Failed to connect to pdev: {}", pdev_client.status_string());
-    return pdev_client.take_error();
+  zx::result<fdf::PDev> pdev = fdf::PDev::Connect(incoming());
+  if (pdev.is_error()) {
+    fdf::error("Failed to connect to pdev: {}", pdev.status_string());
+    return pdev.take_error();
   }
-
-  fdf::PDev pdev{std::move(*pdev_client)};
 
   // Enable clocks
   std::vector<std::string_view> clock_names = {"clock-ssi", "clock-pclk"};
@@ -164,7 +161,7 @@ zx::result<> DwSpiDriver::Start() {
   }
 
   // Get MMIO synchronously
-  auto mmio_params = pdev.GetMmio(0);
+  auto mmio_params = pdev->GetMmio(0);
   if (mmio_params.is_error()) {
     fdf::error("Failed to get MMIO: {}", mmio_params.status_string());
     return mmio_params.take_error();
@@ -179,7 +176,7 @@ zx::result<> DwSpiDriver::Start() {
   }
 
   // Get Interrupt synchronously
-  auto irq_result = pdev.GetInterrupt("dw-spi");
+  auto irq_result = pdev->GetInterrupt("dw-spi");
   if (irq_result.is_error()) {
     fdf::error("Failed to get IRQ: {}", irq_result.status_string());
     return irq_result.take_error();

@@ -11,6 +11,16 @@ namespace fdf {
 PDev::PDev(fidl::ClientEnd<fuchsia_hardware_platform_device::Device> client)
     : pdev_(std::move(client)) {}
 
+zx::result<PDev> PDev::Connect(const std::shared_ptr<Namespace>& incoming,
+                               std::string_view instance) {
+  zx::result client =
+      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>(instance);
+  if (client.is_error()) {
+    return client.take_error();
+  }
+  return zx::ok(PDev(std::move(*client)));
+}
+
 fidl::UnownedClientEnd<fuchsia_hardware_platform_device::Device> PDev::borrow() {
   return pdev_.client_end().borrow();
 }
