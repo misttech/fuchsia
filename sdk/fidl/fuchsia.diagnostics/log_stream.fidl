@@ -18,25 +18,6 @@ const ROLLED_OUT_ARG_NAME string = "$__rolled_out";
 type LogStreamOptions = table {
     /// What logs to stream through this socket.
     1: mode StreamMode;
-
-    /// Whether or not to include the moniker in the record arguments.
-    /// Default: false
-    2: include_moniker bool;
-
-    /// Whether or not to include the component url in the record arguments.
-    /// Default: false
-    3: include_component_url bool;
-
-    /// Whether or not to include the number of rolled out logs in the record
-    /// arguments.
-    /// Default: false
-    4: include_rolled_out bool;
-
-    // Indicates if the client wants to receive a stream of tag definitions
-    // and log records referencing those tags. This is transitional and will
-    // be removed in a future CL once this feature is stable.
-    // TODO(b/315520045): Remove this.
-    5: subscribe_to_manifest bool;
 };
 
 @available(added=HEAD)

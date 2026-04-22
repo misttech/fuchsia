@@ -307,7 +307,6 @@ impl LogIterator {
             client_selector_configuration: Some(
                 fdiagnostics::ClientSelectorConfiguration::SelectAll(true),
             ),
-            subscribe_to_manifest: Some(true),
             ..fdiagnostics::StreamParameters::default()
         };
         let (client_end, server_end) =
