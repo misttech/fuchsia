@@ -9,7 +9,6 @@ import json
 import os
 import pathlib
 import re
-import shutil
 import statistics
 import subprocess
 import sys
@@ -46,23 +45,12 @@ Behavior = Union[
 # Test case helper class for creating temporary directories that will
 # be cleaned up when the test finishes.
 class TempDirTestCase(unittest.TestCase):
-    def setUp(self):
-        self._on_teardown = []
-
     def MakeTempDir(self):
-        temp_dir = tempfile.mkdtemp(
-            prefix="tmp_unittest_%s_" % self.__class__.__name__
+        return self.enterContext(
+            tempfile.TemporaryDirectory(
+                prefix="tmp_unittest_%s_" % self.__class__.__name__
+            )
         )
-
-        def tear_down():
-            shutil.rmtree(temp_dir)
-
-        self._on_teardown.append(tear_down)
-        return temp_dir
-
-    def tearDown(self):
-        for func in reversed(self._on_teardown):
-            func()
 
 
 def WriteJsonFile(filename, json_data):
