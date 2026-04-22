@@ -5,6 +5,7 @@
 #include "dw-spi.h"
 
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
+#include <fidl/fuchsia.hardware.powerdomain/cpp/wire.h>
 #include <fidl/fuchsia.hardware.reset/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -121,6 +122,27 @@ zx::result<> DwSpiDriver::Start() {
     fdf::error("Failed to connect to pdev: {}", pdev.status_string());
     return pdev.take_error();
   }
+
+  // Connect to power domain
+  auto power_domain_client =
+      incoming()->Connect<fuchsia_hardware_powerdomain::Service::Domain>("power-domain");
+  if (power_domain_client.is_error()) {
+    fdf::error("Failed to connect to power domain: {}", power_domain_client.status_string());
+    return power_domain_client.take_error();
+  }
+  auto power_domain = fidl::WireSyncClient<fuchsia_hardware_powerdomain::Domain>(
+      std::move(power_domain_client.value()));
+  auto power_result = power_domain->Enable();
+  if (!power_result.ok()) {
+    fdf::error("Failed to send enable power domain request: {}", power_result.status_string());
+    return zx::error(power_result.status());
+  }
+  if (power_result->is_error()) {
+    fdf::error("Failed to enable power domain: {}",
+               zx_status_get_string(power_result->error_value()));
+    return zx::error(power_result->error_value());
+  }
+  fdf::info("Power domain enabled successfully");
 
   // Enable clocks
   std::vector<std::string_view> clock_names = {"clock-ssi", "clock-pclk"};
