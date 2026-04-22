@@ -2236,6 +2236,44 @@ mod test {
     }
 
     #[::fuchsia::test]
+    async fn file_status_inspect_empty_after_drop() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let child_node = inspector.root().create_child("touch_file_0");
+
+        let input_file = crate::InputFile::new_touch(
+            input_id { bustype: BUS_VIRTUAL as u16, vendor: 0, product: 0, version: 0 },
+            700,
+            700,
+            Some(&child_node),
+        );
+
+        let status = input_file.inspect_status.clone().expect("touch file must have status");
+        status.count_received_events(5);
+
+        assert_data_tree!(inspector, root: {
+            touch_file_0: {
+                fidl_events_received_count: 5u64,
+                fd_notify_count: 0u64,
+                fd_read_count: 0u64,
+                fidl_events_converted_count: 0u64,
+                fidl_events_ignored_count: 0u64,
+                fidl_events_unexpected_count: 0u64,
+                last_generated_uapi_event_timestamp_ns: 0i64,
+                last_read_uapi_event_timestamp_ns: 0i64,
+                uapi_events_generated_count: 0u64,
+                uapi_events_read_count: 0u64,
+            }
+        });
+
+        drop(status);
+        drop(input_file);
+
+        assert_data_tree!(inspector, root: {
+            touch_file_0: {}
+        });
+    }
+
+    #[::fuchsia::test]
     async fn keyboard_input_initialized_with_inspect_node() {
         #[allow(deprecated, reason = "pre-existing usage")]
         let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
