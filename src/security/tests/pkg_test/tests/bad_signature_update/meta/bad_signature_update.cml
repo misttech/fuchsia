@@ -242,6 +242,14 @@
             subdir: "block",
         },
         {
+            service: [
+                "fuchsia.hardware.block.volume.Service",
+                "fuchsia.hardware.ramdisk.Service",
+            ],
+            from: "#storage_driver_test_realm",
+            to: "#fshost",
+        },
+        {
             storage: "tmp",
             from: "parent",
             to: "#pkg_server",

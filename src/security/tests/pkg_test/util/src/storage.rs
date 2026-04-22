@@ -17,6 +17,8 @@ pub async fn mount_image_as_ramdisk(resource_path: &str) -> RamdiskClient {
     image_vmo.write(&image_buffer, 0).unwrap();
 
     let ramdisk_client = RamdiskClientBuilder::new_with_vmo(image_vmo, Some(RAMDISK_BLOCK_SIZE))
+        .use_v2()
+        .publish()
         .build()
         .await
         .unwrap();
