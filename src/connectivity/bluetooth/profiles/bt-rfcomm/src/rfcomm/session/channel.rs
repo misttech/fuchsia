@@ -10,12 +10,11 @@ use fuchsia_inspect as inspect;
 use fuchsia_inspect_derive::{AttachError, IValue, Inspect};
 use futures::channel::{mpsc, oneshot};
 use futures::future::{BoxFuture, Fuse, Shared};
-use futures::{
-    AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, FutureExt, SinkExt, StreamExt, select,
-};
+use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt, select};
 use log::{info, trace, warn};
 use std::collections::VecDeque;
 use std::pin::pin;
+use zx;
 
 use crate::rfcomm::inspect::{DuplexDataStreamInspect, FLOW_CONTROLLER, SessionChannelInspect};
 use crate::rfcomm::types::{Error, SignaledTask};
@@ -38,14 +37,14 @@ const LOW_CREDIT_WATERMARK: usize = 4;
 async fn rx_task(
     dlci: DLCI,
     mut data_from_flow_controller: mpsc::Receiver<UserData>,
-    mut application_writer: impl AsyncWrite + Send + Unpin + 'static,
+    mut application_writer: impl Sink<Vec<u8>, Error = zx::Status> + Send + Unpin + 'static,
 ) {
     trace!(dlci:%; "RFCOMM RX task started");
 
     while let Some(data) = data_from_flow_controller.next().await {
         // The flow controller task should forward user data. Attempt to write it to the
         // application.
-        if let Err(e) = application_writer.write_all(&data.information[..]).await {
+        if let Err(e) = application_writer.send(data.information).await {
             warn!(dlci:%; "Failed to send data to the application: {e:?}");
             break;
         }
@@ -59,22 +58,17 @@ async fn rx_task(
 async fn tx_task(
     dlci: DLCI,
     max_packet_size: usize,
-    mut client_reader: impl AsyncRead + Send + Unpin + 'static,
+    mut client_reader: impl Stream<Item = Result<Vec<u8>, zx::Status>> + Send + Unpin + 'static,
     mut tx_to_flow_controller_sender: mpsc::Sender<UserData>,
 ) {
     trace!(dlci:%; "RFCOMM TX task started");
-    let mut buffer = vec![0; max_packet_size];
-
-    loop {
-        match client_reader.read(&mut buffer).await {
-            Ok(0) => {
-                // A read of 0 bytes indicates that the client has closed its
-                // end of the channel. We can terminate the task.
-                info!(dlci:%; "Application closed the RFCOMM channel");
-                break;
-            }
-            Ok(bytes_read) => {
-                let user_data = UserData { information: buffer[..bytes_read].to_vec() };
+    while let Some(result) = client_reader.next().await {
+        match result {
+            Ok(bytes) => {
+                if bytes.len() > max_packet_size {
+                    warn!(dlci:%; "Received data size {} exceeds max packet size {}", bytes.len(), max_packet_size);
+                }
+                let user_data = UserData { information: bytes };
                 if let Err(e) = tx_to_flow_controller_sender.send(user_data).await {
                     // Can occur if the main flow controller task terminates unexpectedly.
                     warn!(dlci:%; "Error sending TX data to flow controller: {e:?}");
@@ -638,7 +632,7 @@ impl SessionChannel {
         termination_sender: oneshot::Sender<()>,
     ) -> fasync::Task<()> {
         let max_packet_size = application_channel.max_tx_size();
-        let (client_reader, client_writer) = futures::io::AsyncReadExt::split(application_channel);
+        let (client_writer, client_reader) = application_channel.split();
         // TX Processing Task -> Flow Controller Task: Used to send TX data to the peer via the
         // flow controller.
         let (tx_to_flow_controller_sender, tx_to_flow_controller_receiver) = mpsc::channel(0);
@@ -754,7 +748,6 @@ mod tests {
     use fuchsia_inspect_derive::WithInspect;
     use fuchsia_sync::Mutex;
     use futures::task::Poll;
-    use std::io;
     use std::pin::{Pin, pin};
     use std::sync::Arc;
     use std::task::{Context, Waker};
@@ -1421,7 +1414,7 @@ mod tests {
 
         // Application can send data. Should be relayed to the peer immediately.
         let data2 = vec![0x5, 0x4, 0x3, 0x2, 0x1, 0x0];
-        application.write_all(&data2).await.expect("succesful write");
+        application.send(data2.clone()).await.expect("succesful write");
         let received2 = data_to_peer_receiver.select_next_some().await;
         assert_eq!(
             received2.data,
@@ -1456,29 +1449,28 @@ mod tests {
     struct MockApplication(Arc<Mutex<MockApplicationInner>>);
 
     struct MockApplicationInner {
-        write_buffer: Vec<Vec<u8>>,
-        read_buffer: Vec<Vec<u8>>,
+        write_buffer: VecDeque<Vec<u8>>,
+        read_buffer: VecDeque<Vec<u8>>,
         /// The maximum capacity of the buffer.
         capacity: usize,
         /// The waker for the task that is pending on writing to this writer.
-        waker: Option<Waker>,
-        /// Indicates whether the next write should return error.
+        write_waker: Option<Waker>,
+        /// The waker for the task that is pending on reading from this reader.
+        read_waker: Option<Waker>,
+        /// Indicates whether the next operation should return error.
         should_error: bool,
     }
 
     impl MockApplication {
         fn new(capacity: usize) -> Self {
             Self(Arc::new(Mutex::new(MockApplicationInner {
-                write_buffer: Vec::new(),
-                read_buffer: Vec::new(),
+                write_buffer: VecDeque::new(),
+                read_buffer: VecDeque::new(),
                 capacity,
-                waker: None,
+                write_waker: None,
+                read_waker: None,
                 should_error: false,
             })))
-        }
-
-        fn len(&self) -> usize {
-            self.write_buffer().len()
         }
 
         pub fn write_buffer(&self) -> Vec<u8> {
@@ -1490,75 +1482,95 @@ mod tests {
         pub fn clear_and_wake_writer(&self) {
             let mut locked = self.0.lock();
             locked.write_buffer.clear();
-            if let Some(waker) = locked.waker.take() {
+            if let Some(waker) = locked.write_waker.take() {
                 waker.wake();
             }
         }
 
         pub fn set_and_wake_reader(&self, data: Vec<u8>) {
             let mut locked = self.0.lock();
-            locked.read_buffer.push(data);
-            if let Some(waker) = locked.waker.take() {
+            locked.read_buffer.push_back(data);
+            if let Some(waker) = locked.read_waker.take() {
                 waker.wake();
             }
         }
 
         fn set_error(&self) {
-            self.0.lock().should_error = true;
+            let mut locked = self.0.lock();
+            locked.should_error = true;
+            if let Some(waker) = locked.write_waker.take() {
+                waker.wake();
+            }
+            if let Some(waker) = locked.read_waker.take() {
+                waker.wake();
+            }
         }
     }
 
-    impl AsyncWrite for MockApplication {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            let current_length = self.len();
+    impl Sink<Vec<u8>> for MockApplication {
+        type Error = zx::Status;
+
+        fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             let mut locked = self.0.lock();
             if locked.should_error {
-                return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+                return Poll::Ready(Err(zx::Status::PEER_CLOSED));
             }
 
-            if current_length + buf.len() > locked.capacity {
-                // Not enough space in the buffer, simulate the write hanging.
-                locked.waker = Some(cx.waker().clone());
+            let write_buffer_len: usize = locked.write_buffer.iter().map(|v| v.len()).sum();
+            if write_buffer_len >= locked.capacity {
+                locked.write_waker = Some(cx.waker().clone());
                 return Poll::Pending;
             }
-
-            locked.write_buffer.push(buf.to_vec());
-            Poll::Ready(Ok(buf.len()))
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
             Poll::Ready(Ok(()))
         }
 
-        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        fn start_send(self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
+            let mut locked = self.0.lock();
+            locked.write_buffer.push_back(item);
+            Ok(())
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            let locked = self.0.lock();
+            if locked.should_error {
+                return Poll::Ready(Err(zx::Status::PEER_CLOSED));
+            }
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            let locked = self.0.lock();
+            if locked.should_error {
+                return Poll::Ready(Err(zx::Status::PEER_CLOSED));
+            }
             Poll::Ready(Ok(()))
         }
     }
 
-    impl AsyncRead for MockApplication {
-        fn poll_read(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<io::Result<usize>> {
+    impl Stream for MockApplication {
+        type Item = Result<Vec<u8>, zx::Status>;
+
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let mut locked = self.0.lock();
             if locked.should_error {
-                return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+                return Poll::Ready(Some(Err(zx::Status::PEER_CLOSED)));
             }
 
-            if locked.read_buffer.is_empty() {
-                locked.waker = Some(cx.waker().clone());
-                return Poll::Pending;
+            if let Some(data) = locked.read_buffer.pop_front() {
+                if data.is_empty() {
+                    return Poll::Ready(None);
+                }
+                return Poll::Ready(Some(Ok(data)));
             }
 
-            let data = locked.read_buffer.remove(0);
-            let bytes_to_read = data.len();
-            buf[..bytes_to_read].copy_from_slice(&data[..bytes_to_read]);
-            Poll::Ready(Ok(bytes_to_read))
+            locked.read_waker = Some(cx.waker().clone());
+            Poll::Pending
         }
     }
 
@@ -1592,7 +1604,7 @@ mod tests {
         // The writer buffer should be full.
         assert_eq!(writer.write_buffer().as_slice(), &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
-        // Sending more data should over the channel should succeed and cause the `write_all` in
+        // Sending more data should over the channel should succeed and cause the `send` in
         // the RX task to hang as it is full.
         let data3 = UserData { information: vec![11] };
         let mut send_fut3 = pin!(sender.send(data3.clone()));
