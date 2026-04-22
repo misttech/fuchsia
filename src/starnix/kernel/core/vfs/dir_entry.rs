@@ -1191,6 +1191,14 @@ impl<'a> DirEntryLockedChildren<'a> {
             );
 
             let entry = DirEntry::new(node, Some(self.entry.clone()), name.to_owned());
+
+            if let Err(err) = security::fs_node_init_with_dentry(locked, current_task, &entry) {
+                // Null out the `parent` reference from `entry` otherwise dropping `entry` will
+                // attempt to remove itself from `parent`, triggering a deadlock with `self`.
+                entry.parent.update(None);
+                return Err(err);
+            }
+
             Ok((entry, create_result))
         };
 
@@ -1222,8 +1230,6 @@ impl<'a> DirEntryLockedChildren<'a> {
                 (child, create_result)
             }
         };
-
-        security::fs_node_init_with_dentry(locked, current_task, &child)?;
 
         Ok((child, create_result))
     }

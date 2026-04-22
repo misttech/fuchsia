@@ -316,4 +316,42 @@ TEST_F(OverlayFsTest, UnlinkLowerDoesNotRequireMounterMknodCapability) {
   }));
 }
 
+// Verify that retrieving a file's security label through OverlayFS is denied if the mounter lacks
+// the 'getattr' permission, even if the caller has it.
+TEST_F(OverlayFsTest, SecurityLabelAccessDeniedIfMounterGetattrDenied) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
+  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0"),
+            fit::ok());
+
+  ASSERT_NO_FATAL_FAILURE(Mount());
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
+    // Verify that retrieving the SELinux label (getxattr) fails.
+    EXPECT_EQ(GetLabel(overlay_ + "/file"), fit::error(EACCES));
+
+    // Verify that stat() also fails.
+    struct stat st;
+    EXPECT_THAT(stat((overlay_ + "/file").c_str(), &st), SyscallFailsWithErrno(EACCES));
+  }));
+}
+
+// Verify that the file's effective label remains correct for internal access checks even when the
+// mounter cannot perform 'getattr'.
+TEST_F(OverlayFsTest, FileIsEffectivelyUnlabeledIfMounterGetattrDenied) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
+  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0"),
+            fit::ok());
+
+  ASSERT_NO_FATAL_FAILURE(Mount());
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
+    fbl::unique_fd fd(open((overlay_ + "/file").c_str(), O_RDONLY));
+    ASSERT_THAT(fd.get(), SyscallFailsWithErrno(EACCES));
+  }));
+}
+
 }  // namespace

@@ -28,7 +28,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::{CAP_FOWNER, Credentials};
 use starnix_uapi::device_id::DeviceId;
-use starnix_uapi::errors::{ENODATA, Errno};
+use starnix_uapi::errors::{ENODATA, EOPNOTSUPP, Errno};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::{XATTR_NAME_SELINUX, errno, error};
 use std::ops::Deref;
@@ -151,8 +151,8 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                                 .unwrap_or_else(|_| InitialSid::Unlabeled.into()),
                         ),
                         Ok(ValueOrSize::Size(_)) => None,
-                        Err(err) => {
-                            if err.code == ENODATA && parent.is_none() {
+                        Err(err) => match err.code {
+                            ENODATA if parent.is_none() => {
                                 // The root node of xattr-labeled filesystems should be labeled at
                                 // creation in principle. Distinguishing creation of the root of the
                                 // filesystem from re-instantiation of the `FsNode` representing an
@@ -176,12 +176,12 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                                 // Apply the appropriate in-memory label to the `FsNode`.
                                 let node_sid = maybe_root_sid.unwrap_or(default_sid);
                                 Some(node_sid)
-                            } else {
-                                // TODO: https://fxbug.dev/334094811 - Determine how to handle errors besides
-                                // `ENODATA` (no such xattr).
-                                None
                             }
-                        }
+                            ENODATA | EOPNOTSUPP => None,
+                            _ => {
+                                return Err(err);
+                            }
+                        },
                     };
                     maybe_sid.unwrap_or_else(|| {
                         // The node does not have a label, so apply the filesystem's default SID.

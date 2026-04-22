@@ -915,6 +915,12 @@
             ]
         },
         {
+            "name": "OverlayFsTest.FileIsEffectivelyUnlabeledIfMounterGetattrDenied",
+            "audit_expectations": [
+                "avc:  denied  { getattr } for name=\"file\" dev=\"tmpfs\" ino=185 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "OverlayFsTest.MknodRequiresCallerCapability",
             "audit_expectations": [
                 "avc:  denied  { mknod } for capability=27  scontext=test_u:test_r:test_overlayfs_caller_no_mknod_t:s0 tcontext=test_u:test_r:test_overlayfs_caller_no_mknod_t:s0 tclass=capability permissive=0"
@@ -936,6 +942,13 @@
             "name": "OverlayFsTest.OpenReadDeniedIfMounterCannotRead",
             "audit_expectations": [
                 "avc:  denied  { read } for name=\"file\" dev=\"tmpfs\" ino=50 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_mounter_no_read_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "OverlayFsTest.SecurityLabelAccessDeniedIfMounterGetattrDenied",
+            "audit_expectations": [
+                "avc:  denied  { getattr } for name=\"file\" dev=\"tmpfs\" ino=174 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { getattr } for name=\"file\" dev=\"tmpfs\" ino=174 scontext=test_u:test_r:test_overlayfs_mounter_t:s0 tcontext=test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
