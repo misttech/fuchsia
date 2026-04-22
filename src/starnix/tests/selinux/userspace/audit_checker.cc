@@ -421,24 +421,6 @@ bool AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   auto expected_logs = it != expectations_map_.end() ? it->second : std::vector<AuditLogEntry>();
   auto actual_logs = read_result.value();
 
-  // Compare the two sets of logs to determine failure.
-  bool audit_logs_match = actual_logs == expected_logs;
-  bool expect_success = !IsExpectedToFail(test_name);
-
-  if (audit_logs_match == expect_success) {
-    // There are two cases:
-    // 1. We expected failure, and the logs didn't match expectations.
-    // 2. We expected success, and the logs matched expectations.
-    // In either case, the test can be marked as successful.
-    return true;
-  }
-
-  // Linux sometimes coalesces same-source/target/class checks for multiple permissions into a
-  // single check, which is not yet the case in Starnix, so even though the actual and expected logs
-  // are not identical, they may still be equivalent.
-  // TODO: Remove this work-around and clean up the loop below.
-  audit_logs_match = true;
-
   if (test_helper::IsStarnix()) {
     // TODO: Introduce an explicit ignore-audit-logs scope so that permissive logs can be compared.
     std::erase_if(expected_logs, [](auto& x) { return x.permissive; });
@@ -451,30 +433,43 @@ bool AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   std::string audit_diff;
   auto actual_it = actual_logs.begin();
   auto expected_it = expected_logs.begin();
+  bool audit_logs_match = true;
 
   while (actual_it != actual_logs.end() && expected_it != expected_logs.end()) {
-    if (expected_it->contains(*actual_it)) {
-      // Observed audit log matches at least one permission in the next expectation, so emit it
-      // with no prefix.
-      if (expected_it->permission == actual_it->permission) {
-        // Move to next expectation in case of exact match.
-        expected_it++;
-      } else if (actual_it->denied) {
-        // Move to next expectation, if any, in case of partial match denied access, since the
-        // first denial will prevent the subsequent checks being made.
-        expected_it++;
-      } else {
-        // If the expectation is granted (whether permissive or denied) then we expect the other
-        // permissions to also be checked, so just remove the matched permission.
-        std::string found_perm = *actual_it->permission.begin();
-        if (expected_it->permission.erase(found_perm) != 1u) {
-          ADD_FAILURE() << "Expected to erase exactly 1 permission, but failed.";
-          return false;
+    if (test_helper::IsStarnix()) {
+      // Account for Starnix only checking, and audit logging, one permission
+      // at at time, where Linux may check several in a single operation.
+      if (expected_it->contains(*actual_it)) {
+        // Observed audit log matches at least one permission in the next expectation, so emit it
+        // with no prefix.
+        if (expected_it->permission == actual_it->permission) {
+          // Move to next expectation in case of exact match.
+          expected_it++;
+        } else if (actual_it->denied) {
+          // Move to next expectation, if any, in case of partial match denied access, since the
+          // first denial will prevent the subsequent checks being made.
+          expected_it++;
+        } else {
+          // If the expectation is granted (whether permissive or denied) then we expect the other
+          // permissions to also be checked, so just remove the matched permission.
+          std::string found_perm = *actual_it->permission.begin();
+          if (expected_it->permission.erase(found_perm) != 1u) {
+            ADD_FAILURE() << "Expected to erase exactly 1 permission, but failed.";
+            return false;
+          }
         }
+        audit_diff += "\n " + actual_it->ToString();
+        actual_it++;
+        continue;
       }
-      audit_diff += "\n " + actual_it->ToString();
-      actual_it++;
-      continue;
+    } else {
+      // Linux is the baseline, so expect audit logs to match line for line.
+      if (*expected_it == *actual_it) {
+        audit_diff += "\n " + actual_it->ToString();
+        actual_it++;
+        expected_it++;
+        continue;
+      }
     }
 
     audit_logs_match = false;
@@ -504,6 +499,7 @@ bool AuditChecker::CheckAuditExpectations(const std::string& test_name) {
     audit_logs_match = false;
   }
 
+  bool expect_success = !IsExpectedToFail(test_name);
   if (audit_logs_match == expect_success) {
     return true;
   }
