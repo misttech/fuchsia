@@ -54,7 +54,7 @@
       "optionality": "optional",
       "long": "--console",
       "short": null,
-      "description": "launch the emulator in serial console mode. This redirects the virtual serial port to the host's input/output streams, multi-plexed with the QEMU monitor console, then maintains a connection to those streams rather than returning control to the host terminal. This is especially useful when the guest is running without networking enabled. Note: Control sequences are passed through to the guest system in this mode, so Crtl-c will terminate the guest system's shell, rather than the emulator process itself. If you need to hard-kill the emulator, use the QEMU sequence 'Ctrl-a x' instead.",
+      "description": "launch the emulator in serial console mode. This redirects the virtual serial port to the host's input/output streams, multi-plexed with the QEMU monitor console, then maintains a connection to those streams rather than returning control to the host terminal. This is especially useful when the guest is running without networking enabled. Use the QEMU key sequence `Ctrl-a c` to switch between the serial console and the QEMU monitor console. Note: Control sequences are passed through to the guest system in this mode, so Crtl-c will terminate the guest system's shell, rather than the emulator process itself. If you need to hard-kill the emulator, use the QEMU sequence 'Ctrl-a x' instead.",
       "hidden": false
     },
     {
@@ -179,14 +179,6 @@
       "long": "--log",
       "short": "l",
       "description": "store the emulator log at the provided filesystem path. By default, all output goes to a log file in the emulator working directory. The path to this file is printed onscreen during start-up.",
-      "hidden": false
-    },
-    {
-      "kind": "Switch",
-      "optionality": "optional",
-      "long": "--monitor",
-      "short": "m",
-      "description": "launch the emulator in Qemu monitor console mode. See https://qemu-project.gitlab.io/qemu/system/monitor.html for more information on the Qemu monitor console.",
       "hidden": false
     },
     {

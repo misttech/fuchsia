@@ -645,12 +645,9 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             eprintln!("Attach to process {} to continue launching the emulator.", self.get_pid());
         }
 
-        if self.emu_config().runtime.console == ConsoleType::Monitor
-            || self.emu_config().runtime.console == ConsoleType::Console
-        {
-            // When running with '--monitor' or '--console' mode, the user is directly interacting
-            // with the emulator console, or the guest console. Therefore wait until the
-            // execution of QEMU or AEMU terminates.
+        if self.emu_config().runtime.console == ConsoleType::Console {
+            // When running with '--console' mode, the user is directly interacting with the guest
+            // console. Therefore wait until the execution of QEMU or AEMU terminates.
             match fuchsia_async::unblock(move || process::monitored_child_process(&child_arc)).await
             {
                 Ok(_) => {
@@ -1850,10 +1847,6 @@ mod tests {
         assert!(result.is_err());
 
         emu_config.runtime.console = ConsoleType::Console;
-        let result = engine.validate_network_flags(&emu_config);
-        assert!(result.is_ok(), "{:?}", result.unwrap_err());
-
-        emu_config.runtime.console = ConsoleType::Monitor;
         let result = engine.validate_network_flags(&emu_config);
         assert!(result.is_ok(), "{:?}", result.unwrap_err());
 

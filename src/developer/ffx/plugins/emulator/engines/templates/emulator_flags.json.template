@@ -55,13 +55,13 @@
             https://github.com/qemu/qemu/blob/master/qga/qapi-schema.json. }}
         "-qmp-pretty",
         "unix:{{runtime.instance_directory}}/qmp,server,nowait",
-        {{#if (eq runtime.console "monitor")}}
-            "-monitor",
-            "stdio",
-        {{else}}
-            "-monitor",
-            "unix:{{runtime.instance_directory}}/monitor,server,nowait",
-        {{/if}}
+
+        {{! The HMP (human monitor protocol) is an interface for issuing
+          interactive commands to the emulator. Commands are documented in
+          https://qemu-project.gitlab.io/qemu/system/monitor.html. }}
+        "-monitor",
+        "unix:{{runtime.instance_directory}}/monitor,server,nowait",
+
         {{#if (eq runtime.console "console")}}
             "-chardev",
             "stdio,id=char0,mux=on,signal=off",

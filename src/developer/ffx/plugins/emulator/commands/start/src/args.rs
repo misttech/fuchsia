@@ -55,6 +55,9 @@ pub struct StartCommand {
     /// connection to those streams rather than returning control to the host terminal. This is
     /// especially useful when the guest is running without networking enabled.
     ///
+    /// Use the QEMU key sequence `Ctrl-a c` to switch between the serial console and the QEMU
+    /// monitor console.
+    ///
     /// Note: Control sequences are passed through to the guest system in this mode, so Crtl-c will
     /// terminate the guest system's shell, rather than the emulator process itself. If you need to
     /// hard-kill the emulator, use the QEMU sequence 'Ctrl-a x' instead.
@@ -135,12 +138,6 @@ pub struct StartCommand {
     /// during start-up.
     #[argh(option, short = 'l')]
     pub log: Option<PathBuf>,
-
-    /// launch the emulator in Qemu monitor console mode. See
-    /// https://qemu-project.gitlab.io/qemu/system/monitor.html for more information on the Qemu
-    /// monitor console.
-    #[argh(switch, short = 'm')]
-    pub monitor: bool,
 
     /// name of this emulator instance. This is used to identify the instance in other commands and
     /// tools. Default is "fuchsia-emulator". This value can also be set via configuration using the

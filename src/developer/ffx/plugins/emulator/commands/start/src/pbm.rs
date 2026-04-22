@@ -250,8 +250,6 @@ async fn apply_command_line_options(
     // Collapsing multiple binary options into related fields.
     if cmd.console {
         emu_config.runtime.console = ConsoleType::Console;
-    } else if cmd.monitor {
-        emu_config.runtime.console = ConsoleType::Monitor;
     } else {
         emu_config.runtime.console = ConsoleType::None;
     }
@@ -447,7 +445,6 @@ mod tests {
             headless: true,
             hidpi_scaling: true,
             log: Some(PathBuf::from("/path/to/log")),
-            monitor: false,
             name: Some("SomeName".to_string()),
             net: Some("tap".to_string()),
             verbose: true,
@@ -493,13 +490,6 @@ mod tests {
         let opts =
             apply_command_line_options(opts, &cmd, &emulator_instances, &env.context).await?;
         assert_eq!(opts.runtime.upscript, Some(PathBuf::from("/path/to/upscript")));
-
-        // "console" and "monitor" are exclusive, so swap them and reapply.
-        cmd.console = false;
-        cmd.monitor = true;
-        let opts =
-            apply_command_line_options(opts, &cmd, &emulator_instances, &env.context).await?;
-        assert_eq!(opts.runtime.console, ConsoleType::Monitor);
 
         // Test relative file paths
         let temp_path = PathBuf::from(tempdir().unwrap().path());

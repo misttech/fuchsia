@@ -41,9 +41,6 @@ pub enum ConsoleType {
     /// The launcher will finish by opening the Fuchsia serial console.
     Console,
 
-    /// The launcher will finish by opening the Qemu menu terminal.
-    Monitor,
-
     /// The launcher will finish by returning the user to the host's command prompt.
     None,
 }
