@@ -6,9 +6,10 @@
 #### CATEGORY=Software delivery
 ### perform a system OTA on a connected device
 
-## usage: fx ota [--help] [--build|--no-build]
+## usage: fx ota [--help] [--build|--no-build] [--serve]
 ##
 ##   --build | --no-build   Build (or not) the 'updates' target before initiating OTA.
+##   --serve                Spawn 'fx serve' for the duration of the OTA if not already running.
 ##   --help                 Print out this message.
 ##
 ## Ask the connected Fuchsia device to do an OTA.
@@ -61,6 +62,7 @@ function target-using-omaha-client {
 
 function main {
   local build=false
+  local serve=false
   local build_targets=("//build/images/updates")
   if is_feature_enabled "incremental"; then
     # In incremental workflows, these defaults have changed.
@@ -79,6 +81,9 @@ function main {
       --build)
         build=true
         ;;
+      --serve)
+        serve=true
+        ;;
       *)
        fx-error 'Invalid syntax'
        fx-command-help
@@ -87,7 +92,29 @@ function main {
     shift
   done
 
-  check-for-package-server || return 1
+  local started_serve=false
+  if $serve; then
+    # TODO(https://fxbug.dev/504722186): Implement temporary server in `ffx target update`.
+    if ! check-for-package-server >/dev/null 2>&1; then
+      fx-info "Package server not running. Starting 'fx serve'..."
+      local server_name="fx-ota-serve-$(date +%Y-%m-%dT%H-%M-%S)"
+      fx-command-run serve --background --name "${server_name}" || return 1
+      started_serve=true
+      trap "fx-info \"Stopping package server...\"; fx-command-run ffx repository server stop ${server_name} || true" EXIT
+
+      # Wait for it to be ready
+      local tries=10
+      while ! check-for-package-server >/dev/null 2>&1; do
+        if ((tries-- == 0)); then
+          fx-error "Package server failed to start in time."
+          return 1
+        fi
+        sleep 1
+      done
+    fi
+  else
+    check-for-package-server || return 1
+  fi
 
   if target-using-omaha-client; then
     fx-warn "The target device is using omaha-client for update management, which will not"

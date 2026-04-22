@@ -29,6 +29,7 @@ BT_MOCKED_TOOLS=(
   "tools/devshell/wait"
   "tools/devshell/shell"
   "tools/devshell/lib/updates.sh"
+  "tools/devshell/serve"
 )
 
 declare fx build check_package_server trigger_update commit_update
@@ -182,6 +183,42 @@ TEST_ota_nopackageserver() {
 
   # build was not called
   BT_ASSERT_FILE_DOES_NOT_EXIST "${build}.mock_state"
+}
+
+TEST_ota_serve() {
+  echo "1" > "${check_package_server}.mock_status" # package server is not running
+  setup_versions_after_update "1" "1"
+
+  local ffx="$(btf::make_installed_hosttools_mock ffx)"
+  local stop_called="${BT_TEMP_DIR}/stop_called"
+  btf::make_mock "$stop_called"
+
+  cat > "${ffx}.mock_side_effects" <<EOF
+   if [[ "\$@" == "target update check-now --monitor" ]]; then
+     $trigger_update "\$@"
+     return
+   elif [[ "\$@" == "repository server stop fx-ota-serve-"* ]]; then
+     $stop_called "\$@"
+     return
+   fi
+EOF
+
+  local serve_mock="${BT_TEMP_DIR}/tools/devshell/serve"
+  cat >> "${serve_mock}.mock_side_effects" <<EOF
+    echo "0" > "${check_package_server}.mock_status"
+EOF
+
+  local out="${BT_TEMP_DIR}/_fx_ota_output"
+  BT_EXPECT ${fx} ota --serve > "$out" 2>&1
+
+  # Assert serve was called
+  BT_ASSERT_FILE_EXISTS "${serve_mock}.mock_state"
+
+  # Assert update was triggered
+  BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
+
+  # Assert stop was called
+  BT_ASSERT_FILE_EXISTS "${stop_called}.mock_state"
 }
 
 BT_RUN_TESTS "$@"
