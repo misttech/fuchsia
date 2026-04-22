@@ -318,12 +318,21 @@ void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
           const EffectiveProfile& ep = state.effective_profile();
           const bool is_active = scheduler->active_thread_ == &thread;
           if (IsFairThread(&thread)) {
+            // A fair thread that is the active thread has start and finish
+            // times on the monotonic timeline. All fair threads in run queues
+            // have start and finish times on the variable timeline. Display all
+            // start and finish times on the monotonic timeline for consistent
+            // presentation.
+            const SchedTime start_time =
+                is_active ? state.start_time_ : scheduler->VariableToMonotonic(state.start_time_);
+            const SchedTime finish_time =
+                is_active ? state.finish_time_ : scheduler->VariableToMonotonic(state.finish_time_);
+
             fprintf(output_target,
                     "\t%s name=%s weight=%s start=%" PRId64 " finish=%" PRId64 " ts=%" PRId64
                     " ema=%" PRId64 " T_e=%" PRId64 "\n",
                     is_active ? "->" : "  ", thread.name(), Format(ep.weight()).c_str(),
-                    scheduler->VariableToMonotonic(state.start_time_).raw_value(),
-                    scheduler->VariableToMonotonic(state.finish_time_).raw_value(),
+                    start_time.raw_value(), finish_time.raw_value(),
                     state.remaining_time_slice_ns().raw_value(),
                     state.expected_runtime_ns_.raw_value(), state.effective_period().raw_value());
           } else {
