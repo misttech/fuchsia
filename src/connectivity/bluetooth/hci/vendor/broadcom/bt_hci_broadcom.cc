@@ -40,6 +40,8 @@
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
 #include "tools/power_config/lib/cpp/power_config.h"
 
+#include <pw_bluetooth/hci_events.emb.h>
+
 namespace bt_hci_broadcom {
 namespace {
 
@@ -561,17 +563,17 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::EnableLowPowerMode(
   std::array<std::byte, WriteSleepModeCmd::MaxSizeInBytes()> storage;
   return SendCommand(EnableLowPowerModeCmd(&storage, host_idle_threshold, device_idle_threshold))
       .and_then([](const std::vector<uint8_t>& cmd_complete) {
-        if (sizeof(HciCommandComplete) <= cmd_complete.size()) {
-          HciCommandComplete event;
-          std::memcpy(&event, cmd_complete.data(), sizeof(event));
-          if (event.return_code == 0x00) {
+        auto view = pw::bluetooth::emboss::MakeSimpleCommandCompleteEventView(cmd_complete.data(),
+                                                                              cmd_complete.size());
+        if (view.Ok()) {
+          if (view.status().Read() == pw::bluetooth::emboss::StatusCode::SUCCESS) {
             fdf::info("set low power mode settings");
           } else {
-            fdf::warn("failed to set low power mode: 0x{:02x}", event.return_code);
+            fdf::warn("failed to set low power mode: 0x{:02x}",
+                      static_cast<uint8_t>(view.status().Read()));
           }
         } else {
-          fdf::warn("LowPowerMode CmdComplete is too small: {} < {}", cmd_complete.size(),
-                    sizeof(HciCommandComplete));
+          fdf::warn("LowPowerMode CmdComplete is too small or invalid: {}", cmd_complete.size());
         }
       });
 }
@@ -585,15 +587,15 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::DisableLowPowerMode() {
   std::array<std::byte, WriteSleepModeCmd::MaxSizeInBytes()> storage;
   return SendCommand(DisableLowPowerModeCmd(&storage))
       .and_then([](const std::vector<uint8_t>& cmd_complete) {
-        if (sizeof(HciCommandComplete) <= cmd_complete.size()) {
-          HciCommandComplete event;
-          std::memcpy(&event, cmd_complete.data(), sizeof(event));
-          if (event.return_code != 0x00) {
-            fdf::warn("failed to disable low power mode: 0x{:02x}", event.return_code);
+        auto view = pw::bluetooth::emboss::MakeSimpleCommandCompleteEventView(cmd_complete.data(),
+                                                                              cmd_complete.size());
+        if (view.Ok()) {
+          if (view.status().Read() != pw::bluetooth::emboss::StatusCode::SUCCESS) {
+            fdf::warn("failed to disable low power mode: 0x{:02x}",
+                      static_cast<uint8_t>(view.status().Read()));
           }
         } else {
-          fdf::warn("LowPowerMode CmdComplete is too small: {} < {}", cmd_complete.size(),
-                    sizeof(HciCommandComplete));
+          fdf::warn("LowPowerMode CmdComplete is too small or invalid: {}", cmd_complete.size());
         }
       });
 }
@@ -826,13 +828,14 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SetDefaultPowerCaps() {
   }
   return SendCommand(&kDefaultPowerCapCmd, sizeof(kDefaultPowerCapCmd))
       .and_then([](std::vector<uint8_t>& cmd_complete) {
-        if (sizeof(HciCommandComplete) <= cmd_complete.size()) {
-          HciCommandComplete event;
-          std::memcpy(&event, cmd_complete.data(), sizeof(event));
-          if (event.return_code == 0x00) {
+        auto view = pw::bluetooth::emboss::MakeSimpleCommandCompleteEventView(cmd_complete.data(),
+                                                                              cmd_complete.size());
+        if (view.Ok()) {
+          if (view.status().Read() == pw::bluetooth::emboss::StatusCode::SUCCESS) {
             fdf::info("set default power caps");
           } else {
-            fdf::warn("failed to set default power caps: 0x{:02x}", event.return_code);
+            fdf::warn("failed to set default power caps: 0x{:02x}",
+                      static_cast<uint8_t>(view.status().Read()));
           }
         }
       });
@@ -1003,22 +1006,21 @@ zx::result<std::vector<uint8_t>> BtHciBroadcom::ReadEventSync() {
   // Copy out the data from buffer and clear the buffer.
   event_receive_buffer_.clear();
 
-  if (packet_bytes.size() < sizeof(HciCommandComplete)) {
-    fdf::error("command channel read too short: {} < {}", packet_bytes.size(),
-               sizeof(HciCommandComplete));
+  auto view = pw::bluetooth::emboss::MakeSimpleCommandCompleteEventView(packet_bytes.data(),
+                                                                        packet_bytes.size());
+  if (!view.Ok()) {
+    fdf::error("command channel read too short or invalid: {}", packet_bytes.size());
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  HciCommandComplete event;
-  std::memcpy(&event, packet_bytes.data(), sizeof(HciCommandComplete));
-  if (event.header.event_code != kHciEvtCommandCompleteEventCode ||
-      event.header.parameter_total_size < kMinEvtParamSize) {
-    fdf::error("did not receive command complete or params too small");
+  if (view.command_complete().header().event_code().Read() !=
+      pw::bluetooth::emboss::EventCode::COMMAND_COMPLETE) {
+    fdf::error("did not receive command complete");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  if (event.return_code != 0) {
-    fdf::error("got command complete error {}", event.return_code);
+  if (view.status().Read() != pw::bluetooth::emboss::StatusCode::SUCCESS) {
+    fdf::error("got command complete error 0x{:02x}", static_cast<uint8_t>(view.status().Read()));
     return zx::error(ZX_ERR_INTERNAL);
   }
 

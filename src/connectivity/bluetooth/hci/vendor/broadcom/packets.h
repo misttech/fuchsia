@@ -26,15 +26,6 @@ struct HciEventHeader {
   uint8_t parameter_total_size;
 } __PACKED;
 
-struct HciCommandComplete {
-  HciEventHeader header;
-  uint8_t num_hci_command_packets;
-  uint16_t command_opcode;
-  uint8_t return_code;
-} __PACKED;
-
-constexpr uint8_t kHciEvtCommandCompleteEventCode = 0x0e;
-
 constexpr size_t kMacAddrLen = 6;
 
 // Vendor HCI definitions:
@@ -76,9 +67,6 @@ constexpr size_t kMaxHciCommandSize =
 constexpr size_t kChanReadBufLen =
     sizeof(HciEventHeader) +
     std::numeric_limits<decltype(HciEventHeader::parameter_total_size)>::max();
-
-// Min event param size for a valid command complete event frame
-constexpr size_t kMinEvtParamSize = sizeof(HciCommandComplete) - sizeof(HciEventHeader);
 
 // vendor command to begin firmware download
 const HciCommandHeader kStartFirmwareDownloadCmd = {

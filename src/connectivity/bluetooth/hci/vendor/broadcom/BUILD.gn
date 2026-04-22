@@ -185,5 +185,8 @@ emboss_cc_library("emboss") {
   source = "packets.emb"
   imports = [ "$dir_pw_bluetooth/public/pw_bluetooth/hci_common.emb" ]
   import_dirs = [ "$dir_pw_bluetooth/public" ]
-  public_deps = [ "$dir_pw_bluetooth:emboss_hci_common" ]
+  public_deps = [
+    "$dir_pw_bluetooth:emboss_hci_common",
+    "$dir_pw_bluetooth:emboss_hci_events",
+  ]
 }
