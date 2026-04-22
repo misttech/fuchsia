@@ -286,7 +286,6 @@ hlcpp_visibility = [
   "//src/ui/bin/virtual_keyboard_manager/*",
   "//src/ui/examples/screen_recording:*",
   "//src/ui/examples/simplest_sysmem:*",
-  "//src/ui/input/drivers/ctaphid:*",
   "//src/ui/input/lib/hid-input-report:*",
   "//src/ui/input/lib/injector/*",
   "//src/ui/input/testing/fake_input_report_device:*",

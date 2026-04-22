@@ -704,3 +704,9 @@
   available_in_git: '2354ad44d6ab58c285c6d977e0e47f7b914871bd'
   areas: ['Block']
   path: '/src/devices/block/drivers/block-verity'
+- short_description: 'CTAPHID driver'
+  deletion_reason: 'Hardware is not actively supported'
+  gerrit_change_id: '1583320'
+  available_in_git: 'e3f12e5701389bcdad9d801cb92f04799da43b26'
+  areas: ['Input']
+  path: '/src/ui/input/drivers/ctaphid'

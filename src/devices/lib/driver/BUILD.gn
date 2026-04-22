@@ -245,7 +245,6 @@ shared_library("driver") {
     "//src/testing/fuzzing/syzkaller:*",
     "//src/ui/backlight/drivers/ti-lp8556:*",
     "//src/ui/input/drivers/buttons:*",
-    "//src/ui/input/drivers/ctaphid:*",
     "//src/ui/input/drivers/focaltech:*",
     "//src/ui/input/drivers/goldfish_sensor:*",
     "//src/ui/input/drivers/goodix:*",

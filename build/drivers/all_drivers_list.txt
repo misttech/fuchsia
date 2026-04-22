@@ -366,7 +366,6 @@
 //src/ui/backlight/drivers/ti-lp8556:ti-lp8556-driver
 //src/ui/input/drivers/adc-buttons:bazel_package.bazel_build
 //src/ui/input/drivers/buttons:buttons-driver
-//src/ui/input/drivers/ctaphid:ctaphid-driver
 //src/ui/input/drivers/focaltech:focaltech-driver
 //src/ui/input/drivers/focaltech:focaltech-sherlock-driver
 //src/ui/input/drivers/goldfish_sensor:sensor_fuchsia_driver
