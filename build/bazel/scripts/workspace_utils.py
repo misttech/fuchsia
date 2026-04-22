@@ -1213,6 +1213,7 @@ class BazelrcFromGnConfigGenerator(object):
         "fuchsia_x64",
         "fuchsia_arm64",
         "fuchsia_riscv64",
+        "fuchsia_platform",
         "fuchsia_platform_x64",
         "fuchsia_platform_arm64",
         "fuchsia_platform_riscv64",
@@ -1274,10 +1275,15 @@ class BazelrcFromGnConfigGenerator(object):
                 if platform.startswith("fuchsia")
                 else "host_config_args"
             )
-            if platform in ("fuchsia"):
-                # As a special case, make "--config=fuchsia" the same as
-                # "--config=fuchsia_${target_cpu}".
-                values = config_values[platform]
+            platform_base = (
+                "fuchsia" if platform.startswith("fuchsia") else "host"
+            )
+
+            if platform in ("fuchsia", "fuchsia_platform"):
+                # As a special case, make "--config=fuchsia" and "--config=fuchsia_platform"
+                # the same as "--config=fuchsia_${target_cpu}" and
+                # "--config=fuchsia_platform_${target_cpu}", respectively.
+                values = config_values[platform_base]
                 current_os = values["current_os"]
                 current_cpu = values["current_cpu"]
                 platform_name = f"{current_os}_{current_cpu}"

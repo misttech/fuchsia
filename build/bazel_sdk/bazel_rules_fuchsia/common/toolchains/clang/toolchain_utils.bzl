@@ -475,13 +475,20 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
 
     clang_info = ctx.attr.clang_info[ClangInfo]
 
+    if ctx.attr.sysroot_label:
+        if ctx.attr.sysroot_path:
+            fail("Only one of sysroot_label or sysroot_path can be set")
+        sysroot_path = ctx.file.sysroot_label.dirname
+    else:
+        sysroot_path = ctx.attr.sysroot_path
+
     # TODO(digit): Change features list based on build variants
     features = compute_clang_features(
         clang_info,
         ctx.attr.toolchain_repo_name,
         to_fuchsia_os_name(ctx.attr.target_os),
         to_fuchsia_cpu_name(ctx.attr.target_arch),
-        sysroot = ctx.attr.sysroot,
+        sysroot = sysroot_path,
     )
 
     return cc_common.create_cc_toolchain_config_info(
@@ -491,7 +498,7 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
         features = features,
         action_configs = [],
         cxx_builtin_include_directories = clang_info.builtin_include_paths,
-        builtin_sysroot = ctx.attr.sysroot,
+        builtin_sysroot = sysroot_path,
         target_cpu = "_".join([ctx.attr.target_os, ctx.attr.target_arch]),
 
         # Required by constructor, but otherwise ignored by Bazel.
@@ -513,7 +520,8 @@ _prebuilt_clang_cc_toolchain_config = rule(
         "host_arch": attr.string(mandatory = True),
         "target_os": attr.string(mandatory = True),
         "target_arch": attr.string(mandatory = True),
-        "sysroot": attr.string(default = ""),
+        "sysroot_path": attr.string(default = ""),
+        "sysroot_label": attr.label(default = None, allow_single_file = True),
         "clang_info": attr.label(
             mandatory = True,
             providers = [ClangInfo],
@@ -532,6 +540,7 @@ def generate_clang_cc_toolchain(
         sysroot_header_files = [],
         sysroot_library_files = [],
         sysroot_path = "",
+        sysroot_label = None,
         extra_target_compatible_with = []):
     """Define C++ toolchain related targets for a prebuilt Clang installation.
 
@@ -561,8 +570,13 @@ def generate_clang_cc_toolchain(
            C++ link actions.
 
        sysroot_path: (optional) Path to the sysroot directory to be used.
-           This must be set if sysroot_header_files or sysroot_library_files
-           are used.
+           Mutually exclusive with sysroot_label. One of them must be set if
+           sysroot_header_files or sysroot_library_files are used.
+
+       sysroot_label: (optional) The label to a file at the root of the sysroot.
+           Use this instead of sysroot_path if the path is not relative to the
+           workspace root. Mutually exclusive with sysroot_path. One of them
+           must be set if sysroot_header_files or sysroot_library_files are used.
 
        extra_target_compatible_with: (optional) A list of extra target
            constraint values for the toolchain() target definition.
@@ -573,7 +587,8 @@ def generate_clang_cc_toolchain(
         host_arch = host_arch,
         target_os = target_os,
         target_arch = target_arch,
-        sysroot = sysroot_path,
+        sysroot_path = sysroot_path,
+        sysroot_label = sysroot_label,
         clang_info = clang_info,
         toolchain_repo_name = native.repo_name(),
     )

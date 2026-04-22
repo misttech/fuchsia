@@ -50,6 +50,13 @@ alias(
     actual = ":fuchsia_" + fuchsia_target_cpu,
 )
 
+# @//build/bazel/platforms:fuchsia_platform is an alias pointing to the
+# fuchsia_platform_${target_cpu} matching the current args.gn
+alias(
+    name = "fuchsia_platform",
+    actual = ":fuchsia_platform_" + fuchsia_target_cpu,
+)
+
 # The following platforms will be used to generate binaries
 # for Fuchsia, Linux and MacOS systems respectively. Other
 # parts of Bazel should define C++ and Rust toolchain instances

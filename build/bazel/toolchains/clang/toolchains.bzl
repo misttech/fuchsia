@@ -6,6 +6,7 @@
 C++ toolchain definitions for Clang.
 """
 
+load("@fuchsia_build_info//:args.bzl", fuchsia_target_cpu = "target_cpu")
 load(
     "@rules_fuchsia//common:toolchains/clang/toolchain_utils.bzl",
     "generate_clang_cc_toolchain",
@@ -60,12 +61,22 @@ def define_fuchsia_platform_prebuilt_clang_cc_toolchains(name, host_os, host_arc
     bazel_os = to_bazel_os_name(host_os)
     bazel_arch = to_bazel_cpu_name(host_arch)
 
+    def filter_for_target_cpu(arch, fuchsia_value, default_value):
+        """If arch is fuchsia_target_cpu then return fuchsia_value, else default_value"""
+        if arch == fuchsia_target_cpu:
+            return fuchsia_value
+        else:
+            return default_value
+
     generate_clang_cc_toolchain(
         name = name + "_x64",
         host_os = bazel_os,
         host_arch = bazel_arch,
         target_os = "fuchsia",
         target_arch = "x86_64",
+        sysroot_header_files = filter_for_target_cpu("x64", ["@fuchsia_platform_sysroot//:sysroot_header_files"], []),
+        sysroot_library_files = filter_for_target_cpu("x64", ["@fuchsia_platform_sysroot//:sysroot_library_files"], []),
+        sysroot_label = filter_for_target_cpu("x64", "@fuchsia_platform_sysroot//:sysroot/empty", None),
         extra_target_compatible_with = ["@//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules"],
     )
 
@@ -75,6 +86,9 @@ def define_fuchsia_platform_prebuilt_clang_cc_toolchains(name, host_os, host_arc
         host_arch = bazel_arch,
         target_os = "fuchsia",
         target_arch = "aarch64",
+        sysroot_header_files = filter_for_target_cpu("arm64", ["@fuchsia_platform_sysroot//:sysroot_header_files"], []),
+        sysroot_library_files = filter_for_target_cpu("arm64", ["@fuchsia_platform_sysroot//:sysroot_library_files"], []),
+        sysroot_label = filter_for_target_cpu("arm64", "@fuchsia_platform_sysroot//:sysroot/empty", None),
         extra_target_compatible_with = ["@//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules"],
     )
 
@@ -84,5 +98,8 @@ def define_fuchsia_platform_prebuilt_clang_cc_toolchains(name, host_os, host_arc
         host_arch = bazel_arch,
         target_os = "fuchsia",
         target_arch = "riscv64",
+        sysroot_header_files = filter_for_target_cpu("riscv64", ["@fuchsia_platform_sysroot//:sysroot_header_files"], []),
+        sysroot_library_files = filter_for_target_cpu("riscv64", ["@fuchsia_platform_sysroot//:sysroot_library_files"], []),
+        sysroot_label = filter_for_target_cpu("riscv64", "@fuchsia_platform_sysroot//:sysroot/empty", None),
         extra_target_compatible_with = ["@//build/bazel/platforms:fuchsia_artifacts_build_without_sdk_rules"],
     )
