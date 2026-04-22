@@ -68,8 +68,24 @@ VmObjectPaged::~VmObjectPaged() {
 void VmObjectPaged::DestructorHelper() {
   RemoveFromGlobalList();
 
-  if (options_ & kAlwaysPinned) {
-    Unpin(0, size());
+  if (unlikely(options_ & kAlwaysPinned)) {
+    // It's possible that the final stage of construction of an always pinned vmo can fail, in which
+    // case it will be empty. This should be extremely unlikely, so as an efficient approximation we
+    // first check if there are any pinned pages.
+    bool unpin = true;
+    {
+      Guard<CriticalMutex> guard{lock()};
+      if (unlikely(cow_pages_locked()->pinned_page_count_locked() == 0)) {
+        // There's no pinned pages at all, so now perform a full attribution to validate that the
+        // cow pages is truly empty and we are in the not fully initialized state.
+        AttributionCounts counts = GetAttributedMemoryInRangeLocked(0, size());
+        ASSERT(counts == AttributionCounts{});
+        unpin = false;
+      }
+    }
+    if (likely(unpin)) {
+      Unpin(0, size());
+    }
   }
 
   fbl::RefPtr<VmCowPages> deferred;
@@ -302,35 +318,8 @@ zx_status_t VmObjectPaged::CreateCommon(uint32_t pmm_alloc_flags, uint32_t optio
     return status;
   }
 
-  // If this VMO will always be pinned, allocate and pin the pages in the VmCowPages prior to
-  // creating the VmObjectPaged. This ensures the VmObjectPaged destructor can assume that the pages
-  // are committed and pinned.
-  if (options & kAlwaysPinned) {
-    list_node_t prealloc_pages;
-    list_initialize(&prealloc_pages);
-    status = pmm_alloc_pages(size / kPageSize, pmm_alloc_flags, &prealloc_pages);
-    if (status != ZX_OK) {
-      return status;
-    }
-    Guard<CriticalMutex> guard{cow_pages->lock()};
-    // Add all the preallocated pages to the object, this takes ownership of all pages regardless
-    // of the outcome. This is a new VMO, but this call could fail due to OOM.
-    status = cow_pages->AddNewPagesLocked(0, &prealloc_pages, VmCowPages::CanOverwriteSlot::Empty,
-                                          true, nullptr);
-    if (status != ZX_OK) {
-      return status;
-    }
-    // With all the pages in place, pin them.
-    status = cow_pages->PinRangeLocked(VmCowRange(0, size));
-    ASSERT(status == ZX_OK);
-  }
-
   auto vmo = fbl::AdoptRef<VmObjectPaged>(new (&ac) VmObjectPaged(options, ktl::move(cow_pages)));
   if (!ac.check()) {
-    if (options & kAlwaysPinned) {
-      Guard<CriticalMutex> guard{cow_pages->lock()};
-      cow_pages->UnpinLocked(VmCowRange(0, size), nullptr);
-    }
     return ZX_ERR_NO_MEMORY;
   }
 
@@ -341,6 +330,18 @@ zx_status_t VmObjectPaged::CreateCommon(uint32_t pmm_alloc_flags, uint32_t optio
     vmo->cow_pages_locked()->TransitionToAliveLocked();
   }
   vmo->AddToGlobalList();
+
+  // The object is now 'fully created' and can now fulfill any kAlwaysPinned request. Although this
+  // allows anyone who is walking the AllVmosList to see this VMO prior to its pages being
+  // committed, this is fine as they are not the user depending on the pinning. If this fails we can
+  // still tear down the whole object and the VmObjectPaged destructor explicitly handles the case
+  // of destruction without successfully committing and pinning our pages.
+  if (options & kAlwaysPinned) {
+    status = vmo->CommitRangePinned(0, size, /*write=*/true);
+    if (status != ZX_OK) {
+      return status;
+    }
+  }
 
   *obj = ktl::move(vmo);
 
