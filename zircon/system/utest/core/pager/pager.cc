@@ -4364,4 +4364,26 @@ TEST(Pager, CreateVmoUnboundedInvalidStreamSize) {
   EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
 }
 
+// This is a regression test for https://fxbug.dev/498512247 that attempts to trigger a
+// use-after-free in PagerProxy.  It is intended to be run under kasan.
+TEST(Pager, ProxyUseAfterFree) {
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::vmo vmo;
+  ASSERT_OK(pager.create_vmo(0, port, 0, zx_system_get_page_size(), &vmo));
+
+  // Close the pager, which will free the PagerDispatcher.
+  pager.reset();
+
+  // Create a new pager and query the stats in an attempt to trigger a use-after-free.
+  ASSERT_OK(zx::pager::create(0, &pager));
+  zx_pager_vmo_stats_t stats;
+  zx_status_t status = zx_pager_query_vmo_stats(pager.get(), vmo.get(), 0, &stats, sizeof(stats));
+  ASSERT_EQ(status, ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace pager_tests

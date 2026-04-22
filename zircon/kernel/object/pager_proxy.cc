@@ -27,7 +27,11 @@ KCOUNTER(dispatcher_pager_timed_out_request_count, "dispatcher.pager.timed_out_r
 
 PagerProxy::PagerProxy(PagerDispatcher* dispatcher, fbl::RefPtr<PortDispatcher> port, uint64_t key,
                        uint32_t options)
-    : pager_(dispatcher), port_(ktl::move(port)), key_(key), options_(options) {
+    : pager_(dispatcher),
+      pager_koid_(pager_->get_koid()),
+      port_(ktl::move(port)),
+      key_(key),
+      options_(options) {
   LTRACEF("%p key %lx options %x\n", this, key_, options_);
 }
 
@@ -49,7 +53,7 @@ PageSourceProperties PagerProxy::properties() const {
   };
 }
 
-ktl::optional<uint64_t> PagerProxy::GetKoid() const { return pager_->get_koid(); }
+ktl::optional<uint64_t> PagerProxy::GetKoid() const { return pager_koid_; }
 
 void PagerProxy::SendAsyncRequest(PageRequest* request) {
   Guard<Mutex> guard{&mtx_};
@@ -185,7 +189,7 @@ void PagerProxy::OnClose() {
     // We know PagerDispatcher::on_zero_handles hasn't been invoked, since that would
     // have already closed this pager proxy via OnDispatcherClose. Therefore we are free to
     // immediately clean up.
-    DEBUG_ASSERT(!pager_dispatcher_closed_);
+    DEBUG_ASSERT(pager_ != nullptr);
     self_ref = pager_->ReleaseProxy(this);
     self_src = ktl::move(page_source_);
   } else {
@@ -238,9 +242,9 @@ void PagerProxy::OnDispatcherClose() {
     // and cleanup is already done.
     DEBUG_ASSERT(!page_source_);
   }
-  // The pager dispatcher calls OnDispatcherClose when it is going away on zero handles, and it's
-  // not safe to dereference pager_ anymore. Remember that pager_ is now closed.
-  pager_dispatcher_closed_ = true;
+  // The pager dispatcher calls OnDispatcherClose when it is going away on zero handles.  Clear
+  // pager_ to ensure we don't attempt to access an already-freed pager dispatcher.
+  pager_ = nullptr;
 }
 
 void PagerProxy::Free(PortPacket* packet) {
@@ -278,7 +282,7 @@ void PagerProxy::Free(PortPacket* packet) {
     if (page_source_closed_) {
       DEBUG_ASSERT(page_source_);
       // If the PagerDispatcher is already closed, the proxy has already been released.
-      if (!pager_dispatcher_closed_) {
+      if (pager_) {
         // self_ref could be a nullptr if we have ended up racing with
         // PagerDispatcher::on_zero_handles which calls PagerProxy::OnDispatcherClose *after*
         // removing the proxy from its list. This is fine as the proxy will be removed from the
@@ -374,7 +378,7 @@ zx_status_t PagerProxy::WaitOnEvent(Event* event, bool suspendable) {
         // This function is called from the context of waiting on a page request, so we know that we
         // don't hold any locks. It should be safe to iterate the root job tree to dump handle info.
         printf("Dumping all handles for the pager object:\n");
-        DumpHandlesForKoid(pager_->get_koid());
+        DumpHandlesForKoid(pager_koid_);
         printf("Dumping all handles for the pager port object:\n");
         DumpHandlesForKoid(port_->get_koid());
 
@@ -432,11 +436,15 @@ void PagerProxy::Dump(uint depth, uint32_t max_items) {
   Guard<Mutex> guard{&mtx_};
   dump::DepthPrinter printer(depth);
   char name[ZX_MAX_NAME_LEN];
-  pager_->get_debug_name(name, ZX_MAX_NAME_LEN);
+  if (pager_) {
+    pager_->get_debug_name(name, sizeof(name));
+  } else {
+    strlcpy(name, "<closed>", sizeof(name));
+  }
   printer.Emit("pager_dispatcher <%s> page_source %p key %lu", name, page_source_.get(), key_);
 
   printer.Emit("  source_closed %d pager_closed %d packet_busy %d complete_pending %d",
-               page_source_closed_, pager_dispatcher_closed_, packet_busy_, complete_pending_);
+               page_source_closed_, (pager_ == nullptr), packet_busy_, complete_pending_);
 
   if (active_request_) {
     printer.Emit("  active %s request on pager port [0x%lx, 0x%lx) (port koid 0x%lx)",
