@@ -31,6 +31,11 @@ Follow [the virtio-spec processing guide][spec-processing-guide] to prepare a
 Markdown version of the virtio specification in the `local/virtio-spec/`
 directory.
 
+### Iterating on driver changes
+
+Follow [the change validation guide][change-validation-guide] to quickly check
+your change under QEMU.
+
 ### Manual testing
 
 We do not currently have automated integration tests. Behavior changes in this
@@ -66,6 +71,7 @@ fx set workbench_eng.x64 --debug --with //src/graphics/display:tools \
     --with //src/graphics/display:tests
 ```
 
+[change-validation-guide]: ./docs/change-validation.md
 [spec-processing-guide]: ./docs/spec-processing.md
 [virtio-spec]: https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html
 [virtio-spec-gpu-section]: https://docs.oasis-open.org/virtio/virtio/v1.3/csd01/virtio-v1.3-csd01.html#x1-3960007
