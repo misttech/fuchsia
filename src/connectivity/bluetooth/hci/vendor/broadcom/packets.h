@@ -32,13 +32,6 @@ constexpr size_t kMacAddrLen = 6;
 
 constexpr uint16_t kStartFirmwareDownloadCmdOpCode = 0xfc2e;
 
-struct BcmSetBaudRateCmd {
-  HciCommandHeader header;
-  uint16_t unused;
-  uint32_t baud_rate;
-} __PACKED;
-constexpr uint16_t kBcmSetBaudRateCmdOpCode = 0xfc18;
-
 struct BcmSetBdaddrCmd {
   HciCommandHeader header;
   uint8_t bdaddr[kMacAddrLen];

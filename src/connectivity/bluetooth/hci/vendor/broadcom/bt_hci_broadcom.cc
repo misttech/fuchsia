@@ -95,9 +95,6 @@ WriteSleepModeCmdView EnableLowPowerModeCmd(Container* container, zx::duration h
 namespace fhbt = fuchsia_hardware_bluetooth;
 namespace fhsi = fuchsia_hardware_serialimpl::wire;
 
-constexpr uint32_t kTargetBaudRate = 2000000;
-constexpr uint32_t kDefaultBaudRate = 115200;
-
 // Chips with a chip ID greater than or equal to this value support the "Fast Download"
 // feature for firmware loading.
 constexpr uint8_t kFastDownloadChipIdMin = 174;
@@ -525,30 +522,26 @@ fpromise::promise<std::vector<uint8_t>, zx_status_t> BtHciBroadcom::ReadEvent() 
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::SetBaudRate(uint32_t baud_rate) {
-  BcmSetBaudRateCmd command = {
-      .header =
-          {
-              .opcode = kBcmSetBaudRateCmdOpCode,
-              .parameter_total_size = sizeof(BcmSetBaudRateCmd) - sizeof(HciCommandHeader),
-          },
-      .unused = 0,
-      .baud_rate = htole32(baud_rate),
-  };
+  std::array<std::byte, SetBaudRateCommand::MaxSizeInBytes()> storage;
+  auto view = MakeSetBaudRateCommandView(&storage);
+  view.header().opcode().Write(BroadcomOpCode::SET_BAUD_RATE);
+  view.header().parameter_total_size().Write(SetBaudRateCommand::parameter_size());
+  view.unused().Write(0);
+  view.baud_rate().Write(baud_rate);
 
-  return SendCommand(&command, sizeof(command))
-      .and_then(
-          [this, baud_rate](const std::vector<uint8_t>&) -> fpromise::result<void, zx_status_t> {
-            fdf::Arena arena('CONF');
-            fdf::WireUnownedResult<fuchsia_hardware_serialimpl::Device::Config> result =
-                serial_client_.buffer(arena)->Config(baud_rate, fhsi::kSerialSetBaudRateOnly);
-            if (!result.ok()) {
-              return fpromise::error(result.status());
-            }
-            if (result->is_error()) {
-              return fpromise::error(result->error_value());
-            }
-            return fpromise::ok();
-          });
+  return SendCommand(view).and_then(
+      [this, baud_rate](const std::vector<uint8_t>&) -> fpromise::result<void, zx_status_t> {
+        fdf::Arena arena('CONF');
+        fdf::WireUnownedResult<fuchsia_hardware_serialimpl::Device::Config> result =
+            serial_client_.buffer(arena)->Config(baud_rate, fhsi::kSerialSetBaudRateOnly);
+        if (!result.ok()) {
+          return fpromise::error(result.status());
+        }
+        if (result->is_error()) {
+          return fpromise::error(result->error_value());
+        }
+        return fpromise::ok();
+      });
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::EnableLowPowerMode(

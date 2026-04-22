@@ -692,6 +692,25 @@ TEST_F(BtHciBroadcomTest, ControllerFailsToInitializeWhenMissingBdAddr) {
   ASSERT_TRUE(StartDriver().is_error());
 }
 
+// Tests that the driver sends the vendor-specific baud rate setup command during initialization.
+TEST_F(BtHciBroadcomTest, SendsSetBaudRateDuringInitialization) {
+  SetMacAddressMetadata();
+  SetFirmware();
+
+  ASSERT_TRUE(StartDriver().is_ok());
+
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    auto packet = env.transport_device_.LastPacketByOpCode(
+        static_cast<uint16_t>(BroadcomOpCode::SET_BAUD_RATE));
+    ASSERT_TRUE(packet.has_value());
+
+    auto view = MakeSetBaudRateCommandView(packet->data(), packet->size());
+    ASSERT_TRUE(view.Ok());
+    ASSERT_EQ(view.unused().Read(), 0);
+    ASSERT_EQ(view.baud_rate().Read(), kTargetBaudRate);
+  });
+}
+
 TEST_F(BtHciBroadcomTest, SendsPowerCapWhenNeeded) {
   SetMacAddressMetadata();
   //  Respond to SetInfo command with a controller needing PowerCap

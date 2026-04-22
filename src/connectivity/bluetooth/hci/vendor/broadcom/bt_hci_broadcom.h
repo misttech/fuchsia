@@ -28,6 +28,9 @@
 
 namespace bt_hci_broadcom {
 
+constexpr uint32_t kTargetBaudRate = 2000000;
+constexpr uint32_t kDefaultBaudRate = 115200;
+
 class HciEventHandler
     : public fidl::WireSyncEventHandler<fuchsia_hardware_bluetooth::HciTransport> {
  public:
