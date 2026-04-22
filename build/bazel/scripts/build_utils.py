@@ -198,6 +198,8 @@ def force_raw_symlink(dst_path: FilePath, target_path: FilePath) -> None:
         dst_path: path to symlink file to write or update.
         target_path: raw symlink target path.
     """
+    if os.path.lexists(dst_path):
+        os.remove(dst_path)  # Remove previous symlink if it exists.
     dst_dir = os.path.dirname(dst_path)
     os.makedirs(dst_dir, exist_ok=True)
     try:
@@ -208,6 +210,30 @@ def force_raw_symlink(dst_path: FilePath, target_path: FilePath) -> None:
             os.symlink(target_path, dst_path)
         else:
             raise
+
+
+def force_symlink_to_ninja_artifact(
+    link_path: FilePath, target_path: FilePath
+) -> None:
+    """Create a symlink pointing to a Ninja artifact.
+
+    If the target path doesn't exist, create it with a timestamp of 0.
+    This ensures that Bazel doesn't error when performing a query over the
+    repository, even if the target artifact hasn't been built yet.
+
+    Bazel builds still require a Ninja invocation, which will overwrite the
+    target with an up-to-date artifact on the next invocation.
+
+    Args:
+        link_path: Path to the symlink to create.
+        target_path: Path to the target artifact.
+    """
+    force_symlink(link_path, target_path)
+    if not os.path.exists(target_path):
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, "w") as f:
+            f.write("")
+        os.utime(target_path, (0, 0))
 
 
 _HEXADECIMAL_SET = set("0123456789ABCDEFabcdef")

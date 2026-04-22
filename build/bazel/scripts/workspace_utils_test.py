@@ -849,5 +849,85 @@ common:fuchsia_second_cpu --config=fuchsia_config_args --platforms=//build/bazel
         )
 
 
+class GenerateFuchsiaPlatformSysrootRepositoryTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self._root = Path(self._td.name)
+        self._sysroot_json_path = self._root / "sysroot.json"
+        self._repository_dir = self._root / "repository"
+        self._build_dir = self._root / "build_dir"
+        self._build_dir.mkdir()
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_generate_fuchsia_platform_sysroot_repository(self) -> None:
+        sysroot_entries = [
+            {"source": "../src/foo.h", "dest": "include/foo.h"},
+            {"source": "../src/lib_extra/bar.h", "dest": "include/bar.h"},
+            {"source": "obj/libfoo.so", "dest": "lib/libfoo.so"},
+        ]
+        with self._sysroot_json_path.open("w") as f:
+            json.dump(sysroot_entries, f)
+
+        workspace_utils.generate_fuchsia_platform_sysroot_repository(
+            self._repository_dir,
+            "test_sysroot_repo_name",
+            self._sysroot_json_path,
+            self._build_dir,
+        )
+
+        sysroot_empty = self._repository_dir / "sysroot/empty"
+        self.assertTrue(sysroot_empty.exists())
+        self.assertEqual(sysroot_empty.read_text(), "")
+
+        build_bazel = self._repository_dir / "BUILD.bazel"
+        self.assertTrue(build_bazel.exists())
+
+        self.maxDiff = None
+        self.assertEqual(
+            build_bazel.read_text(),
+            """# AUTO-GENERATED - DO NOT EDIT
+
+exports_files(["sysroot/empty"])
+
+filegroup(
+    name = "sysroot_header_files",
+    srcs = [
+        "sysroot/include/foo.h",
+        "sysroot/include/bar.h",
+    ],
+    visibility = ["//visibility:public"]
+)
+
+filegroup(
+    name = "sysroot_library_files",
+    srcs = [
+        "sysroot/lib/libfoo.so",
+    ],
+    visibility = ["//visibility:public"]
+)
+""",
+        )
+
+        self.assertEqual(
+            (self._repository_dir / "MODULE.bazel").read_text(),
+            'module(name = "test_sysroot_repo_name")',
+        )
+
+        self.assertEqual(
+            str((self._repository_dir / "sysroot/include/foo.h").readlink()),
+            "../../../src/foo.h",
+        )
+        self.assertEqual(
+            str((self._repository_dir / "sysroot/include/bar.h").readlink()),
+            "../../../src/lib_extra/bar.h",
+        )
+        self.assertEqual(
+            str((self._repository_dir / "sysroot/lib/libfoo.so").readlink()),
+            "../../../build_dir/obj/libfoo.so",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

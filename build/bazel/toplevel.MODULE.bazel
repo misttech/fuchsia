@@ -202,6 +202,14 @@ fuchsia_sdk_repository(
     },
 )
 
+# The @fuchsia_platform_sysroot repository is populated by symlinks to Ninja sysroot artifacts
+# and a few top-level filegroup()s that can be used to define a C++ toolchain in @prebuilt_clang.
+bazel_dep(name = "fuchsia_platform_sysroot", version = "")
+local_path_override(
+    module_name = "fuchsia_platform_sysroot",
+    path = "fuchsia_build_generated/fuchsia_platform_sysroot",
+)
+
 fuchsia_clang_ext = use_extension(
     "@rules_fuchsia//fuchsia/workspace:fuchsia_clang_repository.bzl",
     "fuchsia_clang_ext",

@@ -117,7 +117,8 @@ sysroot_entries = sysroot_uninstrumented_libc_entries +
 #
 #   include_dir (optional)
 #     [GN path] A GN path to a subdirectory containing zero or more headers
-#     to copy to the sysroot's include directory.
+#     to copy to the sysroot's include directory. This can also be a
+#     path relative to the Ninja build directory.
 #
 #   headers (optional)
 #     [list of paths] Required if `include_dir` is specified, ignored otherwise.

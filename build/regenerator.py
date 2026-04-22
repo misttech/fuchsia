@@ -564,6 +564,20 @@ def main() -> int:
             log=log2,
         )
 
+        time_profile.start(
+            "fuchsia_platform_sysroot", "Generating @fuchsia_platform_sysroot"
+        )
+        platform_sysroot_repository_dir = (
+            regenerator_outputs_dir / "fuchsia_platform_sysroot"
+        )
+        workspace_utils.generate_fuchsia_platform_sysroot_repository(
+            platform_sysroot_repository_dir,
+            "fuchsia_platform_sysroot",
+            # LINT.IfChange(sysroot_for_fuchsia_platform_json)
+            build_dir / "sysroot_for_fuchsia_platform.json",
+            # LINT.ThenChange(//zircon/public/sysroot_sdk/BUILD.gn:sysroot_for_fuchsia_platform_json)
+        )
+
         time_profile.start("@gn_targets", "Generating @gn_targets directories")
         input_file = build_dir / "bazel_build_action_targets.json"
         assert input_file.exists(), f"Missing GN-generated file: {input_file}"

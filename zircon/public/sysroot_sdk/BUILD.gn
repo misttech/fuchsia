@@ -14,7 +14,6 @@ import("//build/sdk/sdk_atom.gni")
 
 # Collect the metadata for the SDK.
 file_base = "${sdk_prebuilt_base_for_target_api_level}/sysroot"
-sdk_files = []
 sdk_api_contents = []
 
 version_content = {
@@ -27,6 +26,11 @@ version_content = {
   dist_libs = []
   debug_libs = []
 }
+
+sdk_files = []
+
+platform_sysroot_files = []
+platform_sysroot_deps = []
 
 import("//sdk/lib/c/sysroot_entries.gni")
 import("//src/zircon/lib/zircon/sysroot_entries.gni")
@@ -48,7 +52,13 @@ foreach(entry, sysroot_entries) {
     sdk = entry.sdk
     if (defined(sdk.headers)) {
       # This has to generate a separate copy() target for each file.
-      dir = rebase_path(sdk.include_dir, "", root_build_dir)
+      # sdk.include_dir can be either a GN source path that begins with //
+      # or a path relative to the Ninja build directory. use rebase_path()
+      # to transform that to a rebased path first, then generate its
+      # absolute path.
+      rebased_include_dir =
+          rebase_path(sdk.include_dir, root_build_dir, root_build_dir)
+      dir = rebase_path(rebased_include_dir, "", root_build_dir)
       foreach(file, sdk.headers) {
         no_export = defined(sdk.no_export) && sdk.no_export
         if (!no_export) {
@@ -57,6 +67,12 @@ foreach(entry, sysroot_entries) {
             {
               source = "$dir/$file"
               dest = "$file_base/include/$file"
+            },
+          ]
+          platform_sysroot_files += [
+            {
+              source = "${rebased_include_dir}/${file}"
+              dest = "include/$file"
             },
           ]
           sdk_api_contents += [
@@ -74,6 +90,12 @@ foreach(entry, sysroot_entries) {
           dest = "$file_base/${sdk.debug}"
         },
       ]
+      platform_sysroot_files += [
+        {
+          source = sdk.source
+          dest = sdk.debug
+        },
+      ]
       version_content.debug_libs += [ "$file_base/${sdk.debug}" ]
     } else {
       # This is just a single copy() target.
@@ -85,6 +107,12 @@ foreach(entry, sysroot_entries) {
             dest = "$file_base/${sdk.link}"
           },
         ]
+        platform_sysroot_files += [
+          {
+            source = sdk.source
+            dest = sdk.link
+          },
+        ]
       } else if (defined(sdk.dist)) {
         version_content.dist_libs += [ "$file_base/${sdk.dist}" ]
         version_content.dist_dir = file_base
@@ -94,12 +122,19 @@ foreach(entry, sysroot_entries) {
             dest = "$file_base/${sdk.dist}"
           },
         ]
+        platform_sysroot_files += [
+          {
+            source = sdk.source
+            dest = sdk.dist
+          },
+        ]
       } else {
         assert(false, "confused by $sdk")
       }
     }
     if (defined(sdk.deps)) {
       sysroot_sdk_deps += sdk.deps
+      platform_sysroot_deps += sdk.deps
     }
   }
 }
@@ -112,6 +147,17 @@ sdk_files += [
   {
     source = "//src/zircon/lib/zircon/zircon.ifs"
     dest = "pkg/sysroot/zircon.ifs"
+  },
+]
+
+platform_sysroot_files += [
+  {
+    source = rebase_path("//sdk/lib/c/libc.ifs", root_build_dir)
+    dest = "libc.ifs"
+  },
+  {
+    source = rebase_path("//src/zircon/lib/zircon/zircon.ifs", root_build_dir)
+    dest = "zircon.ifs"
   },
 ]
 
@@ -173,4 +219,24 @@ sdk_atom("sysroot_sdk") {
   }
 
   files = sdk_files
+}
+
+# This target is used to generate the platform sysroot files with Ninja, and write
+# a JSON file that describes how to copy them to an external platform sysroot. This
+# will be used to configure the Bazel fuchsia_platform toolchain.
+#
+# The output is a JSON array of objects, each one with the following schema:
+#
+#  "source": Path to the source file, relative to the Ninja build directory.
+#  "dest": Path to the destination file, relative to the sysroot directory.
+#
+generated_file("sysroot_for_fuchsia_platform") {
+  deps = platform_sysroot_deps
+  contents = platform_sysroot_files
+
+  # LINT.IfChange(sysroot_for_fuchsia_platform_json)
+  outputs = [ "$root_build_dir/sysroot_for_fuchsia_platform.json" ]
+
+  # LINT.ThenChange(//build/regenerator.py:sysroot_for_fuchsia_platform_json)
+  output_conversion = "json"
 }

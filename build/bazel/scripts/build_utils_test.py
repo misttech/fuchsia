@@ -218,6 +218,42 @@ class ForceSymlinkTest(unittest.TestCase):
             self.assertTrue(link_path.is_symlink())
             self.assertEqual(str(link_path.readlink()), "../../target/new_file")
 
+    def test_force_symlink_to_ninja_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir).resolve()
+
+            # Create a new symlink, then ensure this also creates the target with a timestamp of 0.
+            target1_path = tmp_path / "target" / "file1"
+            link1_path = tmp_path / "links" / "dir" / "symlink1"
+
+            build_utils.force_symlink_to_ninja_artifact(
+                link1_path, target1_path
+            )
+
+            self.assertTrue(link1_path.is_symlink())
+            self.assertEqual(str(link1_path.readlink()), "../../target/file1")
+
+            self.assertTrue(target1_path.exists())
+            self.assertEqual(target1_path.stat().st_mtime_ns, 0)
+
+            # Create another symlink to an existing file, verify that this does not modify its
+            # timestamp.
+            target2_path = tmp_path / "target" / "file2"
+            target2_path.write_text("hi")
+            original_target2_mtime = target2_path.stat().st_mtime_ns
+
+            link2_path = tmp_path / "links" / "dir" / "symlink2"
+
+            build_utils.force_symlink_to_ninja_artifact(
+                link2_path, target2_path
+            )
+            self.assertTrue(link2_path.is_symlink())
+            self.assertEqual(str(link2_path.readlink()), "../../target/file2")
+            self.assertTrue(target2_path.exists())
+            self.assertEqual(
+                target2_path.stat().st_mtime_ns, original_target2_mtime
+            )
+
 
 class IsHexadecimalStringTest(unittest.TestCase):
     def test_is_hexadecimal_string(self) -> None:

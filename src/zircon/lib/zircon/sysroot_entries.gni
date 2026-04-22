@@ -37,7 +37,7 @@ sysroot_vdso_entries = [
   },
   {
     sdk = {
-      source = _vdso_link
+      source = rebase_path(_vdso_link, root_build_dir)
       link = "lib/libzircon.so"
       deps = [ _vdso_link_label ]
     }
