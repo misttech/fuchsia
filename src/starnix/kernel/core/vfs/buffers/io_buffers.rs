@@ -711,7 +711,7 @@ impl VecOutputBuffer {
     }
 
     pub fn reset(&mut self) {
-        self.buffer.truncate(0)
+        self.buffer.clear()
     }
 }
 

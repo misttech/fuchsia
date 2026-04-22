@@ -503,10 +503,7 @@ impl Into<Vec<u8>> for ResultBuffer {
         }
         // If we still exceed the size (for example, a single message of size N in a buffer of
         // size M when N>M), we trim the output.
-        let size = std::cmp::min(result.len(), std::cmp::min(self.max_size, self.current_size));
-        if result.len() != size {
-            result.resize(size, 0);
-        }
+        result.truncate(self.max_size);
         result
     }
 }
@@ -640,6 +637,25 @@ mod tests {
         assert_eq!(result.len(), 50);
         for i in 0..50u8 {
             assert_eq!(result[i as usize], i);
+        }
+
+        let mut buffer = ResultBuffer::new(100);
+        buffer.push(Vec::from_iter(0..20));
+        buffer.push(Vec::from_iter(20..150));
+        let result: Vec<u8> = buffer.into();
+        assert_eq!(result.len(), 100);
+        for i in 0..100u8 {
+            assert_eq!(result[i as usize], i + 20u8);
+        }
+
+        let mut buffer = ResultBuffer::new(100);
+        buffer.push(Vec::from_iter(0..20));
+        buffer.push(Vec::from_iter(20..150));
+        buffer.push(Vec::from_iter(150..210));
+        let result: Vec<u8> = buffer.into();
+        assert_eq!(result.len(), 60);
+        for i in 0..60u8 {
+            assert_eq!(result[i as usize], i + 150u8);
         }
     }
 

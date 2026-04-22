@@ -4071,16 +4071,14 @@ pub mod tests {
                 .expect("read_memory");
             assert_eq!(vector[1], 1);
             assert_eq!(vector, other_vector);
-            vector.clear();
-            vector.resize(VECTOR_SIZE, 0);
+            vector.fill(0);
             remote_memory_accessor
                 .write_memory((vector.as_ptr() as u64).into(), &other_vector)
                 .expect("write_memory");
             apply_writes(remote_ioctl.ioctl_writes.take(), &remote_ioctl.vmo);
             assert_eq!(vector[1], 1);
             assert_eq!(vector, other_vector);
-            vector.clear();
-            vector.resize(VECTOR_SIZE, 0);
+            vector.fill(0);
             remote_memory_accessor
                 .write_memory((vector.as_ptr() as u64).into(), &other_vector[..SMALL_SIZE])
                 .expect("write_memory");
@@ -4090,8 +4088,7 @@ pub mod tests {
 
             // Do one more write than there is space for. The last write should then use the
             // ProcessAccessor to write to the address.
-            vector.clear();
-            vector.resize(VECTOR_SIZE, 0);
+            vector.fill(0);
             for _ in 0..=fbinder::MAX_IOCTL_WRITE_COUNT {
                 remote_memory_accessor
                     .write_memory((vector.as_ptr() as u64).into(), &other_vector[..SMALL_SIZE])
