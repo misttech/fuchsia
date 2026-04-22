@@ -216,8 +216,10 @@ pub struct LogCommand {
     #[argh(subcommand)]
     pub sub_command: Option<LogSubCommand>,
 
-    /// dumps all logs and exits.
-    #[argh(switch)]
+    /// dumps all logs and exits. This flag is deprecated. ffx log dump
+    /// should be used instead. This is now a subcommand.
+    /// This switch will eventually be removed.
+    #[argh(switch, hidden_help)]
     pub dump: bool,
 
     /// filter for a string in either the message, component or url.

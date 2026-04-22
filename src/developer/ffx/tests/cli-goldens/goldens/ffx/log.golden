@@ -18,8 +18,8 @@
       "optionality": "optional",
       "long": "--dump",
       "short": null,
-      "description": "dumps all logs and exits.",
-      "hidden": false
+      "description": "dumps all logs and exits. This flag is deprecated. ffx log dump should be used instead. This is now a subcommand. This switch will eventually be removed.",
+      "hidden": true
     },
     {
       "kind": {
