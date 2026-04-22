@@ -770,6 +770,12 @@
             source_availability: "unknown",
         },
         {
+            protocol: "fuchsia.usb.policy.PolicyProvider",
+            from: "#usb-policy",
+            to: "#session-manager",
+            source_availability: "unknown",
+        },
+        {
             protocol: [ "fuchsia.vulkan.loader.Loader" ],
             from: "#vulkan_loader",
             to: "#session-manager",

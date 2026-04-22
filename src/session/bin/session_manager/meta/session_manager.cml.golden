@@ -191,6 +191,7 @@
                 "fuchsia.ultrasound.Factory",
                 "fuchsia.update.CommitStatusProvider",
                 "fuchsia.update.installer.Installer",
+                "fuchsia.usb.policy.PolicyProvider",
                 "fuchsia.web.ContextProvider",
                 "fuchsia.wlan.wlanix.Wlanix",
                 "google.cast.multizone.Leader",
