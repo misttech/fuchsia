@@ -698,3 +698,9 @@
   available_in_git: '027a17f750ac7493f749d4477ee6664416deb416'
   areas: ['Display']
   path: 'src/ui/backlight/drivers/vim3-pwm-backlight'
+- short_description: 'Fuchsia block-verity driver'
+  deletion_reason: 'Driver is unused'
+  gerrit_change_id: '1581761'
+  available_in_git: '2354ad44d6ab58c285c6d977e0e47f7b914871bd'
+  areas: ['Block']
+  path: '/src/devices/block/drivers/block-verity'

@@ -124,7 +124,6 @@ static_library("ddk") {
     "//src/developer/remote-control/usb:*",
     "//src/devices/bin/driver_manager:*",
     "//src/devices/bin/driver_manager/devfs:*",
-    "//src/devices/block/drivers/block-verity:*",
     "//src/devices/block/drivers/core:*",
     "//src/devices/block/drivers/ftl:*",
     "//src/devices/block/drivers/gpt:*",
