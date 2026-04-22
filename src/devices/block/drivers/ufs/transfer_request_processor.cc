@@ -353,7 +353,10 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
                                                  bool is_timeout) {
   // Check request response.
   zx_status_t status = UpiuCompletion(slot_num, request_slot, is_timeout);
-  if (status != ZX_OK) {
+  if (status == ZX_ERR_UNAVAILABLE) {
+    fdf::warn("Unavailability reported for request, slot[{}] (Possibly a UNIT_ATTENTION condition)",
+              slot_num);
+  } else if (status != ZX_OK) {
     fdf::error("Failed to complete request, slot[{}]: {}", slot_num, zx_status_get_string(status));
   }
   request_slot.result = status;
