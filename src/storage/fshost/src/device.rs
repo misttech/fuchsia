@@ -71,19 +71,9 @@ pub trait Device: Send + Sync {
     /// If this device is a partition, this returns the type GUID. Otherwise, an error is returned.
     async fn partition_type(&mut self) -> Result<&[u8; 16], Error>;
 
-    /// If this device is a partition, this returns the instance GUID.
-    /// Otherwise, an error is returned.
-    async fn partition_instance(&mut self) -> Result<&[u8; 16], Error>;
-
     /// If this device is a volume, this allows resizing the device.
     /// Returns actual byte size assuming success, or error.
     async fn resize(&mut self, _target_size_bytes: u64) -> Result<u64, Error> {
-        Err(anyhow!("Unimplemented"))
-    }
-
-    /// Sets the maximum size of an partition.
-    /// Attempts to resize above this value will fail.
-    async fn set_partition_max_bytes(&mut self, _max_bytes: u64) -> Result<(), Error> {
         Err(anyhow!("Unimplemented"))
     }
 
@@ -110,14 +100,6 @@ pub trait Device: Send + Sync {
 
     /// Establish a new connection to the Block interface of the device.
     fn block_proxy(&self) -> Result<BlockProxy, Error>;
-
-    /// If device is backed by FVM, returns the topological path to FVM, otherwise None.
-    fn fvm_path(&self) -> Option<String> {
-        // The 4 is from the 4 characters in "/fvm"
-        self.topological_path()
-            .rfind("/fvm")
-            .map(|index| (self.topological_path()[..index + 4]).to_string())
-    }
 
     /// Returns a new Device, which is a child of this device with the specified suffix. This
     /// function will return when the device is available. This function assumes the child device
@@ -203,15 +185,7 @@ impl Device for NandDevice {
         self.block_device.partition_type().await
     }
 
-    async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
-        Err(anyhow!("not supported by nand device"))
-    }
-
     async fn resize(&mut self, _target_size_bytes: u64) -> Result<u64, Error> {
-        Err(anyhow!("not supported by nand device"))
-    }
-
-    async fn set_partition_max_bytes(&mut self, _max_bytes: u64) -> Result<(), Error> {
         Err(anyhow!("not supported by nand device"))
     }
 
@@ -260,7 +234,6 @@ pub struct BlockDevice {
     content_format: Option<DiskFormat>,
     partition_label: Option<String>,
     partition_type: Option<[u8; 16]>,
-    partition_instance: Option<[u8; 16]>,
 
     is_fshost_ramdisk: bool,
     parent: Parent,
@@ -287,7 +260,6 @@ impl BlockDevice {
             content_format: None,
             partition_label: None,
             partition_type: None,
-            partition_instance: None,
             is_fshost_ramdisk: false,
             // All of these devices are technically from dev. The system partition table takes
             // precedence, and may be set later if the topological path matches.
@@ -359,24 +331,9 @@ impl Device for BlockDevice {
         Ok(self.partition_type.as_ref().unwrap())
     }
 
-    async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
-        if self.partition_instance.is_none() {
-            let block_proxy = self.block_proxy()?;
-            let (status, instance_guid) = block_proxy.get_instance_guid().await?;
-            zx::Status::ok(status).context("get_instance_guid failed")?;
-            self.partition_instance =
-                Some(instance_guid.ok_or_else(|| anyhow!("Expected instance guid"))?.value);
-        }
-        Ok(self.partition_instance.as_ref().unwrap())
-    }
-
     async fn resize(&mut self, target_size_bytes: u64) -> Result<u64, Error> {
         let block_proxy = self.block_proxy()?;
         crate::volume::resize_volume(&block_proxy, target_size_bytes).await
-    }
-
-    async fn set_partition_max_bytes(&mut self, max_bytes: u64) -> Result<(), Error> {
-        crate::volume::set_partition_max_bytes(self, max_bytes).await
     }
 
     fn controller(&self) -> &ControllerProxy {
@@ -441,7 +398,6 @@ pub struct VolumeServiceDevice {
     content_format: Option<DiskFormat>,
     partition_label: Option<String>,
     partition_type: Option<[u8; 16]>,
-    partition_instance: Option<[u8; 16]>,
 
     parent: Parent,
 }
@@ -467,7 +423,6 @@ impl VolumeServiceDevice {
             content_format: None,
             partition_label: None,
             partition_type: None,
-            partition_instance: None,
             parent,
         })
     }
@@ -528,23 +483,9 @@ impl Device for VolumeServiceDevice {
         Ok(self.partition_type.as_ref().unwrap())
     }
 
-    async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
-        if self.partition_instance.is_none() {
-            let (status, instance_guid) = self.block_proxy.get_instance_guid().await?;
-            zx::Status::ok(status).context("get_instance_guid failed")?;
-            self.partition_instance =
-                Some(instance_guid.ok_or_else(|| anyhow!("Expected instance guid"))?.value);
-        }
-        Ok(self.partition_instance.as_ref().unwrap())
-    }
-
     async fn resize(&mut self, target_size_bytes: u64) -> Result<u64, Error> {
         let block_proxy = self.block_proxy()?;
         crate::volume::resize_volume(&block_proxy, target_size_bytes).await
-    }
-
-    async fn set_partition_max_bytes(&mut self, max_bytes: u64) -> Result<(), Error> {
-        crate::volume::set_partition_max_bytes(self, max_bytes).await
     }
 
     fn service_instance_directory(&self) -> Result<DirectoryProxy, Error> {
@@ -670,16 +611,8 @@ impl Device for LocalBlockDevice {
         Err(anyhow!("partition_type not supported for ramdisk"))
     }
 
-    async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
-        Err(anyhow!("partition_instance not supported for ramdisk"))
-    }
-
     async fn resize(&mut self, _target_size_bytes: u64) -> Result<u64, Error> {
         Err(anyhow!("resize not supported for ramdisk"))
-    }
-
-    async fn set_partition_max_bytes(&mut self, _max_bytes: u64) -> Result<(), Error> {
-        Err(anyhow!("set_partition_max_bytes not supported for ramdisk"))
     }
 
     fn block_connector(&self) -> Result<Box<dyn BlockConnector>, Error> {

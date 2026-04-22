@@ -180,9 +180,6 @@ mod tests {
         async fn partition_type(&mut self) -> Result<&[u8; 16], Error> {
             unimplemented!()
         }
-        async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
-            unimplemented!()
-        }
         fn block_connector(&self) -> Result<Box<dyn BlockConnector>, Error> {
             let volume = self.volume.clone();
             Ok(Box::new(move |server_end: ServerEnd<BlockMarker>| {

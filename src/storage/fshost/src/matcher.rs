@@ -2,13 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::constants::{
-    BLOBFS_PARTITION_LABEL, DATA_PARTITION_LABEL, GPT_DRIVER_PATH, LEGACY_DATA_PARTITION_LABEL,
-    LEGACY_FVM_TYPE_GUID, MBR_DRIVER_PATH,
-};
+use crate::device::constants::LEGACY_FVM_TYPE_GUID;
 use crate::device::{Device, DeviceTag, Parent};
 use crate::environment::Environment;
-use anyhow::{Context, Error, bail};
+use anyhow::Error;
 use async_trait::async_trait;
 use fidl_fuchsia_storage_block::DeviceFlag as BlockDeviceFlag;
 use fs_management::FVM_TYPE_GUID;
@@ -80,32 +77,19 @@ impl Matchers {
                 matchers.push(Box::new(FxblobOnRecoveryMatcher::new()));
             }
         } else {
-            matchers.push(Box::new(FvmMatcher::new(config.ramdisk_image, config.storage_host)));
+            matchers.push(Box::new(FvmMatcher::new(config.ramdisk_image)));
             if config.ramdisk_image {
-                matchers.push(Box::new(FvmOnRecoveryMatcher::new(config.storage_host)));
+                matchers.push(Box::new(FvmOnRecoveryMatcher::new()));
             }
         }
 
         // Match the primary GPT.
         if config.gpt {
-            let gpt_type = if config.storage_host {
-                PartitionMapType::StorageHost
-            } else {
-                PartitionMapType::Driver(GPT_DRIVER_PATH)
-            };
             if !config.gpt_all {
-                matchers.push(Box::new(SystemGptMatcher::new(gpt_type)));
+                matchers.push(Box::new(SystemGptMatcher::new()));
             } else {
-                matchers.push(Box::new(GptAllMatcher::new(gpt_type)))
+                matchers.push(Box::new(GptAllMatcher::new()))
             }
-        }
-
-        // Match non-primary partition tables as configured.
-        if config.mbr && !config.storage_host {
-            matchers.push(Box::new(PartitionMapMatcher::new(
-                DiskFormat::Mbr,
-                PartitionMapType::Driver(MBR_DRIVER_PATH),
-            )));
         }
 
         matchers.append(&mut extra_matchers);
@@ -300,17 +284,14 @@ struct FvmMatcher {
     // True if this partition is required to exist on a ramdisk.
     ramdisk_required: bool,
 
-    // If set, the FVM component will be launched instead of the legacy FVM driver.
-    storage_host: bool,
-
     // Set to true if we already matched a partition. It doesn't make sense to try and match
     // multiple main system partitions.
     already_matched: bool,
 }
 
 impl FvmMatcher {
-    fn new(ramdisk_required: bool, storage_host: bool) -> Self {
-        Self { ramdisk_required, storage_host, already_matched: false }
+    fn new(ramdisk_required: bool) -> Self {
+        Self { ramdisk_required, already_matched: false }
     }
 
     async fn bind_fvm_component(
@@ -321,37 +302,6 @@ impl FvmMatcher {
         env.mount_fvm(device).await?;
         env.mount_blob_volume().await?;
         env.mount_data_volume().await?;
-        Ok(())
-    }
-
-    async fn bind_fvm_driver(
-        &mut self,
-        device: &mut dyn Device,
-        env: &mut dyn Environment,
-    ) -> Result<(), Error> {
-        // volume names have the format {label}-p-{index}, e.g. blobfs-p-1
-        let volume_names = env.bind_and_enumerate_fvm(device).await?;
-        if let Some(blob_name) =
-            volume_names.iter().find(|name| name.starts_with(BLOBFS_PARTITION_LABEL))
-        {
-            env.mount_blobfs_on(blob_name).await?;
-        } else {
-            log::error!(volume_names:?; "Couldn't find blobfs partition!");
-            bail!("Unable to find blobfs within FVM.");
-        }
-
-        if let Some(data_name) = volume_names.iter().find(|name| {
-            name.starts_with(DATA_PARTITION_LABEL) || name.starts_with(LEGACY_DATA_PARTITION_LABEL)
-        }) {
-            env.mount_data_on(data_name, device.is_fshost_ramdisk()).await?;
-        } else {
-            let fvm_driver_path = format!("{}/fvm", device.topological_path());
-            log::warn!(fvm_driver_path:%, volume_names:?;
-                "No existing data partition. Calling format_data().",
-            );
-            let fs = env.format_data(&fvm_driver_path).await.context("failed to format data")?;
-            env.bind_data(fs)?;
-        }
         Ok(())
     }
 }
@@ -380,22 +330,12 @@ impl Matcher for FvmMatcher {
         device: &mut dyn Device,
         env: &mut dyn Environment,
     ) -> Result<Option<DeviceTag>, Error> {
-        if self.storage_host {
-            self.bind_fvm_component(device, env).await?;
-        } else {
-            self.bind_fvm_driver(device, env).await?;
-        }
+        self.bind_fvm_component(device, env).await?;
         // Once we have matched and processed the main system partitions, fuse this matcher so we
         // don't match any other partitions.
         self.already_matched = true;
         Ok(None)
     }
-}
-
-#[derive(Clone, Copy)]
-enum PartitionMapType {
-    StorageHost,
-    Driver(&'static str),
 }
 
 /// When gpt_all is enabled, this is the main gpt matcher. Gpt is launched or bound on any
@@ -409,13 +349,12 @@ enum PartitionMapType {
 /// partition to be tagged, but that's okay because if there are multiple gpt devices, we don't
 /// know which would be the right one to initialize.
 struct GptAllMatcher {
-    gpt_type: PartitionMapType,
     system_gpt_path: Option<String>,
 }
 
 impl GptAllMatcher {
-    fn new(gpt_type: PartitionMapType) -> Self {
-        Self { gpt_type, system_gpt_path: None }
+    fn new() -> Self {
+        Self { system_gpt_path: None }
     }
 }
 
@@ -434,50 +373,35 @@ impl Matcher for GptAllMatcher {
         device: &mut dyn Device,
         env: &mut dyn Environment,
     ) -> Result<Option<DeviceTag>, Error> {
-        match self.gpt_type {
-            PartitionMapType::Driver(driver_path) => {
-                // In non-storage-host, just tag the first thing we find.
-                env.attach_driver(device, driver_path).await?;
-                if self.system_gpt_path.is_none() {
-                    self.system_gpt_path = Some(device.topological_path().to_string());
-                    Ok(Some(DeviceTag::SystemPartitionTable))
-                } else {
-                    Ok(None)
-                }
-            }
-            PartitionMapType::StorageHost => {
-                let (gpt, partitions) = env.launch_and_enumerate_gpt_component(device).await?;
-                // TODO(https://fxbug.dev/344018917): remove this heuristic in favor of
-                // assembly-level label configuration options.
-                if self.system_gpt_path.is_none()
-                    && partitions.iter().any(|p| {
-                        p.label == SUPER_PARTITION_LABEL
-                            || p.label == SUPER_AND_USERDATA_PARTITION_LABEL
-                            || (p.label == FVM_PARTITION_LABEL && p.type_guid == FVM_TYPE_GUID)
-                            || p.type_guid == LEGACY_FVM_TYPE_GUID
-                    })
-                {
-                    self.system_gpt_path = Some(device.topological_path().to_string());
-                    env.register_system_gpt(device, gpt)?;
-                    Ok(Some(DeviceTag::SystemPartitionTable))
-                } else {
-                    env.register_filesystem(gpt);
-                    Ok(None)
-                }
-            }
+        let (gpt, partitions) = env.launch_and_enumerate_gpt_component(device).await?;
+        // TODO(https://fxbug.dev/344018917): remove this heuristic in favor of
+        // assembly-level label configuration options.
+        if self.system_gpt_path.is_none()
+            && partitions.iter().any(|p| {
+                p.label == SUPER_PARTITION_LABEL
+                    || p.label == SUPER_AND_USERDATA_PARTITION_LABEL
+                    || (p.label == FVM_PARTITION_LABEL && p.type_guid == FVM_TYPE_GUID)
+                    || p.type_guid == LEGACY_FVM_TYPE_GUID
+            })
+        {
+            self.system_gpt_path = Some(device.topological_path().to_string());
+            env.register_system_gpt(device, gpt)?;
+            Ok(Some(DeviceTag::SystemPartitionTable))
+        } else {
+            env.register_filesystem(gpt);
+            Ok(None)
         }
     }
 }
 
 /// Matches the system GPT partition, which is expected to be on a non-removable disk.
 struct SystemGptMatcher {
-    gpt_type: PartitionMapType,
     device_path: Option<String>,
 }
 
 impl SystemGptMatcher {
-    fn new(gpt_type: PartitionMapType) -> Self {
-        Self { gpt_type, device_path: None }
+    fn new() -> Self {
+        Self { device_path: None }
     }
 }
 
@@ -520,64 +444,12 @@ impl Matcher for SystemGptMatcher {
         device: &mut dyn Device,
         env: &mut dyn Environment,
     ) -> Result<Option<DeviceTag>, Error> {
-        match self.gpt_type {
-            PartitionMapType::Driver(driver_path) => {
-                env.attach_driver(device, driver_path).await?;
-            }
-            PartitionMapType::StorageHost => {
-                let (gpt, _) = env.launch_and_enumerate_gpt_component(device).await?;
-                env.register_system_gpt(device, gpt)?;
-            }
-        };
+        let (gpt, _) = env.launch_and_enumerate_gpt_component(device).await?;
+        env.register_system_gpt(device, gpt)?;
 
         self.device_path = Some(device.topological_path().to_string());
 
         Ok(Some(DeviceTag::SystemPartitionTable))
-    }
-}
-
-// Matches partition maps. Matching is done using content sniffing.
-struct PartitionMapMatcher {
-    // The content format expected.
-    content_format: DiskFormat,
-
-    // When matched, this driver is attached to the device.
-    gpt_type: PartitionMapType,
-
-    // The topological paths of all devices matched so far.
-    device_paths: Vec<String>,
-}
-
-impl PartitionMapMatcher {
-    fn new(content_format: DiskFormat, gpt_type: PartitionMapType) -> Self {
-        Self { content_format, gpt_type, device_paths: Vec::new() }
-    }
-}
-
-#[async_trait]
-impl Matcher for PartitionMapMatcher {
-    fn matcher_name(&self) -> &str {
-        "PartitionMap"
-    }
-
-    async fn match_device(&self, device: &mut dyn Device) -> bool {
-        device.content_format().await.ok() == Some(self.content_format)
-    }
-
-    async fn process_device(
-        &mut self,
-        device: &mut dyn Device,
-        env: &mut dyn Environment,
-    ) -> Result<Option<DeviceTag>, Error> {
-        match self.gpt_type {
-            PartitionMapType::Driver(driver_path) => env.attach_driver(device, driver_path).await?,
-            PartitionMapType::StorageHost => {
-                let (gpt, _) = env.launch_and_enumerate_gpt_component(device).await?;
-                env.register_filesystem(gpt);
-            }
-        }
-        self.device_paths.push(device.topological_path().to_string());
-        Ok(None)
     }
 }
 
@@ -631,8 +503,6 @@ impl Matcher for FxblobOnRecoveryMatcher {
 
 // Matches against the first FVM partition that isn't the ram-disk.  Doesn't bind any volumes.
 struct FvmOnRecoveryMatcher {
-    storage_host: bool,
-
     // Because this matcher binds to the system FVM, we only match on it once.
     // TODO(https://fxbug.dev/42079130): Can we be more precise here, e.g. give the matcher an
     // expected device path based on system configuration?
@@ -640,8 +510,8 @@ struct FvmOnRecoveryMatcher {
 }
 
 impl FvmOnRecoveryMatcher {
-    fn new(storage_host: bool) -> Self {
-        Self { storage_host, already_matched: false }
+    fn new() -> Self {
+        Self { already_matched: false }
     }
 }
 
@@ -675,23 +545,9 @@ impl Matcher for FvmOnRecoveryMatcher {
 
     async fn process_device(
         &mut self,
-        device: &mut dyn Device,
-        env: &mut dyn Environment,
+        _device: &mut dyn Device,
+        _env: &mut dyn Environment,
     ) -> Result<Option<DeviceTag>, Error> {
-        if self.storage_host {
-            // TODO(https://fxbug.dev/397770032): Support recovery mode.  To do this, we'll need to
-            // make FVM components dynamic children so we can have two (one for the ramdisk, one for
-            // this).  Alternatively, we can make it so that recovery doesn't bind the FVM
-            // component, but we'll need to make sure that works with all recovery flows, and the
-            // fact that volumes don't enumerate won't be an issue.  Today, we still process the
-            // device so it gets tagged correctly, but we don't launch anything, which is a subtle
-            // behavior difference from non-storage-host.
-            log::warn!("Launching secondary FVM on recovery is not supported on storage-host yet");
-        } else {
-            if let Err(err) = env.bind_and_enumerate_fvm(device).await {
-                log::error!(err:?; "Failed to bind driver; FVM may be corrupt");
-            }
-        }
         self.already_matched = true;
         Ok(Some(DeviceTag::SystemContainerOnRecovery))
     }
@@ -701,10 +557,7 @@ impl Matcher for FvmOnRecoveryMatcher {
 mod tests {
     use super::{Device, DiskFormat, Environment, Matchers};
     use crate::config::default_test_config;
-    use crate::device::constants::{
-        BLOBFS_PARTITION_LABEL, DATA_PARTITION_LABEL, GPT_DRIVER_PATH, LEGACY_DATA_PARTITION_LABEL,
-        LEGACY_FVM_TYPE_GUID,
-    };
+    use crate::device::constants::LEGACY_FVM_TYPE_GUID;
     use crate::device::{DeviceTag, Parent, RegisteredDevices};
     use crate::environment::{Filesystem, PartitionInfo, SinglePublisher};
     use crate::matcher::config_matcher::ConfigMatcher;
@@ -806,9 +659,6 @@ mod tests {
         async fn partition_type(&mut self) -> Result<&[u8; 16], Error> {
             self.partition_type.as_ref().ok_or_else(|| anyhow!("partition type not set"))
         }
-        async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
-            unreachable!()
-        }
         fn controller(&self) -> &ControllerProxy {
             unreachable!()
         }
@@ -831,50 +681,20 @@ mod tests {
 
     #[derive(Default)]
     struct MockEnv {
-        expected_driver_path: Mutex<Option<String>>,
-        expect_bind_and_enumerate_fvm: Mutex<bool>,
-        expect_mount_blobfs_on: Mutex<bool>,
         expect_mount_fxblob: Mutex<bool>,
         expect_mount_fvm: Mutex<bool>,
         expect_mount_blob_volume: Mutex<bool>,
         expect_mount_data_volume: Mutex<bool>,
-        expect_mount_data_on: Mutex<bool>,
-        expect_format_data: Mutex<bool>,
-        expect_bind_data: Mutex<bool>,
         expect_publish_device: Mutex<Option<String>>,
         expect_launch_and_enumerate_gpt_component: Mutex<Option<Vec<PartitionInfo>>>,
         expect_register_system_gpt: Mutex<bool>,
         expect_register_filesystem: Mutex<bool>,
-        legacy_data_format: bool,
-        create_data_partition: bool,
         registered_devices: Arc<RegisteredDevices>,
     }
 
     impl MockEnv {
         fn new() -> Self {
-            let mut env = MockEnv::default();
-            env.create_data_partition = true;
-            env
-        }
-        fn expect_attach_driver(mut self, path: impl ToString) -> Self {
-            *self.expected_driver_path.get_mut() = Some(path.to_string());
-            self
-        }
-        fn expect_bind_and_enumerate_fvm(mut self) -> Self {
-            *self.expect_bind_and_enumerate_fvm.get_mut() = true;
-            self
-        }
-        fn expect_mount_blobfs_on(mut self) -> Self {
-            *self.expect_mount_blobfs_on.get_mut() = true;
-            self
-        }
-        fn expect_format_data(mut self) -> Self {
-            *self.expect_format_data.get_mut() = true;
-            self
-        }
-        fn expect_bind_data(mut self) -> Self {
-            *self.expect_bind_data.get_mut() = true;
-            self
+            MockEnv::default()
         }
         fn expect_mount_fxblob(mut self) -> Self {
             *self.expect_mount_fxblob.get_mut() = true;
@@ -890,10 +710,6 @@ mod tests {
         }
         fn expect_mount_data_volume(mut self) -> Self {
             *self.expect_mount_data_volume.get_mut() = true;
-            self
-        }
-        fn expect_mount_data_on(mut self) -> Self {
-            *self.expect_mount_data_on.get_mut() = true;
             self
         }
         fn expect_launch_and_enumerate_gpt_component(
@@ -918,30 +734,10 @@ mod tests {
             *self.expect_publish_device.get_mut() = Some(expected_alias.to_string());
             self
         }
-        fn legacy_data_format(mut self) -> Self {
-            self.legacy_data_format = true;
-            self
-        }
-        fn without_data_partition(mut self) -> Self {
-            self.create_data_partition = false;
-            self
-        }
     }
 
     #[async_trait]
     impl Environment for MockEnv {
-        async fn attach_driver(
-            &self,
-            _device: &mut dyn Device,
-            driver_path: &str,
-        ) -> Result<(), Error> {
-            assert_eq!(
-                driver_path,
-                self.expected_driver_path.lock().take().expect("Unexpected call to attach_driver")
-            );
-            Ok(())
-        }
-
         async fn launch_and_enumerate_gpt_component(
             &mut self,
             _device: &mut dyn Device,
@@ -971,66 +767,6 @@ mod tests {
             &mut self,
         ) -> Result<fidl_fuchsia_io::DirectoryProxy, Error> {
             unreachable!()
-        }
-
-        async fn bind_and_enumerate_fvm(
-            &mut self,
-            _device: &mut dyn Device,
-        ) -> Result<Vec<String>, Error> {
-            assert_eq!(
-                std::mem::take(&mut *self.expect_bind_and_enumerate_fvm.lock()),
-                true,
-                "Unexpected call to bind_and_enumerate_fvm"
-            );
-            let mut volume_names = vec![BLOBFS_PARTITION_LABEL.to_string()];
-            if self.create_data_partition {
-                if self.legacy_data_format {
-                    volume_names.push(LEGACY_DATA_PARTITION_LABEL.to_string())
-                } else {
-                    volume_names.push(DATA_PARTITION_LABEL.to_string())
-                };
-            }
-            Ok(volume_names)
-        }
-
-        async fn mount_blobfs_on(&mut self, _blobfs_partition_name: &str) -> Result<(), Error> {
-            assert_eq!(
-                std::mem::take(&mut *self.expect_mount_blobfs_on.lock()),
-                true,
-                "Unexpected call to mount_blobfs_on"
-            );
-            Ok(())
-        }
-
-        async fn mount_data_on(
-            &mut self,
-            _data_partition_name: &str,
-            _is_fshost_ramdisk: bool,
-        ) -> Result<(), Error> {
-            assert_eq!(
-                std::mem::take(&mut *self.expect_mount_data_on.lock()),
-                true,
-                "Unexpected call to mount_data_on"
-            );
-            Ok(())
-        }
-
-        async fn format_data(&mut self, _fvm_topo_path: &str) -> Result<Filesystem, Error> {
-            assert_eq!(
-                std::mem::take(&mut *self.expect_format_data.lock()),
-                true,
-                "Unexpected call to format_data"
-            );
-            Ok(Filesystem::Queue(vec![]))
-        }
-
-        fn bind_data(&mut self, mut _fs: Filesystem) -> Result<(), Error> {
-            assert_eq!(
-                std::mem::take(&mut *self.expect_bind_data.lock()),
-                true,
-                "Unexpected call to bind_data"
-            );
-            Ok(())
         }
 
         async fn mount_fxblob(&mut self, _device: &mut dyn Device) -> Result<(), Error> {
@@ -1115,262 +851,15 @@ mod tests {
 
     impl Drop for MockEnv {
         fn drop(&mut self) {
-            assert!(self.expected_driver_path.get_mut().is_none());
-            assert!(!*self.expect_mount_blobfs_on.lock());
-            assert!(!*self.expect_mount_data_on.lock());
-            assert!(!*self.expect_bind_and_enumerate_fvm.lock());
-            assert!(!*self.expect_bind_data.lock());
             assert!(!*self.expect_mount_fxblob.lock());
             assert!(!*self.expect_mount_fvm.lock());
             assert!(!*self.expect_mount_blob_volume.lock());
             assert!(!*self.expect_mount_data_volume.lock());
-            assert!(!*self.expect_format_data.lock());
             assert!(self.expect_publish_device.get_mut().is_none());
             assert!(self.expect_launch_and_enumerate_gpt_component.get_mut().is_none());
             assert!(!*self.expect_register_system_gpt.lock());
             assert!(!*self.expect_register_filesystem.lock());
         }
-    }
-
-    #[fuchsia::test]
-    async fn test_partition_map_matcher() {
-        let mut env = MockEnv::new().expect_attach_driver(GPT_DRIVER_PATH);
-
-        // Check no match when disabled in config.
-        let device = MockDevice::new().set_content_format(DiskFormat::Gpt);
-        assert!(
-            !Matchers::new(&fshost_config::Config {
-                blobfs: false,
-                data: false,
-                gpt: false,
-                ..default_test_config()
-            },)
-            .match_device(Box::new(device.clone()), &mut env)
-            .await
-            .expect("match_device failed")
-        );
-
-        let mut matchers = Matchers::new(&default_test_config());
-        assert!(
-            matchers
-                .match_device(Box::new(device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-
-        // More GPT devices should not get matched.
-        assert!(
-            !matchers
-                .match_device(Box::new(device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-
-        // The gpt_all config should allow multiple GPT devices to be matched.
-        let mut matchers =
-            Matchers::new(&fshost_config::Config { gpt_all: true, ..default_test_config() });
-        let mut env = MockEnv::new().expect_attach_driver(GPT_DRIVER_PATH);
-        assert!(
-            matchers
-                .match_device(Box::new(device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-        let mut env = MockEnv::new().expect_attach_driver(GPT_DRIVER_PATH);
-        assert!(
-            matchers
-                .match_device(Box::new(device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_partition_map_matcher_ramdisk() {
-        // If ramdisk_image is true and one of the devices matches the ramdisk prefix, we will match
-        // two fvm devices, and the third one will fail.
-        let mut matchers = Matchers::new(&fshost_config::Config {
-            ramdisk_image: true,
-            data_filesystem_format: "minfs".to_string(),
-            gpt: false,
-            ..default_test_config()
-        });
-        let fvm_device = MockDevice::new()
-            .set_content_format(DiskFormat::Fvm)
-            .set_topological_path("first_prefix");
-        let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
-        assert!(
-            matchers
-                .match_device(Box::new(fvm_device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-
-        let fvm_device = fvm_device.set_topological_path("second_prefix").set_fshost_ramdisk();
-        let mut env = MockEnv::new()
-            .expect_bind_and_enumerate_fvm()
-            .expect_mount_blobfs_on()
-            .expect_mount_data_on();
-        assert!(
-            matchers
-                .match_device(Box::new(fvm_device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-
-        let fvm_device = fvm_device.set_topological_path("third_prefix");
-        assert!(
-            !matchers
-                .match_device(Box::new(fvm_device), &mut MockEnv::new())
-                .await
-                .expect("match_device failed")
-        );
-    }
-
-    #[fuchsia::test]
-    async fn partition_map_matcher_wrong_prefix_match() {
-        // If ramdisk_image is true but no devices match the prefix, only the first device will
-        // match.
-        let mut matchers = Matchers::new(&fshost_config::Config {
-            ramdisk_image: true,
-            data_filesystem_format: "fxfs".to_string(),
-            gpt: false,
-            ..default_test_config()
-        });
-
-        let fvm_device = MockDevice::new()
-            .set_content_format(DiskFormat::Fvm)
-            .set_topological_path("first_prefix");
-        let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
-        assert!(
-            matchers
-                .match_device(Box::new(fvm_device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-        let fvm_device = fvm_device.set_topological_path("second_prefix");
-        assert!(
-            !matchers
-                .match_device(Box::new(fvm_device), &mut MockEnv::new())
-                .await
-                .expect("match_device failed")
-        );
-    }
-
-    #[fuchsia::test]
-    async fn partition_map_matcher_no_prefix_match() {
-        // If ramdisk_image is true but no ramdisk path is provided, only the first device will
-        // match.
-        let mut matchers = Matchers::new(&fshost_config::Config {
-            ramdisk_image: true,
-            data_filesystem_format: "fxfs".to_string(),
-            gpt: false,
-            ..default_test_config()
-        });
-
-        let fvm_device = MockDevice::new()
-            .set_content_format(DiskFormat::Fvm)
-            .set_topological_path("first_prefix");
-        let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
-        assert!(
-            matchers
-                .match_device(Box::new(fvm_device.clone()), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-        let fvm_device = fvm_device.set_topological_path("second_prefix");
-        assert!(
-            !matchers
-                .match_device(Box::new(fvm_device), &mut MockEnv::new())
-                .await
-                .expect("match_device failed")
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_blobfs_and_data_matcher() {
-        let fvm_device = MockDevice::new().set_content_format(DiskFormat::Fvm);
-        let mut env = MockEnv::new()
-            .expect_bind_and_enumerate_fvm()
-            .expect_mount_blobfs_on()
-            .expect_mount_data_on();
-
-        let mut matchers = Matchers::new(&default_test_config());
-
-        assert!(
-            matchers
-                .match_device(Box::new(fvm_device), &mut env)
-                .await
-                .expect("match_device failed")
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_legacy_data_matcher() {
-        let mut matchers = Matchers::new(&default_test_config());
-
-        assert!(
-            matchers
-                .match_device(
-                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
-                    &mut MockEnv::new()
-                        .legacy_data_format()
-                        .expect_bind_and_enumerate_fvm()
-                        .expect_mount_blobfs_on()
-                        .expect_mount_data_on()
-                )
-                .await
-                .expect("match_device failed")
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_matcher_without_data_partition() {
-        let mut matchers = Matchers::new(&default_test_config());
-
-        assert!(
-            matchers
-                .match_device(
-                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
-                    &mut MockEnv::new()
-                        .without_data_partition()
-                        .expect_bind_and_enumerate_fvm()
-                        .expect_mount_blobfs_on()
-                        .expect_format_data()
-                        .expect_bind_data()
-                )
-                .await
-                .expect("match_device failed")
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_multiple_fvm_partitions_no_label() {
-        let mut matchers =
-            Matchers::new(&fshost_config::Config { gpt: false, ..default_test_config() });
-
-        assert!(
-            matchers
-                .match_device(
-                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
-                    &mut MockEnv::new()
-                        .expect_bind_and_enumerate_fvm()
-                        .expect_mount_data_on()
-                        .expect_mount_blobfs_on()
-                )
-                .await
-                .expect("match_device failed")
-        );
-
-        assert!(
-            !matchers
-                .match_device(
-                    Box::new(MockDevice::new().set_content_format(DiskFormat::Fvm)),
-                    &mut MockEnv::new()
-                )
-                .await
-                .expect("match_device failed")
-        );
     }
 
     #[fuchsia::test]
@@ -1548,13 +1037,6 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_device_fvm_path() {
-        let device =
-            MockDevice::new().set_topological_path("/some/fvm/path/with/another/fvm/inside");
-        assert_eq!(device.fvm_path(), Some("/some/fvm/path/with/another/fvm".to_string()));
-    }
-
-    #[fuchsia::test]
     async fn test_fxblob_matcher_without_label() {
         let mut matchers = Matchers::new(&fshost_config::Config {
             fxfs_blob: true,
@@ -1589,7 +1071,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_system_gpt_matcher_storage_host() {
+    async fn test_system_gpt_matcher() {
         let mut matchers =
             Matchers::new(&fshost_config::Config { storage_host: true, ..default_test_config() });
 
@@ -1633,7 +1115,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_gpt_all_matcher_storage_host_fvm_label() {
+    async fn test_gpt_all_matcher_fvm_label() {
         let mut matchers = Matchers::new(&fshost_config::Config {
             storage_host: true,
             gpt_all: true,
@@ -1694,7 +1176,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_gpt_all_matcher_storage_host_super_label() {
+    async fn test_gpt_all_matcher_super_label() {
         let mut matchers = Matchers::new(&fshost_config::Config {
             storage_host: true,
             gpt_all: true,
@@ -1755,7 +1237,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_gpt_all_matcher_storage_host_legacy_fvm_type_guid() {
+    async fn test_gpt_all_matcher_legacy_fvm_type_guid() {
         let mut matchers = Matchers::new(&fshost_config::Config {
             storage_host: true,
             gpt_all: true,
@@ -1828,11 +1310,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fvm_on_recovery_matcher() {
-        let mut matchers =
-            Matchers::new(&fshost_config::Config { ramdisk_image: true, ..default_test_config() });
+        let mut matchers = Matchers::new(&fshost_config::Config {
+            ramdisk_image: true,
+            storage_host: true,
+            ..default_test_config()
+        });
 
-        // The non-ramdisk should match by content format.
-        let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
+        // The non-ramdisk should match by content format, but all we expect is the device to be
+        // tagged.
+        let mut env = MockEnv::new();
         assert!(
             matchers
                 .match_device(
@@ -1849,8 +1335,7 @@ mod tests {
                 .is_some()
         );
 
-        let mut env =
-            env.expect_bind_and_enumerate_fvm().expect_mount_blobfs_on().expect_mount_data_on();
+        let mut env = env.expect_mount_fvm().expect_mount_blob_volume().expect_mount_data_volume();
 
         // The ramdisk FVM should still be able to match.
         assert!(
@@ -1869,7 +1354,7 @@ mod tests {
 
         // The non-ramdisk FVM should be able to match on label as well.
         for label in ALL_SYSTEM_PARTITION_LABELS {
-            let mut env = MockEnv::new().expect_bind_and_enumerate_fvm();
+            let mut env = MockEnv::new();
             matchers = Matchers::new(&fshost_config::Config {
                 ramdisk_image: true,
                 ..default_test_config()

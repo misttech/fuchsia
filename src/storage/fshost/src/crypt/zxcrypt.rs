@@ -32,7 +32,6 @@ pub enum UnsealOutcome {
 /// A BlockDevice representing a zxcrypt wrapped child device.
 pub struct ZxcryptDevice {
     parent_is_nand: bool,
-    proxy: DeviceManagerProxy,
     inner_device: Box<dyn Device>,
     is_fshost_ramdisk: bool,
 }
@@ -95,7 +94,6 @@ impl ZxcryptDevice {
                 Ok(()) => {
                     let device = ZxcryptDevice {
                         parent_is_nand: outer_device.is_nand(),
-                        proxy: proxy.clone(),
                         inner_device: outer_device.get_child("/zxcrypt/unsealed/block").await?,
                         is_fshost_ramdisk: false,
                     };
@@ -111,10 +109,6 @@ impl ZxcryptDevice {
             };
         }
         last_res
-    }
-
-    pub async fn seal(self) -> Result<(), Error> {
-        zx::ok(self.proxy.seal().await?).map_err(|e| e.into())
     }
 }
 
@@ -156,37 +150,12 @@ impl Device for ZxcryptDevice {
         self.inner_device.partition_type().await
     }
 
-    async fn partition_instance(&mut self) -> Result<&[u8; 16], Error> {
-        self.inner_device.partition_instance().await
-    }
-
     async fn resize(&mut self, target_size_bytes: u64) -> Result<u64, Error> {
         // Nb: The zxcrypt device proxies the BlockVolume protocol and
         // changes the extend/shrink offset to account for the
         // zxcrypt header (src/devices/block/drivers/zxcrypt/device.cc:193).
         let block_proxy = self.block_proxy()?;
         crate::volume::resize_volume(&block_proxy, target_size_bytes).await
-    }
-
-    async fn set_partition_max_bytes(&mut self, max_bytes: u64) -> Result<(), Error> {
-        // Because partition limits are set on the volume manager (not the volume proxy)
-        // we have to account fo the zxcrypt overheads ourselves.
-        let extra_bytes = if max_bytes > 0 {
-            let block_proxy = self.block_proxy()?;
-            let (status, volume_manager_info, _volume_info) =
-                block_proxy
-                    .get_volume_info()
-                    .await
-                    .context("Transport error on get_volume_info")?;
-            zx::Status::ok(status).context("get_volume_info failed")?;
-            let manager =
-                volume_manager_info.ok_or_else(|| anyhow!("Expected volume manager info"))?;
-            manager.slice_size
-        } else {
-            0
-        };
-        // Add an extra slice for zxcrypt metadata.
-        self.inner_device.set_partition_max_bytes(max_bytes + extra_bytes).await
     }
 
     fn device_controller(&self) -> Result<ControllerProxy, Error> {
