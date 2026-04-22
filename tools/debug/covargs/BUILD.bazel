@@ -67,6 +67,7 @@ go_library(
         "//tools/lib/color",
         "//tools/lib/flagmisc",
         "//tools/lib/logger",
+        "//tools/lib/osmisc",
         "//tools/lib/retry",
         "//tools/testing/runtests",
     ],

@@ -28,6 +28,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/color"
 	"go.fuchsia.dev/fuchsia/tools/lib/flagmisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
+	"go.fuchsia.dev/fuchsia/tools/lib/osmisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/retry"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 	"golang.org/x/sync/errgroup"
@@ -68,6 +69,7 @@ var (
 	numThreads        int
 	jobs              int
 	malformedOutput   string
+	prefetchDir       string
 )
 
 func init() {
@@ -103,6 +105,7 @@ func init() {
 	flag.IntVar(&numThreads, "num-threads", 0, "number of processing threads")
 	flag.IntVar(&jobs, "jobs", runtime.NumCPU(), "number of parallel jobs")
 	flag.StringVar(&malformedOutput, "malformed-output", "", "the path to write malformed profiles/binaries to")
+	flag.StringVar(&prefetchDir, "prefetch-dir", "", "a persistent directory to store fetched unstripped binaries in the .build-id layout")
 }
 
 const llvmProfileSinkType = "llvm-profile"
@@ -336,15 +339,26 @@ func isInstrumented(filepath string) bool {
 	return false
 }
 
+func fetchBinary(ctx context.Context, repo symbolize.Repository, buildID string) (symbolize.FileCloser, error) {
+	var file symbolize.FileCloser
+	err := retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(cloudFetchRetryBackoff), cloudFetchMaxAttempts), func() error {
+		var err error
+		file, err = repo.GetBuildObject(buildID)
+		return err
+	}, nil)
+	return file, err
+}
+
 // fetchFromSymbolServer returns all the binaries that are fetched from the symbol server when symbol server option is provided.
-func fetchFromSymbolServer(ctx context.Context, mergedProfileFile string, tempDir string, entries *[]profileEntry) ([]symbolize.FileCloser, []string, error) {
+func fetchFromSymbolServer(ctx context.Context, mergedProfileFile string, fetchDir string, entries []profileEntry) ([]symbolize.FileCloser, []string, error) {
 	var fileCache *cache.FileCache
 	if len(symbolServers) > 0 {
 		if symbolCache == "" {
 			return nil, nil, fmt.Errorf("-symbol-cache must be set if a symbol server is used")
 		}
 		var err error
-		if fileCache, err = cache.GetFileCache(symbolCache, symbolCacheSize); err != nil {
+		fileCache, err = cache.GetFileCache(symbolCache, symbolCacheSize)
+		if err != nil {
 			return nil, nil, err
 		}
 	}
@@ -353,7 +367,6 @@ func fetchFromSymbolServer(ctx context.Context, mergedProfileFile string, tempDi
 	for _, dir := range buildIDDirPaths {
 		repo.AddRepo(symbolize.NewBuildIDRepo(dir))
 	}
-
 	for _, symbolServer := range symbolServers {
 		cloudRepo, err := symbolize.NewCloudRepo(ctx, symbolServer, fileCache)
 		if err != nil {
@@ -371,7 +384,7 @@ func fetchFromSymbolServer(ctx context.Context, mergedProfileFile string, tempDi
 	seenModules := make(map[string]struct{})
 	s := make(chan struct{}, jobs)
 	var wg sync.WaitGroup
-	for _, entry := range *entries {
+	for _, entry := range entries {
 		wg.Add(1)
 		go func(module string) {
 			defer wg.Done()
@@ -385,32 +398,47 @@ func fetchFromSymbolServer(ctx context.Context, mergedProfileFile string, tempDi
 			mu.Unlock()
 			s <- struct{}{}
 			defer func() { <-s }()
-			var file symbolize.FileCloser
-			if err := retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(cloudFetchRetryBackoff), cloudFetchMaxAttempts), func() error {
-				var err error
-				file, err = repo.GetBuildObject(module)
-				return err
-			}, nil); err != nil {
+
+			file, err := fetchBinary(ctx, &repo, module)
+			if err != nil {
 				logger.Warningf(ctx, "module with build id %s not found: %v\n", module, err)
 				return
 			}
 			if isInstrumented(file.String()) {
-				// Run llvm-cov with the individual module to make sure it's valid.
-				args := []string{
-					"show",
-					"-instr-profile", mergedProfileFile,
-					"-summary-only",
+				if fetchDir != "" {
+					// llvm-profdata merge --debug-file-directory expects a directory that
+					// CONTAINS a .build-id directory.
+					dest := filepath.Join(fetchDir, ".build-id", module[:2], module[2:]+".debug")
+					if err := os.MkdirAll(filepath.Dir(dest), os.ModePerm); err != nil {
+						logger.Errorf(ctx, "failed to create directory for %s: %v\n", dest, err)
+					} else if err := osmisc.CopyFile(file.String(), dest); err != nil {
+						logger.Errorf(ctx, "failed to copy %s to %s: %v\n", file.String(), dest, err)
+					} else {
+						defer file.Close()
+						file = symbolize.NopFileCloser(dest)
+					}
 				}
-				for _, remapping := range pathRemapping {
-					args = append(args, "-path-equivalence", remapping)
-				}
-				args = append(args, file.String())
-				showCmd := Action{Path: llvmCov, Args: args}
-				data, err := showCmd.Run(ctx)
-				if err != nil {
-					logger.Warningf(ctx, "module %s returned err %v:\n%s", module, err, string(data))
-					file.Close()
-					malformedModules <- module
+
+				if mergedProfileFile != "" {
+					// Run llvm-cov with the individual module to make sure it's valid.
+					args := []string{
+						"show",
+						"-instr-profile", mergedProfileFile,
+						"-summary-only",
+					}
+					for _, remapping := range pathRemapping {
+						args = append(args, "-path-equivalence", remapping)
+					}
+					args = append(args, file.String())
+					showCmd := Action{Path: llvmCov, Args: args}
+					data, err := showCmd.Run(ctx)
+					if err != nil {
+						logger.Warningf(ctx, "module %s returned err %v:\n%s", module, err, string(data))
+						file.Close()
+						malformedModules <- module
+					} else {
+						files <- file
+					}
 				} else {
 					files <- file
 				}
@@ -624,6 +652,19 @@ func process(ctx context.Context) error {
 		return fmt.Errorf("failed to read summary file: %w", err)
 	}
 
+	entries, malformedProfiles, err := createEntries(ctx, versionedProfiles, llvmProfDataVersions)
+	if err != nil {
+		return fmt.Errorf("failed to create profile entries: %w", err)
+	}
+
+	if prefetchDir != "" {
+		// In prefetch mode, covargs should exit after fetching binaries and not generate a coverage report.
+		if _, _, err := fetchFromSymbolServer(ctx, "", prefetchDir, entries); err != nil {
+			return fmt.Errorf("failed to prefetch binaries: %w", err)
+		}
+		return nil
+	}
+
 	tempDir := saveTemps
 	if saveTemps == "" {
 		tempDir, err = os.MkdirTemp(saveTemps, "covargs")
@@ -640,10 +681,6 @@ func process(ctx context.Context) error {
 		return fmt.Errorf("failed to merge profiles: %w", err)
 	}
 
-	entries, malformedProfiles, err := createEntries(ctx, versionedProfiles, llvmProfDataVersions)
-	if err != nil {
-		return fmt.Errorf("failed to create profile entries: %w", err)
-	}
 	if jsonOutput != "" {
 		file, err := os.Create(jsonOutput)
 		if err != nil {
@@ -656,7 +693,7 @@ func process(ctx context.Context) error {
 	}
 
 	start = time.Now()
-	modules, malformed, err := fetchFromSymbolServer(ctx, mergedProfileFile, tempDir, &entries)
+	modules, malformed, err := fetchFromSymbolServer(ctx, mergedProfileFile, "", entries)
 	logger.Debugf(ctx, "time to fetch from symbol server: %.2f minutes\n", time.Since(start).Minutes())
 
 	// Delete all the binary files that are fetched from symbol server.

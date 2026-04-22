@@ -241,6 +241,76 @@ func TestCoverage(t *testing.T) {
 			t.Fatalf("unexpected coverage summary (-golden +generated): %s", diff)
 		}
 	})
+
+	// Subtest 4: Verify prefetch mode in covargs.
+	t.Run("Prefetch", func(t *testing.T) {
+		prefetchDir := t.TempDir()
+		summaryFile := filepath.Join(testOutDir, "summary.json")
+		if _, err := os.Stat(summaryFile); err != nil {
+			t.Fatalf("failed to find summary.json: %s", err)
+		}
+
+		// We use -build-id-dir to simulate the binary being available locally
+		// so that covargs can "fetch" it from there into the prefetch-dir.
+		buildIdDir := filepath.Join(testOutDir, ".build-id")
+
+		args := []string{
+			"-prefetch-dir", prefetchDir,
+			"-build-id-dir", buildIdDir,
+			"-llvm-profdata", *llvmProfData,
+			"-summary", summaryFile,
+		}
+
+		covargsCmd := exec.Command(*covargs, args...)
+		if output, err := covargsCmd.CombinedOutput(); err != nil {
+			t.Fatalf("covargs prefetch failed: %s", string(output))
+		}
+
+		// Verify the binary exists in prefetch-dir with the correct .build-id layout
+		expectedPath := filepath.Join(prefetchDir, ".build-id", embeddedBuildId[:2], embeddedBuildId[2:]+".debug")
+		if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+			t.Fatalf("prefetched binary not found at %s", expectedPath)
+		}
+
+		// Now call covargs again in standard mode, using the prefetchDir as the build-id-dir.
+		// This proves that the prefetched binaries are usable for actual reporting.
+		args = []string{
+			"-build-id-dir", filepath.Join(prefetchDir, ".build-id"),
+			"-llvm-cov", *llvmCov,
+			"-llvm-profdata", *llvmProfData,
+			"-output-dir", testOutDir,
+			"-coverage-report=false",
+			"-report-dir", testOutDir,
+			"-save-temps", testOutDir,
+			"-summary", summaryFile,
+		}
+
+		covargsCmd = exec.Command(*covargs, args...)
+		if output, err := covargsCmd.CombinedOutput(); err != nil {
+			t.Fatalf("covargs standard run using prefetched binaries failed: %s", string(output))
+		}
+
+		// Verify that the coverage.json was created and is valid.
+		generatedCoverageFile := filepath.Join(testOutDir, "coverage.json")
+		generatedCoverageJson, err := os.ReadFile(generatedCoverageFile)
+		if err != nil {
+			t.Fatalf("cannot read coverage.json from prefetch report: %s", err)
+		}
+
+		var generatedCoverage llvm.Export
+		if err := json.Unmarshal(generatedCoverageJson, &generatedCoverage); err != nil {
+			t.Fatalf("cannot unmarshal covargs output from prefetch report: %s", err)
+		}
+
+		if len(generatedCoverage.Data) != 1 {
+			t.Fatalf("unexpected data length in prefetch report")
+		}
+
+		diff := cmp.Diff(goldenCoverageExport.Data[0].Totals, generatedCoverage.Data[0].Totals)
+		if diff != "" {
+			t.Fatalf("unexpected coverage summary in prefetch report (-golden +generated): %s", diff)
+		}
+	})
 }
 
 func runCoverageTest(t *testing.T, testOutDir string) string {
