@@ -588,11 +588,11 @@ mod tests {
 
         // SAFETY: These libc functions are safe to call.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
-        assert_eq!(test_result.uid_gid, (uid as u64) + (gid as u64) << 32);
+        assert_eq!(test_result.uid_gid & 0xFFFFFFFF, uid as u64);
+        assert_eq!(test_result.uid_gid >> 32, gid as u64);
 
-        let tid = gettid();
-        let tgid = std::process::id();
-        assert_eq!(test_result.pid_tgid, (tid as u64) + (tgid as u64) << 32);
+        assert_eq!(test_result.pid_tgid & 0xFFFFFFFF, gettid() as u64);
+        assert_eq!(test_result.pid_tgid >> 32, std::process::id() as u64);
     }
 
     #[test]

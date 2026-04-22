@@ -318,7 +318,7 @@ fn bpf_get_current_uid_gid<C: CurrentTaskProgramContext>(
     _: BpfValue,
 ) -> BpfValue {
     let (uid, gid) = C::get_uid_gid(context);
-    (uid as u64 + (gid as u64) << 32).into()
+    (uid as u64 | (gid as u64) << 32).into()
 }
 
 fn bpf_get_current_pid_tgid<C: CurrentTaskProgramContext>(
@@ -330,7 +330,7 @@ fn bpf_get_current_pid_tgid<C: CurrentTaskProgramContext>(
     _: BpfValue,
 ) -> BpfValue {
     let (pid, tgid) = C::get_tid_tgid(context);
-    (pid as u64 + (tgid as u64) << 32).into()
+    (pid as u64 | (tgid as u64) << 32).into()
 }
 
 // Trait for `EbpfProgramContext` where the first argument is a `SocketRef`,
