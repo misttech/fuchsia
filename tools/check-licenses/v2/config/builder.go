@@ -64,7 +64,7 @@ func (b *Builder) walkDir(baseDir string) error {
 		if category == "readmes" && filepath.Base(path) == "README.fuchsia" {
 			if len(parts) > 1 {
 				logicalParts := parts[1 : len(parts)-1]
-				logicalPath := filepath.Join(logicalParts...)
+				logicalPath := filepath.Clean(filepath.Join(logicalParts...))
 				b.Config.OutOfTreeReadmes[logicalPath] = path
 			}
 			return nil

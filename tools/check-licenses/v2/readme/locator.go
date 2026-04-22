@@ -42,17 +42,9 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 		}
 
 		parent := filepath.Dir(dir)
-		if parent == dir || parent == "." || parent == "/" {
-			break
-		}
 
-		// Don't walk past Fuchsia root
-		if parent == fuchsiaDir {
-			// One last check at the root
-			possibleRootPath := filepath.Join(parent, "README.fuchsia")
-			if _, err := os.Stat(possibleRootPath); err == nil {
-				foundReadmePath = possibleRootPath
-			}
+		// Check if we've reached the repository root or the filesystem root
+		if dir == fuchsiaDir || parent == dir || dir == "." || dir == "/" {
 			break
 		}
 

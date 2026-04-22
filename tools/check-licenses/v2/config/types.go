@@ -55,6 +55,7 @@ type MasterConfig struct {
 // IsPrivateProject returns true if the project path belongs to a proprietary/private
 // repository. It prevents open-source compliance configs from being contaminated.
 func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
+	projectPath = filepath.Clean(projectPath)
 	if strings.HasPrefix(projectPath, "vendor/") {
 		return true
 	}
