@@ -20,8 +20,8 @@ use futures::SinkExt;
 use futures::channel::mpsc::Sender;
 use futures::stream::StreamExt;
 use metrics_registry::*;
+use sorted_vec_map_rs::SortedVecMap;
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Each mm of physical movement by the mouse translates to the cursor moving
@@ -69,7 +69,7 @@ struct MutableState {
     viewport: Option<pointerinjector::Viewport>,
 
     /// The injectors registered with Scenic, indexed by their device ids.
-    injectors: HashMap<u32, fidl_next::Client<pointerinjector::Device, Transport>>,
+    injectors: SortedVecMap<u32, fidl_next::Client<pointerinjector::Device, Transport>>,
 
     /// The current position.
     current_position: Position,
@@ -288,7 +288,7 @@ impl MouseInjectorHandler {
         let handler = Rc::new(Self {
             mutable_state: RefCell::new(MutableState {
                 viewport: None,
-                injectors: HashMap::new(),
+                injectors: SortedVecMap::new(),
                 // Initially centered.
                 current_position: Position {
                     x: display_size.width / 2.0,
@@ -579,7 +579,8 @@ impl MouseInjectorHandler {
                     self.inner_mut().viewport = Some(utils::viewport_to_next(&new_viewport));
 
                     // Update Scenic with the latest viewport.
-                    let injectors = self.inner().injectors.values().cloned().collect::<Vec<_>>();
+                    let injectors =
+                        self.inner().injectors.iter().map(|(_, v)| v).cloned().collect::<Vec<_>>();
                     for injector in injectors {
                         let events = vec![pointerinjector::Event {
                             timestamp: Some(MonotonicInstant::now().into_nanos()),

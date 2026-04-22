@@ -23,9 +23,18 @@ impl<K, V> SortedVecMap<K, V> {
         Self { vec: Vec::new() }
     }
 
-    /// Returns true if there are not entries in the map.
+    /// Returns true if there are no entries in the map.
     pub fn is_empty(&self) -> bool {
         self.vec.is_empty()
+    }
+
+    /// Returns true if the map contains an entry for the given key.
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord + ?Sized,
+    {
+        self.index_of(key).is_ok()
     }
 
     /// Returns a reference to the value corresponding to the key.

@@ -62,6 +62,7 @@ _input_pipeline = {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-sync",
+    "//src/lib/sorted_vec_map_rs",
     "//src/lib/trace/rust:trace",
     "//src/lib/ui/fuchsia-scenic",
     "//src/lib/ui/keymaps",

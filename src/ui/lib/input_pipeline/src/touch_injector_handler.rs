@@ -22,6 +22,7 @@ use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
 use metrics_registry::*;
+use sorted_vec_map_rs::SortedVecMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -73,9 +74,9 @@ struct MutableState {
 
     /// The injectors registered with Scenic, indexed by their device ids.
     #[cfg(feature = "dso")]
-    injectors: HashMap<u32, fidl_next::Client<pointerinjector_dso::Device, DriverTransport>>,
+    injectors: SortedVecMap<u32, fidl_next::Client<pointerinjector_dso::Device, DriverTransport>>,
     #[cfg(not(feature = "dso"))]
-    injectors: HashMap<u32, fidl_next::Client<pointerinjector::Device, Transport>>,
+    injectors: SortedVecMap<u32, fidl_next::Client<pointerinjector::Device, Transport>>,
 
     /// The touch button listeners, key referenced by proxy channel's raw handle.
     pub listeners: HashMap<u32, fidl_ui_policy::TouchButtonsListenerProxy>,
@@ -271,7 +272,7 @@ impl TouchInjectorHandler {
         let handler = Rc::new(Self {
             mutable_state: RefCell::new(MutableState {
                 viewport: None,
-                injectors: HashMap::new(),
+                injectors: SortedVecMap::new(),
                 listeners: HashMap::new(),
                 last_button_event: None,
                 send_event_task_tracker: LocalTaskTracker::new(),
@@ -614,8 +615,14 @@ impl TouchInjectorHandler {
                         Some(utils::viewport_to_next(&new_viewport));
 
                     // Update Scenic with the latest viewport.
-                    let injectors: Vec<fidl_next::Client<_, _>> =
-                        self.mutable_state.borrow_mut().injectors.values().cloned().collect();
+                    let injectors: Vec<fidl_next::Client<_, _>> = self
+                        .mutable_state
+                        .borrow()
+                        .injectors
+                        .iter()
+                        .map(|(_, v)| v)
+                        .cloned()
+                        .collect();
                     for injector in injectors {
                         let events = vec![pointerinjector::Event {
                             timestamp: Some(MonotonicInstant::now().into_nanos()),
