@@ -310,7 +310,6 @@ source_set("ddktl") {
     "//src/ui/backlight/drivers/ti-lp8556:*",
     "//src/ui/input/drivers/buttons:*",
     "//src/ui/input/drivers/focaltech:*",
-    "//src/ui/input/drivers/goldfish_sensor:*",
     "//src/ui/input/drivers/goodix:*",
     "//src/ui/input/drivers/gt6853:*",
     "//src/ui/input/drivers/hid:*",

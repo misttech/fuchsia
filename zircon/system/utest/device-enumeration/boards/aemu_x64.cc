@@ -20,7 +20,6 @@ TEST_F(DeviceEnumerationTest, AemuX64Test) {
 
       "acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe",
       "acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe-control",
-      "acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe-sensor",
       "acpi._SB_.GFSK.pt.GFSK-composite-spec.goldfish-sync",
 
       "acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe-control.goldfish-control-2.goldfish-control",

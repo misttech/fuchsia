@@ -49,7 +49,6 @@ class PipeDriver : public fdf::DriverBase {
 
   fdf::OwnedChildNode devfs_child_node_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> control_child_;
-  fidl::ClientEnd<fuchsia_driver_framework::NodeController> sensor_child_;
 };
 
 }  // namespace goldfish

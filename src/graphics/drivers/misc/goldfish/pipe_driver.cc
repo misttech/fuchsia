@@ -95,22 +95,6 @@ zx::result<> PipeDriver::Start() {
   }
   control_child_ = std::move(add_control_child_result).value();
 
-  const std::vector<fuchsia_driver_framework::NodeProperty2> kSensorProperties = {
-      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
-                         bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
-      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
-                         bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_PID_GOLDFISH),
-      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
-                         bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_DID_PIPE_SENSOR),
-  };
-  zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> add_sensor_child_result =
-      AddChild("goldfish-pipe-sensor", kSensorProperties, kServiceOffers);
-  if (add_sensor_child_result.is_error()) {
-    fdf::error("Failed to add sensor child: {}", add_sensor_child_result);
-    return add_sensor_child_result.take_error();
-  }
-  sensor_child_ = std::move(add_sensor_child_result).value();
-
   return zx::ok();
 }
 

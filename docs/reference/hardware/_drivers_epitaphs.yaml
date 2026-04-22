@@ -716,3 +716,9 @@
   available_in_git: 'e570d9ee1a60b3cd954055c23ccaa6fd0488fa41'
   areas: ['Input']
   path: '/src/ui/input/drivers/i2c-hid'
+- short_description: 'Goldfish sensor driver'
+  deletion_reason: 'Hardware is not actively supported'
+  gerrit_change_id: '1583493'
+  available_in_git: '670a92ee108c81b59a03033c277681c7bafbfb77'
+  areas: ['Input']
+  path: 'src/ui/input/drivers/goldfish_sensor'
