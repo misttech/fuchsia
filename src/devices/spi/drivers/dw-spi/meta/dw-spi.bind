@@ -4,6 +4,7 @@
 
 composite dw_spi;
 
+using fuchsia.clock;
 using fuchsia.devicetree;
 using fuchsia.hardware.clock;
 using fuchsia.hardware.reset;
@@ -13,8 +14,14 @@ primary parent "pdev" {
   fuchsia.devicetree.FIRST_COMPATIBLE == "google,spi";
 }
 
-parent "clock" {
+parent "clock-ssi" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.clock.NAME == "ssi_clk";
+}
+
+parent "clock-pclk" {
+  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.clock.NAME == "pclk";
 }
 
 parent "reset" {

@@ -125,21 +125,25 @@ zx::result<> DwSpiDriver::Start() {
 
   fdf::PDev pdev{std::move(*pdev_client)};
 
-  // Enable clock
-  auto clock_client = incoming()->Connect<fuchsia_hardware_clock::Service::Clock>("clock");
-  if (clock_client.is_error()) {
-    fdf::error("Failed to connect to clock: {}", clock_client.status_string());
-    return clock_client.take_error();
-  }
-  auto clock = fidl::WireSyncClient<fuchsia_hardware_clock::Clock>(std::move(clock_client.value()));
-  auto clock_result = clock->Enable();
-  if (!clock_result.ok()) {
-    fdf::error("Failed to send enable clock request: {}", clock_result.status_string());
-    return zx::error(clock_result.status());
-  }
-  if (clock_result->is_error()) {
-    fdf::error("Failed to enable clock: {}", zx_status_get_string(clock_result->error_value()));
-    return zx::error(clock_result->error_value());
+  // Enable clocks
+  std::vector<std::string_view> clock_names = {"clock-ssi", "clock-pclk"};
+  for (const auto& name : clock_names) {
+    auto clock_client = incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(name);
+    if (clock_client.is_error()) {
+      fdf::error("Failed to connect to clock: {}", clock_client.status_string());
+      return clock_client.take_error();
+    }
+    auto clock =
+        fidl::WireSyncClient<fuchsia_hardware_clock::Clock>(std::move(clock_client.value()));
+    auto clock_result = clock->Enable();
+    if (!clock_result.ok()) {
+      fdf::error("Failed to send enable clock request: {}", clock_result.status_string());
+      return zx::error(clock_result.status());
+    }
+    if (clock_result->is_error()) {
+      fdf::error("Failed to enable clock: {}", zx_status_get_string(clock_result->error_value()));
+      return zx::error(clock_result->error_value());
+    }
   }
 
   // Trigger reset

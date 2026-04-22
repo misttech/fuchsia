@@ -18,6 +18,7 @@ fuchsia_driver_bind_bytecode(
     output = "dw-spi-bind.bindbc",
     rules = "meta/dw-spi.bind",
     deps = [
+        "@fuchsia_sdk//bind/fuchsia.clock",
         "@fuchsia_sdk//bind/fuchsia.devicetree",
         "@fuchsia_sdk//bind/fuchsia.platform",
         "@fuchsia_sdk//fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
