@@ -54,6 +54,9 @@ pub enum SocketError {
     /// The network is unreachable.
     #[error("network unreachable")]
     NetworkUnreachable,
+    /// The address is not available.
+    #[error("address not available")]
+    AddrNotAvailable,
     /// Other IO errors observed on socket operations.
     #[error("socket error: {0}")]
     Other(std::io::Error),

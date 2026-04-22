@@ -889,7 +889,8 @@ async fn send_with_retransmits_at_instants<I: deps::Instant, T: Clone + Send + D
                 deps::SocketError::FailedToOpen(_)
                 | deps::SocketError::NoInterface
                 | deps::SocketError::NetworkUnreachable
-                | deps::SocketError::UnsupportedHardwareType => return Err(Error::Socket(e)),
+                | deps::SocketError::UnsupportedHardwareType
+                | deps::SocketError::AddrNotAvailable => return Err(Error::Socket(e)),
                 // We view EHOSTUNREACH as a recoverable error, as the desired
                 // destination could only be temporarily offline, and this does
                 // not necessarily indicate an issue with our own network stack.
@@ -966,7 +967,8 @@ fn recv_stream<'a, T: 'a, U: Send>(
                 deps::SocketError::FailedToOpen(_)
                 | deps::SocketError::NoInterface
                 | deps::SocketError::NetworkUnreachable
-                | deps::SocketError::UnsupportedHardwareType => {
+                | deps::SocketError::UnsupportedHardwareType
+                | deps::SocketError::AddrNotAvailable => {
                     recv_message_fatal_socket_error.increment();
                     return Err(Error::Socket(e));
                 }
@@ -1953,13 +1955,50 @@ impl<I: deps::Instant> Renewing<I> {
                 },
         } = self;
         let rebinding_time = rebinding_time.unwrap_or(*ip_address_lease_time / 8 * 7);
-        let socket = udp_socket_provider
+        let mut address_removed =
+            pin!(address_event_receiver.filter_map(async |event| match event {
+                AddressEvent::Rejected => {
+                    handle_address_rejection(
+                        client_config,
+                        lease_state,
+                        packet_socket_provider,
+                        time,
+                    )
+                    .map(|result| Some(result.map(RenewingOutcome::AddressRejected)))
+                    .await
+                }
+                AddressEvent::Removed(reason) => {
+                    Some(Ok(RenewingOutcome::AddressRemoved(reason)))
+                }
+                AddressEvent::AssignmentStateChanged(new_state) => {
+                    // TODO(https://fxbug.dev/421941195): Handle addresses
+                    // becoming unavailable.
+                    log::warn!(
+                        "{yiaddr} address state became {new_state:?} during Renewing; ignoring"
+                    );
+                    None
+                }
+            }));
+
+        let socket = match udp_socket_provider
             .bind_new_udp_socket(std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
                 yiaddr.get().into(),
                 CLIENT_PORT.get(),
             )))
             .await
-            .map_err(Error::Socket)?;
+        {
+            Ok(s) => s,
+            Err(e @ deps::SocketError::AddrNotAvailable) => {
+                // Do a best-effort check by polling the address event receiver. The event
+                // is not guaranteed to be available, so just return the socket error if
+                // it isn't.
+                if let Some(Some(result)) = address_removed.next().now_or_never() {
+                    return result;
+                }
+                return Err(Error::Socket(e));
+            }
+            Err(e) => return Err(Error::Socket(e)),
+        };
 
         // Per the table in RFC 2131 section 4.4.1:
         //
@@ -2050,31 +2089,6 @@ impl<I: deps::Instant> Renewing<I> {
         );
 
         let mut timeout_fut = pin!(time.wait_until(t2).fuse());
-
-        let mut address_removed =
-            pin!(address_event_receiver.filter_map(async |event| match event {
-                AddressEvent::Rejected => {
-                    handle_address_rejection(
-                        client_config,
-                        lease_state,
-                        packet_socket_provider,
-                        time,
-                    )
-                    .map(|result| Some(result.map(RenewingOutcome::AddressRejected)))
-                    .await
-                }
-                AddressEvent::Removed(reason) => {
-                    Some(Ok(RenewingOutcome::AddressRemoved(reason)))
-                }
-                AddressEvent::AssignmentStateChanged(new_state) => {
-                    // TODO(https://fxbug.dev/421941195): Handle addresses
-                    // becoming unavailable.
-                    log::warn!(
-                        "{yiaddr} address state became {new_state:?} during Renewing; ignoring"
-                    );
-                    None
-                }
-            }));
 
         let (src_addr, response) = select_biased! {
             response = responses_stream.select_next_some() => {
@@ -2231,13 +2245,50 @@ impl<I: deps::Instant> Rebinding<I> {
                     rebinding_time: _,
                 },
         } = self;
-        let socket = udp_socket_provider
+        let mut address_removed =
+            pin!(address_event_receiver.filter_map(async |event| match event {
+                AddressEvent::Rejected => {
+                    handle_address_rejection(
+                        client_config,
+                        lease_state,
+                        packet_socket_provider,
+                        time,
+                    )
+                    .map(|result| Some(result.map(RebindingOutcome::AddressRejected)))
+                    .await
+                }
+                AddressEvent::Removed(reason) => {
+                    Some(Ok(RebindingOutcome::AddressRemoved(reason)))
+                }
+                AddressEvent::AssignmentStateChanged(new_state) => {
+                    // TODO(https://fxbug.dev/421941195): Handle addresses
+                    // becoming unavailable.
+                    log::warn!(
+                        "{yiaddr} address state became {new_state:?} during Rebinding; ignoring"
+                    );
+                    None
+                }
+            }));
+
+        let socket = match udp_socket_provider
             .bind_new_udp_socket(std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
                 yiaddr.get().into(),
                 CLIENT_PORT.get(),
             )))
             .await
-            .map_err(Error::Socket)?;
+        {
+            Ok(s) => s,
+            Err(e @ deps::SocketError::AddrNotAvailable) => {
+                // Do a best-effort check by polling the address event receiver. The event
+                // is not guaranteed to be available, so just return the socket error if
+                // it isn't.
+                if let Some(Some(result)) = address_removed.next().now_or_never() {
+                    return result;
+                }
+                return Err(Error::Socket(e));
+            }
+            Err(e) => return Err(Error::Socket(e)),
+        };
 
         // Per the table in RFC 2131 section 4.4.1:
         //
@@ -2343,31 +2394,6 @@ impl<I: deps::Instant> Rebinding<I> {
         );
 
         let mut timeout_fut = pin!(time.wait_until(lease_expiry).fuse());
-
-        let mut address_removed =
-            pin!(address_event_receiver.filter_map(async |event| match event {
-                AddressEvent::Rejected => {
-                    handle_address_rejection(
-                        client_config,
-                        lease_state,
-                        packet_socket_provider,
-                        time,
-                    )
-                    .map(|result| Some(result.map(RebindingOutcome::AddressRejected)))
-                    .await
-                }
-                AddressEvent::Removed(reason) => {
-                    Some(Ok(RebindingOutcome::AddressRemoved(reason)))
-                }
-                AddressEvent::AssignmentStateChanged(new_state) => {
-                    // TODO(https://fxbug.dev/421941195): Handle addresses
-                    // becoming unavailable.
-                    log::warn!(
-                        "{yiaddr} address state became {new_state:?} during Rebinding; ignoring"
-                    );
-                    None
-                }
-            }));
 
         let (src_addr, response) = select_biased! {
             response = responses_stream.select_next_some() => {
@@ -4910,5 +4936,56 @@ mod test {
             recv_missing_option: counters.rebinding.recv_error.missing_required_option.load(),
         };
         RebindingTestResult { outcome, counters }
+    }
+
+    struct FailingUdpSocketProvider;
+
+    impl deps::UdpSocketProvider for FailingUdpSocketProvider {
+        type Sock = Rc<FakeSocket<std::net::SocketAddr>>;
+        async fn bind_new_udp_socket(
+            &self,
+            _bound_addr: std::net::SocketAddr,
+        ) -> Result<Self::Sock, deps::SocketError> {
+            Err(deps::SocketError::AddrNotAvailable)
+        }
+    }
+
+    #[test_case(
+        State::Renewing(build_test_renewing_state(Duration::from_secs(100), None, None));
+        "renewing"
+    )]
+    #[test_case(
+        State::Rebinding(build_test_rebinding_state(Duration::from_secs(100), None, None));
+        "rebinding"
+    )]
+    fn return_address_removed_on_udp_socket_addr_not_available(state: State<TestInstant>) {
+        initialize_logging();
+        let counters = Counters::default();
+        let client_config = &test_client_config();
+        let (_server_end, packet_client_end) = FakeSocket::new_pair();
+        let packet_socket_provider = &FakeSocketProvider::new(packet_client_end);
+        let udp_socket_provider = &FailingUdpSocketProvider;
+        let address_event_receiver =
+            futures::stream::once(async { AddressEvent::Removed(FakeRemovedReason) }).fuse();
+        let (_stop_sender, mut stop_receiver) = mpsc::unbounded();
+        let time = &FakeTimeController::new();
+        let mut rng = FakeRngProvider::new(0);
+
+        let mut executor = fasync::TestExecutor::new();
+        let mut fut = pin!(state.run(
+            client_config,
+            packet_socket_provider,
+            udp_socket_provider,
+            &mut rng,
+            time,
+            &mut stop_receiver,
+            address_event_receiver,
+            &counters,
+        ));
+
+        let result = executor.run_until_stalled(&mut fut);
+        let result = assert_matches!(result, std::task::Poll::Ready(r) => r);
+        let step = assert_matches!(result, Ok(s) => s);
+        assert_matches!(step, Step::Exit(ExitReason::AddressRemoved(FakeRemovedReason)));
     }
 }
