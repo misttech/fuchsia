@@ -39,6 +39,8 @@ class DisplayPowerManager : public fidl::Server<fuchsia_ui_display_singleton::Di
   }
 
  private:
+  void AddSetPowerModeInspectValues(fuchsia_ui_display_singleton::PowerMode, zx_status_t status);
+
   DisplayManager& display_manager_;
   inspect::BoundedListNode inspect_display_power_events_;
   fidl::ServerBindingGroup<fuchsia_ui_display_singleton::DisplayPower> bindings_;

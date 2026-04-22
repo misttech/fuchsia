@@ -45,7 +45,7 @@ fuchsia_hardware_display_types::PowerMode ToDisplayPowerMode(const PowerMode& po
     case PowerMode::kDozeSuspend:
       return fuchsia_hardware_display_types::PowerMode::kDozeSuspend;
     default:
-      FX_LOGS(ERROR) << "Unknown power mode: " << ToString(power_mode);
+      FX_LOGS(ERROR) << "Unexpected power mode: " << ToString(power_mode) << "; defaulting to ON";
       return fuchsia_hardware_display_types::PowerMode::kOn;
   }
 }
@@ -83,22 +83,36 @@ void DisplayPowerManager::SetPowerMode(PowerMode power_mode,
   auto set_display_power_mode_result = coordinator_proxy->raw().sync()->SetDisplayPowerMode(
       id.ToFidl(), ToDisplayPowerMode(power_mode));
   if (!set_display_power_mode_result.ok()) {
-    FX_LOGS(ERROR) << "Failed to call FIDL SetDisplayPowerMode(): "
-                   << set_display_power_mode_result.status_string();
+    FX_LOGS(ERROR) << "DisplayPowerManager.SetPowerMode() FAILED to set value: "
+                   << ToString(power_mode)
+                   << " transport error: " << set_display_power_mode_result.status_string();
+    // NOTE: is ZX_ERR_INTERNAL the best value?
+    AddSetPowerModeInspectValues(power_mode, ZX_ERR_INTERNAL);
     completer(fit::error(ZX_ERR_INTERNAL));
     return;
   }
 
   if (set_display_power_mode_result->is_error()) {
-    FX_LOGS(WARNING) << "DisplayCoordinator SetDisplayPowerMode() is not supported; error status: "
-                     << zx_status_get_string(set_display_power_mode_result->error_value());
+    FX_LOGS(ERROR) << "DisplayPowerManager.SetPowerMode() FAILED to set value: "
+                   << ToString(power_mode) << " display error: "
+                   << zx_status_get_string(set_display_power_mode_result->error_value());
+    // NOTE: is ZX_ERR_NOT_SUPPORTED the best value?
+    AddSetPowerModeInspectValues(power_mode, ZX_ERR_NOT_SUPPORTED);
     completer(fit::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
 
   FX_LOGS(INFO) << "Successfully set display power mode: " << ToString(power_mode);
-  inspect_display_power_events_.CreateEntry([power_mode](inspect::Node& n) {
-    const std::string power_mode_str = ToString(power_mode);
+  AddSetPowerModeInspectValues(power_mode, ZX_OK);
+  completer(fit::ok());
+}
+
+void DisplayPowerManager::AddSetPowerModeInspectValues(PowerMode power_mode, zx_status_t status) {
+  inspect_display_power_events_.CreateEntry([power_mode, status](inspect::Node& n) {
+    std::string power_mode_str = ToString(power_mode);
+    if (status != ZX_OK) {
+      power_mode_str = power_mode_str + "_ERROR_" + zx_status_get_string(status);
+    }
 
     // Fencing the "boot_ns" timestamps around a mono value allows us to note if
     // suspend interfered. It takes a few tens of ns to look up all these timestamps.
@@ -110,6 +124,6 @@ void DisplayPowerManager::SetPowerMode(PowerMode power_mode,
     n.RecordInt(std::format("{}_mono_ns", power_mode_str), now_mono.get());
     n.RecordInt(std::format("{}_after_boot_ns", power_mode_str), zx_clock_get_boot());
   });
-  completer(fit::ok());
 }
+
 }  // namespace display

@@ -71,6 +71,11 @@ fuchsia_unittest_package("allocation_unittests") {
 
 fuchsia_unittest_package("display_unittests") {
   deps = [ "lib/display/tests:unittests" ] + scenic_test_deps
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 fuchsia_unittest_package("flatland_unittests") {
