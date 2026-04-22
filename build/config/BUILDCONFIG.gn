@@ -1507,7 +1507,6 @@ if (zircon_toolchain == false) {
     "//build/config:libc++-include",
     "//build/config/zircon:default_assert_level",
     "//build/config/zircon:default_icf",
-    "//build/config/zircon:default_include_dirs",
   ]
 
   # NOTE: Contrary to the Fuchsia build, we start by removing common configs
