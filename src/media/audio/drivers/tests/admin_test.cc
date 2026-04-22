@@ -1524,10 +1524,10 @@ void AdminTest::SetTopologyAndExpectCallback(fhasp::TopologyId id) {
   ASSERT_FALSE(pending_set_topology_id_.has_value());
   pending_set_topology_id_ = id;
   signal_processing()->SetTopology(
-      id, AddCallbackUnordered("SetTopology(" + std::to_string(id) + ")",
+      id, AddCallbackUnordered("SetTopology(topology " + std::to_string(id) + ")",
                                [this, id](fhasp::SignalProcessing_SetTopology_Result result) {
                                  ASSERT_FALSE(result.is_err())
-                                     << "SetTopology(" << id << ") failed";
+                                     << "SetTopology(topology " << id << ") failed";
                                  ASSERT_TRUE(pending_set_topology_id_.has_value());
                                  ASSERT_EQ(*pending_set_topology_id_, id);
                                  pending_set_topology_id_.reset();
@@ -1560,11 +1560,11 @@ void AdminTest::SetTopologyUnknownIdAndExpectError() {
   pending_set_topology_id_ = unknown_id;
   signal_processing()->SetTopology(
       unknown_id,
-      AddCallback("SetTopology(" + std::to_string(unknown_id) + ")",
+      AddCallback("SetTopology(topology " + std::to_string(unknown_id) + ")",
                   [this, unknown_id](fhasp::SignalProcessing_SetTopology_Result result) {
                     pending_set_topology_id_.reset();
                     ASSERT_TRUE(result.is_err())
-                        << "SetTopology(" << unknown_id << ") did not fail";
+                        << "SetTopology(topology " << unknown_id << ") did not fail";
                     EXPECT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
                   }));
   ASSERT_TRUE(signal_processing().is_bound())
@@ -1580,10 +1580,10 @@ void AdminTest::SetTopologyNoChangeAndExpectNoWatch() {
   FailOnWatchTopologyCompletion();
 
   signal_processing()->SetTopology(
-      id, AddCallbackUnordered("SetTopology[no-change](" + std::to_string(id) + ")",
+      id, AddCallbackUnordered("SetTopology[no-change](topology " + std::to_string(id) + ")",
                                [id](fhasp::SignalProcessing_SetTopology_Result result) {
                                  EXPECT_FALSE(result.is_err())
-                                     << "SetTopology[no-change](" << id << ") failed";
+                                     << "SetTopology[no-change](topology " << id << ") failed";
                                }));
   ASSERT_TRUE(signal_processing().is_bound()) << "SignalProcessing failed to set the topology";
 
@@ -1708,7 +1708,7 @@ void AdminTest::RetrieveInitialElementStates() {
     fhasp::ElementState state;
     signal_processing()->WatchElementState(
         e.id(),
-        AddCallback("initial WatchElementState(" + std::to_string(e.id()) + ")",
+        AddCallback("initial WatchElementState(element " + std::to_string(e.id()) + ")",
                     [&state](const fhasp::ElementState& result) { state = fidl::Clone(result); }));
     ExpectCallbacks();
 
@@ -1740,7 +1740,8 @@ void AdminTest::WatchElementStateUnknownIdAndExpectDisconnect(zx_status_t expect
   }
 
   signal_processing()->WatchElementState(
-      unknown_id, AddUnexpectedCallback("WatchElementState(" + std::to_string(unknown_id) + ")"));
+      unknown_id,
+      AddUnexpectedCallback("WatchElementState(element " + std::to_string(unknown_id) + ")"));
   ASSERT_TRUE(signal_processing().is_bound())
       << "SignalProcessing disconnected after setting an unknown topology";
   ExpectError(signal_processing(), expected_error);
@@ -2215,10 +2216,10 @@ void AdminTest::SetAllElementStatesNoChange() {
 void AdminTest::SetElementStateNoChange(fhasp::ElementId id) {
   signal_processing()->SetElementState(
       id, fhasp::SettableElementState{},
-      AddCallbackUnordered("SetElementState[no-change](" + std::to_string(id) + ")",
+      AddCallbackUnordered("SetElementState[no-change](element " + std::to_string(id) + ")",
                            [id](fhasp::SignalProcessing_SetElementState_Result result) {
                              EXPECT_FALSE(result.is_err())
-                                 << "SetElementState[no-change](" << id << ") failed";
+                                 << "SetElementState[no-change](element " << id << ") failed";
                            }));
   EXPECT_TRUE(signal_processing().is_bound()) << "SignalProcessing failed to set the ElementState";
 }
@@ -2235,10 +2236,10 @@ void AdminTest::SetElementStateUnknownIdAndExpectError() {
 
   signal_processing()->SetElementState(
       unknown_id, fuchsia::hardware::audio::signalprocessing::SettableElementState{},
-      AddCallback("SetElementState[unknown](" + std::to_string(unknown_id) + ")",
+      AddCallback("SetElementState[unknown](element " + std::to_string(unknown_id) + ")",
                   [unknown_id](fhasp::SignalProcessing_SetElementState_Result result) {
                     ASSERT_TRUE(result.is_err())
-                        << "SetElementState[unknown](" << unknown_id << ") did not fail";
+                        << "SetElementState[unknown](element " << unknown_id << ") did not fail";
                     EXPECT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
                   }));
   ASSERT_TRUE(signal_processing().is_bound())
@@ -2275,7 +2276,7 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
 
     signal_processing()->WatchElementState(
         element.id(), AddCallbackUnordered(
-                          "WatchElementState[1](" + std::to_string(element.id()) + ")",
+                          "WatchElementState[1](element " + std::to_string(element.id()) + ")",
                           [&element, new_started, new_bypassed](const fhasp::ElementState& result) {
                             ValidateElementState(element, result);
 
@@ -2286,9 +2287,9 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
     signal_processing()->SetElementState(
         element.id(), std::move(state),
         AddCallbackUnordered(
-            "SetElementState[1](" + std::to_string(element.id()) + ")",
+            "SetElementState[1](element " + std::to_string(element.id()) + ")",
             [id = element.id()](fhasp::SignalProcessing_SetElementState_Result result) {
-              EXPECT_FALSE(result.is_err()) << "SetElementState(" << id << ") failed";
+              EXPECT_FALSE(result.is_err()) << "SetElementState(element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound())
         << "SignalProcessing failed to set the ElementState";
@@ -2303,7 +2304,7 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
 
     signal_processing()->WatchElementState(
         element.id(),
-        AddCallbackUnordered("WatchElementState[2](" + std::to_string(element.id()) + ")",
+        AddCallbackUnordered("WatchElementState[2](element " + std::to_string(element.id()) + ")",
                              [&element, &initial_state](const fhasp::ElementState& result) {
                                ValidateElementState(element, result);
 
@@ -2316,9 +2317,9 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
     signal_processing()->SetElementState(
         element.id(), std::move(state),
         AddCallbackUnordered(
-            "SetElementState[2](" + std::to_string(element.id()) + ")",
+            "SetElementState[2](element " + std::to_string(element.id()) + ")",
             [id = element.id()](fhasp::SignalProcessing_SetElementState_Result result) {
-              EXPECT_FALSE(result.is_err()) << "SetElementState(" << id << ") failed";
+              EXPECT_FALSE(result.is_err()) << "SetElementState(element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound())
         << "SignalProcessing failed to restore the ElementState";
@@ -2405,7 +2406,7 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
     signal_processing()->WatchElementState(
         element.id(),
         AddCallbackUnordered(
-            "WatchElementState[dyn 1](" + std::to_string(element.id()) + ")",
+            "WatchElementState[dyn 1](element " + std::to_string(element.id()) + ")",
             [&element, &dyn_copy](const fhasp::ElementState& received_state) {
               ValidateElementState(element, received_state);
               ValidateDynamicsElementState(element, received_state);
@@ -2517,9 +2518,10 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
     signal_processing()->SetElementState(
         element.id(), std::move(new_state),
         AddCallbackUnordered(
-            "SetElementState[dyn](" + std::to_string(element.id()) + ")",
+            "SetElementState[dyn](element " + std::to_string(element.id()) + ")",
             [id = element.id()](fhasp::SignalProcessing_SetElementState_Result result) {
-              EXPECT_FALSE(result.is_err()) << "SetElementState[dyn 1](" << id << ") failed";
+              EXPECT_FALSE(result.is_err())
+                  << "SetElementState[dyn 1](element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound()) << "SetElementState failed. Unbound";
     ExpectCallbacks();
@@ -2534,7 +2536,7 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
     signal_processing()->WatchElementState(
         element.id(),
         AddCallbackUnordered(
-            "WatchElementState[dyn 2](" + std::to_string(element.id()) + ")",
+            "WatchElementState[dyn 2](element " + std::to_string(element.id()) + ")",
             [&element, &initial_state](const fhasp::ElementState& received_state) {
               ValidateElementState(element, received_state);
               ValidateDynamicsElementState(element, received_state);
@@ -2607,9 +2609,10 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
     signal_processing()->SetElementState(
         element.id(), std::move(restored_state),
         AddCallbackUnordered(
-            "SetElementState[dyn](" + std::to_string(element.id()) + ")",
+            "SetElementState[dyn](element " + std::to_string(element.id()) + ")",
             [id = element.id()](fhasp::SignalProcessing_SetElementState_Result result) {
-              EXPECT_FALSE(result.is_err()) << "SetElementState[dyn 2](" << id << ") failed";
+              EXPECT_FALSE(result.is_err())
+                  << "SetElementState[dyn 2](element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound()) << "SetElementState failed (restoral). Unbound";
     ExpectCallbacks();
@@ -2662,7 +2665,7 @@ void AdminTest::TestSetEqualizerElementState(const fhasp::Element& element,
     signal_processing()->WatchElementState(
         element.id(),
         AddCallbackUnordered(
-            "WatchElementState[EQ 1](" + std::to_string(element.id()) + ")",
+            "WatchElementState[EQ 1](element " + std::to_string(element.id()) + ")",
             [&element, &eq_copy](const fhasp::ElementState& received_state) {
               ValidateElementState(element, received_state);
               ValidateEqualizerElementState(element, received_state);
@@ -2706,9 +2709,9 @@ void AdminTest::TestSetEqualizerElementState(const fhasp::Element& element,
     signal_processing()->SetElementState(
         element.id(), std::move(new_state),
         AddCallbackUnordered(
-            "SetElementState[EQ 1](" + std::to_string(element.id()) + ")",
+            "SetElementState[EQ 1](element " + std::to_string(element.id()) + ")",
             [id = element.id()](fhasp::SignalProcessing_SetElementState_Result result) {
-              EXPECT_FALSE(result.is_err()) << "SetElementState[EQ](" << id << ") failed";
+              EXPECT_FALSE(result.is_err()) << "SetElementState[EQ](element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound()) << "SetElementState failed. Unbound";
     ExpectCallbacks();
@@ -2723,7 +2726,7 @@ void AdminTest::TestSetEqualizerElementState(const fhasp::Element& element,
     signal_processing()->WatchElementState(
         element.id(),
         AddCallbackUnordered(
-            "WatchElementState[EQ 2](" + std::to_string(element.id()) + ")",
+            "WatchElementState[EQ 2](element " + std::to_string(element.id()) + ")",
             [&element, &initial_state](const fhasp::ElementState& received_state) {
               ValidateElementState(element, received_state);
               ValidateEqualizerElementState(element, received_state);
@@ -2764,9 +2767,9 @@ void AdminTest::TestSetEqualizerElementState(const fhasp::Element& element,
     signal_processing()->SetElementState(
         element.id(), std::move(restored_state),
         AddCallbackUnordered(
-            "SetElementState[EQ 2](" + std::to_string(element.id()) + ")",
+            "SetElementState[EQ 2](element " + std::to_string(element.id()) + ")",
             [id = element.id()](fhasp::SignalProcessing_SetElementState_Result result) {
-              ASSERT_FALSE(result.is_err()) << "SetElementState[EQ](" << id << ") failed";
+              ASSERT_FALSE(result.is_err()) << "SetElementState[EQ](element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound()) << "SetElementState failed (restoral). Unbound";
     ExpectCallbacks();
@@ -2797,21 +2800,21 @@ void AdminTest::TestSetGainElementState(const fhasp::Element& element,
         fhasp::SettableTypeSpecificElementState::WithGain(std::move(gain_state)));
 
     signal_processing()->WatchElementState(
-        element.id(),
-        AddCallbackUnordered("WatchElementState[gain 1](" + std::to_string(element.id()) + ")",
-                             [&element, expected_gain](const fhasp::ElementState& result) {
-                               ValidateElementState(element, result);
-                               ValidateGainElementState(element, result);
+        element.id(), AddCallbackUnordered(
+                          "WatchElementState[gain 1](element " + std::to_string(element.id()) + ")",
+                          [&element, expected_gain](const fhasp::ElementState& result) {
+                            ValidateElementState(element, result);
+                            ValidateGainElementState(element, result);
 
-                               EXPECT_EQ(expected_gain, result.type_specific().gain().gain());
-                             }));
+                            EXPECT_EQ(expected_gain, result.type_specific().gain().gain());
+                          }));
 
     signal_processing()->SetElementState(
         element.id(), std::move(state),
         AddCallbackUnordered(
-            "SetElementState[gain 1](" + std::to_string(element.id()) + ")",
+            "SetElementState[gain 1](element " + std::to_string(element.id()) + ")",
             [id = element.id()](fhasp::SignalProcessing_SetElementState_Result result) {
-              ASSERT_FALSE(result.is_err()) << "SetElementState[gain](" << id << ") failed";
+              ASSERT_FALSE(result.is_err()) << "SetElementState[gain](element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound())
         << "SignalProcessing failed to set the ElementState";
@@ -2828,7 +2831,7 @@ void AdminTest::TestSetGainElementState(const fhasp::Element& element,
 
     signal_processing()->WatchElementState(
         element.id(),
-        AddCallback("WatchElementState[gain 2](" + std::to_string(element.id()) + ")",
+        AddCallback("WatchElementState[gain 2](element " + std::to_string(element.id()) + ")",
                     [&element, expected_gain = initial_state.type_specific().gain().gain()](
                         const fhasp::ElementState& result) {
                       ValidateElementState(element, result);
@@ -2840,9 +2843,9 @@ void AdminTest::TestSetGainElementState(const fhasp::Element& element,
     signal_processing()->SetElementState(
         element.id(), std::move(state),
         AddCallbackUnordered(
-            "SetElementState[gain 2](" + std::to_string(element.id()) + ")",
+            "SetElementState[gain 2](element " + std::to_string(element.id()) + ")",
             [id = element.id()](fhasp::SignalProcessing_SetElementState_Result result) {
-              EXPECT_FALSE(result.is_err()) << "SetElementState[gain](" << id << ") failed";
+              EXPECT_FALSE(result.is_err()) << "SetElementState[gain](element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound())
         << "SignalProcessing failed to restore the ElementState";
@@ -2863,10 +2866,10 @@ void AdminTest::TestSetGainElementStateNoChange(fhasp::ElementId element_id, flo
 
   signal_processing()->SetElementState(
       element_id, std::move(state),
-      AddCallback("SetElementState[gain no-change](" + std::to_string(element_id) + ")",
+      AddCallback("SetElementState[gain no-change](element " + std::to_string(element_id) + ")",
                   [element_id](fhasp::SignalProcessing_SetElementState_Result result) {
                     EXPECT_FALSE(result.is_err())
-                        << "SetElementState[gain no-change](" << element_id << ") failed";
+                        << "SetElementState[gain no-change](element " << element_id << ") failed";
                   }));
   ASSERT_TRUE(signal_processing().is_bound()) << "SignalProcessing failed to set the ElementState";
   ExpectCallbacks();
@@ -2883,10 +2886,10 @@ void AdminTest::TestSetGainElementStateInvalidGain(fhasp::ElementId element_id) 
 
   signal_processing()->SetElementState(
       element_id, std::move(state),
-      AddCallback("SetElementState[gain NAN](" + std::to_string(element_id) + ")",
+      AddCallback("SetElementState[gain NAN](element " + std::to_string(element_id) + ")",
                   [element_id](fhasp::SignalProcessing_SetElementState_Result result) {
                     ASSERT_TRUE(result.is_err())
-                        << "SetElementState[gain NAN](" << element_id << ") did not fail";
+                        << "SetElementState[gain NAN](element " << element_id << ") did not fail";
                     EXPECT_EQ(result.err(), ZX_ERR_INVALID_ARGS);
                   }));
   ASSERT_TRUE(signal_processing().is_bound())
