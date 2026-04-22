@@ -723,3 +723,24 @@ async fn waker_reentrancy_test() {
     notification.read_exact(&mut buf).await.unwrap();
     assert_eq!(b"Woken", &buf);
 }
+
+#[fuchsia::test]
+async fn failed_transport() {
+    let (client, fault_injector) = TestFDomain::new_client();
+    let (a, b) = client.create_channel();
+    const TEST_STR_A: &[u8] = b"Feral Cats Move In Mysterious Ways";
+
+    fault_injector.inject(TestError("Connection failed".to_owned()));
+
+    let err = a.fdomain_write(TEST_STR_A, Vec::new()).await.unwrap_err();
+    let Error::Transport(Some(err)) = err else { panic!("Wrong error type!") };
+
+    let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
+    assert_eq!("Connection failed", err);
+
+    let err = b.close().await.unwrap_err();
+    let Error::Transport(Some(err)) = err else { panic!("Wrong error type!") };
+
+    let TestError(err) = err.get_ref().unwrap().downcast_ref().unwrap();
+    assert_eq!("Connection failed", err);
+}

@@ -300,10 +300,14 @@ impl Transport {
     }
 
     /// Enqueue a message to be sent on this transport.
-    fn push_msg(&mut self, msg: Box<[u8]>) {
-        if let Transport::Transport(_, v, w) = self {
-            v.push_back(msg);
-            w.drain(..).for_each(Waker::wake);
+    fn push_msg(&mut self, msg: Box<[u8]>) -> Result<(), InnerError> {
+        match self {
+            Transport::Transport(_, v, w) => {
+                v.push_back(msg);
+                w.drain(..).for_each(Waker::wake);
+                Ok(())
+            }
+            Transport::Error(e) => Err(e.clone()),
         }
     }
 
@@ -424,11 +428,14 @@ impl ClientInner {
         let header = TransactionHeader::new(tx_id, ordinal, fidl_message::DynamicFlags::FLEXIBLE);
         let msg = fidl_message::encode_message(header, request).expect("Could not encode request!");
         self.next_tx_id += 1;
-        assert!(
-            self.transactions.insert(tx_id.try_into().unwrap(), responder).is_none(),
-            "Allocated same tx id twice!"
-        );
-        self.transport.push_msg(msg.into());
+        if let Err(e) = self.transport.push_msg(msg.into()) {
+            let _ = responder.handle(self, Err(e.into()));
+        } else {
+            assert!(
+                self.transactions.insert(tx_id.try_into().unwrap(), responder).is_none(),
+                "Allocated same tx id twice!"
+            );
+        }
     }
 
     fn process_waiting_to_close(&mut self) {
