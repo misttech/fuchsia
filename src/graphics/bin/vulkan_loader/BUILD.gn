@@ -136,13 +136,6 @@ fuchsia_package("vulkan_loader") {
   }
 }
 
-fuchsia_package("vulkan_loader_for_intel") {
-  deps = [
-    ":vulkan_loader_cmp",
-    ":x64_config_values",
-  ]
-}
-
 fuchsia_package("hermetic_vulkan_loader_with_lavapipe") {
   deps = [
     ":hermetic_lavapipe_config_values",
