@@ -384,11 +384,14 @@ mod tests {
         properties.insert("ABC".into(), "XYZ".into());
         properties.insert("FOO".into(), "BAR".into());
 
-        let props = device.get_uevent_properties_list();
+        let mut props = device.get_uevent_properties_list();
 
         assert_eq!(props.len(), 9);
-        assert_eq!(props[6], ("USB_STATE".into(), "CONNECTED".into()));
-        assert_eq!(props[7], ("ABC".into(), "XYZ".into()));
-        assert_eq!(props[8], ("FOO".into(), "BAR".into()));
+        // The properties from the metadata HashMap are in non-deterministic order.
+        // Sort them by key to make assertions deterministic.
+        props[6..].sort();
+        assert_eq!(props[6], ("ABC".into(), "XYZ".into()));
+        assert_eq!(props[7], ("FOO".into(), "BAR".into()));
+        assert_eq!(props[8], ("USB_STATE".into(), "CONNECTED".into()));
     }
 }
