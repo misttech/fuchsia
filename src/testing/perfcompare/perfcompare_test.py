@@ -3,9 +3,11 @@
 # found in the LICENSE file.
 
 import csv
+import importlib.resources
 import io
 import json
 import os
+import pathlib
 import re
 import shutil
 import statistics
@@ -18,6 +20,21 @@ import unittest.mock
 from typing import Any, Callable, Dict, List, Tuple, Union
 
 import perfcompare
+
+# The following allows perfcompare_test.py to be run either:
+#
+# 1. Using Fuchsia's GN plumbing for Python code, where test data must
+#    be imported through a special module using importlib.  This case
+#    allows the test to be run on Fuchsia Infra.
+# 2. By running perfcompare_test.py directly through
+#    fuchsia-vendored-python or python3.  This case allows the golden file
+#    to be updated, by passing "--generate".
+try:
+    import perfcompare_test_data
+except ModuleNotFoundError:
+    RESOURCES_DIR = pathlib.Path(__file__).parent
+else:
+    RESOURCES_DIR = importlib.resources.files(perfcompare_test_data)
 
 Behavior = Union[
     str,
@@ -53,8 +70,8 @@ def WriteJsonFile(filename, json_data):
         json.dump(json_data, fh)
 
 
-def ReadGoldenFile(filename):
-    with open(filename, "r") as fh:
+def ReadGoldenFile(file_obj):
+    with file_obj.open("r") as fh:
         data = fh.read()
     matches = list(re.finditer("\n\n### (.*)\n", data, re.M))
     starts = [m.end() for m in matches]
@@ -86,15 +103,13 @@ class GoldenDataOutput(object):
         assert name not in self._cases, name
         self._cases[name] = actual
 
-    def WriteFile(self, filename):
-        with open(filename, "w") as fh:
+    def WriteFile(self, file_obj):
+        with file_obj.open("w") as fh:
             for name, data in sorted(self._cases.items()):
                 fh.write("\n\n### %s\n%s" % (name, data))
 
 
-GOLDEN_FILE = os.path.join(
-    os.path.dirname(__file__), "perfcompare_test_output.txt"
-)
+GOLDEN_FILE = RESOURCES_DIR.joinpath("perfcompare_test_output.txt")
 GOLDEN = GoldenDataInput(GOLDEN_FILE)
 
 
@@ -548,7 +563,7 @@ class PerfCompareTest(TempDirTestCase):
     # Check that data written using the golden file helper reads back
     # the same.
     def test_golden_file_write_and_read(self):
-        temp_file = os.path.join(self.MakeTempDir(), "file")
+        temp_file = pathlib.Path(os.path.join(self.MakeTempDir(), "file"))
         writer = GoldenDataOutput()
         writer.AssertCaseEq("a_key", "a_value")
         writer.AssertCaseEq("b_key", "line 1\n" "line 2\n")

@@ -1,41 +1,53 @@
 # perfcompare: Performance comparison tool
 
-## Dependencies
+## Running the unit tests
 
-The perfcompare tool requires Python 3.
+The unit tests can be run using Fuchsia's GN plumbing for Python code,
+which is how the tests are run on Fuchsia Infra.  Example:
 
-There are two ways to run the perfcompare tool with the required
-dependencies (currently the `scipy` Python library, which depends
-on the `numpy` Python library):
+```sh
+fx set core.x64 --with-host src/testing/perfcompare:tests
+fx test perfcompare_test
+```
+
+Alternatively, they can be run directly using `fuchsia-vendored-python` or
+`python3`:
+
+```sh
+fuchsia-vendored-python src/testing/perfcompare/perfcompare_test.py
+```
+
+This case allows the golden files to be updated when running the test:
+
+```sh
+fuchsia-vendored-python src/testing/perfcompare/perfcompare_test.py --generate
+```
+
+## Running stats_test.py
+
+perfcompare.py used to depend on SciPy, but that dependency was difficult
+to provide in the Fuchsia GN build.  That dependency was removed: the
+relevant function has been reimplemented in stats.py.  However,
+stats_test.py can test stats.py against SciPy, and hence depends on SciPy.
+There are two ways that stats_test.py can be run:
 
 * Via `vpython3`:
 
   ```sh
-  ./prebuilt/third_party/vpython/vpython3 src/testing/perfcompare/perfcompare.py
+  ./prebuilt/third_party/vpython/vpython3 src/testing/perfcompare/stats_test.py
   ```
 
   This will automatically download prebuilt, hermetic versions of
-  dependencies.  `vpython3` is used for running perfcompare on the
-  Infra builders.
+  dependencies.  Note that `vpython3` is used for running perfcompare.py on
+  the Fuchsia Infra builders.
 
 * On Linux, when using Debian/Ubuntu, the dependencies can be
   installed using APT:
 
   ```sh
   sudo apt-get install python3-scipy
+  python3 src/testing/perfcompare/stats_test.py
   ```
-
-  This command should install numpy as well.
-
-## Running the unit tests
-
-The unit tests used to be run on CI/CQ, but that regressed.  Running
-them on CI/CQ is somewhat difficult now because of the dependency on
-`scipy`, so for now the tests must be run manually, with:
-
-```sh
-python3 src/testing/perfcompare/perfcompare_test.py
-```
 
 ## Example: Running perf tests locally and comparing results
 
