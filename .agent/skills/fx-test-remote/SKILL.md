@@ -97,3 +97,27 @@ fx test-remote --builder core.vim3-debug --device vim3 --test my-driver-test
   Buildbucket URL/build ID from standard output and retrieve the test
   logs/results using infra tools (e.g. `bb get <build_id>`, Buildbucket UI, or
   CQ dashboards).
+
+  **Using bb**: The `bb`  (Buildbucket) tool is found in
+  `prebuilt/tools/buildbucket/`. If authentication is needed, ask the user to
+  run `bb auth-login` as agents cannot perform interactive authentication.
+
+  **Using Logdog**: If you have the `logdog` CLI tool installed, you can fetch
+  specific logs (like `serial_log.txt`) directly from the command line.
+
+  *Note: `logdog` is no longer part of `depot_tools` and must be installed from CIPD:*
+  ```bash
+  # Create the directory if it doesn't exist
+  mkdir -p ~/.local/luci/logdog
+
+  # Define the package and version
+  PACKAGE="infra/tools/luci/logdog/logdog/\${platform} latest"
+
+  # Install using cipd ensure
+  echo $PACKAGE | cipd ensure -root ~/.local/luci/logdog -ensure-file -
+  ```
+
+  1. Find the Logdog URL by running:
+     `bb get -A -json <build_id> | jq | grep <log_file_name>`
+  2. Stream or filter the log using:
+     `logdog cat logdog://...`
