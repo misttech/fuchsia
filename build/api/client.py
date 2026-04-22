@@ -1043,7 +1043,9 @@ class AffectedTestsCommand(ScriptCommandBase):
     DESCRIPTION = """
 Determine the set of tests that should be run after the last build,
 based on a list of changed source file paths. On success, print a list
-of test labels.
+where each line is in the format <test_label>,<test_env>, where
+<test_label> is either a GN or Bazel target label, and <test_env> is either
+"host" or "device".
 """
 
     @staticmethod
@@ -1058,13 +1060,21 @@ of test labels.
     @staticmethod
     def run(args: argparse.Namespace) -> int:
         changed_files = args.files_list.read_text().splitlines()
+        # Lazy imports, see technical note at the top of this file.
         import affected_tests
         import ninja_artifacts
 
+        sys.path.insert(0, f"{_SCRIPT_DIR}/../bazel/scripts")
+        import build_utils
+
         ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
         ninja_runner = ninja_artifacts.NinjaRunner(ninja_path, args.build_dir)
+
+        bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, args.build_dir)
+        bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
+
         test_targets = affected_tests.find_tests_affected_by_changed_files(
-            changed_files, args.fuchsia_dir, ninja_runner
+            changed_files, args.fuchsia_dir, ninja_runner, bazel_launcher
         )
         for target in sorted(test_targets, key=lambda x: x.label):
             env = "device" if target.os_name == "fuchsia" else "host"

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import collections
 import dataclasses
 import json
 import os
@@ -15,6 +16,21 @@ from ninja_artifacts import NinjaRunner
 sys.path.insert(
     0, os.path.join(_SCRIPT_DIR, "..", "..", "build", "bazel", "scripts")
 )
+from build_utils import BazelLauncher
+
+# Set this to True to debug operations locally in this script.
+_DEBUG = False
+
+
+def debug_log(msg: str) -> None:
+    """Log a message to stderr if _DEBUG is True.
+
+    Note that for performance reasons, only call this when _DEBUG is True.
+    This avoids un-needed string formatting operations in the usual case where
+    the flag is False.
+    """
+    assert _DEBUG, "Do not call debug_log() directly, check for _DEBUG first!"
+    print(msg, file=sys.stderr)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -126,7 +142,7 @@ def split_gn_and_bazel_tests(
     gn_tests: list[TestTargetInfo] = []
     bazel_tests: list[TestTargetInfo] = []
     for test in input_tests:
-        if test.label.startswith("@@"):
+        if test.label.startswith("@"):
             bazel_tests.append(test)
         else:
             gn_tests.append(test)
@@ -231,10 +247,224 @@ class AffectedTestTarget:
     os_name: str
 
 
+def map_file_path_to_bazel_label(file_path: str, fuchsia_dir: Path) -> str:
+    """Map a given file path to a Bazel target label.
+
+    This inspects the filesystem to find package boundaries determined
+    by the existence of BUILD.bazel files.
+
+    For example, is //some/package/BUILD.bazel exists, then an input
+    of 'some/package/with/target/in/subdir' will produce a result
+    of '@@//some/package:with/target/in/subdir'.
+
+    Args:
+        file_path: A file path. If relative, this is assumed to be relative to
+            fuchsia_dir.
+        fuchsia_dir: The path to the Fuchsia source directory.
+    Returns:
+        A Bazel target label looking like @@//<package>:<target>.
+    """
+    if os.path.isabs(file_path):
+        file_path = os.path.relpath(file_path, fuchsia_dir)
+    # Need to find the BUILD.bazel file that defines a package covering this source file.
+    # This could be cached for performance.
+    package_path = os.path.dirname(file_path)
+    while package_path != "":
+        if (fuchsia_dir / package_path / "BUILD.bazel").exists():
+            break
+        package_path = os.path.dirname(package_path)
+
+    if package_path == ".":
+        package_path = ""
+
+    return f"@@//{package_path}:{os.path.relpath(file_path, package_path)}"
+
+
+def map_file_paths_to_bazel_labels(
+    file_paths: set[str], fuchsia_dir: Path
+) -> set[str]:
+    """Convert a list of source files, relative to the Fuchsia directory, into a set of Bazel labels.
+
+    Args:
+        file_paths: An iterable of source files, relative to the Fuchsia directory.
+        fuchsia_dir: The path to the Fuchsia source directory.
+    Returns:
+        A set of Bazel labels corresponding to the input source files.
+    """
+    return {
+        map_file_path_to_bazel_label(file_path, fuchsia_dir)
+        for file_path in file_paths
+    }
+
+
+def find_bazel_tests_affected_by_changed_files(
+    changed_files: set[str],
+    bazel_tests: list[TestTargetInfo],
+    fuchsia_dir: Path,
+    ninja_build_dir: Path,
+    bazel_launcher: BazelLauncher,
+) -> list[AffectedTestTarget]:
+    """Extract the list of Bazel test targets from tests.json
+
+    Args:
+        changed_files: A list of changed source files, relative to the Fuchsia source directory.
+        bazel_tests: A list of TestTargetInfo for Bazel-defined tests.
+        fuchsia_dir: A Path to the Fuchsia source directory.
+        ninja_build_dir: Path to Ninja build directory.
+        bazel_launcher: A BazelLauncher instance used to run queries.
+    Returns:
+        A list of AffectedTestTarget values.
+    """
+    # There are three sets of files to consider:
+    #
+    # - Regular input sources, these are passed as inputs to rdeps(), then the
+    #   result is intersected with the labels of the test labels to find which
+    #   ones are affected.
+    #
+    # - Bazel BUILD.bazel files, these are ignored as inputs by rdeps(), but one can
+    #   substitute //src/foo:BUILD.bazel with //src/foo:all to get equivalent results.
+    #
+    # - Bazel .bzl files, these are ignored as inputs to query functions.
+    #   However, it is possible to use buildfiles(deps(<target_set>)) to report the
+    #   corresponding .bzl files, then match these with the changed .bzl files.
+    #
+    #   To avoid doing one query per test label, use binary partitioning to find
+    #   the set of affected tests. This will still be significantly slower than
+    #   the above two cases though.
+    #
+    all_test_labels = {test.label for test in bazel_tests}
+
+    changed_input_labels: set[str] = set()
+    changed_bzl_labels: set[str] = set()
+    for changed_label in map_file_paths_to_bazel_labels(
+        changed_files, fuchsia_dir
+    ):
+        package, colon, target = changed_label.partition(":")
+        if colon is None:
+            target = os.path.basename(package)
+        if target.endswith(".bzl"):
+            changed_bzl_labels.add(f"{package}:{target}")
+        else:
+            if target in ("BUILD", "BUILD.bazel"):
+                target = "all"
+            changed_input_labels.add(f"{package}:{target}")
+
+    def run_query(query_args: list[str]) -> list[str]:
+        query_args = ["--config=quiet", "--consistent_labels"] + query_args
+        if _DEBUG:
+            debug_log(f"BAZEL QUERY: {query_args}\n")
+        ret = bazel_launcher.run_query("query", query_args, ignore_errors=True)
+        return ret.stdout.splitlines()
+
+    affected_test_labels: set[str] = set()
+
+    if changed_input_labels:
+        # For regular source files, and BUILD files, use rdeps() to get the set of
+        # reverse dependencies, then intersect it with our set of known test labels.
+        reverse_source_deps = set(
+            run_query(
+                [
+                    "rdeps(//...,set({}))".format(
+                        " ".join(sorted(changed_input_labels))
+                    ),
+                ]
+            )
+        )
+
+        if _DEBUG:
+            debug_log(
+                "All reverse source deps:\n  {}\n".format(
+                    "\n  ".join(label for label in sorted(reverse_source_deps))
+                )
+            )
+
+        affected_source_test_labels = reverse_source_deps & all_test_labels
+        affected_test_labels.update(affected_source_test_labels)
+
+        if _DEBUG:
+            debug_log(
+                "All affected source test labels:\n  {}\n".format(
+                    "\n  ".join(sorted(affected_source_test_labels))
+                )
+            )
+
+    if changed_bzl_labels:
+        if _DEBUG:
+            debug_log(
+                "CHANGED BZL LABELS:\n  {}\n".format(
+                    "\n  ".join(sorted(changed_bzl_labels))
+                )
+            )
+        # For .bzl files, use buildfiles() to get the set of load files needed
+        # by a given set of test targets. To avoid doing one query per test, use
+        # binary partitioning to find the minimal set of test targets that cover
+        # all the changed .bzl files.
+        partition_queue: list[list[str]] = []
+        partition_queue.append(sorted(all_test_labels))
+        while partition_queue:
+            if _DEBUG:
+                debug_log(
+                    "PARTITION QUEUE {}:\n  {}\n".format(
+                        len(partition_queue),
+                        "\n  ".join(
+                            f"{len(partition)} - {partition[0]}..."
+                            for partition in partition_queue
+                        ),
+                    )
+                )
+            current_partition = partition_queue.pop(0)
+
+            # Find the .bzl files required by this partition, then intersect
+            # them with changed_bzl_files.
+            build_labels = run_query(
+                [
+                    "buildfiles(deps(set({})))".format(
+                        " ".join(sorted(current_partition))
+                    ),
+                ]
+            )
+            bzl_labels = set(f for f in build_labels if f.endswith(".bzl"))
+            affected_bzl_labels = bzl_labels & changed_bzl_labels
+            if _DEBUG:
+                debug_log(
+                    "AFFECTED BZL LABELS:\n  {}".format(
+                        "\n  ".join(
+                            label for label in sorted(affected_bzl_labels)
+                        )
+                    )
+                )
+            if not affected_bzl_labels:
+                # No .bzl files in this partition are affected, so skip it.
+                continue
+
+            if len(current_partition) == 1:
+                # Found an individual test affected by the changed .bzl files.
+                affected_test_labels.add(current_partition[0])
+                continue
+
+            # Split the partition in half and add one half to the queue,
+            # process the other in this loop iteration.
+            mid = len(current_partition) // 2
+            partition_queue.append(current_partition[mid:])
+            partition_queue.append(current_partition[:mid])
+
+    label_to_os_names = collections.defaultdict(list)
+    for test in bazel_tests:
+        label_to_os_names[test.label].append(test.os_name)
+
+    result: list[AffectedTestTarget] = []
+    for label in affected_test_labels:
+        for os_name in label_to_os_names[label]:
+            result.append(AffectedTestTarget(label, os_name))
+
+    return result
+
+
 def find_tests_affected_by_changed_files(
     changed_files: list[str],
     fuchsia_dir: Path,
     ninja_runner: NinjaRunner,
+    bazel_launcher: BazelLauncher,
 ) -> set[AffectedTestTarget]:
     """Return the set of test labels that are affected by a set of changed files.
 
@@ -248,9 +478,14 @@ def find_tests_affected_by_changed_files(
             of files that were changed since the last build.
         fuchsia_dir: Path to Fuchsia source directory.
         ninja_runner: A NinjaRunner instance.
+        bazel_launcher: A BazelLauncher instance.
     Returns:
         A set of tuples, each containing a test target label and its OS name.
     """
+
+    if _DEBUG:
+        debug_log(f"changed_files={changed_files}")
+
     changed_sources: set[str] = set()
     for file in changed_files:
         if os.path.isabs(file):
@@ -260,42 +495,78 @@ def find_tests_affected_by_changed_files(
 
     build_dir = ninja_runner.build_dir
 
-    # Read the content of tests.json to determine which important artifacts
-    # each test requires at runtime.
-    test_artifacts = create_gn_test_artifacts_mapping(build_dir)
-
-    # The list of source files as they must appear in the Ninja build plan.
-    # All source inputs appear with a prefix like ../../ that corresponds
-    # to the relative path from the build directory to the Fuchsia source one.
-    source_prefix = os.path.relpath(fuchsia_dir, build_dir) + "/"
-    ninja_sources = [
-        f"{source_prefix}{source_path}"
-        for source_path in sorted(changed_sources)
-    ]
-
-    # Run the 'affected' tool which returns the list of Ninja artifacts affected
-    # by the changed sources. --ignore-errors is used because the changed file list
-    # might include things that are not build plan inputs and should be ignored.
-    # --depfile is used to ensure that implicit dependencies from the last build are
-    # followed properly. This is critical for Bazel defined targets that are built
-    # through bazel_action() GN target definitions.
-    #
-    # Note that for now, all Bazel targets, tests or not, must be wrapped through
-    # GN bazel_action() targets.
-    tool_output = ninja_runner.run_and_extract_output(
-        [
-            "-t",
-            "affected",
-            "--depfile",
-            "--ignore-errors",
-        ]
-        + ninja_sources
+    gn_tests, bazel_tests = split_gn_and_bazel_tests(
+        parse_tests_json(build_dir)
     )
 
-    affected_ninja_artifacts = set(tool_output.splitlines())
+    if _DEBUG:
+        debug_log(
+            "GN_TESTS: {}\n  ".format(
+                "\n  ".join(test.label for test in gn_tests)
+            ),
+        )
+        debug_log(
+            "BAZEL_TESTS: {}\n  ".format(
+                "\n  ".join(test.label for test in bazel_tests)
+            ),
+        )
 
-    return {
-        AffectedTestTarget(label=test_label, os_name=test_info.os_name)
-        for test_label, test_info in test_artifacts.items()
-        if bool(test_info.ninja_artifacts & affected_ninja_artifacts)
-    }
+    ninja_results: set[AffectedTestTarget] = set()
+
+    if gn_tests:
+        # Read the content of tests.json to determine which important artifacts
+        # each test requires at runtime.
+        gn_test_artifacts = _create_gn_test_artifacts_mapping(
+            gn_tests, build_dir
+        )
+
+        # The list of source files as they must appear in the Ninja build plan.
+        # All source inputs appear with a prefix like ../../ that corresponds
+        # to the relative path from the build directory to the Fuchsia source one.
+        source_prefix = os.path.relpath(fuchsia_dir, build_dir) + "/"
+        ninja_sources = [
+            f"{source_prefix}{source_path}"
+            for source_path in sorted(changed_sources)
+        ]
+
+        # Run the 'affected' tool which returns the list of Ninja artifacts affected
+        # by the changed sources. --ignore-errors is used because the changed file list
+        # might include things that are not build plan inputs and should be ignored.
+        # --depfile is used to ensure that implicit dependencies from the last build are
+        # followed properly. This is critical for Bazel defined targets that are built
+        # through bazel_action() GN target definitions.
+        #
+        # Note that for now, all Bazel targets, tests or not, must be wrapped through
+        # GN bazel_action() targets.
+        tool_output = ninja_runner.run_and_extract_output(
+            [
+                "-t",
+                "affected",
+                "--depfile",
+                "--ignore-errors",
+            ]
+            + ninja_sources
+        )
+
+        affected_ninja_artifacts = set(tool_output.splitlines())
+
+        ninja_results = {
+            AffectedTestTarget(label=test_label, os_name=test_info.os_name)
+            for test_label, test_info in gn_test_artifacts.items()
+            if bool(test_info.ninja_artifacts & affected_ninja_artifacts)
+        }
+
+    bazel_results: set[AffectedTestTarget] = set()
+
+    if bazel_tests:
+        bazel_results = set(
+            find_bazel_tests_affected_by_changed_files(
+                changed_sources,
+                bazel_tests,
+                fuchsia_dir,
+                build_dir,
+                bazel_launcher,
+            )
+        )
+
+    return ninja_results | bazel_results

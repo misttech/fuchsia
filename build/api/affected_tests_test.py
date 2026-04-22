@@ -11,10 +11,57 @@ import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
+_SCRIPT_DIR = os.path.dirname(__file__)
+sys.path.insert(0, _SCRIPT_DIR)
 import affected_tests
 import ninja_artifacts
 from ninja_artifacts import MockNinjaRunner
+
+sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
+import re
+
+from build_utils import (
+    BazelPaths,
+    CommandResult,
+    MockBazelLauncher,
+    MockCommandRunner,
+)
+
+
+class PartitioningMockBazelLauncher(MockBazelLauncher):
+    """A mock BazelLauncher used to verify the binary partitioning algorithm
+    used when determining which Bazel tests are affected by changed .bzl files.
+
+    Usage is:
+      1) Create instance, passing a mapping from test labels to the .bzl files
+         they depend on.
+
+      2) Pass the instance to the affected_tests.find_tests_affected_by_changed_files()
+         function as the bazel_launcher argument.
+
+      3) Check that the queries attribute contains the expected queries.
+    """
+
+    def __init__(self, target_to_bzl_map: dict[str, list[str]]) -> None:
+        super().__init__()
+        self.target_to_bzl_map = target_to_bzl_map
+        self.queries: list[list[str]] = []
+
+    def run_query(
+        self, query_type: str, query_args: list[str], ignore_errors: bool
+    ) -> CommandResult:
+        self.queries.append(query_args)
+        query_str = query_args[-1]
+        match = re.search(r"set\((.*?)\)", query_str)
+        if match:
+            targets = match.group(1).split()
+            bzl_files = set()
+            for t in targets:
+                bzl_files.update(self.target_to_bzl_map.get(t, []))
+            return CommandResult(
+                returncode=0, stdout="\n".join(sorted(bzl_files)), stderr=""
+            )
+        return CommandResult(returncode=0, stdout="", stderr="")
 
 
 class CreateTestArtifactsMappingTest(unittest.TestCase):
@@ -24,6 +71,7 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
         self.build_dir = self.root / "out/build"
         self.build_dir.mkdir(parents=True)
         self.tests_json_path = self.build_dir / "tests.json"
+        BazelPaths.write_topdir_config_for_test(self.root, "bazel_topdir")
 
     def tearDown(self) -> None:
         self._td.cleanup()
@@ -210,12 +258,18 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
         self.root = Path(self._td.name)
         self.build_dir = self.root / "out/build"
         self.build_dir.mkdir(parents=True)
+        BazelPaths.write_topdir_config_for_test(self.root, "bazel_topdir")
+        self.bazel_paths = BazelPaths.new(self.root, self.build_dir)
+        self.bazel_paths.output_base.mkdir(parents=True)
 
         (
             self.build_dir / ninja_artifacts.NINJA_BUILD_PLAN_DEPS_FILE
         ).write_text(
             "build.ninja.stamp: ../../BUILD.gn ../../src/foo.gni dep1 dep2 dep3 dep4"
         )
+
+        (self.root / "src/bazel").mkdir(parents=True)
+        (self.root / "src/bazel/BUILD.bazel").touch()
 
         tests_json = [
             {
@@ -227,10 +281,17 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             },
             {
                 "test": {
-                    "label": "@//bazel:target2",
+                    "label": "//bazel:target2",  # A Bazel test wrapped by a GN target.
                     "package_manifests": [
                         "obj/bazel/target2.bazel_outputs/package_manifest.json",
                     ],
+                    "os": "linux",
+                },
+            },
+            {
+                "test": {
+                    "label": "@@//src/bazel:target3",  # A Bazel test target.
+                    "path": "bazel-bin/src/bazel/target3_bin",
                     "os": "linux",
                 },
             },
@@ -248,6 +309,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             ["some/file.txt"],
             self.root,
             MockNinjaRunner(self.build_dir, "obj/some/target2.out\n"),
+            MockBazelLauncher.new_with_empty_outputs(),
         )
         self.assertSetEqual(targets, set())
 
@@ -259,6 +321,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                 self.build_dir,
                 "\n".join(["obj/gn/target1", "obj/gn/target1.o"]),
             ),
+            MockBazelLauncher.new_with_empty_outputs(),
         )
         self.assertSetEqual(
             targets,
@@ -277,10 +340,60 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                     ]
                 ),
             ),
+            MockBazelLauncher.new_with_empty_outputs(),
         )
+        self.maxDiff = None
         self.assertSetEqual(
             targets,
-            {affected_tests.AffectedTestTarget("@//bazel:target2", "linux")},
+            {affected_tests.AffectedTestTarget("//bazel:target2", "linux")},
+        )
+
+        def new_bazel_query_command_filter(
+            queries: list[tuple[str, str]],
+        ) -> T.Callable[[list[str]], tuple[int, str]]:
+            """Create a command filter for bazel queries performed by affected_test.py
+
+            Args:
+                queries: List of (query, expected_output) pairs.
+            Returns:
+                A new input value for MockCommandRunner.set_command_filter()
+            """
+            return MockCommandRunner.new_command_filter_from_list(
+                [
+                    (
+                        f"bazel query --config=quiet --consistent_labels {q[0]} --keep_going",
+                        q[1],
+                    )
+                    for q in queries
+                ]
+            )
+
+        bazel_launcher = MockBazelLauncher()
+        bazel_launcher.command_runner.set_command_filter(
+            new_bazel_query_command_filter(
+                [
+                    (
+                        "rdeps(//...,set(@@//:bazel/test3.cc))",
+                        "@@//src/bazel:target3",
+                    )
+                ]
+            )
+        )
+
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["bazel/test3.cc"],
+            self.root,
+            MockNinjaRunner(self.build_dir, ""),
+            bazel_launcher,
+        )
+        self.maxDiff = None
+        self.assertSetEqual(
+            targets,
+            {
+                affected_tests.AffectedTestTarget(
+                    "@@//src/bazel:target3", "linux"
+                )
+            },
         )
 
         targets = affected_tests.find_tests_affected_by_changed_files(
@@ -297,13 +410,180 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
                     ]
                 ),
             ),
+            MockBazelLauncher.new_with_empty_outputs(),
         )
         self.assertSetEqual(
             targets,
             {
                 affected_tests.AffectedTestTarget("//gn:target1", "fuchsia"),
-                affected_tests.AffectedTestTarget("@//bazel:target2", "linux"),
+                affected_tests.AffectedTestTarget("//bazel:target2", "linux"),
             },
+        )
+
+    def test_native_bazel_target_affected(self) -> None:
+        tests_json = [
+            {
+                "test": {
+                    "label": "@@//src/bazel:test1",
+                    "os": "linux",
+                },
+            },
+            {
+                "test": {
+                    "label": "@@//src/bazel:test2",
+                    "os": "linux",
+                }
+            },
+        ]
+        with self.tests_json_path.open("wt") as f:
+            json.dump(tests_json, f)
+
+        mock_ninja_runner = MockNinjaRunner(self.build_dir, "")
+
+        mock_bazel_launcher = MockBazelLauncher()
+        mock_bazel_launcher.push_expected_outputs(
+            [
+                # Result of rdeps(deps(set(//src/bazel:test1.cc))) query
+                "@@//src/bazel:test1\n",
+            ]
+        )
+
+        # First, check that if the source of only one test is modified, only that specific
+        # test is reported.
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["src/bazel/test1.cc"],
+            self.root,
+            mock_ninja_runner,
+            mock_bazel_launcher,
+        )
+
+        self.assertSetEqual(
+            targets,
+            {affected_tests.AffectedTestTarget("@@//src/bazel:test1", "linux")},
+        )
+
+        # Do the same for the second test.
+        mock_bazel_launcher.push_expected_outputs(
+            [
+                # Result of rdeps(deps(set(//src/bazel:test2.cc))) query
+                "@@//src/bazel:test2\n",
+            ]
+        )
+
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["src/bazel/test2.cc"],
+            self.root,
+            mock_ninja_runner,
+            mock_bazel_launcher,
+        )
+        self.assertSetEqual(
+            targets,
+            {affected_tests.AffectedTestTarget("@@//src/bazel:test2", "linux")},
+        )
+
+        # Do the same for a build file.
+        mock_bazel_launcher.push_expected_outputs(
+            [
+                # Result of rdeps(deps(set(//src/bazel:all))) query
+                "@@//src/bazel:test1\n"
+                + "@@//src/bazel:test2\n",
+            ]
+        )
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["src/bazel/BUILD.bazel"],
+            self.root,
+            mock_ninja_runner,
+            mock_bazel_launcher,
+        )
+        self.assertSetEqual(
+            targets,
+            {
+                affected_tests.AffectedTestTarget(
+                    "@@//src/bazel:test1", "linux"
+                ),
+                affected_tests.AffectedTestTarget(
+                    "@@//src/bazel:test2", "linux"
+                ),
+            },
+        )
+
+    def test_bzl_file_changes_binary_partitioning(self) -> None:
+        tests_json = [
+            {
+                "test": {
+                    "label": "@@//src/bazel:test1",
+                    "os": "linux",
+                },
+            },
+            {
+                "test": {
+                    "label": "@@//src/bazel:test2",
+                    "os": "linux",
+                }
+            },
+            {
+                "test": {
+                    "label": "@@//src/bazel:test3",
+                    "os": "linux",
+                }
+            },
+            {
+                "test": {
+                    "label": "@@//src/bazel:test4",
+                    "os": "linux",
+                }
+            },
+        ]
+        with self.tests_json_path.open("wt") as f:
+            json.dump(tests_json, f)
+
+        mock_ninja_runner = MockNinjaRunner(self.build_dir, "")
+
+        target_to_bzl_map = {
+            "@@//src/bazel:test1": [],
+            "@@//src/bazel:test2": ["@@//src/bazel:foo.bzl"],
+            "@@//src/bazel:test3": [],
+            "@@//src/bazel:test4": [],
+        }
+
+        mock_bazel_launcher = PartitioningMockBazelLauncher(target_to_bzl_map)
+
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["src/bazel/foo.bzl"],
+            self.root,
+            mock_ninja_runner,
+            mock_bazel_launcher,
+        )
+
+        self.assertSetEqual(
+            targets,
+            {affected_tests.AffectedTestTarget("@@//src/bazel:test2", "linux")},
+        )
+
+        self.assertEqual(len(mock_bazel_launcher.queries), 5)
+
+        def get_query_str(args: list[str]) -> str:
+            return args[-1]
+
+        self.assertIn(
+            "set(@@//src/bazel:test1 @@//src/bazel:test2 @@//src/bazel:test3 @@//src/bazel:test4)",
+            get_query_str(mock_bazel_launcher.queries[0]),
+        )
+        self.assertIn(
+            "set(@@//src/bazel:test3 @@//src/bazel:test4)",
+            get_query_str(mock_bazel_launcher.queries[1]),
+        )
+        self.assertIn(
+            "set(@@//src/bazel:test1 @@//src/bazel:test2)",
+            get_query_str(mock_bazel_launcher.queries[2]),
+        )
+        self.assertIn(
+            "set(@@//src/bazel:test2)",
+            get_query_str(mock_bazel_launcher.queries[3]),
+        )
+        self.assertIn(
+            "set(@@//src/bazel:test1)",
+            get_query_str(mock_bazel_launcher.queries[4]),
         )
 
 

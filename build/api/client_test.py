@@ -58,6 +58,12 @@ class ClientTestBase(unittest.TestCase):
             self._build_ninja_d_path, "build.ninja.stamp: ../../BUILD.gn\n"
         )
 
+        self._bazel_workspace = self._build_dir / "bazel_workspace"
+        _write_file(
+            self._top_dir / "build/bazel/config/bazel_top_dir",
+            "bazel_workspace",
+        )
+
         # A fake host tag used to verify that the command used the --host-tag value
         # properly, instead of picking the real one by mistake.
         self._host_tag = "linux-y64"
