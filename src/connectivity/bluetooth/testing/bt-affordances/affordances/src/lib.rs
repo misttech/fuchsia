@@ -5,7 +5,9 @@
 use anyhow::anyhow;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_bluetooth::{AddressType, ChannelMode, ChannelParameters, PeerId, Uuid};
+use fidl_fuchsia_bluetooth::{
+    AddressType, ChannelMode, ChannelParameters, DeviceClass, PeerId, Uuid,
+};
 use fidl_fuchsia_bluetooth_bredr::{
     ConnectParameters, ConnectionReceiverMarker, ConnectionReceiverRequest,
     ConnectionReceiverRequestStream, DataElement, L2capParameters, ProfileMarker, ProfileProxy,
@@ -60,6 +62,7 @@ enum Request {
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetLocalName(String, oneshot::Sender<Result<(), anyhow::Error>>),
+    SetDeviceClass(DeviceClass, oneshot::Sender<Result<(), anyhow::Error>>),
     StartLeScan(
         oneshot::Sender<
             Result<
@@ -249,6 +252,9 @@ impl WorkThread {
                 }
                 Request::SetLocalName(name, result_sender) => {
                     result_sender.send(proxies.set_local_name(name)).unwrap();
+                }
+                Request::SetDeviceClass(device_class, result_sender) => {
+                    result_sender.send(proxies.set_device_class(device_class)).unwrap();
                 }
                 Request::StartLeScan(result_sender) => {
                     result_sender.send(proxies.start_le_scan(peer_cache.clone()).await).unwrap();
@@ -535,6 +541,13 @@ impl WorkThread {
     pub async fn set_local_name(&self, name: String) -> Result<(), anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::SetLocalName(name, sender))?;
+        receiver.await?
+    }
+
+    // Set device class.
+    pub async fn set_device_class(&self, device_class: DeviceClass) -> Result<(), anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::SetDeviceClass(device_class, sender))?;
         receiver.await?
     }
 
@@ -1000,6 +1013,12 @@ impl Proxies {
     fn set_local_name(&self, name: String) -> Result<(), anyhow::Error> {
         self.access_proxy.set_local_name(name.as_str()).map_err(|fidl_error| {
             anyhow!("fuchsia.bluetooth.sys.Access/SetLocalName error: {fidl_error}")
+        })
+    }
+
+    fn set_device_class(&self, device_class: DeviceClass) -> Result<(), anyhow::Error> {
+        self.access_proxy.set_device_class(&device_class).map_err(|fidl_error| {
+            anyhow!("fuchsia.bluetooth.sys.Access/SetDeviceClass error: {fidl_error}")
         })
     }
 

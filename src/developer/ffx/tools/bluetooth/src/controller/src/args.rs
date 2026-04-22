@@ -8,6 +8,9 @@ use ffx_core::ffx_command;
 #[path = "local_name/args.rs"]
 pub mod local_name;
 
+#[path = "device_class/args.rs"]
+pub mod device_class;
+
 // ffx bluetooth controller
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -28,6 +31,7 @@ pub enum ControllerSubCommand {
     Show(ShowCommand),
     List(ListCommand),
     LocalName(local_name::LocalNameCommand),
+    DeviceClass(device_class::DeviceClassCommand),
 }
 /// ffx bluetooth controller show
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]

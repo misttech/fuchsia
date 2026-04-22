@@ -43,10 +43,10 @@ open protocol PeerController {
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
     flexible Pair(table {
-        // Required. Defines which peer to initiate pairing with.
+        /// Required. Defines which peer to initiate pairing with.
         1: selector PeerSelector;
 
-        // Required. The configuration options to use for this pairing request.
+        /// Required. The configuration options to use for this pairing request.
         2: options sys.PairingOptions;
     }) -> () error Error;
 
@@ -59,7 +59,7 @@ open protocol PeerController {
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
     flexible SetDiscovery(table {
-        // Required. Set to true if starting discovery or false if stopping discovery.
+        /// Required. Set to true if starting discovery or false if stopping discovery.
         1: discovery bool;
     }) -> () error Error;
 };
@@ -77,7 +77,7 @@ open protocol HostController {
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
     flexible SetDiscoverability(table {
-        // Required. Set to true if making discoverable or false if revoking discoverability.
+        /// Required. Set to true if making discoverable or false if revoking discoverability.
         1: discoverable bool;
     }) -> () error Error;
 
@@ -101,12 +101,12 @@ open protocol HostController {
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
     flexible StartPairingDelegate(table {
-        // Required. Set based on the ability of the host to enter responses to pairing requests.
-        // See [`fuchsia.bluetooth.sys/InputCapability`].
+        /// Required. Set based on the ability of the host to enter responses to pairing requests.
+        /// See [`fuchsia.bluetooth.sys/InputCapability`].
         1: input_capability sys.InputCapability;
 
-        // Required. Set based on the ability of the host to display information to the user
-        // initiating or accepting a pairing. See [`fuchsia.bluetooth.sys/OutputCapability`].
+        /// Required. Set based on the ability of the host to display information to the user
+        /// initiating or accepting a pairing. See [`fuchsia.bluetooth.sys/OutputCapability`].
         2: output_capability sys.OutputCapability;
     }) -> () error Error;
 
@@ -118,4 +118,12 @@ open protocol HostController {
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
     flexible StopPairingDelegate() -> () error Error;
+
+    /// Set the active host's device class.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible SetDeviceClass(table {
+        /// Required. The device class to assign to the host. See [`fuchsia.bluetooth.DeviceClass`].
+        1: device_class bt.DeviceClass;
+    }) -> () error Error;
 };

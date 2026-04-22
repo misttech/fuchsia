@@ -4,9 +4,10 @@
 
 use anyhow::{Context, Error};
 use fidl_fuchsia_bluetooth_affordances::{
-    HostControllerRequest, HostControllerRequestStream, HostControllerSetDiscoverabilityRequest,
-    HostControllerStartPairingDelegateRequest, PeerControllerPairRequest, PeerControllerRequest,
-    PeerControllerRequestStream, PeerControllerSetDiscoveryRequest, PeerSelector,
+    HostControllerRequest, HostControllerRequestStream, HostControllerSetDeviceClassRequest,
+    HostControllerSetDiscoverabilityRequest, HostControllerStartPairingDelegateRequest,
+    PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
+    PeerControllerSetDiscoveryRequest, PeerSelector,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -242,6 +243,29 @@ async fn handle_host_request(
                     HostControllerRequest::StopPairingDelegate { responder } => {
                         let _ = worker.stop_pairing_delegate().await;
                         responder.send(Ok(()))?;
+                    }
+                    HostControllerRequest::SetDeviceClass { payload, responder } => {
+                        let HostControllerSetDeviceClassRequest {
+                            device_class: Some(device_class),
+                            ..
+                        } = payload
+                        else {
+                            error!("SetDeviceClass encountered error: device_class not set");
+                            responder
+                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                            return Ok(());
+                        };
+                        match worker.set_device_class(device_class).await {
+                            Ok(_) => {
+                                responder.send(Ok(()))?;
+                            }
+                            Err(err) => {
+                                error!("SetDeviceClass encountered error: {err}");
+                                responder.send(Err(
+                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
+                                ))?;
+                            }
+                        }
                     }
                     HostControllerRequest::_UnknownMethod { ordinal, .. } => {
                         error!(

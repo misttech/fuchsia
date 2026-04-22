@@ -14,6 +14,7 @@ use fuchsia_bluetooth::types::{HostInfo, addresses_to_custom_string};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 
+pub mod device_class;
 pub mod local_name;
 
 #[derive(FfxTool)]
@@ -47,6 +48,10 @@ impl FfxMain for ControllerTool {
             // ffx bluetooth controller local-name
             ControllerSubCommand::LocalName(ref cmd) => {
                 local_name::handle_local_name(&self, cmd, &mut writer, &hosts).await?;
+            }
+            // ffx bluetooth controller device-class
+            ControllerSubCommand::DeviceClass(ref cmd) => {
+                device_class::handle_device_class(&self, cmd, &mut writer).await?;
             }
         }
         Ok(())
