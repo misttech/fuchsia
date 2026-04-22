@@ -668,31 +668,33 @@ static int cmd_crash(int argc, const cmd_args* argv, uint32_t flags) {
 }
 
 static int cmd_build_instrumentation(int argc, const cmd_args* argv, uint32_t flags) {
-  ktl::array static_features{
+  auto print_feature = [](const char* what) { printf("build_instrumentation: %s\n", what); };
+
 #if __has_feature(address_sanitizer)
-      "address_sanitizer",
+  print_feature("address_sanitizer");
 #endif
 #if DEBUG_ASSERT_IMPLEMENTED
-      "debug_assert",
+  print_feature("debug_assert");
 #endif
 #if WITH_LOCK_DEP
-      "lockdep",
+  print_feature("lockdep");
 #endif
 #if __has_feature(safe_stack)
-      "safe_stack",
+  print_feature("safe_stack");
 #endif
 #if __has_feature(shadow_call_stack)
-      "shadow_call_stack",
+  print_feature("shadow_call_stack");
 #endif
 #if __has_feature(undefined_behavior_sanitizer)
-      "undefined_behavior_sanitizer",
+  print_feature("undefined_behavior_sanitizer");
 #endif
-      // missing: sancov, profile
-  };
-  for (const auto& feature : static_features) {
-    printf("build_instrumentation: %s\n", feature);
-  }
+
+  // missing: sancov, profile
+
+  // This print statement is load-bearing! It is scraped in a panic test.
+  // LINT.IfChange
   printf("build_instrumentation: done\n");
+  // LINT.ThenChange(//src/tests/kernel_panic/kernel_panic_test.go)
   return 0;
 }
 
