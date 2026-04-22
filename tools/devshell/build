@@ -48,6 +48,8 @@
 ##
 ##    fx build --host @//build/bazel/host_tests/cc_tests:static_test
 ##    fx build --config=host @//build/bazel/host_tests/cc_tests:static_test
+##    fx build --fuchsia_platform @//build/bazel/host_tests/cc_tests:dynamic_test
+##    fx build --config=fuchsia_platform @//build/bazel/host_tests/cc_tests:dynamic_test
 ##
 ## Otherwise, LABELS_OR_TARGETS is a list of Ninja target paths, GN labels
 ## (beginning with //) or `--toolchain=NAME` options or related aliases (see below).
@@ -207,6 +209,10 @@ function validate_build_args {
         fi
         bazel_targets+=("$1")
         ;;
+      --fuchsia_platform)
+        # This is a short-cut for --config=fuchsia_platform
+        bazel_options+=("--config=fuchsia_platform")
+        ;;
       --host)
         # This is compatible with both Bazel and GN invocations so ignore it here.
         gn_args+=("$1")
@@ -316,7 +322,7 @@ function _array_to_json_list {
   local item comma
   printf "["
   for item in "${@}"; do
-    printf "$comma"
+    printf %s "$comma"
     comma=","
     printf '"%q"' "${item}"
   done
@@ -330,7 +336,6 @@ function main {
   local verbose
   local quiet
   local skip_auth_check=0
-  local concurrency=0
 
   if [[ "${FX_BUILD_QUIET}" == "1" ]]; then
     quiet=true
@@ -394,6 +399,7 @@ function main {
         ;;
 
       --no-status)
+        # shellcheck disable=SC2034 # Global variable used by tools/devshell/lib/vars.sh
         FX_BUILD_STATUS=0
         ;;
 
@@ -413,13 +419,11 @@ function main {
       # options. For now pass them directly to fx-run-ninja, which will eventually
       # pass them to Bazel. See https://fxbug.dev/351623259
       -j)
-        concurrency="$2"
         extra_switches+=("$1" "$2")
         shift
         ;;
 
       -j*)
-        concurrency="${1#-j}"
         extra_switches+=("$1")
         ;;
 
@@ -443,6 +447,11 @@ function main {
             gn_targets+=("$1")
           fi
           ;;
+
+      --fuchsia_platform)
+        assert_build_mode "bazel"
+        extra_switches+=("--config=fuchsia_platform")
+        ;;
 
       --config=*)
         assert_build_mode "bazel"
@@ -621,22 +630,23 @@ function main {
     # For now, only support host Bazel targets. Supporting Fuchsia targets requires
     # ensuring that all GN build artifacts they use as input are already built, which
     # is not implemented yet.
-    local has_bazel_host_flag bazel_arg
+    local has_bazel_host_flag has_bazel_fuchsia_platform_flag bazel_arg
     for bazel_arg in "${extra_switches[@]}"; do
       if [[ "${bazel_arg}" == "--config=host" ]]; then
          has_bazel_host_flag=true
-         break
+      elif [[ "${bazel_arg}" == "--config=fuchsia_platform" ]]; then
+         has_bazel_fuchsia_platform_flag=true
       fi
     done
 
-    if [[ "${has_bazel_host_flag}" ]]; then
+    if [[ -n "${has_bazel_host_flag}" || -n "${has_bazel_fuchsia_platform_flag}" ]]; then
       local empty_gn_targets_dir="${FUCHSIA_DIR}/build/bazel/local_repositories/empty"
       extra_switches+=(
         # Prevent any existing @gn_targets definitions from being visible.
         --override_repository=gn_targets="${empty_gn_targets_dir}"
       )
     else
-      fx-error "Only host Bazel target labels are supported for now, please use --host flag."
+      fx-error "Only host or fuchsia_platform Bazel target labels are supported for now, please use --host or --fuchsia_platform flag."
       exit 1
     fi
   elif [[ "${FX_BUILD_MODE}" == "gn" ]]; then
@@ -694,6 +704,23 @@ function main {
 
   if [[ "${FX_BUILD_MODE}" == "bazel" ]]; then
       fx-update-bazel-workspace
+
+      # --fuchsia_platform requires the sysroot artifacts to be built with Ninja first.
+      # For now do this unconditionally. In the future, this will be optimized by a Ninja
+      # sub-build invoked on-demand by Bazel itself.
+      if [[ "${has_bazel_fuchsia_platform_flag}" ]]; then
+        local ninja_path="$PREBUILT_NINJA"
+        # The rsninja.sh script is a wrapper that enables ResultStore features,
+        # and is a safe drop-in replacement for the original ninja binary,
+        # even when ResultStore is disabled.
+        if [[ -x "${ninja_path}" ]]; then
+          ninja_path="${FUCHSIA_DIR}/build/resultstore/rsninja.sh"
+        fi
+        fx-run-ninja "${is_logging}" "${ninja_path}" \
+          -C "${FUCHSIA_BUILD_DIR}" \
+          phony/zircon/public/sysroot_sdk/sysroot_for_fuchsia_platform
+      fi
+
       # Invoke Bazel through fx-run-bazel to ensure a consistent environment and RBE wrapper
       # script, compared with the case where Bazel is called from Ninja.
       local bazel_build_args=(

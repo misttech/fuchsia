@@ -398,10 +398,10 @@ TEST_fx-build-with-ninja-path() {
     BT_EXPECT grep -q "obj/src/foo" stdout.txt
 }
 
-TEST_fx-build-with-bazel-non-host-label() {
+TEST_fx-build-with-bazel-no-config-label() {
     setup_build_test
     BT_EXPECT_FAIL "${fx}" build @//src/foo "2>" stderr.txt
-    BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: Only host Bazel target labels are supported for now, please use --host flag."
+    BT_EXPECT_FILE_CONTAINS stderr.txt "ERROR: Only host or fuchsia_platform Bazel target labels are supported for now, please use --host or --fuchsia_platform flag."
 }
 
 TEST_fx-build-with-bazel-host-label() {
@@ -445,6 +445,39 @@ TEST_fx-build-with-bazel-label-with-config-host() {
     BT_EXPECT grep -q "bazel" stdout.txt
     BT_EXPECT grep -q "build" stdout.txt
     BT_EXPECT grep -q -e "--config=host" stdout.txt
+    BT_EXPECT grep -q -e "@//src/foo" stdout.txt
+}
+
+TEST_fx-build-with-bazel-label-after-fuchsia-platform() {
+    setup_build_test
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build --fuchsia_platform @//src/foo ">" stdout.txt
+    # Verify that the command reached the end of the stack with correct flags.
+    BT_EXPECT grep -q "bazel" stdout.txt
+    BT_EXPECT grep -q "build" stdout.txt
+    BT_EXPECT grep -q -e "--config=fuchsia_platform" stdout.txt
+    BT_EXPECT grep -q -e "@//src/foo" stdout.txt
+}
+
+TEST_fx-build-with-bazel-label-before-fuchsia-platform() {
+    setup_build_test
+    export FX_BUILD_DRY_RUN=1
+    BT_EXPECT "${fx}" build @//src/foo --fuchsia_platform ">" stdout.txt
+    # Verify that the command reached the end of the stack with correct flags.
+    BT_EXPECT grep -q "bazel" stdout.txt
+    BT_EXPECT grep -q "build" stdout.txt
+    BT_EXPECT grep -q -e "--config=fuchsia_platform" stdout.txt
+    BT_EXPECT grep -q -e "@//src/foo" stdout.txt
+}
+
+TEST_fx-build-with-bazel-label-before-config-fuchsia-platform() {
+    setup_build_test
+    export FX_BUILD_DRY_RUN=1
+    # Unlike GN --toolchain options, --config can appear after the Bazel label.
+    BT_EXPECT "${fx}" build @//src/foo --config=fuchsia_platform ">" stdout.txt
+    BT_EXPECT grep -q "bazel" stdout.txt
+    BT_EXPECT grep -q "build" stdout.txt
+    BT_EXPECT grep -q -e "--config=fuchsia_platform" stdout.txt
     BT_EXPECT grep -q -e "@//src/foo" stdout.txt
 }
 
