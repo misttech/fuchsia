@@ -5,7 +5,6 @@
 # found in the LICENSE file.
 
 import argparse
-import json
 import os
 import pathlib
 import shlex
@@ -15,6 +14,7 @@ import sys
 import tempfile
 import typing as T
 
+import build_command_query_utils
 import gn_runner
 import shell_utils
 
@@ -123,122 +123,6 @@ def try_get_build_dir(fuchsia_dir: pathlib.Path) -> T.Optional[pathlib.Path]:
     return pathlib.Path(fx_build_dir_file.read_text().strip())
 
 
-def query_ninja_command(
-    gn: gn_runner.GnRunner,
-    ninja_runner: ninja_artifacts.NinjaRunner,
-    gn_label: str,
-    fuchsia_dir: pathlib.Path,
-) -> list[str]:
-    """
-    Fetch the command line of the rustc command for the given GN label.
-
-    This function uses `fx gn desc` to get the output files of the GN label.
-    Then it uses `fx ninja -t commands` to get the command line of the rustc
-    command.
-
-    Args:
-        gn: The GnRunner instance to use.
-        ninja_runner: The NinjaRunner instance to use.
-        gn_label: The GN label to fetch the command line for.
-
-    Returns:
-        A list of strings representing the command line of the rustc command.
-    """
-    debug(f"Fetching Ninja command for GN label {gn_label}...")
-
-    debug(
-        f"Running gn desc for target {gn_label} in build directory {gn.build_dir}"
-    )
-    desc_output = gn.run_and_extract_output(["desc", gn_label, "outputs"])
-    outputs = desc_output.strip().splitlines()
-    if not outputs:
-        debug(f"No outputs found for GN label {gn_label}.")
-        return []
-
-    debug(f"outputs from GN desc: {outputs}")
-    # Outputs are in format `//out/dir/foo/bar`. Need to strip the `//out/dir` part.
-    # Build root is `out/dir`.
-    build_root_relpath = os.path.relpath(gn.build_dir, fuchsia_dir)
-    relative_outputs = [
-        os.path.relpath(output[2:], build_root_relpath) for output in outputs
-    ]
-
-    cmd_raw = ""
-    for candidate in relative_outputs:
-        try:
-            ninja_cmd = ["-t", "commands", "-s", candidate]
-            debug(f"Running ninja command with args: {ninja_cmd}")
-            ninja_cmd_output = ninja_runner.run_and_extract_output(ninja_cmd)
-            out = ninja_cmd_output.strip()
-            if out:
-                cmd_raw = out
-                selected_output = candidate
-                break
-        except Exception as e:
-            print(f"ERROR: running ninja -t commands for {candidate}: {e}")
-            continue
-
-    if not cmd_raw:
-        debug("Failed to retrieve ninja command for any output.")
-        return []
-
-    debug(
-        f"Selected GN output artifact: {selected_output} to retrieve Ninja command"
-    )
-    return shlex.split(cmd_raw)
-
-
-def query_bazel_command(
-    bazel_launcher: build_utils.BazelLauncher, bazel_label: str
-) -> list[str]:
-    """
-    Query Bazel for the command line of the rustc command for the given Bazel
-    label.
-
-    Args:
-        bazel_launcher: The BazelLauncher instance to use.
-        bazel_label: The Bazel label to fetch the command line for.
-
-    Returns:
-        A list of strings representing the command line of the rustc command.
-    """
-    query_args = [
-        "--config=host",
-        "--config=quiet",
-        "--output=jsonproto",
-        f'mnemonic("Rustc", {bazel_label})',
-    ]
-    debug(
-        f"Fetching Bazel command for {bazel_label} using aquery with args: {query_args}"
-    )
-    res = bazel_launcher.run_query(
-        "aquery",
-        query_args,
-        ignore_errors=False,
-    )
-    if res.returncode != 0:
-        debug(
-            f"Failed to run bazel aquery for {bazel_label}, return code: {res.returncode}"
-        )
-        debug(f"Stdout:\n{res.stdout}")
-        debug(f"Stderr:\n{res.stderr}")
-        return []
-
-    try:
-        aquery_json = json.loads(res.stdout)
-    except json.JSONDecodeError as e:
-        debug(f"Error parsing Bazel aquery JSON: {e}")
-        return []
-
-    actions = aquery_json.get("actions", [])
-    if not actions:
-        debug(f"No actions found in Bazel aquery for {bazel_label}")
-        return []
-
-    # Assume the first action is the relevant action for this target.
-    return actions[0].get("arguments", [])
-
-
 def normalize_rustc_arg(arg: str) -> str:
     """Normalize a single rustc argument.
 
@@ -341,6 +225,7 @@ def main() -> int:
 
     global _DEBUG
     _DEBUG = args.verbose
+    build_command_query_utils.set_debug(args.verbose)
 
     build_dir = args.build_dir or try_get_build_dir(args.fuchsia_dir)
     if not build_dir:
@@ -358,15 +243,17 @@ def main() -> int:
 
     gn = gn_runner.GnRunner(build_dir, args.gn_bin)
     ninja_runner = ninja_artifacts.NinjaRunner(args.ninja_bin, build_dir)
-    gn_cmd_list = query_ninja_command(
+    gn_cmd_raw = build_command_query_utils.query_ninja_command(
         gn, ninja_runner, args.gn_label, args.fuchsia_dir
     )
-    gn_cmd = shell_utils.ShellCommand(" ".join(gn_cmd_list))
+    gn_cmd = shell_utils.ShellCommand(gn_cmd_raw)
 
     bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, build_dir)
     bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
-    bazel_cmd_list = query_bazel_command(bazel_launcher, args.bazel_label)
-    bazel_cmd = shell_utils.ShellCommand(" ".join(bazel_cmd_list))
+    bazel_cmd_raw = build_command_query_utils.query_bazel_command(
+        bazel_launcher, args.bazel_label
+    )
+    bazel_cmd = shell_utils.ShellCommand(bazel_cmd_raw)
 
     gn_rustc_cmd = shell_utils.find_command_with_tool(gn_cmd.split(), "rustc")
     bazel_rustc_cmd = shell_utils.find_command_with_tool(

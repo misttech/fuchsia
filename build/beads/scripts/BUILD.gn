@@ -23,6 +23,7 @@ if (is_host) {
   python_build_time_tests("compare_rustc_commands_test") {
     tests = [ "compare_rustc_commands_test.py" ]
     inputs = [
+      "build_command_query_utils.py",
       "compare_rustc_commands.py",
       "gn_runner.py",
       "shell_utils.py",
@@ -45,6 +46,7 @@ if (is_host) {
     sources = [
       "//build/api/ninja_artifacts.py",
       "//build/bazel/scripts/build_utils.py",
+      "build_command_query_utils.py",
       "gn_runner.py",
       "shell_utils.py",
     ]
