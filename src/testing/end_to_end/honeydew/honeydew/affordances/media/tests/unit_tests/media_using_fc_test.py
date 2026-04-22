@@ -3,14 +3,16 @@
 # found in the LICENSE file.
 """Unit tests for honeydew.affordances.media.media_using_fc.py."""
 
+import asyncio
 import json
 import unittest
 from unittest import mock
 
 import fidl_fuchsia_media_sessions2 as media_session
 import fuchsia_controller_py as fc
+from media_fakes import FakeActiveSessionServer, FakeSessionControlServer
 
-from honeydew import errors
+from honeydew import affordances_capable, errors
 from honeydew.affordances.media import media, media_using_fc
 from honeydew.affordances.media.errors import MediaError
 from honeydew.transports.ffx import ffx
@@ -22,8 +24,16 @@ from honeydew.transports.fuchsia_controller import (
 class MediaFcTests(unittest.IsolatedAsyncioTestCase):
     """Unit tests for the media_using_fc.MediaUsingFc class."""
 
+    reboot_affordance_obj: mock.MagicMock = mock.MagicMock()
+    fc_transport_obj: mock.MagicMock = mock.MagicMock()
+    ffx_transport_obj: mock.MagicMock = mock.MagicMock()
+    media_obj: media_using_fc.MediaUsingFc = mock.MagicMock()
+
     def setUp(self) -> None:
         super().setUp()
+        self.reboot_affordance_obj = mock.MagicMock(
+            spec=affordances_capable.RebootCapableDevice
+        )
         self.fc_transport_obj = mock.MagicMock(
             spec=fc_transport.FuchsiaController
         )
@@ -50,65 +60,73 @@ class MediaFcTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(errors.NotSupportedError):
             self.media_obj.verify_supported()
 
-    @mock.patch.object(media_session, "ActiveSessionClient", autospec=True)
-    @mock.patch.object(media_session, "SessionControlClient", autospec=True)
-    async def test_get_active_session_status_playing(
-        self,
-        mock_session_control_client: mock.Mock,
-        mock_active_session_client: mock.Mock,
-    ) -> None:
-        """Test get_active_session_status returns PLAYING."""
-        mock_active_session_proxy = mock_active_session_client.return_value
-        mock_active_session_proxy.watch_active_session = mock.AsyncMock(
-            return_value=media_session.ActiveSessionWatchActiveSessionResponse(
-                session=mock.MagicMock(spec=fc.Channel)
-            )
-        )
+    async def test_get_active_session_status_playing(self) -> None:
+        """Test get_active_session_status returns PLAYING using fake servers."""
+        ctx = fc.Context()
+        as_client_ch, as_server_ch = ctx.channel_create()
+        sc_client_ch, sc_server_ch = ctx.channel_create()
 
-        mock_session_control_proxy = mock_session_control_client.return_value
-        mock_session_control_proxy.watch_status = mock.AsyncMock(
-            return_value=media_session.SessionControlWatchStatusResponse(
-                session_info_delta=media_session.SessionInfoDelta(
-                    player_status=media_session.PlayerStatus(
-                        player_state=media_session.PlayerState.PLAYING
-                    )
+        as_server = FakeActiveSessionServer(
+            as_server_ch, session_channel=sc_client_ch
+        )
+        expected_response = media_session.SessionControlWatchStatusResponse(
+            session_info_delta=media_session.SessionInfoDelta(
+                player_status=media_session.PlayerStatus(
+                    player_state=media_session.PlayerState.PLAYING
                 )
             )
         )
+        sc_server = FakeSessionControlServer(
+            sc_server_ch, status_response=expected_response
+        )  # type: ignore[abstract]
+
+        loop = asyncio.get_running_loop()
+        as_task = loop.create_task(as_server.serve())
+        sc_task = loop.create_task(sc_server.serve())
+
+        self.fc_transport_obj.connect_device_proxy.return_value = as_client_ch
 
         status = await self.media_obj.get_active_session_status()
+
         self.assertEqual(status, media.PlayerState.PLAYING)
 
-    @mock.patch.object(media_session, "ActiveSessionClient", autospec=True)
-    @mock.patch.object(media_session, "SessionControlClient", autospec=True)
-    async def test_get_active_session_status_no_session(
-        self,
-        mock_session_control_client: mock.Mock,
-        mock_active_session_client: mock.Mock,
-    ) -> None:
+        as_task.cancel()
+        sc_task.cancel()
+
+    async def test_get_active_session_status_no_session(self) -> None:
         """Test get_active_session_status returns None when no session exists."""
-        mock_active_session_proxy = mock_active_session_client.return_value
-        mock_active_session_proxy.watch_active_session = mock.AsyncMock(
-            return_value=media_session.ActiveSessionWatchActiveSessionResponse(
-                session=None
-            )
-        )
+        ctx = fc.Context()
+        as_client_ch, as_server_ch = ctx.channel_create()
+
+        as_server = FakeActiveSessionServer(as_server_ch)
+        loop = asyncio.get_running_loop()
+        as_task = loop.create_task(as_server.serve())
+
+        self.fc_transport_obj.connect_device_proxy.return_value = as_client_ch
 
         status = await self.media_obj.get_active_session_status()
+
         self.assertIsNone(status)
 
-    @mock.patch.object(media_session, "ActiveSessionClient", autospec=True)
-    async def test_get_active_session_status_error(
-        self, mock_active_session_client: mock.Mock
-    ) -> None:
+        as_task.cancel()
+
+    async def test_get_active_session_status_error(self) -> None:
         """Test get_active_session_status raises MediaError on FIDL failure."""
-        mock_active_session_proxy = mock_active_session_client.return_value
-        mock_active_session_proxy.watch_active_session = mock.AsyncMock(
-            side_effect=fc.ZxStatus(fc.ZxStatus.ZX_ERR_PEER_CLOSED)
+        ctx = fc.Context()
+        as_client_ch, as_server_ch = ctx.channel_create()
+
+        as_server = FakeActiveSessionServer(
+            as_server_ch, exception=fc.ZxStatus(fc.ZxStatus.ZX_ERR_PEER_CLOSED)
         )
+        loop = asyncio.get_running_loop()
+        as_task = loop.create_task(as_server.serve())
+
+        self.fc_transport_obj.connect_device_proxy.return_value = as_client_ch
 
         with self.assertRaises(MediaError):
             await self.media_obj.get_active_session_status()
+
+        as_task.cancel()
 
 
 if __name__ == "__main__":
