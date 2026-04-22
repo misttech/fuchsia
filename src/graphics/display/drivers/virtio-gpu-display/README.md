@@ -23,7 +23,15 @@ Blob resources may be supported by the virtio-gpu device. If supported, the
 driver prefers blob resources because the image stride can be specified for
 scanout (otherwise, stride is assumed to be packed).
 
-## Manual testing
+## Development process
+
+### Preparation
+
+Follow [the virtio-spec processing guide][spec-processing-guide] to prepare a
+Markdown version of the virtio specification in the `local/virtio-spec/`
+directory.
+
+### Manual testing
 
 We do not currently have automated integration tests. Behavior changes in this
 driver must be validated using this manual test.
@@ -58,6 +66,7 @@ fx set workbench_eng.x64 --debug --with //src/graphics/display:tools \
     --with //src/graphics/display:tests
 ```
 
+[spec-processing-guide]: ./docs/spec-processing.md
 [virtio-spec]: https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html
 [virtio-spec-gpu-section]: https://docs.oasis-open.org/virtio/virtio/v1.3/csd01/virtio-v1.3-csd01.html#x1-3960007
 [virtio-spec-gpu-request-header]: https://docs.oasis-open.org/virtio/virtio/v1.3/csd01/virtio-v1.3-csd01.html#x1-4110007
