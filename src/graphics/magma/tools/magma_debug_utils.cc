@@ -6,7 +6,9 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 
+#include <cmath>
 #include <string>
+#include <vector>
 
 #include "src/lib/fxl/command_line.h"
 
