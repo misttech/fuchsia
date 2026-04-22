@@ -9,6 +9,7 @@ use crate::bpf::context::EbpfRunContextImpl;
 use crate::bpf::fs::{BpfHandle, get_bpf_object};
 use crate::bpf::program::ProgramHandle;
 use crate::mm::PAGE_SIZE;
+use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::FdNumber;
 use crate::vfs::socket::{
@@ -26,6 +27,7 @@ use linux_uapi::{bpf_sockopt, uaddr};
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{EbpfStateLock, FileOpsCore, Locked, OrderedRwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallResult};
+use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_SYS_ADMIN, Capabilities};
 use starnix_uapi::errors::{Errno, ErrnoCode, is_error_return_value};
 use starnix_uapi::{
     CGROUP2_SUPER_MAGIC, bpf_attr__bindgen_ty_6, bpf_sock, bpf_sock_addr, errno, error, gid_t,
@@ -82,8 +84,13 @@ pub fn bpf_prog_attach(
         return Ok(SUCCESS);
     }
     let program = object.as_program()?.clone();
-    let attach_type = AttachType::from(attr.attach_type);
 
+    if !security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN) {
+        let required_caps = get_capability_for_program(program.info.program_type)?;
+        security::check_task_capable(current_task, required_caps)?;
+    }
+
+    let attach_type = AttachType::from(attr.attach_type);
     let program_type = program.info.program_type;
     if attach_type.get_program_type() != program_type {
         log_warn!(
@@ -904,6 +911,48 @@ impl TryFrom<AttachType> for AttachLocation {
                 error!(EINVAL)
             }
         }
+    }
+}
+
+fn get_capability_for_program(program_type: ProgramType) -> Result<Capabilities, Errno> {
+    match program_type {
+        ProgramType::CgroupSkb
+        | ProgramType::CgroupSock
+        | ProgramType::CgroupSockAddr
+        | ProgramType::CgroupSockopt
+        | ProgramType::CgroupSysctl => Ok(CAP_NET_ADMIN),
+
+        // The following program types cannot be attached with
+        // `bpf(BPF_PROG_ATTACH)` yet.
+        ProgramType::CgroupDevice
+        | ProgramType::Ext
+        | ProgramType::FlowDissector
+        | ProgramType::Kprobe
+        | ProgramType::LircMode2
+        | ProgramType::Lsm
+        | ProgramType::LwtIn
+        | ProgramType::LwtOut
+        | ProgramType::LwtSeg6Local
+        | ProgramType::LwtXmit
+        | ProgramType::Netfilter
+        | ProgramType::PerfEvent
+        | ProgramType::RawTracepoint
+        | ProgramType::RawTracepointWritable
+        | ProgramType::SchedAct
+        | ProgramType::SchedCls
+        | ProgramType::SkLookup
+        | ProgramType::SkMsg
+        | ProgramType::SkReuseport
+        | ProgramType::SkSkb
+        | ProgramType::SocketFilter
+        | ProgramType::SockOps
+        | ProgramType::StructOps
+        | ProgramType::Syscall
+        | ProgramType::Tracepoint
+        | ProgramType::Tracing
+        | ProgramType::Unspec
+        | ProgramType::Xdp
+        | ProgramType::Fuse => error!(ENOTSUP),
     }
 }
 

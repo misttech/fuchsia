@@ -12,6 +12,7 @@
 #include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <syscall.h>
 #include <unistd.h>
 
@@ -1192,13 +1193,27 @@ class BpfCgroupTest : public BpfTestBase {
                        BPF_PROG_TYPE_CGROUP_SOCK_ADDR, expected_attach_type);
   }
 
-  void AttachToRootCgroup(uint32_t attach_type, int prog_fd) {
+  fbl::unique_fd LoadCgroupSkbProgram(uint32_t expected_attach_type) {
+    bpf_insn program[] = {
+        BPF_MOV_IMM(0, 1),
+        BPF_RETURN(),
+    };
+
+    return LoadProgram(program, sizeof(program) / sizeof(program[0]), BPF_PROG_TYPE_CGROUP_SKB,
+                       expected_attach_type);
+  }
+
+  int TryAttachToRootCgroup(uint32_t attach_type, int prog_fd) {
     bpf_attr attr;
     memset(&attr, 0, sizeof(attr));
     attr.target_fd = root_cgroup_.get();
     attr.attach_bpf_fd = prog_fd;
     attr.attach_type = attach_type;
-    ASSERT_EQ(bpf(BPF_PROG_ATTACH, &attr), 0) << " errno: " << errno;
+    return bpf(BPF_PROG_ATTACH, &attr);
+  }
+
+  void AttachToRootCgroup(uint32_t attach_type, int prog_fd) {
+    ASSERT_THAT(TryAttachToRootCgroup(attach_type, prog_fd), SyscallSucceeds());
   }
 
   int TryDetachFromRootCgroup(uint32_t attach_type) {
@@ -1210,7 +1225,7 @@ class BpfCgroupTest : public BpfTestBase {
   }
 
   void DetachFromRootCgroup(uint32_t attach_type) {
-    ASSERT_EQ(TryDetachFromRootCgroup(attach_type), 0) << " errno: " << errno;
+    ASSERT_THAT(TryDetachFromRootCgroup(attach_type), SyscallSucceeds());
   }
 
   testing::AssertionResult TryBind(uint16_t port, int expected_errno) {
@@ -1328,6 +1343,52 @@ TEST_F(BpfCgroupTest, ProgFdEpoll) {
 
   ASSERT_EQ(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, prog.get(), &ev), -1);
   ASSERT_EQ(errno, EPERM);
+}
+
+TEST_F(BpfCgroupTest, CgroupSkbAttachRequiresNetAdmin) {
+  auto prog = LoadCgroupSkbProgram(BPF_CGROUP_INET_INGRESS);
+
+  AttachToRootCgroup(BPF_CGROUP_INET_INGRESS, prog.get());
+  DetachFromRootCgroup(BPF_CGROUP_INET_INGRESS);
+
+  // Older versions of Linux behave inconsisntently with current versions:
+  //  - CAP_NET_ADMIN is needed even with CAP_SYS_ADMIN.
+  //  - EINVAL returned instead of EPERM.
+  bool version_at_least_6_9 = test_helper::IsKernelVersionAtLeast(6, 9);
+
+  test_helper::ForkHelper fork_helper;
+  if (version_at_least_6_9) {
+    SCOPED_TRACE("Without CAP_NET_ADMIN");
+    fork_helper.RunInForkedProcess([&]() {
+      test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+      AttachToRootCgroup(BPF_CGROUP_INET_INGRESS, prog.get());
+      DetachFromRootCgroup(BPF_CGROUP_INET_INGRESS);
+    });
+    ASSERT_TRUE(fork_helper.WaitForChildren());
+  }
+
+  {
+    SCOPED_TRACE("Without CAP_SYS_ADMIN");
+    fork_helper.RunInForkedProcess([&]() {
+      test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+      AttachToRootCgroup(BPF_CGROUP_INET_INGRESS, prog.get());
+      DetachFromRootCgroup(BPF_CGROUP_INET_INGRESS);
+    });
+    ASSERT_TRUE(fork_helper.WaitForChildren());
+  }
+
+  SCOPED_TRACE("Without CAP_SYS_ADMIN and CAP_NET_ADMIN");
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+    test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+    EXPECT_THAT(TryAttachToRootCgroup(BPF_CGROUP_INET_INGRESS, prog.get()), SyscallFails());
+
+    // On Linux this may fail with `EINVAL`,
+    if (version_at_least_6_9) {
+      EXPECT_EQ(errno, EPERM);
+    }
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
 }
 
 class BpfIdTest : public BpfTestBase {
