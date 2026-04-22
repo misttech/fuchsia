@@ -775,7 +775,7 @@ a local debugging feature and is not intended for production use.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:131
+From //zircon/kernel/params.gni:128
 
 ### check_output_dir_leaks
 
@@ -1078,7 +1078,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/riscv64-unknown-fuchsia/libclang_rt.lsan.a"
@@ -3825,7 +3825,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:139
+From //zircon/kernel/params.gni:136
 
 ### enable_mdns_trace
 
@@ -4172,7 +4172,7 @@ Propagate bandwidth and enable run queue promotion for threads making channel ca
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:119
+From //zircon/kernel/params.gni:116
 
 ### experimental_continuous_per_vmo_attribution_enabled
 
@@ -4180,7 +4180,7 @@ Add in-kernel support for querying a per-VMO populated bytes high-water mark.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:116
+From //zircon/kernel/params.gni:113
 
 ### experimental_cxx_version
 
@@ -4233,15 +4233,7 @@ when unblocking once we solve races higher in the stack.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:127
-
-### experimental_ktrace_streaming_enabled
-
-Support streaming ktrace data out of the kernel.
-
-**Current value (from the default):** `true`
-
-From //zircon/kernel/params.gni:113
+From //zircon/kernel/params.gni:124
 
 ### experimental_thread_sampler_enabled
 
