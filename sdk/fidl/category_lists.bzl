@@ -50,6 +50,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.diagnostics.system:fuchsia.diagnostics.system_idk",
     "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_idk",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
+    "//sdk/fidl/fuchsia.fonts:fuchsia.fonts_idk",
     "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_idk",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_idk",
     "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing_idk",
@@ -80,8 +81,12 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_idk",
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_idk",
     "//sdk/fidl/fuchsia.settings.policy:fuchsia.settings.policy_idk",
+    "//sdk/fidl/fuchsia.storage.blobfs:fuchsia.storage.blobfs_idk",
+    "//sdk/fidl/fuchsia.storage.ftl:fuchsia.storage.ftl_idk",
+    "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_idk",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_idk",
     "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_idk",
+    "//sdk/fidl/fuchsia.test:fuchsia.test_idk",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_idk",
     "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_idk",
     "//sdk/fidl/fuchsia.tracing:fuchsia.tracing_idk",
@@ -163,6 +168,7 @@ HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_idk",
     "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_idk",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_idk",
+    "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_idk",
 ]
 
 # FIDL libraries in the compat test category. All are stable.
