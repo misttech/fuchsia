@@ -5,26 +5,49 @@ a Linux environment using Machina.
 
 Machina runs tests inside a Linux virtual machine, providing an isolated and
 standardized environment using our target kernel version. Note that running
-Machina requires an Intel-based CPU to execute, as well as Debian guest images
-available locally. Googlers will have such images available by default, while
-external developers will need to bring their own. External developers should
-read the [Virtualization Get Started][virtualization-get-started] guide for more
-information on how to build their own Debian images.
+Machina-based Starnix tests requires Debian guest images available locally.
+Googlers will have such images available by default, while external developers
+will need to bring their own. External developers should read the
+[Virtualization Get Started][virtualization-get-started] guide for more
+information on how to build and provide their own Debian images.
 
 ## Running existing Machina tests locally {#running-existing-machina-tests-locally}
 
-### Environment setup {#environmental-setup}
+### Host prerequisites
 
-1.  Ensure you're using a high-performance, Intel-based machine with
-    virtualization capabilities. For Googlers, a specialist Cloudtop will provide
-    the ideal environment. If you're unsure what CPU your machine has, you can
-    use `lscpu` like so:
+Machina is a virtualization environment that is limited to modern Intel-based
+host machines. For Googlers, a modern VM-capable Cloudtop provides the ideal
+environment. Older, deprecated Cloudtops may need to resized to a more modern
+image. Ensure that your host is compatible with the following checks:
 
-    ```posix-terminal {:.devsite-disable-click-to-copy}
+-   **Intel-based**:
+
+    ```posix-terminal
     lscpu | grep "Vendor ID"
-
-    Vendor ID: GenuineIntel
     ```
+
+    You should see: `Vendor ID: GenuineIntel`. If not, you'll need to procure an
+    Intel-based machine. For Googlers, a Cloudtop with nested virtualization
+    should be sufficient.
+
+-   **Virtualization capable**:
+
+    Follow the instructions in [Enable VM acceleration][enable-vm-acceleration].
+
+-   **Modern, performant CPU**:
+
+    ```posix-terminal
+    if lscpu | grep -qE "Clear CPU buffers"; then echo 'CPU has performance-hindering mitigations.'; else echo 'No performance issues found.'; fi
+    ```
+
+    You should see: `No performance issues found`. Some older Intel CPUs may
+    have security vulnerability mitigations which greatly impact Machina
+    performance.
+
+If your environment meets the Intel requirement, but not the other requirements,
+then you may consider increasing the `fx test` timeout as a workaround.
+
+### Environment setup {#environmental-setup}
 
 1.  Set a product configuration which supports virtualization. Most products
     will work, so long as the board is `x64`. Here's an example configuration:
@@ -39,29 +62,30 @@ information on how to build their own Debian images.
     fx add-test //src/starnix/tests:linux_vm_tests
     ```
 
-1.  Bootstrap an emulator with the standard `fx build` and `ffx emu start`
-    workflows.
+1.  Bootstrap a headless emulator and package repository with the standard
+    workflows. If you are unfamiliar, you can reference the
+    [Set up FEMU][set-up-femu] guide.
 
 ### Running tests {#running-tests}
 
 The test suites are the same as the vanilla syscalls, but prefixed with
 `linux_`. Here are some examples of common target inclusion:
 
--   **Run the whole suite:**
+-   **Run all syscall test suites:**
 
     ```posix-terminal
     fx test linux_syscalls_cpp_tests
     ```
 
--   **Run individual tests:**
+-   **Run individual suites:**
 
     ```posix-terminal
     fx test linux_fcntl_test
     ```
 
--   **Run on both Starnix and Linux:** Specify the base name of the test, which
-    will run all variants that your environment may be configured to run
-    (Starnix, Machina, Host):
+-   **Run on both Starnix and Linux:** Specify the base name of the target,
+    which will run all variants that your environment may be configured to run
+    (Starnix, Machina, Host). For example:
 
     ```posix-terminal
     fx test mount_test
@@ -72,7 +96,7 @@ The test suites are the same as the vanilla syscalls, but prefixed with
 ### Understanding Logs {#understanding-logs}
 
 The syscall tests are gTest suites, and output is piped through the test
-framework. In other words, the output from the gTest invocation appears in
+framework. This means that the output from the gTest invocation appears in
 stdout on failing tests. You can view all gTest logs, regardless of outcome,
 using the `--output` arg in your `fx test` invocation.
 
@@ -107,8 +131,8 @@ The following documents the system logs associated with a typical flow.
 1.  **Pushing test dependencies and binaries:**
 
     Once the guest is bootstrapped, preliminary data begins to be pushed to the
-    guest. These are the required dependencies for syscall tests, followed by the
-    test binary itself:
+    guest. These are the required dependencies for syscall tests, followed by
+    the test binary itself:
 
     ```none {:.devsite-disable-click-to-copy}
     [00439.934416][starnix_test_runner.cm][linux_guest,starnix_test_runner] INFO: Pushing data to guest (destination: /data/tests/deps/simple_ext4.img)
@@ -120,11 +144,11 @@ The following documents the system logs associated with a typical flow.
 1.  **Test execution and processing:**
 
     Once the environmental setup steps are done, you should see the execution
-    command issued. This is executing the gTest binary on the guest. Once again, the
-    output of this binary execution is piped into stdout on your terminal, as you
-    would expect from any other `fx test` invocation for a gTest suite. When
-    execution completes, the results file is copied back over to the host for
-    processing:
+    command issued. This is executing the gTest binary on the guest. Once again,
+    the output of this binary execution is piped into stdout on your terminal,
+    as you would expect from any other `fx test` invocation for a gTest suite.
+    When execution completes, the results file is copied back over to the host
+    for processing:
 
     ```none {:.devsite-disable-click-to-copy}
     [00448.653126][starnix_test_runner.cm][linux_guest,starnix_test_runner] INFO: Executing command on guest: /starnix_linux_fuse_test_fuse_test_bin --gtest_output=json:/test_result-ccde95ca-acb3-4b84-af4d-f371b9582d20.json)
@@ -185,10 +209,9 @@ scaffolding. See the following sections for more information on getting test
 binaries and artifacts into the guest. Here are the steps to get access to this
 shell:
 
-1.  Follow the
-    [Virtualization Get Started][virtualization-get-started]
-    guide, which shows you how to set up your local GN args to enable
-    virtualization tools.
+1.  Follow the [Virtualization Get Started][virtualization-get-started] guide,
+    which shows you how to set up your local GN args to enable virtualization
+    tools.
 1.  Launch an emulator and connect to the shell:
 
     ```posix-terminal
@@ -220,7 +243,7 @@ over, you must modify the images directly.
 
 1.  **Mount the image:** On your Linux host, install tools and mount the image:
 
-    ```posix-terminal
+    ```
     sudo apt-get install libguestfs-tools
     sudo mkdir /mnt/machina_guest_img
     sudo guestmount -a prebuilt/virtualization/packages/debian_guest/images/x64/rootfs.qcow2 -m /dev/vda /mnt/machina_guest_img/
@@ -229,7 +252,7 @@ over, you must modify the images directly.
 1.  **Interact with the image:** You can now copy files to the mounted
     directory. For example, to copy the mount test binary and dependencies:
 
-    ```posix-terminal
+    ```
     sudo cp ./out/core.x64-balanced/linux_x64/linux_mount_test_bin /mnt/machina_guest_img/home/
     sudo mkdir -p /mnt/machina_guest_img/home/data/tests/deps/
     sudo cp src/starnix/tests/syscalls/cpp/data/* /mnt/machina_guest_img/home/data/tests/deps/
@@ -246,6 +269,8 @@ the environment (as detailed above) and execute binaries as needed.
 
 <!-- Reference links -->
 
+[enable-vm-acceleration]: /docs/get-started/set_up_femu.md#enable-vm-acceleration
+[set-up-femu]: /docs/get-started/set_up_femu.md
 [syscalls-cml]: /src/starnix/tests/syscalls/cpp/meta/syscalls_cpp_test.cml
 [syscalls-rs]: /src/sys/test_runners/starnix/src/syscalls.rs
 [virtualization-get-started]: /docs/development/virtualization/get_started.md
