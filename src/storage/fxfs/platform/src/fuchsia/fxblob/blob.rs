@@ -229,7 +229,7 @@ impl FxNode for FxBlob {
         self.pager_packet_receiver_registration.stop_watching_for_zero_children();
     }
 
-    fn mark_to_be_purged(&self) {
+    fn mark_to_be_purged(self: Arc<Self>) {
         let old = self.open_count.fetch_or(PURGED, Ordering::Relaxed);
         assert!(old & PURGED == 0);
         if old == 0 {

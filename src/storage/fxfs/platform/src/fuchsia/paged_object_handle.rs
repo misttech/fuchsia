@@ -20,6 +20,7 @@ use fxfs::object_store::transaction::{
 use fxfs::object_store::{DataObjectHandle, ObjectStore, RangeType, StoreObjectHandle, Timestamp};
 use fxfs::range::RangeExt;
 use fxfs::round::{how_many, round_up};
+use scopeguard::defer;
 use std::future::Future;
 use std::ops::Range;
 use std::sync::Arc;
@@ -117,6 +118,9 @@ struct Inner {
     /// mark_dirty() should fail. This ensures that the contents of the file do not change while
     /// the merkle tree is being computed or thereon after.
     read_only: bool,
+
+    /// True if the file is currently being flushed. There can be only one task flushing at a time.
+    flushing: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -230,6 +234,7 @@ impl Inner {
             spare: 0,
             pending_shrink: PendingShrink::None,
             read_only,
+            flushing: false,
         })
     }
 
@@ -283,6 +288,18 @@ impl Inner {
     fn end_flush(&mut self) {
         self.dirty_mtime.end_flush();
         self.dirty_crtime.end_flush();
+    }
+
+    fn needs_flush(&self) -> bool {
+        // There should be no need to call `was_file_modified_since_last_call` because we check
+        // `dirty_pages` here and there shouldn't be anything to flush if `dirty_pages` is zero
+        // and `mtime` does not need flushing (truncating a file can leave `dirty_pages` as
+        // zero but it will always update `mtime`).
+        self.dirty_crtime.needs_flush()
+            || self.dirty_mtime.needs_flush()
+            || self.dirty_pages.total() > 0
+            || self.pending_shrink != PendingShrink::None
+            || self.flushing
     }
 }
 
@@ -412,8 +429,11 @@ impl FlushState {
             self.marked_dirty_pages - self.pages_flushed
         };
 
-        if new_dirty_pages.total() > 0 {
-            inner.lock().put_back(new_dirty_pages, &self.reservation);
+        {
+            let mut inner = inner.lock();
+            if new_dirty_pages.total() > 0 {
+                inner.put_back(new_dirty_pages, &self.reservation);
+            }
         }
 
         // Report the delta
@@ -817,7 +837,20 @@ impl PagedObjectHandle {
     ) -> Result<(), Error> {
         Pager::page_in_barrier().await;
 
-        let pending_shrink = self.inner.lock().pending_shrink;
+        let pending_shrink = {
+            let mut inner = self.inner.lock();
+            // Before setting `flushing` to true, double check that a flush is actually required
+            // (whilst a lock is held).  We do this because `needs_flush` checks `flushing` and will
+            // return `true` whilst we are flushing.
+            if !inner.needs_flush() {
+                return Ok(());
+            }
+            assert!(!std::mem::replace(&mut inner.flushing, true));
+            inner.pending_shrink
+        };
+
+        defer! { self.inner.lock().flushing = false; }
+
         if let PendingShrink::ShrinkTo(size, update_has_overwrite_extents) = pending_shrink {
             let needs_trim = self
                 .shrink_file(size, update_has_overwrite_extents)
@@ -1110,25 +1143,7 @@ impl PagedObjectHandle {
 
     /// Returns true if the handle needs flushing.
     pub fn needs_flush(&self) -> bool {
-        let mut inner = self.inner.lock();
-        if inner.dirty_crtime.needs_flush()
-            || inner.dirty_mtime.needs_flush()
-            || inner.dirty_pages.total() > 0
-            || inner.pending_shrink != PendingShrink::None
-        {
-            return true;
-        }
-        match self.was_file_modified_since_last_call() {
-            Ok(true) => {
-                inner.dirty_mtime = DirtyTimestamp::Some(Timestamp::now());
-                true
-            }
-            Ok(false) => false,
-            Err(_) => {
-                // We can't return errors, so play it safe and assume the file needs flushing.
-                true
-            }
-        }
+        self.inner.lock().needs_flush()
     }
 
     /// Pre-allocate a region of this file on-disk.
@@ -4222,6 +4237,81 @@ mod tests {
             .map_err(zx::Status::from_raw)
             .unwrap();
         file.sync().await.unwrap().map_err(zx::Status::from_raw).unwrap();
+
+        fixture.close().await;
+    }
+
+    // This test has to use two threads because we want to test two concurrent flushes.
+    #[fuchsia::test(threads = 2)]
+    async fn test_concurrent_flushes() {
+        let fixture = TestFixture::new_unencrypted().await;
+
+        {
+            let root = fixture.root();
+            let file = open_file_checked(
+                &root,
+                FILE_NAME,
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+
+            // Write to the file and flush it so that we can truncate it.
+            let contents = vec![1; 4096];
+            fuchsia_fs::file::write(&file, &contents).await.unwrap();
+
+            // Flush the write so that the truncate below sets up a pending shrink.
+            file.sync().await.unwrap().unwrap();
+
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+
+            let (file_proxy, server_end) = fidl::endpoints::create_sync_proxy::<fio::FileMarker>();
+            file.clone(server_end.into_channel().into()).expect("clone failed");
+            let barrier_clone = barrier.clone();
+            let sync_finished = Arc::new(AtomicBool::new(false));
+            let sync_finished_clone = sync_finished.clone();
+            let sync_thread = std::thread::spawn(move || {
+                // Wait until the first flush starts.
+                barrier_clone.wait();
+
+                // Issue another sync.  This should end up blocked behind the first flush.
+                file_proxy.sync(zx::MonotonicInstant::INFINITE).unwrap().unwrap();
+
+                sync_finished_clone.store(true, Ordering::Relaxed);
+            });
+
+            let once = AtomicBool::new(false);
+            let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
+                if !once.swap(true, Ordering::Relaxed) {
+                    // Synchronise with the barrier in the sync thread.
+                    barrier.wait();
+
+                    // Wait a short while to allow the `sync` call to run.
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+
+                    // The second sync should wait for the first flush.
+                    assert!(!sync_finished.load(Ordering::Relaxed));
+                }
+            });
+
+            // Truncate it.  This sets up the flush so that when it runs, it will do the truncation
+            // first which will update the mtime.  This will mean that the second flush will call
+            // needs_flush, and except for a flush proceeding, it will look like no flush is
+            // required.
+            file.resize(100).await.unwrap().unwrap();
+
+            // Write something that makes the file dirty.
+            let contents = vec![1; 4096];
+            fuchsia_fs::file::write(&file, &contents).await.unwrap();
+
+            // Trigger the first flush which should end up in the callback above.
+            file.sync().await.unwrap().unwrap();
+
+            sync_thread.join().expect("sync thread failed");
+        }
 
         fixture.close().await;
     }

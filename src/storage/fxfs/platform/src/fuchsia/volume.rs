@@ -438,7 +438,7 @@ impl FxVolume {
     /// |object_id|, since before that point, new connections could be established.
     pub(super) async fn maybe_purge_file(&self, object_id: u64) -> Result<(), Error> {
         if let Some(node) = self.cache.get(object_id) {
-            node.mark_to_be_purged();
+            node.clone().mark_to_be_purged();
             return Ok(());
         }
         // If this fails, the graveyard should clean it up on next mount.

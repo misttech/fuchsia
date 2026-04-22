@@ -252,7 +252,7 @@ impl FxNode for FxSymlink {
         ObjectDescriptor::Symlink
     }
 
-    fn mark_to_be_purged(&self) {
+    fn mark_to_be_purged(self: Arc<Self>) {
         let old = self.open_count.fetch_or(TO_BE_PURGED, Ordering::Relaxed);
         assert!(old & TO_BE_PURGED == 0);
         if old == 0 {

@@ -30,7 +30,7 @@ pub trait FxNode: IntoAny + ToWeakNode + Send + Sync + 'static {
     fn object_descriptor(&self) -> ObjectDescriptor;
 
     /// Marks the object to be purged. Queues the node for tombstone if open count is zero.
-    fn mark_to_be_purged(&self) {
+    fn mark_to_be_purged(self: Arc<Self>) {
         panic!("Unexpected call to mark_to_be_purged");
     }
 

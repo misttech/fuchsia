@@ -68,6 +68,7 @@ const IS_UNNAMED_TEMPORARY: u64 = IS_TEMPORARILY_IN_GRAVEYARD | TO_BE_PURGED;
 /// information regarding the state of the file. See the consts defined above.
 const MAX_OPEN_COUNTS: u64 = IS_DIRTY - 1;
 
+#[derive(Clone, Copy)]
 struct State(u64);
 
 impl Debug for State {
@@ -327,6 +328,57 @@ impl FxFile {
     fn load_state(&self) -> State {
         State(self.state.load(Ordering::Relaxed))
     }
+
+    /// Updates the state.  Calls `callback` to map the current state into the desired new state.
+    /// This handles any bookkeeping and actions that are required by the change of state.
+    fn update_state(self: &Arc<Self>, callback: impl Fn(State) -> State) {
+        let mut old = self.load_state();
+        loop {
+            let mut new = callback(old);
+            if new.will_be_tombstoned() {
+                // There is no point flushing if the file is to be tombstoned, so we can clear the
+                // IS_DIRTY bit.
+                new.0 &= !IS_DIRTY;
+            }
+            match self.state.compare_exchange_weak(
+                old.0,
+                new.0,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    if !old.is_dirty() && new.is_dirty() {
+                        // The `IS_DIRTY` bit being set means we hold an extra `Arc` reference so
+                        // that the node isn't removed from the node cache whilst it still needs
+                        // flushing.  A background task will periodically try and flush the file.
+                        // When it flushes the file, it takes an open count, and then when it drops
+                        // the open count, if the file was successfully flushed, the `IS_DIRTY` bit
+                        // is cleared and the extra reference is dropped (see below).
+                        let _ = Arc::into_raw(self.clone());
+                    } else if old.is_dirty() && !new.is_dirty() {
+                        // SAFETY: The IS_DIRTY bit means we took a reference just above.
+                        unsafe {
+                            let _ = Arc::from_raw(Arc::as_ptr(&self));
+                        }
+                    }
+                    if new.will_be_tombstoned() {
+                        // This node is marked `TO_BE_PURGED` and there are no more references to
+                        // it. This file will be tombstoned. Actual purging is queued to be done
+                        // asynchronously. We don't need to do any flushing in this case - if the
+                        // file is going to be deleted anyway, there is no point.
+                        self.handle.forget_dirty_pages();
+                        let store = self.handle.store();
+                        store
+                            .filesystem()
+                            .graveyard()
+                            .queue_tombstone_object(store.store_object_id(), self.object_id());
+                    }
+                    return;
+                }
+                Err(v) => old.0 = v,
+            }
+        }
+    }
 }
 
 impl Drop for FxFile {
@@ -354,99 +406,21 @@ impl FxNode for FxFile {
     }
 
     fn open_count_sub_one(self: Arc<Self>) {
-        let mut current = self.load_state();
-        loop {
-            // If it's the last open count, we need to handle flushing dirty data, and purging if it
-            // is so marked.
-            if current.open_count() == 1 {
-                if current.to_be_purged() {
-                    match self.state.compare_exchange_weak(
-                        current.0,
-                        (current.0 & !IS_DIRTY) - 1,
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => {
-                            if current.is_dirty() {
-                                // SAFETY: The IS_DIRTY bit means we took a reference.
-                                unsafe {
-                                    let _ = Arc::from_raw(Arc::as_ptr(&self));
-                                }
-                            }
-                            // This node is marked `TO_BE_PURGED` and there are no more references
-                            // to it. This file will be tombstoned. Actual purging is queued to be
-                            // done asynchronously. We don't need to do any flushing in this case -
-                            // if the file is going to be deleted anyway, there is no point.
-                            self.handle.forget_dirty_pages();
-                            self.handle.owner().clone().spawn(async move {
-                                let store = self.handle.store();
-                                store.filesystem().graveyard().queue_tombstone_object(
-                                    store.store_object_id(),
-                                    self.object_id(),
-                                );
-                            });
-                            return;
-                        }
-                        Err(old) => {
-                            current.0 = old;
-                            continue;
-                        }
-                    }
-                }
-                // If the file is dirty, we need to hold a strong reference to make sure the file
-                // doesn't go away until it has been flushed.
+        self.update_state(|old| {
+            let mut new = State(old.0 - 1);
+
+            // If the file is dirty, we need to hold a strong reference to make sure the file
+            // doesn't go away until it has been flushed.
+            if new.open_count() == 0 && !new.to_be_purged() {
                 if self.handle.needs_flush() {
-                    if !current.is_dirty() {
-                        match self.state.compare_exchange_weak(
-                            current.0,
-                            (current.0 | IS_DIRTY) - 1,
-                            Ordering::Relaxed,
-                            Ordering::Relaxed,
-                        ) {
-                            Ok(_) => {
-                                // We need to hold a strong reference to prevent the node from being
-                                // dropped.
-                                let _ = Arc::into_raw(self);
-                                return;
-                            }
-                            Err(old) => {
-                                current.0 = old;
-                                continue;
-                            }
-                        }
-                    }
-                } else if current.is_dirty() {
-                    // File is no longer dirty.
-                    match self.state.compare_exchange_weak(
-                        current.0,
-                        (current.0 & !IS_DIRTY) - 1,
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => {
-                            // SAFETY: The IS_DIRTY bit means we took a reference.
-                            unsafe {
-                                let _ = Arc::from_raw(Arc::as_ptr(&self));
-                            }
-                            return;
-                        }
-                        Err(old) => {
-                            current.0 = old;
-                            continue;
-                        }
-                    }
+                    new.0 |= IS_DIRTY;
+                } else {
+                    new.0 &= !IS_DIRTY;
                 }
             }
-            match self.state.compare_exchange_weak(
-                current.0,
-                current.0 - 1,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return,
-                Err(old) => current.0 = old,
-            }
-        }
+
+            new
+        });
     }
 
     fn object_descriptor(&self) -> ObjectDescriptor {
@@ -457,16 +431,8 @@ impl FxNode for FxFile {
         self.pager_packet_receiver_registration.stop_watching_for_zero_children();
     }
 
-    fn mark_to_be_purged(&self) {
-        let old = State(self.state.fetch_or(TO_BE_PURGED, Ordering::Relaxed));
-        assert!(!old.to_be_purged());
-        if old.open_count() == 0 {
-            let store = self.handle.store();
-            store
-                .filesystem()
-                .graveyard()
-                .queue_tombstone_object(store.store_object_id(), self.object_id());
-        }
+    fn mark_to_be_purged(self: Arc<Self>) {
+        self.update_state(|old| State(old.0 | TO_BE_PURGED));
     }
 }
 
@@ -2905,6 +2871,66 @@ mod tests {
 
         assert_eq!(immutable_attributes.change_time, expected_ctime);
         assert_eq!(mutable_attributes.access_time, expected_atime);
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_delete_with_dirty_bytes_and_no_open_handles() {
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+
+        let file = open_file_checked(
+            &root,
+            "foo",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+
+        file.resize(4096)
+            .await
+            .expect("resize failed")
+            .map_err(Status::from_raw)
+            .expect("resize error");
+
+        let vmo = file
+            .get_backing_memory(
+                fio::VmoFlags::SHARED_BUFFER | fio::VmoFlags::READ | fio::VmoFlags::WRITE,
+            )
+            .await
+            .expect("Failed to make FIDL call")
+            .map_err(Status::from_raw)
+            .expect("Failed to get VMO");
+
+        // Flush the file so that the file isn't dirty.
+        file.sync().await.unwrap().unwrap();
+
+        // Close the file handle.
+        drop(file);
+
+        // Allow time for the close to be noticed.
+        fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+
+        // Modify the file through the VMO (this should mark it dirty).
+        vmo.write(&[1, 2, 3, 4], 0).expect("vmo write failed");
+
+        // Drop the VMO so that the open count reaches zero, but unlike in the close case, this
+        // will not flush the file immediately.
+        drop(vmo);
+
+        // Allow time for the VMO being dropped to be noticed.
+        fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+
+        // Delete the file.  The file should be dirty at this point.
+        root.unlink("foo", &fio::UnlinkOptions::default())
+            .await
+            .expect("unlink failed")
+            .map_err(Status::from_raw)
+            .expect("unlink error");
+
         fixture.close().await;
     }
 }
