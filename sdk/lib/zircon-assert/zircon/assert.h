@@ -24,6 +24,7 @@
 #include <zircon/compiler.h>
 
 __BEGIN_CDECLS
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 void __zx_panic(const char* format, ...) __NO_RETURN __PRINTFLIKE(1, 2);
 __END_CDECLS
 
@@ -120,8 +121,10 @@ __END_CDECLS
 // Only use the [[likely]] attribute if we are sure the compiler is going to
 // understand it.
 #if defined(__has_cpp_attribute) && (__has_cpp_attribute(likely) >= 201803L)
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define _ZIRCON_ASSERT_ATTRIBUTE_LIKELY [[likely]]
 #else
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define _ZIRCON_ASSERT_ATTRIBUTE_LIKELY
 #endif
 
@@ -132,7 +135,7 @@ __END_CDECLS
   do {                                                                  \
     if (x)                                                              \
       _ZIRCON_ASSERT_ATTRIBUTE_LIKELY { break; }                        \
-    else {                                                              \
+    else { /* NOLINT(readability-else-after-return) */                  \
       ZX_PANIC("ASSERT FAILED at (%s:%d): %s", __FILE__, __LINE__, #x); \
     }                                                                   \
   } while (0)
