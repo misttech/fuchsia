@@ -25,6 +25,15 @@ scanout (otherwise, stride is assumed to be packed).
 
 ## Development process
 
+These instructions work with a `workbench_eng.x64` build that includes the
+GN targets mentioned below. Debug builds are recommended for iterating on the
+driver code.
+
+```posix-terminal
+fx set workbench_eng.x64 --debug --with //src/graphics/display:tools \
+    --with //src/graphics/display:tests
+```
+
 ### Preparation
 
 Follow [the virtio-spec processing guide][spec-processing-guide] to prepare a
@@ -38,40 +47,14 @@ your change under QEMU.
 
 ### Manual testing
 
-We do not currently have automated integration tests. Behavior changes in this
-driver must be validated using this manual test.
+We do not currently have automated integration tests.
 
-1. Launch a QEMU-based emulator.
-
-    ```posix-terminal
-    ffx emu start --engine qemu
-    ```
-
-2. Launch the `squares` demo in the `display-tool` test utility.
-
-    ```posix-terminal
-    ffx target ssh display-tool squares
-    ```
-
-3. Add the following footer to your CL description, to document having performed
-   the test.
-
-   ```
-   Test: ffx target ssh display-tool squares
-   ```
-
-These instructions will work with a `workbench_eng.x64` build that includes the
-`//src/graphics/display:tools` GN target. The `//src/graphics/display:tests`
-target is also recommended, as it builds the automated unit tests. Debug
-assertions, which are extensively used in display drivers, are only enabled in
-debug builds.
-
-```posix-terminal
-fx set workbench_eng.x64 --debug --with //src/graphics/display:tools \
-    --with //src/graphics/display:tests
-```
+Before uploading a behavior-changing CL for review, follow
+[the manual testing process][manual-testing-process] to ensure that the CL doesn't
+regress key development workflows.
 
 [change-validation-guide]: ./docs/change-validation.md
+[manual-testing-process]: ./docs/manual-testing.md
 [spec-processing-guide]: ./docs/spec-processing.md
 [virtio-spec]: https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html
 [virtio-spec-gpu-section]: https://docs.oasis-open.org/virtio/virtio/v1.3/csd01/virtio-v1.3-csd01.html#x1-3960007
