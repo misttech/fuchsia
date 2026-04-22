@@ -1632,6 +1632,28 @@
             ]
         },
         {
+            "name": "SocketBindTests/SocketBindTest.Bind/RequiresDirAddName",
+            "audit_expectations": [
+                "avc:  denied  { add_name } for name=\"test_socket_bind_mknod\" scontext=test_u:test_r:socket_bind_test_dir_add_name_no_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=dir permissive=0"
+            ]
+        },
+        {
+            "name": "SocketBindTests/SocketBindTest.Bind/RequiresDirWrite",
+            "audit_expectations": [
+                "avc:  denied  { write } for name=\"/\" dev=\"tmpfs\" ino=1 scontext=test_u:test_r:socket_bind_test_dir_write_no_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=dir permissive=0"
+            ]
+        },
+        {
+            "name": "SocketBindTests/SocketBindTest.Bind/RequiresSockFileCreate",
+            "audit_expectations": [
+                "avc:  denied  { create } for name=\"test_socket_bind_mknod\" scontext=test_u:test_r:socket_bind_test_sock_file_create_no_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=sock_file permissive=0"
+            ]
+        },
+        {
+            "name": "SocketBindTests/SocketBindTest.Bind/SucceedsWithSockFileAndDirPerms",
+            "audit_expectations": []
+        },
+        {
             "name": "SocketPeerSecTest.UnixDomainDatagram",
             "audit_expectations": [
                 "avc:  denied  { getopt } for scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1"

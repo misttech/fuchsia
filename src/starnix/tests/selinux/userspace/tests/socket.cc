@@ -704,4 +704,51 @@ TEST(SocketPeerSecTest, SocketPairUnixDatagram) {
   EXPECT_EQ(GetPeerSec(fd2.get()), fit::error(ENOPROTOOPT));
 }
 
+struct SocketBindTestCase {
+  const char* label;
+  int expected_errno;
+  const char* test_name;
+};
+
+class SocketBindTest : public ::testing::TestWithParam<SocketBindTestCase> {};
+
+TEST_P(SocketBindTest, Bind) {
+  const SocketBindTestCase& test_case = GetParam();
+
+  const char* kSockPath = "/tmp/test_socket_bind_mknod";
+  // Clean up before switching to restricted label.
+  unlink(kSockPath);
+
+  ASSERT_EQ(WriteTaskAttr("current", test_case.label), fit::ok());
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  fbl::unique_fd sock(socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_TRUE(sock.is_valid()) << strerror(errno);
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, kSockPath, sizeof(addr.sun_path) - 1);
+
+  if (test_case.expected_errno == 0) {
+    EXPECT_THAT(bind(sock.get(), (struct sockaddr*)&addr, sizeof(addr)), SyscallSucceeds());
+  } else {
+    EXPECT_THAT(bind(sock.get(), (struct sockaddr*)&addr, sizeof(addr)),
+                SyscallFailsWithErrno(test_case.expected_errno));
+  }
+}
+
+// Tests that binding a UNIX domain socket to a path fails without the appropriate `sock_file` and
+// `dir` permissions.
+INSTANTIATE_TEST_SUITE_P(
+    SocketBindTests, SocketBindTest,
+    ::testing::Values(SocketBindTestCase{"test_u:test_r:socket_bind_test_sock_file_create_no_t:s0",
+                                         EACCES, "RequiresSockFileCreate"},
+                      SocketBindTestCase{"test_u:test_r:socket_bind_test_dir_write_no_t:s0", EACCES,
+                                         "RequiresDirWrite"},
+                      SocketBindTestCase{"test_u:test_r:socket_bind_test_dir_add_name_no_t:s0",
+                                         EACCES, "RequiresDirAddName"},
+                      SocketBindTestCase{"test_u:test_r:socket_bind_test_yes_t:s0", 0,
+                                         "SucceedsWithSockFileAndDirPerms"}),
+    [](const testing::TestParamInfo<SocketBindTestCase>& info) { return info.param.test_name; });
+
 }  // namespace
