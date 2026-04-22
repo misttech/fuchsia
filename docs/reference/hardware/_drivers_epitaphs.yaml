@@ -710,3 +710,9 @@
   available_in_git: 'e3f12e5701389bcdad9d801cb92f04799da43b26'
   areas: ['Input']
   path: '/src/ui/input/drivers/ctaphid'
+- short_description: 'I2C HID driver'
+  deletion_reason: 'Hardware is not supported anymore'
+  gerrit_change_id: '1583796'
+  available_in_git: 'e570d9ee1a60b3cd954055c23ccaa6fd0488fa41'
+  areas: ['Input']
+  path: '/src/ui/input/drivers/i2c-hid'

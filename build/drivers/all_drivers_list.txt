@@ -374,7 +374,6 @@
 //src/ui/input/drivers/hid-input-report:hid-input-report-driver
 //src/ui/input/drivers/hid:hid-driver
 //src/ui/input/drivers/hidctl:hidctl-driver
-//src/ui/input/drivers/i2c-hid:i2c-hid-driver
 //src/ui/input/drivers/usb-hid:usb-hid-driver
 //src/ui/input/drivers/usb-hid:usb-one-endpoint-hid-fake-usb-driver
 //src/ui/input/drivers/usb-hid:usb-two-endpoint-hid-fake-usb-driver

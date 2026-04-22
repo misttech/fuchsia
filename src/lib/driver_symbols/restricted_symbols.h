@@ -93,7 +93,6 @@ inline constexpr std::string_view kCreateThreadSymbolsDriversAllowlist[] = {
     "#meta/hid-input-report.cm",
     "#meta/hid.cm",
     "#meta/hidctl.cm",
-    "#meta/i2c-hid.cm",
     "#meta/igc.cm",
     "#meta/init-test.cm",
     "#meta/integration-test.cm",

@@ -252,7 +252,6 @@ shared_library("driver") {
     "//src/ui/input/drivers/hid:*",
     "//src/ui/input/drivers/hid-input-report:*",
     "//src/ui/input/drivers/hidctl:*",
-    "//src/ui/input/drivers/i2c-hid:*",
     "//src/ui/input/drivers/pc-ps2:*",
     "//src/ui/input/drivers/usb-hid:*",
     "//src/ui/input/drivers/virtio:*",

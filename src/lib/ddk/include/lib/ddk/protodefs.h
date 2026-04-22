@@ -100,9 +100,9 @@ DDK_PROTOCOL_DEF(TEST_POWER_CHILD,        82,   "test-power-child", 0)
 DDK_PROTOCOL_DEF(TEST_PARENT,             83,   "test-parent", PF_NOPUB)
 // 84 was PBUS.
 DDK_PROTOCOL_DEF(PDEV,                    85,   "platform-dev", 0)
-DDK_PROTOCOL_DEF(I2C_HID,                 86,   "i2c-hid", 0)
-// SERIAL was 87
-// SERIAL_IMPL was 88
+// 86 was I2C_HID
+// 87 was SERIAL
+// 88 was SERIAL_IMPL
 // 89 was SHARED_DMA
 DDK_PROTOCOL_DEF(CLOCK,                   90,   "clock", PF_NOPUB)
 DDK_PROTOCOL_DEF(CLOCK_IMPL,              91,   "clock-impl", 0)

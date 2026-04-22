@@ -254,11 +254,6 @@ board_input_bundle("x64_common") {
       driver_components = [ "meta/max98927.cm" ]
     },
     {
-      package_target = "//src/ui/input/drivers/i2c-hid:package"
-      package_set = "bootfs"
-      driver_components = [ "meta/i2c-hid.cm" ]
-    },
-    {
       package_target = "//src/ui/input/drivers/pc-ps2:package"
       package_set = "bootfs"
       driver_components = [ "meta/pc-ps2.cm" ]
