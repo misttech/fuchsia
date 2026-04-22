@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
 #include <lib/component/outgoing/cpp/structured_config.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/internal/concepts.h>
 #include <lib/driver/component/cpp/prepare_stop_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>

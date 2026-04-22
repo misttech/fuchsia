@@ -7,7 +7,9 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/driver/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/internal/driver_server.h>
+#include <lib/driver/component/cpp/internal/driver_server2.h>
 #include <lib/driver/symbols/symbols.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 

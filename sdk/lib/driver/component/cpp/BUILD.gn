@@ -24,9 +24,13 @@ sdk_source_set("cpp") {
     "completer.cc",
     "driver_base.cc",
     "driver_base.h",
+    "driver_base2.cc",
+    "driver_base2.h",
     "driver_export.h",
+    "driver_export2.h",
     "internal/concepts.h",
     "internal/driver_server.h",
+    "internal/driver_server2.h",
     "internal/start_args.h",
     "internal/symbols.h",
     "node_add_args.cc",
@@ -34,11 +38,13 @@ sdk_source_set("cpp") {
     "node_offers.h",
     "prepare_stop_completer.h",
     "start_completer.h",
+    "stop_completer.h",
   ]
 
   sdk_headers_for_internal_use = [
     "internal/concepts.h",
     "internal/driver_server.h",
+    "internal/driver_server2.h",
     "internal/start_args.h",
     "internal/symbols.h",
   ]

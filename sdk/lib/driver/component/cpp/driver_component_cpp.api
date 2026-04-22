@@ -1,12 +1,16 @@
 {
-  "pkg/driver_component_cpp/include/lib/driver/component/cpp/driver_base.h": "9731baa62890f7e22208fb7d7d8e677a",
-  "pkg/driver_component_cpp/include/lib/driver/component/cpp/driver_export.h": "d02fcd3e4c0ad3d46e4b1866eb46d865",
+  "pkg/driver_component_cpp/include/lib/driver/component/cpp/driver_base.h": "4b594a17240ff47c44c412205ca85520",
+  "pkg/driver_component_cpp/include/lib/driver/component/cpp/driver_base2.h": "e2c67f31374a4ebb18d8e693c3cd3ade",
+  "pkg/driver_component_cpp/include/lib/driver/component/cpp/driver_export.h": "c45e798443670bd8be5cc4c1bbb910ad",
+  "pkg/driver_component_cpp/include/lib/driver/component/cpp/driver_export2.h": "21d4c86ecf3cfabb97c8eff2d2b9e4e8",
   "pkg/driver_component_cpp/include/lib/driver/component/cpp/internal/concepts.h": "276179c422855c6db298d020fa79b5ef",
   "pkg/driver_component_cpp/include/lib/driver/component/cpp/internal/driver_server.h": "de1e1120c6ff500bf2186de7ff6c7f0c",
+  "pkg/driver_component_cpp/include/lib/driver/component/cpp/internal/driver_server2.h": "33d960c6d4f858794f8c7c02ee12fa38",
   "pkg/driver_component_cpp/include/lib/driver/component/cpp/internal/start_args.h": "e4be77dd4644207e1327f9b7a4fa388a",
   "pkg/driver_component_cpp/include/lib/driver/component/cpp/internal/symbols.h": "8cbb389c7c2c04cc83d56f4950dbdad0",
   "pkg/driver_component_cpp/include/lib/driver/component/cpp/node_add_args.h": "9ca59cbfda4178a47635e1cd9832fd56",
   "pkg/driver_component_cpp/include/lib/driver/component/cpp/node_offers.h": "ac7110362aaf929b835a18902a5c2310",
   "pkg/driver_component_cpp/include/lib/driver/component/cpp/prepare_stop_completer.h": "e2f0b1c4d88a7f7a0e44ec3a3b8b2715",
-  "pkg/driver_component_cpp/include/lib/driver/component/cpp/start_completer.h": "8e7d8cd41d133f1d9e1e63007317e3fa"
+  "pkg/driver_component_cpp/include/lib/driver/component/cpp/start_completer.h": "8e7d8cd41d133f1d9e1e63007317e3fa",
+  "pkg/driver_component_cpp/include/lib/driver/component/cpp/stop_completer.h": "897a3f3379ebd526e2f994983a091f8b"
 }
