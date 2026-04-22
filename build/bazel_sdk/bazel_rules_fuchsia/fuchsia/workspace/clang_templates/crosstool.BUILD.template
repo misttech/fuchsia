@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_toolchain", "cc_toolchain_suite")
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "COMPATIBILITY",
