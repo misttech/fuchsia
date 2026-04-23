@@ -15,10 +15,8 @@ group("storage_drivers") {
     "//src/devices/block/drivers/ftl",
     "//src/devices/block/drivers/gpt",
     "//src/devices/block/drivers/ramdisk",
-    "//src/devices/block/drivers/zxcrypt",
     "//src/devices/nand/drivers/ram-nand",
     "//src/storage/fvm:fvm-component",
-    "//src/storage/fvm/driver",
     "//src/storage/gpt/component",
   ]
 }
@@ -33,8 +31,6 @@ source_set("storage_driver_test_support") {
   sources = [
     "fvm.cc",
     "fvm.h",
-    "zxcrypt.cc",
-    "zxcrypt.h",
   ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
@@ -43,7 +39,6 @@ source_set("storage_driver_test_support") {
     "//sdk/lib/device-watcher/cpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
-    "//src/security/lib/zxcrypt:zxcrypt-client",
     "//src/storage/lib/utils:topological_path",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/system/ulib/sync",

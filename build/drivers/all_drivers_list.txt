@@ -103,7 +103,6 @@
 //src/devices/block/drivers/usb-mass-storage:usb-mass-storage-driver
 //src/devices/block/drivers/virtio:virtio_block-driver
 //src/devices/block/drivers/virtio:virtio_scsi-driver
-//src/devices/block/drivers/zxcrypt:zxcrypt-driver
 //src/devices/board/drivers/astro/post-init:post-init-driver
 //src/devices/board/drivers/astro:astro-driver
 //src/devices/board/drivers/crosvm:driver
@@ -361,7 +360,6 @@
 //src/power/testing/fake-trippoint:driver
 //src/power/testing/system-integration/example/test-driver:driver
 //src/storage/block-relay/testing/toy-driver:driver
-//src/storage/fvm/driver:fuchsia_driver
 //src/sys/component_manager/tests/structured_config/client_integration/cpp_driver:receiver_driver
 //src/ui/backlight/drivers/ti-lp8556:ti-lp8556-driver
 //src/ui/input/drivers/adc-buttons:bazel_package.bazel_build

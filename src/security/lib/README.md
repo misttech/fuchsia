@@ -30,8 +30,3 @@ security team before including them in a new project.
   security service provided by a TA in TEE. The client API confirms to
   GlobalPlatform standard and currently handles TA session establishment,
   invoking a command, shared memory management etc.
-* [zxcrypt](//src/security/lib/zxcrypt): An encrypted (but not authenticated)
-  filter block device core and supporting client libraries. minfs, where used,
-  is generally configured to sit atop a zxcrypt-encrypted block device to
-  protect mutable data.
-

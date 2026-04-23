@@ -2160,7 +2160,6 @@ httpsdate_time_source,68635
 exe.unstripped/httpsdate_time_source,68635
 httpsdate_time_source.build-id.stamp,68635
 exe.unstripped/httpsdate_time_source.rmeta,68635
-arm64-hwasan-ubsan/obj/src/security/lib/zxcrypt/tests/zxcrypt-test.volume.cc.o,68628
 mock_piconet_client_lib_test,68606
 exe.unstripped/mock_piconet_client_lib_test,68606
 mock_piconet_client_lib_test.build-id.stamp,68606

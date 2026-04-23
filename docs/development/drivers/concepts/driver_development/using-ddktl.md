@@ -106,8 +106,8 @@ thread &mdash; it does not necessarily need to be before returning from **DdkIni
 After replying to the `InitTxn`, your device will be visible in the Device
 filesystem.
 
-As an example, in the directory [`//src/devices/block/drivers/zxcrypt`](/src/devices/block/drivers/zxcrypt)
-we have a typical device declaration ([`device.h`](/src/devices/block/drivers/zxcrypt/device.h)):
+As an example, in the directory `//src/devices/block/drivers/zxcrypt` (now removed)
+we had a typical device declaration (`device.h`):
 
 ```c++
 [01] class Device;
@@ -137,8 +137,7 @@ but also from other classes on lines `[07` .. `09]`.
 Lines `[11` .. `15]` provide the prototypes for the three optional mixins and the
 mandatory **DdkRelease()** member function.
 
-Here's an example of the `zxcrypt` device's `DdkGetProtocol` implementation (from
-[`device.cc`](/src/devices/block/drivers/zxcrypt/device.cc)):
+Here's an example of the `zxcrypt` device's `DdkGetProtocol` implementation:
 
 ```c++
 zx_status_t Device::DdkGetProtocol(uint32_t proto_id, void* out) {
@@ -274,9 +273,6 @@ This usage is typical.
 <!-- xref table -->
 [bti]: /docs/reference/kernel_objects/bus_transaction_initiator.md
 [crtp]: https://en.wikipedia.org/wiki/Curiously_recurring_template_pattern
-[dev/block/zxcrypt/device.cpp]: /src/devices/block/drivers/zxcrypt/device.cc
-[dev/block/zxcrypt/device.h]: /src/devices/block/drivers/zxcrypt/device.h
-[dev/block/zxcrypt]: /src/devices/block/drivers/zxcrypt
 [include/ddktl/device.h]: /src/lib/ddktl/include/ddktl/device.h
 [mixins]: https://en.wikipedia.org/wiki/Mixin
 [usb-xhci.cc]: /src/devices/usb/drivers/xhci/usb-xhci.cc

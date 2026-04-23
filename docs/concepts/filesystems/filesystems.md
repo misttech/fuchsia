@@ -219,7 +219,7 @@ single flat directory of hashes, and blobs can be accessed by operations like
 
 ### FVM
 
-[Fuchsia Volume Manager](/src/storage/fvm/driver/)
+[Fuchsia Volume Manager](/src/storage/fvm/)
 is a "logical volume manager" that adds flexibility on top of existing block
 devices. The current features include ability to add, remove, extend and
 shrink virtual partitions. To make these features possible FVM internally

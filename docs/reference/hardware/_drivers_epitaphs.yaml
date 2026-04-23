@@ -722,3 +722,15 @@
   available_in_git: '670a92ee108c81b59a03033c277681c7bafbfb77'
   areas: ['Input']
   path: 'src/ui/input/drivers/goldfish_sensor'
+- short_description: 'Fuchsia zxcrypt driver'
+  deletion_reason: 'Driver is unused'
+  gerrit_change_id: '1583474'
+  available_in_git: '2354ad44d6ab58c285c6d977e0e47f7b914871bd'
+  areas: ['Block']
+  path: '/src/devices/block/drivers/zxcrypt'
+- short_description: 'Fuchsia Volume Manager (FVM) driver'
+  deletion_reason: 'Driver is unused'
+  gerrit_change_id: '1582120'
+  available_in_git: '2354ad44d6ab58c285c6d977e0e47f7b914871bd'
+  areas: ['Storage']
+  path: '/src/storage/fvm/driver'

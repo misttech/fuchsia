@@ -22,215 +22,6 @@
 
 namespace fvm {
 
-class DriverBlockConnector : public BlockConnector {
- public:
-  explicit DriverBlockConnector(fidl::ClientEnd<fuchsia_device::Controller> controller)
-      : controller_(std::move(controller)) {
-    zx::result partition_server = fidl::CreateEndpoints(&partition_);
-    EXPECT_OK(partition_server);
-    EXPECT_TRUE(
-        fidl::WireCall(controller_)->ConnectToDeviceFidl(partition_server->TakeChannel()).ok());
-  }
-  ~DriverBlockConnector() override = default;
-
-  fidl::ClientEnd<fuchsia_storage_block::Block> connect_block() const override {
-    zx::result endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
-    EXPECT_OK(endpoints);
-    auto [block_client, server] = std::move(endpoints.value());
-    EXPECT_TRUE(fidl::WireCall(controller_)->ConnectToDeviceFidl(server.TakeChannel()).ok());
-    return std::move(block_client);
-  }
-
-  fidl::UnownedClientEnd<fuchsia_storage_block::Block> as_block() const override {
-    return fidl::UnownedClientEnd<fuchsia_storage_block::Block>(partition_.channel().borrow());
-  }
-
-  static zx::result<std::unique_ptr<BlockConnector>> Create(
-      fidl::ClientEnd<fuchsia_device::Controller> controller) {
-    return zx::ok(std::unique_ptr<BlockConnector>(new DriverBlockConnector(std::move(controller))));
-  }
-
- private:
-  fidl::ClientEnd<fuchsia_device::Controller> controller_;
-  fidl::ClientEnd<fuchsia_storage_block::Block> partition_;
-};
-
-void DriverFvmInstance::SetUp() {
-  loop_ = std::make_unique<async::Loop>(&kAsyncLoopConfigNoAttachToCurrentThread);
-  loop_->StartThread();
-
-  auto realm_builder = component_testing::RealmBuilder::Create();
-  driver_test_realm::Setup(
-      realm_builder, loop_->dispatcher(), driver_test_realm::OptionsBuilder().Build(),
-      fuchsia_driver_test::RealmArgs{
-          {.root_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
-           .software_devices = std::vector{
-               fuchsia_driver_test::SoftwareDevice{{
-                   .device_name = "ram-disk",
-                   .device_id = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_DISK,
-               }},
-           }}});
-  realm_ = std::make_unique<component_testing::RealmRoot>(realm_builder.Build(loop_->dispatcher()));
-
-  zx::result<> boot_result = driver_test_realm::WaitForBootup(*realm_);
-  ASSERT_EQ(ZX_OK, boot_result.status_value());
-
-  // TODO(https://fxbug.dev/377735979): Connect using a different mechanism.
-  auto [devfs_client, server] = fidl::Endpoints<fuchsia_io::Node>::Create();
-  fidl::UnownedClientEnd<fuchsia_io::Directory> exposed(
-      realm_->component().exposed().unowned_channel());
-  ASSERT_OK(fidl::WireCall(exposed)
-                ->Open("dev-topological", fuchsia_io::wire::kPermReadable, {}, server.TakeChannel())
-                .status());
-  ASSERT_OK(
-      fdio_fd_create(devfs_client.TakeChannel().release(), devfs_root_.reset_and_get_address()));
-
-  auto node = driver_test_realm::WaitForNode(*realm_, "ram-disk.ramctl");
-  ASSERT_TRUE(node.is_ok());
-}
-
-void DriverFvmInstance::TearDown() {
-  ramdisk_.Reset();
-  driver_test_realm::ShutdownRealm(*realm_);
-}
-
-void DriverFvmInstance::CreateRamdisk(uint64_t block_size, uint64_t block_count) {
-  if (ramdisk_.is_valid()) {
-    ramdisk_.Reset();
-    // We assume if the caller didn't destroy the ramdisk itself it wants a completely new disk.
-    vmo_ = {};
-  }
-  if (!vmo_) {
-    ASSERT_OK(zx::vmo::create(block_size * block_count, 0, &vmo_));
-  }
-  zx::vmo duplicate_vmo;
-  ASSERT_OK(vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_vmo));
-  zx::result ramdisk = ramdevice_client::Ramdisk::CreateLegacyWithVmo(
-      std::move(duplicate_vmo), block_size, devfs_root_.get());
-  ASSERT_OK(ramdisk.status_value());
-  ramdisk_ = std::move(*ramdisk);
-}
-
-void DriverFvmInstance::CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) {
-  CreateRamdisk(block_size, block_count);
-
-  ASSERT_OK(fs_management::FvmInitPreallocated(GetRamdiskPartition(), block_count * block_size,
-                                               block_count * block_size, slice_size));
-
-  StartFvm();
-}
-
-void DriverFvmInstance::StartFvm() {
-  auto resp = fidl::WireCall(GetRamdiskControllerInterface())->Bind(kFvmDriverLib);
-  ASSERT_OK(resp.status());
-  if (!resp->is_ok()) {
-    ASSERT_OK(resp->error_value());
-  }
-
-  ASSERT_OK(device_watcher::RecursiveWaitForFile(devfs_root().get(), GetFvmPath().c_str()));
-}
-
-void DriverFvmInstance::RestartFvm() {
-  auto resp = fidl::WireCall(GetRamdiskControllerInterface())->Rebind(kFvmDriverLib);
-  ASSERT_OK(resp.status());
-  ASSERT_TRUE(resp->is_ok());
-
-  ASSERT_OK(device_watcher::RecursiveWaitForFile(devfs_root().get(), GetFvmPath().c_str()));
-}
-
-void DriverFvmInstance::RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) {
-  auto resp = fidl::WireCall(GetRamdiskPartition())->GetInfo();
-  ASSERT_OK(resp.status());
-  ASSERT_TRUE(resp->is_ok());
-  uint32_t found_block_size = resp->value()->info.block_size;
-  ASSERT_EQ(found_block_size, block_size);
-
-  ramdisk_.Reset();
-
-  zx::vmo vmo;
-  ASSERT_OK(vmo_.create_child(ZX_VMO_CHILD_SNAPSHOT, 0, block_count * block_size, &vmo));
-  vmo_ = std::move(vmo);
-
-  ASSERT_NO_FATAL_FAILURE(CreateRamdisk(block_size, block_count));
-  ASSERT_NO_FATAL_FAILURE(StartFvm());
-}
-
-fuchsia_storage_block::wire::VolumeManagerInfo DriverFvmInstance::GetFvmInfo() const {
-  zx::result fvm = GetVolumeManager();
-  EXPECT_OK(fvm);
-  zx::result info = fs_management::FvmQuery(fvm->borrow());
-  EXPECT_OK(info);
-  return *info;
-}
-
-zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::AllocatePartition(
-    const AllocatePartitionRequest& request) const {
-  zx::result fvm = GetVolumeManager();
-  if (fvm.is_error()) {
-    return fvm.take_error();
-  }
-  fdio_cpp::UnownedFdioCaller caller(devfs_root());
-
-  zx::result controller = fs_management::FvmAllocatePartitionWithDevfs(
-      caller.directory(), *fvm, request.slice_count, request.type, request.guid, request.name,
-      request.flags);
-  if (controller.is_error()) {
-    return controller.take_error();
-  }
-  return DriverBlockConnector::Create(std::move(controller.value()));
-}
-
-zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartition(
-    std::string_view label) const {
-  fdio_cpp::UnownedFdioCaller caller(devfs_root());
-  zx::result controller =
-      fs_management::OpenPartitionWithDevfs(caller.directory(), {.labels = {label}}, true);
-  if (controller.is_error()) {
-    return controller.take_error();
-  }
-  return DriverBlockConnector::Create(std::move(controller.value()));
-}
-
-void DriverFvmInstance::DestroyPartition(std::string_view label) const {
-  zx::result partition = OpenPartition(label);
-  ASSERT_OK(partition);
-  fidl::WireResult result = fidl::WireCall(partition->as_block())->Destroy();
-  ASSERT_OK(result.status());
-  ASSERT_OK(result->status);
-}
-
-fidl::ClientEnd<fuchsia_storage_block::Block> DriverFvmInstance::GetRamdiskPartition() const {
-  zx::result result = ramdisk_.ConnectBlock();
-  ZX_ASSERT(result.status_value() == ZX_OK);
-  EXPECT_OK(result);
-  return fidl::ClientEnd<fuchsia_storage_block::Block>(result.value().TakeChannel());
-}
-
-fidl::UnownedClientEnd<fuchsia_device::Controller>
-DriverFvmInstance::GetRamdiskControllerInterface() const {
-  return ramdisk_.LegacyController();
-}
-
-zx::result<fidl::ClientEnd<fuchsia_storage_block::VolumeManager>>
-DriverFvmInstance::GetVolumeManager() const {
-  fdio_cpp::UnownedFdioCaller caller(devfs_root());
-  return component::ConnectAt<fuchsia_storage_block::VolumeManager>(caller.directory(),
-                                                                    GetFvmPath());
-}
-
-zx::result<std::unique_ptr<BlockConnector>> DriverFvmInstance::OpenPartitionNoWait(
-    std::string_view label) const {
-  fdio_cpp::UnownedFdioCaller caller(devfs_root());
-  zx::result controller =
-      fs_management::OpenPartitionWithDevfs(caller.directory(), {.labels = {label}}, false);
-  if (controller.is_error()) {
-    return controller.take_error();
-  }
-  return DriverBlockConnector::Create(std::move(controller.value()));
-}
-
-std::string DriverFvmInstance::GetFvmPath() const { return std::string(ramdisk_.path()) + "/fvm"; }
-
 class ComponentBlockConnector : public BlockConnector {
  public:
   ~ComponentBlockConnector() = default;
@@ -264,143 +55,118 @@ class ComponentBlockConnector : public BlockConnector {
   fidl::ClientEnd<fuchsia_storage_block::Block> partition_;
 };
 
-class ComponentFvmInstance : public FvmInstance {
- public:
-  void SetUp() override {}
+void FvmInstance::CreateRamdisk(uint64_t block_size, uint64_t block_count) {
+  if (!vmo_) {
+    ASSERT_OK(zx::vmo::create(block_size * block_count, 0, &vmo_));
+  }
+  zx::vmo duplicate_vmo;
+  ASSERT_OK(vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_vmo));
+  // This will also cause the destructor to run for any previous device.
+  device_ = std::make_unique<block_server::FakeServer>(
+      block_server::PartitionInfo{
+          .block_count = block_count,
+          .block_size = static_cast<uint32_t>(block_size),
+          .max_transfer_size = 524288,
+      },
+      std::move(duplicate_vmo));
+  auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  block_ = std::move(block_client);
+  device_->Serve(std::move(block_server));
+}
 
-  void TearDown() override {}
+void FvmInstance::CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) {
+  CreateRamdisk(block_size, block_count);
+  ASSERT_OK(fs_management::FvmInitPreallocated(GetRamdiskPartition(), block_count * block_size,
+                                               block_count * block_size, slice_size));
+  StartFvm();
+}
 
-  void CreateRamdisk(uint64_t block_size, uint64_t block_count) override {
-    if (!vmo_) {
-      ASSERT_OK(zx::vmo::create(block_size * block_count, 0, &vmo_));
+void FvmInstance::StartFvm() {
+  ASSERT_TRUE(device_);
+  auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  device_->Serve(std::move(block_server));
+  zx::result fs = fs_management::MountMultiVolume(std::move(block_client), component_, {});
+  ASSERT_OK(fs);
+  fvm_ = std::make_unique<fs_management::StartedMultiVolumeFilesystem>(std::move(*fs));
+  auto info = GetFvmInfo();
+  slice_size_ = info.slice_size;
+}
+
+void FvmInstance::RestartFvm() {
+  if (fvm_) {
+    ASSERT_OK(fvm_->Unmount());
+    ASSERT_OK(component_.DestroyChild());
+    fvm_ = {};
+  }
+  StartFvm();
+}
+
+void FvmInstance::RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) {
+  if (fvm_) {
+    ASSERT_OK(fvm_->Unmount());
+    ASSERT_OK(component_.DestroyChild());
+    fvm_ = {};
+  }
+
+  zx::vmo vmo;
+  ASSERT_OK(vmo_.create_child(ZX_VMO_CHILD_SNAPSHOT, 0, block_count * block_size, &vmo));
+  vmo_ = std::move(vmo);
+
+  CreateRamdisk(block_size, block_count);
+  StartFvm();
+}
+
+fuchsia_storage_block::wire::VolumeManagerInfo FvmInstance::GetFvmInfo() const {
+  EXPECT_TRUE(fvm_);
+  zx::result volumes = component::ConnectAt<fuchsia_fs_startup::Volumes>(fvm_->ServiceDirectory());
+  EXPECT_OK(volumes);
+  fidl::WireResult info = fidl::WireCall(*volumes)->GetInfo();
+  EXPECT_TRUE(info.ok());
+  EXPECT_TRUE(info->is_ok());
+  return *info.value()->info;
+}
+
+zx::result<std::unique_ptr<BlockConnector>> FvmInstance::AllocatePartition(
+    const AllocatePartitionRequest& request) const {
+  EXPECT_TRUE(fvm_);
+  fidl::Array<uint8_t, 16> type_guid = fidl::Array<uint8_t, 16>{1, 2, 3, 4};
+  memcpy(type_guid.data(), request.type.bytes(), 16);
+  fidl::Arena arena;
+  zx::result volume = fvm_->CreateVolume(request.name,
+                                         fuchsia_fs_startup::wire::CreateOptions::Builder(arena)
+                                             .type_guid(type_guid)
+                                             .initial_size(request.slice_count * slice_size_)
+                                             .Build(),
+                                         {});
+  if (volume.is_error()) {
+    return volume.take_error();
+  }
+  return zx::ok(ComponentBlockConnector::Create(volume.value()));
+}
+
+zx::result<std::unique_ptr<BlockConnector>> FvmInstance::OpenPartition(
+    std::string_view label) const {
+  EXPECT_TRUE(fvm_);
+  std::string name = std::string(label);
+  const fs_management::MountedVolume* volume = fvm_->GetVolume(name);
+  if (volume == nullptr) {
+    zx::result opened_volume = fvm_->OpenVolume(name, {});
+    if (opened_volume.is_error()) {
+      return opened_volume.take_error();
     }
-    zx::vmo duplicate_vmo;
-    ASSERT_OK(vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_vmo));
-    // This will also cause the destructor to run for any previous device.
-    device_ = std::make_unique<block_server::FakeServer>(
-        block_server::PartitionInfo{
-            .block_count = block_count,
-            .block_size = static_cast<uint32_t>(block_size),
-            .max_transfer_size = 524288,
-        },
-        std::move(duplicate_vmo));
-    auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
-    block_ = std::move(block_client);
-    device_->Serve(std::move(block_server));
+    volume = opened_volume.value();
   }
+  return zx::ok(ComponentBlockConnector::Create(volume));
+}
 
-  void CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) override {
-    CreateRamdisk(block_size, block_count);
-    ASSERT_OK(fs_management::FvmInitPreallocated(GetRamdiskPartition(), block_count * block_size,
-                                                 block_count * block_size, slice_size));
-    StartFvm();
-  }
+void FvmInstance::DestroyPartition(std::string_view label) const {
+  ASSERT_OK(fvm_->RemoveVolume(label));
+}
 
-  void StartFvm() override {
-    ASSERT_TRUE(device_);
-    auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
-    device_->Serve(std::move(block_server));
-    zx::result fs = fs_management::MountMultiVolume(std::move(block_client), component_, {});
-    ASSERT_OK(fs);
-    fvm_ = std::make_unique<fs_management::StartedMultiVolumeFilesystem>(std::move(*fs));
-    auto info = GetFvmInfo();
-    slice_size_ = info.slice_size;
-  }
-
-  void RestartFvm() override {
-    if (fvm_) {
-      ASSERT_OK(fvm_->Unmount());
-      ASSERT_OK(component_.DestroyChild());
-      fvm_ = {};
-    }
-    StartFvm();
-  }
-
-  void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) override {
-    if (fvm_) {
-      ASSERT_OK(fvm_->Unmount());
-      ASSERT_OK(component_.DestroyChild());
-      fvm_ = {};
-    }
-
-    zx::vmo vmo;
-    ASSERT_OK(vmo_.create_child(ZX_VMO_CHILD_SNAPSHOT, 0, block_count * block_size, &vmo));
-    vmo_ = std::move(vmo);
-
-    CreateRamdisk(block_size, block_count);
-    StartFvm();
-  }
-
-  fuchsia_storage_block::wire::VolumeManagerInfo GetFvmInfo() const override {
-    EXPECT_TRUE(fvm_);
-    zx::result volumes =
-        component::ConnectAt<fuchsia_fs_startup::Volumes>(fvm_->ServiceDirectory());
-    EXPECT_OK(volumes);
-    fidl::WireResult info = fidl::WireCall(*volumes)->GetInfo();
-    EXPECT_TRUE(info.ok());
-    EXPECT_TRUE(info->is_ok());
-    return *info.value()->info;
-  }
-
-  zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
-      const AllocatePartitionRequest& request) const override {
-    EXPECT_TRUE(fvm_);
-    fidl::Array<uint8_t, 16> type_guid = fidl::Array<uint8_t, 16>{1, 2, 3, 4};
-    memcpy(type_guid.data(), request.type.bytes(), 16);
-    fidl::Arena arena;
-    zx::result volume = fvm_->CreateVolume(request.name,
-                                           fuchsia_fs_startup::wire::CreateOptions::Builder(arena)
-                                               .type_guid(type_guid)
-                                               .initial_size(request.slice_count * slice_size_)
-                                               .Build(),
-                                           {});
-    if (volume.is_error()) {
-      return volume.take_error();
-    }
-    return zx::ok(ComponentBlockConnector::Create(volume.value()));
-  }
-
-  zx::result<std::unique_ptr<BlockConnector>> OpenPartition(std::string_view label) const override {
-    EXPECT_TRUE(fvm_);
-    std::string name = std::string(label);
-    const fs_management::MountedVolume* volume = fvm_->GetVolume(name);
-    if (volume == nullptr) {
-      zx::result opened_volume = fvm_->OpenVolume(name, {});
-      if (opened_volume.is_error()) {
-        return opened_volume.take_error();
-      }
-      volume = opened_volume.value();
-    }
-    return zx::ok(ComponentBlockConnector::Create(volume));
-  }
-
-  void DestroyPartition(std::string_view label) const override {
-    ASSERT_OK(fvm_->RemoveVolume(label));
-  }
-
-  fidl::ClientEnd<fuchsia_storage_block::Block> GetRamdiskPartition() const override {
-    auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
-    device_->Serve(std::move(block_server));
-    return std::move(block_client);
-  }
-
- private:
-  zx::vmo vmo_;
-  std::unique_ptr<block_server::FakeServer> device_;
-  fidl::ClientEnd<fuchsia_storage_block::Block> block_;
-  fs_management::FsComponent component_ =
-      fs_management::FsComponent::FromDiskFormat(fs_management::kDiskFormatFvm);
-  std::unique_ptr<fs_management::StartedMultiVolumeFilesystem> fvm_;
-  uint64_t slice_size_;
-};
-
-std::unique_ptr<FvmInstance> CreateFvmInstance(FvmImplementation impl) {
-  switch (impl) {
-    case FvmImplementation::kDriver:
-      return std::make_unique<DriverFvmInstance>();
-    case FvmImplementation::kComponent:
-      return std::make_unique<ComponentFvmInstance>();
-  }
+fidl::ClientEnd<fuchsia_storage_block::Block> FvmInstance::GetRamdiskPartition() const {
+  auto [block_client, block_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  device_->Serve(std::move(block_server));
+  return std::move(block_client);
 }
 
 }  // namespace fvm

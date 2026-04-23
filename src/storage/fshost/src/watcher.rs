@@ -5,12 +5,13 @@
 use crate::device::{BlockDevice, Device, NandDevice, Parent, VolumeServiceDevice};
 use anyhow::{Context as _, Error};
 use async_trait::async_trait;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_fs::directory::{WatchEvent, WatchMessage};
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt, stream};
 use std::future::ready;
 use std::sync::Arc;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// A provider for a stream of block devices.
 #[async_trait]
@@ -138,7 +139,7 @@ impl WatchSource for DirSource {
     async fn as_stream(&mut self) -> Result<stream::BoxStream<'static, Box<dyn Device>>, Error> {
         let watcher = fuchsia_fs::directory::Watcher::new(&self.dir)
             .await
-            .with_context(|| format!("Failed to watch dir"))?;
+            .with_context(|| format!("Failed to watch dir with source: {}", self.source))?;
         let dir = Arc::new(fuchsia_fs::directory::clone(&self.dir)?);
         let source = self.source.clone();
         let parent = self.parent;

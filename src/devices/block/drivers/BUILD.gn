@@ -21,7 +21,6 @@ group("tests") {
     "ufs:tests",
     "usb-mass-storage:tests",
     "virtio:tests",
-    "zxcrypt:tests",
   ]
 }
 

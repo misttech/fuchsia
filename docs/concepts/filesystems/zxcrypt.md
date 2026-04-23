@@ -9,7 +9,7 @@ bound, the zxcrypt device will publish another block device in the device tree t
 interact with normally.
 
 ## Usage
-zxcrypt contains both a [driver](/src/devices/block/drivers/zxcrypt) and [library](/src/security/lib/zxcrypt)
+zxcrypt is now an integrated part of the FVM component.
 Provided by libzxcrypt.so are four functions for managing zxcrypt devices.  Each takes one or more
 `zxcrypt_key_t` keys, which associates the key data, length, and slot in the case of multiple keys.
 
@@ -55,44 +55,6 @@ There are two small pieces of functionality which cannot be written in DDKTL and
   [binding.h](/src/lib/ddk/include/lib/ddk/binding.h).
 * The completion routines of [ulib/sync](/zircon/system/ulib/sync), which are used for synchronous I/O
   and are incompatible with C++ atomics.
-
-### Worker Threads
-The device starts [worker threads](/src/devices/block/drivers/zxcrypt/worker.h) that run for the duration
-of the device and create a pipeline for all I/O requests.  Each has a type of I/O it operates on, a
-queue of incoming requests I/O that it will wait on, and a data cipher.  When a request is received,
-if the opcode matches the one it is looking for, it will use its cipher to transform the data in the
-request before passing it along.
-
-The overall pipeline is as shown:
-
-```
-DdkIotxnQueue -+
-                \       Worker 1:        Underlying      Worker 2:        Original
-    BlockRead ---+--->  Encrypter   --->   Block   --->  Decrypter  ---> Completion
-                /     Acts on writes       Device      Acts on reads      Callback
-   BlockWrite -+
-```
-
-The "encrypter" worker encrypts the data in every I/O write request before sending it to the
-underlying block device, and the "decrypter" worker decrypts the data in every I/O read response
-coming from the underlying block device.  The
-[cipher](/src/security/lib/fcrypto/cipher.h) must have a key length of at least 16 bytes,
-be semantically secure ([IND-CCA2][ind-cca2]) and incorporate the block offset as a
-"[tweak][tweak]".  Currently, [AES256-XTS][aes-xts] is in use.
-
-### Rings and Txns
-In order to keep the encryption and decryption of data transparent to original I/O requester, the
-workers must copy the data when transforming it.  The I/O request sent through the pipeline is not
-actually the original request, but instead a "shadow" request that encapsulates the original
-request.
-
-As shadow requests are needed, they are allocated backed sequentially by pages in the
-[VMO](/docs/concepts/kernel/concepts.md#shared-memory-virtual-memory-objects-vmos-).  When the
-worker needs to transform the data it either encrypts data from the original, encapsulated write
-request into the shadow request, or decrypts data from the shadow request into the original,
-encapsulated read request.  As soon as the original request can be handed back to the original
-requester, the shadow request is deallocated and its page [decommitted](/reference/syscalls/vmo_op_range.md).
-This ensures no more memory is used than is needed for outstanding I/O requests.
 
 ### Superblock Format
 The key material for encrypting and decrypting the data is referred to as the data key, and is

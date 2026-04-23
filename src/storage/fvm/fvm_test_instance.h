@@ -16,7 +16,9 @@
 #include <fbl/unique_fd.h>
 #include <ramdevice-client/ramdisk.h>
 
+#include "src/storage/lib/block_server/fake_server.h"
 #include "src/storage/lib/fs_management/cpp/fvm.h"
+#include "src/storage/lib/fs_management/cpp/mount.h"
 
 namespace fvm {
 
@@ -63,75 +65,46 @@ struct AllocatePartitionRequest {
 
 class FvmInstance {
  public:
-  virtual void SetUp() = 0;
-  virtual void TearDown() = 0;
-
-  virtual ~FvmInstance() = default;
-
   // Creates a ramdisk, destroying and recreating it if it already exists.
-  virtual void CreateRamdisk(uint64_t block_size, uint64_t block_count) = 0;
+  void CreateRamdisk(uint64_t block_size, uint64_t block_count);
 
   // Creates a ramdisk and formats it with fvm.
-  virtual void CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) = 0;
+  void CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size);
 
-  virtual void StartFvm() = 0;
+  void StartFvm();
 
   // Rebinds or restarts the FVM instance.
-  virtual void RestartFvm() = 0;
+  void RestartFvm();
 
   // Create a new ramdisk with a new total size. The block size must be the same as the existing
   // block size. This will start the disk and the fvm after recreating the disk.
-  virtual void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) = 0;
+  void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count);
 
   // Get general info about fvm.
-  virtual fuchsia_storage_block::wire::VolumeManagerInfo GetFvmInfo() const = 0;
+  fuchsia_storage_block::wire::VolumeManagerInfo GetFvmInfo() const;
 
   // Allocates a new partition.
-  virtual zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
-      const AllocatePartitionRequest& request) const = 0;
+  zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
+      const AllocatePartitionRequest& request) const;
 
   // Opens an existing partition. This will wait for it to appear if it doesn't already exist.
-  virtual zx::result<std::unique_ptr<BlockConnector>> OpenPartition(
-      std::string_view label) const = 0;
+  zx::result<std::unique_ptr<BlockConnector>> OpenPartition(std::string_view label) const;
 
   // Destroys the named partition, removing it from this fvm instance.
-  virtual void DestroyPartition(std::string_view label) const = 0;
+  void DestroyPartition(std::string_view label) const;
 
   // Returns the block interface of the underlying ramdisk.
-  virtual fidl::ClientEnd<fuchsia_storage_block::Block> GetRamdiskPartition() const = 0;
-};
-
-class DriverFvmInstance : public FvmInstance {
- public:
-  void SetUp() override;
-  void TearDown() override;
-  void CreateRamdisk(uint64_t block_size, uint64_t block_count) override;
-  void CreateFvm(uint64_t block_size, uint64_t block_count, uint64_t slice_size) override;
-  void StartFvm() override;
-  void RestartFvm() override;
-  void RestartFvmWithNewDiskSize(uint64_t block_size, uint64_t block_count) override;
-  fuchsia_storage_block::wire::VolumeManagerInfo GetFvmInfo() const override;
-  zx::result<std::unique_ptr<BlockConnector>> AllocatePartition(
-      const AllocatePartitionRequest& request) const override;
-  zx::result<std::unique_ptr<BlockConnector>> OpenPartition(std::string_view label) const override;
-  void DestroyPartition(std::string_view label) const override;
-  fidl::ClientEnd<fuchsia_storage_block::Block> GetRamdiskPartition() const override;
-
-  fidl::UnownedClientEnd<fuchsia_device::Controller> GetRamdiskControllerInterface() const;
-  const fbl::unique_fd& devfs_root() const { return devfs_root_; }
-  zx::result<fidl::ClientEnd<fuchsia_storage_block::VolumeManager>> GetVolumeManager() const;
-  zx::result<std::unique_ptr<BlockConnector>> OpenPartitionNoWait(std::string_view label) const;
-  std::string GetFvmPath() const;
+  fidl::ClientEnd<fuchsia_storage_block::Block> GetRamdiskPartition() const;
 
  private:
-  std::unique_ptr<async::Loop> loop_;
-  std::unique_ptr<component_testing::RealmRoot> realm_;
-  fbl::unique_fd devfs_root_;
-  ramdevice_client::Ramdisk ramdisk_;
   zx::vmo vmo_;
+  std::unique_ptr<block_server::FakeServer> device_;
+  fidl::ClientEnd<fuchsia_storage_block::Block> block_;
+  fs_management::FsComponent component_ =
+      fs_management::FsComponent::FromDiskFormat(fs_management::kDiskFormatFvm);
+  std::unique_ptr<fs_management::StartedMultiVolumeFilesystem> fvm_;
+  uint64_t slice_size_;
 };
-
-std::unique_ptr<FvmInstance> CreateFvmInstance(FvmImplementation impl);
 
 }  // namespace fvm
 

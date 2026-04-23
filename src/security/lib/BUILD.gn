@@ -8,7 +8,6 @@ group("tests") {
     "fake-keymint:tests",
     "fcrypto:tests",
     "scrutiny:tests",
-    "zxcrypt:tests",
   ]
 }
 

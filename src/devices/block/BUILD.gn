@@ -22,7 +22,6 @@ group("drivers") {
     "drivers/usb-mass-storage",
     "drivers/virtio:virtio_block",
     "drivers/virtio:virtio_scsi",
-    "drivers/zxcrypt",
   ]
 }
 

@@ -13,7 +13,6 @@ group("tests") {
     ":fvm-rust-tests",
     ":fvm-tests",
     ":fvm_unit($host_toolchain)",
-    "//src/storage/fvm/driver:tests",
   ]
 }
 
@@ -90,15 +89,13 @@ source_set("client") {
   ]
 }
 
-static_library("test_support") {
+static_library("fvm_test_instance") {
   visibility = [ "//src/storage/fvm/*" ]
   testonly = true
 
   sources = [
     "fvm_test_instance.cc",
     "fvm_test_instance.h",
-    "test_support.cc",
-    "test_support.h",
   ]
 
   public_deps = [
@@ -170,13 +167,12 @@ fuchsia_unittest_package("fvm-tests") {
 test("fvm-integration") {
   output_name = "fvm-integration-test"
   sources = [
-    "fvm_driver_integration_test.cc",
     "fvm_integration_test.cc",
     "resize_integration_test.cc",
   ]
 
   deps = [
-    ":test_support",
+    ":fvm_test_instance",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
@@ -205,7 +201,6 @@ test("fvm-integration") {
     "//src/devices/block/drivers/core",
     "//src/devices/block/drivers/ramdisk",
     "//src/devices/bus/drivers/platform",
-    "//src/storage/fvm/driver",
   ]
 }
 

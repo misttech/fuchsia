@@ -1228,7 +1228,6 @@ config("Wno-unused-but-set-variable") {
     "//src/devices/power/drivers/fusb302/*",
     "//src/devices/usb/drivers/xhci/*",
     "//src/media/audio/drivers/usb-audio/*",
-    "//src/storage/fvm/driver/*",
     "//third_party/*",
     "//vendor/*",
     "//zircon/third_party/uapp/dash",

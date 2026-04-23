@@ -121,6 +121,11 @@
         },
     ],
     use: [
+        {
+            service: "fuchsia.hardware.ramdisk.Service",
+            from: "#storage_driver_test_realm",
+        },
+
         // Control storage capabilities of this realm. See
         // `offer: [{from: "self"}]` for routing details.
         {
