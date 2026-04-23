@@ -390,7 +390,7 @@ pub(crate) trait ClientIface: Sync + Send {
     async fn read_apf_packet_filter_data(&self) -> Result<Vec<u8>, zx::Status>;
     async fn start_sched_scan(
         &self,
-        request: fidl_wlanix::SchedScanRequest,
+        request: fidl_common::ScheduledScanRequest,
         initial_charging_status: bool,
     ) -> Result<Vec<fidl_sme::ScanResult>, Error>;
     async fn stop_sched_scan(&self) -> Result<(), Error>;
@@ -905,7 +905,7 @@ impl ClientIface for SmeClientIface {
 
     async fn start_sched_scan(
         &self,
-        request: fidl_wlanix::SchedScanRequest,
+        request: fidl_common::ScheduledScanRequest,
         initial_charging_status: bool,
     ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
         info!("SmeClientIface.start_sched_scan called with request: {:?}", request);
@@ -1052,7 +1052,7 @@ fn connect_txn_event_name(event: &fidl_sme::ConnectTransactionEvent) -> &'static
 }
 
 fn get_matching_scan_results(
-    match_sets: &Option<Vec<fidl_wlanix::SchedScanMatchSet>>,
+    match_sets: &Option<Vec<fidl_common::ScheduledScanMatchSet>>,
     results: Vec<fidl_sme::ScanResult>,
 ) -> Vec<fidl_sme::ScanResult> {
     if let Some(match_sets) = match_sets {
@@ -1074,7 +1074,7 @@ fn get_matching_scan_results(
                                     .map(|match_ssid| *match_ssid == bss.ssid)
                                     .unwrap_or(false);
                                 let is_rssi_match = match_set
-                                    .rssi_threshold
+                                    .min_rssi_threshold
                                     .map(|threshold| result_rssi > threshold)
                                     .unwrap_or(true);
                                 is_ssid_match && is_rssi_match
@@ -1155,7 +1155,7 @@ pub mod test_utils {
         SetMacAddress([u8; 6]),
         InstallApfPacketFilter(Vec<u8>),
         ReadApfPacketFilterData,
-        StartSchedScan { _request: fidl_wlanix::SchedScanRequest },
+        StartSchedScan { _request: fidl_common::ScheduledScanRequest },
         StopSchedScan,
         SetChargingStatus(bool),
     }
@@ -1305,7 +1305,7 @@ pub mod test_utils {
 
         async fn start_sched_scan(
             &self,
-            request: fidl_wlanix::SchedScanRequest,
+            request: fidl_common::ScheduledScanRequest,
             _initial_charging_status: bool,
         ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
             self.calls.lock().push(ClientIfaceCall::StartSchedScan { _request: request });
@@ -2271,11 +2271,11 @@ mod tests {
     fn test_start_sched_scan_exact_match() {
         let mut test_values = setup_test_manager_with_iface();
         let ssid = b"TestSSID";
-        let request = fidl_wlanix::SchedScanRequest {
+        let request = fidl_common::ScheduledScanRequest {
             ssids: Some(vec![]),
-            match_sets: Some(vec![fidl_wlanix::SchedScanMatchSet {
+            match_sets: Some(vec![fidl_common::ScheduledScanMatchSet {
                 ssid: Some(ssid.to_vec()),
-                rssi_threshold: Some(-80),
+                min_rssi_threshold: Some(-80),
                 ..Default::default()
             }]),
             ..Default::default()
@@ -2306,8 +2306,8 @@ mod tests {
     #[fuchsia::test]
     fn test_second_sched_scan_stops_first() {
         let mut test_values = setup_test_manager_with_iface();
-        let request1 = fidl_wlanix::SchedScanRequest::default();
-        let request2 = fidl_wlanix::SchedScanRequest::default();
+        let request1 = fidl_common::ScheduledScanRequest::default();
+        let request2 = fidl_common::ScheduledScanRequest::default();
 
         // Start a first PNO scan
         let mut scan_fut1 = test_values.iface.start_sched_scan(request1, true);
@@ -2339,7 +2339,7 @@ mod tests {
     #[fuchsia::test]
     fn test_sched_scan_resumes_when_charging_starts() {
         let mut test_values = setup_test_manager_with_iface_and_fake_time();
-        let request = fidl_wlanix::SchedScanRequest::default();
+        let request = fidl_common::ScheduledScanRequest::default();
 
         let mut scan_fut = test_values.iface.start_sched_scan(request, false); // initial_charging_status = false
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
@@ -2385,7 +2385,7 @@ mod tests {
     #[fuchsia::test]
     fn test_sched_scan_pauses_and_resumes() {
         let mut test_values = setup_test_manager_with_iface_and_fake_time();
-        let request = fidl_wlanix::SchedScanRequest::default();
+        let request = fidl_common::ScheduledScanRequest::default();
 
         let mut scan_fut = test_values.iface.start_sched_scan(request, true); // initial_charging_status = true
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
@@ -2433,11 +2433,11 @@ mod tests {
     fn test_start_sched_scan_rssi_too_low() {
         let mut test_values = setup_test_manager_with_iface_and_fake_time();
         let ssid = b"TestSSID";
-        let request = fidl_wlanix::SchedScanRequest {
+        let request = fidl_common::ScheduledScanRequest {
             ssids: Some(vec![]),
-            match_sets: Some(vec![fidl_wlanix::SchedScanMatchSet {
+            match_sets: Some(vec![fidl_common::ScheduledScanMatchSet {
                 ssid: Some(ssid.to_vec()),
-                rssi_threshold: Some(-72),
+                min_rssi_threshold: Some(-72),
                 ..Default::default()
             }]),
             ..Default::default()
@@ -2493,7 +2493,7 @@ mod tests {
     #[test]
     fn test_start_sched_scan_empty_match_sets() {
         let mut test_values = setup_test_manager_with_iface();
-        let request = fidl_wlanix::SchedScanRequest {
+        let request = fidl_common::ScheduledScanRequest {
             ssids: Some(vec![]),
             match_sets: Some(vec![]),
             ..Default::default()
@@ -2524,7 +2524,7 @@ mod tests {
     #[test]
     fn test_start_sched_scan_cancelled() {
         let mut test_values = setup_test_manager_with_iface();
-        let request = fidl_wlanix::SchedScanRequest::default();
+        let request = fidl_common::ScheduledScanRequest::default();
         let mut scan_fut = test_values.iface.start_sched_scan(request, true);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
@@ -2543,7 +2543,7 @@ mod tests {
     #[test]
     fn test_start_sched_scan_stop_signal() {
         let mut test_values = setup_test_manager_with_iface();
-        let request = fidl_wlanix::SchedScanRequest::default();
+        let request = fidl_common::ScheduledScanRequest::default();
 
         let mut scan_fut = test_values.iface.start_sched_scan(request, true);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);

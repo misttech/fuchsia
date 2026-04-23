@@ -7,6 +7,7 @@ use crate::security::wep::WepKeys;
 use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_power_system as fsystem;
+use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_device_service as fidl_device_service;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_internal as fidl_internal;
@@ -1921,32 +1922,56 @@ async fn handle_nl80211_message<I: IfaceManager>(
 
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
                 Ok((client_iface, iface_id)) => {
-                    let mut ssids = vec![];
-                    let mut match_sets = vec![];
-                    let mut frequencies = vec![];
-                    let mut plans = vec![];
+                    let mut request = fidl_common::ScheduledScanRequest::default();
                     let mut default_interval = None;
-                    let mut ie = None;
-                    let mut top_level_relative_rssi = None;
-                    let mut top_level_rssi_adjust = None;
-                    let mut sched_scan_delay = None;
-                    let mut sched_scan_multi = None;
 
                     for attr in &message.payload.attrs {
                         match attr {
                             Nl80211Attr::ScanSsids(s) => {
                                 for ssid_bytes in s {
-                                    if !ssid_bytes.is_empty() {
-                                        ssids.push(ssid_bytes.clone());
-                                    }
+                                    request
+                                        .ssids
+                                        .get_or_insert_with(Vec::new)
+                                        .push(ssid_bytes.clone());
                                 }
                             }
+                            Nl80211Attr::SchedScanPlans(plans) => {
+                                let mut parsed_plans = Vec::new();
+                                for plan in plans {
+                                    let mut interval = None;
+                                    let mut iterations = None;
+                                    for plan_attr in plan {
+                                        match plan_attr {
+                                            Nl80211SchedScanPlanAttr::Interval(i) => {
+                                                interval = Some(*i);
+                                            }
+                                            Nl80211SchedScanPlanAttr::Iterations(i) => {
+                                                iterations = Some(*i);
+                                            }
+                                        }
+                                    }
+                                    if let (Some(interval), Some(iterations)) =
+                                        (interval, iterations)
+                                    {
+                                        parsed_plans.push(fidl_common::ScheduledScanPlan {
+                                            interval,
+                                            iterations,
+                                        });
+                                    } else {
+                                        warn!(
+                                            "Scan plan attribute is missing interval or iterations, ignoring."
+                                        );
+                                    }
+                                }
+                                request.scan_plans = Some(parsed_plans);
+                            }
                             Nl80211Attr::ScanFrequencies(f) => {
-                                frequencies = f.clone();
+                                request.frequencies = Some(f.clone());
                             }
                             Nl80211Attr::SchedScanMatch(matches) => {
                                 for match_set_attrs in matches {
-                                    let mut match_set = fidl_wlanix::SchedScanMatchSet::default();
+                                    let mut match_set =
+                                        fidl_common::ScheduledScanMatchSet::default();
                                     for match_attr in match_set_attrs {
                                         match match_attr {
                                             Nl80211SchedScanMatchAttr::Ssid(ssid_bytes)
@@ -1955,87 +1980,91 @@ async fn handle_nl80211_message<I: IfaceManager>(
                                                 match_set.ssid = Some(ssid_bytes.clone());
                                             }
                                             Nl80211SchedScanMatchAttr::Rssi(val) => {
-                                                match_set.rssi_threshold = Some(i8::try_from(*val).unwrap_or_else(|_| {
+                                                match_set.min_rssi_threshold = Some(i8::try_from(*val).unwrap_or_else(|_| {
                                                     let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
                                                     warn!("RSSI threshold {} unexpectedly out of range, clamping to {}", val, clamped);
                                                     clamped
                                                 }));
                                             }
                                             Nl80211SchedScanMatchAttr::RelativeRssi(val) => {
-                                                match_set.relative_rssi = Some(i8::try_from(*val).unwrap_or_else(|_| {
+                                                match_set.relative_rssi_threshold = Some(i8::try_from(*val).unwrap_or_else(|_| {
                                                     let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
-                                                    warn!("Relative RSSI {} unexpectedly out of range, clamping to {}", val, clamped);
+                                                    warn!("Relative RSSI threshold {} unexpectedly out of range, clamping to {}", val, clamped);
                                                     clamped
                                                 }));
                                             }
                                             Nl80211SchedScanMatchAttr::RssiAdjust(val) => {
-                                                match_set.rssi_adjust = Some(i8::try_from(*val).unwrap_or_else(|_| {
-                                                    let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
-                                                    warn!("RSSI adjust {} unexpectedly out of range, clamping to {}", val, clamped);
-                                                    clamped
-                                                }));
+                                                let bytes = val.to_ne_bytes();
+                                                let band = bytes[0];
+                                                let rssi_adjustment = bytes[1] as i8;
+                                                let wlan_band = match band {
+                                                    0 => Some(fidl_ieee80211::WlanBand::TwoGhz),
+                                                    1 => Some(fidl_ieee80211::WlanBand::FiveGhz),
+                                                    _ => {
+                                                        debug!(
+                                                            "Unsupported band {} in RssiAdjust, ignoring attribute",
+                                                            band
+                                                        );
+                                                        None
+                                                    }
+                                                };
+                                                if let Some(band) = wlan_band {
+                                                    match_set
+                                                        .band_rssi_adjustments
+                                                        .get_or_insert_with(Vec::new)
+                                                        .push(fidl_common::BandRssiAdjustment {
+                                                            band,
+                                                            rssi_adjustment,
+                                                        });
+                                                }
                                             }
                                             _ => {
-                                                warn!(
-                                                    "Unhandled SchedScanMatchAttr: {:?}",
+                                                debug!(
+                                                    "Unsupported SchedScanMatchAttr: {:?}",
                                                     match_attr
                                                 );
                                             }
                                         }
                                     }
-                                    match_sets.push(match_set);
-                                }
-                            }
-                            Nl80211Attr::SchedScanPlans(p) => {
-                                for plan_attrs in p {
-                                    let mut interval_ms = 0;
-                                    let mut iterations = 0;
-                                    for plan_attr in plan_attrs {
-                                        match plan_attr {
-                                            Nl80211SchedScanPlanAttr::Interval(val) => {
-                                                interval_ms = *val;
-                                            }
-                                            Nl80211SchedScanPlanAttr::Iterations(val) => {
-                                                iterations = *val;
-                                            }
-                                        }
-                                    }
-                                    if interval_ms == 0 {
-                                        warn!("Skipping SchedScanPlan with interval_ms = 0");
-                                        continue;
-                                    }
-                                    plans.push(fidl_wlanix::SchedScanPlan {
-                                        interval_ms,
-                                        iterations,
-                                    });
+                                    request.match_sets.get_or_insert_with(Vec::new).push(match_set);
                                 }
                             }
                             Nl80211Attr::SchedScanInterval(interval) => {
-                                default_interval = Some(*interval);
-                            }
-                            Nl80211Attr::IfaceIndex(_) => {}
-                            Nl80211Attr::Ie(val) => {
-                                ie = Some(val.clone());
+                                // Unlike the interval provided in scheduled scan plans, this value
+                                // is provided in milliseconds.
+                                default_interval = Some(*interval / 1000);
                             }
                             Nl80211Attr::RelativeRssi(val) => {
-                                top_level_relative_rssi = Some(i8::try_from(*val).unwrap_or_else(|_| {
+                                request.relative_rssi_threshold = Some(i8::try_from(*val).unwrap_or_else(|_| {
                                     let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
-                                    warn!("Top-level relative RSSI {} unexpectedly out of range, clamping to {}", val, clamped);
+                                    warn!("Relative RSSI threshold {} unexpectedly out of range, clamping to {}", val, clamped);
                                     clamped
                                 }));
                             }
                             Nl80211Attr::RssiAdjust(val) => {
-                                top_level_rssi_adjust = Some(i8::try_from(*val).unwrap_or_else(|_| {
-                                    let clamped = (*val).clamp(i8::MIN.into(), i8::MAX.into()) as i8;
-                                    warn!("Top-level RSSI adjust {} unexpectedly out of range, clamping to {}", val, clamped);
-                                    clamped
-                                }));
-                            }
-                            Nl80211Attr::SchedScanDelay(val) => {
-                                sched_scan_delay = Some(*val);
-                            }
-                            Nl80211Attr::SchedScanMulti(val) => {
-                                sched_scan_multi = Some(*val);
+                                let bytes = val.to_ne_bytes();
+                                let band = bytes[0];
+                                let rssi_adjustment = bytes[1] as i8;
+                                let wlan_band = match band {
+                                    0 => Some(fidl_ieee80211::WlanBand::TwoGhz),
+                                    1 => Some(fidl_ieee80211::WlanBand::FiveGhz),
+                                    _ => {
+                                        debug!(
+                                            "Unsupported band {} in RssiAdjust, ignoring attribute",
+                                            band
+                                        );
+                                        None
+                                    }
+                                };
+                                if let Some(band) = wlan_band {
+                                    request
+                                        .band_rssi_adjustments
+                                        .get_or_insert_with(Vec::new)
+                                        .push(fidl_common::BandRssiAdjustment {
+                                            band,
+                                            rssi_adjustment,
+                                        });
+                                }
                             }
                             _ => {
                                 warn!("Unhandled SchedScanAttr: {:?}", attr);
@@ -2043,19 +2072,17 @@ async fn handle_nl80211_message<I: IfaceManager>(
                         }
                     }
 
+                    // Treat a top-level interval attribute as an indefinite scan plan if no plans were provided.
                     if let Some(interval) = default_interval {
-                        // If a top-level interval was provided, add it as the final scan plan, to
-                        // run until scan plans are terminated. Doing so simplifies the wlanix API
-                        // surface by not requiring a separate interval field.
-                        plans.push(fidl_wlanix::SchedScanPlan {
-                            interval_ms: interval,
-                            iterations: 0,
-                        });
+                        request
+                            .scan_plans
+                            .get_or_insert_with(Vec::new)
+                            .push(fidl_common::ScheduledScanPlan { interval, iterations: 0 });
                     }
 
-                    if plans.is_empty() {
+                    if request.scan_plans.as_ref().is_none_or(|p| p.is_empty()) {
                         warn!(
-                            "Received StartSchedScan without any scan plans or top-level interval. Ignoring."
+                            "Received scheduled scan request without any scan plans or interval. Ignoring."
                         );
                         responder
                             .take()
@@ -2068,19 +2095,6 @@ async fn handle_nl80211_message<I: IfaceManager>(
                         .take()
                         .send(Ok(vec![build_nl80211_ack()]))
                         .context("Failed to ack StartSchedScan")?;
-
-                    let request = fidl_wlanix::SchedScanRequest {
-                        ssids: Some(ssids),
-                        match_sets: Some(match_sets),
-                        frequencies: Some(frequencies),
-                        scan_plans: Some(plans),
-                        ie,
-                        sched_scan_multi,
-                        sched_scan_delay,
-                        relative_rssi: top_level_relative_rssi,
-                        rssi_adjust: top_level_rssi_adjust,
-                        ..Default::default()
-                    };
 
                     let initial_charging = state.lock().is_charging.unwrap_or(false);
                     match client_iface.start_sched_scan(request, initial_charging).await {
@@ -5120,21 +5134,21 @@ mod tests {
             Nl80211Cmd::StartSchedScan,
             vec![
                 Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into()),
-                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec()]),
+                Nl80211Attr::ScanSsids(vec![b"TestSSID".to_vec(), b"".to_vec()]),
                 Nl80211Attr::SchedScanMatch(vec![vec![
                     Nl80211SchedScanMatchAttr::Ssid(b"TestMatchSSID".to_vec()),
                     Nl80211SchedScanMatchAttr::Rssi(-50),
                     Nl80211SchedScanMatchAttr::RelativeRssi(10),
-                    Nl80211SchedScanMatchAttr::RssiAdjust(20),
+                    Nl80211SchedScanMatchAttr::RssiAdjust(5120), // band: 0 (2GHz), delta: 20
                 ]]),
                 Nl80211Attr::Ie(vec![1, 2, 3]),
                 Nl80211Attr::RelativeRssi(5),
-                Nl80211Attr::RssiAdjust(15),
+                Nl80211Attr::RssiAdjust(62977), // band: 1 (5GHz), delta: -10
                 Nl80211Attr::SchedScanDelay(30),
                 Nl80211Attr::SchedScanMulti(true),
-                Nl80211Attr::SchedScanInterval(40),
+                Nl80211Attr::SchedScanInterval(40000), // 40 seconds
                 Nl80211Attr::SchedScanPlans(vec![vec![
-                    Nl80211SchedScanPlanAttr::Interval(20),
+                    Nl80211SchedScanPlanAttr::Interval(20), // 20 seconds
                     Nl80211SchedScanPlanAttr::Iterations(5),
                 ]]),
             ],
@@ -5154,28 +5168,37 @@ mod tests {
         let request =
             assert_matches!(&calls[0], ClientIfaceCall::StartSchedScan { _request } => _request);
 
-        assert_eq!(request.ssids.as_ref().unwrap().len(), 1);
+        assert_eq!(request.ssids.as_ref().unwrap().len(), 2);
         assert_eq!(request.ssids.as_ref().unwrap()[0], b"TestSSID".to_vec());
+        assert_eq!(request.ssids.as_ref().unwrap()[1], b"".to_vec());
 
         assert_eq!(request.match_sets.as_ref().unwrap().len(), 1);
         assert_eq!(request.match_sets.as_ref().unwrap()[0].ssid, Some(b"TestMatchSSID".to_vec()));
-        assert_eq!(request.match_sets.as_ref().unwrap()[0].rssi_threshold, Some(-50));
-        assert_eq!(request.match_sets.as_ref().unwrap()[0].relative_rssi, Some(10));
-        assert_eq!(request.match_sets.as_ref().unwrap()[0].rssi_adjust, Some(20));
+        assert_eq!(request.match_sets.as_ref().unwrap()[0].min_rssi_threshold, Some(-50));
+        assert_eq!(request.match_sets.as_ref().unwrap()[0].relative_rssi_threshold, Some(10));
+        assert_eq!(
+            request.match_sets.as_ref().unwrap()[0].band_rssi_adjustments,
+            Some(vec![fidl_common::BandRssiAdjustment {
+                band: fidl_ieee80211::WlanBand::TwoGhz,
+                rssi_adjustment: 20
+            }])
+        );
 
         let scan_plans = request.scan_plans.as_ref().unwrap();
         assert_eq!(scan_plans.len(), 2);
-        assert_eq!(scan_plans[0].interval_ms, 20);
+        assert_eq!(scan_plans[0].interval, 20);
         assert_eq!(scan_plans[0].iterations, 5);
-        // Scan plan added for the top-level interval param
-        assert_eq!(scan_plans[1].interval_ms, 40);
+        assert_eq!(scan_plans[1].interval, 40);
         assert_eq!(scan_plans[1].iterations, 0);
 
-        assert_eq!(request.ie, Some(vec![1, 2, 3]));
-        assert_eq!(request.sched_scan_multi, Some(true));
-        assert_eq!(request.sched_scan_delay, Some(30));
-        assert_eq!(request.relative_rssi, Some(5));
-        assert_eq!(request.rssi_adjust, Some(15));
+        assert_eq!(request.relative_rssi_threshold, Some(5));
+        assert_eq!(
+            request.band_rssi_adjustments,
+            Some(vec![fidl_common::BandRssiAdjustment {
+                band: fidl_ieee80211::WlanBand::FiveGhz,
+                rssi_adjustment: -10
+            }])
+        );
     }
 
     #[fuchsia::test]

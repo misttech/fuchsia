@@ -12,4 +12,5 @@ fidl_library(
     ],
     enable_hlcpp = True,
     visibility = ["//visibility:public"],
+    deps = [],
 )
