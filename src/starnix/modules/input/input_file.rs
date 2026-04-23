@@ -91,51 +91,54 @@ impl InputFileStatus {
             fd_notify_count: AtomicU64::new(0),
         });
 
-        let weak_status = Arc::downgrade(&status);
+        let cloned_status = status.clone();
         node.record_lazy_values("status", move || {
-            let status = weak_status.upgrade();
+            let cloned_cloned_status = cloned_status.clone();
             async move {
                 let inspector = Inspector::default();
-                if let Some(status) = status {
-                    let root = inspector.root();
-                    root.record_uint("fd_read_count", status.fd_read_count.load(Ordering::Relaxed));
-                    root.record_uint(
-                        "fd_notify_count",
-                        status.fd_notify_count.load(Ordering::Relaxed),
-                    );
-                    root.record_uint(
-                        "fidl_events_received_count",
-                        status.fidl_events_received_count.load(Ordering::Relaxed),
-                    );
-                    root.record_uint(
-                        "fidl_events_ignored_count",
-                        status.fidl_events_ignored_count.load(Ordering::Relaxed),
-                    );
-                    root.record_uint(
-                        "fidl_events_unexpected_count",
-                        status.fidl_events_unexpected_count.load(Ordering::Relaxed),
-                    );
-                    root.record_uint(
-                        "fidl_events_converted_count",
-                        status.fidl_events_converted_count.load(Ordering::Relaxed),
-                    );
-                    root.record_uint(
-                        "uapi_events_generated_count",
-                        status.uapi_events_generated_count.load(Ordering::Relaxed),
-                    );
-                    root.record_int(
-                        "last_generated_uapi_event_timestamp_ns",
-                        status.last_generated_uapi_event_timestamp_ns.load(Ordering::Relaxed),
-                    );
-                    root.record_uint(
-                        "uapi_events_read_count",
-                        status.uapi_events_read_count.load(Ordering::Relaxed),
-                    );
-                    root.record_int(
-                        "last_read_uapi_event_timestamp_ns",
-                        status.last_read_uapi_event_timestamp_ns.load(Ordering::Relaxed),
-                    );
-                }
+                let root = inspector.root();
+                root.record_uint(
+                    "fd_read_count",
+                    cloned_cloned_status.fd_read_count.load(Ordering::Relaxed),
+                );
+                root.record_uint(
+                    "fd_notify_count",
+                    cloned_cloned_status.fd_notify_count.load(Ordering::Relaxed),
+                );
+                root.record_uint(
+                    "fidl_events_received_count",
+                    cloned_cloned_status.fidl_events_received_count.load(Ordering::Relaxed),
+                );
+                root.record_uint(
+                    "fidl_events_ignored_count",
+                    cloned_cloned_status.fidl_events_ignored_count.load(Ordering::Relaxed),
+                );
+                root.record_uint(
+                    "fidl_events_unexpected_count",
+                    cloned_cloned_status.fidl_events_unexpected_count.load(Ordering::Relaxed),
+                );
+                root.record_uint(
+                    "fidl_events_converted_count",
+                    cloned_cloned_status.fidl_events_converted_count.load(Ordering::Relaxed),
+                );
+                root.record_uint(
+                    "uapi_events_generated_count",
+                    cloned_cloned_status.uapi_events_generated_count.load(Ordering::Relaxed),
+                );
+                root.record_int(
+                    "last_generated_uapi_event_timestamp_ns",
+                    cloned_cloned_status
+                        .last_generated_uapi_event_timestamp_ns
+                        .load(Ordering::Relaxed),
+                );
+                root.record_uint(
+                    "uapi_events_read_count",
+                    cloned_cloned_status.uapi_events_read_count.load(Ordering::Relaxed),
+                );
+                root.record_int(
+                    "last_read_uapi_event_timestamp_ns",
+                    cloned_cloned_status.last_read_uapi_event_timestamp_ns.load(Ordering::Relaxed),
+                );
                 Ok(inspector)
             }
             .boxed()
