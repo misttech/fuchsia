@@ -177,7 +177,7 @@ fn compute_transport_checksum_serialize<A: IpAddress>(
     src_ip: A,
     dst_ip: A,
     proto: u8,
-    target: &mut SerializeTarget<'_>,
+    target: &SerializeTarget<'_>,
     body: FragmentedBytesMut<'_, '_>,
 ) -> Option<[u8; 2]> {
     // See for details:
