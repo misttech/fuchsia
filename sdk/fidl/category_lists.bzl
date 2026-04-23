@@ -49,6 +49,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_idk",
     "//sdk/fidl/fuchsia.diagnostics.system:fuchsia.diagnostics.system_idk",
     "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_idk",
+    "//sdk/fidl/fuchsia.element:fuchsia.element_idk",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
     "//sdk/fidl/fuchsia.fonts:fuchsia.fonts_idk",
     "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_idk",
@@ -79,6 +80,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_idk",
     "//sdk/fidl/fuchsia.process:fuchsia.process_idk",
     "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_idk",
+    "//sdk/fidl/fuchsia.session:fuchsia.session_idk",
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_idk",
     "//sdk/fidl/fuchsia.settings.policy:fuchsia.settings.policy_idk",
     "//sdk/fidl/fuchsia.storage.blobfs:fuchsia.storage.blobfs_idk",
@@ -158,6 +160,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
 PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_idk",
+    "//sdk/fidl/fuchsia.posix:fuchsia.posix_idk",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_idk",
 ]
 
@@ -167,6 +170,7 @@ HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_idk",
     "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_idk",
+    "//sdk/fidl/fuchsia.starnix.container:fuchsia.starnix.container_idk",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_idk",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_idk",
 ]
