@@ -12,9 +12,13 @@ rustc_library("sorted_vec_map_rs") {
   sources = [
     "src/lib.rs",
     "src/sorted_vec_map.rs",
+    "src/sorted_vec_set.rs",
   ]
   deps = [ "//third_party/rust_crates:serde" ]
-  test_deps = [ "//third_party/rust_crates:bincode" ]
+  test_deps = [
+    "//third_party/rust_crates:bincode",
+    "//third_party/rust_crates:test-case",
+  ]
 }
 
 fuchsia_unittest_package("sorted_vec_map_rs_tests") {

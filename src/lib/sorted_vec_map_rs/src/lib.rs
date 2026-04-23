@@ -4,3 +4,6 @@
 
 pub mod sorted_vec_map;
 pub use sorted_vec_map::SortedVecMap;
+
+pub mod sorted_vec_set;
+pub use sorted_vec_set::SortedVecSet;
