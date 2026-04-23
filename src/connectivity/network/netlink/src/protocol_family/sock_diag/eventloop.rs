@@ -107,95 +107,108 @@ impl<S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>>
         let Self { socket_diagnostics, socket_control, request_stream, async_work_receiver: _ } =
             self;
 
-        let mut request = request_stream.next().await.expect("request stream cannot end");
+        let request = request_stream.next().await.expect("request stream cannot end");
 
-        match request.args {
-            RequestArgs::Get(matchers, extensions, is_dump) => {
-                log_debug!(
-                    "Calling iterate_ip with matchers: {:?}, extensions: {:?}, is_dump: {}",
-                    matchers,
-                    extensions,
-                    is_dump
-                );
+        handle_request(socket_diagnostics, socket_control, request).await;
+    }
+}
 
-                let stream =
-                    match fnet_sockets_ext::iterate_ip(socket_diagnostics, extensions, matchers)
-                        .await
-                    {
-                        Ok(stream) => stream,
-                        Err(e) => {
-                            log_error!("iterate_ip error: {e:?}");
-                            request
-                                .completer
-                                .send(Err(RequestError::Internal))
-                                .expect("receiving end of completer should not be dropped");
-                            return;
+async fn handle_request<S>(
+    socket_diagnostics: &mut fidl_fuchsia_net_sockets::DiagnosticsProxy,
+    socket_control: &mut fidl_fuchsia_net_sockets::ControlProxy,
+    mut request: Request<S>,
+) where
+    S: crate::messaging::Sender<<NetlinkSockDiag as ProtocolFamily>::Response>,
+{
+    match request.args {
+        RequestArgs::Get(matchers, extensions, is_dump) => {
+            log_debug!(
+                "Calling iterate_ip with matchers: {:?}, extensions: {:?}, is_dump: {}",
+                matchers,
+                extensions,
+                is_dump
+            );
+
+            let stream = match fnet_sockets_ext::iterate_ip(
+                socket_diagnostics,
+                extensions,
+                matchers,
+            )
+            .await
+            {
+                Ok(stream) => stream,
+                Err(e) => {
+                    log_error!("iterate_ip error: {e:?}");
+                    request
+                        .completer
+                        .send(Err(RequestError::Internal))
+                        .expect("receiving end of completer should not be dropped");
+                    return;
+                }
+            };
+
+            pin_mut!(stream);
+
+            let mut found = false;
+            while let Some(socket) = stream.next().await {
+                match socket {
+                    Ok(socket) => {
+                        found = true;
+
+                        let mut msg: NetlinkMessage<SockDiagResponse> =
+                            ip_socket_to_netlink_response(socket).into();
+                        msg.header.sequence_number = request.sequence_number;
+                        if is_dump {
+                            msg.header.flags |= NLM_F_MULTIPART;
                         }
-                    };
+                        msg.finalize();
+                        request.client.send_unicast(msg);
 
-                pin_mut!(stream);
-
-                let mut found = false;
-                while let Some(socket) = stream.next().await {
-                    match socket {
-                        Ok(socket) => {
-                            found = true;
-
-                            let mut msg: NetlinkMessage<SockDiagResponse> =
-                                ip_socket_to_netlink_response(socket).into();
-                            msg.header.sequence_number = request.sequence_number;
-                            if is_dump {
-                                msg.header.flags |= NLM_F_MULTIPART;
-                            }
-                            msg.finalize();
-                            request.client.send_unicast(msg);
-
-                            // Non-dump requests on Linux return only the
-                            // first socket, even if more would match (e.g.
-                            // SO_REUSEPORT with a wildcard cookie).
-                            if !is_dump {
-                                break;
-                            }
+                        // Non-dump requests on Linux return only the
+                        // first socket, even if more would match (e.g.
+                        // SO_REUSEPORT with a wildcard cookie).
+                        if !is_dump {
+                            break;
                         }
+                    }
 
-                        Err(e) => {
-                            log_error!("socket stream error: {e:?}");
-                            request
-                                .completer
-                                .send(Err(RequestError::Internal))
-                                .expect("receiving end of completer should not be dropped");
-                            return;
-                        }
+                    Err(e) => {
+                        log_error!("socket stream error: {e:?}");
+                        request
+                            .completer
+                            .send(Err(RequestError::Internal))
+                            .expect("receiving end of completer should not be dropped");
+                        return;
                     }
                 }
-
-                let result = if !is_dump && !found { Err(RequestError::NotFound) } else { Ok(()) };
-
-                request
-                    .completer
-                    .send(result)
-                    .expect("receiving end of completer should not be dropped");
             }
-            RequestArgs::Destroy(matchers) => {
-                log_debug!("Calling disconnect_ip with matchers: {:?}", matchers);
-                let result = match fnet_sockets_ext::disconnect_ip(socket_control, matchers).await {
-                    Ok(disconnected) => {
-                        if disconnected > 0 {
-                            Ok(())
-                        } else {
-                            Err(RequestError::NotFound)
-                        }
+
+            let result = if !is_dump && !found { Err(RequestError::NotFound) } else { Ok(()) };
+
+            request
+                .completer
+                .send(result)
+                .expect("receiving end of completer should not be dropped");
+        }
+        RequestArgs::Destroy(matchers) => {
+            log_debug!("Calling disconnect_ip with matchers: {:?}", matchers);
+            let result = match fnet_sockets_ext::disconnect_ip(socket_control, matchers).await {
+                Ok(disconnected) => {
+                    if disconnected > 0 {
+                        Ok(())
+                    } else {
+                        Err(RequestError::NotFound)
                     }
-                    Err(e) => {
-                        log_error!("disconnect_ip error: {e:?}");
-                        Err(RequestError::Internal)
-                    }
-                };
-                request
-                    .completer
-                    .send(result)
-                    .expect("receiving end of completer should not be dropped");
-            }
+                }
+                Err(e) => {
+                    log_error!("disconnect_ip error: {e:?}");
+                    Err(RequestError::Internal)
+                }
+            };
+            request
+                .completer
+                .send(result)
+                .expect("receiving end of completer should not be dropped");
         }
     }
 }
