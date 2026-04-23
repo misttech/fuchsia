@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
@@ -152,7 +153,7 @@ func (f *legacyFfxCmdBuilder) isStrict() bool {
 // etc.
 type strictFfxCmdBuilder struct {
 	outputFile string
-	configs    map[string]any
+	configs    sync.Map
 }
 
 func newStrictFfxCmdBuilder(outputFile string) *strictFfxCmdBuilder {
@@ -181,13 +182,14 @@ func (b *strictFfxCmdBuilder) commandWithConfigs(ffxPath string, args []string, 
 	// TODO(slgrady): Eventually use the specific configs required for
 	// particular commands. Unfortunately that information is not
 	// available from ffx yet.
-	for k, v := range b.configs {
+	b.configs.Range(func(k, v any) bool {
+		key := k.(string)
 		// The caller may have already provided the config
-		if _, exists := configs[k]; !exists {
-			cmd = append(cmd, "-c", fmt.Sprintf("%s=%v", k, v))
+		if _, exists := configs[key]; !exists {
+			cmd = append(cmd, "-c", fmt.Sprintf("%s=%v", key, v))
 		}
-
-	}
+		return true
+	})
 
 	for k, v := range configs {
 		cmd = append(cmd, "-c", fmt.Sprintf("%s=%v", k, v))
@@ -211,16 +213,24 @@ func (b *strictFfxCmdBuilder) setConfigMap(user, global map[string]any) error {
 	// TODO(slgrady): remove this code once we remove non-strict ffx invocations.
 	delete(global, "daemon.autostart")
 	delete(global, "ffx.isolated")
-	b.configs = global
+
+	for k, v := range global {
+		b.configs.Store(k, v)
+	}
 	return nil
 }
 
 func (b *strictFfxCmdBuilder) getConfigMap() map[string]any {
-	return b.configs
+	m := make(map[string]any)
+	b.configs.Range(func(k, v any) bool {
+		m[k.(string)] = v
+		return true
+	})
+	return m
 }
 
 func (b *strictFfxCmdBuilder) setConfig(key, val string) {
-	b.configs[key] = val
+	b.configs.Store(key, val)
 }
 
 func (b *strictFfxCmdBuilder) env() []string {
