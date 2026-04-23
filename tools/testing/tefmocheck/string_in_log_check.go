@@ -534,20 +534,23 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		// For https://fxbug.dev/486245491
 		// LINT.IfChange(no_response_tefmo)
 		&stringInLogCheck{
-			String:             "No response to AfterResume  from SuspendBlocker 'schg-wake'",
-			Type:               serialLogType,
-			SkipAllPassedTests: true,
+			String:                "No response to AfterResume  from SuspendBlocker 'schg-wake'",
+			Type:                  serialLogType,
+			SkipAllPassedTests:    true,
+			emitSyntheticTestCase: true,
 		},
 		// For other suspend blocker timeouts.
 		&stringInLogCheck{
-			String:             "No response to AfterResume",
-			Type:               serialLogType,
-			SkipAllPassedTests: true,
+			String:                "No response to AfterResume",
+			Type:                  serialLogType,
+			SkipAllPassedTests:    true,
+			emitSyntheticTestCase: true,
 		},
 		&stringInLogCheck{
-			String:             "No response to BeforeSuspend",
-			Type:               serialLogType,
-			SkipAllPassedTests: true,
+			String:                "No response to BeforeSuspend",
+			Type:                  serialLogType,
+			SkipAllPassedTests:    true,
+			emitSyntheticTestCase: true,
 		},
 		// LINT.ThenChange(//src/power/system-activity-governor/src/system_activity_governor.rs:no_response_tefmo)
 		// No particular bug, a generic capture for crashes in system_server.
