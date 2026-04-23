@@ -58,6 +58,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_idk",
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_idk",
     "//sdk/fidl/fuchsia.hardware.clockimpl:fuchsia.hardware.clockimpl_idk",
+    "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_idk",
     "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_idk",
     "//sdk/fidl/fuchsia.images:fuchsia.images_idk",
     "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
@@ -78,6 +79,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_idk",
     "//sdk/fidl/fuchsia.net:fuchsia.net_idk",
     "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_idk",
+    "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_idk",
     "//sdk/fidl/fuchsia.process:fuchsia.process_idk",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_idk",
     "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_idk",
@@ -153,6 +155,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_idk",
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_idk",
     "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_idk",
+    "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers_idk",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_idk",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_idk",
     "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_idk",
@@ -164,6 +167,8 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
 PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_idk",
+    "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_idk",
+    "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_idk",
     "//sdk/fidl/fuchsia.posix:fuchsia.posix_idk",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_idk",
 ]
