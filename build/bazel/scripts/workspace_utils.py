@@ -1275,18 +1275,15 @@ class BazelrcFromGnConfigGenerator(object):
                 if platform.startswith("fuchsia")
                 else "host_config_args"
             )
-            platform_base = (
-                "fuchsia" if platform.startswith("fuchsia") else "host"
-            )
 
             if platform in ("fuchsia", "fuchsia_platform"):
                 # As a special case, make "--config=fuchsia" and "--config=fuchsia_platform"
                 # the same as "--config=fuchsia_${target_cpu}" and
                 # "--config=fuchsia_platform_${target_cpu}", respectively.
+                platform_base = "fuchsia"
                 values = config_values[platform_base]
-                current_os = values["current_os"]
                 current_cpu = values["current_cpu"]
-                platform_name = f"{current_os}_{current_cpu}"
+                platform_name = f"{platform}_{current_cpu}"
             else:
                 platform_name = platform
             output += f"common:{platform} --config={config_args_name} --platforms=//build/bazel/platforms:{platform_name}\n"
