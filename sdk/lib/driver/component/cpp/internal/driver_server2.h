@@ -67,11 +67,6 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     async::PostTask(fdf_dispatcher_get_async_dispatcher(dispatcher_),
                     [this, context = std::move(context),
                      inner_completer = std::move(start_completer)]() mutable {
-                      zx::result<> result = driver_->RunInitMethods(context);
-                      if (result.is_error()) {
-                        inner_completer(result.take_error());
-                        return;
-                      }
                       driver_->Start(std::move(context), std::move(inner_completer));
                     });
   }

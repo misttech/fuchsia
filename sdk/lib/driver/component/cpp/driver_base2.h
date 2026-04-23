@@ -237,18 +237,7 @@ class DriverBase2 {
       fit::callback<zx::result<>(async_dispatcher_t*, Namespace&, std::string_view)>;
 
   // Callbacks that are invoked prior to the start hook.
-  void RegisterInitMethods(InitMethodCallback cb) { init_methods_.push_back(std::move(cb)); }
-
-  // Runs methods registered. Meant to be invoked prior to the start hook.
-  zx::result<> RunInitMethods(DriverContext& context) {
-    for (auto& method : init_methods_) {
-      zx::result result = method(dispatcher(), context.incoming(), name());
-      if (result.is_error()) {
-        return result.take_error();
-      }
-    }
-    return zx::ok();
-  }
+  void RegisterInitMethods(InitMethodCallback cb) {}
 
   // The destructor is called right after the |Stop| method.
   virtual ~DriverBase2();
@@ -355,7 +344,6 @@ class DriverBase2 {
   fidl::ClientEnd<fuchsia_driver_framework::Node> node_;
   std::shared_ptr<OutgoingDirectory> outgoing_;
   fdf::UnownedSynchronizedDispatcher driver_dispatcher_;
-  std::vector<InitMethodCallback> init_methods_;
 };
 
 }  // namespace fdf

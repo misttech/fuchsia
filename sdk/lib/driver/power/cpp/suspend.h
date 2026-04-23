@@ -69,7 +69,7 @@ class Suspendable {
 
   explicit Suspendable() : server_(this) {
     static_cast<Driver*>(this)->RegisterInitMethods(
-        fit::bind_member(this, &Suspendable::RegisterSuspendHooks));
+        fit::bind_member(this, &Suspendable::InitializeSuspend));
   }
 
   // Returns true if:
@@ -81,6 +81,31 @@ class Suspendable {
   bool SuspendActive() { return binding_.index() != 0; }
 
   virtual ~Suspendable() = default;
+
+  zx::result<> InitializeSuspend(async_dispatcher_t* dispatcher, fdf::Namespace& incoming,
+                                 std::string_view name) {
+    if (!SuspendEnabled()) {
+      return zx::ok();
+    }
+
+    std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> runner =
+        static_cast<Driver*>(this)->take_power_element_runner();
+    if (runner.has_value()) {
+      binding_.emplace<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>(
+          dispatcher, std::move(runner.value()), &server_, fidl::kIgnoreBindingClosure);
+      return zx::ok();
+    }
+
+    zx::result server_end = internal::RegisterSuspendHooks(incoming, name);
+    if (server_end.is_error()) {
+      return server_end.take_error();
+    }
+
+    binding_.emplace<fidl::ServerBinding<fuchsia_power_system::SuspendBlocker>>(
+        dispatcher, std::move(server_end.value()), &server_, fidl::kIgnoreBindingClosure);
+
+    return zx::ok();
+  }
 
  private:
   class Server : public fidl::Server<fuchsia_power_system::SuspendBlocker>,
@@ -144,30 +169,6 @@ class Suspendable {
   //      levels 0 and 1 to drive calls to `BeforeSuspend` and `AfterResume`, respectively.
   //   3) If neither (1) nor (2), it registers a `fuchsia.power.system/SuspendBlocker` with the
   //      `ActivityGovernor` protocol.
-  zx::result<> RegisterSuspendHooks(async_dispatcher_t* dispatcher, fdf::Namespace& incoming,
-                                    std::string_view name) {
-    if (!SuspendEnabled()) {
-      return zx::ok();
-    }
-
-    std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> runner =
-        static_cast<Driver*>(this)->take_power_element_runner();
-    if (runner.has_value()) {
-      binding_.emplace<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>(
-          dispatcher, std::move(runner.value()), &server_, fidl::kIgnoreBindingClosure);
-      return zx::ok();
-    }
-
-    zx::result server_end = internal::RegisterSuspendHooks(incoming, name);
-    if (server_end.is_error()) {
-      return server_end.take_error();
-    }
-
-    binding_.emplace<fidl::ServerBinding<fuchsia_power_system::SuspendBlocker>>(
-        dispatcher, std::move(server_end.value()), &server_, fidl::kIgnoreBindingClosure);
-
-    return zx::ok();
-  }
 
   Server server_;
   std::variant<std::monostate, fidl::ServerBinding<fuchsia_power_system::SuspendBlocker>,
