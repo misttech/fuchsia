@@ -91,7 +91,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ),
         )
 
-        await self.dut.wlan_policy.stop_client_connections()
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=False
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
@@ -156,7 +158,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             asserts.fail(f"Expected no updates, got {update}")
 
         # Stopping client connections should initiate a auto-disconnection.
-        await self.dut.wlan_policy.stop_client_connections()
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=False
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
@@ -196,14 +200,8 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def test_save_network_with_client_connections_disabled(self) -> None:
         """Verify save_network() works without enabling client connections."""
-        await self.dut.wlan_policy.stop_client_connections()
-        await self.dut.wlan_policy.set_new_update_listener()
-        asserts.assert_equal(
-            await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
-                networks=[],
-            ),
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=True
         )
 
         test_ssid = random_str()
@@ -219,14 +217,8 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def test_connect_with_client_connections_disabled(self) -> None:
         """Verify connect() rejects without enabling client connections."""
-        await self.dut.wlan_policy.stop_client_connections()
-        await self.dut.wlan_policy.set_new_update_listener()
-        asserts.assert_equal(
-            await self.dut.wlan_policy.get_update(),
-            ClientStateSummary(
-                state=WlanClientState.CONNECTIONS_DISABLED,
-                networks=[],
-            ),
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=True
         )
 
         test_ssid = random_str()
@@ -246,7 +238,9 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     ) -> None:
         """Verify remove_all_networks() works without enabling client
         connections."""
-        await self.dut.wlan_policy.stop_client_connections()
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=True
+        )
 
         await self.dut.wlan_policy.remove_all_networks()
         asserts.assert_equal(

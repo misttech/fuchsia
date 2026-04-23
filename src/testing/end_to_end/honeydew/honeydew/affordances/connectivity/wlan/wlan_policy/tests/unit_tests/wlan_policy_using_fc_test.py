@@ -821,7 +821,18 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
         )
-        await self.wlan_policy_obj.stop_client_connections()
+        with mock.patch.object(
+            self.wlan_policy_obj,
+            "get_status",
+            mock.AsyncMock(
+                return_value=ClientStateSummary(
+                    state=WlanClientState.CONNECTIONS_ENABLED, networks=[]
+                )
+            ),
+        ):
+            await self.wlan_policy_obj.stop_client_connections(
+                wait_for_confirmation=False
+            )
         client_controller.stop_client_connections.assert_called_once_with()
 
     async def test_stop_client_connections_fails(self) -> None:
@@ -870,8 +881,20 @@ class WlanPolicyFCTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(msg=msg, resp=resp):
                 client_controller.stop_client_connections.reset_mock()
                 client_controller.stop_client_connections.return_value = resp
-                with self.assertRaises(HoneydewWlanError):
-                    await self.wlan_policy_obj.stop_client_connections()
+                with mock.patch.object(
+                    self.wlan_policy_obj,
+                    "get_status",
+                    mock.AsyncMock(
+                        return_value=ClientStateSummary(
+                            state=WlanClientState.CONNECTIONS_ENABLED,
+                            networks=[],
+                        )
+                    ),
+                ):
+                    with self.assertRaises(HoneydewWlanError):
+                        await self.wlan_policy_obj.stop_client_connections(
+                            wait_for_confirmation=False
+                        )
                 client_controller.stop_client_connections.assert_called_once_with()
 
 

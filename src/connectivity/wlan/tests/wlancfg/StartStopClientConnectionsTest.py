@@ -149,7 +149,9 @@ class StartStopClientConnectionsTest(
             WlanClientState.CONNECTIONS_ENABLED
         )
 
-        await self.dut.wlan_policy.stop_client_connections()
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=False
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
@@ -160,10 +162,8 @@ class StartStopClientConnectionsTest(
 
     async def test_start_client_connections_update(self) -> None:
         """Test that we can start client connections."""
-        await self.dut.wlan_policy.stop_client_connections()
-        await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_DISABLED,
-            timeout=30,
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=True
         )
 
         await self.dut.wlan_policy.start_client_connections()
@@ -202,7 +202,9 @@ class StartStopClientConnectionsTest(
         )
 
         # Stop connections interrupts connect attempt.
-        await self.dut.wlan_policy.stop_client_connections()
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=False
+        )
         asserts.assert_equal(
             await self.dut.wlan_policy.get_update(),
             ClientStateSummary(
@@ -233,9 +235,8 @@ class StartStopClientConnectionsTest(
         When starting and stopping the client connections the device should connect and
         disconnect from the saved network.
         """
-        await self.dut.wlan_policy.stop_client_connections()
-        await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_DISABLED
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=True
         )
 
         await self.dut.wlan_policy.save_network(
@@ -288,7 +289,9 @@ class StartStopClientConnectionsTest(
         )
         logger.info(f'Connected to network "{self.ssid}"')
 
-        await self.dut.wlan_policy.stop_client_connections()
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=False
+        )
         logger.info("Stopped client connections")
 
         asserts.assert_equal(

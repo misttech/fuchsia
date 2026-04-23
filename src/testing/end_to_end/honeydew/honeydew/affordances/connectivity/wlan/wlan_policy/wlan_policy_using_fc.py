@@ -958,6 +958,7 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
     async def stop_client_connections(
         self,
         *,
+        wait_for_confirmation: bool = True,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
@@ -968,11 +969,30 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
 
         See fuchsia.wlan.policy/ClientController.StopClientConnections().
 
+        Args:
+            wait_for_confirmation: Whether to wait for the client state to
+                reach CONNECTIONS_DISABLED.
+            timeout: Operation takes longer than expected.
+
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: A client controller has not been created yet.
         """
         assert self._client_controller is not None
+
+        try:
+            client = await self.get_status(timeout=timeout)
+            if client.state != WlanClientState.CONNECTIONS_ENABLED:
+                _LOGGER.info(
+                    "Client connections are not enabled, so they will not be disabled."
+                )
+                return
+        except TimeoutError:
+            # This update should basically be immediate because we get a new client state listener
+            # channel, so this is unexpected
+            _LOGGER.warning(
+                "Unexpectedly timed out getting client state. Proceeding to stop client connections"
+            )
 
         _LOGGER.debug(
             "Calling fuchsia.wlan.policy/ClientController.StopClientConnections()"
@@ -986,6 +1006,11 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
             if status != f_wlan_policy.RequestStatus.ACKNOWLEDGED:
                 raise wlan_errors.HoneydewWlanError(
                     f"ClientController.StopClientConnections() returned request status {status.name}"
+                )
+
+            if wait_for_confirmation:
+                await self.wait_for_client_state(
+                    WlanClientState.CONNECTIONS_DISABLED, timeout=timeout
                 )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
@@ -1322,6 +1347,7 @@ class WlanPolicy(wlan_policy.WlanPolicy):
     def stop_client_connections(
         self,
         *,
+        wait_for_confirmation: bool = True,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
@@ -1332,12 +1358,19 @@ class WlanPolicy(wlan_policy.WlanPolicy):
 
         See fuchsia.wlan.policy/ClientController.StopClientConnections().
 
+        Args:
+            wait_for_confirmation: Whether to wait for the client state to
+                reach CONNECTIONS_DISABLED.
+            timeout: Operation takes longer than expected.
+
         Raises:
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: A client controller has not been created yet
         """
         return fuchsia_async_extension.get_loop().run_until_complete(
-            self._inner.stop_client_connections(timeout=timeout)
+            self._inner.stop_client_connections(
+                wait_for_confirmation=wait_for_confirmation, timeout=timeout
+            )
         )
 
     def wait_for_no_connections(

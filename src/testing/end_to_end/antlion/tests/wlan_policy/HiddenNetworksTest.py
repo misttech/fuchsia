@@ -23,7 +23,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectionState,
     SecurityType,
-    WlanClientState,
 )
 from mobly import signals, test_runner
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
@@ -128,9 +127,8 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             TestFailure if we fail to see hidden network in scans before timing out.
         """
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.stop_client_connections()
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_client_state(
-                WlanClientState.CONNECTIONS_DISABLED
+            fd.honeydew_fd.wlan_policy_deprecated_sync.stop_client_connections(
+                wait_for_confirmation=True
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
                 self.hidden_ssid, SecurityType.WPA2, self.hidden_password
@@ -169,7 +167,9 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
         # Start up AP with an open network with a random SSID
 
         for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.stop_client_connections()
+            fd.honeydew_fd.wlan_policy_deprecated_sync.stop_client_connections(
+                wait_for_confirmation=True
+            )
             fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
                 self.hidden_ssid, SecurityType.WPA2, self.hidden_password
             )

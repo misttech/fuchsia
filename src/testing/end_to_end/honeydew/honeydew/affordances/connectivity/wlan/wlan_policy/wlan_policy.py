@@ -241,6 +241,7 @@ class AsyncWlanPolicy(abc.ABC):
     async def stop_client_connections(
         self,
         *,
+        wait_for_confirmation: bool = True,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Disables device for initiating connections to networks.
@@ -249,6 +250,11 @@ class AsyncWlanPolicy(abc.ABC):
         initiation of new connections.
 
         See fuchsia.wlan.policy/ClientController.StopClientConnections().
+
+        Args:
+            wait_for_confirmation: Whether to wait for the client state to
+                reach CONNECTIONS_DISABLED.
+            timeout: Operation takes longer than expected.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.
@@ -494,6 +500,7 @@ class WlanPolicy(affordance.Affordance):
     def stop_client_connections(
         self,
         *,
+        wait_for_confirmation: bool = True,
         timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Disables device for initiating connections to networks.
@@ -502,6 +509,11 @@ class WlanPolicy(affordance.Affordance):
         initiation of new connections.
 
         See fuchsia.wlan.policy/ClientController.StopClientConnections().
+
+        Args:
+            wait_for_confirmation: Whether to wait for the client state to
+                reach CONNECTIONS_DISABLED.
+            timeout: Operation takes longer than expected.
 
         Raises:
             HoneydewWlanError: Error from WLAN stack.

@@ -89,9 +89,8 @@ class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         # With the country code set to US, destroy all interfaces
         await self.dut.wlan_policy.set_country_code(CountryCode("US"))
-        await self.dut.wlan_policy.stop_client_connections()
-        await self.dut.wlan_policy.wait_for_client_state(
-            WlanClientState.CONNECTIONS_DISABLED
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=True
         )
         if self.device_supports_ap:
             await self.dut.wlan_policy_ap.stop_all()
