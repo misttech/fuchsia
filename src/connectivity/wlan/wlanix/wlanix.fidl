@@ -229,6 +229,13 @@ open protocol SupplicantStaIface {
     flexible SetStaCountryCode(resource table {
         1: code array<byte, 2>;
     }) -> () error zx.Status;
+
+    flexible GetSignalPollResults() -> (table {
+        1: current_rssi_dbm int32;
+        2: tx_bitrate_mbps uint32;
+        3: rx_bitrate_mbps uint32;
+        4: frequency_mhz uint32;
+    }) error zx.Status;
 };
 
 open protocol SupplicantStaIfaceCallback {

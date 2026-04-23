@@ -34,6 +34,7 @@ enum class CommandTag {
   kWifiChipGetStaIface,
   kWifiChipRemoveStaIface,
   kWifiChipSetCountryCode,
+  kWifiChipGetSignalPollResults,
   kWifiChipGetAvailableModes,
   kWifiChipGetId,
   kWifiChipGetMode,
@@ -128,6 +129,7 @@ class FakeWlanix : public fidl::WireServer<fuchsia_wlan_wlanix::Wlanix>,
                       RemoveStaIfaceCompleter::Sync& completer) override;
   void SetCountryCode(fuchsia_wlan_wlanix::wire::WifiChipSetCountryCodeRequest* request,
                       SetCountryCodeCompleter::Sync& completer) override;
+  void GetSignalPollResults(GetSignalPollResultsCompleter::Sync& completer) override;
   void GetAvailableModes(GetAvailableModesCompleter::Sync& completer) override;
   void GetId(GetIdCompleter::Sync& completer) override;
   void GetMode(GetModeCompleter::Sync& completer) override;

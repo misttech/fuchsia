@@ -154,6 +154,22 @@ void FakeWlanix::SetCountryCode(fuchsia_wlan_wlanix::wire::WifiChipSetCountryCod
   completer.ReplySuccess();
 }
 
+void FakeWlanix::GetSignalPollResults(GetSignalPollResultsCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWifiChipGetSignalPollResults});
+
+  // Reply with dummy values
+  fidl::Arena arena;
+  auto builder =
+      fuchsia_wlan_wlanix::wire::SupplicantStaIfaceGetSignalPollResultsResponse::Builder(arena);
+  builder.current_rssi_dbm(-60);
+  builder.tx_bitrate_mbps(50);
+  builder.rx_bitrate_mbps(50);
+  builder.frequency_mhz(2412);
+
+  auto response = builder.Build();
+  completer.Reply(fit::ok(&response));
+}
+
 void FakeWlanix::GetAvailableModes(GetAvailableModesCompleter::Sync& completer) {
   AppendCommand(Command{.tag = CommandTag::kWifiChipGetAvailableModes});
 

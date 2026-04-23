@@ -33,7 +33,7 @@ use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
-use wlan_telemetry::{self, TelemetryEvent, TelemetrySender};
+use wlan_telemetry::{self, TelemetryEvent, TelemetrySender, ThrottledErrorLogger};
 mod bss_scorer;
 mod default_drop;
 mod ifaces;
@@ -52,6 +52,8 @@ use wlan_power_manager::{DevicePowerManager, PowerManager};
 // TODO(https://fxbug.dev/368005870): Need to reconsider the consequences of using
 // the same iface name, even when an iface is recreated.
 const IFACE_NAME: &str = "wlan";
+/// Time between potentially frequent error logs to prevent cluttering up the syslog.
+const MIN_MINUTES_BETWEEN_FREQUENT_ERRORS: i64 = 60;
 
 async fn handle_wifi_sta_iface_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::WifiStaIfaceRequest,
@@ -993,12 +995,27 @@ async fn handle_client_connect_transactions<C: ClientIface, P: PowerManager>(
     }
 }
 
+/// This is the same as get_iface_and_log without logging for the functions that would be called
+/// frequently and would cause log spam.
+async fn get_iface<I: IfaceManager>(iface_manager: Arc<I>) -> Result<(Arc<I::Client>, u16), Error> {
+    // TODO(https://fxbug.dev/299349496): Fetch the iface by name.
+    let ifaces = iface_manager.list_ifaces();
+    if ifaces.is_empty() {
+        bail!("no iface available");
+    } else {
+        match iface_manager.get_client_iface(ifaces[0]).await {
+            Ok(iface) => Ok((iface, ifaces[0])),
+            Err(e) => bail!("failed to get client iface: {}", e),
+        }
+    }
+}
+
 async fn get_iface_and_log<I: IfaceManager>(
     label: &str,
     iface_manager: Arc<I>,
     iface_name: &str,
 ) -> Result<(Arc<I::Client>, u16), Error> {
-    // TODO(b/299349496): Fetch the iface by name.
+    // TODO(https://fxbug.dev/299349496): Fetch the iface by name.
     let ifaces = iface_manager.list_ifaces();
     if ifaces.is_empty() {
         warn!("{} -- no iface available to serve {}", label, iface_name);
@@ -1309,6 +1326,7 @@ async fn serve_supplicant_sta_network<I: IfaceManager, P: PowerManager>(
     .await;
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_supplicant_sta_iface_request<I: IfaceManager, P: PowerManager>(
     telemetry_sender: TelemetrySender,
     req: fidl_wlanix::SupplicantStaIfaceRequest,
@@ -1317,6 +1335,7 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager, P: PowerManager>(
     iface_manager: Arc<I>,
     power_manager: Arc<P>,
     iface_name: String,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::SupplicantStaIfaceRequest::RegisterCallback { payload, .. } => {
@@ -1495,6 +1514,49 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager, P: PowerManager>(
             };
             responder.send(result).context("send SetStaCountryCode response")?;
         }
+        fidl_wlanix::SupplicantStaIfaceRequest::GetSignalPollResults { responder } => {
+            debug!(
+                "fidl_wlanix::SupplicantStaIfaceRequest::GetSignalPollResults (iface {}",
+                iface_name
+            );
+            let (iface, _) = get_iface(iface_manager).await?;
+            let result = match iface.get_signal_report().await {
+                Ok(report) => {
+                    let (tx_mbps, rx_mbps, rssi, freq_mhz) = report
+                        .connection_signal_report
+                        .map(|conn| {
+                            let tx = conn.tx_rate_500kbps.unwrap_or(0) / 2;
+                            // TODO(496331508): Rx rate is not sent up in get_signal_report yet.
+                            let rx = 0;
+                            let r = conn.rssi_dbm.unwrap_or(0) as i32;
+                            let f = conn
+                                .channel
+                                .map(|c| {
+                                    Channel::try_from(c)
+                                        .map(|chan| chan.get_center_freq().unwrap_or(0) as u32)
+                                        .unwrap_or(0)
+                                })
+                                .unwrap_or(0);
+                            (tx, rx, r, f)
+                        })
+                        .unwrap_or((0, 0, 0, 0));
+                    Ok(fidl_wlanix::SupplicantStaIfaceGetSignalPollResultsResponse {
+                        current_rssi_dbm: Some(rssi),
+                        tx_bitrate_mbps: Some(tx_mbps),
+                        rx_bitrate_mbps: Some(rx_mbps),
+                        frequency_mhz: Some(freq_mhz),
+                        ..Default::default()
+                    })
+                }
+                Err(e) => {
+                    log_throttler.lock().throttle_log(format!("Failed to get signal report {}", e));
+                    Err(zx::sys::ZX_ERR_INTERNAL)
+                }
+            };
+            responder
+                .send(result.as_ref().map_err(|&e| e))
+                .context("send GetSignalPollResults response")?;
+        }
         fidl_wlanix::SupplicantStaIfaceRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown SupplicantStaIfaceRequest ordinal: {}", ordinal);
         }
@@ -1509,6 +1571,7 @@ async fn serve_supplicant_sta_iface<I: IfaceManager, P: PowerManager>(
     iface_manager: Arc<I>,
     power_manager: Arc<P>,
     iface_name: String,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) {
     let sta_iface_state = Arc::new(Mutex::new(SupplicantStaIfaceState { callback: None }));
     reqs.for_each_concurrent(None, |req| async {
@@ -1522,6 +1585,7 @@ async fn serve_supplicant_sta_iface<I: IfaceManager, P: PowerManager>(
                     Arc::clone(&iface_manager),
                     Arc::clone(&power_manager),
                     iface_name.clone(),
+                    Arc::clone(&log_throttler),
                 )
                 .await
                 {
@@ -1542,6 +1606,7 @@ async fn handle_supplicant_request<I: IfaceManager, P: PowerManager>(
     power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     state: Arc<Mutex<WifiState>>,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::SupplicantRequest::AddStaInterface { payload, .. } => {
@@ -1566,6 +1631,7 @@ async fn handle_supplicant_request<I: IfaceManager, P: PowerManager>(
                         Arc::clone(&iface_manager),
                         Arc::clone(&power_manager),
                         iface_name.clone(),
+                        Arc::clone(&log_throttler),
                     )
                     .await;
                 }
@@ -1599,6 +1665,7 @@ async fn serve_supplicant<I: IfaceManager, P: PowerManager>(
     power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
     state: Arc<Mutex<WifiState>>,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) {
     reqs.for_each_concurrent(None, |req| async {
         match req {
@@ -1609,6 +1676,7 @@ async fn serve_supplicant<I: IfaceManager, P: PowerManager>(
                     Arc::clone(&power_manager),
                     telemetry_sender.clone(),
                     Arc::clone(&state),
+                    Arc::clone(&log_throttler),
                 )
                 .await
                 {
@@ -2631,6 +2699,7 @@ async fn handle_wlanix_request<I: IfaceManager, P: PowerManager>(
     iface_manager: Arc<I>,
     power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) -> Result<(), Error> {
     match req {
         fidl_wlanix::WlanixRequest::GetWifi { payload, .. } => {
@@ -2657,6 +2726,7 @@ async fn handle_wlanix_request<I: IfaceManager, P: PowerManager>(
                     Arc::clone(&power_manager),
                     telemetry_sender,
                     Arc::clone(&state),
+                    Arc::clone(&log_throttler),
                 )
                 .await;
             }
@@ -2694,6 +2764,7 @@ async fn serve_wlanix<I: IfaceManager, P: PowerManager>(
     iface_manager: Arc<I>,
     power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) {
     reqs.for_each_concurrent(None, |req| async {
         match req {
@@ -2704,6 +2775,7 @@ async fn serve_wlanix<I: IfaceManager, P: PowerManager>(
                     Arc::clone(&iface_manager),
                     Arc::clone(&power_manager),
                     telemetry_sender.clone(),
+                    Arc::clone(&log_throttler),
                 )
                 .await
                 {
@@ -2723,6 +2795,7 @@ async fn serve_fidl<I: IfaceManager, P: PowerManager>(
     iface_manager: Arc<I>,
     power_manager: Arc<P>,
     telemetry_sender: TelemetrySender,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) -> Result<(), Error> {
     let mut fs = ServiceFs::new();
     let _inspect_server_task = inspect_runtime::publish(
@@ -2736,6 +2809,7 @@ async fn serve_fidl<I: IfaceManager, P: PowerManager>(
             Arc::clone(&iface_manager),
             Arc::clone(&power_manager),
             telemetry_sender.clone(),
+            Arc::clone(&log_throttler),
         )
     });
     fs.take_and_serve_directory_handle()?;
@@ -2897,6 +2971,8 @@ async fn main() {
         fuchsia_inspect::component::inspector().root().create_child(CLIENT_STATS_NODE_NAME),
         &format!("root/{CLIENT_STATS_NODE_NAME}"),
     );
+    let log_throttler =
+        Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
 
     let activity_governor = client::connect_to_protocol::<fsystem::ActivityGovernorMarker>()
         .map_err(|e| {
@@ -2926,7 +3002,8 @@ async fn main() {
             Arc::clone(&wifi_state),
             Arc::clone(&iface_manager),
             Arc::new(power_manager),
-            telemetry_sender
+            telemetry_sender,
+            Arc::clone(&log_throttler),
         ),
         serve_phy_events(phy_events_proxy, wifi_state)
     );
@@ -3350,12 +3427,15 @@ mod tests {
         let iface_manager = Arc::new(TestIfaceManager::new().mock_create_client_iface_failure());
         let power_manager = Arc::new(TestPowerManager::new());
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
             power_manager,
             TelemetrySender::new(telemetry_sender),
+            Arc::clone(&log_throttler),
         );
         let mut test_fut = Box::pin(test_fut);
         assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -3437,12 +3517,15 @@ mod tests {
         );
         let power_manager = Arc::new(TestPowerManager::new());
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
             power_manager,
             TelemetrySender::new(telemetry_sender),
+            Arc::clone(&log_throttler),
         );
         let mut test_fut = Box::pin(test_fut);
         assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -3897,12 +3980,15 @@ mod tests {
         let iface_manager = Arc::new(iface_manager);
         let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let power_manager = Arc::new(TestPowerManager::new());
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
             power_manager.clone(),
             TelemetrySender::new(telemetry_sender),
+            Arc::clone(&log_throttler),
         );
         let mut test_fut = Box::pin(test_fut);
         assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -4712,6 +4798,51 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_supplicant_get_signal_poll_results_success() {
+        let (mut test_helper, mut test_fut) = setup_supplicant_test();
+        let mut mcast_stream = get_nl80211_mcast(&test_helper.nl80211_proxy, "mlme");
+
+        establish_open_connection(&mut test_helper, &mut test_fut, &mut mcast_stream);
+
+        // Mock the signal report response
+        let mock_report = fidl_fuchsia_wlan_stats::SignalReport {
+            connection_signal_report: Some(fidl_fuchsia_wlan_stats::ConnectionSignalReport {
+                rssi_dbm: Some(-53),
+                tx_rate_500kbps: Some(300),
+                channel: Some(fidl_fuchsia_wlan_ieee80211::WlanChannel {
+                    primary: 36,
+                    cbw: fidl_fuchsia_wlan_ieee80211::ChannelBandwidth::Cbw20,
+                    secondary80: 0,
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let client_iface = test_helper.iface_manager.client_iface.lock().as_ref().unwrap().clone();
+        client_iface.signal_report.lock().replace(mock_report);
+
+        let mut get_fut = test_helper.supplicant_sta_iface_proxy.get_signal_poll_results();
+
+        assert_matches!(test_helper.exec.run_until_stalled(&mut get_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        assert_matches!(iface_calls.lock().last().unwrap(), ClientIfaceCall::GetSignalReport);
+
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_fut),
+            Poll::Ready(Ok(response)) => response
+        );
+        let result = assert_matches!(response, Ok(res) => res);
+
+        assert_eq!(result.current_rssi_dbm, Some(-53));
+        assert_eq!(result.tx_bitrate_mbps, Some(150)); // 300 / 2
+        assert_eq!(result.rx_bitrate_mbps, Some(0)); // TODO(496331508): Rx rate isn't implemented yet
+        assert_eq!(result.frequency_mhz, Some(5180)); // Channel 36 center freq
+    }
+
+    #[fuchsia::test]
     fn test_supplicant_sta_roam_result() {
         let (mut test_helper, mut test_fut) = setup_supplicant_test();
         let mut mcast_stream = get_nl80211_mcast(&test_helper.nl80211_proxy, "mlme");
@@ -4850,12 +4981,15 @@ mod tests {
         let iface_manager = Arc::new(TestIfaceManager::new_with_client());
         let power_manager = Arc::new(TestPowerManager::new());
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
         let test_fut = serve_wlanix(
             wlanix_stream,
             wifi_state,
             Arc::clone(&iface_manager),
             power_manager.clone(),
             TelemetrySender::new(telemetry_sender),
+            Arc::clone(&log_throttler),
         );
         let mut test_fut = Box::pin(test_fut);
         assert_eq!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
@@ -4936,12 +5070,15 @@ mod tests {
         let state = Arc::new(Mutex::new(WifiState::default()));
         let iface_manager = Arc::new(TestIfaceManager::new());
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
         let wlanix_fut = serve_wlanix(
             stream,
             state,
             iface_manager,
             Arc::new(TestPowerManager::new()),
             TelemetrySender::new(telemetry_sender),
+            Arc::clone(&log_throttler),
         );
         let mut wlanix_fut = pin!(wlanix_fut);
         let (nl_proxy, nl_server) = create_proxy::<fidl_wlanix::Nl80211Marker>();

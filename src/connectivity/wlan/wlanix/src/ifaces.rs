@@ -11,6 +11,7 @@ use fidl_fuchsia_wlan_device_service as fidl_device_service;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_sme as fidl_sme;
+use fidl_fuchsia_wlan_stats as fidl_stats;
 use fidl_fuchsia_wlan_wlanix as fidl_wlanix;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
 use fuchsia_sync::Mutex;
@@ -225,10 +226,16 @@ impl IfaceManager for DeviceMonitorIfaceManager {
 
         let (sme_proxy, server) = create_proxy::<fidl_sme::ClientSmeMarker>();
         self.monitor_svc.get_client_sme(iface_id, server).await?.map_err(zx::Status::from_raw)?;
+        let (telemetry_proxy, server) = create_proxy::<fidl_sme::TelemetryMarker>();
+        self.monitor_svc
+            .get_sme_telemetry(iface_id, server)
+            .await?
+            .map_err(zx::Status::from_raw)?;
         let mut iface = SmeClientIface::new(
             phy_id,
             iface_id,
             sme_proxy,
+            telemetry_proxy,
             self.monitor_svc.clone(),
             self.telemetry_sender.clone(),
         );
@@ -395,6 +402,7 @@ pub(crate) trait ClientIface: Sync + Send {
     ) -> Result<Vec<fidl_sme::ScanResult>, Error>;
     async fn stop_sched_scan(&self) -> Result<(), Error>;
     fn set_charging_status(&self, is_charging: bool) -> Result<(), Error>;
+    async fn get_signal_report(&self) -> Result<fidl_stats::SignalReport, Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -415,6 +423,7 @@ pub(crate) struct SmeClientIface {
     iface_id: u16,
     monitor_svc: fidl_device_service::DeviceMonitorProxy,
     sme_proxy: fidl_sme::ClientSmeProxy,
+    telemetry_proxy: fidl_sme::TelemetryProxy,
     last_scan_results: Arc<Mutex<Option<LastScanResults>>>,
     scan_abort_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     pno_scan_stop_signal: Arc<Mutex<Option<oneshot::Sender<()>>>>,
@@ -434,6 +443,7 @@ impl SmeClientIface {
         phy_id: u16,
         iface_id: u16,
         sme_proxy: fidl_sme::ClientSmeProxy,
+        telemetry_proxy: fidl_sme::TelemetryProxy,
         monitor_svc: fidl_device_service::DeviceMonitorProxy,
         telemetry_sender: TelemetrySender,
     ) -> Self {
@@ -475,6 +485,7 @@ impl SmeClientIface {
             iface_id,
             phy_id,
             sme_proxy,
+            telemetry_proxy,
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
@@ -1010,6 +1021,13 @@ impl ClientIface for SmeClientIface {
         }
         Ok(())
     }
+
+    async fn get_signal_report(&self) -> Result<fidl_stats::SignalReport, Error> {
+        self.telemetry_proxy
+            .get_signal_report()
+            .await?
+            .map_err(|e| format_err!("Failed to get signal report: {:?}", e))
+    }
 }
 
 /// Wait until stream returns an OnConnectResult event or None. Ignore other event types.
@@ -1158,6 +1176,7 @@ pub mod test_utils {
         StartSchedScan { _request: fidl_common::ScheduledScanRequest },
         StopSchedScan,
         SetChargingStatus(bool),
+        GetSignalReport,
     }
 
     pub struct TestClientIface {
@@ -1167,6 +1186,7 @@ pub mod test_utils {
         pub connect_success: Mutex<bool>,
         pub scan_results: Mutex<Vec<fidl_sme::ScanResult>>,
         pub start_sched_scan_success: Mutex<bool>,
+        pub signal_report: Mutex<Option<fidl_stats::SignalReport>>,
     }
 
     impl TestClientIface {
@@ -1178,6 +1198,7 @@ pub mod test_utils {
                 connect_success: Mutex::new(true),
                 scan_results: Mutex::new(vec![fake_scan_result()]),
                 start_sched_scan_success: Mutex::new(true),
+                signal_report: Mutex::new(None),
             }
         }
     }
@@ -1324,6 +1345,15 @@ pub mod test_utils {
         fn set_charging_status(&self, is_charging: bool) -> Result<(), Error> {
             self.calls.lock().push(ClientIfaceCall::SetChargingStatus(is_charging));
             Ok(())
+        }
+
+        async fn get_signal_report(&self) -> Result<fidl_stats::SignalReport, Error> {
+            self.calls.lock().push(ClientIfaceCall::GetSignalReport);
+            if let Some(report) = self.signal_report.lock().clone() {
+                Ok(report)
+            } else {
+                Err(format_err!("get signal report not mocked"))
+            }
         }
     }
 
@@ -1664,6 +1694,7 @@ mod tests {
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         TestValuesNoIface {
+            exec,
             monitor_stream,
             telemetry_receiver,
             manager: DeviceMonitorIfaceManager {
@@ -1671,14 +1702,17 @@ mod tests {
                 ifaces: Mutex::new(HashMap::new()),
                 telemetry_sender: TelemetrySender::new(telemetry_sender),
             },
-            exec,
         }
     }
 
     pub struct TestValuesWithIface {
         pub monitor_stream: fidl_device_service::DeviceMonitorRequestStream,
         pub sme_stream: fidl_sme::ClientSmeRequestStream,
+        /// This is the stream  of telemetry events sent out by the IfaceManager to be logged
+        /// in the telemetry module.
         pub telemetry_receiver: mpsc::Receiver<TelemetryEvent>,
+        /// This is the stream to serve SME telemetry requests, such as get_iface_stats.
+        pub telemetry_stream: fidl_sme::TelemetryRequestStream,
         pub manager: DeviceMonitorIfaceManager,
         pub iface: Arc<SmeClientIface>,
         // The executor is last in the struct so it gets dropped last.
@@ -1699,11 +1733,14 @@ mod tests {
             telemetry_sender: TelemetrySender::new(telemetry_sender.clone()),
         };
         let (sme_proxy, sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let (telemetry_proxy, telemetry_stream) =
+            create_proxy_and_stream::<fidl_sme::TelemetryMarker>();
         let phy_id = rand::random();
         let iface = SmeClientIface::new(
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
+            telemetry_proxy,
             monitor_svc,
             TelemetrySender::new(telemetry_sender),
         );
@@ -1711,7 +1748,15 @@ mod tests {
         let mut client_fut = manager.get_client_iface(TEST_IFACE_ID);
         let iface = exec.run_singlethreaded(&mut client_fut).expect("Failed to get client iface");
         drop(client_fut);
-        TestValuesWithIface { monitor_stream, sme_stream, telemetry_receiver, manager, iface, exec }
+        TestValuesWithIface {
+            exec,
+            monitor_stream,
+            sme_stream,
+            telemetry_stream,
+            telemetry_receiver,
+            manager,
+            iface,
+        }
     }
 
     fn setup_test_manager_with_iface_and_fake_time() -> TestValuesWithIface {
@@ -1720,6 +1765,8 @@ mod tests {
         let (monitor_svc, monitor_stream) =
             create_proxy_and_stream::<fidl_device_service::DeviceMonitorMarker>();
         let (sme_proxy, sme_stream) = create_proxy_and_stream::<fidl_sme::ClientSmeMarker>();
+        let (telemetry_proxy, telemetry_stream) =
+            create_proxy_and_stream::<fidl_sme::TelemetryMarker>();
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let manager = DeviceMonitorIfaceManager {
             monitor_svc: monitor_svc.clone(),
@@ -1730,6 +1777,7 @@ mod tests {
             iface_id: 13,
             phy_id: 42,
             sme_proxy,
+            telemetry_proxy,
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
@@ -1763,7 +1811,15 @@ mod tests {
         let mut client_fut = manager.get_client_iface(1);
         let iface = assert_matches!(exec.run_until_stalled(&mut client_fut), Poll::Ready(Ok(iface)) => iface);
         drop(client_fut);
-        TestValuesWithIface { monitor_stream, sme_stream, telemetry_receiver, manager, iface, exec }
+        TestValuesWithIface {
+            exec,
+            monitor_stream,
+            sme_stream,
+            telemetry_stream,
+            telemetry_receiver,
+            manager,
+            iface,
+        }
     }
 
     #[test]
@@ -1877,6 +1933,13 @@ mod tests {
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetClientSme { responder, .. })) => responder);
         responder.send(Ok(())).expect("Failed to send GetClientSme response");
 
+        // Establish a connection to the telemetry proxy.
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
+        let responder = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetSmeTelemetry { responder, .. })) => responder);
+        responder.send(Ok(())).expect("Failed to send GetSmeTelemetry response");
+
         // Creation complete!
         let request_id =
             test_values.exec.run_singlethreaded(&mut fut).expect("Creation completes ok");
@@ -1945,12 +2008,19 @@ mod tests {
         assert_eq!(iface_id, FAKE_IFACE_RESPONSE.id);
         responder.send(Ok(&FAKE_IFACE_RESPONSE)).expect("Failed to respond to QueryIface");
 
-        // Establish a connection to the new iface.
+        // Respond to GetClientSme.
         assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
         let responder = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetClientSme { responder, .. })) => responder);
         responder.send(Ok(())).expect("Failed to send GetClientSme response");
+
+        // Respond to GetSmeTelemetry.
+        assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Pending);
+        let responder = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetSmeTelemetry { responder, .. })) => responder);
+        responder.send(Ok(())).expect("Failed to send GetSmeTelemetry response");
 
         // We finish up and have a new iface. This may take longer than one try, since resolving
         // the power broker FIDL can take a few loops.
@@ -1995,6 +2065,7 @@ mod tests {
             iface_id: 13,
             phy_id: 42,
             sme_proxy,
+            telemetry_proxy: fidl::endpoints::create_proxy::<fidl_sme::TelemetryMarker>().0,
             monitor_svc,
             last_scan_results: Arc::new(Mutex::new(None)),
             scan_abort_signal: Arc::new(Mutex::new(None)),
@@ -3126,6 +3197,42 @@ mod tests {
     }
 
     #[test]
+    fn test_get_signal_poll_results_success() {
+        let mut test_values = setup_test_manager_with_iface();
+
+        let mut signal_report_fut = test_values.iface.get_signal_report();
+        assert_matches!(test_values.exec.run_until_stalled(&mut signal_report_fut), Poll::Pending);
+
+        let responder = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.telemetry_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::TelemetryRequest::GetSignalReport { responder }))) => responder
+        );
+
+        let report = fidl_stats::SignalReport {
+            connection_signal_report: Some(fidl_stats::ConnectionSignalReport {
+                rssi_dbm: Some(-53),
+                snr_db: Some(25),
+                tx_rate_500kbps: Some(300),
+                channel: Some(fidl_ieee80211::WlanChannel {
+                    primary: 36,
+                    cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
+                    secondary80: 0,
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        responder.send(Ok(&report)).expect("Failed to send mock signal report response");
+
+        let response = assert_matches!(test_values.exec.run_until_stalled(&mut signal_report_fut), Poll::Ready(Ok(response)) => response);
+
+        // Ensure values unpacked correctly
+        let conn_report = response.connection_signal_report.expect("No connection report");
+        assert_eq!(conn_report.tx_rate_500kbps, Some(300));
+        assert_eq!(conn_report.rssi_dbm, Some(-53));
+    }
+
+    #[test]
     fn test_set_bt_coexistence_mode() {
         let mut test_values = setup_test_manager_with_iface();
 
@@ -3195,6 +3302,7 @@ mod tests {
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
+            fidl::endpoints::create_proxy::<fidl_sme::TelemetryMarker>().0,
             monitor_svc,
             TelemetrySender::new(telemetry_sender),
         );
@@ -3257,6 +3365,7 @@ mod tests {
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
+            fidl::endpoints::create_proxy::<fidl_sme::TelemetryMarker>().0,
             monitor_svc,
             TelemetrySender::new(telemetry_sender),
         );
@@ -3332,6 +3441,7 @@ mod tests {
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
+            fidl::endpoints::create_proxy::<fidl_sme::TelemetryMarker>().0,
             monitor_svc,
             TelemetrySender::new(telemetry_sender),
         );
@@ -3422,6 +3532,7 @@ mod tests {
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
+            fidl::endpoints::create_proxy::<fidl_sme::TelemetryMarker>().0,
             monitor_svc,
             TelemetrySender::new(telemetry_sender),
         );
@@ -3473,6 +3584,7 @@ mod tests {
             phy_id,
             TEST_IFACE_ID,
             sme_proxy,
+            fidl::endpoints::create_proxy::<fidl_sme::TelemetryMarker>().0,
             monitor_svc,
             TelemetrySender::new(telemetry_sender),
         );
