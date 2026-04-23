@@ -14,11 +14,13 @@ use fuchsia_inspect::{
 use futures::FutureExt;
 use futures::lock::Mutex;
 use inspect::Node;
+use sorted_vec_map_rs::SortedVecSet;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::Arc;
+use strum::EnumCount;
 
 const MAX_RECENT_EVENT_LOG_SIZE: usize = 125;
 const LATENCY_HISTOGRAM_PROPERTIES: ExponentialHistogramParams<i64> = ExponentialHistogramParams {
@@ -57,26 +59,21 @@ struct EventCounters {
 }
 
 impl EventCounters {
-    fn add_new_into(
-        map: &mut HashMap<InputEventType, EventCounters>,
-        root: &inspect::Node,
-        event_type: InputEventType,
-    ) {
+    fn create(root: &inspect::Node, event_type: InputEventType) -> EventCounters {
         let node = root.create_child(format!("{}", event_type));
         let events_count = node.create_uint("events_count", 0);
         let events_with_wake_lease_count = node.create_uint("events_with_wake_lease_count", 0);
         let handled_events_count = node.create_uint("handled_events_count", 0);
         let last_seen_timestamp_ns = node.create_int("last_seen_timestamp_ns", 0);
         let last_generated_timestamp_ns = node.create_int("last_generated_timestamp_ns", 0);
-        let new_counters = EventCounters {
+        EventCounters {
             _node: node,
             events_count,
             events_with_wake_lease_count,
             handled_events_count,
             last_seen_timestamp_ns,
             last_generated_timestamp_ns,
-        };
-        map.insert(event_type, new_counters);
+        }
     }
 
     pub fn count_event(
@@ -171,7 +168,7 @@ pub struct InspectHandler<F> {
     /// 0 if unset.
     last_generated_timestamp_ns: inspect::IntProperty,
     /// An inventory of event counters by type.
-    events_by_type: HashMap<InputEventType, EventCounters>,
+    events_by_type: [Option<EventCounters>; InputEventType::COUNT],
     /// Log of recent events in the order they were received.
     recent_events_log: Option<Arc<Mutex<CircularBuffer<InputEvent>>>>,
     /// Histogram of latency from the binding timestamp for an `InputEvent` until
@@ -247,8 +244,8 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
         self.last_seen_timestamp_ns.set(now.into_nanos());
         self.last_generated_timestamp_ns.set(event_time.into_nanos());
         let event_type = InputEventType::from(&input_event.device_event);
-        self.events_by_type
-            .get(&event_type)
+        self.events_by_type[event_type as usize]
+            .as_ref()
             .unwrap_or_else(|| panic!("no event counters for {}", event_type))
             .count_event(now, event_time, &input_event.handled, has_wake_lease);
         if let Some(recent_events_log) = &self.recent_events_log {
@@ -264,7 +261,7 @@ impl<F: FnMut() -> zx::MonotonicInstant + 'static> InputHandler for InspectHandl
 /// `node` is the inspect node that will receive the stats.
 pub fn make_inspect_handler(
     node: inspect::Node,
-    supported_input_devices: &HashSet<&InputDeviceType>,
+    supported_input_devices: &SortedVecSet<&InputDeviceType>,
     displays_recent_events: bool,
 ) -> Rc<InspectHandler<fn() -> zx::MonotonicInstant>> {
     InspectHandler::new_internal(
@@ -281,7 +278,7 @@ impl<F> InspectHandler<F> {
     fn new_internal(
         node: inspect::Node,
         now: F,
-        supported_input_devices: &HashSet<&InputDeviceType>,
+        supported_input_devices: &SortedVecSet<&InputDeviceType>,
         displays_recent_events: bool,
     ) -> Rc<Self> {
         let event_count = node.create_uint("events_count", 0);
@@ -305,29 +302,34 @@ impl<F> InspectHandler<F> {
         let mut health_node = fuchsia_inspect::health::Node::new(&node);
         health_node.set_starting_up();
 
-        let mut events_by_type = HashMap::new();
+        let mut events_by_type: [Option<EventCounters>; InputEventType::COUNT] = Default::default();
         if supported_input_devices.contains(&InputDeviceType::Keyboard) {
-            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::Keyboard);
+            events_by_type[InputEventType::Keyboard as usize] =
+                Some(EventCounters::create(&node, InputEventType::Keyboard));
         }
         if supported_input_devices.contains(&InputDeviceType::ConsumerControls) {
-            EventCounters::add_new_into(
-                &mut events_by_type,
-                &node,
-                InputEventType::ConsumerControls,
-            );
+            events_by_type[InputEventType::ConsumerControls as usize] =
+                Some(EventCounters::create(&node, InputEventType::ConsumerControls));
         }
         if supported_input_devices.contains(&InputDeviceType::LightSensor) {
-            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::LightSensor);
+            events_by_type[InputEventType::LightSensor as usize] =
+                Some(EventCounters::create(&node, InputEventType::LightSensor));
         }
         if supported_input_devices.contains(&InputDeviceType::Mouse) {
-            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::Mouse);
+            events_by_type[InputEventType::Mouse as usize] =
+                Some(EventCounters::create(&node, InputEventType::Mouse));
         }
         if supported_input_devices.contains(&InputDeviceType::Touch) {
-            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::TouchScreen);
-            EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::Touchpad);
+            events_by_type[InputEventType::TouchScreen as usize] =
+                Some(EventCounters::create(&node, InputEventType::TouchScreen));
+            events_by_type[InputEventType::Touchpad as usize] =
+                Some(EventCounters::create(&node, InputEventType::Touchpad));
         }
         #[cfg(test)]
-        EventCounters::add_new_into(&mut events_by_type, &node, InputEventType::Fake);
+        {
+            events_by_type[InputEventType::Fake as usize] =
+                Some(EventCounters::create(&node, InputEventType::Fake));
+        }
 
         Rc::new(Self {
             now: RefCell::new(now),
@@ -380,7 +382,7 @@ mod tests {
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_input_report::InputDeviceMarker;
     use fuchsia_async as fasync;
-    use maplit::{hashmap, hashset};
+    use maplit::hashmap;
     use sorted_vec_map_rs::SortedVecSet;
     use test_case::test_case;
 
@@ -634,7 +636,7 @@ mod tests {
         let inspector = inspect::Inspector::default();
         let root = inspector.root();
         let test_node = root.create_child("test_node");
-        let supported_input_devices: HashSet<&InputDeviceType> = HashSet::from([
+        let supported_input_devices: SortedVecSet<&InputDeviceType> = SortedVecSet::from([
             &input_device::InputDeviceType::Keyboard,
             &input_device::InputDeviceType::ConsumerControls,
             &input_device::InputDeviceType::LightSensor,
@@ -896,7 +898,7 @@ mod tests {
         let inspector = inspect::Inspector::default();
         let root = inspector.root();
         let test_node = root.create_child("test_node");
-        let supported_input_devices: HashSet<&InputDeviceType> = HashSet::from([
+        let supported_input_devices: SortedVecSet<&InputDeviceType> = SortedVecSet::from([
             &input_device::InputDeviceType::Keyboard,
             &input_device::InputDeviceType::ConsumerControls,
             &input_device::InputDeviceType::LightSensor,
@@ -1200,7 +1202,7 @@ mod tests {
         let handler = super::InspectHandler::new_internal(
             test_node,
             now,
-            &hashset! {},
+            &SortedVecSet::new(),
             /* displays_recent_events = */ false,
         );
         for _latency in latencies_nsec.clone() {

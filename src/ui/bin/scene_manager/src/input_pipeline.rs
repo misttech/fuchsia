@@ -42,7 +42,7 @@ use fuchsia_inspect as inspect;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
-use std::collections::HashSet;
+use sorted_vec_map_rs::SortedVecSet;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -169,7 +169,7 @@ pub async fn handle_input(
             media_buttons_handler.clone(),
             light_sensor_handler.clone(),
             touch_injector_handler.clone(),
-            HashSet::from_iter(supported_input_devices.iter()),
+            SortedVecSet::from_iter(supported_input_devices.iter()),
             focus_chain_publisher,
             input_handlers_node,
             metrics_logger.clone(),
@@ -429,7 +429,7 @@ async fn build_input_pipeline_assembly(
     media_buttons_handler: Rc<MediaButtonsHandler>,
     light_sensor_handler: Option<Rc<CalibratedLightSensorHandler>>,
     touch_injector_handler: Rc<TouchInjectorHandler>,
-    supported_input_devices: HashSet<&input_device::InputDeviceType>,
+    supported_input_devices: SortedVecSet<&input_device::InputDeviceType>,
     focus_chain_publisher: FocusChainProviderPublisher,
     input_handlers_node: inspect::Node,
     metrics_logger: metrics::MetricsLogger,
@@ -547,7 +547,7 @@ fn add_key_meaning_modifier_handler(
 fn add_inspect_handler(
     node: inspect::Node,
     assembly: InputPipelineAssembly,
-    supported_input_devices: &HashSet<&input_device::InputDeviceType>,
+    supported_input_devices: &SortedVecSet<&input_device::InputDeviceType>,
     displays_recent_events: bool,
 ) -> InputPipelineAssembly {
     assembly.add_handler(crate::lib::inspect_handler::make_inspect_handler(

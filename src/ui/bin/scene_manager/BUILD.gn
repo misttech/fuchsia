@@ -45,6 +45,7 @@ _scene_manager = {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/sorted_vec_map_rs",
     "//src/lib/trace/rust:trace-provider",
     "//src/ui/lib/focus_chain_provider:lib_with_includes",
     "//third_party/rust_crates:anyhow",

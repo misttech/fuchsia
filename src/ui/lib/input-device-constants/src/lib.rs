@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 
 // LINT.IfChange
 /// Generic types of supported input devices.
-#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum InputDeviceType {
     Keyboard,
