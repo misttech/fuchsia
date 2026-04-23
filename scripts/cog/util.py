@@ -5,16 +5,6 @@
 """Utility functions for cog scripts."""
 
 import re
-import subprocess
-
-
-def check_gcert_status() -> bool:
-    """Checks if the user has a valid gcert certificate."""
-    try:
-        subprocess.check_call(["gcertstatus", "-check_ssh=false", "-quiet"])
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
 
 
 def sanitize_filename(filename: str) -> str:

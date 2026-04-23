@@ -87,12 +87,6 @@ def snapshot_workspace(
                 capture_output=True,
                 text=True,
             )
-
-    except FileNotFoundError:
-        logger.log_error(
-            "Error: grpc_cli not found. Please ensure it is in your PATH."
-        )
-        raise
     except subprocess.CalledProcessError as e:
         logger.log_error(f"Error during snapshotting via grpc_cli: {e}")
         logger.log_error(f"stdout: {e.stdout}")
@@ -131,11 +125,6 @@ def copy_cartfs_directory(from_path_rel: Path, to_path_rel: Path) -> None:
             capture_output=True,
             text=True,
         )
-    except FileNotFoundError:
-        logger.log_error(
-            "Error: grpc_cli not found. Please ensure it is in your PATH."
-        )
-        raise
     except subprocess.CalledProcessError as e:
         logger.log_error(f"Error during CartFS directory copy: {e}")
         logger.log_error(f"stdout: {e.stdout}")

@@ -11,29 +11,9 @@ import logging
 import os
 import sys
 
-import cartfs
 import logger
-import util
+import preflight
 import workspace
-
-
-def try_create_workspace(
-    use_local_mock_cartfs: bool,
-) -> workspace.Workspace | None:
-    """Attempts to create a workspace instance."""
-    logger.emit_status("Creating workspace instance...")
-    try:
-        # Identifies the current Cog and associated CartFS workspaces.
-        return workspace.Workspace.create(use_local_mock_cartfs)
-    except workspace.NotInCogWorkspaceError:
-        logger.log_error("This script can only be run in cog workspaces.")
-        logger.log_error(
-            "Please refer to https://go/fuchsia-cog-user-guide for instructions on fuchsia development with cog."
-        )
-        return None
-    except cartfs.CartfsError as e:
-        logger.log_exception(e)
-        return None
 
 
 def _parse_args() -> argparse.Namespace:
@@ -95,15 +75,16 @@ def main() -> int:
         enable_status_updates=args.enable_status_updates,
     )
 
-    if not util.check_gcert_status():
-        logger.log_error("You do not have a valid gcert certificate.")
-        logger.log_error("Please run 'gcert' and try again.")
+    if preflight.check_all(
+        skip_cartfs_checks=args.use_local_mock_cartfs,
+        require_grpc_cli=args.snapshot,
+    ):
+        logger.log_info("All preflight checks passed!")
+    else:
         return 1
 
-    ws = try_create_workspace(args.use_local_mock_cartfs)
-    if not ws:
-        logger.log_warn("Could not create workspace instance.")
-        return 1
+    logger.emit_status("Creating workspace instance...")
+    ws = workspace.Workspace(use_local_mock_cartfs=args.use_local_mock_cartfs)
 
     logger.log_debug(f"Found repository: {ws.repo_dir}")
     logger.log_debug(f"CartFS mount point: {ws.cartfs_instance.mount_point}")

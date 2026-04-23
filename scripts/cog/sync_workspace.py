@@ -22,7 +22,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+import cartfs
 import logger
+import preflight
 import workspace
 
 
@@ -48,13 +50,7 @@ class WorkspaceSyncService:
     """Syncs changes between Cog <=> CartFS checkouts."""
 
     def __init__(self) -> None:
-        self.git_citc_path = shutil.which("git-citc")
-        if not self.git_citc_path:
-            raise workspace.WorkspaceError(
-                "git-citc command not found in PATH."
-            )
-
-        self.workspace = workspace.Workspace.create()
+        self.workspace = workspace.Workspace()
         self.cog_root = self.workspace.workspace_root
         logger.log_info(f"Cog root: {self.cog_root}")
         if self.workspace.has_cartfs_dir:
@@ -70,15 +66,12 @@ class WorkspaceSyncService:
     def _config(self) -> dict[str, Any]:
         return self.workspace.config
 
-    def _git_citc(
-        self, *command: str, cwd: Path | None = None, exit_on_error: bool = True
-    ) -> str:
-        assert self.git_citc_path is not None
+    def _git_citc(self, *command: str, cwd: Path | None = None) -> str:
         return self.workspace._run(
-            [self.git_citc_path] + list(command),
+            ["git-citc"] + list(command),
             cwd=cwd or self.cog_root,
             capture_output=True,
-            exit_on_error=exit_on_error,
+            exit_on_error=False,
         )
 
     @property
@@ -465,8 +458,7 @@ def _parse_args() -> argparse.Namespace:
     return args
 
 
-def main() -> int:
-    """Main function to sync the Cog <=> CartFS workspaces."""
+def _main() -> None:
     args = _parse_args()
 
     if not args.color:
@@ -485,44 +477,30 @@ def main() -> int:
         enable_status_updates=args.enable_status_updates,
     )
 
-    try:
-        sync_service = WorkspaceSyncService()
-    except Exception as e:
-        logger.log_error(
-            "An unexpected error occurred when initializing the sync service."
-        )
-        logger.log_exception(e)
-        return 1
+    sync_service = WorkspaceSyncService()
 
-    try:
-        if args.sync_direction == SyncDirection.FROM_COG_TO_CARTFS:
-            logger.log_info("Syncing changes from Cog to CartFS...")
-            sync_result = sync_service.sync_cog_to_cartfs()
-            if sync_result.failed:
-                logger.log_warn(
-                    f"Failed to sync {len(sync_result.failed)} files from Cog to CartFS:\n"
-                    f"{textwrap.indent(chr(10).join(sync_result.failed), '    ')}\n"
-                    "Some source file changes made in Cider won't be made effective for this "
-                    "`fx`/`ffx` command invocation!"
-                )
-        else:
-            logger.log_info("Syncing changes from CartFS to Cog...")
-            sync_result = sync_service.sync_cartfs_to_cog(
-                not args.unsafe_overwrite_cog_changes_since_last_sync
+    if args.sync_direction == SyncDirection.FROM_COG_TO_CARTFS:
+        logger.log_info("Syncing changes from Cog to CartFS...")
+        sync_result = sync_service.sync_cog_to_cartfs()
+        if sync_result.failed:
+            logger.log_warn(
+                f"Failed to sync {len(sync_result.failed)} files from Cog to CartFS:\n"
+                f"{textwrap.indent(chr(10).join(sync_result.failed), '    ')}\n"
+                "Some source file changes made in Cider won't be made effective for this "
+                "`fx`/`ffx` command invocation!"
             )
-            if sync_result.failed:
-                logger.log_warn(
-                    f"Failed to sync {len(sync_result.failed)} files from CartFS to Cog:\n"
-                    f"{textwrap.indent(chr(10).join(sync_result.failed), '    ')}\n"
-                    "Some source file changes made by `fx`/`ffx` tooling won't be reflected back "
-                    "to Cider!"
-                )
-    except Exception as e:
-        logger.log_error(
-            f"An unexpected error occurred when syncing changes {args.sync_direction.value}."
+    else:
+        logger.log_info("Syncing changes from CartFS to Cog...")
+        sync_result = sync_service.sync_cartfs_to_cog(
+            not args.unsafe_overwrite_cog_changes_since_last_sync
         )
-        logger.log_exception(e)
-        return 1
+        if sync_result.failed:
+            logger.log_warn(
+                f"Failed to sync {len(sync_result.failed)} files from CartFS to Cog:\n"
+                f"{textwrap.indent(chr(10).join(sync_result.failed), '    ')}\n"
+                "Some source file changes made by `fx`/`ffx` tooling won't be reflected back "
+                "to Cider!"
+            )
 
     logger.log_info(
         "Sync complete.\n"
@@ -539,7 +517,28 @@ def main() -> int:
             f"CARTFS_FUCHSIA_DIR={shlex.quote(str(sync_service.cartfs_root / 'fuchsia'))}\n"
         )
 
-    return 0
+
+def main() -> int:
+    """Main function to sync the Cog <=> CartFS workspaces."""
+    try:
+        _main()
+        return 0
+    except (workspace.NotInCogWorkspaceError, cartfs.CartfsNotRunningError):
+        # Let `preflight.check_all()` surface a better error message.
+        pass
+    except Exception as err:
+        logger.log_error("An unexpected error occurred:")
+        logger.log_exception(err)
+
+    # Run preflight checks to diagnose errors and provide helpful error messages.
+    #
+    # Since this script is run twice per `fx`/`ffx` user invocation, opportunistically assume the
+    # user has a working environment and run preflight checks otherwise to reduce this script's
+    # overhead.
+    with logger.set_level(min(logger.get_log_level(), logging.INFO)):
+        logger.log_info("\nRunning environment diagnostics...")
+        preflight.check_all()
+    return 1
 
 
 if __name__ == "__main__":

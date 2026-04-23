@@ -110,439 +110,352 @@ class TestCartfs(unittest.TestCase):
     def test_suggest_cartfs_dir_name_handles_collision(self) -> None:
         """Test that a counter is appended when the directory exists."""
         with mock_fs.FileSystemTestHelper() as fs:
-            c = cartfs.Cartfs(fs.cartfs_dir, use_local_mock_cartfs=False)
-            (fs.cartfs_dir / "test-ws").mkdir()
-            suggested_name = c.suggest_cartfs_dir_name(base_name="test-ws")
-            self.assertEqual(str(suggested_name), "test-ws-1")
+            with patch.object(
+                cartfs.Cartfs, "find_mount_point", return_value=fs.cartfs_dir
+            ):
+                c = cartfs.Cartfs(use_local_mock_cartfs=False)
+                (fs.cartfs_dir / "test-ws").mkdir()
+                suggested_name = c.suggest_cartfs_dir_name(base_name="test-ws")
+                self.assertEqual(str(suggested_name), "test-ws-1")
 
 
 class TestWorkspace(unittest.TestCase):
     """Tests for Workspace."""
 
+    def setUp(self) -> None:
+        self.fs = mock_fs.FileSystemTestHelper()
+        self.patcher = patch.object(
+            cartfs.Cartfs, "find_mount_point", return_value=self.fs.cartfs_dir
+        )
+        self.patcher.start()
+
+    def tearDown(self) -> None:
+        self.patcher.stop()
+        self.fs.cleanup()
+
     def test_config_success(self) -> None:
         """Test that config reads from file."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            workspace_dir = fs.cog_dir / "testuser" / "test-workspace"
-            repo_name = "fuchsia"
-            config_path = (
-                workspace_dir
-                / repo_name
-                / "scripts"
-                / "cog"
-                / "repo_config.json"
-            )
-            config_path.parent.mkdir(exist_ok=True, parents=True)
-            with open(config_path, "w") as f:
-                f.write('{"fuchsia": {"repo": "fuchsia"}}')
+        workspace_dir = self.fs.cog_dir / "testuser" / "test-workspace"
+        repo_name = "fuchsia"
+        config_path = (
+            workspace_dir / repo_name / "scripts" / "cog" / "repo_config.json"
+        )
+        config_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(config_path, "w") as f:
+            f.write('{"fuchsia": {"repo": "fuchsia"}}')
 
-            ws = workspace.Workspace(
-                repo_dir=workspace_dir / repo_name,
-                cartfs_instance=MagicMock(),
-            )
-            self.assertEqual(ws.config, {"fuchsia": {"repo": "fuchsia"}})
+        ws = workspace.Workspace(self.fs.repo_dir)
+        self.assertEqual(ws.config, {"fuchsia": {"repo": "fuchsia"}})
 
     def test_config_file_not_found(self) -> None:
         """Test that FileNotFoundError is raised when config file is missing."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            workspace_dir = fs.cog_dir / "testuser" / "test-workspace"
-            ws = workspace.Workspace(
-                repo_dir=workspace_dir / "fuchsia",
-                cartfs_instance=MagicMock(),
-            )
-            with self.assertRaises(FileNotFoundError):
-                _ = ws.config
+        ws = workspace.Workspace(self.fs.repo_dir)
+        with self.assertRaises(FileNotFoundError):
+            _ = ws.config
 
     def test_has_cartfs_dir_true(self) -> None:
         """Test that has_cartfs_dir returns True when cartfs_dir is available."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=MagicMock(),
-            )
-            ws.__dict__["cartfs_dir"] = fs.cartfs_dir
-            self.assertTrue(ws.has_cartfs_dir)
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.__dict__["cartfs_dir"] = self.fs.cartfs_dir
+        self.assertTrue(ws.has_cartfs_dir)
 
     def test_has_cartfs_dir_false(self) -> None:
         """Test that has_cartfs_dir returns False when cartfs_dir is not available."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=MagicMock(),
+        ws = workspace.Workspace(self.fs.repo_dir)
+        with patch.object(ws, "_get_linked_cartfs_dir", return_value=None):
+            self.assertFalse(ws.has_cartfs_dir)
+
+    def test_cogd_path_success(self) -> None:
+        """Test that cogd_path returns the path from git-citc."""
+        workspace.Workspace.cogd_path.cache_clear()
+        with patch("subprocess.check_output") as mock_check_output:
+            mock_check_output.return_value = "/path/to/cogd\n"
+            path = workspace.Workspace.cogd_path()
+            self.assertEqual(path, Path("/path/to/cogd"))
+            mock_check_output.assert_called_once_with(
+                ["git-citc", "cogd"], text=True
             )
-            with patch.object(ws, "_get_linked_cartfs_dir", return_value=None):
-                self.assertFalse(ws.has_cartfs_dir)
 
-    def test_create_success(self) -> None:
-        """Test that a Workspace instance can be created successfully."""
-        with mock_fs.FileSystemTestHelper(
-            user="testuser",
-            workspace_name="test-workspace",
-            repo_name="fuchsia",
-        ) as fs:
-            # Mock the environment variables and current working directory.
-            with (
-                patch.object(
-                    os,
-                    "getcwd",
-                    return_value=str(
-                        fs.full_path(
-                            "testuser/test-workspace/fuchsia",
-                            mock_fs.FSType.COG,
-                        )
-                    ),
-                ),
-                patch.object(
-                    cartfs.Cartfs, "create", return_value=MagicMock()
-                ) as mock_cartfs_create,
-                patch("subprocess.run") as mock_subprocess_run,
-            ):
-                mock_process = MagicMock()
-                expected_path = (
-                    fs.cog_dir / "testuser" / "test-workspace" / "fuchsia"
-                )
-                mock_process.stdout = f"{expected_path}\n".encode()
-                mock_subprocess_run.return_value = mock_process
+    def test_cogd_path_cached(self) -> None:
+        """Test that cogd_path is cached."""
+        workspace.Workspace.cogd_path.cache_clear()
+        with patch("subprocess.check_output") as mock_check_output:
+            mock_check_output.return_value = "/path/to/cogd\n"
+            path1 = workspace.Workspace.cogd_path()
+            path2 = workspace.Workspace.cogd_path()
+            self.assertEqual(path1, path2)
+            mock_check_output.assert_called_once()
 
-                ws = workspace.Workspace.create()
-                self.assertEqual(
-                    ws.workspace_root,
-                    fs.cog_dir / "testuser" / "test-workspace",
-                )
-                self.assertEqual(ws.repo_name, "fuchsia")
-                self.assertEqual(ws.workspace_name, "test-workspace")
-                self.assertEqual(ws.workspace_id, fs.workspace_id)
-                mock_cartfs_create.assert_called_once()
+    def test_init_cogd_path_failure(self) -> None:
+        """Test that Workspace instantiation fails when cogd_path fails."""
+        workspace.Workspace.cogd_path.cache_clear()
+        with patch("subprocess.check_output") as mock_check_output:
+            mock_check_output.side_effect = subprocess.CalledProcessError(
+                1, "cmd"
+            )
+            with self.assertRaises(workspace.NotInCogWorkspaceError):
+                workspace.Workspace(repo_dir=None)
 
-    def test_create_not_in_cog_workspace(self) -> None:
-        """Test that NotInCogWorkspaceError is raised when not in a Cog workspace."""
-        with mock_fs.FileSystemTestHelper(
-            user="testuser",
-            workspace_name="test-workspace",
-            repo_name="fuchsia",
-        ) as fs:
-            fs.mkdir("some/other/dir", mock_fs.FSType.COG)
-            with (
-                patch.object(
-                    os,
-                    "getcwd",
-                    return_value=str(
-                        fs.full_path("some/other/dir", mock_fs.FSType.COG)
-                    ),
-                ),
-                patch(
-                    "subprocess.run",
-                    side_effect=subprocess.CalledProcessError(1, ["git"]),
-                ),
-                self.assertRaises(workspace.NotInCogWorkspaceError),
-            ):
-                workspace.Workspace.create()
+    def test_init_cogd_path_not_found(self) -> None:
+        """Test that cogd_path raises RepoSetupError when git-citc is missing."""
+        workspace.Workspace.cogd_path.cache_clear()
+        with patch("subprocess.check_output", side_effect=FileNotFoundError):
+            with self.assertRaises(workspace.NotInCogWorkspaceError):
+                workspace.Workspace.cogd_path()
 
-    def test_create_cartfs_error(self) -> None:
-        """Test that CartfsError is raised when cartfs is not available."""
-        with mock_fs.FileSystemTestHelper(
-            user="testuser",
-            workspace_name="test-workspace",
-            repo_name="fuchsia",
-        ) as fs:
-            with (
-                patch.object(
-                    os,
-                    "getcwd",
-                    return_value=str(
-                        fs.full_path(
-                            "testuser/test-workspace/fuchsia",
-                            mock_fs.FSType.COG,
-                        )
-                    ),
-                ),
-                patch.object(
-                    cartfs.Cartfs, "create", side_effect=cartfs.CartfsError
-                ),
-                patch("subprocess.run") as mock_subprocess_run,
-                self.assertRaises(cartfs.CartfsError),
-            ):
-                mock_process = MagicMock()
-                expected_path = (
-                    fs.cog_dir / "testuser" / "test-workspace" / "fuchsia"
-                )
-                mock_process.stdout = f"{expected_path}\n".encode()
-                mock_subprocess_run.return_value = mock_process
-
-                workspace.Workspace.create()
+    def test_init_cartfs_find_mount_point_failure(self) -> None:
+        """Test that Workspace instantiation fails when Cartfs.find_mount_point fails."""
+        with patch.object(
+            cartfs.Cartfs,
+            "find_mount_point",
+            side_effect=cartfs.CartfsNotRunningError("mock error"),
+        ):
+            with self.assertRaises(cartfs.CartfsNotRunningError):
+                workspace.Workspace(repo_dir=self.fs.repo_dir)
 
     def test_init_cartfs_workspace_snapshot_success(
         self,
     ) -> None:
         """Test that snapshotting from a previous instance is successful."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
-            suggested_directory_name = "new_cartfs_dir"
-            cartfs_instance.suggest_cartfs_dir_name.return_value = (
-                suggested_directory_name
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
+        suggested_directory_name = "new_cartfs_dir"
+        cartfs_instance.suggest_cartfs_dir_name.return_value = (
+            suggested_directory_name
+        )
+
+        def mock_snapshot_workspace(
+            _workspace_to_snapshot_from: Path,
+            _workspace_to_snapshot_to: Path,
+            cartfs_mount_point: Path,
+        ) -> None:
+            (cartfs_mount_point / suggested_directory_name).mkdir()
+
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
+        with patch.object(
+            ws,
+            "_find_previous_instance",
+            return_value=Path("foo"),
+        ), patch.object(
+            workspace.Workspace, "lock_file", new_callable=PropertyMock
+        ) as mock_lock_file, patch(
+            "workspace.snapshotter.snapshot_workspace",
+            side_effect=mock_snapshot_workspace,
+        ):
+            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
+            with ws.lock():
+                ws.init_cartfs_workspace(snapshot=True)
+
+            self.assertTrue(
+                self.fs.full_path(
+                    suggested_directory_name, mock_fs.FSType.CARTFS
+                ).is_dir()
             )
-
-            def mock_snapshot_workspace(
-                _workspace_to_snapshot_from: Path,
-                _workspace_to_snapshot_to: Path,
-                cartfs_mount_point: Path,
-            ) -> None:
-                (cartfs_mount_point / suggested_directory_name).mkdir()
-
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=cartfs_instance,
-            )
-            with patch.object(
-                ws,
-                "_find_previous_instance",
-                return_value=Path("foo"),
-            ), patch.object(
-                workspace.Workspace, "lock_file", new_callable=PropertyMock
-            ) as mock_lock_file, patch(
-                "workspace.snapshotter.snapshot_workspace",
-                side_effect=mock_snapshot_workspace,
-            ):
-                mock_lock_file.return_value = fs.cog_dir / "test.lock"
-                with ws.lock():
-                    ws.init_cartfs_workspace(snapshot=True)
-
-                self.assertTrue(
-                    fs.full_path(
-                        suggested_directory_name, mock_fs.FSType.CARTFS
-                    ).is_dir()
-                )
-                symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
-                self.assertTrue(symlink_path.is_symlink())
+            symlink_path = self.fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+            self.assertTrue(symlink_path.is_symlink())
 
     def test_init_cartfs_workspace_snapshot_no_previous_instance(
         self,
     ) -> None:
         """Test that empty workspace is created when no previous instance is found."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
-            suggested_directory_name = "new_cartfs_dir"
-            cartfs_instance.suggest_cartfs_dir_name.return_value = (
-                suggested_directory_name
-            )
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=cartfs_instance,
-            )
-            with patch.object(
-                ws, "_find_previous_instance", return_value=None
-            ), patch.object(
-                workspace.Workspace, "lock_file", new_callable=PropertyMock
-            ) as mock_lock_file:
-                mock_lock_file.return_value = fs.cog_dir / "test.lock"
-                with ws.lock():
-                    ws.init_cartfs_workspace(snapshot=True)
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
+        suggested_directory_name = "new_cartfs_dir"
+        cartfs_instance.suggest_cartfs_dir_name.return_value = (
+            suggested_directory_name
+        )
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
+        with patch.object(
+            ws, "_find_previous_instance", return_value=None
+        ), patch.object(
+            workspace.Workspace, "lock_file", new_callable=PropertyMock
+        ) as mock_lock_file:
+            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
+            with ws.lock():
+                ws.init_cartfs_workspace(snapshot=True)
 
-                symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
-                self.assertTrue(symlink_path.is_symlink())
+            symlink_path = self.fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+            self.assertTrue(symlink_path.is_symlink())
 
     def test_init_cartfs_workspace_snapshot_snapshot_error(self) -> None:
         """Test that empty workspace is created when snapshotting raises an error."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
-            suggested_directory_name = "new_cartfs_dir"
-            cartfs_instance.suggest_cartfs_dir_name.return_value = (
-                suggested_directory_name
-            )
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=cartfs_instance,
-            )
-            with patch.object(
-                ws,
-                "_find_previous_instance",
-                return_value=fs.cartfs_dir / "previous_instance",
-            ), patch.object(
-                workspace.Workspace, "lock_file", new_callable=PropertyMock
-            ) as mock_lock_file:
-                mock_lock_file.return_value = fs.cog_dir / "test.lock"
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
+        suggested_directory_name = "new_cartfs_dir"
+        cartfs_instance.suggest_cartfs_dir_name.return_value = (
+            suggested_directory_name
+        )
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
+        with patch.object(
+            ws,
+            "_find_previous_instance",
+            return_value=self.fs.cartfs_dir / "previous_instance",
+        ), patch.object(
+            workspace.Workspace, "lock_file", new_callable=PropertyMock
+        ) as mock_lock_file:
+            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
 
-                def mock_snapshot_workspace(
-                    _workspace_to_snapshot_from: Path,
-                    _workspace_to_snapshot_to: Path,
-                    _cartfs_mount_point: Path,
-                ) -> None:
-                    raise ValueError("test error")
+            def mock_snapshot_workspace(
+                _workspace_to_snapshot_from: Path,
+                _workspace_to_snapshot_to: Path,
+                _cartfs_mount_point: Path,
+            ) -> None:
+                raise ValueError("test error")
 
-                with ws.lock():
-                    with patch(
-                        "workspace.snapshotter.snapshot_workspace",
-                        side_effect=mock_snapshot_workspace,
-                    ):
-                        ws.init_cartfs_workspace(snapshot=True)
+            with ws.lock():
+                with patch(
+                    "workspace.snapshotter.snapshot_workspace",
+                    side_effect=mock_snapshot_workspace,
+                ):
+                    ws.init_cartfs_workspace(snapshot=True)
 
-                symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
-                self.assertTrue(symlink_path.is_symlink())
+            symlink_path = self.fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+            self.assertTrue(symlink_path.is_symlink())
 
     def test_init_cartfs_workspace_empty(self) -> None:
         """Test that an empty cartfs workspace directory is created and linked."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
-            suggested_directory_name = "new_cartfs_dir"
-            cartfs_instance.suggest_cartfs_dir_name.return_value = (
-                suggested_directory_name
-            )
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=cartfs_instance,
-            )
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
+        suggested_directory_name = "new_cartfs_dir"
+        cartfs_instance.suggest_cartfs_dir_name.return_value = (
+            suggested_directory_name
+        )
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
 
-            with patch.object(
-                workspace.Workspace, "lock_file", new_callable=PropertyMock
-            ) as mock_lock_file:
-                mock_lock_file.return_value = fs.cog_dir / "test.lock"
-                with ws.lock():
-                    ws.init_cartfs_workspace(snapshot=False)
+        with patch.object(
+            workspace.Workspace, "lock_file", new_callable=PropertyMock
+        ) as mock_lock_file:
+            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
+            with ws.lock():
+                ws.init_cartfs_workspace(snapshot=False)
 
-            expected_dir = (
-                Path(cartfs_instance.mount_point) / suggested_directory_name
-            )
-            self.assertTrue(expected_dir.is_dir())
-            symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
-            self.assertTrue(symlink_path.is_symlink())
+        expected_dir = (
+            Path(cartfs_instance.mount_point) / suggested_directory_name
+        )
+        self.assertTrue(expected_dir.is_dir())
+        symlink_path = self.fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+        self.assertTrue(symlink_path.is_symlink())
 
     def test_init_cartfs_workspace_local_mock_cartfs(self) -> None:
         """Test that snapshotting is skipped when using local mock cartfs."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
-            cartfs_instance.use_local_mock_cartfs = True
-            suggested_directory_name = "new_cartfs_dir"
-            cartfs_instance.suggest_cartfs_dir_name.return_value = (
-                suggested_directory_name
-            )
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=cartfs_instance,
-            )
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
+        cartfs_instance.use_local_mock_cartfs = True
+        suggested_directory_name = "new_cartfs_dir"
+        cartfs_instance.suggest_cartfs_dir_name.return_value = (
+            suggested_directory_name
+        )
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
 
-            with patch.object(
-                workspace.Workspace, "lock_file", new_callable=PropertyMock
-            ) as mock_lock_file, patch.object(
-                ws, "_init_cartfs_workspace_snapshot"
-            ) as mock_snapshot:
-                mock_lock_file.return_value = fs.cog_dir / "test.lock"
-                with ws.lock():
-                    ws.init_cartfs_workspace(snapshot=True)
+        with patch.object(
+            workspace.Workspace, "lock_file", new_callable=PropertyMock
+        ) as mock_lock_file, patch.object(
+            ws, "_init_cartfs_workspace_snapshot"
+        ) as mock_snapshot:
+            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
+            with ws.lock():
+                ws.init_cartfs_workspace(snapshot=True)
 
-                mock_snapshot.assert_not_called()
+            mock_snapshot.assert_not_called()
 
-            expected_dir = (
-                Path(cartfs_instance.mount_point) / suggested_directory_name
-            )
-            self.assertTrue(expected_dir.is_dir())
+        expected_dir = (
+            Path(cartfs_instance.mount_point) / suggested_directory_name
+        )
+        self.assertTrue(expected_dir.is_dir())
 
     def test_link_to_cartfs(self) -> None:
         """Test that the workspace can be linked to a cartfs directory."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=cartfs_instance,
-            )
+        cartfs_instance = MagicMock()
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
 
-            cartfs_dir = fs.mkdir("cartfs_dir", mock_fs.FSType.CARTFS)
-            ws._link_to_cartfs(cartfs_dir)
+        cartfs_dir = self.fs.mkdir("cartfs_dir", mock_fs.FSType.CARTFS)
+        ws._link_to_cartfs(cartfs_dir)
 
-            symlink_path = fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
-            self.assertTrue(symlink_path.is_symlink())
+        symlink_path = self.fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
+        self.assertTrue(symlink_path.is_symlink())
 
-            # Ensure that we write the name of the repository in cartfs
-            metadata = workspace.CogMetadata.from_file(
-                cartfs_dir / workspace.COG_METADATA_FILE_NAME
-            )
-            self.assertIsNotNone(metadata)
+        # Ensure that we write the name of the repository in cartfs
+        metadata = workspace.CogMetadata.from_file(
+            cartfs_dir / workspace.COG_METADATA_FILE_NAME
+        )
+        self.assertIsNotNone(metadata)
 
-            self.assertEqual(
-                metadata and metadata.repo_name or "",
-                "fuchsia",
-            )
-            self.assertEqual(
-                metadata and metadata.workspace_name or "",
-                "test-workspace",
-            )
-            self.assertEqual(
-                metadata and metadata.workspace_id or "",
-                fs.workspace_id,
-            )
+        self.assertEqual(
+            metadata and metadata.repo_name or "",
+            "fuchsia",
+        )
+        self.assertEqual(
+            metadata and metadata.workspace_name or "",
+            "test-workspace",
+        )
+        self.assertEqual(
+            metadata and metadata.workspace_id or "",
+            self.fs.workspace_id,
+        )
 
     def test_find_previous_instance_success(self) -> None:
         """Test that the previous instance is found correctly."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
 
-            # Create a candidate directory.
-            candidate_dir = fs.mkdir("candidate", mock_fs.FSType.CARTFS)
-            workspace.CogMetadata(
-                workspace_name="test-workspace",
-                repo_name="fuchsia",
-            ).write(candidate_dir)
+        # Create a candidate directory.
+        candidate_dir = self.fs.mkdir("candidate", mock_fs.FSType.CARTFS)
+        workspace.CogMetadata(
+            workspace_name="test-workspace",
+            repo_name="fuchsia",
+        ).write(candidate_dir)
 
-            ws = workspace.Workspace(
-                repo_dir=fs.cog_dir / "testuser" / "test-workspace" / "fuchsia",
-                cartfs_instance=cartfs_instance,
-            )
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
 
-            result = ws._find_previous_instance()
-            self.assertEqual(result, Path("candidate"))
+        result = ws._find_previous_instance()
+        self.assertEqual(result, Path("candidate"))
 
     def test_find_previous_instance_ignores_current_workspace(self) -> None:
         """Test that the current workspace is ignored."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
 
-            ws = workspace.Workspace(
-                repo_dir=fs.cog_dir / "testuser" / "test-workspace" / "fuchsia",
-                cartfs_instance=cartfs_instance,
-            )
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
 
-            result = ws._find_previous_instance()
-            self.assertIsNone(result)
+        result = ws._find_previous_instance()
+        self.assertIsNone(result)
 
     def test_find_previous_instance_ignores_other_repo(self) -> None:
         """Test that the previous instance is skipped if it is for a different repository."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
 
-            # Create a candidate directory.
-            candidate_dir = fs.mkdir("candidate", mock_fs.FSType.CARTFS)
-            workspace.CogMetadata(
-                workspace_name="test-workspace",
-                repo_name="other-repo",
-            ).write(candidate_dir)
+        # Create a candidate directory.
+        candidate_dir = self.fs.mkdir("candidate", mock_fs.FSType.CARTFS)
+        workspace.CogMetadata(
+            workspace_name="test-workspace",
+            repo_name="other-repo",
+        ).write(candidate_dir)
 
-            ws = workspace.Workspace(
-                repo_dir=fs.cog_dir / "testuser" / "test-workspace" / "fuchsia",
-                cartfs_instance=cartfs_instance,
-            )
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
 
-            result = ws._find_previous_instance()
-            self.assertIsNone(result)
+        result = ws._find_previous_instance()
+        self.assertIsNone(result)
 
     def test_find_previous_instance_no_candidates(self) -> None:
         """Test that None is returned when there are no candidate directories."""
-        with mock_fs.FileSystemTestHelper() as fs:
-            cartfs_instance = MagicMock()
-            cartfs_instance.mount_point = fs.cartfs_dir
+        cartfs_instance = MagicMock()
+        cartfs_instance.mount_point = self.fs.cartfs_dir
 
-            ws = workspace.Workspace(
-                repo_dir=fs.cog_dir / "testuser" / "test-workspace" / "fuchsia",
-                cartfs_instance=cartfs_instance,
-            )
+        ws = workspace.Workspace(self.fs.repo_dir)
+        ws.cartfs_instance = cartfs_instance
 
-            result = ws._find_previous_instance()
-            self.assertIsNone(result)
+        result = ws._find_previous_instance()
+        self.assertIsNone(result)
 
     def test_checkout_cartfs_to_cog_revisions_up_to_date_no_cog_integration(
         self,
@@ -550,9 +463,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that initialization skips sync and symlinks when up-to-date."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -573,6 +484,7 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(
                     ws, "_checkout_integration_roll", return_value="int_hash"
                 ) as mock_checkout,
+                patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
             ):
                 with patch.object(ws, "_assert_locked") as mock_assert_locked:
                     ws.checkout_cartfs_to_cog_revisions()
@@ -587,9 +499,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that initialization skips sync and symlinks when up-to-date (including integration)."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -617,6 +527,7 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "_create_symlinks") as mock_symlinks,
                 patch.object(ws, "_fetch_prebuilts") as mock_fetch,
                 patch.object(ws, "_reinit_integration_repo") as mock_reinit,
+                patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
             ):
                 with patch.object(ws, "_assert_locked") as mock_assert_locked:
                     ws.checkout_cartfs_to_cog_revisions()
@@ -631,9 +542,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that initialization performs sync when not up-to-date (no integration repo)."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -660,6 +569,7 @@ class TestWorkspace(unittest.TestCase):
                     "_checkout_integration_roll",
                     return_value="integration_hash_abc",
                 ) as mock_checkout,
+                patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
             ):
                 with patch.object(ws, "_assert_locked") as mock_assert_locked:
                     ws.checkout_cartfs_to_cog_revisions()
@@ -677,9 +587,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that initialization performs sync when not up-to-date (with integration repo)."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -714,6 +622,7 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "_fetch_prebuilts") as mock_fetch,
                 patch.object(ws, "_reinit_integration_repo") as mock_reinit,
                 patch.object(ws, "_checkout_integration_roll") as mock_checkout,
+                patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
             ):
                 with patch.object(ws, "_assert_locked") as mock_assert_locked:
                     ws.checkout_cartfs_to_cog_revisions()
@@ -729,9 +638,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that _create_symlinks correctly resolves @cog// and @cartfs// paths."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
 
@@ -787,9 +694,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that _write_jiri_manifest uses jiriImports from config."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
 
@@ -825,9 +730,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that specifying integration.repo and integration.remote changes behavior."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
 
@@ -853,6 +756,7 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(
                     ws, "_checkout_integration_roll"
                 ) as mock_checkout_roll,
+                patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
                 patch("subprocess.run") as mock_subprocess_run,
             ):
                 mock_get_cog_commit.side_effect = lambda repo: {
@@ -884,9 +788,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that returns True when standalone checkout is up to date."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -907,9 +809,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that returns False when standalone checkout is not up to date."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -932,9 +832,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that returns True when superproject checkout is up to date."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -963,9 +861,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that returns False when fuchsia commit differs in superproject."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -988,9 +884,7 @@ class TestWorkspace(unittest.TestCase):
         """Test that returns False when integration commit differs in superproject."""
         with mock_fs.FileSystemTestHelper() as fs:
             ws = workspace.Workspace(
-                repo_dir=fs.full_path("test-workspace", mock_fs.FSType.COG)
-                / "fuchsia",
-                cartfs_instance=MagicMock(),
+                fs.full_path("test-workspace", mock_fs.FSType.COG) / "fuchsia",
             )
             ws.__dict__["cartfs_dir"] = fs.cartfs_dir
             ws.__dict__["config"] = {
@@ -1021,10 +915,7 @@ class TestWorkspace(unittest.TestCase):
     def test_lock_acquisition(self) -> None:
         """Test that lock can be acquired."""
         with mock_fs.FileSystemTestHelper() as fs:
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=MagicMock(),
-            )
+            ws = workspace.Workspace(fs.repo_dir)
             with patch.object(
                 workspace.Workspace, "lock_file", new_callable=PropertyMock
             ) as mock_lock_file:
@@ -1041,10 +932,7 @@ class TestWorkspace(unittest.TestCase):
     def test_lock_reentrant(self) -> None:
         """Test that lock is reentrant."""
         with mock_fs.FileSystemTestHelper() as fs:
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=MagicMock(),
-            )
+            ws = workspace.Workspace(fs.repo_dir)
             with patch.object(
                 workspace.Workspace, "lock_file", new_callable=PropertyMock
             ) as mock_lock_file:
@@ -1060,15 +948,11 @@ class TestWorkspace(unittest.TestCase):
     def test_lock_blocks_and_resumes(self) -> None:
         """Test that a second workspace instance blocks and resumes."""
         with mock_fs.FileSystemTestHelper() as fs:
-            ws1 = workspace.Workspace(
-                repo_dir=fs.repo_dir, cartfs_instance=MagicMock()
-            )
-            ws2 = workspace.Workspace(
-                repo_dir=fs.repo_dir, cartfs_instance=MagicMock()
-            )
+            ws1 = workspace.Workspace(fs.repo_dir)
+            ws2 = workspace.Workspace(fs.repo_dir)
 
             # Mock Path.home() to return fs.cog_dir
-            with patch("pathlib.Path.home", return_value=fs.cog_dir):
+            with patch.object(Path, "home", return_value=fs.cog_dir):
                 lock_acquired_by_ws1 = threading.Event()
                 ws2_can_proceed = threading.Event()
                 ws2_finished = threading.Event()
@@ -1101,20 +985,14 @@ class TestWorkspace(unittest.TestCase):
     def test_assert_locked_raises(self) -> None:
         """Test that _assert_locked raises error when not locked."""
         with mock_fs.FileSystemTestHelper() as fs:
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=MagicMock(),
-            )
+            ws = workspace.Workspace(fs.repo_dir)
             with self.assertRaises(workspace.WorkspaceError):
                 ws._assert_locked()
 
     def test_assert_locked_passes(self) -> None:
         """Test that _assert_locked passes when locked."""
         with mock_fs.FileSystemTestHelper() as fs:
-            ws = workspace.Workspace(
-                repo_dir=fs.repo_dir,
-                cartfs_instance=MagicMock(),
-            )
+            ws = workspace.Workspace(fs.repo_dir)
             ws._lock_count = 1
             ws._assert_locked()
 

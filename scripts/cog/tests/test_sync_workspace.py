@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import logger
 import mock_fs
+import preflight
 import sync_workspace
 import workspace
 
@@ -172,8 +174,8 @@ else:
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
             ):
                 os.environ["GIT_CITC_OUTPUT_TYPE"] = "typical"
@@ -293,8 +295,8 @@ else:
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
             ):
                 os.environ["GIT_CITC_OUTPUT_TYPE"] = "superproject"
@@ -403,8 +405,8 @@ else:
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
             ):
                 hashes_file = fs.cartfs_dir / "cog_transfer_file_hashes.json"
@@ -446,15 +448,13 @@ else:
             mock_ws.workspace_root = fs.repo_dir.parent
             mock_ws.cartfs_dir = fs.cartfs_dir
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 hashes_file = fs.cartfs_dir / "cog_transfer_file_hashes.json"
                 hashes_file.write_text("{ malformed json }")
 
-                with patch("sync_workspace.logger.log_error") as mock_log:
+                with patch.object(logger, "log_error") as mock_log:
                     result = service._cog_transfer_file_hashes
                     self.assertEqual(result, {})
                     mock_log.assert_called_once()
@@ -476,8 +476,8 @@ else:
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
             ):
                 service = sync_workspace.WorkspaceSyncService()
@@ -505,8 +505,8 @@ else:
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
             ):
                 service = sync_workspace.WorkspaceSyncService()
@@ -521,9 +521,7 @@ else:
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 with patch.object(
@@ -561,9 +559,7 @@ else:
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 target_file = fs.repo_dir / "target.txt"
@@ -583,9 +579,7 @@ else:
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 target_dir = fs.repo_dir / "target_dir"
@@ -605,9 +599,7 @@ else:
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 target_file = fs.repo_dir / "non_existent.txt"
@@ -639,8 +631,8 @@ else:
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
             ):
                 service = sync_workspace.WorkspaceSyncService()
@@ -672,6 +664,19 @@ else:
                     / "bar.rs",
                 )
 
+    def test_main_exception_calls_preflight(self) -> None:
+        """Test that main calls preflight.check_all on exception."""
+        with patch.object(sync_workspace, "_main") as mock_main, patch.object(
+            preflight, "check_all"
+        ) as mock_check_all, patch(
+            "sync_workspace.logger.log_exception"
+        ) as mock_log_exception:
+            mock_main.side_effect = Exception("test error")
+            result = sync_workspace.main()
+            self.assertEqual(result, 1)
+            mock_check_all.assert_called_once()
+            mock_log_exception.assert_called_once()
+
 
 class TestSyncBatch(TestWorkspaceSyncService):
     """Tests for sync_batch method."""
@@ -683,9 +688,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
             mock_ws.workspace_root = fs.repo_dir.parent
             mock_ws.cartfs_dir = fs.cartfs_dir
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -715,9 +718,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -750,9 +751,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -786,9 +785,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -817,9 +814,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -844,9 +839,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -877,9 +870,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 def failing_src_func(p: str) -> Path:
@@ -900,9 +891,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -929,9 +918,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -969,9 +956,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -1002,9 +987,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -1044,9 +1027,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -1083,9 +1064,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -1125,9 +1104,7 @@ class TestSyncBatch(TestWorkspaceSyncService):
         with mock_fs.FileSystemTestHelper() as fs:
             mock_ws = MagicMock()
 
-            with patch.object(
-                workspace.Workspace, "create", return_value=mock_ws
-            ):
+            with patch.object(workspace, "Workspace", return_value=mock_ws):
                 service = sync_workspace.WorkspaceSyncService()
 
                 src_dir = fs.repo_dir / "src"
@@ -1209,8 +1186,8 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ,
@@ -1251,8 +1228,8 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
             ):
                 service = sync_workspace.WorkspaceSyncService()
@@ -1293,8 +1270,8 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ, {"FAKE_MODIFIED_REPOS": "", "FAKE_CLI_DIFF": ""}
@@ -1350,8 +1327,8 @@ class TestSyncCogToCartFS(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ,
@@ -1416,8 +1393,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ, {"FAKE_MODIFIED_REPOS": "", "FAKE_CLI_DIFF": ""}
@@ -1474,8 +1451,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ, {"FAKE_MODIFIED_REPOS": "", "FAKE_CLI_DIFF": ""}
@@ -1534,8 +1511,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ, {"FAKE_MODIFIED_REPOS": "", "FAKE_CLI_DIFF": ""}
@@ -1591,8 +1568,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ, {"FAKE_MODIFIED_REPOS": "", "FAKE_CLI_DIFF": ""}
@@ -1644,8 +1621,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ, {"FAKE_MODIFIED_REPOS": "", "FAKE_CLI_DIFF": ""}
@@ -1702,8 +1679,8 @@ class TestSyncCartFSToCog(TestWorkspaceSyncService):
 
             with (
                 patch.object(os, "getcwd", return_value=str(fs.repo_dir)),
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(
                     os.environ, {"FAKE_MODIFIED_REPOS": "", "FAKE_CLI_DIFF": ""}
@@ -1745,8 +1722,8 @@ class TestEnsureCartfsCwd(TestWorkspaceSyncService):
             cog_fuchsia_dir.mkdir(parents=True, exist_ok=True)
 
             with (
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(os.environ, {"PWD": str(cog_fuchsia_dir)}),
             ):
@@ -1769,11 +1746,11 @@ class TestEnsureCartfsCwd(TestWorkspaceSyncService):
             outside_dir.mkdir(parents=True, exist_ok=True)
 
             with (
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(os.environ, {"PWD": str(outside_dir)}),
-                patch("sync_workspace.logger.log_warn") as mock_log,
+                patch.object(logger, "log_warn") as mock_log,
             ):
                 service = sync_workspace.WorkspaceSyncService()
                 cwd = service.ensure_cartfs_cwd()
@@ -1797,8 +1774,8 @@ class TestEnsureCartfsCwd(TestWorkspaceSyncService):
             cartfs_target = fs.cartfs_dir / "fuchsia" / "new_dir"
 
             with (
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(os.environ, {"PWD": str(sub_dir)}),
             ):
@@ -1830,8 +1807,8 @@ class TestEnsureCartfsCwd(TestWorkspaceSyncService):
             cog_cwd = symlink_vendor / "company"
 
             with (
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(os.environ, {"PWD": str(cog_cwd)}),
             ):
@@ -1873,8 +1850,8 @@ class TestEnsureCartfsCwd(TestWorkspaceSyncService):
             cartfs_target = fs.cartfs_dir / "fuchsia" / "vendor" / "company"
 
             with (
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch.dict(os.environ, {"PWD": str(cog_cwd)}),
             ):
@@ -1906,8 +1883,8 @@ class TestEnsureCartfsCwd(TestWorkspaceSyncService):
             report_file = fs.repo_dir / "report.json"
 
             with (
-                patch.object(
-                    workspace.Workspace, "create", return_value=mock_ws
+                patch(
+                    "sync_workspace.workspace.Workspace", return_value=mock_ws
                 ),
                 patch(
                     "sync_workspace.WorkspaceSyncService",

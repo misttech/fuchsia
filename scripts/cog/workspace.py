@@ -13,7 +13,7 @@ import sys
 import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from functools import cached_property
+from functools import cache, cached_property
 from pathlib import Path
 from typing import (
     Any,
@@ -43,10 +43,6 @@ class RepoSetupError(WorkspaceError):
 
 class NotInCogWorkspaceError(WorkspaceError):
     """Raised when the current directory is not within a Cog workspace."""
-
-
-class CannotFindRepoNameError(WorkspaceError):
-    """Raised when the repo name cannot be found."""
 
 
 CARTFS_SYMLINK_NAME: str = "cartfs-dir"
@@ -142,54 +138,30 @@ def lock(
 class Workspace:
     """A class to encapsulate a Cog workspace and an associated Cartfs workspace."""
 
-    @classmethod
-    def create(cls, use_local_mock_cartfs: bool = False) -> "Workspace":
-        """Creates a Workspace instance after verifying its state.
-
-        Raises:
-            NotInCogWorkspaceError: If the current directory is not within a Cog workspace.
-                cannot be found.
-            CannotFindRepoNameError: If the repo name cannot be found.
-            CartfsError: If cartfs is not installed or running.
-
-        Returns:
-            A new Workspace instance.
-        """
+    @staticmethod
+    @cache
+    def cogd_path() -> Path:
         try:
-            repo_dir = Path(
-                subprocess.run(
-                    ["git", "citc", "cogd"],
-                    capture_output=True,
-                    check=True,
-                )
-                .stdout.decode("utf-8")
-                .strip()
+            return Path(
+                subprocess.check_output(
+                    ["git-citc", "cogd"],
+                    text=True,
+                ).strip()
             )
-        except subprocess.CalledProcessError as e:
+        except (FileNotFoundError, subprocess.CalledProcessError) as e:
             raise NotInCogWorkspaceError(
-                "Verify whether the current directory is "
-                f"within a Cog workspace: {Path.cwd()}"
+                "Unable to find the cog workspace. Are you in a cog workspace?"
             ) from e
-
-        # Note: this will raise a CartfsError if cartfs is not installed or
-        # running.
-        cartfs_instance = cartfs.Cartfs.create(use_local_mock_cartfs)
-
-        return cls(repo_dir, cartfs_instance)
 
     def __init__(
         self,
-        repo_dir: Path,
-        cartfs_instance: cartfs.Cartfs,
-    ):
-        """Initializes a Workspace instance.
-
-        Note: This constructor should not be called directly. Instead, use the
-        `create` class method to create an instance.
-        """
-        self.repo_dir = repo_dir
-        self.cartfs_instance = cartfs_instance
-        self.cartfs_mount_point = cartfs_instance.mount_point
+        repo_dir: Path | None = None,
+        use_local_mock_cartfs: bool = False,
+    ) -> None:
+        """Initializes a Workspace instance."""
+        self.repo_dir = repo_dir or Workspace.cogd_path()
+        self.cartfs_instance = cartfs.Cartfs(use_local_mock_cartfs)
+        self.cartfs_mount_point = self.cartfs_instance.mount_point
         self._lock_file_handle: TextIO | None = None
         self._lock_count = 0
 
@@ -582,7 +554,7 @@ class Workspace:
         """Determines the `repository` commit hash from CitC."""
         repo_states = (
             self._run(
-                ["git", "citc", "api.get-repo-states", repository],
+                ["git-citc", "api.get-repo-states", repository],
                 cwd=self.repo_dir,
                 capture_output=True,
             )
