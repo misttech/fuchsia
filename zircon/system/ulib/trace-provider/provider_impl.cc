@@ -78,21 +78,24 @@ namespace internal {
 TraceProviderImpl::TraceProviderImpl(
     std::string name, async_dispatcher_t* dispatcher,
     fidl::ServerEnd<fuchsia_tracing_provider::ProviderV2> server_end)
-    : name_(std::move(name)),
-      dispatcher_(dispatcher),
-      binding_(
-          fidl::BindServer(dispatcher_, std::move(server_end), this,
-                           [](TraceProviderImpl* impl, fidl::UnbindInfo info,
-                              fidl::ServerEnd<fuchsia_tracing_provider::ProviderV2> server_end) {
-                             // We don't own impl, so don't attempt to clean it up.
-                           })) {}
+    : name_(std::move(name)), dispatcher_(dispatcher) {
+  std::scoped_lock lock{mutex_};
+  binding_ = fidl::BindServer(dispatcher_, std::move(server_end), this,
+                              [](TraceProviderImpl* impl, fidl::UnbindInfo info,
+                                 fidl::ServerEnd<fuchsia_tracing_provider::ProviderV2> server_end) {
+                                // We don't own impl, so don't attempt to clean it up.
+                              });
+}
 
 TraceProviderImpl::~TraceProviderImpl() {
   // Our clean up step involves a bit of a dance:
   //
-  // We may be destroyed on the async loop, but trace-engine is waiting to be notified on the async
-  // loop that various clean up steps have occurred so that it can correctly clean up its state
-  // concurrently.
+  // 1) We may be destroyed on/by the async loop, but trace-engine may trigger and then wait for
+  //    clean up operations on the loop. So we need to release the loop by posting a continuation
+  //    task between each step to allow for the cleanup to occur.
+  // 2) After each step completes, trace-engine calls a callback on the registered handler
+  //    `Session session_`. So the Session needs to stay alive until after we've received the
+  //    TraceTerminated callback.
   //
   // Therefore, we allow the session to outlive us and task the async loop with stopping, then
   // terminating, releasing the async loop between each stop so that trace engine can process the
@@ -100,15 +103,16 @@ TraceProviderImpl::~TraceProviderImpl() {
   //
   // Finally, we hand ownership of the session to an empty callback so that it can be destroyed
   // cleanly.
+  std::scoped_lock lock{mutex_};
+  if (binding_) {
+    binding_->Unbind();
+  }
   if (session_) {
-    async::PostTask(dispatcher_,
-                    [dispatcher = dispatcher_, session = std::move(session_)]() mutable {
-                      session->StopEngine([dispatcher, session = std::move(session)]() mutable {
-                        async::PostTask(dispatcher, [session = std::move(session)]() mutable {
-                          session->TerminateEngine([session = std::move(session)] {});
-                        });
-                      });
-                    });
+    async::PostTask(dispatcher_, [session = std::move(session_)]() mutable {
+      session->StopEngine([session = std::move(session)]() mutable {
+        session->TerminateEngine([session = std::move(session)]() {});
+      });
+    });
   }
 }
 #else
@@ -128,8 +132,14 @@ TraceProviderImpl::~TraceProviderImpl() { Session::TerminateEngine(); }
 void TraceProviderImpl::Initialize(
     fuchsia_tracing_provider::wire::ProviderV2InitializeRequest* request,
     InitializeCompleter::Sync& completer) {
+  std::scoped_lock lock{mutex_};
   if (session_) {
     fprintf(stderr, "TraceProvider: Initialize failed, session already exists.\n");
+    completer.Close(ZX_ERR_BAD_STATE);
+  }
+
+  if (!binding_) {
+    fprintf(stderr, "TraceProvider: Initialize failed, binding not yet completed.\n");
     completer.Close(ZX_ERR_BAD_STATE);
   }
 
@@ -146,7 +156,7 @@ void TraceProviderImpl::Initialize(
 
   std::vector<std::string> categories = CloneCategories(config);
   session_ = Session::InitializeEngine(dispatcher_, buffering_mode, std::move(buffer), categories,
-                                       binding_);
+                                       *binding_);
   provider_config_ = {
       .buffering_mode = buffering_mode,
       .categories = std::move(categories),
@@ -170,6 +180,7 @@ void TraceProviderImpl::Initialize(
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 void TraceProviderImpl::Start(fuchsia_tracing_provider::wire::ProviderV2StartRequest* request,
                               StartCompleter::Sync& completer) {
+  std::scoped_lock lock{mutex_};
   const fuchsia_tracing_provider::wire::StartOptions& options = request->options;
   if (session_) {
     session_->StartEngine(
@@ -190,6 +201,7 @@ void TraceProviderImpl::Start(fuchsia_tracing_provider::wire::ProviderStartReque
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 void TraceProviderImpl::Stop(StopCompleter::Sync& completer) {
+  std::scoped_lock lock{mutex_};
   if (session_) {
     session_->StopEngine([cb = completer.ToAsync()]() mutable { cb.Reply(); });
   } else {
@@ -202,14 +214,20 @@ void TraceProviderImpl::Stop(StopCompleter::Sync& completer) { Session::StopEngi
 
 void TraceProviderImpl::Terminate(TerminateCompleter::Sync& completer) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-  if (session_) {
-    session_->TerminateEngine([cb = completer.ToAsync(), this]() mutable {
-      cb.Reply();
-      session_.reset();
-    });
-  } else {
-    completer.Reply();
+  std::unique_ptr<Session> session;
+  {
+    std::scoped_lock lock{mutex_};
+    if (!session_) {
+      completer.Reply();
+      return;
+    }
+    session = std::move(session_);
   }
+
+  // Calling TerminateEngine will call Session::TraceTerminated, which then calls this callback.
+  // Passing Session into the callback extends its lifetime until we no longer need it.
+  session->TerminateEngine(
+      [cb = completer.ToAsync(), session = std::move(session)]() mutable { cb.Reply(); });
 #else
   Session::TerminateEngine();
 #endif

@@ -72,8 +72,10 @@ class TraceProviderImpl final : public trace_provider_t,
   async_dispatcher_t* const dispatcher_;
   ProviderConfig provider_config_;
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-  fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding_;
-  std::unique_ptr<Session> session_;
+  std::mutex mutex_;
+  std::optional<fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2>> binding_
+      __TA_GUARDED(mutex_);
+  std::unique_ptr<Session> session_ __TA_GUARDED(mutex_);
 #endif
 
   trace::GetKnownCategoriesCallback get_known_categories_callback_;

@@ -31,7 +31,7 @@ class Session final : public trace::TraceHandler {
   void StartEngine(trace_start_mode_t start_mode, fit::callback<void()> cb);
 
   void StopEngine(fit::callback<void()> cb);
-  void TerminateEngine(fit::callback<void()> cb);
+  void TerminateEngine(fit::callback<void()> cb) __TA_EXCLUDES(mutex_);
 #else
   static void InitializeEngine(async_dispatcher_t* dispatcher,
                                trace_buffering_mode_t buffering_mode, zx::vmo buffer, zx::fifo fifo,
@@ -73,19 +73,26 @@ class Session final : public trace::TraceHandler {
   void SendFifoPacket(const trace_provider_packet_t* packet);
 #endif
 
-  fit::callback<void()> start_cb_;
-  fit::callback<void()> stop_cb_;
-  fit::callback<void()> terminate_cb_;
-  void* buffer_;
-  size_t buffer_num_bytes_;
+  // We can be accessed by multiple threads concurrently if:
+  //
+  // - We're running in a multithreaded async loop/executor
+  // - The async loop we're running on spawns it own thread. Then we're shared between the main
+  //   thread and the async loop thread, which can race during destruction.
+  std::mutex mutex_;
+
+  fit::callback<void()> start_cb_ __TA_GUARDED(mutex_);
+  fit::callback<void()> stop_cb_ __TA_GUARDED(mutex_);
+  fit::callback<void()> terminate_cb_ __TA_GUARDED(mutex_);
+  void* const buffer_;
+  const size_t buffer_num_bytes_;
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-  fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding_;
+  fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding_ __TA_GUARDED(mutex_);
 #else
   async_dispatcher_t* const dispatcher_;
   zx::fifo fifo_;
   async::WaitMethod<Session, &Session::HandleFifo> fifo_wait_;
 #endif
-  std::vector<std::string> enabled_categories_;
+  std::vector<std::string> enabled_categories_ __TA_GUARDED(mutex_);
 
   Session(const Session&) = delete;
   Session(Session&&) = delete;

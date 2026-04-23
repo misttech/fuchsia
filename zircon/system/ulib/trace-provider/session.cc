@@ -43,6 +43,7 @@ Session::Session(async_dispatcher_t* dispatcher, void* buffer, size_t buffer_num
 #endif
 
 Session::~Session() {
+  std::scoped_lock<std::mutex> lock{mutex_};
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   // If there are uncalled callbacks, they may hold FIDL callbacks which are an error
   // to drop without first replying to.
@@ -177,6 +178,7 @@ void Session::InitializeEngine(async_dispatcher_t* dispatcher,
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 void Session::StartEngine(trace_start_mode_t start_mode, fit::callback<void()> cb) {
+  std::scoped_lock<std::mutex> lock{mutex_};
   auto d = fit::defer([&cb]() { cb(); });
   if (start_cb_) {
     // Already a start request in flight, our contract is to ignore repeat calls.
@@ -239,6 +241,7 @@ void Session::StartEngine(trace_start_mode_t start_mode) {
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 void Session::StopEngine(fit::callback<void()> cb) {
+  std::scoped_lock<std::mutex> lock{mutex_};
   if (stop_cb_) {
     // Already a stop request in flight, our contract is to ignore repeat calls.
     cb();
@@ -253,12 +256,19 @@ void Session::StopEngine() { trace_engine_stop(ZX_OK); }
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 void Session::TerminateEngine(fit::callback<void()> cb) {
-  if (terminate_cb_) {
+  bool already_terminating = false;
+  {
+    std::scoped_lock<std::mutex> lock{mutex_};
+    if (terminate_cb_) {
+      already_terminating = true;
+    } else {
+      terminate_cb_ = std::move(cb);
+    }
+  }
+  if (already_terminating) {
     // Already a terminate request in flight, our contract is to ignore repeat calls.
     cb();
-    return;
   }
-  terminate_cb_ = std::move(cb);
   trace_engine_terminate();
 }
 #else
@@ -340,6 +350,7 @@ bool DoesCategoryMatch(const std::string& category, const std::string& match_str
 }
 
 bool Session::IsCategoryEnabled(const char* category) {
+  std::scoped_lock<std::mutex> lock{mutex_};
   if (enabled_categories_.size() == 0) {
     // If none are specified, enable all categories.
     return true;
@@ -360,6 +371,7 @@ void Session::SendFifoPacket(const trace_provider_packet_t* packet) {
 
 void Session::TraceStarted() {
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+  std::scoped_lock<std::mutex> lock{mutex_};
   // Unlike stopping or terminating which may occur on trace-engine's behest, starting should only
   // occur if we ask for it.
   ZX_DEBUG_ASSERT(start_cb_);
@@ -373,6 +385,7 @@ void Session::TraceStarted() {
 }
 
 void Session::TraceStopped(zx_status_t disposition) {
+  std::scoped_lock<std::mutex> lock{mutex_};
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   if (stop_cb_) {
     stop_cb_();
@@ -386,12 +399,21 @@ void Session::TraceStopped(zx_status_t disposition) {
 
 void Session::TraceTerminated() {
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-  if (terminate_cb_) {
-    // this terminate_cb_ owns `this` and will destroy us. Do not reference `this` after
-    // calling it.
-    terminate_cb_();
+  fit::callback<void()> cb = nullptr;
+  {
+    std::scoped_lock<std::mutex> lock{mutex_};
+    if (terminate_cb_) {
+      // this terminate_cb_ owns `this` and will destroy us. Do not reference `this` after
+      // calling it.
+      cb = std::move(terminate_cb_);
+    }
+  }
+  // Call cb without holding the lock
+  if (cb) {
+    cb();
   }
 #else
+  std::scoped_lock<std::mutex> lock{mutex_};
   // Destruction can race with HandleFifo, e.g., if the dispatcher runs on a background thread
   // and tracing terminates on a different thread. Handle this by running the destructor on the
   // dispatcher's thread (which we assume is single-threaded). It may also happen that the task
@@ -403,6 +425,7 @@ void Session::TraceTerminated() {
 }
 
 void Session::NotifyBufferFull(uint32_t wrapped_count, uint64_t durable_data_end) {
+  std::scoped_lock<std::mutex> lock{mutex_};
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   auto result = fidl::SendEvent(binding_)->OnSaveBuffer(
       {{.wrapped_count = wrapped_count, .durable_data_end = durable_data_end}});
@@ -423,6 +446,7 @@ void Session::NotifyBufferFull(uint32_t wrapped_count, uint64_t durable_data_end
 }
 
 void Session::SendAlert(const char* alert_name) {
+  std::scoped_lock<std::mutex> lock{mutex_};
 #if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   auto result = fidl::SendEvent(binding_)->OnAlert({{.name = alert_name}});
   if (result.is_error()) {
