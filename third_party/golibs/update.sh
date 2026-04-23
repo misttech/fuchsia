@@ -130,6 +130,11 @@ cp -R "${FUCHSIA_DIR}/third_party/golibs" "${GAZELLE_TMP}/third_party"
 BIN_TMP=$(mktemp -d)
 GOBIN="${BIN_TMP}" $GO install 'github.com/bazelbuild/bazel-gazelle/cmd/gazelle@v0.38.0'
 (cd "${GAZELLE_TMP}" && "${BIN_TMP}/gazelle" update -repo_root . -go_prefix='go.fuchsia.dev/fuchsia')
+
+# CGO is not needed to build third_party/golibs/vendor/golang.org/x/sys/unix and can cause build
+# failures, so remove it. See https://fxbug.dev/503868144 for details.
+sed -i '/cgo = True/d' "${GAZELLE_TMP}/third_party/golibs/vendor/golang.org/x/sys/unix/BUILD.bazel"
+
 # Copy back generated Bazel files.
 cp -Rf "${GAZELLE_TMP}/third_party/golibs" "${FUCHSIA_DIR}/third_party"
 "$FUCHSIA_DIR/scripts/fuchsia-vendored-python" prepend_autogen_header.py

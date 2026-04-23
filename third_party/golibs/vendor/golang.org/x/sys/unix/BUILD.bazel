@@ -252,7 +252,6 @@ go_library(
         "ztypes_openbsd_arm64.go",
         "ztypes_solaris_amd64.go",
     ],
-    cgo = True,
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/golang.org/x/sys/unix",
     importpath = "golang.org/x/sys/unix",
     visibility = ["//visibility:public"],

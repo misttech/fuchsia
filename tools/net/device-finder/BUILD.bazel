@@ -37,6 +37,12 @@ idk_go_binary_host_tool(
     category = "partner",
     embed = [":lib"],
     idk_name = "device-finder",
+    # Forces PIE mode, otherwise linking against CGO library would fail with `recompile with -fPIC`.
+    linkmode = "pie",  # @bazel2gn:skip
+    # We turn on pure mode globally for build consistency, see https://fxbug.dev/489925970.
+    #
+    # Here we need to turn it off because `lib` needs CGO support, and pure mode disables CGO.
+    pure = "off",  # @bazel2gn:skip
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
