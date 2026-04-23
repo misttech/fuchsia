@@ -46,7 +46,7 @@ struct LdTests : public elfldltl::testing::FormatTypedTest<ElfLayout> {
   static_assert(std::is_trivially_destructible_v<RDebug>);
 };
 
-TYPED_TEST_SUITE(LdTests, elfldltl::testing::AllFormatsTypedTest);
+TYPED_TEST_SUITE(LdTests, elfldltl::testing::AllFormatsTypedTest, elfldltl::testing::TestNames);
 
 TYPED_TEST(LdTests, AbiTypes) {
   using Abi = typename TestFixture::Abi;

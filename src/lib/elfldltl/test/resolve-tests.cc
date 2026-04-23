@@ -118,7 +118,8 @@ class ElfldltlResolveTests : public testing::Test {
   }
 };
 
-TYPED_TEST_SUITE(ElfldltlResolveTests, elfldltl::testing::AllFormatsTypedTest);
+TYPED_TEST_SUITE(ElfldltlResolveTests, elfldltl::testing::AllFormatsTypedTest,
+                 elfldltl::testing::TestNames);
 
 constexpr elfldltl::SymbolName kASymbol("a"sv);
 constexpr elfldltl::SymbolName kBSymbol("b"sv);

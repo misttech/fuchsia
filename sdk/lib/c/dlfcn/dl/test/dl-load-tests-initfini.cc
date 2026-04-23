@@ -8,7 +8,7 @@
 namespace {
 
 using dl::testing::DlTests;
-TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes);
+TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes, dl::testing::TestNames);
 
 // This is used to check that module initializers and finalizers call the
 // Callback function in a specific order.

@@ -37,6 +37,8 @@ namespace elfldltl::testing {
 
 #ifdef __Fuchsia__
 struct LocalVmarLoaderTraits {
+  static constexpr std::string_view kName = "LocalVmarLoaderTraits";
+
   template <class Elf, template <class> class Container>
   using Info = LoadInfo<Elf, Container>;
 
@@ -79,6 +81,8 @@ struct LocalVmarLoaderTraits {
 };
 
 struct RemoteVmarLoaderTraits : public LocalVmarLoaderTraits {
+  static constexpr std::string_view kName = "RemoteVmarLoaderTraits";
+
   using Loader = elfldltl::RemoteVmarLoader;
 
   static Loader MakeLoader(const zx::vmar& vmar = *zx::vmar::root_self()) { return Loader{vmar}; }
@@ -88,6 +92,8 @@ struct RemoteVmarLoaderTraits : public LocalVmarLoaderTraits {
 };
 
 struct AlignedRemoteVmarLoaderTraits : public RemoteVmarLoaderTraits {
+  static constexpr std::string_view kName = "AlignedRemoteVmarLoaderTraits";
+
   template <class Elf, template <class> class Container>
   using Info = LoadInfo<Elf, Container, PhdrLoadPolicy::kBasic, SegmentWithVmo::NoCopy>;
 
@@ -104,6 +110,8 @@ struct AlignedRemoteVmarLoaderTraits : public RemoteVmarLoaderTraits {
 #endif  // __Fuchsia__
 
 struct MmapLoaderTraits {
+  static constexpr std::string_view kName = "MmapLoaderTraits";
+
   template <class Elf, template <class> class Container>
   using Info = LoadInfo<Elf, Container>;
 

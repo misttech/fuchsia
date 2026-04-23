@@ -28,6 +28,8 @@ namespace ld::testing {
 // what to do.
 class LdStartupSpawnProcessTests : public ::testing::Test, public LdLoadTestsPosixBase {
  public:
+  static constexpr std::string_view kName = "LdStartupSpawnProcessTests";
+
   static constexpr int64_t kRunFailureForTrap = 128 + SIGILL;
   static constexpr int64_t kRunFailureForBadPointer = 128 + SIGSEGV;
 

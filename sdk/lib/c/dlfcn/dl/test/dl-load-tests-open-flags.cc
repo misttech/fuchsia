@@ -10,7 +10,7 @@ using dl::testing::DlTests;
 using dl::testing::TestModule;
 using dl::testing::TestShlib;
 
-TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes);
+TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes, dl::testing::TestNames);
 
 // If RTLD_NOLOAD is passed and the module is not found, NULL is returned but an
 // error is not expected.

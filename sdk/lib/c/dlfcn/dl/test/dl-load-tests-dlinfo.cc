@@ -28,7 +28,7 @@ using dl::testing::GetPhdrInfoForModule;
 using dl::testing::TestModule;
 
 using dl::testing::DlTests;
-TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes);
+TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes, dl::testing::TestNames);
 
 // Test dlinfo with an unknown RTLD_DI_* flag.
 TYPED_TEST(DlTests, DlInfoBadFlag) {

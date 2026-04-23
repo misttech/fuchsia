@@ -33,6 +33,8 @@ class LdStartupInProcessTests
     : public elfldltl::testing::LoadTests<elfldltl::testing::LocalVmarLoaderTraits>,
       public LdLoadZirconLdsvcTestsBase {
  public:
+  static constexpr std::string_view kName = "LdStartupInProcessTests";
+
   static constexpr std::string_view kTestExecutableSuffix = kTestExecutableInProcessSuffix;
 
   void Init(std::initializer_list<std::string_view> args = {},

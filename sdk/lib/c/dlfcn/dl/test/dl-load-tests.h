@@ -47,10 +47,17 @@ using TestTypes = ::testing::Types<
 #endif
     dl::testing::DlSystemTests>;
 
+struct TestNames {
+  template <typename T>
+  static std::string GetName(int i) {
+    return std::string(T::kName);
+  }
+};
+
 // This must be repeated inside each file's anonymous namespace:
 // ```
 // using dl::testing::DlTests;
-// TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes);
+// TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes, dl::testing::TestNames);
 // ```
 template <class Fixture>
 using DlTests = Fixture;

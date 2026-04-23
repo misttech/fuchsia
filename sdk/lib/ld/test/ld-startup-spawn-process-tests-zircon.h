@@ -28,6 +28,8 @@ namespace ld::testing {
 // really.  So all the methods before Run() just collect details of what to do.
 class LdStartupSpawnProcessTests : public ::testing::Test, public LdLoadZirconProcessTestsBase {
  public:
+  static constexpr std::string_view kName = "LdStartupSpawnProcessTests";
+
   using LdLoadZirconLdsvcTestsBase::Init;
 
   void Load(std::string_view executable_name,

@@ -43,6 +43,8 @@ class LdStartupCreateProcessTests
     : public elfldltl::testing::LoadTests<elfldltl::testing::RemoteVmarLoaderTraits, Elf>,
       public LdStartupCreateProcessTestsBase {
  public:
+  static constexpr std::string_view kName = "LdStartupCreateProcessTests";
+
   using LdStartupCreateProcessTestsBase::Run;
 
   void Load(std::string_view executable_name,
@@ -94,6 +96,8 @@ class LdStartupCreateProcessTests
 template <class Elf = elfldltl::Elf<>>
 class LdStartupCreateSharedProcessTests : public LdStartupCreateProcessTests<Elf> {
  public:
+  static constexpr std::string_view kName = "LdStartupCreateSharedProcessTests";
+
   LdStartupCreateSharedProcessTests() { this->set_create_options(ZX_PROCESS_SHARED); }
 };
 

@@ -17,17 +17,25 @@ using AllNativeFormatsTypedTest = elfldltl::AllNativeFormats<::testing::Types>;
 template <class ElfLayout>
 struct FormatTypedTest : public ::testing::Test {
   using Elf = ElfLayout;
+  static constexpr std::string_view kName = Elf::kUpperName;
+};
+
+struct TestNames {
+  template <typename T>
+  static std::string GetName(int i) {
+    return std::string(T::kName);
+  }
 };
 
 #define FORMAT_TYPED_TEST_SUITE(Name)                   \
   template <class Elf>                                  \
   using Name = elfldltl::testing::FormatTypedTest<Elf>; \
-  TYPED_TEST_SUITE(Name, elfldltl::testing::AllFormatsTypedTest)
+  TYPED_TEST_SUITE(Name, elfldltl::testing::AllFormatsTypedTest, elfldltl::testing::TestNames)
 
 #define NATIVE_FORMAT_TYPED_TEST_SUITE(Name)            \
   template <class Elf>                                  \
   using Name = elfldltl::testing::FormatTypedTest<Elf>; \
-  TYPED_TEST_SUITE(Name, elfldltl::testing::AllNativeFormatsTypedTest)
+  TYPED_TEST_SUITE(Name, elfldltl::testing::AllNativeFormatsTypedTest, elfldltl::testing::TestNames)
 
 }  // namespace elfldltl::testing
 

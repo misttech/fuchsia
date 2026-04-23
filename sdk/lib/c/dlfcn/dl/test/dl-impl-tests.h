@@ -178,7 +178,12 @@ class DlImplTests : public Base {
   std::unique_ptr<RuntimeDynamicLinker> dynamic_linker_;
 };
 
-using DlImplLoadPosixTests = DlImplTests<DlLoadTestsBase>;
+class DlLoadPosixTestsBase : public DlLoadTestsBase {
+ public:
+  static constexpr std::string_view kName = "DlImplLoadPosixTests";
+};
+
+using DlImplLoadPosixTests = DlImplTests<DlLoadPosixTestsBase>;
 #ifdef __Fuchsia__
 using DlImplLoadZirconTests = DlImplTests<DlLoadZirconTestsBase>;
 #endif

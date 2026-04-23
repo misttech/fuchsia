@@ -22,6 +22,8 @@ namespace dl::testing {
 // the fuchsia.ldsvc.Loader as expected.
 class DlLoadZirconTestsBase : public DlLoadTestsBase {
  public:
+  static constexpr std::string_view kName = "DlImplLoadZirconTests";
+
   using Base = DlLoadTestsBase;
   using File = elfldltl::VmoFile<Diagnostics>;
   using Loader = elfldltl::LocalVmarLoader;

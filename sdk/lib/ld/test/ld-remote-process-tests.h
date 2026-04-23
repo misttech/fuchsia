@@ -32,6 +32,8 @@ namespace ld::testing {
 
 class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessTestsBase {
  public:
+  static constexpr std::string_view kName = "LdRemoteProcessTests";
+
   using LdLoadZirconProcessTestsBase::Run;
   using LdLoadZirconProcessTestsBase::RunWithCustomBootstrap;
   using LdLoadZirconProcessTestsBase::Start;
@@ -213,6 +215,8 @@ class LdRemoteProcessTests : public ::testing::Test, public LdLoadZirconProcessT
 // that its root VMAR will be the "top half only" VMAR.
 class LdRemoteSharedProcessTests : public LdRemoteProcessTests {
  public:
+  static constexpr std::string_view kName = "LdRemoteSharedProcessTests";
+
   LdRemoteSharedProcessTests() { this->set_create_options(ZX_PROCESS_SHARED); }
 };
 

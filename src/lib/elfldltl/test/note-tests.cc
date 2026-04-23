@@ -5,6 +5,7 @@
 #include <lib/elfldltl/diagnostics.h>
 #include <lib/elfldltl/memory.h>
 #include <lib/elfldltl/note.h>
+#include <lib/elfldltl/testing/typed-test.h>
 
 #include <cerrno>
 #include <cstdint>
@@ -187,6 +188,8 @@ class ElfldltlNoteObserverTests : public ::testing::Test {
 };
 
 struct FileObserver {
+  static constexpr std::string_view kName = "FileObserver";
+
   static constexpr auto Make = [](auto&& elf, auto&& file, auto&&... callback) {
     return elfldltl::PhdrFileNoteObserver(
         std::forward<decltype(elf)>(elf), std::forward<decltype(file)>(file),
@@ -198,6 +201,8 @@ struct FileObserver {
 };
 
 struct MemoryObserver {
+  static constexpr std::string_view kName = "MemoryObserver";
+
   static constexpr auto Make = [](auto&&... args) {
     return elfldltl::PhdrMemoryNoteObserver(std::forward<decltype(args)>(args)...);
   };
@@ -207,7 +212,7 @@ struct MemoryObserver {
 
 using NoteObservers = ::testing::Types<FileObserver, MemoryObserver>;
 
-TYPED_TEST_SUITE(ElfldltlNoteObserverTests, NoteObservers);
+TYPED_TEST_SUITE(ElfldltlNoteObserverTests, NoteObservers, elfldltl::testing::TestNames);
 
 TYPED_TEST(ElfldltlNoteObserverTests, ObserveEmpty) {
   using Elf = typename TestFixture::Elf;

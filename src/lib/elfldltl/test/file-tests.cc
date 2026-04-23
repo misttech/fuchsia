@@ -6,6 +6,7 @@
 #include <lib/elfldltl/file.h>
 #include <lib/elfldltl/memory.h>
 #include <lib/elfldltl/testing/diagnostics.h>
+#include <lib/elfldltl/testing/typed-test.h>
 #include <lib/elfldltl/unique-fd.h>
 #include <stdio.h>
 
@@ -24,6 +25,9 @@ using ::testing::Eq;
 using ::testing::Optional;
 
 class TestFdFile : public ::testing::Test {
+ public:
+  static constexpr std::string_view kName = "TestFdFile";
+
  protected:
   static constexpr bool kDestroysHandle = false;
 
@@ -55,6 +59,9 @@ class TestFdFile : public ::testing::Test {
 };
 
 class TestUniqueFdFile : public TestFdFile {
+ public:
+  static constexpr std::string_view kName = "TestUniqueFdFile";
+
  protected:
   static constexpr bool kDestroysHandle = true;
 
@@ -67,6 +74,9 @@ class TestUniqueFdFile : public TestFdFile {
 #ifdef __Fuchsia__
 
 class TestVmoFile : public ::testing::Test {
+ public:
+  static constexpr std::string_view kName = "TestVmoFile";
+
  protected:
   static constexpr bool kDestroysHandle = true;
 
@@ -94,6 +104,9 @@ class TestVmoFile : public ::testing::Test {
 };
 
 class TestUnownedVmoFile : public TestVmoFile {
+ public:
+  static constexpr std::string_view kName = "TestUnownedVmoFile";
+
  protected:
   static constexpr bool kDestroysHandle = false;
 
@@ -142,7 +155,7 @@ class ElfldltlFileTests : public TestFile {
   using EofFileT = typename TestFile::template FileT<EofDiagnostics>;
 };
 
-TYPED_TEST_SUITE(ElfldltlFileTests, FileTypes);
+TYPED_TEST_SUITE(ElfldltlFileTests, FileTypes, elfldltl::testing::TestNames);
 
 TYPED_TEST(ElfldltlFileTests, InvalidFd) {
   auto expected = TestFixture::MakeExpectedInvalidFd();

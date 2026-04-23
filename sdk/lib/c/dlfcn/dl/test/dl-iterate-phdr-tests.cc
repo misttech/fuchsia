@@ -22,7 +22,7 @@ using dl::testing::ModuleInfoList;
 using dl::testing::ModulePhdrInfo;
 
 using dl::testing::DlTests;
-TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes);
+TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes, dl::testing::TestNames);
 
 // Test that `dl_iterate_phdr` includes startup modules.
 TYPED_TEST(DlTests, DlIteratePhdrStartupModules) {

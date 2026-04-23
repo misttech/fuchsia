@@ -11,6 +11,7 @@
 #include <lib/elfldltl/testing/diagnostics.h>
 #include <lib/elfldltl/testing/get-test-data.h>
 #include <lib/elfldltl/testing/loader.h>
+#include <lib/elfldltl/testing/typed-test.h>
 #include <lib/fit/defer.h>
 #include <sys/mman.h>
 
@@ -180,7 +181,7 @@ class ElfldltlLoaderTests : public elfldltl::testing::LoadTests<Traits> {
   std::optional<Phdr> relro_phdr_;
 };
 
-TYPED_TEST_SUITE(ElfldltlLoaderTests, elfldltl::testing::LoaderTypes);
+TYPED_TEST_SUITE(ElfldltlLoaderTests, elfldltl::testing::LoaderTypes, elfldltl::testing::TestNames);
 
 TYPED_TEST(ElfldltlLoaderTests, Basic) {
   ASSERT_NO_FATAL_FAILURE(this->Load(kRet24, {.reloc = false}));

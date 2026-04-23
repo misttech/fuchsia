@@ -16,7 +16,7 @@ template <class Fixture>
 using LdLoadLibcTests = Fixture;
 
 // The libc-using tests don't run in-process; so TestTypes<>, not LoadTypes.
-TYPED_TEST_SUITE(LdLoadLibcTests, TestTypes<>);
+TYPED_TEST_SUITE(LdLoadLibcTests, TestTypes<>, elfldltl::testing::TestNames);
 
 namespace {
 

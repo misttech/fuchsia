@@ -5,6 +5,8 @@
 #ifndef LIB_LD_TEST_LOAD_TESTS_H_
 #define LIB_LD_TEST_LOAD_TESTS_H_
 
+#include <lib/elfldltl/testing/typed-test.h>
+
 #include <gtest/gtest.h>
 
 #ifdef __Fuchsia__
@@ -47,8 +49,8 @@ using LoadTypes = TestTypes<ld::testing::LdStartupInProcessTests>;
 // LdLoadFailureTests.
 using FailTypes = TestTypes<>;
 
-TYPED_TEST_SUITE(LdLoadTests, LoadTypes);
-TYPED_TEST_SUITE(LdLoadFailureTests, FailTypes);
+TYPED_TEST_SUITE(LdLoadTests, LoadTypes, elfldltl::testing::TestNames);
+TYPED_TEST_SUITE(LdLoadFailureTests, FailTypes, elfldltl::testing::TestNames);
 
 }  // namespace ld::testing
 

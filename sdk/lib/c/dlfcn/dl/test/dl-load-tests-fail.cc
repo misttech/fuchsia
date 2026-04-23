@@ -7,7 +7,7 @@
 namespace {
 
 using dl::testing::DlTests;
-TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes);
+TYPED_TEST_SUITE(DlTests, dl::testing::TestTypes, dl::testing::TestNames);
 
 using dl::testing::Found;
 using dl::testing::IsDepFileNotFoundErrMsg;

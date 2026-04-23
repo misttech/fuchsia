@@ -39,6 +39,7 @@ class DlSystemTests : public DlSystemLoadTestsBase {
 #endif
 
  public:
+  static constexpr std::string_view kName = "DlSystemTests";
   // This test fixture does not need to match on exact error text, since the
   // error message can vary between different system implementations.
   static constexpr bool kCanMatchExactError = false;
