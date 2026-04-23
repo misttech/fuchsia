@@ -2269,14 +2269,14 @@ alias(
 )
 
 alias(
-    name = "rkyv-0.8.15",
-    actual = "//third_party/rust_crates/vendor/rkyv-0.8.15:rkyv",
+    name = "rkyv-0.8.16",
+    actual = "//third_party/rust_crates/vendor/rkyv-0.8.16:rkyv",
     tags = ["manual"],
 )
 
 alias(
     name = "rkyv",
-    actual = "//third_party/rust_crates/vendor/rkyv-0.8.15:rkyv",
+    actual = "//third_party/rust_crates/vendor/rkyv-0.8.16:rkyv",
     tags = ["manual"],
 )
 
