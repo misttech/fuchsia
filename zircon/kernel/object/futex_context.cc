@@ -650,7 +650,10 @@ zx_status_t FutexContext::FutexRequeue(user_in_ptr<const zx_futex_t> wake_ptr, u
     return result;
   }
 
-  if (wake_ptr.get() == requeue_ptr.get()) {
+  FutexId wake_id(wake_ptr);
+  FutexId requeue_id(requeue_ptr);
+
+  if (wake_id == requeue_id) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -661,9 +664,6 @@ zx_status_t FutexContext::FutexRequeue(user_in_ptr<const zx_futex_t> wake_ptr, u
       ValidateFutexOwner(new_requeue_owner_handle, &requeue_owner_thread);
 
   // Find the FutexState for the wake and requeue futexes.
-  FutexId wake_id(wake_ptr);
-  FutexId requeue_id(requeue_ptr);
-
   Guard<SpinLock, IrqSave> ref_lookup_guard{&pool_lock_};
   FutexState::PendingOpRef wake_futex_ref = ActivateFutexLocked(wake_id);
   FutexState::PendingOpRef requeue_futex_ref = ActivateFutexLocked(requeue_id);

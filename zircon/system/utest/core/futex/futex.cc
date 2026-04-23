@@ -760,5 +760,24 @@ TEST(FutexTest, RequeueCycleStressTest) {
   }
 }
 
+// Regression test for b/505738128.
+TEST(FutexTest, FutexRequeueTbiReturnsInvalidArgs) {
+#if defined(__aarch64__)
+  zx_futex_t futex = 0;
+  zx_futex_t* wake_ptr = &futex;
+
+  // Apply a Top-Byte tag (bit 56)
+  uintptr_t wake_ptr_int = reinterpret_cast<uintptr_t>(&futex);
+  uintptr_t requeue_ptr_int = wake_ptr_int | (1ULL << 56);
+  zx_futex_t* requeue_ptr = reinterpret_cast<zx_futex_t*>(requeue_ptr_int);
+
+  // This should not cause a panic.
+  zx_status_t status = zx_futex_requeue(wake_ptr, 1, 0, requeue_ptr, 1, ZX_HANDLE_INVALID);
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
+#else
+  ZXTEST_SKIP("TBI is only enabled on arm64");
+#endif
+}
+
 }  // namespace
 }  // namespace futex
