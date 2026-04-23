@@ -337,15 +337,10 @@ impl FSConfig for F2fs {
 }
 
 /// FvmFilesystem Configuration
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Fvm {
     pub component_type: ComponentType,
-}
-
-impl Default for Fvm {
-    fn default() -> Self {
-        Self { component_type: Default::default() }
-    }
+    pub slice_size: u64,
 }
 
 impl Fvm {
@@ -370,7 +365,10 @@ impl FSConfig for Fvm {
         Options {
             component_name: "fvm2",
             reuse_component_after_serving: true,
-            format_options: FormatOptions::default(),
+            format_options: FormatOptions {
+                fvm_slice_size: if self.slice_size > 0 { Some(self.slice_size) } else { None },
+                ..FormatOptions::default()
+            },
             start_options: StartOptions::default(),
             component_type: self.component_type.clone(),
         }

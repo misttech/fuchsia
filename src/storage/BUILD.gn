@@ -35,7 +35,6 @@ group("tests") {
     "minfs:tests",
     "stress-tests",
     "stressor:tests",
-    "testing:tests",
     "tools:tests",
     "type-fprint:tests",
     "volume_image:tests",

@@ -67,6 +67,8 @@ type FormatOptions = table {
     4: fvm_data_slices uint32;
     /// The number of sectors-per-cluster (for FAT filesystems).
     5: sectors_per_cluster uint16;
+    /// The slice size for FVM (in bytes).
+    6: fvm_slice_size uint64;
 };
 
 /// Options for running consistency checks on filesystems.

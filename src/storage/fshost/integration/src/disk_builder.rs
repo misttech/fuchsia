@@ -28,7 +28,6 @@ use serde_json::json;
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
-use storage_isolated_driver_manager::fvm::format_for_fvm;
 use storage_isolated_driver_manager::{BlockDeviceMatcher, find_block_device};
 use uuid::Uuid;
 use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
@@ -609,12 +608,12 @@ impl DiskBuilder {
     }
 
     async fn build_fvm_as_volume_manager(&mut self, connector: Box<dyn BlockConnector>) {
-        let block_device = connector.connect_block().unwrap().into_proxy();
         let fvm_slice_size = self.fvm_slice_size;
-        fasync::unblock(move || format_for_fvm(&block_device, fvm_slice_size as usize))
-            .await
-            .unwrap();
-        let fvm_fs = Filesystem::from_boxed_config(connector, Box::new(Fvm::dynamic_child()));
+        let mut fvm_fs = Filesystem::from_boxed_config(
+            connector,
+            Box::new(Fvm { slice_size: fvm_slice_size, ..Fvm::dynamic_child() }),
+        );
+        fvm_fs.format().await.unwrap();
         let fvm = fvm_fs.serve_multi_volume().await.unwrap();
 
         {

@@ -2,112 +2,121 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_io as fio;
-use fidl_fuchsia_storage_block::VolumeManagerProxy;
-use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
-use std::path::PathBuf;
-use storage_isolated_driver_manager::{
-    BlockDeviceMatcher, create_random_guid, fvm, wait_for_block_device_devfs,
-};
-use zx::{Rights, Status, Vmo};
 
+use fs_management::filesystem::{
+    DirBasedBlockConnector, Filesystem, ServingMultiVolumeFilesystem, ServingVolume,
+};
+use fs_management::{self, Fvm};
+use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
 pub use storage_isolated_driver_manager::Guid;
+use storage_isolated_driver_manager::create_random_guid;
+use zx::{Rights, Vmo};
 
 async fn create_ramdisk(vmo: &Vmo, ramdisk_block_size: u64) -> RamdiskClient {
     let duplicated_handle = vmo.as_handle_ref().duplicate(Rights::SAME_RIGHTS).unwrap();
     let duplicated_vmo = Vmo::from(duplicated_handle);
 
-    // Create the ramdisks
     RamdiskClientBuilder::new_with_vmo(duplicated_vmo, Some(ramdisk_block_size))
         .build()
         .await
         .unwrap()
 }
 
-/// This structs holds processes of component manager, isolated-devmgr
-/// and the fvm driver.
-///
-/// NOTE: The order of fields in this struct is important.
-/// Destruction happens top-down. Test must be destroyed last.
+/// A wrapper around a running FVM component instance backed by a ramdisk.
 pub struct FvmInstance {
-    /// A proxy to fuchsia.hardware.block.VolumeManager protocol
-    /// Used to create new FVM volumes
-    volume_manager: VolumeManagerProxy,
-
-    /// Manages the ramdisk device that is backed by a VMO
     ramdisk: RamdiskClient,
+    fvm_instance: ServingMultiVolumeFilesystem,
+}
+
+/// A wrapper around an opened volume in an FVM instance.
+/// This keeps the volume alive and provides access to its block connector.
+pub struct FvmVolume {
+    serving_volume: ServingVolume,
+    guid: Guid,
+}
+
+impl FvmVolume {
+    /// Creates a new `FvmVolume` wrapping the given `ServingVolume` and `Guid`.
+    pub fn new(serving_volume: ServingVolume, guid: Guid) -> Self {
+        Self { serving_volume, guid }
+    }
+
+    pub fn guid(&self) -> &Guid {
+        &self.guid
+    }
+
+    pub fn block_connector(&self) -> DirBasedBlockConnector {
+        let block_dir = fuchsia_fs::directory::clone(self.serving_volume.exposed_dir()).unwrap();
+        DirBasedBlockConnector::new(
+            block_dir,
+            format!("svc/{}", fidl_fuchsia_storage_block::BlockMarker::PROTOCOL_NAME),
+        )
+    }
 }
 
 impl FvmInstance {
-    /// Start an isolated FVM driver against the given VMO.
-    /// If `init` is true, initialize the VMO with FVM layout first.
-    pub async fn new(init: bool, vmo: &Vmo, fvm_slice_size: u64, ramdisk_block_size: u64) -> Self {
+    /// Creates a new FVM instance.  If `fvm_slice_size` is specified, the device is formatted with
+    /// the specified slice size.  If not specified, `vmo` should contain an existing FVM format.
+    pub async fn new(vmo: &Vmo, ramdisk_block_size: u64, fvm_slice_size: Option<u64>) -> Self {
         let ramdisk = create_ramdisk(&vmo, ramdisk_block_size).await;
 
-        if init {
-            fvm::format_for_fvm(
-                &ramdisk.open().expect("invalid ramdisk").into_proxy(),
-                fvm_slice_size as usize,
-            )
-            .unwrap();
+        let mut fs = Filesystem::from_boxed_config(
+            ramdisk.connector().unwrap(),
+            Box::new(Fvm { slice_size: fvm_slice_size.unwrap_or(0), ..Fvm::dynamic_child() }),
+        );
+
+        if fvm_slice_size.is_some() {
+            fs.format().await.unwrap();
         }
 
-        let volume_manager = fvm::start_fvm_driver(
-            ramdisk.as_controller().expect("invalid controller"),
-            ramdisk.as_dir().expect("invalid directory proxy"),
-        )
-        .await
-        .expect("failed to start fvm driver");
-
-        Self { ramdisk, volume_manager }
+        Self { ramdisk, fvm_instance: fs.serve_multi_volume().await.unwrap() }
     }
 
-    /// Create a new FVM volume with the given name and type GUID.
-    /// Returns the instance GUID used to uniquely identify this volume.
     pub async fn new_volume(
         &mut self,
         name: &str,
         type_guid: &Guid,
         initial_volume_size: Option<u64>,
-    ) -> Guid {
+    ) -> FvmVolume {
         let instance_guid = create_random_guid();
 
-        fvm::create_fvm_volume(
-            &self.volume_manager,
-            name,
-            type_guid,
-            &instance_guid,
-            initial_volume_size,
-            0,
-        )
-        .await
-        .unwrap();
+        let create_options = fidl_fuchsia_fs_startup::CreateOptions {
+            initial_size: initial_volume_size,
+            guid: Some(instance_guid.clone()),
+            type_guid: Some(type_guid.clone()),
+            ..fidl_fuchsia_fs_startup::CreateOptions::default()
+        };
 
-        instance_guid
+        let mount_options = fidl_fuchsia_fs_startup::MountOptions::default();
+
+        let serving_volume =
+            self.fvm_instance.create_volume(name, create_options, mount_options).await.unwrap();
+
+        FvmVolume { serving_volume, guid: instance_guid }
     }
 
-    /// Returns the number of bytes the FVM partition has available.
-    pub async fn free_space(&self) -> u64 {
-        let (status, info) = self.volume_manager.get_info().await.unwrap();
-        Status::ok(status).unwrap();
-        let info = info.unwrap();
-
-        (info.slice_count - info.assigned_slice_count) * info.slice_size
+    pub async fn open_volume(&self, name: &str) -> FvmVolume {
+        let guid = self.fvm_instance.get_volume_info(name).await.unwrap().guid;
+        let serving_volume = self
+            .fvm_instance
+            .open_volume(name, fidl_fuchsia_fs_startup::MountOptions::default())
+            .await
+            .unwrap();
+        FvmVolume::new(serving_volume, guid.unwrap())
     }
 
-    /// Returns a reference to the ramdisk DirectoryProxy.
     pub fn ramdisk_get_dir(&self) -> Option<&fio::DirectoryProxy> {
         self.ramdisk.as_dir()
     }
 
-    /// Shuts down the FVM instance and ramdisk that's hosting it.
     pub async fn shutdown(self) {
         self.ramdisk.destroy_and_wait_for_removal().await.expect("failed to shutdown ramdisk");
     }
-}
 
-/// Gets the full path to a volume matching the given instance GUID at the given
-/// /dev/class/block path. This function will wait until a matching volume is found.
-pub async fn get_volume_path(instance_guid: &Guid) -> PathBuf {
-    wait_for_block_device_devfs(&[BlockDeviceMatcher::InstanceGuid(instance_guid)]).await.unwrap()
+    pub async fn free_space(&self) -> u64 {
+        let info = self.fvm_instance.get_info().await.unwrap();
+        (info.slice_count - info.assigned_slice_count) * info.slice_size
+    }
 }

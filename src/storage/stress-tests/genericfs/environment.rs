@@ -10,12 +10,13 @@ use anyhow::{anyhow, format_err};
 use async_trait::async_trait;
 use diagnostics_reader::ArchiveReader;
 use either::Either;
-use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fidl_fuchsia_fxfs::{CryptManagementMarker, CryptManagementProxy, CryptMarker, KeyPurpose};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_logger as flogger;
 use fs_management::FSConfig;
 use fs_management::filesystem::Filesystem;
-use fuchsia_component::client::connect_to_protocol_at_path;
+use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_inspect::hierarchy::DiagnosticsHierarchy;
 use fuchsia_sync::Mutex;
@@ -29,13 +30,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use storage_stress_test_utils::data::{Compressibility, FileFactory, UncompressedSize};
-use storage_stress_test_utils::fvm::{FvmInstance, Guid, get_volume_path};
+use storage_stress_test_utils::fvm::{FvmInstance, Guid};
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::ActorRunner;
 use stress_test::environment::Environment;
 use stress_test::random_seed;
 use zx::Vmo;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_logger as flogger, fuchsia_async as fasync};
 
 // All partitions in this test have their type set to this arbitrary GUID.
 const TYPE_GUID: Guid =
@@ -136,7 +136,6 @@ pub struct FsEnvironment<FSC: FSConfig> {
     seed: u64,
     args: Args,
     vmo: Vmo,
-    volume_guid: Guid,
     config: FSC,
     crypt_realm: Option<RealmInstance>,
     instance_actor: Arc<FuturesMutex<InstanceActor>>,
@@ -161,17 +160,11 @@ impl<FSC: Clone + FSConfig> FsEnvironment<FSC> {
 
         // Create a ramdisk and setup FVM.
         let mut fvm =
-            FvmInstance::new(true, &vmo, args.fvm_slice_size, args.ramdisk_block_size).await;
+            FvmInstance::new(&vmo, args.ramdisk_block_size, Some(args.fvm_slice_size)).await;
 
         // Initialize the filesystem on a new volume
-        let volume_guid = fvm.new_volume("default", &TYPE_GUID, Some(fvm.free_space().await)).await;
-        let volume_path = get_volume_path(&volume_guid).await;
-        let controller = connect_to_protocol_at_path::<ControllerMarker>(&format!(
-            "{}/device_controller",
-            volume_path.to_str().unwrap()
-        ))
-        .unwrap();
-        let mut fs = Filesystem::new(controller, config.clone());
+        let volume = fvm.new_volume("default", &TYPE_GUID, Some(fvm.free_space().await)).await;
+        let mut fs = Filesystem::new(volume.block_connector(), config.clone());
         fs.format().await.unwrap();
         let moniker = fs.get_component_moniker().await.unwrap();
 
@@ -227,7 +220,7 @@ impl<FSC: Clone + FSConfig> FsEnvironment<FSC> {
             Arc::new(FuturesMutex::new(DeletionActor::new(rng, home_dir)))
         };
 
-        let instance_actor = Arc::new(FuturesMutex::new(InstanceActor::new(fvm, instance)));
+        let instance_actor = Arc::new(FuturesMutex::new(InstanceActor::new(fvm, volume, instance)));
 
         let inspect = Arc::new(Mutex::new(None));
         let inspect_cloned = inspect.clone();
@@ -235,7 +228,6 @@ impl<FSC: Clone + FSConfig> FsEnvironment<FSC> {
             seed,
             args,
             vmo,
-            volume_guid,
             crypt_realm,
             file_actor,
             deletion_actor,
@@ -328,21 +320,10 @@ impl<FSC: 'static + FSConfig + Clone + Send + Sync> Environment for FsEnvironmen
             assert!(actor.instance.is_none());
 
             // Create a ramdisk and setup FVM.
-            let fvm = FvmInstance::new(
-                false,
-                &self.vmo,
-                self.args.fvm_slice_size,
-                self.args.ramdisk_block_size,
-            )
-            .await;
-            let volume_path = get_volume_path(&self.volume_guid).await;
-            let controller = connect_to_protocol_at_path::<ControllerMarker>(&format!(
-                "{}/device_controller",
-                volume_path.to_str().unwrap()
-            ))
-            .unwrap();
+            let fvm = FvmInstance::new(&self.vmo, self.args.ramdisk_block_size, None).await;
+            let volume = fvm.open_volume("default").await;
 
-            let mut fs = Filesystem::new(controller, self.config.clone());
+            let mut fs = Filesystem::new(volume.block_connector(), self.config.clone());
             fs.fsck().await.unwrap();
             let instance = if fs.config().is_multi_volume() {
                 let instance = fs.serve_multi_volume().await.unwrap();
@@ -381,7 +362,7 @@ impl<FSC: 'static + FSConfig + Clone + Send + Sync> Environment for FsEnvironmen
             *self.inspect.lock() = None;
 
             // Replace the fvm and fs instances
-            actor.instance = Some((fvm, instance));
+            actor.instance = Some((fvm, volume, instance));
         }
 
         // Replace the root directory with a new one

@@ -8,7 +8,9 @@ use fidl::endpoints::{
     DiscoverableProtocolMarker as _, Proxy, create_proxy, create_request_stream,
 };
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::BlockMarker;
+use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::Fvm;
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
@@ -16,15 +18,13 @@ use fs_management::filesystem::{
 use fs_management::format::constants::{
     BENCHMARK_FVM_TYPE_GUID, BENCHMARK_FVM_VOLUME_NAME, PAD_RW_PARTITION_LABEL,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_dir_root};
 use std::sync::Arc;
 use storage_benchmarks::block_device::BlockDevice;
 use storage_benchmarks::{BlockDeviceConfig, BlockDeviceFactory};
 use storage_isolated_driver_manager::{
-    BlockDeviceMatcher, Guid, create_random_guid, find_block_device, fvm,
-};
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
+    BlockDeviceMatcher, Guid, create_random_guid, find_block_device,
 };
 
 const BENCHMARK_FVM_SIZE_BYTES: u64 = 160 * 1024 * 1024;
@@ -32,7 +32,7 @@ const BENCHMARK_FVM_SIZE_BYTES: u64 = 160 * 1024 * 1024;
 // system FVM partition (so they are interchangeable).
 // Note that this only affects the performance of minfs and blobfs, since these two filesystems are
 // the only ones that dynamically allocate from FVM.
-const BENCHMARK_FVM_SLICE_SIZE_BYTES: usize = 8 * 1024 * 1024;
+const BENCHMARK_FVM_SLICE_SIZE_BYTES: u64 = 8 * 1024 * 1024;
 
 // On systems which don't have FVM (i.e. Fxblob), we create an FVM partition the test can use, with
 // this GUID.  See connect_to_test_fvm for details.
@@ -280,15 +280,11 @@ impl BenchmarkVolumeFactory {
         instance_guid: [u8; 16],
         config: &BlockDeviceConfig,
     ) -> FvmVolume {
-        let block_device =
-            partition.connect_block().expect("Failed to connect to block").into_proxy();
-        fvm::format_for_fvm(&block_device, BENCHMARK_FVM_SLICE_SIZE_BYTES)
-            .expect("Failed to format FVM");
-
-        let fs = fs_management::filesystem::Filesystem::from_boxed_config(
+        let mut fs = fs_management::filesystem::Filesystem::from_boxed_config(
             Box::new(partition),
-            Box::new(Fvm::default()),
+            Box::new(Fvm { slice_size: BENCHMARK_FVM_SLICE_SIZE_BYTES, ..Fvm::default() }),
         );
+        fs.format().await.expect("Failed to format FVM");
         let fvm_instance = fs.serve_multi_volume().await.expect("Failed to serve FVM");
         let volumes = connect_to_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumesMarker>(
             fvm_instance.exposed_dir(),
@@ -487,15 +483,12 @@ mod tests {
                 .build()
                 .await
                 .expect("Failed to create ramdisk");
-            fvm::format_for_fvm(&ramdisk.open().unwrap().into_proxy(), RAMDISK_FVM_SLICE_SIZE)
-                .expect("Failed to format FVM");
-            let fvm_component = match fs_management::filesystem::Filesystem::from_boxed_config(
+            let mut fs = fs_management::filesystem::Filesystem::from_boxed_config(
                 ramdisk.connector().unwrap(),
-                Box::new(Fvm::dynamic_child()),
-            )
-            .serve_multi_volume()
-            .await
-            {
+                Box::new(Fvm { slice_size: RAMDISK_FVM_SLICE_SIZE, ..Fvm::dynamic_child() }),
+            );
+            fs.format().await.expect("Failed to format FVM");
+            let fvm_component = match fs.serve_multi_volume().await {
                 Ok(fvm_component) => fvm_component,
                 Err(_) => loop {},
             };

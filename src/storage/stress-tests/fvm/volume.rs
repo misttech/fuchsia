@@ -3,10 +3,8 @@
 // found in the LICENSE file.
 
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
-use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
-use fuchsia_component::client::connect_to_protocol_at_path;
-
-use storage_stress_test_utils::fvm::{Guid, get_volume_path};
+use fidl_fuchsia_storage_block::BlockProxy;
+use fs_management::filesystem::BlockConnector;
 
 fn fidl_to_status(result: Result<i32, fidl::Error>) -> Result<(), zx::Status> {
     match result {
@@ -30,12 +28,9 @@ pub struct VolumeConnection {
 }
 
 impl VolumeConnection {
-    pub async fn new(volume_guid: &Guid, slice_size: u64) -> Self {
-        let volume_path = get_volume_path(volume_guid).await;
-        let volume_path = volume_path.to_str().unwrap();
-
-        let volume_proxy = connect_to_protocol_at_path::<BlockMarker>(volume_path).unwrap();
-        let block_proxy = connect_to_protocol_at_path::<BlockMarker>(volume_path).unwrap();
+    pub async fn new(connector: impl BlockConnector, slice_size: u64) -> Self {
+        let block_proxy = connector.connect_block().unwrap().into_proxy();
+        let volume_proxy = block_proxy.clone();
         let block_device = RemoteBlockClient::new(block_proxy).await.unwrap();
 
         Self { volume_proxy, block_device, slice_size }

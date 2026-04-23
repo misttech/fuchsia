@@ -10,10 +10,13 @@ use fs_management::filesystem::{
 use storage_stress_test_utils::fvm::FvmInstance;
 use stress_test::actor::{Actor, ActorError};
 
+use storage_stress_test_utils::fvm::FvmVolume;
+
 /// An actor that kills the fs instance and destroys the ramdisk
 pub struct InstanceActor {
     pub instance: Option<(
         FvmInstance,
+        FvmVolume,
         Either<ServingSingleVolumeFilesystem, (ServingMultiVolumeFilesystem, ServingVolume)>,
     )>,
 }
@@ -21,16 +24,17 @@ pub struct InstanceActor {
 impl InstanceActor {
     pub fn new(
         fvm: FvmInstance,
+        volume: FvmVolume,
         fs: Either<ServingSingleVolumeFilesystem, (ServingMultiVolumeFilesystem, ServingVolume)>,
     ) -> Self {
-        Self { instance: Some((fvm, fs)) }
+        Self { instance: Some((fvm, volume, fs)) }
     }
 }
 
 #[async_trait]
 impl Actor for InstanceActor {
     async fn perform(&mut self) -> Result<(), ActorError> {
-        if let Some((fvm_instance, fs)) = self.instance.take() {
+        if let Some((fvm_instance, _volume, fs)) = self.instance.take() {
             // We want to kill the ram-disk before the filesystem so that we test the filesystem in
             // a simulated power-fail.
             // Wait for the device to go away.
@@ -47,7 +51,7 @@ impl Actor for InstanceActor {
                 Either::Right((fs, _)) => {
                     let _ = fs.shutdown().await;
                 }
-            };
+            }
         } else {
             panic!("Instance was already killed!")
         }

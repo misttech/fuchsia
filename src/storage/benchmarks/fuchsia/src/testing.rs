@@ -4,21 +4,22 @@
 
 use async_trait::async_trait;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::BlockMarker;
 use fs_management::Fvm;
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use ramdevice_client::RamdiskClient;
 use storage_benchmarks::block_device::BlockDevice;
 use storage_benchmarks::{BlockDeviceConfig, BlockDeviceFactory};
-use storage_isolated_driver_manager::{create_random_guid, fvm};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use storage_isolated_driver_manager::create_random_guid;
 
 use crate::block_devices::create_fvm_volume;
 
-pub const RAMDISK_FVM_SLICE_SIZE: usize = 1024 * 1024;
+pub const RAMDISK_FVM_SLICE_SIZE: u64 = 1024 * 1024;
 
 /// Creates block devices on ramdisks.
 pub struct RamdiskFactory {
@@ -56,16 +57,12 @@ impl Ramdisk {
             .await
             .expect("Failed to create RamdiskClient");
 
-        let block_device = ramdisk.open().expect("Failed to connect to block").into_proxy();
-        fvm::format_for_fvm(&block_device, RAMDISK_FVM_SLICE_SIZE).expect("Failed to format FVM");
-
-        let fvm = fs_management::filesystem::Filesystem::from_boxed_config(
+        let mut fs = fs_management::filesystem::Filesystem::from_boxed_config(
             ramdisk.connector().unwrap(),
-            Box::new(Fvm::default()),
-        )
-        .serve_multi_volume()
-        .await
-        .expect("Failed to serve FVM");
+            Box::new(Fvm { slice_size: RAMDISK_FVM_SLICE_SIZE, ..Fvm::default() }),
+        );
+        fs.format().await.expect("Failed to format FVM");
+        let fvm = fs.serve_multi_volume().await.expect("Failed to serve FVM");
         let volumes = connect_to_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumesMarker>(
             fvm.exposed_dir(),
         )

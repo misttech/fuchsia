@@ -59,6 +59,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 // See //src/storage/fvm/format.h for a detailed description of the FVM format.
 
 static MAGIC: u64 = 0x54524150204d5646;
+static MAJOR_VERSION: u64 = 1;
+static MINOR_VERSION: u64 = 1;
 
 // Whilst this is the block size that FVM uses to round up certain structures, FVM still supports
 // I/O at a smaller size than this (it will pass along the block size from the underlying device).
@@ -71,8 +73,10 @@ const MAX_SLICE_COUNT: u64 = 1u64 << 31;
 
 const MAX_PARTITIONS: u64 = 1024;
 
+const DEFAULT_SLICE_SIZE: u64 = 32768;
+
 #[repr(C)]
-#[derive(Clone, Copy, KnownLayout, FromBytes, IntoBytes, Immutable)]
+#[derive(Clone, Copy, Debug, KnownLayout, FromBytes, IntoBytes, Immutable)]
 struct Header {
     magic: u64,
     major_version: u64,
@@ -88,7 +92,7 @@ struct Header {
 
 impl Header {
     fn used_allocation_table_size(&self) -> Result<usize, Error> {
-        self.pslice_count
+        (self.pslice_count + 1)
             .checked_mul(std::mem::size_of::<SliceEntry>() as u64)
             .and_then(|n| n.checked_next_multiple_of(BLOCK_SIZE))
             .ok_or_else(|| anyhow!("Bad pslice_count"))
@@ -444,13 +448,14 @@ impl Fvm {
         // preallocated metadata had some size set when the image was created but the device it is
         // flashed to has a larger disk than that. If we notice this happen, we need to expand the
         // number of physical slices available up to whatever maximum the metadata allows for.
+        let max_data_slices_for_disk;
         {
             let header = &inner.metadata.header;
             let device_size = client.block_count() * client.block_size() as u64;
             let start_offset = header.data_start();
-            let max_data_slices_for_disk = device_size
+            max_data_slices_for_disk = device_size
                 .checked_sub(start_offset)
-                .ok_or_else(|| anyhow!("Disk is too small for fvm volume"))?
+                .ok_or_else(|| anyhow!("Disk is too small for an FVM volume"))?
                 / header.slice_size;
             let slices_for_disk =
                 std::cmp::min(max_data_slices_for_disk, header.max_allocation_table_entries());
@@ -470,7 +475,7 @@ impl Fvm {
             fuchsia_inspect::component::inspector().root().create_child("partitions");
 
         // Build the mappings.
-        let metadata = &inner.metadata;
+        let metadata = &mut inner.metadata;
         for (idx, partition) in metadata.partitions.iter() {
             inner.partition_state.insert(
                 *idx,
@@ -495,7 +500,13 @@ impl Fvm {
             if !metadata.partitions.contains_key(&partition_index) {
                 warn!("Slice entry points to free partition: 0x{:x?}", allocation.0);
                 continue;
-            };
+            }
+            if physical_slice as u64 >= max_data_slices_for_disk {
+                return Err(zx::Status::IO_DATA_INTEGRITY).context(
+                    "Volume has allocated slice {physical_slice} beyond end of disk \
+                              ({max_data_slices_for_disk})",
+                );
+            }
             inner.assigned_slice_count += 1;
             // unwrap safety: map is made from metadata.partitions right before this and we make
             // sure the key exists in that map.
@@ -533,6 +544,13 @@ impl Fvm {
             if bad_mapping {
                 warn!("Duplicate slice entry: 0x{:x?}", allocation.0);
             }
+        }
+
+        if metadata.header.pslice_count > max_data_slices_for_disk {
+            warn!("Number of slices exceeds disk bounds (continuing since none are allocated)");
+            // There aren't any allocated slices (we check that earlier), but we need to prevent the
+            // slices from being allocated, so pslice_count is updated here.
+            metadata.header.pslice_count = max_data_slices_for_disk;
         }
 
         info!(
@@ -1132,15 +1150,75 @@ impl Component {
             match request {
                 StartupRequest::Start { responder, device, options } => responder
                     .send(self.handle_start(device, options).await.map_err(map_to_raw_status))?,
-                StartupRequest::Format { responder, .. } => {
-                    // Formatting FVM should be covered by C++ libraries.
-                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
-                }
+                StartupRequest::Format { responder, device, options } => responder
+                    .send(self.handle_format(device, options).await.map_err(map_to_raw_status))?,
                 StartupRequest::Check { responder, .. } => {
                     responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Handles the `Format` request from `fuchsia.fs.startup.Startup` protocol.
+    /// This formats the provided block device as an empty FVM volume.
+    async fn handle_format(
+        self: &Arc<Self>,
+        device: fidl::endpoints::ClientEnd<fblock::BlockMarker>,
+        options: FormatOptions,
+    ) -> Result<(), Error> {
+        let block_proxy = device.into_proxy();
+        let info = block_proxy.get_info().await?.map_err(zx::Status::from_raw)?;
+        let disk_size = info.block_count * info.block_size as u64;
+
+        let slice_size = options.fvm_slice_size.unwrap_or(DEFAULT_SLICE_SIZE);
+        if slice_size < BLOCK_SIZE || !slice_size.is_power_of_two() {
+            return Err(zx::Status::INVALID_ARGS).context("Bad slice size {slice_size}");
+        }
+        let vpartition_table_size = (MAX_PARTITIONS * std::mem::size_of::<PartitionEntry>() as u64)
+            .next_multiple_of(BLOCK_SIZE);
+
+        // This uses the same strategy as the C++ FVM code: it chooses the allocation table size
+        // assuming the metadata space is zero.  This results in a table size that's bigger than it
+        // might need to be.
+        let allocation_table_size = (((disk_size / slice_size) + 1)
+            * (std::mem::size_of::<SliceEntry>() as u64))
+            .next_multiple_of(BLOCK_SIZE);
+
+        let mut header = Header {
+            magic: MAGIC,
+            major_version: MAJOR_VERSION,
+            pslice_count: 0,
+            slice_size,
+            fvm_partition_size: disk_size,
+            vpartition_table_size,
+            allocation_table_size,
+            generation: 0,
+            hash: [0; 32],
+            oldest_minor_version: MINOR_VERSION,
+        };
+
+        // Compute the number of physical slices that can fit in the remaining space after
+        // accounting for the metadata.
+        header.pslice_count =
+            (disk_size.checked_sub(header.data_start()).ok_or(zx::Status::INVALID_ARGS)?)
+                / slice_size;
+        ensure!(header.pslice_count > 0, zx::Status::INVALID_ARGS);
+
+        info!("Formatting FVM: {header:?}");
+
+        let metadata = Metadata {
+            header,
+            partitions: std::collections::BTreeMap::new(),
+            allocations: vec![SliceEntry(0); header.pslice_count as usize],
+        };
+
+        let block_client = block_client::RemoteBlockClient::new(block_proxy).await?;
+
+        // Write both primary and secondary copies of the metadata.
+        metadata.write(&block_client, metadata.header.offset_for_slot(0)).await?;
+        metadata.write(&block_client, metadata.header.offset_for_slot(1)).await?;
+
         Ok(())
     }
 
@@ -1203,7 +1281,7 @@ impl Component {
                     create_options,
                     mount_options,
                 } => {
-                    log::info!(name:?, create_options:?; "Create volume");
+                    info!(name:?, create_options:?; "Create volume");
                     responder.send(
                         self.handle_create_volume(
                             &name,
@@ -1219,7 +1297,7 @@ impl Component {
                     )?;
                 }
                 VolumesRequest::Remove { responder, name } => {
-                    log::info!(name:?; "Remove volume");
+                    info!(name:?; "Remove volume");
                     responder.send(self.handle_remove_volume(&name).await.map_err(|error| {
                         log::warn!(error:?; "Remove volume failed");
                         map_to_raw_status(error)
@@ -2168,8 +2246,8 @@ mod tests {
     use fidl::endpoints::RequestStream;
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{
-        CheckOptions, CreateOptions, MountOptions, StartOptions, StartupMarker, VolumeMarker,
-        VolumesMarker,
+        CheckOptions, CreateOptions, FormatOptions, MountOptions, StartOptions, StartupMarker,
+        VolumeMarker, VolumesMarker,
     };
     use fidl_fuchsia_fxfs::{CryptMarker, CryptRequest};
     use fidl_fuchsia_io as fio;
@@ -2256,6 +2334,189 @@ mod tests {
         fn take_fake_server(self) -> Arc<VmoBackedServer> {
             self.fake_server
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_format_and_mount() {
+        let block_size: u32 = 512;
+        let block_count: u64 = 102400; // 50MB
+        let fake_server = Arc::new(VmoBackedServer::new(block_count, block_size, &[]));
+
+        let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        let component = Arc::new(Component::new());
+
+        let fake_server_clone = fake_server.clone();
+        let (block_client, block_server) = fidl::endpoints::create_request_stream::<BlockMarker>();
+        fasync::Task::spawn(async move {
+            let _ = fake_server_clone.serve(block_server.cast_stream()).await;
+        })
+        .detach();
+
+        component.serve(server_end.into_channel()).await.unwrap();
+
+        let startup_proxy = connect_to_protocol_at_dir_svc::<StartupMarker>(&outgoing_dir).unwrap();
+
+        // Format the volume
+        let options =
+            FormatOptions { fvm_slice_size: Some(SLICE_SIZE), ..FormatOptions::default() };
+        startup_proxy.format(block_client.into_channel().into(), &options).await.unwrap().unwrap();
+
+        // Now try to start it
+        let (block_client, block_server) = fidl::endpoints::create_request_stream::<BlockMarker>();
+        let fake_server_clone = fake_server.clone();
+        fasync::Task::spawn(async move {
+            let _ = fake_server_clone.serve(block_server.cast_stream()).await;
+        })
+        .detach();
+
+        startup_proxy
+            .start(block_client.into_channel().into(), &StartOptions::default())
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Now try to add a volume
+        let volumes_proxy = connect_to_protocol_at_dir_svc::<VolumesMarker>(&outgoing_dir).unwrap();
+        let (_vol_dir, vol_server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        let create_options = CreateOptions {
+            initial_size: Some(32768),
+            type_guid: Some([1; 16]),
+            ..CreateOptions::default()
+        };
+        volumes_proxy
+            .create("default", vol_server, create_options, MountOptions::default())
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Verify that it exists
+        let volumes_dir =
+            fuchsia_fs::directory::open_directory(&outgoing_dir, "volumes", fio::PERM_READABLE)
+                .await
+                .unwrap();
+        let entries = readdir(&volumes_dir).await.unwrap();
+        assert!(entries.iter().any(|e| e.name == "default"));
+    }
+
+    #[fuchsia::test]
+    async fn test_allocation_persistence() {
+        // We want to allocate *every* slice within the table. To do that, we need to format the
+        // volume and then effectively resize the disk so that all the entries can be allocated.
+        let block_size: u32 = 512;
+        let initial_block_count: u64 = 65600;
+        let final_block_count: u64 = 65900;
+
+        let vmo = zx::Vmo::create_with_opts(
+            zx::VmoOptions::RESIZABLE,
+            final_block_count * block_size as u64,
+        )
+        .unwrap();
+        let vmo_dup = vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let vmo_dup = zx::Vmo::from(vmo_dup);
+
+        vmo.set_size(initial_block_count * block_size as u64).unwrap();
+        let fake_server = Arc::new(VmoBackedServer::from_vmo(block_size, vmo));
+
+        let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        let component = Arc::new(Component::new());
+
+        let fake_server_clone = fake_server.clone();
+        let (block_client, block_server) = fidl::endpoints::create_request_stream::<BlockMarker>();
+        fasync::Task::spawn(async move {
+            let _ = fake_server_clone.serve(block_server.cast_stream()).await;
+        })
+        .detach();
+
+        component.serve(server_end.into_channel()).await.unwrap();
+
+        let startup_proxy = connect_to_protocol_at_dir_svc::<StartupMarker>(&outgoing_dir).unwrap();
+
+        let options =
+            FormatOptions { fvm_slice_size: Some(SLICE_SIZE), ..FormatOptions::default() };
+        startup_proxy.format(block_client.into_channel().into(), &options).await.unwrap().unwrap();
+
+        // Shutdown component to grow disk
+        let admin_proxy = connect_to_protocol_at_dir_svc::<AdminMarker>(&outgoing_dir).unwrap();
+        admin_proxy.shutdown().await.unwrap();
+
+        // Grow disk
+        vmo_dup.set_size(final_block_count * block_size as u64).unwrap();
+
+        // Remount with larger disk
+        let fake_server = Arc::new(VmoBackedServer::from_vmo(block_size, vmo_dup));
+        let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        let component = Arc::new(Component::new());
+
+        let fake_server_clone = fake_server.clone();
+        let (block_client, block_server) = fidl::endpoints::create_request_stream::<BlockMarker>();
+        fasync::Task::spawn(async move {
+            let _ = fake_server_clone.serve(block_server.cast_stream()).await;
+        })
+        .detach();
+
+        component.serve(server_end.into_channel()).await.unwrap();
+        let startup_proxy = connect_to_protocol_at_dir_svc::<StartupMarker>(&outgoing_dir).unwrap();
+        startup_proxy
+            .start(block_client.into_channel().into(), &StartOptions::default())
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Add a volume
+        let volumes_proxy = connect_to_protocol_at_dir_svc::<VolumesMarker>(&outgoing_dir).unwrap();
+        let (vol_dir, vol_server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        let create_options = CreateOptions { type_guid: Some([1; 16]), ..CreateOptions::default() };
+        volumes_proxy
+            .create("default", vol_server, create_options, MountOptions::default())
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Get volume proxy
+        let vol_proxy = connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&vol_dir).unwrap();
+
+        // Allocate 1023 MORE slices (it starts with 1). Total 1024.
+        let status = vol_proxy.extend(2, 1023).await.unwrap();
+        zx::Status::ok(status).unwrap();
+
+        // Verify they are allocated
+        let (_, manager_info, _) = vol_proxy.get_volume_info().await.unwrap();
+        assert_eq!(manager_info.unwrap().assigned_slice_count, 1024);
+
+        // Unmount
+        let admin_proxy = connect_to_protocol_at_dir_svc::<AdminMarker>(&outgoing_dir).unwrap();
+        admin_proxy.shutdown().await.unwrap();
+
+        // Remount again
+        let component = Arc::new(Component::new());
+        let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        let (block_client, block_server) = fidl::endpoints::create_request_stream::<BlockMarker>();
+        let fake_server_clone = fake_server.clone();
+        fasync::Task::spawn(async move {
+            let _ = fake_server_clone.serve(block_server.cast_stream()).await;
+        })
+        .detach();
+
+        component.serve(server_end.into_channel()).await.unwrap();
+        let startup_proxy = connect_to_protocol_at_dir_svc::<StartupMarker>(&outgoing_dir).unwrap();
+        startup_proxy
+            .start(block_client.into_channel().into(), &StartOptions::default())
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Get volume proxy again
+        let vol_proxy = connect_to_named_protocol_at_dir_root::<
+            fidl_fuchsia_fs_startup::VolumeMarker,
+        >(&outgoing_dir, "volumes/default")
+        .unwrap();
+        let (vol_dir, vol_server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        vol_proxy.mount(vol_server, MountOptions::default()).await.unwrap().unwrap();
+        let vol_proxy = connect_to_protocol_at_dir_svc::<fblock::BlockMarker>(&vol_dir).unwrap();
+
+        // Verify they are STILL allocated
+        let (_, manager_info, _) = vol_proxy.get_volume_info().await.unwrap();
+        assert_eq!(manager_info.unwrap().assigned_slice_count, 1024);
     }
 
     /// Returns the number of assigned slices for the individual volume and the whole FVM volume.

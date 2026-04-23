@@ -3,18 +3,15 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow};
-use fidl_fuchsia_device::ControllerProxy;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
+use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fuchsia_component::client::{ServiceInstanceStream, connect_to_protocol_at_path};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::TryStreamExt;
 use std::path::{Path, PathBuf};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions};
-
-pub mod fvm;
-pub mod zxcrypt;
 
 pub type Guid = [u8; 16];
 
@@ -24,10 +21,6 @@ pub fn into_guid(guid: Guid) -> fidl_fuchsia_storage_block::Guid {
 
 pub fn create_random_guid() -> Guid {
     *uuid::Uuid::new_v4().as_bytes()
-}
-
-pub async fn bind_fvm(proxy: &ControllerProxy) -> Result<()> {
-    fvm::bind_fvm_driver(proxy).await
 }
 
 async fn partition_type_guid_matches(guid: &Guid, partition: &BlockProxy) -> Result<bool> {
@@ -182,115 +175,4 @@ where
         }
     }
     Ok(None)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use fidl_fuchsia_storage_block::ALLOCATE_PARTITION_FLAG_INACTIVE;
-    use ramdevice_client::RamdiskClient;
-    const BLOCK_SIZE: u64 = 512;
-    const BLOCK_COUNT: u64 = 64 * 1024 * 1024 / BLOCK_SIZE;
-    const FVM_SLICE_SIZE: usize = 1024 * 1024;
-    const INSTANCE_GUID: Guid = [
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-        0x0f,
-    ];
-    const TYPE_GUID: Guid = [
-        0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0,
-        0xf0,
-    ];
-    const VOLUME_NAME: &str = "volume-name";
-
-    #[fuchsia::test]
-    async fn wait_for_block_device_devfs_with_all_match_criteria() {
-        let ramdisk = RamdiskClient::create(BLOCK_SIZE, BLOCK_COUNT).await.unwrap();
-        let fvm = fvm::set_up_fvm(
-            ramdisk.as_controller().expect("invalid controller"),
-            ramdisk.as_dir().expect("invalid directory proxy"),
-            FVM_SLICE_SIZE,
-        )
-        .await
-        .expect("Failed to format ramdisk with FVM");
-        fvm::create_fvm_volume(
-            &fvm,
-            VOLUME_NAME,
-            &TYPE_GUID,
-            &INSTANCE_GUID,
-            None,
-            ALLOCATE_PARTITION_FLAG_INACTIVE,
-        )
-        .await
-        .expect("Failed to create fvm volume");
-
-        wait_for_block_device_devfs(&[
-            BlockDeviceMatcher::TypeGuid(&TYPE_GUID),
-            BlockDeviceMatcher::InstanceGuid(&INSTANCE_GUID),
-            BlockDeviceMatcher::Name(VOLUME_NAME),
-        ])
-        .await
-        .expect("Failed to find block device");
-
-        find_block_device_devfs(&[
-            BlockDeviceMatcher::TypeGuid(&TYPE_GUID),
-            BlockDeviceMatcher::InstanceGuid(&INSTANCE_GUID),
-            BlockDeviceMatcher::Name(VOLUME_NAME),
-        ])
-        .await
-        .expect("Failed to find block device");
-
-        find_block_device_devfs(&[
-            BlockDeviceMatcher::TypeGuid(&TYPE_GUID),
-            BlockDeviceMatcher::InstanceGuid(&INSTANCE_GUID),
-            BlockDeviceMatcher::Name("something else"),
-        ])
-        .await
-        .expect_err("Unexpected match for block device");
-    }
-
-    #[fuchsia::test]
-    async fn wait_for_block_device_with_all_match_criteria() {
-        let ramdisk = RamdiskClient::create(BLOCK_SIZE, BLOCK_COUNT).await.unwrap();
-        let fvm = fvm::set_up_fvm(
-            ramdisk.as_controller().expect("invalid controller"),
-            ramdisk.as_dir().expect("invalid directory proxy"),
-            FVM_SLICE_SIZE,
-        )
-        .await
-        .expect("Failed to format ramdisk with FVM");
-        fvm::create_fvm_volume(
-            &fvm,
-            VOLUME_NAME,
-            &TYPE_GUID,
-            &INSTANCE_GUID,
-            None,
-            ALLOCATE_PARTITION_FLAG_INACTIVE,
-        )
-        .await
-        .expect("Failed to create fvm volume");
-
-        wait_for_block_device_devfs(&[
-            BlockDeviceMatcher::TypeGuid(&TYPE_GUID),
-            BlockDeviceMatcher::InstanceGuid(&INSTANCE_GUID),
-            BlockDeviceMatcher::Name(VOLUME_NAME),
-        ])
-        .await
-        .expect("Failed to find block device");
-
-        find_block_device_devfs(&[
-            BlockDeviceMatcher::TypeGuid(&TYPE_GUID),
-            BlockDeviceMatcher::InstanceGuid(&INSTANCE_GUID),
-            BlockDeviceMatcher::Name(VOLUME_NAME),
-        ])
-        .await
-        .expect("Failed to find block device");
-
-        find_block_device_devfs(&[
-            BlockDeviceMatcher::TypeGuid(&TYPE_GUID),
-            BlockDeviceMatcher::InstanceGuid(&INSTANCE_GUID),
-            BlockDeviceMatcher::Name("something else"),
-        ])
-        .await
-        .expect_err("Unexpected match for block device");
-    }
 }

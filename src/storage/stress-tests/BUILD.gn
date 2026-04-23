@@ -149,7 +149,10 @@ fuchsia_test_package("storage-stress-tests") {
     ":f2fs-crash",
     ":f2fs-no-crash",
   ]
-  deps = [ "//src/storage/testing:storage_driver_test_realm" ]
+  deps = [
+    "//src/storage/fvm:fvm-component",
+    "//src/storage/testing:storage_driver_test_realm",
+  ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -175,7 +178,10 @@ fuchsia_test_package("storage-stress-tests-short") {
     ":fxfs-short",
     ":f2fs-short",
   ]
-  deps = [ "//src/storage/testing:storage_driver_test_realm" ]
+  deps = [
+    "//src/storage/fvm:fvm-component",
+    "//src/storage/testing:storage_driver_test_realm",
+  ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"

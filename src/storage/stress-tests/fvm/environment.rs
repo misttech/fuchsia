@@ -12,7 +12,7 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use std::sync::Arc;
 use std::time::Duration;
-use storage_stress_test_utils::fvm::{FvmInstance, Guid};
+use storage_stress_test_utils::fvm::{FvmInstance, FvmVolume, Guid};
 use stress_test::actor::ActorRunner;
 use stress_test::environment::Environment;
 use stress_test::random_seed;
@@ -28,7 +28,7 @@ pub struct FvmEnvironment {
     args: Args,
     vmo: Vmo,
     instance_actor: Arc<Mutex<InstanceActor>>,
-    volume_actors: Vec<(Guid, Arc<Mutex<VolumeActor>>)>,
+    volume_actors: Vec<(FvmVolume, Arc<Mutex<VolumeActor>>)>,
 }
 
 impl FvmEnvironment {
@@ -39,7 +39,7 @@ impl FvmEnvironment {
 
         // Create a ramdisk and setup FVM.
         let mut fvm =
-            FvmInstance::new(true, &vmo, args.fvm_slice_size, args.ramdisk_block_size).await;
+            FvmInstance::new(&vmo, args.ramdisk_block_size, Some(args.fvm_slice_size)).await;
 
         // Create the root RNG
         let seed = match args.seed {
@@ -52,10 +52,11 @@ impl FvmEnvironment {
         for i in 0..args.num_volumes {
             // Create the new volume
             let volume_name = format!("testpart-{}", i);
-            let volume_guid = fvm.new_volume(&volume_name, &TYPE_GUID, None).await;
+            let fvm_volume = fvm.new_volume(&volume_name, &TYPE_GUID, None).await;
 
             // Connect to the volume
-            let volume = VolumeConnection::new(&volume_guid, args.fvm_slice_size).await;
+            let volume =
+                VolumeConnection::new(fvm_volume.block_connector(), args.fvm_slice_size).await;
 
             // Create the actor
             let rng = SmallRng::from_seed(rng.random());
@@ -64,7 +65,7 @@ impl FvmEnvironment {
                     .await,
             ));
 
-            volume_actors.push((volume_guid, volume_actor));
+            volume_actors.push((fvm_volume, volume_actor));
         }
 
         let instance_actor = Arc::new(Mutex::new(InstanceActor::new(fvm)));
@@ -92,8 +93,8 @@ impl Environment for FvmEnvironment {
     async fn actor_runners(&mut self) -> Vec<ActorRunner> {
         let mut runners = vec![];
 
-        for (guid, actor) in &self.volume_actors {
-            let actor_name = format!("volume_actor_{}", guid[0]);
+        for (volume, actor) in &self.volume_actors {
+            let actor_name = format!("volume_actor_{}", volume.guid()[0]);
             runners.push(ActorRunner::new(actor_name, None, actor.clone()));
         }
 
@@ -119,23 +120,18 @@ impl Environment for FvmEnvironment {
             assert!(actor.instance.is_none());
 
             // Start isolated-devmgr and FVM
-            let fvm = FvmInstance::new(
-                false,
-                &self.vmo,
-                self.args.fvm_slice_size,
-                self.args.ramdisk_block_size,
-            )
-            .await;
+            let fvm = FvmInstance::new(&self.vmo, self.args.ramdisk_block_size, None).await;
 
             // Replace the FVM instance
             actor.instance = Some(fvm);
         }
 
-        for (guid, actor) in &self.volume_actors {
+        for (volume, actor) in &self.volume_actors {
             let mut actor = actor.lock().await;
 
             // Connect to the volume
-            let volume = VolumeConnection::new(guid, self.args.fvm_slice_size).await;
+            let volume =
+                VolumeConnection::new(volume.block_connector(), self.args.fvm_slice_size).await;
 
             // Replace the volume
             actor.volume = volume;

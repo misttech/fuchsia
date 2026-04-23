@@ -9,9 +9,13 @@ use crate::{ComponentType, FSConfig, Options};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl::endpoints::{ClientEnd, ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_component::{self as fcomponent, RealmMarker};
+use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_fs::AdminMarker;
-use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions, StartupMarker};
-use fidl_fuchsia_storage_block::BlockMarker;
+use fidl_fuchsia_fs_startup::{
+    CheckOptions, CreateOptions, MountOptions, StartupMarker, VolumesMarker,
+};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block::{self as fblock, BlockMarker};
 use fuchsia_component_client::{
     connect_to_named_protocol_at_dir_root, connect_to_protocol, connect_to_protocol_at_dir_root,
     connect_to_protocol_at_dir_svc, open_childs_exposed_directory,
@@ -19,7 +23,6 @@ use fuchsia_component_client::{
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use zx::Status;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
 /// Creates new connections to an instance of fuchsia.hardware.block.Block and similar protocols
 /// (Volume, Partition).
@@ -595,21 +598,17 @@ impl ServingMultiVolumeFilesystem {
     /// Returns whether the given volume exists.
     pub async fn has_volume(&self, volume: &str) -> Result<bool, Error> {
         let path = format!("volumes/{}", volume);
-        fuchsia_fs::directory::open_node(
-            self.exposed_dir.as_ref().unwrap(),
-            &path,
-            fio::Flags::PROTOCOL_NODE,
-        )
-        .await
-        .map(|_| true)
-        .or_else(|e| {
-            if let fuchsia_fs::node::OpenError::OpenError(status) = &e {
-                if *status == zx::Status::NOT_FOUND {
-                    return Ok(false);
+        fuchsia_fs::directory::open_node(self.exposed_dir(), &path, fio::Flags::PROTOCOL_NODE)
+            .await
+            .map(|_| true)
+            .or_else(|e| {
+                if let fuchsia_fs::node::OpenError::OpenError(status) = &e {
+                    if *status == zx::Status::NOT_FOUND {
+                        return Ok(false);
+                    }
                 }
-            }
-            Err(e.into())
-        })
+                Err(e.into())
+            })
     }
 
     /// Creates and mounts the volume.  Fails if the volume already exists.
@@ -622,23 +621,19 @@ impl ServingMultiVolumeFilesystem {
         options: MountOptions,
     ) -> Result<ServingVolume, Error> {
         let (exposed_dir, server) = create_proxy::<fio::DirectoryMarker>();
-        connect_to_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumesMarker>(
-            self.exposed_dir.as_ref().unwrap(),
-        )?
-        .create(volume, server, create_options, options)
-        .await?
-        .map_err(|e| anyhow!(zx::Status::from_raw(e)))?;
+        connect_to_protocol_at_dir_root::<VolumesMarker>(self.exposed_dir())?
+            .create(volume, server, create_options, options)
+            .await?
+            .map_err(|e| anyhow!(zx::Status::from_raw(e)))?;
         ServingVolume::new(exposed_dir)
     }
 
     /// Deletes the volume. Fails if the volume is already mounted.
     pub async fn remove_volume(&self, volume: &str) -> Result<(), Error> {
-        connect_to_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumesMarker>(
-            self.exposed_dir.as_ref().unwrap(),
-        )?
-        .remove(volume)
-        .await?
-        .map_err(|e| anyhow!(zx::Status::from_raw(e)))
+        connect_to_protocol_at_dir_root::<VolumesMarker>(self.exposed_dir())?
+            .remove(volume)
+            .await?
+            .map_err(|e| anyhow!(zx::Status::from_raw(e)))
     }
 
     /// Mounts an existing volume.  Fails if the volume is already mounted or doesn't exist.
@@ -651,7 +646,7 @@ impl ServingMultiVolumeFilesystem {
         let (exposed_dir, server) = create_proxy::<fio::DirectoryMarker>();
         let path = format!("volumes/{}", volume);
         connect_to_named_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumeMarker>(
-            self.exposed_dir.as_ref().unwrap(),
+            self.exposed_dir(),
             &path,
         )?
         .mount(server, options)
@@ -668,7 +663,7 @@ impl ServingMultiVolumeFilesystem {
     ) -> Result<fidl_fuchsia_fs_startup::VolumeInfo, Error> {
         let path = format!("volumes/{}", volume);
         connect_to_named_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumeMarker>(
-            self.exposed_dir.as_ref().unwrap(),
+            self.exposed_dir(),
             &path,
         )?
         .get_info()
@@ -683,7 +678,7 @@ impl ServingMultiVolumeFilesystem {
         }
         let path = format!("volumes/{}", volume);
         connect_to_named_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumeMarker>(
-            self.exposed_dir.as_ref().unwrap(),
+            self.exposed_dir(),
             &path,
         )?
         .set_limit(byte_limit)
@@ -694,7 +689,7 @@ impl ServingMultiVolumeFilesystem {
     pub async fn check_volume(&self, volume: &str, options: CheckOptions) -> Result<(), Error> {
         let path = format!("volumes/{}", volume);
         connect_to_named_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumeMarker>(
-            self.exposed_dir.as_ref().unwrap(),
+            self.exposed_dir(),
             &path,
         )?
         .check(options)
@@ -745,6 +740,15 @@ impl ServingMultiVolumeFilesystem {
             .await
             .map(|entries| entries.into_iter().map(|e| e.name).collect())
             .map_err(|e| anyhow!("failed to read volumes dir: {}", e))
+    }
+
+    /// Returns the volume manager information.
+    pub async fn get_info(&self) -> Result<fblock::VolumeManagerInfo, Error> {
+        Ok(*connect_to_protocol_at_dir_root::<VolumesMarker>(self.exposed_dir())?
+            .get_info()
+            .await?
+            .map_err(|e| anyhow!(zx::Status::from_raw(e)))?
+            .ok_or_else(|| anyhow!("Missing info"))?)
     }
 }
 

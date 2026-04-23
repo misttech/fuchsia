@@ -71,8 +71,3 @@ source_set("fake-paver") {
     "//zircon/system/ulib/zx",
   ]
 }
-
-group("tests") {
-  testonly = true
-  deps = [ "rust:tests" ]
-}

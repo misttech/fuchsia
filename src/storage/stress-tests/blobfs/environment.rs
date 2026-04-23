@@ -17,7 +17,7 @@ use rand::{Rng, SeedableRng};
 use std::sync::Arc;
 use std::time::Duration;
 use storage_stress_test_utils::data::{Compressibility, FileFactory, UncompressedSize};
-use storage_stress_test_utils::fvm::{FvmInstance, Guid, get_volume_path};
+use storage_stress_test_utils::fvm::{FvmInstance, Guid};
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::ActorRunner;
 use stress_test::environment::Environment;
@@ -37,7 +37,6 @@ pub struct BlobfsEnvironment {
     seed: u64,
     args: Args,
     vmo: Vmo,
-    volume_guid: Guid,
     small_blob_actor: Arc<Mutex<BlobActor>>,
     medium_blob_actor: Arc<Mutex<BlobActor>>,
     large_blob_actor: Arc<Mutex<BlobActor>>,
@@ -70,20 +69,13 @@ impl BlobfsEnvironment {
 
         // Create a ramdisk and setup FVM.
         let mut fvm =
-            FvmInstance::new(true, &vmo, args.fvm_slice_size, args.ramdisk_block_size).await;
+            FvmInstance::new(&vmo, args.ramdisk_block_size, Some(args.fvm_slice_size)).await;
 
         // Create a blobfs volume
-        let volume_guid = fvm.new_volume("blobfs", &TYPE_GUID, None).await;
+        let volume = fvm.new_volume("blobfs", &TYPE_GUID, None).await;
 
-        // Find the path to the volume
-        let volume_path = get_volume_path(&volume_guid).await;
-
-        // Initialize blobfs on volume
-        let controller = fuchsia_component::client::connect_to_protocol_at_path::<
-            fidl_fuchsia_device::ControllerMarker,
-        >(&format!("{}/device_controller", volume_path.to_str().unwrap()))
-        .unwrap();
-        let mut blobfs = Blobfs::new(controller);
+        let connector = volume.block_connector();
+        let mut blobfs = fs_management::filesystem::Filesystem::new(connector, Blobfs::default());
         blobfs.format().await.unwrap();
 
         let seed = match args.seed {
@@ -99,7 +91,7 @@ impl BlobfsEnvironment {
         let exposed_dir = Clone::clone(blobfs.exposed_dir());
 
         // Create the instance actor
-        let instance_actor = Arc::new(Mutex::new(InstanceActor::new(fvm, blobfs)));
+        let instance_actor = Arc::new(Mutex::new(InstanceActor::new(fvm, blobfs, volume)));
 
         let mut rng = SmallRng::seed_from_u64(seed);
 
@@ -149,7 +141,6 @@ impl BlobfsEnvironment {
             seed,
             args,
             vmo,
-            volume_guid,
             instance_actor,
             small_blob_actor,
             medium_blob_actor,
@@ -212,24 +203,14 @@ impl Environment for BlobfsEnvironment {
             assert!(actor.instance.is_none());
 
             // Create a ramdisk and setup FVM.
-            let fvm = FvmInstance::new(
-                false,
-                &self.vmo,
-                self.args.fvm_slice_size,
-                self.args.ramdisk_block_size,
-            )
-            .await;
+            let fvm = FvmInstance::new(&self.vmo, self.args.ramdisk_block_size, None).await;
 
-            // Find the path to the volume
-            let volume_path = get_volume_path(&self.volume_guid).await;
+            // Open the volume
+            let volume = fvm.open_volume("blobfs").await;
 
-            // Initialize blobfs on volume
-            let controller =
-                fuchsia_component::client::connect_to_protocol_at_path::<
-                    fidl_fuchsia_device::ControllerMarker,
-                >(&format!("{}/device_controller", volume_path.to_str().unwrap()))
-                .unwrap();
-            let mut blobfs = Blobfs::new(controller);
+            let connector = volume.block_connector();
+            let mut blobfs =
+                fs_management::filesystem::Filesystem::new(connector, Blobfs::default());
 
             // Mount the blobfs volume
             blobfs.fsck().await.unwrap();
@@ -237,8 +218,8 @@ impl Environment for BlobfsEnvironment {
             blobfs.bind_to_path(BLOBFS_MOUNT_PATH).unwrap();
 
             let exposed_dir = Clone::clone(blobfs.exposed_dir());
-            // Replace the fvm and blobfs instances
-            actor.instance = Some((blobfs, fvm));
+            // Replace the fvm, blobfs and volume instances
+            actor.instance = Some((blobfs, fvm, volume));
             exposed_dir
         };
 
