@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "httparse",
     package_url = "https://github.com/seanmonstar/httparse",
-    package_version = "1.9.4",
+    package_version = "1.10.1",
 )
 
 license(
@@ -77,9 +77,9 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.9.4",
+    version = "1.10.1",
     deps = [
-        "//third_party/rust_crates/vendor/httparse-1.9.4:build_script_build",
+        "//third_party/rust_crates/vendor/httparse-1.10.1:build_script_build",
     ],
 )
 
@@ -132,7 +132,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "1.9.4",
+    version = "1.10.1",
     visibility = ["//visibility:private"],
 )
 

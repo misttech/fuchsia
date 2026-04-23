@@ -659,7 +659,7 @@ group_name = "heck-0_3"
 visibility = [
   "//third_party/rust_crates/compat/icu:*", "//src/sys/test_runners/starnix:*", "//third_party/rust_crates:*" ]
 
-[gn.package.httparse."1.9.4"]
+[gn.package.httparse."1.10.1"]
 rustflags = [
   "--cfg=httparse_simd",
   "--cfg=httparse_simd_neon_intrinsics",
