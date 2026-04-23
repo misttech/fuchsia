@@ -7,7 +7,7 @@
 //! types will be directly deserializable from the PBM, and converted into engine-specific types at
 //! runtime.
 
-use emulator_instance::{FlagData, NetworkingMode, PortMapping};
+use emulator_instance::{EngineState, EngineType, FlagData, NetworkingMode, PortMapping};
 use schemars::JsonSchema;
 use sdk_metadata::{VirtualDeviceV1, display_impl};
 use serde::{Deserialize, Serialize};
@@ -126,6 +126,14 @@ pub enum ShowDetail {
         upscript: Option<PathBuf>,
         ports: Option<HashMap<String, PortMapping>>,
     },
+    Instance {
+        name: Option<String>,
+        engine_type: Option<EngineType>,
+        engine_state: Option<EngineState>,
+        pid: Option<u32>,
+        emulator_binary: Option<PathBuf>,
+        instance_directory: Option<PathBuf>,
+    },
 }
 
 impl Default for ShowDetail {
@@ -198,6 +206,42 @@ impl Display for ShowDetail {
                     for (k, v) in portdata {
                         writeln!(f, "\t\t{:10}{:<10}{:<10}", k, v.guest, v.host.unwrap_or(0))?;
                     }
+                }
+            }
+            ShowDetail::Instance {
+                name,
+                engine_type,
+                engine_state,
+                pid,
+                emulator_binary,
+                instance_directory,
+            } => {
+                writeln!(f, "Instance:")?;
+                writeln!(f, "\tName: {}", name.as_deref().unwrap_or(""))?;
+                if let Some(engine_type) = engine_type {
+                    writeln!(f, "\tType: {}", engine_type)?;
+                } else {
+                    writeln!(f, "\tType: None")?;
+                }
+                if let Some(engine_state) = engine_state {
+                    writeln!(f, "\tState: {}", engine_state)?;
+                } else {
+                    writeln!(f, "\tState: None")?;
+                }
+                if let Some(pid) = pid {
+                    writeln!(f, "\tPID: {}", pid)?;
+                } else {
+                    writeln!(f, "\tPID: None")?;
+                }
+                if let Some(emulator_binary) = emulator_binary {
+                    writeln!(f, "\tBinary: {}", emulator_binary.display())?;
+                } else {
+                    writeln!(f, "\tBinary: None")?;
+                }
+                if let Some(instance_directory) = instance_directory {
+                    writeln!(f, "\tDirectory: {}", instance_directory.display())?;
+                } else {
+                    writeln!(f, "\tDirectory: None")?;
                 }
             }
         }

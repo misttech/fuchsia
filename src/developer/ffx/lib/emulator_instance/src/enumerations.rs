@@ -121,7 +121,7 @@ impl Default for EngineState {
 
 display_impl!(EngineState);
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineType {
     /// Fuchsia Emulator based on AEMU. Supports graphics.

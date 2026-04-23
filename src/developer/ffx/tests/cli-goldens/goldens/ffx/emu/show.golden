@@ -46,6 +46,14 @@
     {
       "kind": "Switch",
       "optionality": "optional",
+      "long": "--instance",
+      "short": null,
+      "description": "show the instance information.",
+      "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
       "long": "--net",
       "short": null,
       "description": "switch to show network details.",

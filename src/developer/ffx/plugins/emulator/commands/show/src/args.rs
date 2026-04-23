@@ -28,6 +28,10 @@ pub struct ShowCommand {
     #[argh(switch)]
     pub device: bool,
 
+    /// show the instance information.
+    #[argh(switch)]
+    pub instance: bool,
+
     /// name of the emulator instance to show details for.
     /// See a list of available instances by running `ffx emu list`.
     /// If only one instance is running, this defaults to that instance name.

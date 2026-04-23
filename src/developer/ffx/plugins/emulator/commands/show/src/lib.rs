@@ -37,6 +37,16 @@ fn which_details(cmd: &ShowCommand) -> Vec<ShowDetail> {
     if cmd.net || cmd.all {
         details.push(ShowDetail::Net { mode: None, mac_address: None, upscript: None, ports: None })
     }
+    if cmd.instance || cmd.all {
+        details.push(ShowDetail::Instance {
+            name: None,
+            engine_type: None,
+            engine_state: None,
+            pid: None,
+            emulator_binary: None,
+            instance_directory: None,
+        })
+    }
 
     if details.is_empty() {
         details = vec![
@@ -44,6 +54,14 @@ fn which_details(cmd: &ShowCommand) -> Vec<ShowDetail> {
             ShowDetail::Config { flags: None },
             ShowDetail::Device { device: None },
             ShowDetail::Net { mode: None, mac_address: None, upscript: None, ports: None },
+            ShowDetail::Instance {
+                name: None,
+                engine_type: None,
+                engine_state: None,
+                pid: None,
+                emulator_binary: None,
+                instance_directory: None,
+            },
         ]
     }
     details
@@ -108,8 +126,8 @@ impl EmuShowTool {
 mod tests {
     use super::*;
     use emulator_instance::{
-        EmulatorInstanceData, EmulatorInstanceInfo, EngineState, FlagData, NetworkingMode,
-        write_to_disk,
+        EmulatorInstanceData, EmulatorInstanceInfo, EngineState, EngineType, FlagData,
+        NetworkingMode, write_to_disk,
     };
     use ffx_config::ConfigLevel;
     use ffx_emulator_config::VirtualDeviceInfo;
@@ -184,6 +202,14 @@ mod tests {
                 mac_address: None,
                 upscript: None,
                 ports: None,
+            },
+            ShowDetail::Instance {
+                name: Some("one_instance".into()),
+                engine_type: Some(EngineType::default()),
+                engine_state: Some(EngineState::Staged),
+                pid: Some(0),
+                emulator_binary: Some(PathBuf::from("")),
+                instance_directory: Some(PathBuf::from("")),
             },
         ];
 

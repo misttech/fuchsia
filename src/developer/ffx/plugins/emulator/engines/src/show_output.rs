@@ -4,7 +4,7 @@
 
 //! The show_output module contains print routines for the Show subcommand.
 
-use emulator_instance::{EmulatorConfiguration, NetworkingMode};
+use emulator_instance::{EmulatorConfiguration, EmulatorInstanceInfo, NetworkingMode};
 use ffx_emulator_config::ShowDetail;
 use sdk_metadata::virtual_device::{Cpu, Hardware};
 use sdk_metadata::{ElementType, InputDevice, VirtualDeviceV1};
@@ -87,4 +87,17 @@ pub(crate) fn device(emu_config: &EmulatorConfiguration) -> ShowDetail {
     }
 
     ShowDetail::Device { device: Some(device.into()) }
+}
+
+pub(crate) fn instance(engine: &dyn EmulatorInstanceInfo) -> ShowDetail {
+    ShowDetail::Instance {
+        name: Some(engine.get_name().to_string()),
+        engine_type: Some(engine.get_engine_type()),
+        engine_state: Some(engine.get_engine_state()),
+        pid: Some(engine.get_pid()),
+        emulator_binary: Some(engine.get_emulator_binary().clone()),
+        instance_directory: Some(
+            engine.get_emulator_configuration().runtime.instance_directory.clone(),
+        ),
+    }
 }

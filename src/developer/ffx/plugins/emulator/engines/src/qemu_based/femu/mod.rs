@@ -55,6 +55,10 @@ impl FemuEngine {
 
 #[async_trait(?Send)]
 impl EmulatorEngine for FemuEngine {
+    fn get_instance_data(&self) -> &EmulatorInstanceData {
+        &self.data
+    }
+
     async fn stage(&mut self) -> Result<()> {
         let ctx_clone = self.context.clone();
         let result = <Self as QemuBasedEngine>::stage(&mut self, &ctx_clone)

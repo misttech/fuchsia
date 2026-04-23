@@ -33,3 +33,11 @@ Network:
 	MAC: None
 	Upscript: None
 
+Instance:
+	Name: one_instance
+	Type: femu
+	State: staged
+	PID: 0
+	Binary: 
+	Directory: 
+

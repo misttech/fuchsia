@@ -823,6 +823,9 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                 ShowDetail::Config { .. } => results.push(show_output::config(self.emu_config())),
                 ShowDetail::Device { .. } => results.push(show_output::device(self.emu_config())),
                 ShowDetail::Net { .. } => results.push(show_output::net(self.emu_config())),
+                ShowDetail::Instance { .. } => {
+                    results.push(show_output::instance(self.get_instance_data()))
+                }
                 _ => {}
             };
         }
