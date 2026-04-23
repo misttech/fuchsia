@@ -18,6 +18,7 @@
 /// should use the standard libraries provided by their runtime.
 @available(added=HEAD)
 library fuchsia.time.external;
+
 using zx;
 
 /// A protocol which defines common methods for all time sources. Should not be
@@ -60,6 +61,12 @@ closed protocol PullSource {
     strict NextPossibleSampleTime() -> (struct {
         next_possible_time zx.Time;
     });
+
+    /// Notifies the time source that it is about to be shut down.
+    ///
+    /// The time source should escrow its Inspect data to allow it to be
+    /// retrieved after the component has stopped.
+    strict Shutdown() -> () error EscrowError;
 };
 
 /// A protocol for time sources that produce time samples on a schedule that it
@@ -188,6 +195,14 @@ type Error = strict enum {
     /// The request was made too soon and the client should wait before making
     /// another request.
     RATE_LIMITED = 8;
+};
+
+/// Errors returned by `Shutdown`.
+type EscrowError = strict enum {
+    /// The call to `fuchsia.inspect.InspectSink.FrozenEscrow` failed.
+    ESCROW_INSPECT_FAILED = 9;
+    /// The time source does not have an Inspect controller to escrow.
+    ESCROW_NO_INSPECT_CONTROLLER = 10;
 };
 
 /// Device global properties a time source may use to help it sample time.
