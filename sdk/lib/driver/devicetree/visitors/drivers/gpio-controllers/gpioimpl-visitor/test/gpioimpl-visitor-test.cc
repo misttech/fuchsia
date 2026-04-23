@@ -195,7 +195,7 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   ASSERT_EQ((*controller_metadata_b->init_steps())[1].call()->pin(),
             static_cast<uint32_t>(GROUP5_PIN1));
   ASSERT_EQ((*controller_metadata_b->init_steps())[1].call()->call(),
-            fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{.function_name = "spi"}}));
+            fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{.function_name = "spi-bus"}}));
 
   ASSERT_EQ(1lu, gpio_tester->GetCompositeNodeSpecs("audio").size());
   auto mgr_request_audio = gpio_tester->GetCompositeNodeSpecs("audio")[0];

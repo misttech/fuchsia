@@ -24,6 +24,7 @@ class GpioImplVisitor : public fdf_devicetree::Visitor {
   static constexpr char kPinCtrl0[] = "pinctrl-0";
   static constexpr char kPins[] = "pins";
   static constexpr char kPinFunction[] = "function";
+  static constexpr char kPinFunctionId[] = "function-id";
   static constexpr char kPinDriveStrengthUa[] = "drive-strength-microamp";
   static constexpr char kPinOutputLow[] = "output-low";
   static constexpr char kPinOutputHigh[] = "output-high";

@@ -42,7 +42,7 @@
 			reg = <0x00 0xff634400 0x00 0x400>;
 
 			pwm-a0-d-regulator-pins {
-				function = <0x00 0x03>;
+				function-id = <0x00 0x03>;
 				output-low;
 				pins = <0x62>;
 			};

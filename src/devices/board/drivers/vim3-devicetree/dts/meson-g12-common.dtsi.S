@@ -77,24 +77,24 @@
 
 			audio_tdm_a_cfg1: audio-tdm-a-cfg1 {
 				pins = <A311D_GPIOX(11) A311D_GPIOX(10) A311D_GPIOX(9)>;
-				function = <0 1>;
+				function-id = <0 1>;
 				drive-strength-microamp = <0 3000>;
 			};
 
 			audio_tdm_a_cfg2: audio-tdm-a-cfg2 {
 				pins = <A311D_GPIOX(8)>;
-				function = <0 2>;
+				function-id = <0 2>;
 			};
 
 			audio_tdm_b_cfg1: audio-tdm-b-cfg1 {
 				pins = <A311D_GPIOA(1) A311D_GPIOA(2) A311D_GPIOA(3)>;
-				function = <0 1>;
+				function-id = <0 1>;
 				drive-strength-microamp = <0 3000>;
 			};
 
 			audio_tdm_b_cfg2: audio-tdm-b-cfg2 {
 				pins = <A311D_GPIOA(4)>;
-				function = <0 2>;
+				function-id = <0 2>;
 			};
 
 			usb_power: usb-power {
@@ -105,22 +105,22 @@
 			emmc_d0_d7_cfg: emmc-d0-d7-cfg {
 				pins = <A311D_GPIOBOOT(0) A311D_GPIOBOOT(1) A311D_GPIOBOOT(2) A311D_GPIOBOOT(3)>,
 						<A311D_GPIOBOOT(4) A311D_GPIOBOOT(5) A311D_GPIOBOOT(6) A311D_GPIOBOOT(7)>;
-				function = <0 1>;
+				function-id = <0 1>;
 			};
 
 			emmc_clk_cfg: emmc-clk-cfg {
 				pins = <A311D_GPIOBOOT(8)>;
-				function = <0 1>;
+				function-id = <0 1>;
 			};
 
 			emmc_cmd_cfg: emmc-cmd-cfg {
 				pins = <A311D_GPIOBOOT(10)>;
-				function = <0 1>;
+				function-id = <0 1>;
 			};
 
 			emmc_ds_cfg: emmc-ds-cfg {
 				pins = <A311D_GPIOBOOT(13)>;
-				function = <0 1>;
+				function-id = <0 1>;
 			};
 
 			emmc_cs_cfg: emmc-cs-cfg {
@@ -130,37 +130,37 @@
 
 			sdcard_d0_d3_cfg: sdcard-d0-d3-cfg{
 				pins = <A311D_GPIOC(0) A311D_GPIOC(1) A311D_GPIOC(2) A311D_GPIOC(3)>;
-				function = <0 1>;
+				function-id = <0 1>;
 			};
 
 			sdcard_clk_cfg: sdcard-clk-cfg{
 				pins = <A311D_GPIOC(4)>;
-				function = <0 1>;
+				function-id = <0 1>;
 			};
 
 			sdcard_cmd_cfg: sdcard-cmd-cfg{
 				pins = <A311D_GPIOC(5)>;
-				function = <0 1>;
+				function-id = <0 1>;
 			};
 
 			sdio_d0_d3_cfg: sdio-d0-d3-cfg{
 				pins = <A311D_GPIOX(0) A311D_GPIOX(1) A311D_GPIOX(2) A311D_GPIOX(3)>;
 				bias-disable;
-				function = <0 1>;
+				function-id = <0 1>;
 				drive-strength-microamp = <0 4000>;
 			};
 
 			sdio_clk_cfg: sdio-clk-cfg{
 				pins = <A311D_GPIOX(4)>;
 				bias-disable;
-				function = <0 1>;
+				function-id = <0 1>;
 				drive-strength-microamp = <0 4000>;
 			};
 
 			sdio_cmd_cfg: sdio-cmd-cfg{
 				pins = <A311D_GPIOX(5)>;
 				bias-disable;
-				function = <0 1>;
+				function-id = <0 1>;
 				drive-strength-microamp = <0 4000>;
 			};
 
@@ -169,13 +169,13 @@
 					<A311D_GPIOZ(4) A311D_GPIOZ(5) A311D_GPIOZ(6) A311D_GPIOZ(7)>,
 					<A311D_GPIOZ(8) A311D_GPIOZ(9) A311D_GPIOZ(10) A311D_GPIOZ(11)>,
 					<A311D_GPIOZ(12) A311D_GPIOZ(13)>;
-				function = <0 1>;
+				function-id = <0 1>;
 				drive-strength-microamp = <0 2500>;
 			};
 
 			wifi_lpo_pwm: wifi-lpo-pwm {
 				pins = <A311D_GPIOX(16)>;
-				function = <0 1>;
+				function-id = <0 1>;
 			};
 
 		};

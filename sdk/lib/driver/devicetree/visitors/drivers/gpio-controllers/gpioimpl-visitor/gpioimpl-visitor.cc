@@ -4,6 +4,7 @@
 
 #include "gpioimpl-visitor.h"
 
+#include <ctype.h>
 #include <fidl/fuchsia.hardware.pinimpl/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
@@ -257,16 +258,24 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
 
   config.pull(pull);
 
-  auto function = cfg_node.GetProperty<uint64_t>(kPinFunction);
-  if (function.is_ok()) {
+  if (auto function = cfg_node.GetProperty<uint64_t>(kPinFunctionId); function.is_ok()) {
     config.function(function.value());
-  } else if (auto function_name = cfg_node.GetProperty<std::string>(kPinFunction);
-             function_name.is_ok()) {
-    config.function_name(function_name.value());
-  } else if (function.status_value() != ZX_ERR_NOT_FOUND) {
-    fdf::error("Pin controller config '{}' has invalid function or function name: {}.",
-               cfg_node.name(), function);
+  } else if (function.is_error() && function.status_value() != ZX_ERR_NOT_FOUND) {
+    fdf::error("Pin controller config '{}' has invalid function: {}.", cfg_node.name(), function);
     return function.take_error();
+  }
+
+  if (auto function_name = cfg_node.GetProperty<std::string>(kPinFunction); function_name.is_ok()) {
+    if (config.function().has_value()) {
+      fdf::error("Pin controller config '{}' specifies function and function name.",
+                 cfg_node.name());
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    config.function_name(function_name.value());
+  } else if (function_name.is_error() && function_name.status_value() != ZX_ERR_NOT_FOUND) {
+    fdf::error("Pin controller config '{}' has invalid function name: {}.", cfg_node.name(),
+               function_name);
+    return function_name.take_error();
   }
 
   auto drive_strength_ua = cfg_node.GetProperty<uint64_t>(kPinDriveStrengthUa);

@@ -31,7 +31,7 @@
 
       group1: group1 {
         pins = <GROUP1_PIN1 GROUP1_PIN2>;
-        function = <0x0 GROUP1_FUNCTION>;
+        function-id = <0x0 GROUP1_FUNCTION>;
         drive-strength-microamp = <0x0 GROUP1_DRIVE_STRENGTH>;
         drive-open-drain;
       };
@@ -66,7 +66,7 @@
 
       group5: group5 {
         pins = <GROUP5_PIN1>;
-        function = "spi";
+        function = "spi-bus";
       };
     };
 

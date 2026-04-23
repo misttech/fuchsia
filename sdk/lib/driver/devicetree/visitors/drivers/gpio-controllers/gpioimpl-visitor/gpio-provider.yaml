@@ -55,8 +55,12 @@ patternProperties:
         description: List of pins to configure.
 
       function:
+        $ref: /schemas/types.yaml#/definitions/string
+        description: Pin function (string). Must not be specified if function-id exists.
+
+      function-id:
         $ref: /schemas/types.yaml#/definitions/uint64
-        description: Pin function.
+        description: Pin function (uint64). Must not be specified if function exists.
 
       drive-strength-microamp:
         description: Drive strength in microamps.

@@ -161,13 +161,13 @@
 &gpio {
 	pwm_a0_d_regulator_pins: pwm-a0-d-regulator-pins {
 		pins = <A311D_GPIOE(1)>;
-		function = <0 A311D_GPIOE_1_PWM_D_FN>;
+		function-id = <0 A311D_GPIOE_1_PWM_D_FN>;
 		output-low;
 	};
 
 	pwm_a_regulator_pins: pwm-a-regulator-pins {
 		pins = <A311D_GPIOE(2)>;
-		function = <0 A311D_GPIOE_2_PWM_D_FN>;
+		function-id = <0 A311D_GPIOE_2_PWM_D_FN>;
 		output-low;
 	};
 

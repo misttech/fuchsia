@@ -161,23 +161,23 @@
 &gpio {
 	i2c_AO_pins: i2c-AO-pins {
 		pins = <A311D_GPIOAO(2) A311D_GPIOAO(2)>;
-		function = <0 A311D_GPIOAO_2_M0_SCL_FN>;
+		function-id = <0 A311D_GPIOAO_2_M0_SCL_FN>;
 	};
 
 	i2c3_pins: i2c3-pins {
 		pins = <A311D_GPIOA(15) A311D_GPIOA(14)>;
-		function = <0 A311D_GPIOA_15_I2C_EE_M3_SCL_FN>;
+		function-id = <0 A311D_GPIOA_15_I2C_EE_M3_SCL_FN>;
 	};
 
 	bt_uart_pins: bt-uart-pins {
 		pins = <A311D_GPIOX(12) A311D_GPIOX(13) A311D_GPIOX(14) A311D_GPIOX(15)>;
-		function = <0 1>;
+		function-id = <0 1>;
 	};
 
 	gpio_buttons_pins: gpio-buttons-pins {
 		pins = <A311D_GPIOAO(7)>;
 		bias-disable;
-		function = <0 0>;
+		function-id = <0 0>;
 		fuchsia,interrupt-wake-vector;
 	};
 

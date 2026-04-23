@@ -40,7 +40,7 @@
 &gpio {
 	pwm_a0_d_regulator_pins: pwm-a0-d-regulator-pins {
 		pins = <TEST_SOC_GPIOE(1)>;
-		function = <0 TEST_SOC_GPIOE_1_PWM_D_FN>;
+		function-id = <0 TEST_SOC_GPIOE_1_PWM_D_FN>;
 		output-low;
 	};
 };
