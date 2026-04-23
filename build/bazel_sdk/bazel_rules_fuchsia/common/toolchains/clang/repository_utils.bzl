@@ -7,6 +7,7 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("//common:repository_utils.bzl", "get_fuchsia_host_arch", "get_fuchsia_host_os")
 load("//common:toolchains/clang/clang_utils.bzl", "process_clang_builtins_output")
+load("//common:toolchains/clang/empty_toolchain.bzl", _empty_host_cpp_toolchain_repository = "empty_host_cpp_toolchain_repository")
 load("//common:toolchains/clang/providers.bzl", "ClangInfo")
 load("//common:toolchains/clang/toolchain_utils.bzl", "define_clang_runtime_filegroups")
 
@@ -51,7 +52,7 @@ def prepare_clang_repository(repo_ctx, clang_install_dir, needs_symlinks = True)
     # the repository directory.
 
     # Symlink top-level items from Clang prebuilt install to repository directory
-    # Note that this is possible because our C++ toolchain configuration redefine
+    # Note that this is possible because our C++ toolchain configuration redefines
     # the "dependency_file" feature to use relative file paths.
     if paths.is_absolute(clang_install_dir):
         clang_install_path = repo_ctx.path(clang_install_dir)
@@ -292,68 +293,6 @@ def setup_clang_repository(constants):
         ],
     )
 
-def _empty_host_cpp_toolchain_repository_impl(repo_ctx):
-    _BUILD_BAZEL_CONTENT = """
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
-load("//common:toolchains/clang/toolchain_utils.bzl", "empty_cc_toolchain_config")
-
-package(default_visibility = ["//visibility:public"])
-
-# An empty filegroup.
-filegroup(
-  name = "empty",
-  srcs = [],
-)
-
-empty_cc_toolchain_config(
-  name = "empty_cc_toolchain_config",
-)
-
-cc_toolchain(
-  name = "empty_cc_toolchain",
-  all_files = ":empty",
-  ar_files = ":empty",
-  as_files = ":empty",
-  compiler_files = ":empty",
-  dwp_files = ":empty",
-  linker_files = ":empty",
-  objcopy_files = ":empty",
-  strip_files = ":empty",
-  supports_param_files = 0,
-  toolchain_config = ":empty_cc_toolchain_config",
-  toolchain_identifier = "empty_cc_toolchain",
-)
-
-toolchain(
-  name = "empty_cpp_toolchain",
-  exec_compatible_with = HOST_CONSTRAINTS,
-  target_compatible_with = HOST_CONSTRAINTS,
-  toolchain = ":empty_cc_toolchain",
-  toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
-)
-"""
-    repo_ctx.file("WORKSPACE.bazel", "")
-    repo_ctx.symlink(repo_ctx.path(Label("//common:BUILD.bazel")).dirname, "common")
-    repo_ctx.file("BUILD.bazel", _BUILD_BAZEL_CONTENT)
-
-empty_host_cpp_toolchain_repository = repository_rule(
-    implementation = _empty_host_cpp_toolchain_repository_impl,
-    doc = """Generate a repository that contains an empty C++ toolchain definition.
-
-Useful when running on machines without an installed GCC or Clang.
-Usage example, from a WORKSPACE.bazel file:
-
-  load(
-      "//common:toolchains/clang/repository_utils.bzl",
-      "empty_host_cpp_toolchain_repository",
-  )
-
-  empty_host_cpp_toolchain_repository(
-    name = "no_host_cpp",
-  )
-
-  register_toolchain("@no_host_cpp:empty_cpp_toolchain")
-
-""",
-)
+# Re-export the repository rule that was moved to a different .bzl file
+# to avoid breaking OOT builds.
+empty_host_cpp_toolchain_repository = _empty_host_cpp_toolchain_repository
