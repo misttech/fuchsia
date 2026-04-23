@@ -69,6 +69,12 @@
         "resourceness": "resource"
     },
     {
+        "kind": "const",
+        "name": "fuchsia.diagnostics/COMPONENT_URL_ARG_NAME",
+        "type": "string",
+        "value": "$__url"
+    },
+    {
         "kind": "union/member",
         "name": "fuchsia.diagnostics/ClientSelectorConfiguration.select_all",
         "ordinal": "2",
@@ -186,6 +192,47 @@
         "name": "fuchsia.diagnostics/LogSettingsSetComponentInterestRequest"
     },
     {
+        "kind": "protocol/member",
+        "name": "fuchsia.diagnostics/LogStream.Connect",
+        "strictness": "flexible",
+        "ordinal": "8385336708376631944",
+        "direction": "one_way",
+        "request": "fuchsia.diagnostics/LogStreamConnectRequest"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.diagnostics/LogStream",
+        "openness": "open",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.diagnostics/LogStreamConnectRequest.opts",
+        "ordinal": "2",
+        "type": "fuchsia.diagnostics/LogStreamOptions"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.diagnostics/LogStreamConnectRequest.socket",
+        "ordinal": "1",
+        "type": "zx/Handle:<SOCKET,zx.WRITE,zx.WAIT>"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.diagnostics/LogStreamConnectRequest",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.diagnostics/LogStreamOptions.mode",
+        "ordinal": "1",
+        "type": "fuchsia.diagnostics/StreamMode"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.diagnostics/LogStreamOptions"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.diagnostics/MAXIMUM_ENTRIES_PER_BATCH",
         "type": "uint16",
@@ -222,6 +269,12 @@
         "value": "1024"
     },
     {
+        "kind": "const",
+        "name": "fuchsia.diagnostics/MONIKER_ARG_NAME",
+        "type": "string",
+        "value": "$__moniker"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.diagnostics/PerformanceConfiguration.batch_retrieval_timeout_seconds",
         "ordinal": "2",
@@ -252,6 +305,12 @@
     {
         "kind": "struct",
         "name": "fuchsia.diagnostics/PropertySelector"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.diagnostics/ROLLED_OUT_ARG_NAME",
+        "type": "string",
+        "value": "$__rolled_out"
     },
     {
         "kind": "enum/member",

@@ -5,37 +5,26 @@ library fuchsia.diagnostics;
 
 using zx;
 
-@available(added=HEAD)
+@available(added=NEXT)
 const MONIKER_ARG_NAME string = "$__moniker";
 
-@available(added=HEAD)
+@available(added=NEXT)
 const COMPONENT_URL_ARG_NAME string = "$__url";
 
-@available(added=HEAD)
+@available(added=NEXT)
 const ROLLED_OUT_ARG_NAME string = "$__rolled_out";
 
-@available(added=HEAD)
+@available(added=NEXT)
 type LogStreamOptions = table {
     /// What logs to stream through this socket.
     1: mode StreamMode;
 };
 
-@available(added=HEAD)
+@available(added=NEXT)
 @discoverable(server="platform")
 open protocol LogStream {
     /// Enables clients to stream all logs stored in the Archivist.
-    /// Expects a datagram or stream socket handle that can be written to.
-    /// If subscribe_to_manifest is used, a stream socket is required,
-    /// otherwise either a stream or datagram socket can be used.
-    ///
-    /// Logs will be written in the original FXT format with two additional
-    /// arguments appended at the end of the record depending on the options
-    /// passed:
-    ///
-    ///     - `$__moniker`: the moniker of the component that emitted the log.
-    ///     - `$__url`: the URL of the component that emitted the log.
-    ///     - `$__rolled_out`: the number of logs that were rolled out from the
-    ///       buffer before this one.
+    /// Expects a stream socket handle that can be written to.
     flexible Connect(resource struct {
         socket zx.Handle:<SOCKET, zx.Rights.WRITE | zx.Rights.WAIT>;
         opts LogStreamOptions;
