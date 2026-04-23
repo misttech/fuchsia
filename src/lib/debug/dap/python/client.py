@@ -8,6 +8,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from pydap.models import (
+    AttachRequestArguments,
     ContinueArguments,
     DisconnectArguments,
     InitializeArguments,
@@ -133,6 +134,20 @@ class DapClient:
         """Sends a threads request."""
         resp = await self.send_request(writer, "threads")
         return from_dict(ThreadsResponse, resp.get("body", {}))
+
+    async def attach(
+        self, writer: asyncio.StreamWriter, args: AttachRequestArguments
+    ) -> Dict[str, Any]:
+        """Sends an attach request."""
+        data = dataclass_to_dict(args)
+        # Map _restart to __restart for protocol compliance
+        restart = data.pop("_restart", None)
+        if restart is not None:
+            data["__restart"] = restart
+        extra_fields = data.pop("extra_fields", None)
+        if extra_fields:
+            data.update(extra_fields)
+        return await self.send_request(writer, "attach", data)
 
     async def _read_message(
         self, reader: asyncio.StreamReader

@@ -213,3 +213,16 @@ class PauseArguments:
     """
 
     threadId: int
+
+
+@dataclass
+class AttachRequestArguments:
+    """Arguments for `attach` request.
+
+    Attributes:
+        _restart: Arbitrary data from the previous, restarted session.
+        extra_fields: Additional implementation specific attributes.
+    """
+
+    _restart: Optional[Any] = None
+    extra_fields: Optional[Dict[str, Any]] = None

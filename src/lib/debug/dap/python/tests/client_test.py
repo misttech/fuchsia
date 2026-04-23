@@ -275,3 +275,37 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(resp.threads), 2)
         self.assertEqual(resp.threads[0].id, 1234)
         self.assertEqual(resp.threads[0].name, "main")
+
+    async def test_attach(self) -> None:
+        from pydap.models import AttachRequestArguments
+
+        client = DapClient()
+
+        writer = MockWriter()
+        args = AttachRequestArguments(
+            _restart=True, extra_fields={"process": "my_process"}
+        )
+        send_task = asyncio.create_task(client.attach(writer, args))  # type: ignore
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "attach",
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp["success"])
+        self.assertTrue(req_val["arguments"]["__restart"])
+        self.assertEqual(req_val["arguments"]["process"], "my_process")
