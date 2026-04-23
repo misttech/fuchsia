@@ -123,19 +123,19 @@ type TouchButton = flexible enum : uint8 {
     PALM = 1;
 
     /// Represents a swipe up gesture on the touchscreen.
-    @available(added=NEXT)
+    @available(added=31)
     SWIPE_UP = 2;
 
     /// Represents a swipe left gesture on the touchscreen.
-    @available(added=NEXT)
+    @available(added=31)
     SWIPE_LEFT = 3;
 
     /// Represents a swipe right gesture on the touchscreen.
-    @available(added=NEXT)
+    @available(added=31)
     SWIPE_RIGHT = 4;
 
     /// Represents a swipe down gesture on the touchscreen.
-    @available(added=NEXT)
+    @available(added=31)
     SWIPE_DOWN = 5;
 };
 

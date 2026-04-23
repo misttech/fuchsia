@@ -283,7 +283,7 @@ class ZirconPlatformSysmem2BufferConstraints : public PlatformBufferConstraints 
     if (format_constraints->width > 0 || format_constraints->height > 0) {
       constraints.required_max_size() = {format_constraints->width, format_constraints->height};
     }
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
     if (format_constraints->pad_for_block_width > 0 ||
         format_constraints->pad_for_block_height > 0) {
       constraints.pad_for_block_size() = {format_constraints->pad_for_block_width,

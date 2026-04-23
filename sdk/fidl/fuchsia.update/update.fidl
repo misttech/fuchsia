@@ -37,7 +37,7 @@ closed protocol Manager {
     ///
     /// Replaced by
     /// `fuchsia.power/CollaborativeRebootInitiator.PerformPendingReboot`.
-    @available(deprecated=27, removed=NEXT)
+    @available(deprecated=27, removed=31)
     strict PerformPendingReboot() -> (struct {
         rebooting bool;
     });

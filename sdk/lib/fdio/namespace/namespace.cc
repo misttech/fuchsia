@@ -31,7 +31,7 @@ zx_status_t fdio_ns_set_root(fdio_ns_t* ns, fdio_t* io) { return ns->SetRoot(io)
 
 __BEGIN_CDECLS
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
 __EXPORT
 zx_status_t fdio_ns_open(fdio_ns_t* ns, const char* path, uint32_t flags, zx_handle_t request) {
   if (path == nullptr) {

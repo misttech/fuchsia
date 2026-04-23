@@ -30,7 +30,7 @@ closed protocol MediaButtonsDevice {
     /// Schedules a button press and release of the requested button at a
     /// specific duration from now. "Now" is defined as the time when the request is processed by the
     /// device, so there is some latency.
-    @available(added=NEXT)
+    @available(added=31)
     strict ScheduleSimulateButtonPress(table {
         /// The button receiving the button press.
         1: button fuchsia.input.report.ConsumerControlButton;

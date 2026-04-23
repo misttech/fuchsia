@@ -16,7 +16,7 @@ struct trace_provider {};
 namespace trace::internal {
 
 class TraceProviderImpl final : public trace_provider_t,
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
                                 public fidl::WireServer<fuchsia_tracing_provider::ProviderV2>
 #else
                                 public fidl::WireServer<fuchsia_tracing_provider::Provider>
@@ -25,7 +25,7 @@ class TraceProviderImpl final : public trace_provider_t,
  public:
   ~TraceProviderImpl() override;
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   TraceProviderImpl(std::string name, async_dispatcher_t* dispatcher,
                     fidl::ServerEnd<fuchsia_tracing_provider::ProviderV2> server_end);
 
@@ -71,7 +71,7 @@ class TraceProviderImpl final : public trace_provider_t,
   const std::string name_;
   async_dispatcher_t* const dispatcher_;
   ProviderConfig provider_config_;
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   std::mutex mutex_;
   std::optional<fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2>> binding_
       __TA_GUARDED(mutex_);

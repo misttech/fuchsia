@@ -14,7 +14,7 @@ type ShutdownReason = flexible enum {
     USER_REQUEST = 1;
 
     /// The end user of the device initiated the shutdown because the device was stuck.
-    @available(added=NEXT)
+    @available(added=31)
     USER_REQUEST_DEVICE_STUCK = 16;
 
     /// The developer initiated the shutdown, typically via a shell command or similar interface,
@@ -62,6 +62,6 @@ type ShutdownReason = flexible enum {
     ANDROID_CRITICAL_PROCESS_FAILURE = 14;
 
     /// The device battery is drained.
-    @available(added=NEXT)
+    @available(added=31)
     BATTERY_DRAINED = 17;
 };

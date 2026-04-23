@@ -224,11 +224,11 @@ void trace_context_register_vthread(trace_context_t* context, zx_koid_t process_
 
 // Like trace_context_register_vthread, but takes a string ref for the vthread name instead of a
 // const char*.
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void trace_context_register_vthread_by_ref(trace_context_t* context, zx_koid_t process_koid,
                                            const trace_string_ref_t* name_ref,
                                            trace_vthread_id_t vthread_id,
-                                           trace_thread_ref_t* out_ref) ZX_AVAILABLE_SINCE(NEXT);
+                                           trace_thread_ref_t* out_ref) ZX_AVAILABLE_SINCE(31);
 #endif
 
 // Registers the specified thread into the thread table.

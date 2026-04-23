@@ -829,12 +829,12 @@ EXPORT void trace_context_register_vthread(trace_context_t* context, zx_koid_t p
   trace::RegisterVThread(context, process_koid, needs_registration, &name_ref, vthread_id, out_ref);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 EXPORT void trace_context_register_vthread_by_ref(trace_context_t* context, zx_koid_t process_koid,
                                                   const trace_string_ref_t* name_ref,
                                                   trace_vthread_id_t vthread_id,
                                                   trace_thread_ref_t* out_ref)
-    ZX_AVAILABLE_SINCE(NEXT) {
+    ZX_AVAILABLE_SINCE(31) {
   auto result = trace::LookUpVThread(context, vthread_id);
   if (auto* registered = std::get_if<trace::VThreadRegistered>(&result)) {
     *out_ref = registered->thread_ref;

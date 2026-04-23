@@ -184,7 +184,7 @@ zx::result<fdio_ptr> fdio_namespace::CreateConnection(fbl::RefPtr<LocalVnode> vn
   return fdio_internal::CreateLocalConnection(fbl::RefPtr(this), std::move(vn));
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
 zx_status_t fdio_namespace::OpenRemoteDeprecated(std::string_view path, fio::wire::OpenFlags flags,
                                                  fidl::ServerEnd<fio::Node> server_end) const {
   // Require that we start at /

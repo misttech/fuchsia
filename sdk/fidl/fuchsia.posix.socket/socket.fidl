@@ -1090,7 +1090,7 @@ alias TcpState = fuchsia.net.tcp.State;
 
 /// TCP congestion control state machine state.
 @strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
-@available(added=11, replaced=NEXT)
+@available(added=11, replaced=31)
 type TcpCongestionControlState = strict enum {
     OPEN = 0;
     DISORDER = 1;
@@ -1100,11 +1100,11 @@ type TcpCongestionControlState = strict enum {
 };
 
 /// TCP congestion control state machine state.
-@available(added=NEXT)
+@available(added=31)
 alias TcpCongestionControlState = fuchsia.net.tcp.CongestionControlState;
 
 /// TCP protocol state.
-@available(added=11, replaced=NEXT)
+@available(added=11, replaced=31)
 type TcpInfo = table {
     1: state TcpState;
     2: ca_state TcpCongestionControlState;
@@ -1165,7 +1165,7 @@ type TcpInfo = table {
 };
 
 /// TCP protocol state.
-@available(added=NEXT)
+@available(added=31)
 alias TcpInfo = fuchsia.net.tcp.Info;
 
 /// Holds information about an interface and its addresses.

@@ -24,7 +24,7 @@
 namespace trace {
 namespace internal {
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 Session::Session(void* buffer, size_t buffer_num_bytes, std::vector<std::string> categories,
                  fidl::ServerBindingRef<fuchsia_tracing_provider::ProviderV2> binding)
     : buffer_(buffer),
@@ -44,7 +44,7 @@ Session::Session(async_dispatcher_t* dispatcher, void* buffer, size_t buffer_num
 
 Session::~Session() {
   std::scoped_lock<std::mutex> lock{mutex_};
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   // If there are uncalled callbacks, they may hold FIDL callbacks which are an error
   // to drop without first replying to.
   if (start_cb_) {
@@ -60,13 +60,13 @@ Session::~Session() {
   zx_status_t status =
       zx::vmar::root_self()->unmap(reinterpret_cast<uintptr_t>(buffer_), buffer_num_bytes_);
   ZX_DEBUG_ASSERT(status == ZX_OK);
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
   status = fifo_wait_.Cancel();
   ZX_DEBUG_ASSERT(status == ZX_OK || status == ZX_ERR_NOT_FOUND);
 #endif
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 std::unique_ptr<Session> Session::InitializeEngine(
     async_dispatcher_t* dispatcher, trace_buffering_mode_t buffering_mode, zx::vmo buffer,
     std::vector<std::string> categories,
@@ -77,7 +77,7 @@ void Session::InitializeEngine(async_dispatcher_t* dispatcher,
                                std::vector<std::string> categories) {
 #endif
   ZX_DEBUG_ASSERT(buffer);
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
   ZX_DEBUG_ASSERT(fifo);
 #endif
 
@@ -91,7 +91,7 @@ void Session::InitializeEngine(async_dispatcher_t* dispatcher,
               "Session for process %" PRIu64
               ": cannot initialize engine, still stopping from previous trace\n",
               GetPid());
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
       return nullptr;
 #else
       return;
@@ -105,7 +105,7 @@ void Session::InitializeEngine(async_dispatcher_t* dispatcher,
               ": engine is already initialized. Is there perchance two"
               " providers in this app?\n",
               GetPid());
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
       return nullptr;
 #else
       return;
@@ -119,7 +119,7 @@ void Session::InitializeEngine(async_dispatcher_t* dispatcher,
   if (status != ZX_OK) {
     fprintf(stderr, "Session: error getting buffer size, status=%d(%s)\n", status,
             zx_status_get_string(status));
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
     return nullptr;
 #else
     return;
@@ -132,14 +132,14 @@ void Session::InitializeEngine(async_dispatcher_t* dispatcher,
   if (status != ZX_OK) {
     fprintf(stderr, "Session: error mapping buffer, status=%d(%s)\n", status,
             zx_status_get_string(status));
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
     return nullptr;
 #else
     return;
 #endif
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   auto session =
       std::unique_ptr<Session>(new Session(reinterpret_cast<void*>(buffer_ptr), buffer_num_bytes,
                                            std::move(categories), std::move(binding)));
@@ -164,19 +164,19 @@ void Session::InitializeEngine(async_dispatcher_t* dispatcher,
   if (status != ZX_OK) {
     fprintf(stderr, "Session: error starting engine, status=%d(%s)\n", status,
             zx_status_get_string(status));
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
     delete session;
 #endif
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   return session;
 #else
   // The session will be destroyed in |TraceTerminated()|.
 #endif
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void Session::StartEngine(trace_start_mode_t start_mode, fit::callback<void()> cb) {
   std::scoped_lock<std::mutex> lock{mutex_};
   auto d = fit::defer([&cb]() { cb(); });
@@ -205,7 +205,7 @@ void Session::StartEngine(trace_start_mode_t start_mode) {
       __UNREACHABLE;
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   start_cb_ = std::move(cb);
   d.cancel();
 #endif
@@ -232,14 +232,14 @@ void Session::StartEngine(trace_start_mode_t start_mode) {
       fprintf(stderr, "Session: error starting engine, status=%d(%s)\n", status,
               zx_status_get_string(status));
     }
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
     start_cb_ = nullptr;
 #endif
     return;
   }
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void Session::StopEngine(fit::callback<void()> cb) {
   std::scoped_lock<std::mutex> lock{mutex_};
   if (stop_cb_) {
@@ -254,7 +254,7 @@ void Session::StopEngine(fit::callback<void()> cb) {
 void Session::StopEngine() { trace_engine_stop(ZX_OK); }
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void Session::TerminateEngine(fit::callback<void()> cb) {
   bool already_terminating = false;
   {
@@ -275,7 +275,7 @@ void Session::TerminateEngine(fit::callback<void()> cb) {
 void Session::TerminateEngine() { trace_engine_terminate(); }
 #endif
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
 void Session::HandleFifo(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
                          const zx_packet_signal_t* signal) {
   if (status == ZX_ERR_CANCELED) {
@@ -362,7 +362,7 @@ bool Session::IsCategoryEnabled(const char* category) {
   return false;
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
 void Session::SendFifoPacket(const trace_provider_packet_t* packet) {
   auto status = fifo_.write(sizeof(*packet), packet, 1, nullptr);
   ZX_DEBUG_ASSERT(status == ZX_OK || status == ZX_ERR_PEER_CLOSED);
@@ -370,7 +370,7 @@ void Session::SendFifoPacket(const trace_provider_packet_t* packet) {
 #endif
 
 void Session::TraceStarted() {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   std::scoped_lock<std::mutex> lock{mutex_};
   // Unlike stopping or terminating which may occur on trace-engine's behest, starting should only
   // occur if we ask for it.
@@ -386,7 +386,7 @@ void Session::TraceStarted() {
 
 void Session::TraceStopped(zx_status_t disposition) {
   std::scoped_lock<std::mutex> lock{mutex_};
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   if (stop_cb_) {
     stop_cb_();
   }
@@ -398,7 +398,7 @@ void Session::TraceStopped(zx_status_t disposition) {
 }
 
 void Session::TraceTerminated() {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   fit::callback<void()> cb = nullptr;
   {
     std::scoped_lock<std::mutex> lock{mutex_};
@@ -426,7 +426,7 @@ void Session::TraceTerminated() {
 
 void Session::NotifyBufferFull(uint32_t wrapped_count, uint64_t durable_data_end) {
   std::scoped_lock<std::mutex> lock{mutex_};
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   auto result = fidl::SendEvent(binding_)->OnSaveBuffer(
       {{.wrapped_count = wrapped_count, .durable_data_end = durable_data_end}});
   if (result.is_error()) {
@@ -447,7 +447,7 @@ void Session::NotifyBufferFull(uint32_t wrapped_count, uint64_t durable_data_end
 
 void Session::SendAlert(const char* alert_name) {
   std::scoped_lock<std::mutex> lock{mutex_};
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   auto result = fidl::SendEvent(binding_)->OnAlert({{.name = alert_name}});
   if (result.is_error()) {
     fprintf(stderr, "Session: SendAlert failed: %s\n",

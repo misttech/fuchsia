@@ -221,7 +221,7 @@ pub struct ComponentDecl {
     pub facets: Option<fdata::Dictionary>,
     pub environments: Box<[EnvironmentDecl]>,
     pub config: Option<ConfigDecl>,
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "31")]
     pub debug_info: Option<DebugInfo>,
 }
 
@@ -645,7 +645,7 @@ pub struct EnvironmentDecl {
     pub stop_timeout_ms: Option<u32>,
 }
 
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "31")]
 #[derive(FidlDecl, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[fidl_decl(fidl_table = "fdecl::DebugInfo")]

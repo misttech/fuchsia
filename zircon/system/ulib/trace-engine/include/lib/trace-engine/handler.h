@@ -184,8 +184,8 @@ zx_status_t trace_engine_mark_buffer_saved(uint32_t wrapped_count, uint64_t dura
 // Returns |ZX_ERR_BAD_STATE| if current state is |TRACE_STOPPED|.
 //
 // This function is thread-safe.
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
-zx_status_t trace_engine_flush_buffer() ZX_AVAILABLE_SINCE(NEXT);
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
+zx_status_t trace_engine_flush_buffer() ZX_AVAILABLE_SINCE(31);
 #endif
 
 __END_CDECLS

@@ -55,7 +55,7 @@ struct fdio_namespace : public fbl::RefCounted<fdio_namespace> {
   zx_status_t Readdir(const LocalVnode& vn, DirentIteratorState* state,
                       zxio_dirent_t* inout_entry) const;
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
   // Open a remote object within the namespace using deprecated fuchsia.io/Directory.Open1.
   //
   // Returns an error if |path| does not exist.

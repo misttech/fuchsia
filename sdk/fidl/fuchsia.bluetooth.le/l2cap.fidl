@@ -26,7 +26,7 @@ type AcceptedChannelParameters = table {
 /// Protocol extension for a `bt.Channel`. This is typically provided by or to
 /// privileged clients alongside a `bt.Channel`. This protocol can be closed
 /// before or after StartOffload has returned with no effect.
-@available(added=NEXT)
+@available(added=31)
 open protocol ChannelOffloadExt {
     /// StartOffload MUST be called before Channel.Receive(). The offloaded
     /// channel will have 0 RX credits given to the peer to prevent the peer
@@ -52,13 +52,13 @@ open protocol ChannelOffloadExt {
 /// reuse the PSM that was previously assigned for this instance.
 @available(added=24)
 open protocol ChannelListener {
-    @available(removed=NEXT)
+    @available(removed=31)
     flexible Accept(resource struct {
         channel client_end:bt.Channel;
     }) -> ();
 
     /// Called for each successful incoming channel connection.
-    @available(added=NEXT)
+    @available(added=31)
     flexible Connected(resource table {
         /// Required.
         1: channel client_end:bt.Channel;

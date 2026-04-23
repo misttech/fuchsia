@@ -168,7 +168,7 @@ zx_status_t fdio_ns_export_root(fdio_flat_namespace_t** out) ZX_AVAILABLE_SINCE(
 //   * `ZX_ERR_INVALID_ARGS`: `path` is invalid.
 //
 //   * `ZX_ERR_NOT_FOUND`: A prefix of `path` cannot be found in `ns`.
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
 zx_status_t fdio_ns_open(fdio_ns_t* ns, const char* path, uint32_t flags, zx_handle_t request)
     ZX_REMOVED_SINCE(8, 27, 28, "Use fdio_ns_open3 instead.");
 #endif

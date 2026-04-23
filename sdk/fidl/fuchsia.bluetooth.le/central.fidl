@@ -294,7 +294,7 @@ closed protocol Central {
 /// Privileged version of the Central protocol, providing advanced features
 /// like socket offload. This protocol should only be routed to trusted and
 /// system components due to sensitive information and capabilities it composes.
-@available(added=NEXT)
+@available(added=31)
 @discoverable(server="platform")
 closed protocol PrivilegedCentral {
     compose Central;

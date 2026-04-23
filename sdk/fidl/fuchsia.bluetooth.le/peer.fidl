@@ -40,7 +40,7 @@ type ScanData = table {
     /// Identifies the peer as belonging to a Coordinated Set.
     /// Resolution and generation of this parameter is defined in the
     /// Coordinated Set Identification Service Specification.
-    @available(added=NEXT)
+    @available(added=31)
     8: resolvable_set_identifier array<uint8, 6>;
 
     /// The broadcast name string can be used by a user interface on a scanning
@@ -51,7 +51,7 @@ type ScanData = table {
     /// long and no more than 32 characters.
     ///
     /// Defined in the Public Broadcast Profile specification.
-    @available(added=NEXT)
+    @available(added=31)
     9: broadcast_name string:MAX_BROADCAST_NAME_OCTETS;
 };
 
@@ -188,7 +188,7 @@ closed protocol Connection {
         /// Only privileged clients are allowed to offload channels. This
         /// protocol will be closed for other clients. The client must
         /// additionally call `ChannelOffloadExt.StartOffload` to start offloading.
-        @available(added=NEXT)
+        @available(added=31)
         4: ext_offload server_end:ChannelOffloadExt;
     });
 

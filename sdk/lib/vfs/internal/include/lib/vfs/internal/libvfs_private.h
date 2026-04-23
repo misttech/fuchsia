@@ -55,7 +55,7 @@ typedef void (*vfs_internal_release_buffer_t)(void* cookie);
 typedef zx_status_t (*vfs_internal_write_handler_t)(const void* cookie, const char* data,
                                                     size_t len);
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
 // Serve `vnode` using `dispatcher` over `channel` with specified `flags`, where `flags` aligns with
 // fuchsia.io/OpenFlags. `channel` must be protocol compatible with the type of node. Takes
 // ownership of `channel` and closes the handle on failure or when `vfs` is destroyed. The same

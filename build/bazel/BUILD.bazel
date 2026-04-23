@@ -83,6 +83,12 @@ config_setting(
 )
 
 config_setting(
+    name = "is_api_level_31",
+    flag_values = {"//build/bazel:fuchsia_api_level": "31"},
+    visibility = _api_level_condition_visibility,
+)
+
+config_setting(
     name = "is_api_level_NEXT",
     flag_values = {"//build/bazel:fuchsia_api_level": "NEXT"},
     visibility = _api_level_condition_visibility,

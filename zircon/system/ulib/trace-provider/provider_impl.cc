@@ -46,7 +46,7 @@ trace_start_mode_t FidlBufferingDispositionToTraceEngineStartMode(
   }
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 std::vector<std::string> CloneCategories(
     const fuchsia_tracing_provider::wire::ProviderConfigV2& config) {
   std::vector<std::string> categories;
@@ -74,7 +74,7 @@ std::vector<std::string> CloneCategories(
 namespace trace {
 namespace internal {
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 TraceProviderImpl::TraceProviderImpl(
     std::string name, async_dispatcher_t* dispatcher,
     fidl::ServerEnd<fuchsia_tracing_provider::ProviderV2> server_end)
@@ -128,7 +128,7 @@ TraceProviderImpl::TraceProviderImpl(std::string name, async_dispatcher_t* dispa
 TraceProviderImpl::~TraceProviderImpl() { Session::TerminateEngine(); }
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void TraceProviderImpl::Initialize(
     fuchsia_tracing_provider::wire::ProviderV2InitializeRequest* request,
     InitializeCompleter::Sync& completer) {
@@ -177,7 +177,7 @@ void TraceProviderImpl::Initialize(
 }
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void TraceProviderImpl::Start(fuchsia_tracing_provider::wire::ProviderV2StartRequest* request,
                               StartCompleter::Sync& completer) {
   std::scoped_lock lock{mutex_};
@@ -199,7 +199,7 @@ void TraceProviderImpl::Start(fuchsia_tracing_provider::wire::ProviderStartReque
 }
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void TraceProviderImpl::Stop(StopCompleter::Sync& completer) {
   std::scoped_lock lock{mutex_};
   if (session_) {
@@ -213,7 +213,7 @@ void TraceProviderImpl::Stop(StopCompleter::Sync& completer) { Session::StopEngi
 #endif
 
 void TraceProviderImpl::Terminate(TerminateCompleter::Sync& completer) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   std::unique_ptr<Session> session;
   {
     std::scoped_lock lock{mutex_};
@@ -257,7 +257,7 @@ void TraceProviderImpl::SetGetKnownCategoriesCallback(GetKnownCategoriesCallback
   get_known_categories_callback_ = std::move(callback);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void TraceProviderImpl::NotifyBufferSaved(
     fuchsia_tracing_provider::wire::ProviderV2NotifyBufferSavedRequest* request,
     NotifyBufferSavedCompleter::Sync& completer) {
@@ -309,7 +309,7 @@ EXPORT trace_provider_t* trace_provider_create_with_name(zx_handle_t to_service_
   ZX_DEBUG_ASSERT(dispatcher);
 
   // Create the channel to which we will bind the trace provider.
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   auto [client_end, server_end] = fidl::Endpoints<fuchsia_tracing_provider::ProviderV2>::Create();
   const fidl::Status result = fidl::WireCall(to_service)
                                   ->RegisterV2(std::move(client_end), trace::internal::GetPid(),
@@ -357,7 +357,7 @@ EXPORT trace_provider_t* trace_provider_create_synchronously(zx_handle_t to_serv
   ZX_DEBUG_ASSERT(dispatcher);
 
   // Create the channel to which we will bind the trace provider.
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_tracing_provider::ProviderV2>();
   if (endpoints.is_error()) {
     fprintf(stderr, "TraceProvider: channel create failed: status=%d(%s)\n",

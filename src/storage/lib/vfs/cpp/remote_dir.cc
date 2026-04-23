@@ -43,7 +43,7 @@ void RemoteDir::DeprecatedOpenRemote(fio::OpenFlags flags, fio::ModeType mode,
                         ", response=", status.FormatDescription());
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void RemoteDir::OpenRemote(fuchsia_io::wire::OpenableOpenRequest request) const {
 #else
 void RemoteDir::OpenRemote(fuchsia_io::wire::DirectoryOpenRequest request) const {

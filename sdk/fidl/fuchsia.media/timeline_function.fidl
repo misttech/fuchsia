@@ -40,31 +40,31 @@ library fuchsia.media;
 /// playback rate.
 type TimelineFunction = struct {
     /// A value from the subject timeline that correlates to reference_time.
-    @available(replaced=NEXT)
+    @available(replaced=31)
     @allow_deprecated_struct_defaults
     subject_time int64 = 0;
-    @available(added=NEXT)
+    @available(added=31)
     subject_time int64;
 
     /// A value from the reference timeline that correlates to subject_time.
-    @available(replaced=NEXT)
+    @available(replaced=31)
     @allow_deprecated_struct_defaults
     reference_time int64 = 0;
-    @available(added=NEXT)
+    @available(added=31)
     reference_time int64;
 
     /// The change in the subject timeline corresponding to reference_delta.
-    @available(replaced=NEXT)
+    @available(replaced=31)
     @allow_deprecated_struct_defaults
     subject_delta uint32 = 0;
-    @available(added=NEXT)
+    @available(added=31)
     subject_delta uint32;
 
     /// The change in the reference timeline corresponding to subject_delta.
     /// Cannot be zero.
-    @available(replaced=NEXT)
+    @available(replaced=31)
     @allow_deprecated_struct_defaults
     reference_delta uint32 = 1;
-    @available(added=NEXT)
+    @available(added=31)
     reference_delta uint32;
 };

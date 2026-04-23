@@ -242,7 +242,7 @@ MAGMA_EXPORT magma_status_t magma_sysmem_connection_create_buffer_constraints(
 ///
 MAGMA_EXPORT magma_status_t magma_buffer_constraints_set_format(
     magma_sysmem_buffer_constraints_t constraints, uint32_t index,
-    const magma_image_format_constraints2_t* format_constraints) MAGMA_AVAILABLE_SINCE(NEXT);
+    const magma_image_format_constraints2_t* format_constraints) MAGMA_AVAILABLE_SINCE(31);
 
 ///
 /// DEPRECATED: use magma_buffer_constraints_set_format.

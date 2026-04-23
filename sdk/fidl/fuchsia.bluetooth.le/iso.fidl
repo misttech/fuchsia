@@ -136,7 +136,7 @@ type CigParameters = table {
     /// used to optimize parameters, but may limit the set of peers that can
     /// connect to the group.
     /// Optional.
-    @available(added=NEXT)
+    @available(added=31)
     7: expected_peers vector<bt.PeerId>:MAX;
 };
 
@@ -206,7 +206,7 @@ type EstablishStreamsError = flexible enum {
     /// Expected peers were provided at CIG creation, and one or more peers
     /// requested did not satisfy the parameters of the CIG decided by that
     /// set.
-    @available(added=NEXT)
+    @available(added=31)
     PEER_PARAMETERS_OUT_OF_RANGE = 5;
 };
 

@@ -839,7 +839,7 @@ macro_rules! duration_begin {
 /// const VTHREAD_NAME: &'static str = "my_vthread";
 /// vthread_duration_begin!(FOO, BAR, VTHREAD_NAME, 123, "x" => 5, "y" => "boo");
 /// ```
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "31")]
 #[macro_export]
 macro_rules! vthread_duration_begin {
     ($category:expr, $name:expr, $vthread_name:expr, $vthread_id:expr $(, $key:expr => $val:expr)* $(,)?) => {
@@ -900,7 +900,7 @@ macro_rules! duration_end {
 /// const VTHREAD_NAME: &'static str = "my_vthread";
 /// vthread_duration_end!(FOO, BAR, VTHREAD_NAME, 123, "x" => 5, "y" => "boo");
 /// ```
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "31")]
 #[macro_export]
 macro_rules! vthread_duration_end {
     ($category:expr, $name:expr, $vthread_name:expr, $vthread_id:expr $(, $key:expr => $val:expr)* $(,)?) => {
@@ -938,14 +938,14 @@ pub fn duration_begin<S: AsTraceStrRef>(context: &TraceCategoryContext, name: S,
     context.write_duration_begin(ticks, name_ref, args);
 }
 
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "31")]
 pub struct VThread<S: AsTraceStrRef = &'static str> {
     name: S,
     id: sys::trace_vthread_id_t,
     process_koid: zx::sys::zx_koid_t,
 }
 
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "31")]
 impl<S: AsTraceStrRef> VThread<S> {
     pub fn new(name: S, id: sys::trace_vthread_id_t) -> Self {
         Self { name, id, process_koid: zx::sys::ZX_KOID_INVALID }
@@ -961,7 +961,7 @@ impl<S: AsTraceStrRef> VThread<S> {
 }
 
 /// Like `duration_begin`, but writes the event to a vthread track.
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "31")]
 pub fn vthread_duration_begin<S1: AsTraceStrRef, S2: AsTraceStrRef>(
     context: &TraceCategoryContext,
     name: S1,
@@ -993,7 +993,7 @@ pub fn duration_end<S: AsTraceStrRef>(context: &TraceCategoryContext, name: S, a
 }
 
 /// Like `duration_end`, but writes the event to a vthread track.
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "31")]
 pub fn vthread_duration_end<S1: AsTraceStrRef, S2: AsTraceStrRef>(
     context: &TraceCategoryContext,
     name: S1,
@@ -1708,7 +1708,7 @@ impl TraceCategoryContext {
         }
     }
 
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "31")]
     #[inline]
     fn register_vthread<S: AsTraceStrRef>(
         &self,
@@ -1827,7 +1827,7 @@ impl TraceCategoryContext {
         }
     }
 
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "31")]
     fn write_vthread_duration_begin<S: AsTraceStrRef>(
         &self,
         ticks: zx::BootTicks,
@@ -1874,7 +1874,7 @@ impl TraceCategoryContext {
         }
     }
 
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "31")]
     fn write_vthread_duration_end<S: AsTraceStrRef>(
         &self,
         ticks: zx::BootTicks,
@@ -2308,7 +2308,7 @@ mod sys {
             out_ref: *mut trace_thread_ref_t,
         );
 
-        #[cfg(fuchsia_api_level_at_least = "NEXT")]
+        #[cfg(fuchsia_api_level_at_least = "31")]
         pub fn trace_context_register_vthread_by_ref(
             context: *const trace_context_t,
             process_koid: zx_koid_t,

@@ -229,7 +229,7 @@ open protocol SessionManager {
     }) error RecordingError;
 
     /// Aborts an ongoing trace session without saving results.
-    @available(added=NEXT)
+    @available(added=31)
     flexible AbortTraceSession(struct {
         task_id uint64;
     }) -> () error RecordingError;
@@ -300,7 +300,7 @@ open protocol Session {
     /// Some clients may want more regular smaller data transfers. These clients
     /// may instead manually invoke FlushBuffers whenever they are ready for
     /// data.
-    @available(added=NEXT)
+    @available(added=31)
     flexible FlushBuffers() -> () error FlushError;
 };
 
@@ -391,7 +391,7 @@ type StopError = flexible enum {
 };
 
 /// Error codes from Flush operations.
-@available(added=NEXT)
+@available(added=31)
 type FlushError = flexible enum {
     /// Trace controller is unavailable. Nothing to flush.
     NOT_INITIALIZED = 1;

@@ -37,11 +37,11 @@ class thread final : public task<thread> {
   static zx_status_t create(const process& process, const char* name, uint32_t name_len,
                             uint32_t flags, thread* result) ZX_AVAILABLE_SINCE(7);
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
   zx_status_t start(uint64_t pc, uint64_t sp,
                     // PC and SP must be given, but others default to zero.
                     uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t tp = 0,
-                    uint64_t abi_reg = 0) const ZX_AVAILABLE_SINCE(NEXT) {
+                    uint64_t abi_reg = 0) const ZX_AVAILABLE_SINCE(31) {
     return zx_thread_start_regs(get(), pc, sp, arg1, arg2, tp, abi_reg);
   }
 #else

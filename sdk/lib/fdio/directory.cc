@@ -63,7 +63,7 @@ zx_status_t fdio_service_connect_by_name(const char* name, zx_handle_t request) 
   return fdio_service_connect_at((*service_root)->get(), name, request);
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
 __EXPORT
 zx_status_t fdio_open(const char* path, uint32_t flags, zx_handle_t request) {
   zx::handle handle{request};
@@ -128,7 +128,7 @@ zx_status_t OpenFdAt(int dirfd, const char* dirty_path, fio::Flags flags, bool a
 
 }  // namespace
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
 __EXPORT
 zx_status_t fdio_open_fd(const char* path, uint32_t flags, int* out_fd) {
   const fio::Flags fio_flags = fdio_internal::TranslateDeprecatedFlags(fio::wire::OpenFlags{flags});

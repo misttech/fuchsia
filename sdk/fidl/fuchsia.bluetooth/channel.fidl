@@ -120,7 +120,7 @@ type ChannelParameters = table {
 
 /// Set of low-level L2CAP channel parameters needed to transfer control of
 /// a channel to an offload processor.
-@available(added=NEXT)
+@available(added=31)
 type L2capChannelOffloadParameters = table {
     /// The HCI ACL connection handle to the peer over which this L2CAP channel exists.
     /// Required.

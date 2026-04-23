@@ -111,7 +111,7 @@ type MfpFeature = table {
 /// Opportunistic Wireless Encryption.
 /// See RFC 8110.
 /// This is a security feature, usable for fullmac or softmac.
-@available(added=NEXT)
+@available(added=31)
 type OweFeature = table {
     1: supported bool;
 };
@@ -121,7 +121,7 @@ type OweFeature = table {
 type SecuritySupport = table {
     1: sae SaeFeature;
     2: mfp MfpFeature;
-    @available(added=NEXT)
+    @available(added=31)
     3: owe OweFeature;
 };
 
@@ -143,7 +143,7 @@ type SpectrumManagementSupport = table {
 };
 
 /// Android Packet Filter (APF) support.
-@available(added=NEXT)
+@available(added=31)
 type ApfPacketFilterSupport = table {
     1: supported bool;
     /// Only valid if 'supported' is true.

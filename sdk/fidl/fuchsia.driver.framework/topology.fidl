@@ -154,9 +154,9 @@ type BusType = flexible enum {
     SDIO = 9;
     UART = 10;
     SPMI = 11;
-    @available(added=NEXT)
+    @available(added=31)
     USB_PERIPHERAL = 12;
-    @available(added=NEXT)
+    @available(added=31)
     VIRTIO = 13;
 };
 

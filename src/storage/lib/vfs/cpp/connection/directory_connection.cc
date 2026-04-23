@@ -74,7 +74,7 @@ constexpr zx::result<std::tuple<fio::Rights, fio::Rights>> ValidateRequestRights
   return zx::ok(std::tuple{requested_rights & parent_rights, optional_rights & parent_rights});
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void ForwardRequestToRemote(fio::wire::OpenableOpenRequest* request, Vfs::OpenResult open_result,
                             fio::Rights parent_rights) {
 #else

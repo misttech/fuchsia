@@ -62,11 +62,11 @@ type VendorCommand = flexible union {
     1: set_acl_priority VendorSetAclPriorityParams;
 };
 
-@available(added=NEXT)
+@available(added=31)
 alias VendorCrashEventPrefix = vector<byte>:8;
 
 /// Parameters for filing controller crash reports.
-@available(added=NEXT)
+@available(added=31)
 type VendorCrashParameters = table {
     /// The prefixes of the vendor event payloads to match. For example, this could
     /// be the subevent code. If the prefix is empty, all vendor debug events will be
@@ -121,7 +121,7 @@ open protocol Vendor {
     /// Returns parameters used by bt-snoop to record and file Bluetooth controller crash reports.
     /// Core dump events will be redacted from snoop logs.
     /// Returns NOT_SUPPORTED if crash dumps are not supported by this vendor.
-    @available(added=NEXT)
+    @available(added=31)
     flexible GetCrashParameters() -> (VendorCrashParameters) error zx.Status;
 };
 

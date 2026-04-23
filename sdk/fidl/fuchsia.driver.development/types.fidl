@@ -53,7 +53,7 @@ type NodeInfo = table {
     /// The topological path of the node in devfs.
     // TODO(https://fxbug.dev/500119481): Remove this field once all clients are
     // migrated away from devfs.
-    @available(added=NEXT)
+    @available(added=31)
     12: topological_path string:NODE_MONIKER_MAX;
 };
 
@@ -87,11 +87,11 @@ type CompositeNodeInfo = table {
     3: composite CompositeInfo;
 
     /// The monikers of the parent nodes of this composite, ordered by index.
-    @available(added=NEXT)
+    @available(added=31)
     4: parent_monikers vector<string:<MAX, optional>>:MAX;
 
     /// The moniker of the created composite node. Empty if not created.
-    @available(added=NEXT)
+    @available(added=31)
     5: moniker string:NODE_MONIKER_MAX;
 };
 
@@ -131,7 +131,7 @@ type DriverHostInfo = table {
     1: process_koid zx.Koid;
 
     /// Optional name of the driver host.
-    @available(added=NEXT)
+    @available(added=31)
     5: name string:MAX;
 
     /// The list of threads of the driver host.

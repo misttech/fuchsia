@@ -53,7 +53,7 @@ class ComposedServiceDir final : public Node {
               ZX_OK);
   }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(31)
   // Sets the fallback directory for services. Services in this directory can be connected to, but
   // will not be enumerated. This method may only be called once.
   void set_fallback(fidl::InterfaceHandle<fuchsia::io::Directory> fallback_dir)
