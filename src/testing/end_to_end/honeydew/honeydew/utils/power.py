@@ -7,8 +7,6 @@ import dataclasses
 import logging
 from datetime import timedelta
 
-from mobly import asserts
-
 from honeydew import errors
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
@@ -25,6 +23,10 @@ SUSPEND_RESUME_DEFAULT_TIMEOUT: timedelta = timedelta(minutes=5)
 # doesn't suspend in time, we'll double the waiting period until we
 # successfully suspend, or the deadline runs out.
 SUSPEND_RESUME_BASE_IDLE_DURATION: timedelta = timedelta(seconds=5)
+
+
+class DeviceDidNotSuspendError(errors.HoneydewError):
+    """Exception raised when the device fails to suspend."""
 
 
 @dataclasses.dataclass
@@ -114,7 +116,7 @@ async def suspend_resume(
         attempt += 1
 
         if deadline.is_due():
-            asserts.fail("SAG did not suspend during idle.")
+            raise DeviceDidNotSuspendError("SAG did not suspend during idle.")
         _LOGGER.info("Suspension attempt %s...", attempt + 1)
         before_off_charger_stats = await get_sag_suspend_stats(device)
 

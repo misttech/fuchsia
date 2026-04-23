@@ -10,7 +10,6 @@ from typing import Any
 from unittest import mock
 
 import fuchsia_inspect
-from mobly import signals
 
 from honeydew import errors
 from honeydew.fuchsia_device import fuchsia_device
@@ -275,7 +274,7 @@ class PowerTests(unittest.IsolatedAsyncioTestCase):
         mock_get_stats.side_effect = [stats_before, stats_after]
 
         with self.assertRaisesRegex(
-            signals.TestFailure, "SAG did not suspend during idle."
+            power.DeviceDidNotSuspendError, "SAG did not suspend during idle."
         ):
             await power.suspend_resume(self.mock_device, deadline)
 
