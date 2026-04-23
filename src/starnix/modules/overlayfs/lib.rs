@@ -948,16 +948,27 @@ impl FsNodeOps for OverlayNodeOps {
         info: &'a RwLock<FsNodeInfo>,
     ) -> Result<RwLockReadGuard<'a, FsNodeInfo>, Errno> {
         self.node.as_mounter(current_task, || {
-            let real_info = self
-                .node
-                .main_entry()
-                .entry()
-                .node
-                .fetch_and_refresh_info(locked, current_task)?
-                .clone();
+            let underlying_node = &self.node.main_entry().entry().node;
+            // Work-around to ensure that mounter `getattr` access is required when a caller tries
+            // to `stat()` a file.
+            security::check_fs_node_getattr_access(current_task, underlying_node)?;
+            let real_info = underlying_node.fetch_and_refresh_info(locked, current_task)?.clone();
             let mut lock = info.write();
             *lock = real_info;
             Ok(RwLockWriteGuard::downgrade(lock))
+        })
+    }
+
+    // Work-around to allow the append-only writes to proceed without `getattr` access checks,
+    // which `fetch_and_refresh_info()`, above, would otherwise introduce.
+    fn get_size(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        _node: &FsNode,
+        current_task: &CurrentTask,
+    ) -> Result<usize, Errno> {
+        self.node.as_mounter(current_task, || {
+            self.node.main_entry().entry().node.get_size(locked, current_task)
         })
     }
 
