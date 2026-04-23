@@ -49,6 +49,12 @@
             to: "#bluetooth-core",
         },
         {
+            config: "fuchsia.bluetooth.HciCommandTimeout",
+            from: "parent",
+            to: "#bluetooth-core",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.bluetooth.ScoOffloadPathIndex",
             from: "parent",
             to: "#bluetooth-core",

@@ -484,7 +484,6 @@ pub struct BluetoothCoreConfig {
     /// Whether the device is BR/EDR connectable by default on boot.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub start_connectable: bool,
-
     /// slow advertising parameters
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub slow_advertising: LeAdvertisingConfig,
@@ -497,6 +496,9 @@ pub struct BluetoothCoreConfig {
     /// scan parameters
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub scan: LeScanConfig,
+    /// HCI command timeout in seconds.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub hci_command_timeout: u16,
 }
 
 impl Default for BluetoothCoreConfig {
@@ -510,6 +512,7 @@ impl Default for BluetoothCoreConfig {
             fast_advertising: LeAdvertisingConfig::default(),
             very_fast_advertising: LeAdvertisingConfig::default(),
             scan: LeScanConfig::default(),
+            hci_command_timeout: 10,
         }
     }
 }
@@ -756,6 +759,7 @@ mod tests {
                 max_tx_power: 30,
             },
             scan: LeScanConfig { active_interval: 30, active_window: 60 },
+            hci_command_timeout: 10,
         };
         let expected = BluetoothConfig::Standard {
             profiles: expected_profiles,

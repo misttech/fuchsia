@@ -160,6 +160,10 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             "fuchsia.bluetooth.LeActiveScanWindow",
             Config::new(ConfigValueType::Uint16, core.scan.active_window.into()),
         )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.HciCommandTimeout",
+            Config::new(ConfigValueType::Uint16, core.hci_command_timeout.into()),
+        )?;
         // Fast Pair Provider is currently disabled by default.
         // TODO(https://fxbug.dev/253626392): Add a Fast Pair config to the schema and use it here.
         builder.set_config_capability(

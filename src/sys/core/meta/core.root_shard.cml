@@ -42,6 +42,7 @@
             config: [
                 "fuchsia.adb.IsRecovery",
                 "fuchsia.bluetooth.FastPairProvider",
+                "fuchsia.bluetooth.HciCommandTimeout",
                 "fuchsia.bluetooth.LegacyPairing",
                 "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
                 "fuchsia.bluetooth.Rfcomm",
