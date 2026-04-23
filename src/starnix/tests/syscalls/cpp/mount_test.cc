@@ -424,6 +424,89 @@ TEST_F(MountTest, RemountBindReadOnlyFlagInheritance) {
   EXPECT_TRUE(fs_stat.f_flags & ST_RDONLY);
 }
 
+TEST_F(MountTest, RemountReadWriteToReadOnlyWithOpenWriterFails) {
+  ASSERT_SUCCESS(MakeDir("a"));
+  auto dir = TestPath("a");
+  ASSERT_THAT(mount(nullptr, dir.c_str(), "tmpfs", 0, nullptr), SyscallSucceeds());
+
+  // Open a file for writing.
+  fbl::unique_fd writer = MakeFile("a/foo");
+  ASSERT_THAT(writer.get(), SyscallSucceeds());
+
+  // Attempt to remount read-only. This should fail with EBUSY because of the open writer.
+  ASSERT_THAT(mount(nullptr, dir.c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallFailsWithErrno(EBUSY));
+}
+
+TEST_F(MountTest, RemountBindReadWriteToReadOnlyWithOpenWriterToBindFails) {
+  ASSERT_SUCCESS(MakeDir("a"));
+  ASSERT_SUCCESS(MakeDir("b"));
+
+  // Mount the filesystem read-write, and create a new bind mount to it.
+  auto base = TestPath("a");
+  ASSERT_THAT(mount(nullptr, base.c_str(), "tmpfs", 0, nullptr), SyscallSucceeds());
+  auto bind = TestPath("b");
+  ASSERT_THAT(mount(base.c_str(), bind.c_str(), nullptr, MS_BIND, nullptr), SyscallSucceeds());
+
+  // Open files for writing via the base and the bind mount.
+  fbl::unique_fd base_writer = MakeFile("a/base_writer");
+  ASSERT_THAT(base_writer.get(), SyscallSucceeds());
+  fbl::unique_fd bind_writer = MakeFile("b/bind_writer");
+  ASSERT_THAT(bind_writer.get(), SyscallSucceeds());
+
+  // Attempt to remount the bind read-only, without changing the filesystem to read-only.
+  // This should fail with EBUSY because of the open `bind_writer`.
+  ASSERT_THAT(mount(nullptr, bind.c_str(), nullptr, MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallFailsWithErrno(EBUSY));
+
+  // Close the `bind_writer` and try remounting again.
+  bind_writer.reset();
+  ASSERT_THAT(mount(nullptr, bind.c_str(), nullptr, MS_BIND | MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+}
+
+TEST_F(MountTest, RemountFilesystemReadWriteToReadOnlyWithOpenWriterToBindFails) {
+  ASSERT_SUCCESS(MakeDir("a"));
+  ASSERT_SUCCESS(MakeDir("b"));
+
+  // Mount the filesystem read-write, and create a new bind mount to it.
+  auto base = TestPath("a");
+  ASSERT_THAT(mount(nullptr, base.c_str(), "tmpfs", 0, nullptr), SyscallSucceeds());
+  auto bind = TestPath("b");
+  ASSERT_THAT(mount(base.c_str(), bind.c_str(), nullptr, MS_BIND, nullptr), SyscallSucceeds());
+
+  // Open a file for writing via bind mount.
+  fbl::unique_fd bind_writer = MakeFile("b/bind_writer");
+  ASSERT_THAT(bind_writer.get(), SyscallSucceeds());
+
+  // Attempt to remount the base read-only, rendering the whole filesystem read-only.
+  // This should fail with EBUSY because of the open `bind_writer`.
+  ASSERT_THAT(mount(nullptr, base.c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallFailsWithErrno(EBUSY));
+
+  // Close the `bind_writer` and try remounting again.
+  bind_writer.reset();
+  ASSERT_THAT(mount(nullptr, base.c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+}
+
+TEST_F(MountTest, RemountReadWriteToReadOnlyWithOpenReaderSucceeds) {
+  ASSERT_SUCCESS(MakeDir("a"));
+  auto dir = TestPath("a");
+  ASSERT_THAT(mount(nullptr, dir.c_str(), "tmpfs", 0, nullptr), SyscallSucceeds());
+
+  // Create a file.
+  ASSERT_THAT(MakeFile("a/foo").get(), SyscallSucceeds());
+
+  // Open it for reading.
+  fbl::unique_fd reader(open(TestPath("a/foo").c_str(), O_RDONLY));
+  ASSERT_THAT(reader.get(), SyscallSucceeds());
+
+  // Remount read-only should succeed.
+  ASSERT_THAT(mount(nullptr, dir.c_str(), nullptr, MS_REMOUNT | MS_RDONLY, nullptr),
+              SyscallSucceeds());
+}
+
 // Test that we can successfully mount ext4 images backed files in an fs that returns resizable
 // VMOs.
 TEST_F(MountTest, Ext4ReadOnlyInMutableStorageSmokeTest) {

@@ -173,6 +173,11 @@
                 "MountTest.RemountReadOnlyToReadWriteIgnored",
                 "MountTest/ProcMountinfoSuperblockFlagsTest.FlagReporting/MS_RDONLY",
 
+                // TODO(https://fxbug.dev/369889180): Remount rw to ro should fail with open files.
+                "MountTest.RemountBindReadWriteToReadOnlyWithOpenWriterToBindFails",
+                "MountTest.RemountFilesystemReadWriteToReadOnlyWithOpenWriterToBindFails",
+                "MountTest.RemountReadWriteToReadOnlyWithOpenWriterFails",
+
                 // TODO(https://fxbug.dev/503425074): Fix and re-enable.
                 "ScmCredentialsTest.ForgeryNonExistingPid",
             ],
