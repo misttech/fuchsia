@@ -1042,6 +1042,36 @@ class AsyncWlanPolicyUsingFc(wlan_policy.AsyncWlanPolicy, AsyncLazyReady):
                 "Networks still connected."
             ) from e
 
+    @ensure_ready
+    async def ensure_clean_state(self) -> None:
+        logging.info("Ensuring a clear policy state for tests")
+        await self.remove_all_networks()
+        await self.wait_for_no_connections()
+
+        retries = 3
+        for attempt in range(retries):
+            try:
+                # Restart client connections to start tests in a good state. This should
+                # prevent issues like scans still being in progress when tests start.
+                await self.stop_client_connections(wait_for_confirmation=True)
+
+                # Sleep 150 ms to give a bit of time and specifically to prevent race
+                # conditions with retrying failed scans
+                await asyncio.sleep(0.150)  # 150 ms wait
+
+                await self.start_client_connections()
+                logging.info("WLAN policy configured successfully")
+                return
+            except wlan_errors.HoneydewWlanError as e:
+                logging.warning(
+                    "Attempt %d/%d to configure WLAN policy failed: %s",
+                    attempt + 1,
+                    retries,
+                    e,
+                )
+                if attempt == retries - 1:
+                    raise
+
 
 class WlanPolicy(wlan_policy.WlanPolicy):
     """WlanPolicy affordance implemented with Fuchsia Controller."""

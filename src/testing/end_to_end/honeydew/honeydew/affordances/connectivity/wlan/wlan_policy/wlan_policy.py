@@ -271,6 +271,15 @@ class AsyncWlanPolicy(abc.ABC):
             HoneydewWlanError: Failure to observe no connection within timeout.
         """
 
+    @abc.abstractmethod
+    async def ensure_clean_state(self) -> None:
+        """Restarts client connections to start tests in a good state.
+
+        For background, see bugs:
+        - https://fxbug.dev/461881673
+        - https://fxbug.dev/467783085
+        """
+
 
 class WlanPolicy(affordance.Affordance):
     """Abstract base class for WlanPolicy affordance."""
