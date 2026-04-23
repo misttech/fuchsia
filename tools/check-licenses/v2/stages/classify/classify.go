@@ -275,19 +275,33 @@ func (c *Classifier) ClassifyFile(path string, projectRoot string, isLicense boo
 		parser = "Single License" // Default parser behavior
 	}
 
-	switch parser {
-	case "Android":
-		chunks = parseAndroid(normalizedText)
-	case "Chromium":
-		chunks = parseChromium(normalizedText)
-	case "Flutter":
-		chunks = parseFlutter(normalizedText)
-	case "Google":
-		chunks = parseGoogle(normalizedText)
-	case "OneDelimiter":
-		chunks = parseOneDelimiter(normalizedText)
-	default:
-		chunks = [][]byte{normalizedText}
+	if strings.HasPrefix(parser, "Delimiter: ") {
+		delim := strings.TrimPrefix(parser, "Delimiter: ")
+		if len(delim) > 0 {
+			blocks := bytes.Split(normalizedText, []byte(delim))
+			for _, block := range blocks {
+				block = bytes.TrimSpace(block)
+				if len(block) > 0 {
+					chunks = append(chunks, block)
+				}
+			}
+			chunks = deduplicateChunks(chunks)
+		}
+	} else {
+		switch parser {
+		case "Android":
+			chunks = parseAndroid(normalizedText)
+		case "Chromium":
+			chunks = parseChromium(normalizedText)
+		case "Flutter":
+			chunks = parseFlutter(normalizedText)
+		case "Google":
+			chunks = parseGoogle(normalizedText)
+		case "OneDelimiter":
+			chunks = parseOneDelimiter(normalizedText)
+		default:
+			chunks = [][]byte{normalizedText}
+		}
 	}
 
 	// 4. Classify each chunk and extract data
