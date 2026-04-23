@@ -49,7 +49,7 @@ func unwrapParenExpr(expr syntax.Expr) syntax.Expr {
 // [0] https://github.com/bazelbuild/starlark/blob/master/spec.md#statements
 func StmtToGN(stmt syntax.Stmt) ([]string, error) {
 	// Skip the statement if it is mark for skipping by users.
-	shouldSkip, err := HasSkipAnnotation(stmt)
+	shouldSkip, err := hasSkipAnnotation(stmt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check skip annotation: %v", err)
 	}
@@ -239,7 +239,7 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 		}
 
 		// Skip the binary expression if it is marked for skipping.
-		shouldSkip, err := HasSkipAnnotation(binaryExpr)
+		shouldSkip, err := hasSkipAnnotation(binaryExpr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check skip annotation: %v", err)
 		}
@@ -564,7 +564,7 @@ func dictExprToGN(expr *syntax.DictExpr, transformers []transformer) ([]string, 
 	return ret, nil
 }
 
-// HasSkipAnnotation returns true if the given node has a skip annotation.
+// hasSkipAnnotation returns true if the given node has a skip annotation.
 //
 // A skip annotation is a comment that exactly matches `@bazel2gn:skip`, and
 // right above or after the node on the same line. The node will be skipped
@@ -596,7 +596,7 @@ func dictExprToGN(expr *syntax.DictExpr, transformers []transformer) ([]string, 
 //	# @bazel2gn:skip
 //
 // ```
-func HasSkipAnnotation(node syntax.Node) (bool, error) {
+func hasSkipAnnotation(node syntax.Node) (bool, error) {
 	comments := node.Comments()
 	if comments == nil {
 		return false, nil
