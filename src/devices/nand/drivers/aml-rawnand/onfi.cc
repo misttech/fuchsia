@@ -4,7 +4,7 @@
 
 #include "onfi.h"
 
-#include <lib/ddk/debug.h>
+#include <lib/driver/logging/cpp/structured_logger.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -100,11 +100,11 @@ zx_status_t Onfi::OnfiWait(zx::duration timeout, zx::duration polling_interval) 
     }
   }
   if (!(cmd_status & NAND_STATUS_READY)) {
-    zxlogf(ERROR, "nand command wait timed out");
+    FDF_LOG(ERROR, "nand command wait timed out");
     return ZX_ERR_TIMED_OUT;
   }
   if (cmd_status & NAND_STATUS_FAIL) {
-    zxlogf(ERROR, "%s: nand command returns error", __func__);
+    FDF_LOG(ERROR, "%s: nand command returns error", __func__);
     return ZX_ERR_IO;
   }
   return ZX_OK;

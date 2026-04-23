@@ -6,7 +6,6 @@ import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
 fuchsia_cc_driver("aml-rawnand-driver") {
-  legacy = true
   output_name = "aml-rawnand"
   deps = [
     ":common",
@@ -54,10 +53,14 @@ source_set("common") {
     ":aml-rawnand-bind",
     "//sdk/banjo/fuchsia.hardware.rawnand:fuchsia.hardware.rawnand_banjo_cpp",
     "//sdk/fidl/fuchsia.boot.metadata:fuchsia.boot.metadata_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/mmio/cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.nand:fuchsia.nand_cpp",
     "//src/devices/lib/amlogic",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//src/devices/lib/dma-buffer",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/sync",

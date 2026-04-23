@@ -8,9 +8,14 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fuchsia/hardware/nandinfo/c/banjo.h>
 #include <fuchsia/hardware/rawnand/cpp/banjo.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/io-buffer.h>
+#include <lib/dma-buffer/buffer.h>
+#include <lib/driver/compat/cpp/banjo_server.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/time.h>
 #include <string.h>
@@ -22,10 +27,7 @@
 #include <optional>
 #include <utility>
 
-#include <ddktl/device.h>
-#include <ddktl/metadata_server.h>
-#include <ddktl/suspend-txn.h>
-#include <ddktl/unbind-txn.h>
+#include <fbl/auto_lock.h>
 #include <fbl/bits.h>
 #include <fbl/mutex.h>
 
@@ -64,29 +66,25 @@ static_assert(sizeof(AmlInfoFormat) == 8, "sizeof(AmlInfoFormat) must be exactly
 // to have no padding between the items.
 static_assert(sizeof(AmlInfoFormat[2]) == 16, "AmlInfoFormat has unexpected padding");
 
-class AmlRawNand;
-using DeviceType = ddk::Device<AmlRawNand, ddk::Unbindable, ddk::Suspendable>;
-
-class AmlRawNand : public DeviceType, public ddk::RawNandProtocol<AmlRawNand, ddk::base_protocol> {
+class AmlRawNand : public fdf::DriverBase, public ddk::RawNandProtocol<AmlRawNand> {
  public:
-  explicit AmlRawNand(zx_device_t* parent, fdf::MmioBuffer mmio_nandreg,
-                      fdf::MmioBuffer mmio_clockreg, zx::bti bti, std::unique_ptr<Onfi> onfi)
-      : DeviceType(parent),
-        onfi_(std::move(onfi)),
-        mmio_nandreg_(std::move(mmio_nandreg)),
-        mmio_clockreg_(std::move(mmio_clockreg)),
-        bti_(std::move(bti)) {}
+  AmlRawNand(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : fdf::DriverBase("aml-rawnand", std::move(start_args), std::move(driver_dispatcher)) {}
 
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
+  // Test constructor
+  AmlRawNand(fdf::MmioBuffer mmio_nandreg, fdf::MmioBuffer mmio_clockreg, zx::bti bti,
+             std::unique_ptr<Onfi> onfi);
 
   virtual ~AmlRawNand() = default;
 
-  void DdkRelease();
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkSuspend(ddk::SuspendTxn txn);
+  zx::result<> Start() override;
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void TestSuspend() {
+    fbl::AutoLock lock(&mutex_);
+    shutdown_ = true;
+    buffers_.reset();
+  }
 
-  zx_status_t Bind();
-  zx_status_t Init();
   zx_status_t RawNandReadPageHwecc(uint32_t nand_page, uint8_t* data, size_t data_size,
                                    size_t* data_actual, uint8_t* oob, size_t oob_size,
                                    size_t* oob_actual, uint32_t* ecc_correct);
@@ -99,18 +97,20 @@ class AmlRawNand : public DeviceType, public ddk::RawNandProtocol<AmlRawNand, dd
   // These functions require complicated hardware interaction so need to be
   // overridden or called differently in tests.
 
+  zx_status_t InitHardware();
+
   // Reads a single status byte from a NAND register. Used during initialization
   // to query the chip information and settings.
   virtual uint8_t AmlReadByte();
 
   // Tests can fake page read/writes by copying bytes to/from these buffers.
-  const ddk::IoBuffer& data_buffer() __TA_NO_THREAD_SAFETY_ANALYSIS {
-    return buffers_->data_buffer;
+  const dma_buffer::ContiguousBuffer& data_buffer() __TA_NO_THREAD_SAFETY_ANALYSIS {
+    return *buffers_->data_buffer;
   }
-  const ddk::IoBuffer& info_buffer() __TA_NO_THREAD_SAFETY_ANALYSIS {
-    return buffers_->info_buffer;
+  const dma_buffer::ContiguousBuffer& info_buffer() __TA_NO_THREAD_SAFETY_ANALYSIS {
+    return *buffers_->info_buffer;
   }
-  const zx::bti& bti() const { return bti_; }
+  const zx::bti& bti() const { return bti_.value(); }
 
  private:
   static constexpr uint32_t kMicrosecondsToNanoseconds = 1'000;
@@ -120,16 +120,16 @@ class AmlRawNand : public DeviceType, public ddk::RawNandProtocol<AmlRawNand, dd
   struct Buffers {
     void *info_buf, *data_buf;
     zx_paddr_t info_buf_paddr, data_buf_paddr;
-    ddk::IoBuffer data_buffer;
-    ddk::IoBuffer info_buffer;
+    std::unique_ptr<dma_buffer::ContiguousBuffer> data_buffer;
+    std::unique_ptr<dma_buffer::ContiguousBuffer> info_buffer;
   };
 
   fbl::Mutex mutex_;
   std::optional<Buffers> buffers_ __TA_GUARDED(mutex_);
-  fdf::MmioBuffer mmio_nandreg_;
-  fdf::MmioBuffer mmio_clockreg_;
+  std::optional<fdf::MmioBuffer> mmio_nandreg_;
+  std::optional<fdf::MmioBuffer> mmio_clockreg_;
 
-  zx::bti bti_;
+  std::optional<zx::bti> bti_;
 
   AmlController controller_params_;
   uint32_t chip_select_ = 0;  // Default to 0.
@@ -201,13 +201,14 @@ class AmlRawNand : public DeviceType, public ddk::RawNandProtocol<AmlRawNand, dd
   zx_status_t AmlRawNandAllocBufs() __TA_REQUIRES(mutex_);
   zx_status_t AmlNandInit();
 
+  compat::BanjoServer raw_nand_server_{ZX_PROTOCOL_RAW_NAND, this, &raw_nand_protocol_ops_};
+  compat::SyncInitializedDeviceServer compat_server_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
+  fdf_metadata::MetadataServer<fuchsia_boot_metadata::PartitionMap> partition_map_metadata_server_;
+
   // If true, the driver is the process of being stopped, and no attempts to access the NAND
   // controller or device should be made.
   bool shutdown_ __TA_GUARDED(mutex_) = false;
-
-  async_dispatcher_t* dispatcher_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
-  ddk::MetadataServer<fuchsia_boot_metadata::PartitionMap> partition_map_metadata_server_;
-  component::OutgoingDirectory outgoing_{dispatcher_};
 };
 
 }  // namespace amlrawnand

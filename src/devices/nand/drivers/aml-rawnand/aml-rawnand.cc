@@ -4,34 +4,13 @@
 
 #include "src/devices/nand/drivers/aml-rawnand/aml-rawnand.h"
 
-#include <fuchsia/hardware/nandinfo/c/banjo.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/driver.h>
-#include <lib/ddk/io-buffer.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/mmio/cpp/mmio-buffer.h>
-#include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/zx/bti.h>
-#include <lib/zx/time.h>
-#include <strings.h>
-#include <zircon/assert.h>
-#include <zircon/errors.h>
-#include <zircon/types.h>
+#include <lib/dma-buffer/buffer.h>
+#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/logging/cpp/structured_logger.h>
 
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <optional>
-#include <utility>
-
-#include <ddktl/device.h>
-#include <ddktl/metadata_server.h>
-#include <ddktl/suspend-txn.h>
-#include <ddktl/unbind-txn.h>
+#include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/nand/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
 #include <soc/aml-common/aml-rawnand.h>
@@ -101,18 +80,18 @@ AmlControllerParams AmlParams = {
     AML_ECC_BCH60_1K,  // This is the BCH setting for page0.
 };
 
-void AmlRawNand::NandctrlSetCfg(uint32_t val) { mmio_nandreg_.Write32(val, P_NAND_CFG); }
+void AmlRawNand::NandctrlSetCfg(uint32_t val) { mmio_nandreg_->Write32(val, P_NAND_CFG); }
 
 void AmlRawNand::NandctrlSetTimingAsync(int bus_tim, int bus_cyc) {
   static constexpr uint32_t lenmask = (static_cast<uint32_t>(1) << 12) - 1;
-  uint32_t value = mmio_nandreg_.Read32(P_NAND_CFG);
+  uint32_t value = mmio_nandreg_->Read32(P_NAND_CFG);
 
   value &= ~lenmask;
   value |= (((bus_cyc & 31) | ((bus_tim & 31) << 5) | (0 << 10)) & lenmask);
-  mmio_nandreg_.Write32(value, P_NAND_CFG);
+  mmio_nandreg_->Write32(value, P_NAND_CFG);
 }
 
-void AmlRawNand::NandctrlSendCmd(uint32_t cmd) { mmio_nandreg_.Write32(cmd, P_NAND_CMD); }
+void AmlRawNand::NandctrlSendCmd(uint32_t cmd) { mmio_nandreg_->Write32(cmd, P_NAND_CMD); }
 
 static const char* AmlEccString(uint32_t ecc_mode) {
   const char* s;
@@ -200,7 +179,7 @@ static int AmlGetEccStrength(uint32_t ecc_mode) {
 
 void AmlRawNand::AmlCmdIdle(uint32_t nand_bus_cycles) {
   uint32_t cmd = chip_select_ | AML_CMD_IDLE | (nand_bus_cycles & 0x3ff);
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 }
 
 void AmlRawNand::AmlCmdIdle(zx::duration duration) {
@@ -218,7 +197,7 @@ zx_status_t AmlRawNand::AmlWaitCmdQueueEmpty(zx::duration timeout, zx::duration 
   // Wait until cmd fifo is empty.
   bool first = true;
   while (true) {
-    uint32_t cmd_size = mmio_nandreg_.Read32(P_NAND_CMD);
+    uint32_t cmd_size = mmio_nandreg_->Read32(P_NAND_CMD);
     uint32_t numcmds = (cmd_size >> 22) & 0x1f;
     if (numcmds == 0)
       break;
@@ -232,7 +211,7 @@ zx_status_t AmlRawNand::AmlWaitCmdQueueEmpty(zx::duration timeout, zx::duration 
     }
   }
   if (ret == ZX_ERR_TIMED_OUT)
-    zxlogf(ERROR, "wait for empty cmd FIFO time out");
+    FDF_LOG(ERROR, "wait for empty cmd FIFO time out");
   return ret;
 }
 
@@ -257,19 +236,19 @@ zx_status_t AmlRawNand::AmlWaitCmdFinish(zx::duration timeout, zx::duration firs
 
 void AmlRawNand::AmlCmdSeed(uint32_t seed) {
   uint32_t cmd = AML_CMD_SEED | (0xc2 + (seed & 0x7fff));
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 }
 
 void AmlRawNand::AmlCmdN2M(uint32_t ecc_pages, uint32_t ecc_pagesize) {
   uint32_t cmd = CMDRWGEN(AML_CMD_N2M, controller_params_.rand_mode, controller_params_.bch_mode, 0,
                           ecc_pagesize, ecc_pages);
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 }
 
 void AmlRawNand::AmlCmdM2N(uint32_t ecc_pages, uint32_t ecc_pagesize) {
   uint32_t cmd = CMDRWGEN(AML_CMD_M2N, controller_params_.rand_mode, controller_params_.bch_mode, 0,
                           ecc_pagesize, ecc_pages);
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 }
 
 namespace {
@@ -295,7 +274,7 @@ void AmlRawNand::AmlCmdM2NPage0() {
   static_assert(kPage0ShortpageMode == 1, "Fix pagesize calculation");
   uint32_t cmd = CMDRWGEN(AML_CMD_M2N, kPage0RandMode, kPage0BchMode, kPage0ShortpageMode,
                           kPage0EccPageSize / 8, kPage0NumEccPages);
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 }
 
 void AmlRawNand::AmlCmdN2MPage0() {
@@ -303,7 +282,7 @@ void AmlRawNand::AmlCmdN2MPage0() {
   static_assert(kPage0ShortpageMode == 1, "Fix pagesize calculation");
   uint32_t cmd = CMDRWGEN(AML_CMD_N2M, kPage0RandMode, kPage0BchMode, kPage0ShortpageMode,
                           kPage0EccPageSize / 8, kPage0NumEccPages);
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 }
 
 void* AmlRawNand::AmlInfoPtr(int i) {
@@ -369,7 +348,7 @@ zx_status_t AmlRawNand::AmlGetECCCorrections(int ecc_pages, uint32_t nand_page,
     info = reinterpret_cast<struct AmlInfoFormat*>(AmlInfoPtr(i));
     if (info->ecc.eccerr_cnt == AML_ECC_UNCORRECTABLE_CNT) {
       if (!controller_params_.rand_mode) {
-        zxlogf(WARNING, "%s: ECC failure (non-randomized)@%u", __func__, nand_page);
+        FDF_LOG(WARNING, "%s: ECC failure (non-randomized)@%u", __func__, nand_page);
         stats.failed++;
         return ZX_ERR_IO_DATA_INTEGRITY;
       }
@@ -388,12 +367,12 @@ zx_status_t AmlRawNand::AmlGetECCCorrections(int ecc_pages, uint32_t nand_page,
       // depend on the quality of the NAND, the wear of the NAND etc.
       zero_bits = info->zero_bits & AML_ECC_UNCORRECTABLE_CNT;
       if (zero_bits >= controller_params_.ecc_strength) {
-        zxlogf(WARNING, "%s: ECC failure (randomized)@%u zero_bits=%u", __func__, nand_page,
-               zero_bits);
+        FDF_LOG(WARNING, "%s: ECC failure (randomized)@%u zero_bits=%u", __func__, nand_page,
+                zero_bits);
         stats.failed++;
         return ZX_ERR_IO_DATA_INTEGRITY;
       }
-      zxlogf(INFO, "%s: Blank Page@%u", __func__, nand_page);
+      FDF_LOG(INFO, "%s: Blank Page@%u", __func__, nand_page);
       bitflips = std::max(static_cast<uint8_t>(bitflips), static_cast<uint8_t>(zero_bits));
       ++erased_ecc_pages;
       continue;
@@ -408,7 +387,7 @@ zx_status_t AmlRawNand::AmlGetECCCorrections(int ecc_pages, uint32_t nand_page,
   if (erased_ecc_pages == ecc_pages) {
     *erased = true;
   } else if (erased_ecc_pages != 0) {
-    zxlogf(WARNING, "%s: Partially erased nand page @%u", __func__, nand_page);
+    FDF_LOG(WARNING, "%s: Partially erased nand page @%u", __func__, nand_page);
     return ZX_ERR_IO_DATA_INTEGRITY;
   }
   return ZX_OK;
@@ -439,13 +418,13 @@ void AmlRawNand::AmlQueueRB() {
   // chip. A status command must be issued before RB IO for the chip to reply with the status
   // register value in response to these reads.
   cmd = chip_select_ | AML_CMD_CLE | (NAND_CMD_STATUS & 0xff);
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 
   // Must wait t_WHR after STATUS before reading from the chip.
   AmlCmdIdle(tWHR);
 
   cmd = AML_CMD_RB | AML_CMD_IO6 | (0x18 & 0x1f);
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 }
 
 void AmlRawNand::AmlCmdCtrl(int32_t cmd, uint32_t ctrl) {
@@ -462,7 +441,7 @@ void AmlRawNand::AmlCmdCtrl(int32_t cmd, uint32_t ctrl) {
   } else {
     cmd = chip_select_ | AML_CMD_ALE | (cmd & 0xff);
   }
-  mmio_nandreg_.Write32(cmd, P_NAND_CMD);
+  mmio_nandreg_->Write32(cmd, P_NAND_CMD);
 }
 
 uint8_t AmlRawNand::AmlReadByte() {
@@ -472,7 +451,7 @@ uint8_t AmlRawNand::AmlReadByte() {
   AmlCmdIdle(NAND_TWB_TIME_CYCLE);
 
   AmlWaitCmdFinish(zx::msec(CMD_FINISH_TIMEOUT_MS), zx::usec(10), zx::usec(10));
-  return mmio_nandreg_.Read<uint8_t>(P_NAND_BUF);
+  return mmio_nandreg_->Read<uint8_t>(P_NAND_BUF);
 }
 
 void AmlRawNand::AmlSetClockRate(uint32_t clk_freq) {
@@ -499,7 +478,7 @@ void AmlRawNand::AmlSetClockRate(uint32_t clk_freq) {
       break;
   }
   clk |= always_on;
-  mmio_clockreg_.Write32(clk, 0);
+  mmio_clockreg_->Write32(clk, 0);
 }
 
 void AmlRawNand::AmlClockInit() {
@@ -623,10 +602,10 @@ zx_status_t AmlRawNand::RawNandReadPageHwecc(uint32_t nand_page, uint8_t* data, 
   onfi_->OnfiCommand(NAND_CMD_READ0, -1, -1, static_cast<uint32_t>(chipsize_), chip_delay_,
                      (controller_params_.options & NAND_BUSWIDTH_16));
 
-  mmio_nandreg_.Write32(GENCMDDADDRL(AML_CMD_ADL, buffers_->data_buf_paddr), P_NAND_CMD);
-  mmio_nandreg_.Write32(GENCMDDADDRH(AML_CMD_ADH, buffers_->data_buf_paddr), P_NAND_CMD);
-  mmio_nandreg_.Write32(GENCMDIADDRL(AML_CMD_AIL, buffers_->info_buf_paddr), P_NAND_CMD);
-  mmio_nandreg_.Write32(GENCMDIADDRH(AML_CMD_AIH, buffers_->info_buf_paddr), P_NAND_CMD);
+  mmio_nandreg_->Write32(GENCMDDADDRL(AML_CMD_ADL, buffers_->data_buf_paddr), P_NAND_CMD);
+  mmio_nandreg_->Write32(GENCMDDADDRH(AML_CMD_ADH, buffers_->data_buf_paddr), P_NAND_CMD);
+  mmio_nandreg_->Write32(GENCMDIADDRL(AML_CMD_AIL, buffers_->info_buf_paddr), P_NAND_CMD);
+  mmio_nandreg_->Write32(GENCMDIADDRH(AML_CMD_AIH, buffers_->info_buf_paddr), P_NAND_CMD);
 
   if ((page0 && kPage0RandMode) || controller_params_.rand_mode) {
     // Only need to set the seed if randomizing is enabled.
@@ -648,13 +627,13 @@ zx_status_t AmlRawNand::RawNandReadPageHwecc(uint32_t nand_page, uint8_t* data, 
   // controller seems to continue processing ECC after the N2M command is off the queue, so poll the
   // completed bit here to find out when DMA is really done.
   if (zx_status_t status = AmlCheckECCPages(ecc_pages); status != ZX_OK) {
-    zxlogf(ERROR, "%s: AmlCheckECCPages failed %d", __func__, status);
+    FDF_LOG(ERROR, "%s: AmlCheckECCPages failed %d", __func__, status);
     return status;
   }
 
   const zx_status_t status = AmlGetECCCorrections(ecc_pages, nand_page, ecc_correct, &erased);
   if (status != ZX_OK) {
-    zxlogf(WARNING, "%s: Uncorrectable ECC error on read", __func__);
+    FDF_LOG(WARNING, "%s: Uncorrectable ECC error on read", __func__);
     *ecc_correct = controller_params_.ecc_strength + 1;
   }
 
@@ -722,8 +701,8 @@ zx_status_t AmlRawNand::RawNandWritePageHwecc(const uint8_t* data, size_t data_s
     // Writing the wrong OOB bytes will brick the device, raise an error if
     // the caller tried to provide their own here.
     if (oob != nullptr) {
-      zxlogf(ERROR, "%s: Cannot write provided OOB, page %u requires specific OOB bytes", __func__,
-             nand_page);
+      FDF_LOG(ERROR, "%s: Cannot write provided OOB, page %u requires specific OOB bytes", __func__,
+              nand_page);
       return ZX_ERR_INVALID_ARGS;
     }
 
@@ -737,10 +716,10 @@ zx_status_t AmlRawNand::RawNandWritePageHwecc(const uint8_t* data, size_t data_s
 
   onfi_->OnfiCommand(NAND_CMD_SEQIN, 0x00, nand_page, static_cast<uint32_t>(chipsize_), chip_delay_,
                      (controller_params_.options & NAND_BUSWIDTH_16));
-  mmio_nandreg_.Write32(GENCMDDADDRL(AML_CMD_ADL, buffers_->data_buf_paddr), P_NAND_CMD);
-  mmio_nandreg_.Write32(GENCMDDADDRH(AML_CMD_ADH, buffers_->data_buf_paddr), P_NAND_CMD);
-  mmio_nandreg_.Write32(GENCMDIADDRL(AML_CMD_AIL, buffers_->info_buf_paddr), P_NAND_CMD);
-  mmio_nandreg_.Write32(GENCMDIADDRH(AML_CMD_AIH, buffers_->info_buf_paddr), P_NAND_CMD);
+  mmio_nandreg_->Write32(GENCMDDADDRL(AML_CMD_ADL, buffers_->data_buf_paddr), P_NAND_CMD);
+  mmio_nandreg_->Write32(GENCMDDADDRH(AML_CMD_ADH, buffers_->data_buf_paddr), P_NAND_CMD);
+  mmio_nandreg_->Write32(GENCMDIADDRL(AML_CMD_AIL, buffers_->info_buf_paddr), P_NAND_CMD);
+  mmio_nandreg_->Write32(GENCMDIADDRH(AML_CMD_AIH, buffers_->info_buf_paddr), P_NAND_CMD);
 
   if ((page0 && kPage0RandMode) || controller_params_.rand_mode) {
     // Only need to set the seed if randomizing is enabled.
@@ -766,8 +745,8 @@ zx_status_t AmlRawNand::RawNandWritePageHwecc(const uint8_t* data, size_t data_s
 zx_status_t AmlRawNand::RawNandEraseBlock(uint32_t nand_page) {
   // nandblock has to be erasesize_ aligned.
   if (nand_page % erasesize_pages_) {
-    zxlogf(ERROR, "%s: NAND block %u must be a erasesize_pages (%u) multiple", __func__, nand_page,
-           erasesize_pages_);
+    FDF_LOG(ERROR, "%s: NAND block %u must be a erasesize_pages (%u) multiple", __func__, nand_page,
+            erasesize_pages_);
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -802,18 +781,18 @@ zx_status_t AmlRawNand::AmlGetFlashType() {
   for (uint32_t i = 0; i < sizeof(id_data); i++)
     id_data[i] = AmlReadByte();
   if (id_data[0] != nand_maf_id || id_data[1] != nand_dev_id) {
-    zxlogf(ERROR, "second ID read did not match %02x,%02x against %02x,%02x", nand_maf_id,
-           nand_dev_id, id_data[0], id_data[1]);
+    FDF_LOG(ERROR, "second ID read did not match %02x,%02x against %02x,%02x", nand_maf_id,
+            nand_dev_id, id_data[0], id_data[1]);
   }
 
-  zxlogf(INFO, "%s: manufacturer_id = %x, device_ide = %x, extended_id = %x", __func__, nand_maf_id,
-         nand_dev_id, id_data[3]);
+  FDF_LOG(INFO, "%s: manufacturer_id = %x, device_ide = %x, extended_id = %x", __func__,
+          nand_maf_id, nand_dev_id, id_data[3]);
   nand_chip = onfi_->FindNandChipTable(nand_maf_id, nand_dev_id);
   if (nand_chip == nullptr) {
-    zxlogf(ERROR,
-           "%s: Cound not find matching NAND chip. NAND chip unsupported."
-           " This is FATAL\n",
-           __func__);
+    FDF_LOG(ERROR,
+            "%s: Cound not find matching NAND chip. NAND chip unsupported."
+            " This is FATAL\n",
+            __func__);
     return ZX_ERR_UNAVAILABLE;
   }
   if (nand_chip->extended_id_nand) {
@@ -852,11 +831,11 @@ zx_status_t AmlRawNand::AmlGetFlashType() {
   // to the NAND chip.
   chip_delay_ = nand_chip->chip_delay_us;
   nand_timings_ = nand_chip->timings;
-  zxlogf(INFO,
-         "NAND %s %s: chip size = %lu(MiB), page size = %u, oob size = %u\n"
-         "eraseblock size = %u, chip delay (us) = %u\n",
-         nand_chip->manufacturer_name, nand_chip->device_name, chipsize_, writesize_, oobsize_,
-         erasesize_, chip_delay_);
+  FDF_LOG(INFO,
+          "NAND %s %s: chip size = %lu(MiB), page size = %u, oob size = %u\n"
+          "eraseblock size = %u, chip delay (us) = %u\n",
+          nand_chip->manufacturer_name, nand_chip->device_name, chipsize_, writesize_, oobsize_,
+          erasesize_, chip_delay_);
   return ZX_OK;
 }
 
@@ -882,7 +861,7 @@ zx_status_t AmlRawNand::RawNandGetNandInfo(nand_info_t* nand_info) {
   return status;
 }
 
-void AmlRawNand::AmlSetEncryption() { mmio_nandreg_.SetBits32((1 << 17), P_NAND_CFG); }
+void AmlRawNand::AmlSetEncryption() { mmio_nandreg_->SetBits32((1 << 17), P_NAND_CFG); }
 
 zx_status_t AmlRawNand::AmlReadPage0(uint8_t* data, size_t data_size, uint8_t* oob, size_t oob_size,
                                      uint32_t nand_page, uint32_t* ecc_correct, int retries) {
@@ -894,7 +873,7 @@ zx_status_t AmlRawNand::AmlReadPage0(uint8_t* data, size_t data_size, uint8_t* o
                                   ecc_correct);
   } while (status != ZX_OK && --retries > 0);
   if (status != ZX_OK)
-    zxlogf(ERROR, "%s: Read error", __func__);
+    FDF_LOG(ERROR, "%s: Read error", __func__);
   return status;
 }
 
@@ -914,7 +893,7 @@ zx_status_t AmlRawNand::AmlNandInitFromPage0() {
   }
   if (status != ZX_OK) {
     // Could not read any of the page0 copies. This is a fatal error.
-    zxlogf(ERROR, "%s: Page0 Read (all copies) failed", __func__);
+    FDF_LOG(ERROR, "%s: Page0 Read (all copies) failed", __func__);
     return status;
   }
 
@@ -924,11 +903,11 @@ zx_status_t AmlRawNand::AmlNandInitFromPage0() {
 
   controller_params_.ecc_strength = AmlGetEccStrength(controller_params_.bch_mode);
   if (controller_params_.ecc_strength < 0) {
-    zxlogf(INFO, "%s: BAD ECC strength computed from BCH Mode", __func__);
+    FDF_LOG(INFO, "%s: BAD ECC strength computed from BCH Mode", __func__);
     return ZX_ERR_BAD_STATE;
   }
 
-  zxlogf(INFO, "%s: NAND BCH Mode is %s", __func__, AmlEccString(controller_params_.bch_mode));
+  FDF_LOG(INFO, "%s: NAND BCH Mode is %s", __func__, AmlEccString(controller_params_.bch_mode));
   return ZX_OK;
 }
 
@@ -937,29 +916,30 @@ zx_status_t AmlRawNand::AmlRawNandAllocBufs() {
     return ZX_OK;
   Buffers& buffers = buffers_.emplace();
 
-  // The iobuffers MUST be uncachable. Making these cachable, with
-  // cache flush/invalidate at the right places in the code does not
-  // work. We see data corruptions caused by speculative cache prefetching
-  // done by ARM. Note also that these corruptions are not easily reproducible.
-  zx_status_t status = buffers.data_buffer.Init(
-      bti_.get(), writesize_, IO_BUFFER_UNCACHED | IO_BUFFER_RW | IO_BUFFER_CONTIG);
+  auto buffer_factory = dma_buffer::CreateBufferFactory();
+
+  size_t page_size = zx_system_get_page_size();
+  size_t data_buf_size = (writesize_ + page_size - 1) / page_size * page_size;
+
+  zx_status_t status =
+      buffer_factory->CreateContiguous(*bti_, data_buf_size, 0, false, &buffers.data_buffer);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "io_buffer_init(data_buffer) failed");
+    FDF_LOG(ERROR, "CreateContiguous(data_buffer) failed: %s", zx_status_get_string(status));
     buffers_.reset();
     return status;
   }
-  ZX_DEBUG_ASSERT(writesize_ > 0);
-  status = buffers.info_buffer.Init(bti_.get(), writesize_,
-                                    IO_BUFFER_UNCACHED | IO_BUFFER_RW | IO_BUFFER_CONTIG);
+
+  status = buffer_factory->CreateContiguous(*bti_, data_buf_size, 0, false, &buffers.info_buffer);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "io_buffer_init(info_buffer) failed");
+    FDF_LOG(ERROR, "CreateContiguous(info_buffer) failed: %s", zx_status_get_string(status));
     buffers_.reset();
     return status;
   }
-  buffers.data_buf = buffers.data_buffer.virt();
-  buffers.info_buf = buffers.info_buffer.virt();
-  buffers.data_buf_paddr = buffers.data_buffer.phys();
-  buffers.info_buf_paddr = buffers.info_buffer.phys();
+
+  buffers.data_buf = buffers.data_buffer->virt();
+  buffers.info_buf = buffers.info_buffer->virt();
+  buffers.data_buf_paddr = buffers.data_buffer->phys();
+  buffers.info_buf_paddr = buffers.info_buffer->phys();
   return ZX_OK;
 }
 
@@ -1000,140 +980,98 @@ zx_status_t AmlRawNand::AmlNandInit() {
   return status;
 }
 
-void AmlRawNand::DdkRelease() {
-  // This should result in the dtors of all members to be called (so the MmioBuffers, and bti should
-  // get cleaned up).
-  delete this;
+void AmlRawNand::PrepareStop(fdf::PrepareStopCompleter completer) {
+  fbl::AutoLock lock(&mutex_);
+  shutdown_ = true;
+  buffers_.reset();
+  completer(zx::ok());
 }
 
-void AmlRawNand::DdkUnbind(ddk::UnbindTxn txn) { txn.Reply(); }
-
-void AmlRawNand::DdkSuspend(ddk::SuspendTxn txn) {
-  const uint8_t suspend_reason = txn.suspend_reason() & DEVICE_MASK_SUSPEND_REASON;
-  if (suspend_reason != DEVICE_SUSPEND_REASON_SUSPEND_RAM) {
-    fbl::AutoLock lock(&mutex_);
-    shutdown_ = true;
-    buffers_.reset();
-  }
-  txn.Reply(ZX_OK, txn.requested_state());
-}
-
-zx_status_t AmlRawNand::Init() {
+zx_status_t AmlRawNand::InitHardware() {
   onfi_->Init([this](int32_t cmd, uint32_t ctrl) -> void { AmlCmdCtrl(cmd, ctrl); },
               [this]() -> uint8_t { return AmlReadByte(); });
 
   AmlClockInit();
-  zx_status_t status = AmlNandInit();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "aml_raw_nand: AmlNandInit() failed - This is FATAL");
-  }
-  return status;
+  return AmlNandInit();
 }
 
-zx_status_t AmlRawNand::Bind() {
-  auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-
-  zx::result result = outgoing_.Serve(std::move(server));
-  if (result.is_error()) {
-    zxlogf(ERROR, "Failed to serve outgoing directory: %s", result.status_string());
-    return result.status_value();
-  }
-
-  std::array fidl_service_offers = {
-      ddk::MetadataServer<fuchsia_boot_metadata::PartitionMap>::kFidlServiceName};
-
-  ddk::DeviceAddArgs add_args{"aml-raw_nand"};
-  add_args.forward_metadata(parent(), DEVICE_METADATA_PRIVATE)
-      .set_outgoing_dir(client.TakeChannel())
-      .set_fidl_service_offers(fidl_service_offers);
-
-  zx::result metadata =
-      ddk::GetMetadataIfExists<fuchsia_boot_metadata::PartitionMap>(parent(), "pdev");
-  if (metadata.is_error()) {
-    zxlogf(ERROR, "Failed to get partition map: %s", metadata.status_string());
-  }
-  if (metadata.value().has_value()) {
-    zx_status_t status = partition_map_metadata_server_.SetMetadata(metadata.value().value());
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to set metadata for partition map metadata server: %s",
-             zx_status_get_string(status));
-      return status;
-    }
-
-    status = partition_map_metadata_server_.Serve(outgoing_, dispatcher_);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to serve partition map: %s", zx_status_get_string(status));
-      return status;
-    }
-  }
-
-  zx_status_t status = DdkAdd(add_args);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: DdkAdd failed", __FILE__);
-  }
-  return status;
-}
-
-zx_status_t AmlRawNand::Create(void* ctx, zx_device_t* parent) {
+zx::result<> AmlRawNand::Start() {
   zx::result pdev_client_end =
-      DdkConnectFragmentFidlProtocol<fuchsia_hardware_platform_device::Service::Device>(parent,
-                                                                                        "pdev");
+      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
-    zxlogf(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
-    return pdev_client_end.status_value();
+    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client_end.status_string());
+    return pdev_client_end.take_error();
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
   zx::result bti = pdev.GetBti(0);
   if (bti.is_error()) {
-    zxlogf(ERROR, "Failed to get bti: %s", bti.status_string());
-    return bti.status_value();
+    FDF_LOG(ERROR, "Failed to get bti: %s", bti.status_string());
+    return bti.take_error();
   }
+  bti_ = std::move(bti.value());
 
   static constexpr uint32_t kNandRegWindow = 0;
   zx::result mmio_nandreg = pdev.MapMmio(kNandRegWindow);
   if (mmio_nandreg.is_error()) {
-    zxlogf(ERROR, "Failed to map nand reg window mmio: %s", mmio_nandreg.status_string());
-    return mmio_nandreg.status_value();
+    FDF_LOG(ERROR, "Failed to map nand reg window mmio: %s", mmio_nandreg.status_string());
+    return mmio_nandreg.take_error();
   }
+  mmio_nandreg_ = std::move(mmio_nandreg).value();
 
   static constexpr uint32_t kClockRegWindow = 1;
   zx::result mmio_clockreg = pdev.MapMmio(kClockRegWindow);
   if (mmio_clockreg.is_error()) {
-    zxlogf(ERROR, "Failed to map clock reg window mmio: %s", mmio_clockreg.status_string());
-    return mmio_clockreg.status_value();
+    FDF_LOG(ERROR, "Failed to map clock reg window mmio: %s", mmio_clockreg.status_string());
+    return mmio_clockreg.take_error();
+  }
+  mmio_clockreg_ = std::move(mmio_clockreg).value();
+
+  onfi_ = std::make_unique<Onfi>();
+
+  if (zx_status_t status = InitHardware(); status != ZX_OK) {
+    FDF_LOG(ERROR, "aml_raw_nand: InitHardware() failed - This is FATAL");
+    return zx::error(status);
   }
 
-  fbl::AllocChecker ac;
-  std::unique_ptr<AmlRawNand> device(new (&ac) AmlRawNand(
-      parent, std::move(mmio_nandreg.value()), std::move(mmio_clockreg.value()),
-      std::move(bti.value()), std::make_unique<Onfi>()));
+  compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_RAW_NAND};
+  banjo_config.callbacks[ZX_PROTOCOL_RAW_NAND] = raw_nand_server_.callback();
 
-  if (!ac.check()) {
-    zxlogf(ERROR, "%s: AmlRawNand alloc failed", __FILE__);
-    return ZX_ERR_NO_MEMORY;
+  zx::result result = compat_server_.Initialize(
+      incoming(), outgoing(), node_name(), "aml-raw_nand",
+      compat::ForwardMetadata::Some({DEVICE_METADATA_PRIVATE}), std::move(banjo_config));
+  if (result.is_error()) {
+    FDF_LOG(ERROR, "Failed to initialize compat server: %s", result.status_string());
+    return result.take_error();
   }
 
-  if (zx_status_t status = device->Init(); status != ZX_OK) {
-    return status;
+  if (zx::result result =
+          partition_map_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+      result.is_error()) {
+    FDF_LOG(ERROR, "Failed to forward partition map: %s", result.status_string());
+    return result.take_error();
   }
 
-  if (zx_status_t status = device->Bind(); status != ZX_OK) {
-    return status;
+  const std::array<fuchsia_driver_framework::NodeProperty2, 1> properties = {
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, static_cast<uint32_t>(ZX_PROTOCOL_RAW_NAND)),
+  };
+
+  std::vector<fuchsia_driver_framework::Offer> offers = compat_server_.CreateOffers2();
+  std::optional partition_map_offer = partition_map_metadata_server_.CreateOffer();
+  if (partition_map_offer.has_value()) {
+    offers.emplace_back(std::move(partition_map_offer.value()));
   }
 
-  // devmgr is now in charge of the device.
-  [[maybe_unused]] auto* dummy = device.release();
-  return ZX_OK;
+  zx::result child = AddChild("aml-raw_nand", properties, offers);
+  if (child.is_error()) {
+    FDF_LOG(ERROR, "Failed to create child: %s", child.status_string());
+    return child.take_error();
+  }
+  child_ = std::move(child.value());
+
+  return zx::ok();
 }
-
-static constexpr zx_driver_ops_t amlrawnand_driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = AmlRawNand::Create;
-  return ops;
-}();
 
 }  // namespace amlrawnand
 
-ZIRCON_DRIVER(aml_rawnand, amlrawnand::amlrawnand_driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT(amlrawnand::AmlRawNand);
