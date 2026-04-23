@@ -1135,6 +1135,14 @@ impl CurrentTask {
             // capabilities accordingly.
             let mut new_creds = Credentials::clone(&self.current_creds());
             new_creds.exec(maybe_set_id);
+
+            // TODO(https://fxbug.dev/503338788) - Migrate this (and other capabilities wrangling)
+            // into a `common_cap::bprm_creds_from_file()` implementation.
+            if state.no_new_privs() {
+                new_creds.cap_permitted &= self.current_creds().cap_permitted;
+                new_creds.cap_effective &= new_creds.cap_permitted;
+            }
+
             let new_creds = Arc::new(new_creds);
             writable_creds.update(new_creds.clone());
             *self.current_creds.borrow_mut() = CurrentCreds::Cached(new_creds);

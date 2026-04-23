@@ -339,6 +339,30 @@ TEST_F(CapsExecTest, RootExecutingRegularBinaryGetsAllCapabilitiesBack) {
   EXPECT_EQ(capabilities[CAP_AUDIT_READ].ambient, 0);
 }
 
+TEST_F(CapsExecTest, RootExecutingRegularBinaryWithNoNewPrivsDoesNotGetCapabilitiesBack) {
+  std::vector<capability_t> capabilities;
+
+  ASSERT_TRUE(RunPrintCapabilities(
+      []() {
+        // Ensure that the sub-process is executing as the root user.
+        SAFE_SYSCALL(setresuid(kRootUid, kRootUid, kRootUid));
+
+        // Set the no-new-privileges bit for the process.
+        SAFE_SYSCALL(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0));
+
+        // Drop the `CAP_AUDIT_READ` capability from the effective & permitted sets.
+        test_helper::UnsetCapabilityEffective(CAP_AUDIT_READ);
+        test_helper::UnsetCapabilityPermitted(CAP_AUDIT_READ);
+      },
+      capabilities));
+
+  EXPECT_EQ(capabilities[CAP_AUDIT_READ].effective, 0);
+  EXPECT_EQ(capabilities[CAP_AUDIT_READ].permitted, 0);
+  EXPECT_EQ(capabilities[CAP_AUDIT_READ].inheritable, 0);
+  EXPECT_EQ(capabilities[CAP_AUDIT_READ].bounding, 1);
+  EXPECT_EQ(capabilities[CAP_AUDIT_READ].ambient, 0);
+}
+
 TEST_F(CapsExecTest, ChangingFromRootUidDropsAllCapabilities) {
   test_helper::ForkHelper helper;
 
