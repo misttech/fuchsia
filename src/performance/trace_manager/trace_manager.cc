@@ -71,12 +71,20 @@ std::optional<std::string> GetBoardName() {
   return board_name_res->name();
 }
 
+uint64_t sessionId = 0;
+
 }  // namespace
 
-TraceController::TraceController(TraceManager* trace_manager, std::unique_ptr<TraceSession> session)
-    : trace_manager_(trace_manager), session_(std::move(session)) {
-  session_->MarkInitialized();
-}
+TraceController::TraceController(std::unique_ptr<TraceSession> session,
+                                 fidl::ServerEnd<fuchsia_tracing_controller::Session> server_end,
+                                 async_dispatcher_t* dispatcher, fit::closure on_disconnect)
+    : id_(sessionId++),
+      session_{std::move(session)},
+      binding_{dispatcher, std::move(server_end), this,
+               [cb = std::move(on_disconnect)](fidl::UnbindInfo info) {
+                 if (cb)
+                   cb();
+               }} {}
 
 TraceController::~TraceController() = default;
 
@@ -192,49 +200,21 @@ void TraceController::TerminateTracing(fit::closure cb) {
     session_->set_write_results_on_terminate(false);
   }
 
-  session_->Terminate([this, callback = std::move(cb)]() {
-    FX_LOGS(DEBUG) << "Session Terminated";
-
-    // Clean up any bindings for currently running trace so a new one
-    // can be initiated
-    session_.reset();
-
-    FX_DCHECK(callback);
-    // The call back will destroy the TraceController object. Only issue the callback
-    // as the last thing to do.
-    callback();
-  });
+  session_->Terminate(std::move(cb));
 }
 
 TraceManager::TraceManager(Config config, async::Executor& executor)
     : config_(std::move(config)), executor_(executor) {
-  session_bindings_.set_empty_set_handler([this]() { OnEmptyControllerSet(); });
   provider_registry_bindings_.CreateHandler(this, executor.dispatcher(),
                                             fidl::kIgnoreBindingClosure);
 }
 
-TraceManager::~TraceManager() = default;
-
-void TraceManager::AddSessionBinding(
-    const std::shared_ptr<TraceController>& trace_session,
-    fidl::ServerEnd<fuchsia_tracing_controller::Session> session_controller) {
-  session_bindings_.AddBinding(executor_.dispatcher(), std::move(session_controller),
-                               trace_session.get(), [trace_session](fidl::UnbindInfo) {});
-
-  FX_LOGS(DEBUG) << "TraceController registered";
-}
-
-void TraceManager::CloseSession() {
-  // Clean up any bindings for the currently running trace so a new one
-  // can be initiated.
-
-  // The actual trace_controller object is held by trace_manager.session_bindings
-  // and will be removed once the binding is closed. Remove the stored
-  // referencce to the trace_controller object to prevent use after free
-  FX_LOGS(DEBUG) << "Clean up leftover bindings";
-  session_bindings_.CloseAll(ZX_ERR_PEER_CLOSED);
+TraceManager::~TraceManager() {
+  // Ensure we destroy the trace controller first.
   trace_controller_.reset();
 }
+
+void TraceManager::CloseSession() { trace_controller_.reset(); }
 
 void TraceManager::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_tracing_provider::Registry> metadata,
@@ -243,7 +223,7 @@ void TraceManager::handle_unknown_method(
                    << metadata.method_ordinal;
 }
 
-void TraceManager::OnEmptyControllerSet() {
+void TraceManager::OnControllerDisconnect() {
   // While one controller could go away and another remain causing a trace
   // to not be terminated, at least handle the common case.
   FX_LOGS(INFO) << "Controller is gone";
@@ -251,8 +231,6 @@ void TraceManager::OnEmptyControllerSet() {
     FX_LOGS(DEBUG) << "Terminating trace and closing session";
     // Terminate the running trace and the close the trace session.
     trace_controller_->TerminateTracing([this]() { CloseSession(); });
-  } else {
-    CloseSession();
   }
 }
 
@@ -269,7 +247,9 @@ void TraceManager::InitializeTracing(InitializeTracingRequest& request,
                                      InitializeTracingCompleter::Sync& completer) {
   FX_LOGS(DEBUG) << "InitializeTracing";
 
+  // We only support once session at a time.
   if (trace_controller_) {
+    request.controller().Close(ZX_ERR_ALREADY_EXISTS);
     FX_LOGS(ERROR) << "Ignoring initialize request, trace already initialized";
     return;
   }
@@ -370,16 +350,12 @@ void TraceManager::InitializeTracing(InitializeTracingRequest& request,
   auto session = std::make_unique<TraceSession>(
       executor_, std::move(forwarder), std::move(categories), default_buffer_size_megabytes,
       tracing_buffering_mode, std::move(provider_specs), start_timeout, kStopTimeout,
-      std::move(fxt_version),
-      [this]() {
+      std::move(fxt_version), [this]() { trace_controller_.reset(); },
+      [this](const std::string& alert_name) {
         if (trace_controller_) {
-          // We only abort when the write to socket fails. We do not want to attempt
-          // to write to the socket again.
-          trace_controller_->write_results_on_terminate_ = false;
-          trace_controller_->TerminateTracing([this]() { CloseSession(); });
+          trace_controller_->OnAlert(alert_name);
         }
-      },
-      [this](const std::string& alert_name) { trace_controller_->OnAlert(alert_name); });
+      });
 
   // The trace header is written now to ensure it appears first, and to avoid
   // timing issues if the trace is terminated early (and the session being
@@ -391,8 +367,13 @@ void TraceManager::InitializeTracing(InitializeTracingRequest& request,
                variant);
   }
 
-  trace_controller_ = std::make_shared<TraceController>(this, std::move(session));
-  AddSessionBinding(trace_controller_, std::move(request.controller()));
+  trace_controller_.emplace(
+      std::move(session), std::move(request.controller()), executor_.dispatcher(),
+      [weak = weak_ptr_factory_.GetWeakPtr(), id = sessionId]() {
+        if (weak && weak->trace_controller_.has_value() && id == weak->trace_controller_->Id()) {
+          weak->OnControllerDisconnect();
+        }
+      });
 }
 
 // fidl
@@ -561,7 +542,6 @@ void TraceController::FlushBuffers(FlushBuffersCompleter::Sync& completer) {
     return;
   }
   switch (session()->state()) {
-    case TraceSession::State::kReady:
     case TraceSession::State::kInitialized:
     case TraceSession::State::kStarting:
       completer.Reply(fit::error(fuchsia_tracing_controller::FlushError::kNotStarted));
@@ -598,13 +578,10 @@ void TraceManager::RegisterProviderSynchronously(
 }
 
 void TraceController::SendSessionStateEvent(fuchsia_tracing_controller::SessionState state) {
-  trace_manager_->session_bindings_.ForEachBinding(
-      [state](const fidl::ServerBinding<fuchsia_tracing_controller::Session>& binding) {
-        fit::result<fidl::Error> result = fidl::SendEvent(binding)->OnSessionStateChange({state});
-        if (result.is_error()) {
-          FX_LOGS(ERROR) << "Failed to send OnSessionStateChange event: " << result.error_value();
-        }
-      });
+  fit::result<fidl::Error> result = fidl::SendEvent(binding_)->OnSessionStateChange({state});
+  if (result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to send OnSessionStateChange event: " << result.error_value();
+  }
 }
 
 TraceSession* TraceManager::session() const {
@@ -617,8 +594,6 @@ TraceSession* TraceManager::session() const {
 fuchsia_tracing_controller::SessionState TraceController::TranslateSessionState(
     TraceSession::State state) {
   switch (state) {
-    case TraceSession::State::kReady:
-      return fuchsia_tracing_controller::SessionState::kReady;
     case TraceSession::State::kInitialized:
       return fuchsia_tracing_controller::SessionState::kInitialized;
     case TraceSession::State::kStarting:

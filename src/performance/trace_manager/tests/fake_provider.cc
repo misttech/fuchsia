@@ -144,7 +144,7 @@ void FakeProvider::MarkStopped() {
 }
 
 void FakeProvider::MarkTerminated() {
-  FX_DCHECK(state_ == State::kTerminating) << state_;
+  FX_DCHECK(state_ == State::kTerminating || state_ == State::kStopped) << state_;
   AdvanceToState(State::kTerminated);
 }
 

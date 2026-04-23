@@ -108,7 +108,6 @@ void TraceSession::AddProvider(TraceProviderBundle* provider) {
   } else {
     Tracee* tracee = std::get<std::unique_ptr<Tracee>>(tracees_.back()).get();
     switch (state_) {
-      case State::kReady:
       case State::kInitialized:
         // Nothing more to do.
         break;
@@ -197,7 +196,6 @@ void TraceSession::AddProvider(ProviderConnection* provider) {
     });
 
     switch (state_) {
-      case State::kReady:
       case State::kInitialized:
         // Nothing more to do.
         break;
@@ -227,8 +225,6 @@ void TraceSession::AddProvider(ProviderConnection* provider) {
     }
   }
 }
-
-void TraceSession::MarkInitialized() { TransitionToState(State::kInitialized); }
 
 void TraceSession::Terminate(fit::closure callback) {
   if (state_ == State::kTerminating) {
@@ -352,7 +348,7 @@ void TraceSession::OnProviderStarted(TraceProviderBundle* bundle) {
 
     if (it != tracees_.end()) {
       auto& tracee = std::get<std::unique_ptr<Tracee>>(*it);
-      if (state_ == State::kReady || state_ == State::kInitialized) {
+      if (state_ == State::kInitialized) {
         FX_LOGS(WARNING) << "Provider " << *bundle << " sent a \"started\""
                          << " notification but tracing hasn't started";
         // Misbehaving provider, but it may just be slow.
@@ -384,7 +380,7 @@ void TraceSession::OnV2ProviderStarted(ProviderConnection* connection) {
 
     if (it != tracees_.end()) {
       auto& tracee = std::get<std::unique_ptr<TraceeV2>>(*it);
-      if (state_ == State::kReady || state_ == State::kInitialized) {
+      if (state_ == State::kInitialized) {
         FX_LOGS(WARNING) << std::format(
             "Provider {} sent a \"started\" notification but tracing hasn't started", *connection);
         // Misbehaving provider, but it may just be slow.
@@ -772,19 +768,9 @@ void TraceSession::SessionTerminateTimeout(async_dispatcher_t* dispatcher, async
   }
 }
 
-void TraceSession::RemoveDeadProvider(TraceProviderBundle* bundle) {
-  if (state_ == State::kReady) {
-    // Session never got started. Nothing to do.
-    return;
-  }
-  OnProviderTerminated(bundle);
-}
+void TraceSession::RemoveDeadProvider(TraceProviderBundle* bundle) { OnProviderTerminated(bundle); }
 
 void TraceSession::RemoveDeadV2Provider(ProviderConnection* connection) {
-  if (state_ == State::kReady) {
-    // Session never got started. Nothing to do.
-    return;
-  }
   OnV2ProviderTerminated(connection);
 }
 
@@ -879,9 +865,6 @@ void TraceSession::TransitionToState(State new_state) {
 
 std::ostream& operator<<(std::ostream& out, TraceSession::State state) {
   switch (state) {
-    case TraceSession::State::kReady:
-      out << "ready";
-      break;
     case TraceSession::State::kInitialized:
       out << "initialized";
       break;

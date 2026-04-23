@@ -107,7 +107,6 @@ TraceManagerTest::SessionState TraceManagerTest::GetSessionState() const {
 #define TRANSLATE_STATE(state)     \
   case TraceSession::State::state: \
     return SessionState::state;
-      TRANSLATE_STATE(kReady);
       TRANSLATE_STATE(kInitialized);
       TRANSLATE_STATE(kStarting);
       TRANSLATE_STATE(kStarted);
@@ -411,11 +410,7 @@ void TraceManagerTest::VerifyCounts(int expected_start_count, int expected_stop_
     std::visit(
         [state, expected_start_count, expected_stop_count](const auto& p) {
           const std::string& name = p->provider->name();
-          if (state != SessionState::kReady) {
-            EXPECT_EQ(p->provider->initialize_count(), 1) << name;
-          } else {
-            EXPECT_EQ(p->provider->initialize_count(), 0) << name;
-          }
+          EXPECT_EQ(p->provider->initialize_count(), 1) << name;
           EXPECT_EQ(p->provider->start_count(), expected_start_count) << name;
           EXPECT_EQ(p->provider->stop_count(), expected_stop_count) << name;
           if (state != SessionState::kNonexistent) {

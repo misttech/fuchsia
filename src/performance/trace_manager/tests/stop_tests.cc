@@ -35,7 +35,8 @@ TEST_F(TraceManagerTest, RetryAfterFailedStop) {
   DropSocket();
   MarkAllProvidersStopped();
   RunLoopUntilIdle();
-  ASSERT_EQ(GetSessionState(), SessionState::kTerminating);
+  // The session will already be gone because we dropped the socket.
+  ASSERT_EQ(GetSessionState(), SessionState::kNonexistent);
   MarkAllProvidersTerminated();
   RunLoopUntilIdle();
   ASSERT_EQ(GetSessionState(), SessionState::kNonexistent);

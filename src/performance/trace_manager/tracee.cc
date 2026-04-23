@@ -183,7 +183,11 @@ void Tracee::OnHandleReady(async_dispatcher_t* dispatcher, async::WaitBase* wait
   FX_DCHECK(state_ != State::kReady && state_ != State::kTerminated);
 
   if (pending & ZX_FIFO_READABLE) {
+    auto weak = weak_ptr_factory_.GetWeakPtr();
     OnFifoReadable(dispatcher, wait);
+    if (!weak) {
+      return;
+    }
     // Keep reading packets, one per call, until the peer goes away.
     status = wait->Begin(dispatcher);
     if (status != ZX_OK)

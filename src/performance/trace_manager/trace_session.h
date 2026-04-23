@@ -43,8 +43,6 @@ enum class DataForwarding {
 class TraceSession {
  public:
   enum class State {
-    // The session is ready to be initialized.
-    kReady,
     // The session has been initialized.
     kInitialized,
     // The session is starting.
@@ -103,9 +101,6 @@ class TraceSession {
 
   // Initializes a v2 |provider| and adds it to this session.
   void AddProvider(ProviderConnection* provider);
-
-  // Called after all registered providers have been added.
-  void MarkInitialized();
 
   // Terminates the trace.
   // Stops tracing first if necessary (see |Stop()|).
@@ -178,7 +173,7 @@ class TraceSession {
   void TransitionToState(State state);
 
   async::Executor& executor_;
-  State state_ = State::kReady;
+  State state_{State::kInitialized};
   std::shared_ptr<BufferForwarder> buffer_forwarder_;
   std::vector<std::string> enabled_categories_;
   size_t buffer_size_megabytes_;
