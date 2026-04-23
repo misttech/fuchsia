@@ -5,11 +5,13 @@
 #ifndef REGION_ALLOC_REGION_ALLOC_H_
 #define REGION_ALLOC_REGION_ALLOC_H_
 
+#include <lib/zx/result.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -403,7 +405,7 @@ class RegionAllocator {
   // which  : Either TestRegionSet::Allocated or TestRegionSet::Available to
   //          test against the set of currently allocated or currently available
   //          regions.
-  bool TestRegionIntersects(const ralloc_region_t& region, TestRegionSet which) const {
+  zx::result<bool> TestRegionIntersects(const ralloc_region_t& region, TestRegionSet which) const {
     fbl::AutoLock alloc_lock(&alloc_lock_);
     return IntersectsLocked(
         (which == TestRegionSet::Allocated) ? allocated_regions_by_base_ : avail_regions_by_base_,
@@ -418,7 +420,7 @@ class RegionAllocator {
   // which  : Either TestRegionSet::Allocated or TestRegionSet::Available to
   //          test against the set of currently allocated or currently available
   //          regions.
-  bool TestRegionContainedBy(const ralloc_region_t& region, TestRegionSet which) const {
+  zx::result<bool> TestRegionContainedBy(const ralloc_region_t& region, TestRegionSet which) const {
     fbl::AutoLock alloc_lock(&alloc_lock_);
     return ContainedByLocked(
         (which == TestRegionSet::Allocated) ? allocated_regions_by_base_ : avail_regions_by_base_,
@@ -473,6 +475,11 @@ class RegionAllocator {
   }
 
  private:
+  // A valid region may not have a size zero, or wrap around the allocation space.
+  static bool IsValidRegion(const ralloc_region_t& region) {
+    return region.size && (region.size <= (std::numeric_limits<uint64_t>::max() - region.base));
+  }
+
   zx_status_t AddSubtractSanityCheckLocked(const ralloc_region_t& region)
       __TA_REQUIRES(alloc_lock_);
   void ReleaseRegion(Region* region) __TA_EXCLUDES(alloc_lock_);
@@ -484,12 +491,13 @@ class RegionAllocator {
       __TA_REQUIRES(alloc_lock_);
 
   // Returns true if any of the regions in |tree| intersect |region|.
-  bool IntersectsLocked(const Region::WAVLTreeSortByBase& tree, const ralloc_region_t& region) const
-      __TA_REQUIRES(alloc_lock_);
+  zx::result<bool> IntersectsLocked(const Region::WAVLTreeSortByBase& tree,
+                                    const ralloc_region_t& region) const __TA_REQUIRES(alloc_lock_);
 
   // Returns true if any of the regions in |tree| completely contain |region|.
-  bool ContainedByLocked(const Region::WAVLTreeSortByBase& tree,
-                         const ralloc_region_t& region) const __TA_REQUIRES(alloc_lock_);
+  zx::result<bool> ContainedByLocked(const Region::WAVLTreeSortByBase& tree,
+                                     const ralloc_region_t& region) const
+      __TA_REQUIRES(alloc_lock_);
 
   // Create a region by allocating it from the current RegionPool, or from the
   // heap if we have no assigned region pool.

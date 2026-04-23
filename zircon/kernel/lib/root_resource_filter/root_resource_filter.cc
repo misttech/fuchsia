@@ -74,14 +74,17 @@ void RootResourceFilter::Finalize() {
 }
 
 bool RootResourceFilter::IsRegionAllowed(uintptr_t base, size_t size, zx_rsrc_kind_t kind) const {
+  zx::result<bool> test_result;
   switch (kind) {
     case ZX_RSRC_KIND_MMIO:
-      return !mmio_deny_.TestRegionIntersects({.base = base, .size = size},
-                                              RegionAllocator::TestRegionSet::Available);
+      test_result = mmio_deny_.TestRegionIntersects({.base = base, .size = size},
+                                                    RegionAllocator::TestRegionSet::Available);
+      return !test_result.value_or(true);
 #ifdef __x86_64__
     case ZX_RSRC_KIND_IOPORT:
-      return !ioport_deny_.TestRegionIntersects({.base = base, .size = size},
-                                                RegionAllocator::TestRegionSet::Available);
+      test_result = ioport_deny_.TestRegionIntersects({.base = base, .size = size},
+                                                      RegionAllocator::TestRegionSet::Available);
+      return !test_result.value_or(true);
 #endif
     default:
       return true;

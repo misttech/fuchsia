@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/stdcompat/bit.h>
+#include <lib/zx/result.h>
 #include <string.h>
 
 #include <algorithm>
@@ -77,8 +78,15 @@ zx_status_t RegionAllocator::AddRegion(const ralloc_region_t& region, AllowOverl
 
   // Make sure that we do not intersect with the available regions if we do
   // not allow overlaps.
-  if ((allow_overlap != AllowOverlap::Yes) && IntersectsLocked(avail_regions_by_base_, region)) {
-    return ZX_ERR_INVALID_ARGS;
+  if (allow_overlap != AllowOverlap::Yes) {
+    zx::result<bool> test_result = IntersectsLocked(avail_regions_by_base_, region);
+    if (test_result.is_error()) {
+      return test_result.status_value();
+    }
+
+    if (test_result.value()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
   }
 
   // All sanity checks passed.  Grab a piece of free bookkeeping from our pool,
@@ -375,16 +383,15 @@ zx_status_t RegionAllocator::GetRegion(const ralloc_region_t& requested_region,
 }
 
 zx_status_t RegionAllocator::AddSubtractSanityCheckLocked(const ralloc_region_t& region) {
-  // Sanity check the region to make sure that it is well formed.  We do not
-  // allow a region which is of size zero, or which wraps around the
-  // allocation space.
-  if ((region.base + region.size) <= region.base) {
-    return ZX_ERR_INVALID_ARGS;
+  // Make sure the region we are adding or subtracting is valid and does not
+  // intersect any region which is currently allocated.
+  const zx::result<bool> test_result = IntersectsLocked(allocated_regions_by_base_, region);
+
+  if (test_result.is_error()) {
+    return test_result.status_value();
   }
 
-  // Next, make sure the region we are adding or subtracting does not
-  // intersect any region which is currently allocated.
-  if (IntersectsLocked(allocated_regions_by_base_, region)) {
+  if (test_result.value()) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -513,9 +520,9 @@ void RegionAllocator::AddRegionToAvailLocked(Region* region, AllowOverlap allow_
   // should not overlap with any of the regions we are currently tracking.
   ZX_DEBUG_ASSERT(!fbl::InContainer<SortByBaseTag>(*region));
   ZX_DEBUG_ASSERT(!fbl::InContainer<SortBySizeTag>(*region));
-  ZX_DEBUG_ASSERT(!IntersectsLocked(allocated_regions_by_base_, *region));
+  ZX_DEBUG_ASSERT(!IntersectsLocked(allocated_regions_by_base_, *region).value_or(true));
   ZX_DEBUG_ASSERT((allow_overlap == AllowOverlap::Yes) ||
-                  !IntersectsLocked(avail_regions_by_base_, *region));
+                  !IntersectsLocked(avail_regions_by_base_, *region).value_or(true));
 
   // Find the region which comes before us and the region which comes after us
   // in the tree.
@@ -569,29 +576,39 @@ void RegionAllocator::AddRegionToAvailLocked(Region* region, AllowOverlap allow_
   avail_regions_by_size_.insert(region);
 }
 
-bool RegionAllocator::IntersectsLocked(const Region::WAVLTreeSortByBase& tree,
-                                       const ralloc_region_t& region) const {
+zx::result<bool> RegionAllocator::IntersectsLocked(const Region::WAVLTreeSortByBase& tree,
+                                                   const ralloc_region_t& region) const {
+  // Return an error if the region requested was invalid.
+  if (!IsValidRegion(region)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   // Find the first entry in the tree whose base is >= region.base.  If this
   // element exists, and its base is < the exclusive end of region, then
   // we have an intersection.
   auto iter = tree.lower_bound(region.base);
-  if (iter.IsValid() && (iter->base < (region.base + region.size))) {
-    return true;
+  if (iter.IsValid() && ((iter->base - region.base) < region.size)) {
+    return zx::ok(true);
   }
 
   // Check the element before us in the tree.  If it exists, we know that it's
   // base is < region.base.  If it's exclusive end is >= region.base, then we
   // have an intersection.
   --iter;
-  if (iter.IsValid() && (region.base < (iter->base + iter->size))) {
-    return true;
+  if (iter.IsValid() && ((region.base - iter->base) < iter->size)) {
+    return zx::ok(true);
   }
 
-  return false;
+  return zx::ok(false);
 }
 
-bool RegionAllocator::ContainedByLocked(const Region::WAVLTreeSortByBase& tree,
-                                        const ralloc_region_t& region) const {
+zx::result<bool> RegionAllocator::ContainedByLocked(const Region::WAVLTreeSortByBase& tree,
+                                                    const ralloc_region_t& region) const {
+  // Return an error if the region requested was invalid.
+  if (!IsValidRegion(region)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+
   // Find the first entry in the tree whose base is > region.base, then back up
   // one.  Our iterator now points to the first entry in a set of disjoint
   // regions sorted by ascending base address, whose base address is <= to ours.
@@ -606,10 +623,10 @@ bool RegionAllocator::ContainedByLocked(const Region::WAVLTreeSortByBase& tree,
   // region either.
   auto iter = --(tree.upper_bound(region.base));
   if (iter.IsValid() && ((iter->base + iter->size) >= (region.base + region.size))) {
-    return true;
+    return zx::ok(true);
   }
 
-  return false;
+  return zx::ok(false);
 }
 
 RegionAllocator::Region* RegionAllocator::CreateRegion() {

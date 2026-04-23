@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include <iterator>
+#include <limits>
 #include <utility>
 
 #include <fbl/algorithm.h>
@@ -470,18 +471,31 @@ void TestRegionHelper(TestFlavor flavor) {
 
   for (const auto& tv : test_vectors) {
     using TRS = RegionAllocator::TestRegionSet;
+    zx::result<bool> test_result;
     uint64_t s = tv.region.base;
     uint64_t e = tv.region.base + tv.region.size - 1;
-    EXPECT_EQ(tv.ai, alloc.TestRegionIntersects(tv.region, TRS::Allocated),
+
+    test_result = alloc.TestRegionIntersects(tv.region, TRS::Allocated);
+    ASSERT_TRUE(test_result.is_ok());
+    EXPECT_EQ(tv.ai, test_result.value(),
               "Region [0x%lx, 0x%lx] should %sintersect by the allocated set, but is%s.", s, e,
               tv.ai ? "" : "not ", tv.ai ? "not " : "");
-    EXPECT_EQ(tv.ac, alloc.TestRegionContainedBy(tv.region, TRS::Allocated),
+
+    test_result = alloc.TestRegionContainedBy(tv.region, TRS::Allocated);
+    ASSERT_TRUE(test_result.is_ok());
+    EXPECT_EQ(tv.ac, test_result.value(),
               "Region [0x%lx, 0x%lx] should %sbe contained by the allocated set, but is%s.", s, e,
               tv.ac ? "" : "not ", tv.ac ? "not " : "");
-    EXPECT_EQ(tv.vi, alloc.TestRegionIntersects(tv.region, TRS::Available),
+
+    test_result = alloc.TestRegionIntersects(tv.region, TRS::Available);
+    ASSERT_TRUE(test_result.is_ok());
+    EXPECT_EQ(tv.vi, test_result.value(),
               "Region [0x%lx, 0x%lx] should %sintersect by the available set, but is%s.", s, e,
               tv.vi ? "" : "not ", tv.vi ? "not " : "");
-    EXPECT_EQ(tv.vc, alloc.TestRegionContainedBy(tv.region, TRS::Available),
+
+    test_result = alloc.TestRegionContainedBy(tv.region, TRS::Available);
+    ASSERT_TRUE(test_result.is_ok());
+    EXPECT_EQ(tv.vc, test_result.value(),
               "Region [0x%lx, 0x%lx] should %sbe contained by the available set, but is%s.", s, e,
               tv.vc ? "" : "not ", tv.vc ? "not " : "");
   }
@@ -497,6 +511,108 @@ TEST(RegionAllocCppApiTestCase, TestRegionFromPool) {
 
 TEST(RegionAllocCppApiTestCase, TestRegionFromHeap) {
   ASSERT_NO_FAILURES(TestRegionHelper(TestFlavor::UseHeap));
+}
+
+// This is a regression test for b/502276776
+void InvalidRegionIntersectsHelper(TestFlavor flavor) {
+  // Create an allocator, and add one available region at the very end of the space.
+  RegionAllocator alloc((flavor == TestFlavor::UsePool)
+                            ? RegionAllocator::RegionPool::Create(REGION_POOL_MAX_SIZE)
+                            : nullptr);
+
+  constexpr uint64_t avail_size = 0x10000;
+  constexpr uint64_t avail_base = std::numeric_limits<uint64_t>::max() - avail_size;
+  ASSERT_OK(alloc.AddRegion({.base = avail_base, .size = avail_size}));
+
+  // Now test for intersection which starts just before the available region,
+  // and runs until the end of the space.
+  constexpr uint64_t test_base = avail_base - 1;
+  constexpr uint64_t test_size = std::numeric_limits<uint64_t>::max() - test_base;
+  ralloc_region_t test_region{.base = test_base, .size = test_size};
+
+  zx::result<bool> test_result =
+      alloc.TestRegionIntersects(test_region, RegionAllocator::TestRegionSet::Available);
+  ASSERT_TRUE(test_result.is_ok());
+  EXPECT_TRUE(test_result.value());
+
+  // Do it again, but this time with a side which overflows the 64-bit range
+  // exactly (the end of the region should overflow to be equal to 0).
+  // This should fail.
+  test_region.size += 1;
+  test_result = alloc.TestRegionIntersects(test_region, RegionAllocator::TestRegionSet::Available);
+  ASSERT_TRUE(test_result.is_error());
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, test_result.status_value());
+
+  // Once again, but this time overflow by even more.  This should also fail.
+  test_region.size += 4096;
+  test_result = alloc.TestRegionIntersects(test_region, RegionAllocator::TestRegionSet::Available);
+  ASSERT_TRUE(test_result.is_error());
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, test_result.status_value());
+
+  // Finally, make sure that zero-length regions are rejected as well.
+  test_region.size = 0;
+  test_result = alloc.TestRegionIntersects(test_region, RegionAllocator::TestRegionSet::Available);
+  ASSERT_TRUE(test_result.is_error());
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, test_result.status_value());
+}
+
+TEST(RegionAllocCppApiTestCase, InvalidRegionIntersectsFromPool) {
+  ASSERT_NO_FAILURES(InvalidRegionIntersectsHelper(TestFlavor::UsePool));
+}
+
+TEST(RegionAllocCppApiTestCase, InvalidRegionIntersectsFromHeap) {
+  ASSERT_NO_FAILURES(InvalidRegionIntersectsHelper(TestFlavor::UseHeap));
+}
+
+// This is a regression test for b/502276776
+void InvalidRegionContainedByHelper(TestFlavor flavor) {
+  // Create an allocator, and add one available region at the very end of the space.
+  RegionAllocator alloc((flavor == TestFlavor::UsePool)
+                            ? RegionAllocator::RegionPool::Create(REGION_POOL_MAX_SIZE)
+                            : nullptr);
+
+  constexpr uint64_t avail_size = 0x10000;
+  constexpr uint64_t avail_base = std::numeric_limits<uint64_t>::max() - avail_size;
+  ASSERT_OK(alloc.AddRegion({.base = avail_base, .size = avail_size}));
+
+  // Now test a region which starts just after the available region, and runs
+  // until the end of the space.
+  constexpr uint64_t test_base = avail_base + 1;
+  constexpr uint64_t test_size = std::numeric_limits<uint64_t>::max() - test_base;
+  ralloc_region_t test_region{.base = test_base, .size = test_size};
+
+  zx::result<bool> test_result =
+      alloc.TestRegionContainedBy(test_region, RegionAllocator::TestRegionSet::Available);
+  ASSERT_TRUE(test_result.is_ok());
+  EXPECT_TRUE(test_result.value());
+
+  // Do it again, but this time with a side which overflows the 64-bit range
+  // exactly (the end of the region should overflow to be equal to 0).
+  // This should fail.
+  test_region.size += 1;
+  test_result = alloc.TestRegionContainedBy(test_region, RegionAllocator::TestRegionSet::Available);
+  ASSERT_TRUE(test_result.is_error());
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, test_result.status_value());
+
+  // Once again, but this time overflow by even more.  This should also fail.
+  test_region.size += 4096;
+  test_result = alloc.TestRegionContainedBy(test_region, RegionAllocator::TestRegionSet::Available);
+  ASSERT_TRUE(test_result.is_error());
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, test_result.status_value());
+
+  // Finally, make sure that zero-length regions are rejected as well.
+  test_region.size = 0;
+  test_result = alloc.TestRegionContainedBy(test_region, RegionAllocator::TestRegionSet::Available);
+  ASSERT_TRUE(test_result.is_error());
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, test_result.status_value());
+}
+
+TEST(RegionAllocCppApiTestCase, InvalidRegionContainedByFromPool) {
+  ASSERT_NO_FAILURES(InvalidRegionContainedByHelper(TestFlavor::UsePool));
+}
+
+TEST(RegionAllocCppApiTestCase, InvalidRegionContainedByFromHeap) {
+  ASSERT_NO_FAILURES(InvalidRegionContainedByHelper(TestFlavor::UseHeap));
 }
 
 }  // namespace

@@ -10,9 +10,15 @@ library_headers("headers") {
     "region-alloc/region.h",
   ]
   if (zircon_toolchain == false) {
-    public_deps = [ "//zircon/system/ulib/fbl" ]
+    public_deps = [
+      "//zircon/system/ulib/fbl",
+      "//zircon/system/ulib/zx",
+    ]
   } else {
-    public_deps = [ "//zircon/system/ulib/fbl:headers" ]
+    public_deps = [
+      "//zircon/system/ulib/fbl:headers",
+      "//zircon/system/ulib/zx:headers",
+    ]
   }
 }
 
