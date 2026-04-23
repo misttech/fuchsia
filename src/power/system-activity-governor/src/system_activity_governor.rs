@@ -394,7 +394,7 @@ impl LeaseManager {
                         name
                     );
                     let report = ffeedback::CrashReport {
-                        program_name: Some("device".to_string()),
+                        program_name: Some("system".to_string()),
                         crash_signature: Some(NO_SUSPEND_CRASH_SIGNATURE.to_string()),
                         is_fatal: Some(false),
                         ..Default::default()
@@ -1594,7 +1594,7 @@ impl SystemActivityGovernor {
             fasync::Timer::new(timeout).await;
             let phase = if is_suspending { "Suspend" } else { "Resume" };
             let report = ffeedback::CrashReport {
-                program_name: Some("device".to_string()),
+                program_name: Some("system".to_string()),
                 crash_signature: Some(format!(
                     "fuchsia-system-activity-governor-{}-stuck",
                     phase.to_lowercase()
