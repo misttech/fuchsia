@@ -24,8 +24,8 @@ class AudioCapturer : public BaseCapturer,
   static std::shared_ptr<AudioCapturer> Create(
       fuchsia::media::AudioCapturerConfiguration configuration, std::optional<Format> format,
       fidl::InterfaceRequest<fuchsia::media::AudioCapturer> request, Context* context) {
-    return std::make_shared<AudioCapturer>(std::move(configuration), std::move(format),
-                                           std::move(request), context);
+    return std::make_shared<AudioCapturer>(std::move(configuration), format, std::move(request),
+                                           context);
   }
 
   // Callers should use the |Create| method instead, this is only public to enable std::make_shared.
@@ -33,13 +33,6 @@ class AudioCapturer : public BaseCapturer,
                 std::optional<Format> format,
                 fidl::InterfaceRequest<fuchsia::media::AudioCapturer> request, Context* context);
   ~AudioCapturer() override;
-
- private:
-  // |media::audio::BaseCapturer|
-  void ReportStart() final;
-  void ReportStop() final;
-  void OnStateChanged(State old_state, State new_state) override;
-  void SetRoutingProfile(bool routable) override;
 
   // |fuchsia::media::AudioCapturer|
   void SetReferenceClock(zx::clock ref_clock) final;
@@ -55,10 +48,8 @@ class AudioCapturer : public BaseCapturer,
     FX_NOTIMPLEMENTED();
   }
   void SetMute(bool mute) final;
-  void NotifyGainMuteChanged();
 
   // |media::audio::AudioObject|
-  void OnLinkAdded() override;
   std::optional<StreamUsage> usage() const override {
     return {StreamUsage::WithCaptureUsage(usage_)};
   }
@@ -66,6 +57,19 @@ class AudioCapturer : public BaseCapturer,
   // |media::audio::StreamVolume|
   fuchsia::media::Usage2 GetStreamUsage() const final;
   void RealizeVolume(VolumeCommand volume_command) final;
+
+ protected:
+  // |media::audio::BaseCapturer|
+  void ReportStart() final;
+  void ReportStop() final;
+  void OnStateChanged(State old_state, State new_state) override;
+  void SetRoutingProfile(bool routable) override;
+
+  // |media::audio::AudioObject|
+  void OnLinkAdded() override;
+
+ private:
+  void NotifyGainMuteChanged();
 
   fidl::BindingSet<fuchsia::media::audio::GainControl> gain_control_bindings_;
 

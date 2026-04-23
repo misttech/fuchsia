@@ -4,14 +4,14 @@
 
 #include "src/media/audio/audio_core/ultrasound_renderer.h"
 
-#include "src/media/audio/lib/clock/utils.h"
+#include <algorithm>
 
 namespace media::audio {
 
 namespace {
 const PipelineConfig::MixGroup* FindUltrasoundGroup(const PipelineConfig::MixGroup& group) {
   auto& inputs = group.input_streams;
-  if (std::find(inputs.begin(), inputs.end(), RenderUsage::ULTRASOUND) != inputs.end()) {
+  if (std::ranges::find(inputs, RenderUsage::ULTRASOUND) != inputs.end()) {
     return &group;
   }
   for (auto& child : group.inputs) {
@@ -24,8 +24,6 @@ const PipelineConfig::MixGroup* FindUltrasoundGroup(const PipelineConfig::MixGro
 }
 }  // namespace
 
-constexpr bool kLogUltrasoundRendererCtorDtor = false;
-
 UltrasoundRenderer::UltrasoundRenderer(
     fidl::InterfaceRequest<fuchsia::media::AudioRenderer> request, Context* context,
     fuchsia::ultrasound::Factory::CreateRendererCallback callback)
@@ -34,7 +32,7 @@ UltrasoundRenderer::UltrasoundRenderer(
   reporter().SetUsage(RenderUsage::ULTRASOUND);
 
   if constexpr (kLogUltrasoundRendererCtorDtor) {
-    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ") *****";
+    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ")";
   }
 }
 
@@ -43,7 +41,7 @@ UltrasoundRenderer::~UltrasoundRenderer() {
   ReportStopIfStarted();
 
   if constexpr (kLogUltrasoundRendererCtorDtor) {
-    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ") *****";
+    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ")";
   }
 }
 

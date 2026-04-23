@@ -34,13 +34,11 @@ class AudioRenderer : public BaseRenderer,
                 Context* context);
   ~AudioRenderer() override;
 
- private:
   // |media::audio::AudioObject|
   std::optional<Format> format() const final { return format_; }
   std::optional<StreamUsage> usage() const override {
     return {StreamUsage::WithRenderUsage(usage_)};
   }
-  void OnLinkAdded() override;
 
   // |fuchsia::media::AudioRenderer|
   void SetReferenceClock(zx::clock ref_clock) final;
@@ -48,6 +46,19 @@ class AudioRenderer : public BaseRenderer,
   void SetUsage(fuchsia::media::AudioRenderUsage usage) override;
   void SetUsage2(fuchsia::media::AudioRenderUsage2 usage) override;
   void BindGainControl(fidl::InterfaceRequest<fuchsia::media::audio::GainControl> request) final;
+
+  // |media::audio::StreamVolume|
+  fuchsia::media::Usage2 GetStreamUsage() const final;
+  void RealizeVolume(VolumeCommand volume_command) final;
+
+  // |fuchsia::media::audio::GainControl|
+  void SetGain(float gain_db) final;
+  void SetGainWithRamp(float gain_db, int64_t duration_ns,
+                       fuchsia::media::audio::RampType ramp_type) final;
+  void SetMute(bool muted) final;
+
+ protected:
+  void OnLinkAdded() override;
 
   // |media::audio::BaseRenderer|
   void ReportStart() final;
@@ -62,15 +73,7 @@ class AudioRenderer : public BaseRenderer,
   void PlayInternal(zx::time reference_time, zx::time media_time, PlayCallback callback) final;
   void PauseInternal(PauseCallback callback) final;
 
-  // |media::audio::StreamVolume|
-  fuchsia::media::Usage2 GetStreamUsage() const final;
-  void RealizeVolume(VolumeCommand volume_command) final;
-
-  // |fuchsia::media::audio::GainControl|
-  void SetGain(float gain_db) final;
-  void SetGainWithRamp(float gain_db, int64_t duration_ns,
-                       fuchsia::media::audio::RampType ramp_type) final;
-  void SetMute(bool muted) final;
+ private:
   void NotifyGainMuteChanged();
   // TODO(mpuryear): Notify on SetGainWithRamp.
 
@@ -98,7 +101,7 @@ class AudioRenderer : public BaseRenderer,
     // Independent of gain_db or ramping, is this stream muted.
     std::optional<bool> mute;
     // Which GainControl should this command apply to?
-    enum class Control { SOURCE, ADJUSTMENT };
+    enum class Control : uint8_t { SOURCE, ADJUSTMENT };
     Control control = Control::SOURCE;
   };
   void PostStreamGainMute(StreamGainCommand gain_command);
@@ -116,7 +119,7 @@ class AudioRenderer : public BaseRenderer,
     std::vector<fit::closure> queued;      // closures to run on completion
   };
   std::shared_ptr<PauseRampState> pause_ramp_state_;
-  void FinishPauseRamp(std::shared_ptr<PauseRampState> expected_state);
+  void FinishPauseRamp(const std::shared_ptr<PauseRampState>& expected_state);
   zx::duration mix_profile_period_;
 
   std::mutex mutex_;
@@ -144,7 +147,7 @@ class AudioRenderer : public BaseRenderer,
    private:
     friend class std::default_delete<GainControlBinding>;
 
-    GainControlBinding(AudioRenderer* owner) : owner_(owner) {}
+    explicit GainControlBinding(AudioRenderer* owner) : owner_(owner) {}
     ~GainControlBinding() override {}
 
     AudioRenderer* owner_;

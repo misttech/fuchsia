@@ -50,15 +50,16 @@ AudioRenderer::AudioRenderer(
   context->volume_manager().AddStream(this);
   reporter().SetUsage(ToRenderUsage(usage_));
 
-  if constexpr (kLogRendererCtorDtorCalls) {
-    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ") *****";
+  if constexpr (kLogAudioRendererCtorDtor) {
+    FX_LOGS(INFO) << "AudioRenderer::" << __FUNCTION__ << " (" << this
+                  << ") usage:" << ToString(ToRenderUsage(usage_));
   }
 }
 
 AudioRenderer::~AudioRenderer() {
-  if constexpr (kLogRendererCtorDtorCalls) {
-    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ") usage:" << ToString(ToRenderUsage(usage_))
-                  << " *****";
+  if constexpr (kLogAudioRendererCtorDtor) {
+    FX_LOGS(INFO) << "AudioRenderer::" << __FUNCTION__ << " (" << this
+                  << ") usage:" << ToString(ToRenderUsage(usage_));
   }
 
   // We (not ~BaseRenderer) must call this, because our ReportStop is gone when parent dtor runs
@@ -108,10 +109,9 @@ void AudioRenderer::SetUsage2(fuchsia::media::AudioRenderUsage2 usage) {
   }
   reporter().SetUsage(ToRenderUsage(usage));
 
-  if constexpr (kLogAudioRendererSetUsageCalls) {
+  if constexpr (kLogAudioRendererSetUsage) {
     FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ") changed from "
-                  << ToString(ToRenderUsage(usage_)) << " to " << ToString(ToRenderUsage(usage))
-                  << " *****";
+                  << ToString(ToRenderUsage(usage_)) << " to " << ToString(ToRenderUsage(usage));
   }
 
   usage_ = usage;
@@ -226,7 +226,7 @@ bool AudioRenderer::AnalyzePacket(fuchsia::media::StreamPacket packet) {
   auto payload_buffer = payload_buffers().find(packet.payload_buffer_id)->second;
   auto packet_data = reinterpret_cast<const float*>(
       reinterpret_cast<uint8_t*>(payload_buffer->start()) + packet.payload_offset);
-  int64_t frame_count = packet.payload_size / format()->bytes_per_frame();
+  int64_t frame_count = static_cast<int64_t>(packet.payload_size / format()->bytes_per_frame());
   auto frame_start = frames_received();
   auto rms_check =
       power_checker_ ? power_checker_->Check(packet_data, frame_start, frame_count, true) : true;
@@ -391,7 +391,7 @@ void AudioRenderer::PauseInternal(PauseCallback callback) {
   context().threading_model().FidlDomain().PostDelayedTask(std::move(finish_pause_ramp), delay);
 }
 
-void AudioRenderer::FinishPauseRamp(std::shared_ptr<PauseRampState> expected_state) {
+void AudioRenderer::FinishPauseRamp(const std::shared_ptr<PauseRampState>& expected_state) {
   TRACE_DURATION("audio", "AudioRenderer::FinishPauseRamp");
   FX_CHECK(expected_state);
 
@@ -430,7 +430,7 @@ fuchsia::media::Usage2 AudioRenderer::GetStreamUsage() const {
 // Set a change to the usage volume+gain_adjustment
 void AudioRenderer::RealizeVolume(VolumeCommand volume_command) {
   context().link_matrix().ForEachDestLink(
-      *this, [this, volume_command](LinkMatrix::LinkHandle link) {
+      *this, [this, volume_command](const LinkMatrix::LinkHandle& link) {
         FX_CHECK(link.mix_domain) << "Renderer dest link should have a defined mix_domain";
         float gain_db = link.loudness_transform->Evaluate<2>({
             VolumeValue{volume_command.volume},
@@ -440,7 +440,7 @@ void AudioRenderer::RealizeVolume(VolumeCommand volume_command) {
         if constexpr (kLogRenderUsageVolumeGainActions) {
           // TODO(https://fxbug.dev/42128197) Swap this logging for inspect or other real-time gain
           // observation
-          FX_LOGS(INFO) << static_cast<const void*>(this) << " (gain " << &(link.mixer->gain)
+          FX_LOGS(INFO) << static_cast<const void*>(this) << " (gain " << &link.mixer->gain
                         << ", mixer " << static_cast<const void*>(link.mixer.get()) << ") "
                         << StreamUsage::WithRenderUsage(usage_).ToString() << " dest_gain("
                         << (volume_command.ramp.has_value() ? "ramping to " : "") << gain_db
@@ -466,14 +466,14 @@ void AudioRenderer::RealizeVolume(VolumeCommand volume_command) {
 
 void AudioRenderer::PostStreamGainMute(StreamGainCommand gain_command) {
   context().link_matrix().ForEachDestLink(*this, [this, gain_command](
-                                                     LinkMatrix::LinkHandle link) mutable {
+                                                     const LinkMatrix::LinkHandle& link) mutable {
     FX_CHECK(link.mix_domain) << "Renderer dest link should have a defined mix_domain";
 
     if constexpr (kLogRendererSetGainMuteRampActions) {
       // TODO(https://fxbug.dev/42128197) Swap this logging for inspect or other real-time gain
       // observation
       std::stringstream stream;
-      stream << static_cast<const void*>(this) << " (gain " << &(link.mixer->gain) << ", mixer "
+      stream << static_cast<const void*>(this) << " (gain " << &link.mixer->gain << ", mixer "
              << static_cast<const void*>(link.mixer.get()) << ") stream ("
              << (gain_command.control == StreamGainCommand::Control::ADJUSTMENT ? "adjustment"
                                                                                 : "source")

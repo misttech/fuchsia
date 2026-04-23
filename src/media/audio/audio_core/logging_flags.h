@@ -11,20 +11,19 @@
 
 namespace media::audio {
 
-// Logging related to our periodic memory pinning (to avoid page faults on deadline threads).
-// This occurs no sooner than every `kTimeBetweenPins`, as defined in `PinExecutableMemory`.
-inline constexpr bool kLogMemoryPins = true;
-inline constexpr bool kLogMemoryPinsIfNoChange = false;
-
+//
 // Render-related logging
 //
 // Timing and lifetime for AudioRenderers (including timestamps).
-inline constexpr bool kLogRendererCtorDtorCalls = false;
+inline constexpr bool kLogUltrasoundRendererCtorDtor = false;
+inline constexpr bool kLogAudioRendererCtorDtor = false;
+inline constexpr bool kLogAudioRendererSetUsage = false;
 inline constexpr bool kLogRendererClockConstruction = false;
-inline constexpr bool kLogAudioRendererSetUsageCalls = false;
 inline constexpr bool kLogRendererPlayCalls = false;
 inline constexpr bool kLogRendererPauseCalls = false;
 
+// Logging related to render discontinuities
+//
 // In packet queue underflows, we discard data because its start timestamp has already passed.
 // The client is not submitting packets fast enough to meet the pipeline demand, so these are
 // understood to be UNDERflows (not enough data).
@@ -41,7 +40,6 @@ inline constexpr uint16_t kPacketQueueUnderflowInfoInterval = 10;
 // This intends to more consistently log a long underflow's _first_ packet.
 inline constexpr zx::duration kPacketQueueUnderflowDurationIncreaseWarningThreshold = zx::msec(500);
 inline constexpr zx::duration kPacketQueueUnderflowDurationIncreaseInfoThreshold = zx::msec(50);
-
 //
 // To disable timestamp checks of client-submitted packets, set kLogRendererUnderflow to false.
 inline constexpr bool kLogRendererUnderflow = true;
@@ -67,7 +65,15 @@ inline constexpr uint16_t kRendererTimestampUnderflowWarningInterval = 100;
 inline constexpr uint16_t kRendererTimestampUnderflowInfoInterval = 10;
 // If AudioCore's log level is TRACE or DEBUG, we log all timestamp underflows.
 
+//
 // Capture-related logging
+//
+// Lifetime and state for Capturers.
+inline constexpr bool kLogUltrasoundCapturerCtorDtor = false;
+inline constexpr bool kLogAudioCapturerCtorDtor = false;
+inline constexpr bool kLogAudioCapturerSetUsage = false;
+
+// Logging related to capture discontinuities
 //
 // In a capture overflow, we discard data when no buffer space is available. The client did not
 // free empty space fast enough for incoming data: these are OVERflows (too much data).
@@ -78,9 +84,12 @@ inline constexpr uint16_t kCaptureOverflowWarningInterval = 100;  // Log 1/100 i
 inline constexpr uint16_t kCaptureOverflowInfoInterval = 10;      // Log 1/10 instances.
 // If AudioCore's log level is TRACE or DEBUG, we log all capture overflows.
 
-// Relevant for both renderers and capturers
+//
+// Relevant to both renderers and capturers
+//
 inline constexpr bool kLogPresentationDelay = false;
 
+//
 // Loudness-related logging
 //
 inline constexpr bool kLogMuteCalls = false;
@@ -93,23 +102,24 @@ inline constexpr bool kLogRendererSetGainMuteRampCalls = false;
 inline constexpr bool kLogRendererSetGainMuteRampActions = false;
 inline constexpr bool kLogSetDeviceGainMuteActions = true;
 
-// Device- and driver-related logging
 //
-inline constexpr bool kLogAudioDevice = false;
-inline constexpr bool kLogDevicePlugUnplug = true;
-inline constexpr bool kLogAddRemoveDevice = true;
+// Policy-related logging
+//
+inline constexpr bool kLogPolicyLoader = true;
+// Routing-related logging
+inline constexpr bool kLogRoutingChanges = false;
+// Logging related to idle power-conservation policy/mechanism.
+inline constexpr bool kLogIdlePolicyChannelFrequencies = false;
+inline constexpr bool kLogIdlePolicyStaticConfigValues = false;
+inline constexpr bool kLogIdlePolicyCounts = false;
+inline constexpr bool kLogIdleTimers = false;
+inline constexpr bool kLogSetActiveChannelsSupport = false;
+inline constexpr bool kLogSetActiveChannelsCalls = false;
+inline constexpr bool kLogSetActiveChannelsActions = true;
+// Logging related to thermal management
+inline constexpr bool kLogThermalStateChanges = true;
 
-// Values retrieved from the audio driver related to delay, and associated calculations.
-inline constexpr bool kLogDriverDelayProperties = false;
-
-// Formats supported by the driver, and the format chosen when creating a RingBuffer.
-inline constexpr bool kLogAudioDriverFormats = false;
-
-// Log driver callbacks received (except position notifications: handled separately below).
-inline constexpr bool kLogAudioDriverCallbacks = false;
-// For non-zero value N, log every Nth position notification. If 0, don't log any.
-inline constexpr uint16_t kDriverPositionNotificationDisplayInterval = 0;
-
+//
 // Mix-related logging
 //
 inline constexpr bool kLogReconciledTimelineFunctions = false;  // very verbose for ongoing streams
@@ -136,6 +146,7 @@ inline constexpr bool kLogReadLocks = true;
 inline constexpr bool kLogTrims = true;
 #endif
 
+//
 // Effects-related logging
 //
 inline constexpr bool kLogEffectsV1CtorValues = false;
@@ -143,21 +154,31 @@ inline constexpr bool kLogEffectsV2CtorValues = false;
 inline constexpr bool kLogEffectsUpdates = false;
 inline constexpr bool kLogThermalEffectEnumeration = false;
 
-// Policy-related logging
 //
-inline constexpr bool kLogPolicyLoader = true;
-// Routing-related logging
-inline constexpr bool kLogRoutingChanges = false;
-// Logging related to idle power-conservation policy/mechanism.
-inline constexpr bool kLogIdlePolicyChannelFrequencies = false;
-inline constexpr bool kLogIdlePolicyStaticConfigValues = false;
-inline constexpr bool kLogIdlePolicyCounts = false;
-inline constexpr bool kLogIdleTimers = false;
-inline constexpr bool kLogSetActiveChannelsSupport = false;
-inline constexpr bool kLogSetActiveChannelsCalls = false;
-inline constexpr bool kLogSetActiveChannelsActions = true;
-// Logging related to thermal management
-inline constexpr bool kLogThermalStateChanges = true;
+// Device- and driver-related logging
+//
+inline constexpr bool kLogAudioDevice = false;
+inline constexpr bool kLogDevicePlugUnplug = true;
+inline constexpr bool kLogAddRemoveDevice = true;
+
+// Values retrieved from the audio driver related to delay, and associated calculations.
+inline constexpr bool kLogDriverDelayProperties = false;
+
+// Formats supported by the driver, and the format chosen when creating a RingBuffer.
+inline constexpr bool kLogAudioDriverFormats = false;
+
+// Log driver callbacks received (except position notifications: handled separately below).
+inline constexpr bool kLogAudioDriverCallbacks = false;
+// For non-zero value N, log every Nth position notification. If 0, don't log any.
+inline constexpr uint16_t kDriverPositionNotificationDisplayInterval = 0;
+
+//
+// Memory-related logging.
+//
+// Logging related to our periodic memory pinning (to avoid page faults on deadline threads).
+// This occurs no sooner than every `kTimeBetweenPins`, as defined in `PinExecutableMemory`.
+inline constexpr bool kLogMemoryPins = true;
+inline constexpr bool kLogMemoryPinsIfNoChange = false;
 
 }  // namespace media::audio
 

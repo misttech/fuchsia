@@ -4,8 +4,6 @@
 
 #include "src/media/audio/audio_core/ultrasound_capturer.h"
 
-#include "src/media/audio/lib/clock/utils.h"
-
 namespace media::audio {
 
 UltrasoundCapturer::UltrasoundCapturer(
@@ -15,6 +13,16 @@ UltrasoundCapturer::UltrasoundCapturer(
       create_callback_(std::move(callback)) {
   FX_DCHECK(create_callback_);
   reporter().SetUsage(CaptureUsage::ULTRASOUND);
+
+  if constexpr (kLogUltrasoundCapturerCtorDtor) {
+    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ")";
+  }
+}
+
+UltrasoundCapturer::~UltrasoundCapturer() {
+  if constexpr (kLogUltrasoundCapturerCtorDtor) {
+    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ")";
+  }
 }
 
 fpromise::result<std::pair<std::shared_ptr<Mixer>, ExecutionDomain*>, zx_status_t>

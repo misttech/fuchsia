@@ -124,7 +124,7 @@ void Gain::Control::AccumulateScaleArrayForRamp(
       scale_arr[idx] *= end_scale;
     } else {
       auto ramp_fraction = static_cast<float>(frame_time.to_nsecs()) * inverse_source_ramp_duration;
-      auto scale_factor = start_scale + (end_scale - start_scale) * ramp_fraction;
+      auto scale_factor = start_scale + ((end_scale - start_scale) * ramp_fraction);
       scale_arr[idx] *= (scale_factor <= media_audio::kMinGainScale) ? kMuteScale : scale_factor;
     }
   }
@@ -222,7 +222,7 @@ Gain::AScale Gain::GetGainScale() {
     if constexpr (kLogGainScaleValues) {
       if (latest_scale_ != kMuteScale) {
         latest_scale_ = kMuteScale;
-        FX_LOGS(INFO) << "Gain(" << this << ") ***** New gain_scale: " << latest_scale_ << " *****";
+        FX_LOGS(INFO) << "Gain(" << this << ") New gain_scale: " << latest_scale_;
       }
     }
     return kMuteScale;
@@ -250,7 +250,7 @@ Gain::AScale Gain::GetGainScale() {
   if constexpr (kLogGainScaleValues) {
     if (latest_scale_ != combined_scale) {
       latest_scale_ = combined_scale;
-      FX_LOGS(INFO) << "Gain(" << this << ") ***** New gain_scale: " << latest_scale_ << " *****";
+      FX_LOGS(INFO) << "Gain(" << this << ") New gain_scale: " << latest_scale_;
     }
   }
 

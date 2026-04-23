@@ -10,9 +10,8 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <cmath>
+#include <optional>
 
-#include "src/media/audio/audio_core/mixer/constants.h"
 #include "src/media/audio/audio_core/mixer/logging_flags.h"
 #include "src/media/audio/lib/processing/gain.h"
 #include "src/media/audio/lib/timeline/timeline_rate.h"
@@ -27,7 +26,7 @@ class Gain {
   using AScale = float;
   static constexpr AScale kMuteScale = 0.0f;
 
-  static inline float CombineGains(float gain_db_a, float gain_db_b) {
+  static float CombineGains(float gain_db_a, float gain_db_b) {
     if (gain_db_a > media_audio::kMinGainDb && gain_db_b > media_audio::kMinGainDb) {
       return std::max(gain_db_a + gain_db_b, media_audio::kMinGainDb);
     }
@@ -66,7 +65,8 @@ class Gain {
   // The calculation is performed in two steps: First, the Source and Dest controls are combined and
   // the maximum value is saved. Second, the Adjustment control is added. The return value is the
   // max value computed in the first type (the max value from the combination of Source and Dest).
-  AScale CalculateScaleArray(AScale* scale_arr, int64_t num_frames, const TimelineRate& rate);
+  AScale CalculateScaleArray(AScale* scale_arr, int64_t num_frames,
+                             const TimelineRate& destination_frames_per_reference_tick);
 
   // Returns the current gain from each control, including mute effects.
   float GetSourceGainDb() const {
@@ -215,7 +215,7 @@ class Gain {
       }
     }
 
-    void Advance(int64_t num_frames, const TimelineRate& rate);
+    void Advance(int64_t num_frames, const TimelineRate& destination_frames_per_reference_tick);
 
     // Caller must fill scale_arr with initial values (e.g. 1.0). The Control must be ramping.
     void AccumulateScaleArrayForRamp(

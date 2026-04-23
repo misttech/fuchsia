@@ -16,8 +16,7 @@ AudioCapturer::AudioCapturer(fuchsia::media::AudioCapturerConfiguration configur
                              std::optional<Format> format,
                              fidl::InterfaceRequest<fuchsia::media::AudioCapturer> request,
                              Context* context)
-    : BaseCapturer(std::move(format), std::move(request), context),
-      loopback_(configuration.is_loopback()) {
+    : BaseCapturer(format, std::move(request), context), loopback_(configuration.is_loopback()) {
   FX_DCHECK(context);
   if (loopback_) {
     usage_ = CaptureUsage::LOOPBACK;
@@ -29,10 +28,16 @@ AudioCapturer::AudioCapturer(fuchsia::media::AudioCapturerConfiguration configur
       usage_ = ToCaptureUsage(configuration.input().usage());
     }
   }
+  if constexpr (kLogAudioCapturerCtorDtor) {
+    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ") usage:" << ToString(usage_);
+  }
   reporter().SetUsage(usage_);
 }
 
 AudioCapturer::~AudioCapturer() {
+  if constexpr (kLogAudioCapturerCtorDtor) {
+    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ") usage:" << ToString(usage_);
+  }
   if (!loopback_) {
     context().volume_manager().RemoveStream(this);
   }
@@ -64,7 +69,7 @@ void AudioCapturer::SetRoutingProfile(bool routable) {
       .routable = routable,
       .usage = StreamUsage::WithCaptureUsage(usage_),
   };
-  context().route_graph().SetCapturerRoutingProfile(*this, std::move(profile));
+  context().route_graph().SetCapturerRoutingProfile(*this, profile);
 
   // Once we route the capturer, we accept the default reference clock if one hasn't yet been set.
   if (routable) {
@@ -83,7 +88,7 @@ void AudioCapturer::OnLinkAdded() {
 constexpr auto kRequiredClockRights = ZX_RIGHT_DUPLICATE | ZX_RIGHT_TRANSFER | ZX_RIGHT_READ;
 // If received clock is null, use our adjustable clock. Else, use this new clock. Fail/disconnect,
 // if the client-submitted clock has insufficient rights. Strip off other rights such as WRITE.
-void AudioCapturer::SetReferenceClock(zx::clock raw_clock) {
+void AudioCapturer::SetReferenceClock(zx::clock ref_clock) {
   TRACE_DURATION("audio", "AudioCapturer::SetReferenceClock");
   auto cleanup = fit::defer([this]() { BeginShutdown(); });
 
@@ -98,14 +103,14 @@ void AudioCapturer::SetReferenceClock(zx::clock raw_clock) {
     return;
   }
 
-  if (raw_clock.is_valid()) {
-    // If raw_clock doesn't have DUPLICATE or READ or TRANSFER rights, return (i.e. shutdown).
-    zx_status_t status = raw_clock.replace(kRequiredClockRights, &raw_clock);
+  if (ref_clock.is_valid()) {
+    // If ref_clock doesn't have DUPLICATE or READ or TRANSFER rights, return (i.e. shutdown).
+    zx_status_t status = ref_clock.replace(kRequiredClockRights, &ref_clock);
     if (status != ZX_OK) {
       FX_PLOGS(ERROR, status) << "Could not set rights on client-submitted reference clock";
       return;
     }
-    SetClock(context().clock_factory()->CreateClientFixed(std::move(raw_clock)));
+    SetClock(context().clock_factory()->CreateClientFixed(std::move(ref_clock)));
   } else {
     // To achieve "no-SRC", we will rate-adjust this clock to match the device clock.
     SetClock(context().clock_factory()->CreateClientAdjustable(
@@ -172,6 +177,11 @@ void AudioCapturer::SetUsage2(fuchsia::media::AudioCaptureUsage2 usage) {
   State state = capture_state();
   if (state == State::SyncOperating || state == State::AsyncOperating) {
     context().audio_admin().UpdateCapturerState(usage_, false, this);
+  }
+
+  if constexpr (kLogAudioCapturerSetUsage) {
+    FX_LOGS(INFO) << __FUNCTION__ << " (" << this << ") changed from " << ToString(usage_) << " to "
+                  << ToString(ToCaptureUsage(usage));
   }
 
   usage_ = ToCaptureUsage(usage);

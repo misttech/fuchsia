@@ -9,7 +9,6 @@
 
 #include "src/media/audio/audio_core/base_capturer.h"
 #include "src/media/audio/audio_core/stream_usage.h"
-#include "src/media/audio/audio_core/stream_volume_manager.h"
 
 namespace media::audio {
 
@@ -25,27 +24,15 @@ class UltrasoundCapturer : public BaseCapturer {
   UltrasoundCapturer(fidl::InterfaceRequest<fuchsia::media::AudioCapturer> request,
                      Context* context,
                      fuchsia::ultrasound::Factory::CreateCapturerCallback callback);
-  ~UltrasoundCapturer() override = default;
+  ~UltrasoundCapturer() override;
 
- private:
   // |media::audio::AudioObject|
   std::optional<Format> format() const final { return format_; }
   std::optional<StreamUsage> usage() const override {
     return {StreamUsage::WithCaptureUsage(CaptureUsage::ULTRASOUND)};
   }
-  fpromise::result<std::pair<std::shared_ptr<Mixer>, ExecutionDomain*>, zx_status_t>
-  InitializeSourceLink(const AudioObject& source, std::shared_ptr<ReadableStream> stream) override;
-  void CleanupSourceLink(const AudioObject& source,
-                         std::shared_ptr<ReadableStream> stream) override;
-  void SetRoutingProfile(bool routable) override {
-    context().route_graph().SetCapturerRoutingProfile(
-        *this, RoutingProfile{.routable = routable,
-                              .usage = StreamUsage::WithCaptureUsage(CaptureUsage::ULTRASOUND)});
-  }
 
   // |fuchsia::media::BaseCapturer|
-  void ReportStart() final;
-  void ReportStop() final;
   // Unsupported by UltrasoundCapturer
   void SetUsage(fuchsia::media::AudioCaptureUsage usage) final;
   void SetUsage2(fuchsia::media::AudioCaptureUsage2 usage) final;
@@ -53,6 +40,25 @@ class UltrasoundCapturer : public BaseCapturer {
   void BindGainControl(fidl::InterfaceRequest<fuchsia::media::audio::GainControl> request) final;
   void SetReferenceClock(zx::clock ref_clock) final;
 
+ protected:
+  // |media::audio::AudioObject|
+  fpromise::result<std::pair<std::shared_ptr<Mixer>, ExecutionDomain*>, zx_status_t>
+  InitializeSourceLink(const AudioObject& source, std::shared_ptr<ReadableStream> stream) override;
+  void CleanupSourceLink(const AudioObject& source,
+                         std::shared_ptr<ReadableStream> stream) override;
+  void SetRoutingProfile(bool routable) override {
+    context().route_graph().SetCapturerRoutingProfile(
+        *this, RoutingProfile{
+                   .routable = routable,
+                   .usage = StreamUsage::WithCaptureUsage(CaptureUsage::ULTRASOUND),
+               });
+  }
+
+  // |fuchsia::media::BaseCapturer|
+  void ReportStart() final;
+  void ReportStop() final;
+
+ private:
   std::optional<Format> format_;
   fuchsia::ultrasound::Factory::CreateCapturerCallback create_callback_;
 };
