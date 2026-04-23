@@ -725,11 +725,11 @@ impl FxFilesystem {
     }
 
     #[trace]
-    pub async fn commit_transaction(
+    pub async fn commit_transaction<R: Send>(
         &self,
         transaction: &mut Transaction<'_>,
-        callback: &mut (dyn FnMut(u64) + Send),
-    ) -> Result<u64, Error> {
+        callback: impl FnOnce(u64) -> R + Send,
+    ) -> Result<R, Error> {
         if let Some(hook) = self.options.pre_commit_hook.as_ref() {
             hook(transaction)?;
         }
@@ -760,13 +760,13 @@ impl FxFilesystem {
         // that except if there's a post-commit-hook (which there usually won't be).  We can
         // consider changing this if we need to for performance, but we'd need to double check that
         // callers don't depend on this.
-        callback(journal_offset);
+        let result = callback(journal_offset);
 
         if let Some(hook) = self.options.post_commit_hook.as_ref() {
             hook().await;
         }
 
-        Ok(journal_offset)
+        Ok(result)
     }
 
     pub fn lock_manager(&self) -> &LockManager {

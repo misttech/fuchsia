@@ -1072,7 +1072,7 @@ impl<'a> Transaction<'a> {
     /// Commits a transaction.  If successful, returns the journal offset of the transaction.
     pub async fn commit(mut self) -> Result<u64, Error> {
         debug!(txn:? = &self; "Commit");
-        self.txn_guard.fs().clone().commit_transaction(&mut self, &mut |_| {}).await
+        self.txn_guard.fs().clone().commit_transaction(&mut self, |x| x).await
     }
 
     /// Commits and then runs the callback whilst locks are held.  The callback accepts a single
@@ -1082,25 +1082,14 @@ impl<'a> Transaction<'a> {
         f: impl FnOnce(u64) -> R + Send,
     ) -> Result<R, Error> {
         debug!(txn:? = &self; "Commit");
-        // It's not possible to pass an FnOnce via a trait without boxing it, but we don't want to
-        // do that (for performance reasons), hence the reason for the following.
-        let mut f = Some(f);
-        let mut result = None;
-        self.txn_guard
-            .fs()
-            .clone()
-            .commit_transaction(&mut self, &mut |offset| {
-                result = Some(f.take().unwrap()(offset));
-            })
-            .await?;
-        Ok(result.unwrap())
+        self.txn_guard.fs().clone().commit_transaction(&mut self, f).await
     }
 
     /// Commits the transaction, but allows the transaction to be used again.  The locks are not
     /// dropped (but transaction locks will get downgraded to read locks).
     pub async fn commit_and_continue(&mut self) -> Result<(), Error> {
         debug!(txn:? = self; "Commit");
-        self.txn_guard.fs().clone().commit_transaction(self, &mut |_| {}).await?;
+        self.txn_guard.fs().clone().commit_transaction(self, |_| {}).await?;
         assert!(self.mutations.is_empty());
         self.txn_guard.fs().lock_manager().downgrade_locks(&self.txn_locks);
         Ok(())
