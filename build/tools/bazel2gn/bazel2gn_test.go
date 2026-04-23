@@ -1019,14 +1019,6 @@ go_library(
 )
 `,
 		},
-		{
-			name: "skip annotation after target",
-			bazel: `
-go_library(
-    name = "baz",
-) # @bazel2gn:skip
-`,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
@@ -1036,6 +1028,47 @@ go_library(
 			_, err := bazel2gn.HasSkipAnnotation(f.Stmts[0])
 			if err == nil {
 				t.Errorf("Expected error, but got nil, Bazel source:\n%s", tc.bazel)
+			}
+		})
+	}
+}
+
+func TestSkipAnnotationOnAttributes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "Skip attributes",
+			bazel: `
+go_library(
+    name = "foo",
+    srcs = ["foo.cc"],
+    # @bazel2gn:skip
+    pure = "off",
+    deps = ["//foo/bar"],
+    cgo = "on", # @bazel2gn:skip
+)
+`,
+			wantGN: `go_library("foo") {
+	sources = [
+		"foo.cc",
+	]
+	deps = [
+		"//foo/bar",
+	]
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
 			}
 		})
 	}
