@@ -76,8 +76,7 @@ impl Test for BlobfsCheckerboard {
             }
             None => None,
         };
-        let blobfs_controller =
-            blackout_target::set_up_partition(&device_label, device_dir.as_ref(), true).await?;
+        let blobfs_controller = blackout_target::set_up_partition(device_label.clone()).await?;
 
         let mut blobfs = Blobfs::new(blobfs_controller);
         let mut rng = StdRng::seed_from_u64(seed);

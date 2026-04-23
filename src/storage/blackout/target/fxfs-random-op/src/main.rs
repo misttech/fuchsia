@@ -45,7 +45,6 @@ impl blackout_target::random_op::OpSampler for OpSampler {
 
 #[derive(Copy, Clone)]
 struct FxfsRandomOp {
-    storage_host: bool,
     barriers_enabled: bool,
 }
 
@@ -93,7 +92,7 @@ impl Test for FxfsRandomOp {
         _seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "setting up");
-        let block_connector = set_up_partition(device_label, self.storage_host).await?;
+        let block_connector = set_up_partition(device_label).await?;
 
         let mut fxfs = Filesystem::from_boxed_config(
             block_connector,
@@ -120,8 +119,7 @@ impl Test for FxfsRandomOp {
         seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "running load gen");
-        let block_connector =
-            find_partition(device_label, self.storage_host).await.context("find partition")?;
+        let block_connector = find_partition(device_label).await.context("find partition")?;
 
         let fxfs = Filesystem::from_boxed_config(
             block_connector,
@@ -144,7 +142,7 @@ impl Test for FxfsRandomOp {
         _seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "verifying disk consistency");
-        let block_connector = find_partition(device_label, self.storage_host).await?;
+        let block_connector = find_partition(device_label).await?;
 
         let mut fxfs = Filesystem::from_boxed_config(
             block_connector,
@@ -165,10 +163,8 @@ impl Test for FxfsRandomOp {
 
 #[fuchsia::main(logging_tags = ["blackout", "fxfs-random-op"])]
 async fn main() -> Result<()> {
-    let config = blackout_config::Config::take_from_startup_handle();
     let barriers_enabled = BARRIERS_ENABLED == "true";
-    let server =
-        TestServer::new(FxfsRandomOp { storage_host: config.storage_host, barriers_enabled })?;
+    let server = TestServer::new(FxfsRandomOp { barriers_enabled })?;
     server.serve().await;
 
     Ok(())

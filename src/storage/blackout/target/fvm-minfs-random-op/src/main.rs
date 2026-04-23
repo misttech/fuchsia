@@ -51,7 +51,7 @@ impl Test for FvmMinfsTest {
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)?;
         let block_connector =
-            set_up_partition(device_label, true).await.context("Failed to set up partition")?;
+            set_up_partition(device_label).await.context("Failed to set up partition")?;
         {
             // Format FVM by flashing the golden image
             let client =
@@ -89,7 +89,7 @@ impl Test for FvmMinfsTest {
         seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "running load gen");
-        let block_connector = find_partition(device_label, true).await.context("find partition")?;
+        let block_connector = find_partition(device_label).await.context("find partition")?;
 
         let fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
         let fs = fvm.serve_multi_volume().await?;
@@ -115,7 +115,7 @@ impl Test for FvmMinfsTest {
         _seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "verifying disk consistency");
-        let block_connector = find_partition(device_label, true).await?;
+        let block_connector = find_partition(device_label).await?;
 
         let fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
         let fs = fvm.serve_multi_volume().await?;

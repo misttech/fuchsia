@@ -9,12 +9,12 @@
 use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
 use fidl::HandleBased as _;
-use fidl::endpoints::create_proxy;
 use fidl_fuchsia_blackout_test::{ControllerRequest, ControllerRequestStream};
 use fidl_fuchsia_device::ControllerMarker;
-use fidl_fuchsia_storage_block::VolumeManagerMarker;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::filesystem::BlockConnector;
-use fs_management::format::DiskFormat;
+use fuchsia_async as fasync;
 use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_path};
 use fuchsia_component::server::{ServiceFs, ServiceObj};
 use fuchsia_fs::directory::readdir;
@@ -25,11 +25,7 @@ use rand::{Rng, SeedableRng};
 use std::pin::pin;
 use std::sync::Arc;
 use storage_isolated_driver_manager::{
-    BlockDeviceMatcher, Guid, create_random_guid, find_block_device, find_block_device_devfs,
-    into_guid, wait_for_block_device_devfs,
-};
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
+    BlockDeviceMatcher, Guid, create_random_guid, find_block_device, into_guid,
 };
 
 pub mod random_op;
@@ -195,16 +191,8 @@ const GPT_PARTITION_SIZE: u64 = 60 * 1024 * 1024;
 
 /// Set up a partition for testing using the device label, returning a block connector for it. If
 /// the partition already exists with this label, it's used. If no existing device is found with
-/// this label, create a new gpt partition to use. If storage-host is enabled, it uses the new
-/// partition apis from fshost, if not it falls back to devfs.
-pub async fn set_up_partition(
-    device_label: String,
-    storage_host: bool,
-) -> Result<Box<dyn BlockConnector>> {
-    if !storage_host {
-        return set_up_partition_devfs(device_label).await;
-    }
-
+/// this label, create a new gpt partition to use.
+pub async fn set_up_partition(device_label: String) -> Result<Box<dyn BlockConnector>> {
     let partitions = Service::open(fpartitions::PartitionServiceMarker).unwrap();
     let manager = connect_to_protocol::<fpartitions::PartitionsManagerMarker>().unwrap();
 
@@ -260,85 +248,8 @@ pub async fn set_up_partition(
     }
 }
 
-/// Fallback logic for setting up a partition on devfs.
-/// TODO(https://fxbug.dev/394968352): remove when everything uses storage-host.
-async fn set_up_partition_devfs(device_label: String) -> Result<Box<dyn BlockConnector>> {
-    let mut partition_path = if let Ok(path) =
-        find_block_device_devfs(&[BlockDeviceMatcher::Name(&device_label)]).await
-    {
-        log::info!("found existing partition");
-        path
-    } else {
-        log::info!("finding existing gpt and adding a new partition to it");
-        let mut gpt_block_path =
-            find_block_device_devfs(&[BlockDeviceMatcher::ContentsMatch(DiskFormat::Gpt)])
-                .await
-                .context("finding gpt device failed")?;
-        gpt_block_path.push("device_controller");
-        let gpt_block_controller =
-            connect_to_protocol_at_path::<ControllerMarker>(gpt_block_path.to_str().unwrap())
-                .context("connecting to block controller")?;
-        let gpt_path = gpt_block_controller
-            .get_topological_path()
-            .await
-            .context("get_topo fidl error")?
-            .map_err(zx::Status::from_raw)
-            .context("get_topo failed")?;
-        let gpt_controller = connect_to_protocol_at_path::<ControllerMarker>(&format!(
-            "{}/gpt/device_controller",
-            gpt_path
-        ))
-        .context("connecting to gpt controller")?;
-
-        let (volume_manager, server) = create_proxy::<VolumeManagerMarker>();
-        gpt_controller
-            .connect_to_device_fidl(server.into_channel())
-            .context("connecting to gpt fidl")?;
-        let slice_size = {
-            let (status, info) = volume_manager.get_info().await.context("get_info fidl error")?;
-            zx::ok(status).context("get_info returned error")?;
-            info.unwrap().slice_size
-        };
-        let slice_count = GPT_PARTITION_SIZE / slice_size;
-        let instance_guid = into_guid(create_random_guid());
-        let status = volume_manager
-            .allocate_partition(
-                slice_count,
-                &into_guid(BLACKOUT_TYPE_GUID.clone()),
-                &instance_guid,
-                &device_label,
-                0,
-            )
-            .await
-            .context("allocating test partition fidl error")?;
-        zx::ok(status).context("allocating test partition returned error")?;
-
-        wait_for_block_device_devfs(&[
-            BlockDeviceMatcher::Name(&device_label),
-            BlockDeviceMatcher::TypeGuid(&BLACKOUT_TYPE_GUID),
-        ])
-        .await
-        .context("waiting for new gpt partition")?
-    };
-    partition_path.push("device_controller");
-    log::info!(partition_path:?; "found partition to use");
-    Ok(Box::new(
-        connect_to_protocol_at_path::<ControllerMarker>(partition_path.to_str().unwrap())
-            .context("connecting to provided path")?,
-    ))
-}
-
-/// Find an existing test partition using the device label and return a block connector for it. If
-/// storage-host is enabled, use the new partition service apis from fshost, otherwise fall back to
-/// devfs.
-pub async fn find_partition(
-    device_label: String,
-    storage_host: bool,
-) -> Result<Box<dyn BlockConnector>> {
-    if !storage_host {
-        return find_partition_devfs(device_label).await;
-    }
-
+/// Find an existing test partition using the device label and return a block connector for it.
+pub async fn find_partition(device_label: String) -> Result<Box<dyn BlockConnector>> {
     let partitions = Service::open(fpartitions::PartitionServiceMarker).unwrap();
     let service_instances = partitions.enumerate().await.expect("Failed to enumerate partitions");
     let connector = find_block_device(
@@ -350,19 +261,4 @@ pub async fn find_partition(
     .ok_or_else(|| anyhow!("Block device not found"))?;
     log::info!(device_label:%; "found existing partition");
     Ok(Box::new(connector))
-}
-
-/// Fallback logic for finding a partition on devfs.
-/// TODO(https://fxbug.dev/394968352): remove when everything uses storage-host.
-async fn find_partition_devfs(device_label: String) -> Result<Box<dyn BlockConnector>> {
-    log::info!("finding gpt");
-    let mut partition_path = find_block_device_devfs(&[BlockDeviceMatcher::Name(&device_label)])
-        .await
-        .context("finding block device")?;
-    partition_path.push("device_controller");
-    log::info!(partition_path:?; "found partition to use");
-    Ok(Box::new(
-        connect_to_protocol_at_path::<ControllerMarker>(partition_path.to_str().unwrap())
-            .context("connecting to provided path")?,
-    ))
 }

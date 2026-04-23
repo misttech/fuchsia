@@ -33,9 +33,7 @@ const METADATA_KEY: [u8; 32] = [
 ];
 
 #[derive(Copy, Clone)]
-struct FsTree {
-    storage_host: bool,
-}
+struct FsTree;
 
 impl FsTree {
     fn connect_to_crypt_service(&self) -> Result<ClientEnd<CryptMarker>> {
@@ -150,7 +148,7 @@ impl Test for FsTree {
         _seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "setting up");
-        let block_connector = set_up_partition(device_label, self.storage_host).await?;
+        let block_connector = set_up_partition(device_label).await?;
 
         match DATA_FILESYSTEM_FORMAT {
             "fxfs" => self.setup_fxfs(block_connector).await?,
@@ -169,9 +167,8 @@ impl Test for FsTree {
         seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "running load gen");
-        let block_connector = find_partition(device_label, self.storage_host)
-            .await
-            .context("test failed to find partition")?;
+        let block_connector =
+            find_partition(device_label).await.context("test failed to find partition")?;
         let fs = match DATA_FILESYSTEM_FORMAT {
             "fxfs" => self.serve_fxfs(block_connector).await?,
             "minfs" => self.serve_minfs(block_connector).await?,
@@ -209,9 +206,8 @@ impl Test for FsTree {
         _seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "verifying disk consistency");
-        let block_connector = find_partition(device_label, self.storage_host)
-            .await
-            .context("verify failed to find partition")?;
+        let block_connector =
+            find_partition(device_label).await.context("verify failed to find partition")?;
 
         match DATA_FILESYSTEM_FORMAT {
             "fxfs" => self.verify_fxfs(block_connector).await?,
@@ -226,8 +222,7 @@ impl Test for FsTree {
 
 #[fuchsia::main(logging_tags = ["blackout", "fs-tree"])]
 async fn main() -> Result<()> {
-    let config = blackout_config::Config::take_from_startup_handle();
-    let server = TestServer::new(FsTree { storage_host: config.storage_host })?;
+    let server = TestServer::new(FsTree)?;
     server.serve().await;
 
     Ok(())
