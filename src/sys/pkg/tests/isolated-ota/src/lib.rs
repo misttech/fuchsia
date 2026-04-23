@@ -248,19 +248,26 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
             .await
             .unwrap();
 
-        let system_image = fuchsia_pkg_testing::SystemImageBuilder::new().build().await;
-        let mut expected_blobfs_contents = params.expected_blobfs_contents;
-        expected_blobfs_contents.extend(system_image.list_blobs());
-
         let (blobfs_ramdisk, blobfs_handle) = match params.blobfs {
             Some(blobfs_handle) => (None, blobfs_handle),
             None => {
                 let blobfs_ramdisk = BlobfsRamdisk::start().await.expect("launching blobfs");
-                system_image.write_to_blobfs(&blobfs_ramdisk).await;
                 let blobfs_handle =
                     blobfs_ramdisk.root_dir_handle().expect("getting blobfs root handle");
                 (Some(blobfs_ramdisk), blobfs_handle)
             }
+        };
+
+        let mut expected_blobfs_contents = params.expected_blobfs_contents;
+        let system_image_hash = if let Some(hash) = params.system_image_hash {
+            hash
+        } else {
+            let system_image = fuchsia_pkg_testing::SystemImageBuilder::new().build().await;
+            expected_blobfs_contents.extend(system_image.list_blobs());
+            if let Some(blobfs_ramdisk) = &blobfs_ramdisk {
+                system_image.write_to_blobfs(blobfs_ramdisk).await;
+            }
+            *system_image.hash()
         };
 
         let blobfs_proxy = blobfs_handle.into_proxy();
@@ -360,7 +367,7 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
         realm_builder
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.system.base_merkle".parse().unwrap(),
-                value: system_image.hash().to_string().into(),
+                value: system_image_hash.to_string().into(),
             }))
             .await
             .unwrap();
@@ -766,6 +773,29 @@ pub async fn test_omaha_works() -> Result<(), Error> {
         ]
     );
     assert_matches!(result.result, Ok(()));
+    let () = result.check_packages();
+
+    Ok(())
+}
+
+#[fasync::run_singlethreaded(test)]
+pub async fn test_system_image_broken_works() -> Result<(), Error> {
+    let package = build_test_package().await?;
+    let env = TestEnvBuilder::new()
+        .test_executor(IsolatedOtaTestExecutor::new())
+        .system_image_hash(fuchsia_hash::Hash::from([0; 32]))
+        .add_package(package)
+        .fuchsia_image(b"zbi-contents".to_vec(), None)
+        .omaha_state(OmahaState::Auto(OmahaResponse::Update))
+        .build()
+        .await
+        .context("Building TestEnv")?;
+
+    let result = env.run().await;
+
+    // The update should work even if system image is broken, because require_system_image is false.
+    assert_matches!(result.result, Ok(()));
+
     let () = result.check_packages();
 
     Ok(())

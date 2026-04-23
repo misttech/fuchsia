@@ -7,9 +7,11 @@
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, Proxy, ServerEnd};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_paver::PaverRequestStream;
 use fidl_fuchsia_pkg_ext::RepositoryConfigs;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
 use fuchsia_merkle::Hash;
@@ -27,7 +29,6 @@ use std::io::Write;
 use std::str::FromStr;
 use std::sync::Arc;
 use tempfile::TempDir;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub const GLOBAL_SSL_CERTS_PATH: &str = "/config/ssl";
 const EMPTY_REPO_PATH: &str = "/pkg/empty-repo";
@@ -55,6 +56,7 @@ pub struct TestParams {
     pub version: String,
     pub update_url_source: UpdateUrlSource,
     pub paver_connector: ClientEnd<fio::DirectoryMarker>,
+    pub system_image_hash: Option<Hash>,
 }
 
 /// Connects the local component to a mock paver.
@@ -104,6 +106,7 @@ pub struct TestEnvBuilder<R> {
     // The zbi and optional vbmeta contents of the recovery partition.
     recovery_image: Option<(Vec<u8>, Option<Vec<u8>>)>,
     firmware_images: BTreeMap<String, Vec<u8>>,
+    system_image_hash: Option<Hash>,
 }
 
 impl<R> TestEnvBuilder<R> {
@@ -122,6 +125,7 @@ impl<R> TestEnvBuilder<R> {
             fuchsia_image: None,
             recovery_image: None,
             firmware_images: BTreeMap::new(),
+            system_image_hash: None,
         }
     }
 
@@ -142,6 +146,11 @@ impl<R> TestEnvBuilder<R> {
     /// This will override the repository that the builder would otherwise generate.
     pub fn repo_config(mut self, repo: RepositoryConfigs) -> Self {
         self.repo_config = Some(repo);
+        self
+    }
+
+    pub fn system_image_hash(mut self, hash: Hash) -> Self {
+        self.system_image_hash = Some(hash);
         self
     }
 
@@ -297,6 +306,7 @@ impl<R> TestEnvBuilder<R> {
             update_merkle: merkle,
             version: self.version,
             test_executor: self.test_executor.expect("test executor must be set"),
+            system_image_hash: self.system_image_hash,
         })
     }
 }
@@ -314,6 +324,7 @@ pub struct TestEnv<R> {
     board: String,
     version: String,
     test_executor: Box<dyn TestExecutor<R>>,
+    system_image_hash: Option<Hash>,
 }
 
 impl<R> TestEnv<R> {
@@ -385,6 +396,7 @@ impl<R> TestEnv<R> {
             version: self.version,
             update_url_source,
             paver_connector: client,
+            system_image_hash: self.system_image_hash,
         };
 
         self.test_executor.run(params).await

@@ -196,7 +196,7 @@ fuchsia_test_package("base-resolver-as-a-component-resolver-tests") {
     ":integration-test",
     ":mock-component",
     ":mock-superpackage-component",
-    "//src/sys/pkg/bin/pkg-cache:production-component-and-config-cpp-blobfs",
+    "//src/sys/pkg/bin/pkg-cache:production-component-and-config",
   ]
 
   subpackages = [ ":subpackaged-component" ]
@@ -214,7 +214,7 @@ fuchsia_test_package("base-resolver-as-a-component-resolver-tests-fxblob") {
     ":integration-test",
     ":mock-component",
     ":mock-superpackage-component",
-    "//src/sys/pkg/bin/pkg-cache:production-component-and-config-fxblob",
+    "//src/sys/pkg/bin/pkg-cache:production-component-and-config",
   ]
 
   subpackages = [ ":subpackaged-component" ]

@@ -5,14 +5,15 @@
 use assert_matches::assert_matches;
 use blobfs_ramdisk::BlobfsRamdisk;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_component_decl as fcomponent_decl;
+use fidl_fuchsia_component_resolution as fcomponent_resolution;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::future::FutureExt as _;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_component_decl as fcomponent_decl,
-    fidl_fuchsia_component_resolution as fcomponent_resolution, fidl_fuchsia_io as fio,
-    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_garbagecollector as fpkg_gc,
-};
 
 // When this feature is enabled, the base-resolver integration tests will start Fxblob.
 #[cfg(feature = "use_fxblob")]
@@ -91,7 +92,7 @@ impl TestEnvBuilder {
             .add_route(
                 Route::new()
                     .capability(Capability::configuration("fuchsia.pkgcache.AllPackagesExecutable"))
-                    .capability(Capability::configuration("fuchsia.pkgcache.UseSystemImage"))
+                    .capability(Capability::configuration("fuchsia.pkgcache.RequireSystemImage"))
                     .from(&pkg_cache_config)
                     .to(&pkg_cache),
             )

@@ -712,7 +712,7 @@ where
 
         builder
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.pkgcache.UseSystemImage".parse().unwrap(),
+                name: "fuchsia.pkgcache.RequireSystemImage".parse().unwrap(),
                 value: system_image.is_some().into(),
             }))
             .await
@@ -720,7 +720,7 @@ where
         builder
             .add_route(
                 Route::new()
-                    .capability(Capability::configuration("fuchsia.pkgcache.UseSystemImage"))
+                    .capability(Capability::configuration("fuchsia.pkgcache.RequireSystemImage"))
                     .from(Ref::self_())
                     .to(&pkg_cache),
             )

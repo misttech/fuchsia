@@ -142,7 +142,7 @@ pub(crate) mod for_tests {
             for (name, value) in [
                 ("fuchsia.zircon.system.pkgfs.cmd", system_image_package.hash().to_string().into()),
                 ("fuchsia.pkgcache.AllPackagesExecutable", false.into()),
-                ("fuchsia.pkgcache.UseSystemImage", true.into()),
+                ("fuchsia.pkgcache.RequireSystemImage", false.into()),
                 ("fuchsia.pkgcache.EnableUpgradablePackages", false.into()),
             ] {
                 realm_builder

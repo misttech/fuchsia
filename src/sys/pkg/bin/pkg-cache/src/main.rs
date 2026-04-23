@@ -120,7 +120,7 @@ async fn main_inner() -> Result<(), Error> {
     // determine whether executability should be enforced.
     let pkg_cache_config::Config {
         all_packages_executable: _,
-        use_system_image,
+        require_system_image,
         enable_upgradable_packages,
         system_image_hash,
     } = config;
@@ -134,37 +134,51 @@ async fn main_inner() -> Result<(), Error> {
 
     let authenticator = context_authenticator::ContextAuthenticator::new();
 
-    let (executability_restrictions, base_packages, cache_packages) = if use_system_image {
-        let system_image = system_image::SystemImage::new(blobfs.clone(), &system_image_hash)
-            .await
-            .context("Accessing contents of system_image package")?;
-        info!("system_image package: {}", system_image.hash());
-        inspector.root().record_string("system_image", system_image.hash().to_string());
+    let system_image_result =
+        system_image::SystemImage::new(blobfs.clone(), &system_image_hash).await;
+    let (executability_restrictions, base_packages, cache_packages) = match system_image_result {
+        Ok(system_image) => {
+            info!("system_image package: {}", system_image.hash());
+            inspector.root().record_string("system_image", system_image.hash().to_string());
 
-        let (base_packages_res, cache_packages_res) =
-            join!(BasePackages::new(&blobfs, &system_image), async {
-                let cache_packages =
-                    system_image.cache_packages().await.context("reading cache_packages")?;
-                CachePackages::new(&blobfs, &cache_packages)
-                    .await
-                    .context("creating CachePackages index")
+            let (base_packages_res, cache_packages_res) =
+                join!(BasePackages::new(&blobfs, &system_image), async {
+                    let cache_packages =
+                        system_image.cache_packages().await.context("reading cache_packages")?;
+                    CachePackages::new(&blobfs, &cache_packages)
+                        .await
+                        .context("creating CachePackages index")
+                });
+            let base_packages = match base_packages_res {
+                Ok(base_packages) => base_packages,
+                Err(e) if require_system_image => {
+                    return Err(e).context("loading base packages");
+                }
+                Err(e) => {
+                    error!("Failed to load base packages, using empty: {e:#}");
+                    BasePackages::empty()
+                }
+            };
+            let cache_packages = cache_packages_res.unwrap_or_else(|e: anyhow::Error| {
+                error!("Failed to load cache packages, using empty: {e:#}");
+                CachePackages::empty()
             });
-        let base_packages = base_packages_res.context("loading base packages")?;
-        let cache_packages = cache_packages_res.unwrap_or_else(|e: anyhow::Error| {
-            error!("Failed to load cache packages, using empty: {e:#}");
-            CachePackages::empty()
-        });
-        let executability_restrictions = system_image.load_executability_restrictions();
+            let executability_restrictions = system_image.load_executability_restrictions();
 
-        (executability_restrictions, base_packages, cache_packages)
-    } else {
-        info!("not loading system_image due to structured config");
-        inspector.root().record_string("system_image", "ignored");
-        (
-            system_image::ExecutabilityRestrictions::Enforce,
-            BasePackages::empty(),
-            CachePackages::empty(),
-        )
+            (executability_restrictions, base_packages, cache_packages)
+        }
+        Err(e) if require_system_image => {
+            return Err(e).context("Accessing contents of system_image package");
+        }
+        Err(e) => {
+            error!("Failed to load system_image, using empty: {e:#}");
+            inspector.root().record_string("system_image", "failed_to_load");
+            (
+                system_image::ExecutabilityRestrictions::Enforce,
+                BasePackages::empty(),
+                CachePackages::empty(),
+            )
+        }
     };
 
     inspector

@@ -34,15 +34,20 @@ async fn system_image_hash_present() {
 }
 
 #[fuchsia::test]
-async fn system_image_hash_ignored() {
-    let env = TestEnv::builder().ignore_system_image().build().await;
+async fn system_image_failed_to_load() {
+    let blobfs = blobfs_ramdisk::BlobfsRamdisk::builder().impl_from_env().start().await.unwrap();
+    let env = TestEnv::builder()
+        .blobfs_and_system_image_hash(blobfs, None)
+        .require_system_image(false)
+        .build()
+        .await;
     env.block_until_started().await;
 
     let hierarchy = env.inspect_hierarchy().await;
     assert_data_tree!(
         hierarchy,
         root: contains {
-            "system_image": "ignored",
+            "system_image": "failed_to_load",
         }
     );
     env.stop().await;

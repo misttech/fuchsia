@@ -106,7 +106,7 @@ impl DefineSubsystemConfiguration<SwdConfig> for SwdSubsystemConfig {
             Config::new(ConfigValueType::Bool, (context.build_type == &BuildType::Eng).into()),
         )?;
         builder.set_config_capability(
-            "fuchsia.pkgcache.UseSystemImage",
+            "fuchsia.pkgcache.RequireSystemImage",
             Config::new(ConfigValueType::Bool, true.into()),
         )?;
         builder.set_config_capability(

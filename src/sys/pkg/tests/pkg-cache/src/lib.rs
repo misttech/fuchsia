@@ -11,6 +11,17 @@ use assert_matches::assert_matches;
 use blobfs_ramdisk::BlobfsRamdisk;
 use diagnostics_assertions::TreeAssertion;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_component_resolution as fcomponent_resolution;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_metrics as fmetrics;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_ext as fpkg_ext;
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
+use fidl_fuchsia_update as fupdate;
+use fidl_fuchsia_update_verify as fupdate_verify;
+use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use fuchsia_inspect::reader::DiagnosticsHierarchy;
 use fuchsia_merkle::Hash;
@@ -25,13 +36,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable as _;
 use zx::{self as zx, Status};
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_component_resolution as fcomponent_resolution,
-    fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics,
-    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as fpkg_ext,
-    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_update as fupdate,
-    fidl_fuchsia_update_verify as fupdate_verify, fuchsia_async as fasync,
-};
 
 mod base_pkg_index;
 mod cache_pkg_index;
@@ -369,7 +373,7 @@ struct TestEnvBuilder<BlobfsAndSystemImageFut> {
     paver_service_builder: Option<MockPaverServiceBuilder>,
     blobfs_and_system_image:
         Box<dyn FnOnce(blobfs_ramdisk::Implementation) -> BlobfsAndSystemImageFut>,
-    ignore_system_image: bool,
+    require_system_image: bool,
     enable_upgradable_packages: bool,
     blob_implementation: Option<blobfs_ramdisk::Implementation>,
     bootfs_blobs: HashMap<Hash, Vec<u8>>,
@@ -390,7 +394,7 @@ impl TestEnvBuilder<BoxFuture<'static, (BlobfsRamdisk, Option<Hash>)>> {
                 .boxed()
             }),
             paver_service_builder: None,
-            ignore_system_image: false,
+            require_system_image: true,
             enable_upgradable_packages: false,
             blob_implementation: None,
             bootfs_blobs: HashMap::new(),
@@ -418,7 +422,7 @@ where
         TestEnvBuilder {
             blobfs_and_system_image: Box::new(move |_| future::ready((blobfs, system_image))),
             paver_service_builder: self.paver_service_builder,
-            ignore_system_image: self.ignore_system_image,
+            require_system_image: self.require_system_image,
             enable_upgradable_packages: self.enable_upgradable_packages,
             blob_implementation: self.blob_implementation,
             bootfs_blobs: self.bootfs_blobs,
@@ -454,16 +458,15 @@ where
                 future::ready((blobfs, Some(system_image_hash)))
             }),
             paver_service_builder: self.paver_service_builder,
-            ignore_system_image: self.ignore_system_image,
+            require_system_image: self.require_system_image,
             enable_upgradable_packages: self.enable_upgradable_packages,
             blob_implementation: Some(blobfs_ramdisk::Implementation::from_env()),
             bootfs_blobs: self.bootfs_blobs,
         }
     }
 
-    fn ignore_system_image(self) -> Self {
-        assert_eq!(self.ignore_system_image, false);
-        Self { ignore_system_image: true, ..self }
+    fn require_system_image(self, require: bool) -> Self {
+        Self { require_system_image: require, ..self }
     }
 
     fn enable_upgradable_packages(self) -> Self {
@@ -578,65 +581,34 @@ where
             .add_child("pkg_cache", "#meta/pkg-cache.cm", ChildOptions::new())
             .await
             .unwrap();
-        let pkg_cache_config = builder
-            .add_child("pkg_cache_config", "#meta/pkg-cache-config.cm", ChildOptions::new())
-            .await
-            .unwrap();
-        builder
-            .add_route(
-                Route::new()
-                    .capability(Capability::configuration("fuchsia.pkgcache.AllPackagesExecutable"))
-                    .from(&pkg_cache_config)
-                    .to(&pkg_cache),
-            )
-            .await
-            .unwrap();
-        if self.ignore_system_image {
+        let system_image_value = if let Some(hash) = system_image {
+            static PKGFS_BOOT_ARG_VALUE_PREFIX: &str = "bin/pkgsvr+";
+            format!("{PKGFS_BOOT_ARG_VALUE_PREFIX}{hash}")
+        } else {
+            "".to_string()
+        };
+        for (name, value) in [
+            ("fuchsia.zircon.system.pkgfs.cmd", system_image_value.into()),
+            ("fuchsia.pkgcache.AllPackagesExecutable", false.into()),
+            ("fuchsia.pkgcache.RequireSystemImage", self.require_system_image.into()),
+            ("fuchsia.pkgcache.EnableUpgradablePackages", self.enable_upgradable_packages.into()),
+        ] {
             builder
-                .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                    name: "fuchsia.pkgcache.UseSystemImage".parse().unwrap(),
-                    value: false.into(),
-                }))
+                .add_capability(
+                    cm_rust::ConfigurationDecl { name: name.parse().unwrap(), value }.into(),
+                )
+                .await
+                .unwrap();
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(name))
+                        .from(Ref::self_())
+                        .to(&pkg_cache),
+                )
                 .await
                 .unwrap();
         }
-        builder
-            .add_route(
-                Route::new()
-                    .capability(Capability::configuration("fuchsia.pkgcache.UseSystemImage"))
-                    .from(if self.ignore_system_image {
-                        Ref::self_()
-                    } else {
-                        (&pkg_cache_config).into()
-                    })
-                    .to(&pkg_cache),
-            )
-            .await
-            .unwrap();
-        if self.enable_upgradable_packages {
-            builder
-                .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                    name: "fuchsia.pkgcache.EnableUpgradablePackages".parse().unwrap(),
-                    value: true.into(),
-                }))
-                .await
-                .unwrap();
-        }
-        builder
-            .add_route(
-                Route::new()
-                    .capability(Capability::configuration(
-                        "fuchsia.pkgcache.EnableUpgradablePackages",
-                    ))
-                    .from(if self.enable_upgradable_packages {
-                        Ref::self_()
-                    } else {
-                        (&pkg_cache_config).into()
-                    })
-                    .to(&pkg_cache),
-            )
-            .await
-            .unwrap();
         let system_update_committer = builder
             .add_child(
                 "system_update_committer",
@@ -772,30 +744,6 @@ where
                     ))
                     .from(Ref::self_())
                     .to(&system_update_committer),
-            )
-            .await
-            .unwrap();
-
-        let system_image_value = if let Some(hash) = system_image {
-            static PKGFS_BOOT_ARG_VALUE_PREFIX: &str = "bin/pkgsvr+";
-            format!("{PKGFS_BOOT_ARG_VALUE_PREFIX}{hash}")
-        } else {
-            "".to_string()
-        };
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.zircon.system.pkgfs.cmd".parse().unwrap(),
-                value: system_image_value.into(),
-            }))
-            .await
-            .unwrap();
-
-        builder
-            .add_route(
-                Route::new()
-                    .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
-                    .from(Ref::self_())
-                    .to(&pkg_cache),
             )
             .await
             .unwrap();

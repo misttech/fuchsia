@@ -42,7 +42,7 @@
                 "fuchsia.driver.UseHardwareIommu",
                 "fuchsia.pkgcache.AllPackagesExecutable",
                 "fuchsia.pkgcache.EnableUpgradablePackages",
-                "fuchsia.pkgcache.UseSystemImage",
+                "fuchsia.pkgcache.RequireSystemImage",
                 "fuchsia.platform.bus.SoftwareDeviceIds",
                 "fuchsia.platform.bus.SoftwareDeviceNames",
                 "fuchsia.power.cpu.BoostEnabled",

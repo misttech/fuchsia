@@ -136,31 +136,7 @@ fuchsia_structured_config_values2("config_values_from_gn") {
   values = {
     # TODO(https://fxbug.dev/331302451) Populate this correctly.
     all_packages_executable = false
-    use_system_image = true
-    enable_upgradable_packages = false
-  }
-  visibility = [ ":*" ]
-}
-
-fuchsia_structured_config_values2("config_values_from_gn-cpp-blobfs") {
-  cm_label = ":manifest"
-  output_component_name = "pkg-cache-config"
-  values = {
-    # TODO(https://fxbug.dev/331302451) Populate this correctly.
-    all_packages_executable = false
-    use_system_image = true
-    enable_upgradable_packages = false
-  }
-  visibility = [ ":*" ]
-}
-
-fuchsia_structured_config_values2("config_values_from_gn-fxblob") {
-  cm_label = ":manifest"
-  output_component_name = "pkg-cache-config"
-  values = {
-    # TODO(https://fxbug.dev/331302451) Populate this correctly.
-    all_packages_executable = false
-    use_system_image = true
+    require_system_image = true
     enable_upgradable_packages = false
   }
   visibility = [ ":*" ]
@@ -176,22 +152,6 @@ group("production-component-and-config") {
   public_deps = [
     ":component",
     ":config_values_from_gn",
-  ]
-}
-
-group("production-component-and-config-cpp-blobfs") {
-  testonly = true
-  public_deps = [
-    ":component",
-    ":config_values_from_gn-cpp-blobfs",
-  ]
-}
-
-group("production-component-and-config-fxblob") {
-  testonly = true
-  public_deps = [
-    ":component",
-    ":config_values_from_gn-fxblob",
   ]
 }
 

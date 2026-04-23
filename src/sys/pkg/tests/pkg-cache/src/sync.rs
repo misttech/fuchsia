@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use crate::TestEnv;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
 use futures::TryFutureExt;
 use zx::Status;
-use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 struct BrokenBlobfs;
 
@@ -37,7 +38,7 @@ async fn sync_success() {
 async fn sync_returns_errs() {
     let env = TestEnv::builder()
         .blobfs_and_system_image_hash(BrokenBlobfs, None)
-        .ignore_system_image()
+        .require_system_image(false)
         .build()
         .await;
 

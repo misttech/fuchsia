@@ -150,7 +150,7 @@
             config: [
                 "fuchsia.pkgcache.AllPackagesExecutable",
                 "fuchsia.pkgcache.EnableUpgradablePackages",
-                "fuchsia.pkgcache.UseSystemImage",
+                "fuchsia.pkgcache.RequireSystemImage",
             ],
             from: "#pkg-cache-config",
             to: "#pkg-cache",

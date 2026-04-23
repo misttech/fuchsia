@@ -44,9 +44,9 @@
             value: false,
         },
         {
-            config: "fuchsia.pkgcache.UseSystemImage",
+            config: "fuchsia.pkgcache.RequireSystemImage",
             type: "bool",
-            value: true,
+            value: false,
         },
         {
             config: "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
@@ -103,7 +103,7 @@
             config: [
                 "fuchsia.pkgcache.AllPackagesExecutable",
                 "fuchsia.pkgcache.EnableUpgradablePackages",
-                "fuchsia.pkgcache.UseSystemImage",
+                "fuchsia.pkgcache.RequireSystemImage",
             ],
             from: "self",
             to: "#pkg-cache",

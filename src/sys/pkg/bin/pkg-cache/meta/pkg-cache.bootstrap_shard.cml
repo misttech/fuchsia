@@ -22,7 +22,7 @@
             config: [
                 "fuchsia.pkgcache.AllPackagesExecutable",
                 "fuchsia.pkgcache.EnableUpgradablePackages",
-                "fuchsia.pkgcache.UseSystemImage",
+                "fuchsia.pkgcache.RequireSystemImage",
             ],
             from: "parent",
             to: "#pkg-cache",
