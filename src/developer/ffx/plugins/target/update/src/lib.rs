@@ -504,7 +504,7 @@ for more detail on the progress of update-related downloads.\n"
                 {
                     product_path
                 } else {
-                    return_user_error!("No product bundle path specified nor configured")
+                    return_user_error!("No product bundle path specified nor configured. Run `ffx product-bundle get` or specify one with the appropriate flag.")
                 }
             }
         };
