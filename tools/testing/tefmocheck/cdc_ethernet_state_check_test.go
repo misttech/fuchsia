@@ -6,6 +6,8 @@ package tefmocheck
 
 import (
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
 func TestCdcEthernetStateCheck(t *testing.T) {
@@ -16,6 +18,7 @@ func TestCdcEthernetStateCheck(t *testing.T) {
 		expectedErr   string
 		requiredTags  map[string]string
 		tags          []string
+		testSummary   *runtests.TestSummary
 	}{
 		{
 			name: "success",
@@ -172,6 +175,22 @@ lan" }] }]
 `),
 			expectFailure: false,
 		},
+		{
+			name: "skip when all tests passed",
+			log: []byte(`
+2026-03-30 16:37:05.323213 physboot: Finding kernel package zircon...
+2026-03-30 16:37:16.544647 [00006.605] 03977:03979> [driver] INFO: Found driver: fuchsia-pkg://fuchsia.com/usb-cdc-function#meta/usb-cdc-function.cm
+`),
+			expectFailure: false,
+			testSummary: &runtests.TestSummary{
+				Tests: []runtests.TestDetails{
+					{
+						Name:   "test1",
+						Status: runtests.TestSuccess,
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -180,7 +199,8 @@ lan" }] }]
 				RequiredTags: tc.requiredTags,
 			}
 			to := &TestingOutputs{
-				SerialLogs: [][]byte{tc.log},
+				SerialLogs:  [][]byte{tc.log},
+				TestSummary: tc.testSummary,
 			}
 			if len(tc.tags) > 0 {
 				to.SwarmingSummary = &SwarmingTaskSummary{

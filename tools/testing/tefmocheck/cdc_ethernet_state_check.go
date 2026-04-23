@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"regexp"
 	"strings"
+
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
 // CdcEthernetStateCheck checks whether the device failed to initialize the CDC ethernet link correctly via serial logs.
@@ -101,6 +103,19 @@ func (s *ethernetState) setPrefix(lineBytes []byte) {
 }
 
 func (c *CdcEthernetStateCheck) shouldRun(to *TestingOutputs) bool {
+	if to.TestSummary != nil && len(to.TestSummary.Tests) > 0 {
+		allPassed := true
+		for _, test := range to.TestSummary.Tests {
+			if test.Status != runtests.TestSuccess {
+				allPassed = false
+				break
+			}
+		}
+		if allPassed {
+			return false
+		}
+	}
+
 	if len(c.RequiredTags) == 0 {
 		return true
 	}
