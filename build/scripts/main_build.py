@@ -26,6 +26,7 @@ import os
 import pathlib
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -173,7 +174,7 @@ class BuildLock:
     understand what is happening.
     """
 
-    def __init__(self, build_dir: pathlib.Path):
+    def __init__(self, build_dir: pathlib.Path) -> None:
         # LINT.IfChange(build_lock)
         self.build_lock_file = build_dir.with_suffix(".build_lock")
         # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_lock)
@@ -517,8 +518,9 @@ class BuildCommandExecution(object):
 
         # Forward signals like SIGINT, SIGHUP, SIGTERM to the subprocess group
         # while it is running.
-        with signal_utils.forward_signals(process):
-            rc = process.wait()
+        rc = signal_utils.wait_and_forward_signals(
+            process, verbose=config.verbose
+        )
 
         return BuildResult(return_code=rc)
 
@@ -873,11 +875,17 @@ def main(argv: list[str]) -> int:
     except BuildConfigurationError as e:
         print(f"Error: {e}")
         return 1
+    except signal_utils.BuildInterruptedError as e:
+        # signal_utils.wait_and_forward_signals() ensures that we have
+        # already waited for any child processes before this is raised.
+        sig_name = signal.Signals(e.signum).name
+        print(
+            f"[main_build.py] Interrupted by {sig_name}, exiting ({e.return_code})"
+        )
+        return e.return_code
     except KeyboardInterrupt:
-        # forward_signals() will intercept Ctrl-C so this is not
-        # expected to be reached, but is here just to cover any paths
-        # that don't use forward_signals(), and avoid a stacktrace.
-        print("received KeyboardInterrupt, exiting")
+        # Fallback for standard interrupts outside wait_and_forward_signals
+        print("[main_build.py] Received KeyboardInterrupt, exiting (130)")
         return 130
 
 

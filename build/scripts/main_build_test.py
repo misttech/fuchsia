@@ -6,12 +6,14 @@
 import contextlib
 import io
 import pathlib
+import signal
 import unittest
 from contextlib import contextmanager
 from typing import Any, Generator
 from unittest import mock
 
 import main_build
+import signal_utils
 
 
 class MainBuildTestBase(unittest.TestCase):
@@ -589,13 +591,50 @@ class MainFunctionTest(MainBuildTestBase):
                     self.assertEqual(rc, 1)
                     mock_print.assert_called_with("Error: test error")
 
+    def test_main_catches_keyboard_interrupt(self) -> None:
+        with mock.patch.object(
+            main_build._MAIN_ARG_PARSER, "parse_known_args"
+        ) as mock_parse:
+            mock_args = mock.Mock()
+            mock_parse.return_value = (mock_args, [])
+            mock_args.func.side_effect = KeyboardInterrupt
+            with mock.patch.object(
+                main_build.FuchsiaBuildContext, "from_args"
+            ) as mock_from_args:
+                with mock.patch("builtins.print") as mock_print:
+                    rc = main_build.main(
+                        ["--build-dir", "out/default", "ninja"]
+                    )
+                    self.assertEqual(rc, 130)
+                    mock_print.assert_called_with(
+                        "[main_build.py] Received KeyboardInterrupt, exiting (130)"
+                    )
+
+    def test_main_catches_build_interrupted_error(self) -> None:
+        with mock.patch.object(
+            main_build._MAIN_ARG_PARSER, "parse_known_args"
+        ) as mock_parse:
+            mock_args = mock.Mock()
+            mock_parse.return_value = (mock_args, [])
+            mock_args.func.side_effect = signal_utils.BuildInterruptedError(
+                137, signal.SIGKILL
+            )
+            with mock.patch.object(
+                main_build.FuchsiaBuildContext, "from_args"
+            ) as mock_from_args:
+                with mock.patch("builtins.print") as mock_print:
+                    rc = main_build.main(
+                        ["--build-dir", "out/default", "ninja"]
+                    )
+                    self.assertEqual(rc, 137)
+                    mock_print.assert_called_with(
+                        "[main_build.py] Interrupted by SIGKILL, exiting (137)"
+                    )
+
 
 class BuildCommandSignalTest(MainBuildTestBase):
     @mock.patch("main_build.subprocess.Popen")
-    @mock.patch("main_build.signal_utils.forward_signals")
-    def test_signal_forwarding(
-        self, mock_forward: mock.Mock, mock_popen: mock.Mock
-    ) -> None:
+    def test_signal_forwarding(self, mock_popen: mock.Mock) -> None:
         context = self.create_context()
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
@@ -611,9 +650,12 @@ class BuildCommandSignalTest(MainBuildTestBase):
         mock_process.wait.return_value = 0
         mock_popen.return_value = mock_process
 
-        _ = exec_info._run_without_locking()
-
-        mock_forward.assert_called_once_with(mock_process)
+        with mock.patch.object(
+            signal_utils, "wait_and_forward_signals"
+        ) as mock_wait:
+            mock_wait.return_value = 0
+            _ = exec_info._run_without_locking()
+            mock_wait.assert_called_once_with(mock_process, verbose=False)
 
 
 if __name__ == "__main__":
