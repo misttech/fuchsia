@@ -71,22 +71,10 @@ pub trait Device: Send + Sync {
     /// If this device is a partition, this returns the type GUID. Otherwise, an error is returned.
     async fn partition_type(&mut self) -> Result<&[u8; 16], Error>;
 
-    /// If this device is a volume, this allows resizing the device.
-    /// Returns actual byte size assuming success, or error.
-    async fn resize(&mut self, _target_size_bytes: u64) -> Result<u64, Error> {
-        Err(anyhow!("Unimplemented"))
-    }
-
     /// Returns a DirectoryProxy connected to the fuchsia.hardware.block.volume.Service instance
     /// directory for the device.  The device must originate from a Service instance.
     fn service_instance_directory(&self) -> Result<DirectoryProxy, Error> {
         Err(anyhow!("Device is not a volume service instance"))
-    }
-
-    /// Returns the connection to the Controller interface of the device.  Panics if the device
-    /// isn't a DF-managed device.
-    fn controller(&self) -> &ControllerProxy {
-        panic!("Device isn't managed by Driver Framework.")
     }
 
     /// Establishes a new connection to the Controller interface of the device.  Panics if the
@@ -100,11 +88,6 @@ pub trait Device: Send + Sync {
 
     /// Establish a new connection to the Block interface of the device.
     fn block_proxy(&self) -> Result<BlockProxy, Error>;
-
-    /// Returns a new Device, which is a child of this device with the specified suffix. This
-    /// function will return when the device is available. This function assumes the child device
-    /// will show up in /dev/class/block.
-    async fn get_child(&self, suffix: &str) -> Result<Box<dyn Device>, Error>;
 
     /// True if this is the ramdisk device that fshost has created or a child of the ramdisk device.
     /// NOTE: This is *only* true for the ramdisk device that fshost creates and will not be true
@@ -143,24 +126,6 @@ impl Device for NandDevice {
         Ok(DiskFormat::Unknown)
     }
 
-    async fn get_child(&self, suffix: &str) -> Result<Box<dyn Device>, Error> {
-        const DEV_CLASS_NAND: &str = "/dev/class/nand";
-        let dev_class_nand =
-            fuchsia_fs::directory::open_in_namespace(DEV_CLASS_NAND, fio::PERM_READABLE)?;
-        let child_path = device_watcher::wait_for_device_with(
-            &dev_class_nand,
-            |device_watcher::DeviceInfo { filename, topological_path }| {
-                topological_path.strip_suffix(suffix).and_then(|topological_path| {
-                    (topological_path == self.topological_path())
-                        .then(|| format!("{}/{}", DEV_CLASS_NAND, filename))
-                })
-            },
-        )
-        .await?;
-        let nand_device = NandDevice::new(child_path).await?;
-        Ok(Box::new(nand_device))
-    }
-
     fn topological_path(&self) -> &str {
         self.block_device.topological_path()
     }
@@ -183,14 +148,6 @@ impl Device for NandDevice {
 
     async fn partition_type(&mut self) -> Result<&[u8; 16], Error> {
         self.block_device.partition_type().await
-    }
-
-    async fn resize(&mut self, _target_size_bytes: u64) -> Result<u64, Error> {
-        Err(anyhow!("not supported by nand device"))
-    }
-
-    fn controller(&self) -> &ControllerProxy {
-        self.block_device.controller()
     }
 
     fn device_controller(&self) -> Result<ControllerProxy, Error> {
@@ -331,15 +288,6 @@ impl Device for BlockDevice {
         Ok(self.partition_type.as_ref().unwrap())
     }
 
-    async fn resize(&mut self, target_size_bytes: u64) -> Result<u64, Error> {
-        let block_proxy = self.block_proxy()?;
-        crate::volume::resize_volume(&block_proxy, target_size_bytes).await
-    }
-
-    fn controller(&self) -> &ControllerProxy {
-        &self.controller_proxy
-    }
-
     fn device_controller(&self) -> Result<ControllerProxy, Error> {
         Ok(connect_to_protocol_at_path::<ControllerMarker>(&format!(
             "{}/device_controller",
@@ -355,25 +303,6 @@ impl Device for BlockDevice {
         let (proxy, server) = create_proxy::<BlockMarker>();
         self.controller_proxy.connect_to_device_fidl(server.into_channel())?;
         Ok(proxy)
-    }
-
-    async fn get_child(&self, suffix: &str) -> Result<Box<dyn Device>, Error> {
-        const DEV_CLASS_BLOCK: &str = "/dev/class/block";
-        let dev_class_block =
-            fuchsia_fs::directory::open_in_namespace(DEV_CLASS_BLOCK, fio::PERM_READABLE)?;
-        let child_path = device_watcher::wait_for_device_with(
-            &dev_class_block,
-            |device_watcher::DeviceInfo { filename, topological_path }| {
-                topological_path.strip_suffix(suffix).and_then(|topological_path| {
-                    (topological_path == self.topological_path)
-                        .then(|| format!("{}/{}", DEV_CLASS_BLOCK, filename))
-                })
-            },
-        )
-        .await?;
-
-        let block_device = BlockDevice::new(child_path).await?;
-        Ok(Box::new(block_device))
     }
 
     fn is_fshost_ramdisk(&self) -> bool {
@@ -483,11 +412,6 @@ impl Device for VolumeServiceDevice {
         Ok(self.partition_type.as_ref().unwrap())
     }
 
-    async fn resize(&mut self, target_size_bytes: u64) -> Result<u64, Error> {
-        let block_proxy = self.block_proxy()?;
-        crate::volume::resize_volume(&block_proxy, target_size_bytes).await
-    }
-
     fn service_instance_directory(&self) -> Result<DirectoryProxy, Error> {
         let (instance_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
         self.connector.dir().clone(server_end.into_channel().into())?;
@@ -500,10 +424,6 @@ impl Device for VolumeServiceDevice {
 
     fn block_proxy(&self) -> Result<BlockProxy, Error> {
         self.connector.connect_block().and_then(|c| Ok(c.into_proxy()))
-    }
-
-    async fn get_child(&self, _suffix: &str) -> Result<Box<dyn Device>, Error> {
-        unimplemented!()
     }
 
     fn is_fshost_ramdisk(&self) -> bool {
@@ -611,20 +531,12 @@ impl Device for LocalBlockDevice {
         Err(anyhow!("partition_type not supported for ramdisk"))
     }
 
-    async fn resize(&mut self, _target_size_bytes: u64) -> Result<u64, Error> {
-        Err(anyhow!("resize not supported for ramdisk"))
-    }
-
     fn block_connector(&self) -> Result<Box<dyn BlockConnector>, Error> {
         Ok(Box::new(self.connector.clone()))
     }
 
     fn block_proxy(&self) -> Result<BlockProxy, Error> {
         Ok(self.connector.connect_block()?.into_proxy())
-    }
-
-    async fn get_child(&self, _suffix: &str) -> Result<Box<dyn Device>, Error> {
-        unimplemented!()
     }
 
     fn is_fshost_ramdisk(&self) -> bool {

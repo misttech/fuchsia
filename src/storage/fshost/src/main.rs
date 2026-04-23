@@ -6,7 +6,7 @@ use crate::environment::{DevicePublisher, Environment, FshostEnvironment};
 use crate::inspect::register_stats;
 use crate::watcher::{DirSource, PathSource, PathSourceType, WatchSource, Watcher};
 use anyhow::{Context as _, Error, format_err};
-use device::{DeviceTag, Parent};
+use device::Parent;
 use fidl::prelude::*;
 use fidl_fuchsia_fshost as fshost;
 use fidl_fuchsia_io as fio;
@@ -14,7 +14,6 @@ use fuchsia_runtime::{HandleType, take_startup_handle};
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{StreamExt, stream};
-use std::collections::HashSet;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
@@ -31,7 +30,6 @@ mod manager;
 mod matcher;
 mod ramdisk;
 mod service;
-mod volume;
 mod watcher;
 
 const DEV_CLASS_BLOCK: &str = "/dev/class/block";
@@ -61,7 +59,7 @@ async fn main() -> Result<(), Error> {
 
     let registered_devices = Arc::new(device::RegisteredDevices::default());
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<service::FshostShutdownResponder>(1);
-    let (watcher, device_stream) = Watcher::new(if config.storage_host {
+    let (watcher, device_stream) = Watcher::new({
         // TODO(https://fxbug.dev/394968352): Don't watch /dev/class/nand
         let mut sources =
             vec![Box::new(PathSource::new(DEV_CLASS_NAND, PathSourceType::Nand, None))
@@ -85,32 +83,13 @@ async fn main() -> Result<(), Error> {
             }),
         );
         sources
-    } else {
-        let registered_devices = registered_devices.clone();
-        vec![
-            Box::new(PathSource::new(
-                DEV_CLASS_BLOCK,
-                PathSourceType::Block,
-                Some(Arc::new(move |path| {
-                    if registered_devices
-                        .get_topological_path(DeviceTag::SystemPartitionTable)
-                        .is_some_and(|topo_path| path.starts_with(&topo_path))
-                    {
-                        Parent::SystemPartitionTable
-                    } else {
-                        Parent::Dev
-                    }
-                })),
-            )),
-            Box::new(PathSource::new(DEV_CLASS_NAND, PathSourceType::Nand, None)),
-        ]
     })
     .await?;
     // Potentially launch the boot items ramdisk. It's not fatal, so if it fails we print an error
     // and continue.
     let ramdisk_device = if config.ramdisk_image {
         log::info!("setting up ramdisk image from boot items");
-        ramdisk::set_up_ramdisk(config.storage_host).await.unwrap_or_else(|error| {
+        ramdisk::set_up_ramdisk().await.unwrap_or_else(|error| {
             log::error!(error:?; "failed to set up ramdisk filesystems");
             None
         })
@@ -121,10 +100,7 @@ async fn main() -> Result<(), Error> {
     let inspector = fuchsia_inspect::component::inspector();
     let _inspect_server_task =
         inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
-    // matcher_lock is used to block matching temporarily and inject
-    // paths to be ignored.
     let scope = ExecutionScope::new();
-    let matcher_lock = Arc::new(Mutex::new(HashSet::new()));
     let device_publisher = DevicePublisher::new(scope.clone());
     let extra_matchers = matcher::get_config_matchers(&device_publisher)
         .await
@@ -133,7 +109,6 @@ async fn main() -> Result<(), Error> {
     let publisher_debug_block_dir = device_publisher.debug_block_dir();
     let mut env = FshostEnvironment::new(
         config.clone(),
-        matcher_lock.clone(),
         inspector.clone(),
         watcher,
         registered_devices,
@@ -145,6 +120,7 @@ async fn main() -> Result<(), Error> {
     register_stats(inspector.root(), env.data_root()?, config.data_filesystem_format != "fxfs");
     let blob_exposed_dir = env.blobfs_exposed_dir()?;
     let data_exposed_dir = env.data_exposed_dir()?;
+    let gpt_exposed_dir = env.partition_manager_exposed_dir()?;
     let export = vfs::pseudo_directory! {
         "block" => publisher_block_dir,
         "debug_block" => publisher_debug_block_dir,
@@ -152,11 +128,9 @@ async fn main() -> Result<(), Error> {
             "blob" => remote_dir(blob_exposed_dir),
             "data" => remote_dir(data_exposed_dir),
         },
+        "gpt" => remote_dir(gpt_exposed_dir),
         "mnt" => vfs::pseudo_directory! {},
     };
-    if config.storage_host {
-        export.add_entry("gpt", remote_dir(env.partition_manager_exposed_dir()?)).unwrap();
-    }
     let system_gpt_service_instance = env.system_gpt_volume_service_instance()?;
     let env: Arc<Mutex<dyn Environment>> = Arc::new(Mutex::new(env));
     // Guard to prevent concurrent access to the system container (or the partition backing it).
@@ -176,7 +150,6 @@ async fn main() -> Result<(), Error> {
                 system_partition_lock.clone(),
                 env.clone(),
                 config.clone(),
-                ramdisk_device.as_ref().map(|d| d.topological_path().to_string()),
                 launcher,
             ),
         fidl_fuchsia_hardware_block_volume::ServiceMarker::SERVICE_NAME => vfs::pseudo_directory! {
@@ -223,7 +196,7 @@ async fn main() -> Result<(), Error> {
 
     // Run the main loop of fshost, handling devices as they appear according to our filesystem
     // policy.
-    let mut fs_manager = manager::Manager::new(&config, env, matcher_lock, extra_matchers);
+    let mut fs_manager = manager::Manager::new(&config, env, extra_matchers);
     let shutdown_responder = if config.disable_block_watcher {
         // If the block watcher is disabled, fshost just waits on the shutdown receiver instead of
         // processing devices.

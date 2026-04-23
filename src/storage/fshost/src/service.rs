@@ -2,30 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::crypt::zxcrypt::{UnsealOutcome, ZxcryptDevice};
-use crate::device::constants::{
-    self, BLOB_IMAGE_VOLUME_LABEL, BLOB_VOLUME_LABEL, DATA_PARTITION_LABEL,
-    LEGACY_DATA_PARTITION_LABEL, ZXCRYPT_DRIVER_PATH,
-};
-use crate::device::{BlockDevice, Device, DeviceTag};
-use crate::environment::{
-    Container, Environment, FilesystemLauncher, FvmContainer, FxfsContainer, ServeFilesystemStatus,
-};
+use crate::device::DeviceTag;
+use crate::device::constants::{BLOB_IMAGE_VOLUME_LABEL, BLOB_VOLUME_LABEL};
+use crate::environment::{Container, Environment, FilesystemLauncher, FvmContainer, FxfsContainer};
 use anyhow::{Context, Error, anyhow, ensure};
-use device_watcher::recursive_wait_and_open;
 use fidl::endpoints::{ClientEnd, Proxy, RequestStream, ServerEnd};
-use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_fshost as fshost;
 use fidl_fuchsia_fxfs as ffxfs;
 use fidl_fuchsia_io::{self as fio, DirectoryMarker};
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
-use fidl_fuchsia_storage_block::VolumeManagerMarker;
 use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::{DiskFormat, detect_disk_format};
-use fs_management::partition::{PartitionMatcher, find_partition, partition_matches_with_proxy};
-use fs_management::{F2fs, Fvm, Fxfs, Minfs, filesystem};
+use fs_management::{Fvm, Fxfs, filesystem};
 use fuchsia_async as fasync;
 use fuchsia_async::TimeoutExt as _;
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
@@ -58,76 +48,6 @@ impl FshostShutdownResponder {
 const FIND_PARTITION_DURATION: MonotonicDuration = MonotonicDuration::from_seconds(20);
 const STARNIX_TEST_VOLUME_NAME: &str = "starnix_test_volume";
 const IMAGE_FILE_NAME: &str = "blob.img";
-
-fn data_partition_names() -> Vec<String> {
-    vec![DATA_PARTITION_LABEL.to_string(), LEGACY_DATA_PARTITION_LABEL.to_string()]
-}
-
-async fn find_data_partition(ramdisk_prefix: Option<String>) -> Result<ControllerProxy, Error> {
-    let fvm_matcher = PartitionMatcher {
-        detected_disk_formats: Some(vec![DiskFormat::Fvm]),
-        ignore_prefix: ramdisk_prefix,
-        ..Default::default()
-    };
-
-    let fvm_controller =
-        find_partition(fvm_matcher, FIND_PARTITION_DURATION).await.context("Failed to find FVM")?;
-    let fvm_path = fvm_controller
-        .get_topological_path()
-        .await
-        .context("fvm get_topo_path transport error")?
-        .map_err(zx::Status::from_raw)
-        .context("fvm get_topo_path returned error")?;
-
-    let fvm_dir = fuchsia_fs::directory::open_in_namespace(&fvm_path, fio::Flags::empty())?;
-    let fvm_volume_manager_proxy = recursive_wait_and_open::<VolumeManagerMarker>(&fvm_dir, "/fvm")
-        .await
-        .context("failed to connect to the VolumeManager")?;
-
-    // **NOTE**: We must call VolumeManager::GetInfo() to ensure all partitions are visible when
-    // we enumerate them below. See https://fxbug.dev/42077585 for more information.
-    zx::ok(fvm_volume_manager_proxy.get_info().await.context("transport error on get_info")?.0)
-        .context("get_info failed")?;
-
-    find_data_partition_in(fvm_path).await
-}
-
-async fn find_data_partition_in(fvm_path: String) -> Result<ControllerProxy, Error> {
-    let fvm_dir =
-        fuchsia_fs::directory::open_in_namespace(&format!("{fvm_path}/fvm"), fio::PERM_READABLE)?;
-
-    let data_matcher = PartitionMatcher {
-        type_guids: Some(vec![constants::DATA_TYPE_GUID]),
-        labels: Some(data_partition_names()),
-        parent_device: Some(fvm_path),
-        ignore_if_path_contains: Some("zxcrypt/unsealed".to_string()),
-        ..Default::default()
-    };
-
-    // We can't use find_partition because it looks in /dev/class/block and we can't be sure that
-    // it will show up there yet (the block driver is bound after fvm has published its
-    // volumes). Instead, we enumerate the topological path directory whose entries should be
-    // present thanks to calling get_info above.
-    for entry in fuchsia_fs::directory::readdir(&fvm_dir).await? {
-        // This will wait for the block entry to show up.
-        let proxy = recursive_wait_and_open::<ControllerMarker>(
-            &fvm_dir,
-            &format!("{}/block/device_controller", entry.name),
-        )
-        .await
-        .context("opening partition path")?;
-        match partition_matches_with_proxy(&proxy, &data_matcher).await {
-            Ok(true) => {
-                return Ok(proxy);
-            }
-            Ok(false) => {}
-            Err(error) => {
-                log::info!(error:?; "Failure in partition match. Transient device?");
-            }
-        }
-    }
-    Err(anyhow!("Data partition not found"))
-}
 
 async fn mount_main_starnix_volume(
     environment: &Arc<Mutex<dyn Environment>>,
@@ -235,7 +155,6 @@ async fn write_data_file(
     system_partition_lock: &Arc<Mutex<()>>,
     environment: &Arc<Mutex<dyn Environment>>,
     config: &fshost_config::Config,
-    ramdisk_prefix: Option<String>,
     launcher: &FilesystemLauncher,
     filename: &str,
     payload: zx::Vmo,
@@ -259,104 +178,26 @@ async fn write_data_file(
         usize::try_from(content_size).context("Failed to convert u64 content_size to usize")?;
 
     let _guard = system_partition_lock.lock().await;
-    let (filesystem, mut data) = if config.fxfs_blob || config.storage_host {
-        let (device, _) = get_system_container_for_recovery(environment).await?;
-        let mut container: Box<dyn Container> = if config.fxfs_blob {
-            Box::new(FxfsContainer::new(
-                launcher
-                    .serve_fxblob(device, Box::new(Fxfs::dynamic_child()))
-                    .await
-                    .context("serving Fxblob")?,
-            ))
-        } else {
-            Box::new(FvmContainer::new(
-                launcher
-                    .serve_fvm(device, Box::new(Fvm::dynamic_child()))
-                    .await
-                    .context("serving Fvm")?,
-                false,
-            ))
-        };
-        let data = container.serve_data(&launcher).await.context("serving data from Fxblob")?;
-
-        (Some(container.into_fs()), data)
+    let device = get_system_container_for_recovery(environment).await?;
+    let mut container: Box<dyn Container> = if config.fxfs_blob {
+        Box::new(FxfsContainer::new(
+            launcher
+                .serve_fxblob(device, Box::new(Fxfs::dynamic_child()))
+                .await
+                .context("serving Fxblob")?,
+        ))
     } else {
-        let partition_controller = find_data_partition(ramdisk_prefix).await?;
-
-        let format = match config.data_filesystem_format.as_ref() {
-            "fxfs" => DiskFormat::Fxfs,
-            "f2fs" => DiskFormat::F2fs,
-            "minfs" => DiskFormat::Minfs,
-            _ => panic!("unsupported data filesystem format type"),
-        };
-
-        let partition_path = partition_controller
-            .get_topological_path()
-            .await
-            .context("get_topo_path transport error")?
-            .map_err(zx::Status::from_raw)
-            .context("get_topo_path returned error")?;
-        log::info!(partition_path:%; "Found data partition");
-        let mut device = Box::new(
-            BlockDevice::from_proxy(partition_controller, &partition_path)
+        Box::new(FvmContainer::new(
+            launcher
+                .serve_fvm(device, Box::new(Fvm::dynamic_child()))
                 .await
-                .context("failed to make new device")?,
-        );
-        let mut device: &mut dyn Device = device.as_mut();
-        let mut zxcrypt_device;
-        if format != DiskFormat::Fxfs && !config.no_zxcrypt {
-            launcher.attach_driver(device, ZXCRYPT_DRIVER_PATH).await?;
-            log::info!("Ensuring device is formatted with zxcrypt");
-            zxcrypt_device = Box::new(
-                match ZxcryptDevice::unseal(device).await.context("Failed to unseal zxcrypt")? {
-                    UnsealOutcome::Unsealed(device) => device,
-                    UnsealOutcome::FormatRequired => ZxcryptDevice::format(device).await?,
-                },
-            );
-            device = zxcrypt_device.as_mut();
-        }
-
-        let filesystem = match format {
-            DiskFormat::Fxfs => {
-                launcher.serve_data(device, Fxfs::dynamic_child()).await.context("serving fxfs")?
-            }
-            DiskFormat::F2fs => {
-                launcher.serve_data(device, F2fs::dynamic_child()).await.context("serving f2fs")?
-            }
-            DiskFormat::Minfs => launcher
-                .serve_data(device, Minfs::dynamic_child())
-                .await
-                .context("serving minfs")?,
-            _ => unreachable!(),
-        };
-        let filesystem = match filesystem {
-            ServeFilesystemStatus::Serving(fs) => fs,
-            ServeFilesystemStatus::FormatRequired => {
-                log::info!(
-                    "Format required {:?} for device {:?}",
-                    format,
-                    device.topological_path()
-                );
-                match format {
-                    DiskFormat::Fxfs => launcher
-                        .format_data(device, Fxfs::dynamic_child())
-                        .await
-                        .context("serving fxfs")?,
-                    DiskFormat::F2fs => launcher
-                        .format_data(device, F2fs::dynamic_child())
-                        .await
-                        .context("serving f2fs")?,
-                    DiskFormat::Minfs => launcher
-                        .format_data(device, Minfs::dynamic_child())
-                        .await
-                        .context("serving minfs")?,
-                    _ => unreachable!(),
-                }
-            }
-        };
-
-        (None, filesystem)
+                .context("serving Fvm")?,
+            false,
+        ))
     };
+    let mut data = container.serve_data(&launcher).await.context("serving data from Fxblob")?;
+    let filesystem = container.into_fs();
+
     let data_root = data.root().context("Failed to get data root")?;
     let (directory_proxy, file_path) = match filename.rsplit_once("/") {
         Some((directory_path, relative_file_path)) => {
@@ -385,9 +226,7 @@ async fn write_data_file(
     write(&file_proxy, &contents).await.context("writing file contents")?;
 
     data.shutdown().await.context("shutting down data")?;
-    if let Some(fs) = filesystem {
-        fs.shutdown().await.context("shutting down filesystem")?;
-    }
+    filesystem.shutdown().await.context("shutting down filesystem")?;
     return Ok(());
 }
 
@@ -396,7 +235,7 @@ async fn shred_data_volume(
     environment: &Arc<Mutex<dyn Environment>>,
     config: &fshost_config::Config,
 ) -> Result<(), zx::Status> {
-    if !(config.data_filesystem_format == "fxfs" || (config.storage_host && !config.no_zxcrypt)) {
+    if !(config.data_filesystem_format == "fxfs" || !config.no_zxcrypt) {
         return Err(zx::Status::NOT_SUPPORTED);
     }
 
@@ -414,7 +253,7 @@ async fn shred_data_volume(
 
         // Get the block connector for all filesystem types. This blocks until the matchers find
         // the system container, so even if we don't use it, we know after this the device exists.
-        let (device, device_path) = get_system_container_for_recovery(environment).await?;
+        let device = get_system_container_for_recovery(environment).await?;
         let format = detect_disk_format(
             &device
                 .connect_block()
@@ -449,7 +288,7 @@ async fn shred_data_volume(
                 zx::Status::INTERNAL
             })?;
             log::info!("Deleted fxfs-data keybag");
-        } else if config.storage_host && config.data_filesystem_format == "minfs" {
+        } else if config.data_filesystem_format == "minfs" {
             if format != DiskFormat::Fvm {
                 return Ok(());
             }
@@ -468,34 +307,6 @@ async fn shred_data_volume(
                 zx::Status::INTERNAL
             })?;
             log::info!("Shredded zxcrypt instances in fvm");
-        } else if !config.storage_host && config.data_filesystem_format == "fxfs" {
-            // fvm+fxfs, fxblob is handled above.
-            if format != DiskFormat::Fvm {
-                return Ok(());
-            }
-
-            let controller_proxy = find_data_partition_in(device_path).await.map_err(|error| {
-                log::error!(error:?; "Failed to find data partition");
-                zx::Status::NOT_FOUND
-            })?;
-            let fxfs = fs_management::filesystem::Filesystem::from_boxed_config(
-                Box::new(controller_proxy),
-                Box::new(Fxfs::dynamic_child()),
-            );
-            let serving_fxfs = fxfs.serve_multi_volume().await.map_err(|error| {
-                log::error!(error:?; "Failed to serve fxfs");
-                zx::Status::INTERNAL
-            })?;
-            let mut fxfs_container = Box::new(FxfsContainer::new(serving_fxfs));
-            fxfs_container.shred_data().await.map_err(|error| {
-                log::error!(error:?; "Failed to shred fxfs keybag");
-                zx::Status::INTERNAL
-            })?;
-            fxfs_container.into_fs().shutdown().await.map_err(|error| {
-                log::error!(error:?; "Failed to unmount fxfs");
-                zx::Status::INTERNAL
-            })?;
-            log::info!("Deleted fxfs-data keybag");
         }
     }
     log::info!("Shredded the data volume.  Data will be lost!!");
@@ -510,10 +321,6 @@ async fn init_system_partition_table(
 ) -> Result<(), zx::Status> {
     if !config.ramdisk_image {
         log::error!("init_system_partition_table only supported in ramdisk-image mode.");
-        return Err(zx::Status::NOT_SUPPORTED);
-    }
-    if !config.storage_host {
-        log::error!("init_system_partition_table only supported in storage-host mode.");
         return Err(zx::Status::NOT_SUPPORTED);
     }
     if !config.gpt {
@@ -636,7 +443,7 @@ pub fn fshost_admin(
                         });
                     }
                     Ok(fshost::AdminRequest::StorageHostEnabled { responder }) => {
-                        responder.send(config.storage_host).unwrap_or_else(|error| {
+                        responder.send(true).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
@@ -655,14 +462,12 @@ pub fn fshost_recovery(
     system_partition_lock: Arc<Mutex<()>>,
     environment: Arc<Mutex<dyn Environment>>,
     config: Arc<fshost_config::Config>,
-    ramdisk_prefix: Option<String>,
     launcher: Arc<FilesystemLauncher>,
 ) -> Arc<service::Service> {
     service::host(move |mut stream: fshost::RecoveryRequestStream| {
         let system_partition_lock = system_partition_lock.clone();
         let env = environment.clone();
         let config = config.clone();
-        let ramdisk_prefix = ramdisk_prefix.clone();
         let launcher = launcher.clone();
         async move {
             while let Some(request) = stream.next().await {
@@ -673,7 +478,6 @@ pub fn fshost_recovery(
                             &system_partition_lock,
                             &env,
                             &config,
-                            ramdisk_prefix.clone(),
                             &launcher,
                             &filename,
                             payload,
@@ -842,7 +646,7 @@ async fn format_system_blob_volume_impl(
     ensure!(config.fxfs_blob, "format_system_blob_volume requires a fxblob-based product");
 
     let _guard = system_partition_lock.clone().lock_owned().await;
-    let (device, _) = get_system_container_for_recovery(environment).await?;
+    let device = get_system_container_for_recovery(environment).await?;
 
     let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
     let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
@@ -876,7 +680,7 @@ async fn mount_system_blob_volume_impl(
     ensure!(config.fxfs_blob, "mount_system_blob_volume requires a fxblob-based product");
 
     let guard = system_partition_lock.clone().lock_owned().await;
-    let (device, _) = get_system_container_for_recovery(environment).await?;
+    let device = get_system_container_for_recovery(environment).await?;
 
     log::info!("Mounting Fxfs.");
     let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
@@ -937,7 +741,7 @@ async fn mount_system_blob_volume_impl(
 
 async fn get_system_container_for_recovery(
     env: &Arc<Mutex<dyn Environment>>,
-) -> Result<(Box<dyn BlockConnector>, String), zx::Status> {
+) -> Result<Box<dyn BlockConnector>, zx::Status> {
     log::info!("Finding system container...");
     let registered_devices = env.lock().await.registered_devices().clone();
     let block_connector = registered_devices
@@ -951,9 +755,7 @@ async fn get_system_container_for_recovery(
             Err(zx::Status::NOT_FOUND)
         })
         .await?;
-    let topological_path =
-        registered_devices.get_topological_path(DeviceTag::SystemContainerOnRecovery).unwrap();
-    Ok((block_connector, topological_path))
+    Ok(block_connector)
 }
 
 #[derive(Debug, Error)]
@@ -972,7 +774,7 @@ async fn get_blob_image_handle(
     ensure!(config.fxfs_blob, "get_blob_image_handle requires a fxblob-based product");
 
     let guard = system_partition_lock.clone().lock_owned().await;
-    let (device, _) = get_system_container_for_recovery(environment)
+    let device = get_system_container_for_recovery(environment)
         .await
         .context("could not find system container")?;
 
@@ -1068,7 +870,7 @@ async fn install_blob_image(
     ensure!(config.fxfs_blob, "install_blob_image requires a fxblob-based product");
 
     let _guard = system_partition_lock.clone().lock_owned().await;
-    let (device, _) = get_system_container_for_recovery(environment).await?;
+    let device = get_system_container_for_recovery(environment).await?;
 
     let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
     let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;

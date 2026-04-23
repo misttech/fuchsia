@@ -190,9 +190,6 @@ mod tests {
         fn block_proxy(&self) -> Result<BlockProxy, Error> {
             unimplemented!()
         }
-        async fn get_child(&self, _suffix: &str) -> Result<Box<dyn Device>, Error> {
-            unimplemented!()
-        }
         fn is_fshost_ramdisk(&self) -> bool {
             unimplemented!()
         }

@@ -11,7 +11,6 @@ use fs_management::format::DiskFormat;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 fn size_as_string(bytes: u64) -> String {
@@ -35,23 +34,17 @@ fn size_as_string(bytes: u64) -> String {
 pub struct Manager {
     matcher: matcher::Matchers,
     environment: Arc<Mutex<dyn Environment>>,
-    /// Holds a set of topological paths that have already been processed and
-    /// should be ignored when matching. When matched, the ignored paths are removed from the set.
-    /// (i.e. The device is ignored only once.)
-    matcher_lock: Arc<Mutex<HashSet<String>>>,
 }
 
 impl Manager {
     pub fn new(
         config: &fshost_config::Config,
         environment: Arc<Mutex<dyn Environment>>,
-        matcher_lock: Arc<Mutex<HashSet<String>>>,
         extra_matchers: Vec<Box<dyn Matcher>>,
     ) -> Self {
         Manager {
             matcher: matcher::Matchers::new_with_extra_matchers(config, extra_matchers),
             environment,
-            matcher_lock,
         }
     }
 
@@ -63,7 +56,6 @@ impl Manager {
         mut shutdown_rx: mpsc::Receiver<service::FshostShutdownResponder>,
     ) -> Result<service::FshostShutdownResponder, Error> {
         let mut device_stream = Box::pin(device_stream).fuse();
-        let mut ignored_paths = HashSet::new();
         let mut block_index = 0;
         loop {
             let name = format!("{:03}", block_index);
@@ -83,18 +75,6 @@ impl Manager {
                     }
                 },
             };
-
-            for path in (*self.matcher_lock.lock().await).drain() {
-                ignored_paths.insert(path);
-            }
-            let topological_path = device.topological_path().to_string();
-            if ignored_paths.remove(&topological_path) {
-                log::info!(
-                    topological_path = topological_path.as_str();
-                    "Skipping explicitly ignored device."
-                );
-                continue;
-            }
 
             let mut environment = self.environment.lock().await;
             let content_format = device.content_format().await.unwrap_or(DiskFormat::Unknown);

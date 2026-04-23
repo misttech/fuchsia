@@ -563,7 +563,6 @@ mod tests {
     use crate::matcher::config_matcher::ConfigMatcher;
     use anyhow::{Error, anyhow};
     use async_trait::async_trait;
-    use fidl_fuchsia_device::ControllerProxy;
     use fidl_fuchsia_storage_block::{BlockInfo, BlockProxy, DeviceFlag};
     use fs_management::FVM_TYPE_GUID;
     use fs_management::filesystem::{BlockConnector, ServingMultiVolumeFilesystem};
@@ -659,16 +658,10 @@ mod tests {
         async fn partition_type(&mut self) -> Result<&[u8; 16], Error> {
             self.partition_type.as_ref().ok_or_else(|| anyhow!("partition type not set"))
         }
-        fn controller(&self) -> &ControllerProxy {
-            unreachable!()
-        }
         fn block_connector(&self) -> Result<Box<dyn BlockConnector>, Error> {
             unreachable!()
         }
         fn block_proxy(&self) -> Result<BlockProxy, Error> {
-            unreachable!()
-        }
-        async fn get_child(&self, _suffix: &str) -> Result<Box<dyn Device>, Error> {
             unreachable!()
         }
         fn is_fshost_ramdisk(&self) -> bool {
@@ -924,7 +917,6 @@ mod tests {
     async fn test_fvm_component_matcher() {
         let new_matchers = || {
             Matchers::new(&fshost_config::Config {
-                storage_host: true,
                 data_filesystem_format: "minfs".to_string(),
                 gpt: false,
                 ..default_test_config()
@@ -1072,8 +1064,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_system_gpt_matcher() {
-        let mut matchers =
-            Matchers::new(&fshost_config::Config { storage_host: true, ..default_test_config() });
+        let mut matchers = Matchers::new(&default_test_config());
 
         // Don't match devices with a partition type, since they are likely nested in another GPT.
         assert!(
@@ -1116,11 +1107,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_gpt_all_matcher_fvm_label() {
-        let mut matchers = Matchers::new(&fshost_config::Config {
-            storage_host: true,
-            gpt_all: true,
-            ..default_test_config()
-        });
+        let mut matchers =
+            Matchers::new(&fshost_config::Config { gpt_all: true, ..default_test_config() });
 
         // Without the appropriate partitions inside it, this gpt will not be registered as the
         // system gpt, just registered as a regular filesystem for shutdown.
@@ -1177,11 +1165,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_gpt_all_matcher_super_label() {
-        let mut matchers = Matchers::new(&fshost_config::Config {
-            storage_host: true,
-            gpt_all: true,
-            ..default_test_config()
-        });
+        let mut matchers =
+            Matchers::new(&fshost_config::Config { gpt_all: true, ..default_test_config() });
 
         // Without the appropriate partitions inside it, this gpt will not be registered as the
         // system gpt, just registered as a regular filesystem for shutdown.
@@ -1238,11 +1223,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_gpt_all_matcher_legacy_fvm_type_guid() {
-        let mut matchers = Matchers::new(&fshost_config::Config {
-            storage_host: true,
-            gpt_all: true,
-            ..default_test_config()
-        });
+        let mut matchers =
+            Matchers::new(&fshost_config::Config { gpt_all: true, ..default_test_config() });
 
         // With a partition with the legacy fvm type guid, it is registered as the system gpt.
         assert!(
@@ -1265,7 +1247,6 @@ mod tests {
     #[fuchsia::test]
     async fn test_fxblob_on_recovery_matcher() {
         let mut matchers = Matchers::new(&fshost_config::Config {
-            storage_host: true,
             ramdisk_image: true,
             fxfs_blob: true,
             ..default_test_config()
@@ -1310,11 +1291,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fvm_on_recovery_matcher() {
-        let mut matchers = Matchers::new(&fshost_config::Config {
-            ramdisk_image: true,
-            storage_host: true,
-            ..default_test_config()
-        });
+        let mut matchers =
+            Matchers::new(&fshost_config::Config { ramdisk_image: true, ..default_test_config() });
 
         // The non-ramdisk should match by content format, but all we expect is the device to be
         // tagged.
@@ -1433,7 +1411,7 @@ mod tests {
             assert_eq!(
                 std::mem::take(&mut *self.should_publish.lock()),
                 true,
-                "Unexpected call to launch_storage_host"
+                "Unexpected call to publish"
             );
             Ok(())
         }

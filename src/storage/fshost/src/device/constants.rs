@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// -- Partition labels --
-pub const DATA_PARTITION_LABEL: &str = "data";
-pub const LEGACY_DATA_PARTITION_LABEL: &str = "minfs";
-
 // -- Fxfs volume labels --
 pub const BLOB_VOLUME_LABEL: &str = "blob";
 pub const BLOB_IMAGE_VOLUME_LABEL: &str = "blob-image";
@@ -19,8 +15,5 @@ pub const DATA_TYPE_GUID: [u8; 16] = [
 pub const LEGACY_FVM_TYPE_GUID: [u8; 16] = [
     0x40, 0xe3, 0xd0, 0x41, 0xe3, 0x57, 0x4e, 0x95, 0x8c, 0x1e, 0x17, 0xec, 0xac, 0x44, 0xcf, 0xf5,
 ];
-
-// -- Driver paths (to be used to attach devices)
-pub const ZXCRYPT_DRIVER_PATH: &str = "zxcrypt.cm";
 
 pub const DEFAULT_F2FS_MIN_BYTES: u64 = 50 * 1024 * 1024;

@@ -12,8 +12,8 @@ pub use fvm_container::FvmContainer;
 pub use fxfs_container::FxfsContainer;
 pub use publisher::{DevicePublisher, SinglePublisher};
 
-use crate::crypt::fxfs::{self, CryptService};
-use crate::device::constants::{DATA_VOLUME_LABEL, DEFAULT_F2FS_MIN_BYTES};
+use crate::crypt::fxfs::CryptService;
+use crate::device::constants::DATA_VOLUME_LABEL;
 use crate::device::{Device, RegisteredDevices};
 use crate::watcher::{DirSource, Watcher};
 use anyhow::{Context, Error, anyhow, bail};
@@ -24,23 +24,13 @@ use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::BlockProxy;
 use fidl_fuchsia_storage_partitions as fpartitions;
-use fs_management::filesystem::{
-    BlockConnector, ServingMultiVolumeFilesystem, ServingSingleVolumeFilesystem, ServingVolume,
-};
+use fs_management::filesystem::{BlockConnector, ServingMultiVolumeFilesystem, ServingVolume};
 use fs_management::format::DiskFormat;
 use fs_management::{ComponentType, FSConfig, Fvm, Fxfs};
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect as finspect;
-use futures::lock::Mutex;
-use std::collections::HashSet;
 use std::sync::Arc;
-
-/// Returned from Environment::launch_data to signal when formatting is required.
-pub enum ServeFilesystemStatus {
-    Serving(Filesystem),
-    FormatRequired,
-}
 
 pub struct PartitionInfo {
     pub label: String,
@@ -121,15 +111,6 @@ enum BufferedDirectory {
 
 pub enum Filesystem {
     Queue(Vec<ServerEnd<fio::DirectoryMarker>>),
-    Serving(ServingSingleVolumeFilesystem),
-    ServingMultiVolume(
-        // We hold onto crypt service here to avoid it prematurely shutting down.
-        // Fxfs may expect to find it in via VFS at a later time and it stops running
-        // when all channels are closed.
-        #[allow(dead_code)] Option<CryptService>,
-        ServingMultiVolumeFilesystem,
-        Option<ServingVolume>,
-    ),
     ServingVolumeInMultiVolume(
         // We hold onto crypt service here to avoid it prematurely shutting down.
         #[allow(dead_code)] Option<CryptService>,
@@ -148,16 +129,11 @@ impl Filesystem {
         let (proxy, server) = create_proxy::<fio::DirectoryMarker>();
         match self {
             Filesystem::Queue(queue) => queue.push(server),
-            Filesystem::Serving(fs) => fs.exposed_dir().clone(server.into_channel().into())?,
-            Filesystem::ServingMultiVolume(_, _, Some(data_volume)) => {
-                data_volume.exposed_dir().clone(server.into_channel().into())?
-            }
             Filesystem::ServingVolumeInMultiVolume(_, volume) => {
                 volume.exposed_dir().clone(server.into_channel().into())?
             }
             Filesystem::ServingGpt(fs) => fs.exposed_dir().clone(server.into_channel().into())?,
             Filesystem::Shutdown => bail!(anyhow!("filesystem is shutting down")),
-            _ => bail!("No data volume"),
         }
         Ok(proxy)
     }
@@ -183,10 +159,6 @@ impl Filesystem {
         let old = std::mem::replace(self, Filesystem::Shutdown);
         match old {
             Filesystem::Queue(_) => Ok(()),
-            Filesystem::Serving(fs) => fs.shutdown().await.context("shutdown failed"),
-            Filesystem::ServingMultiVolume(_, fs, _) => {
-                fs.shutdown().await.context("shutdown failed")
-            }
             Filesystem::ServingVolumeInMultiVolume(_, volume) => {
                 volume.shutdown().await.context("shutdown failed")
             }
@@ -304,7 +276,6 @@ pub struct FshostEnvironment {
 impl FshostEnvironment {
     pub fn new(
         config: Arc<fshost_config::Config>,
-        _matcher_lock: Arc<Mutex<HashSet<String>>>,
         inspector: fuchsia_inspect::Inspector,
         watcher: Watcher,
         registered_devices: Arc<RegisteredDevices>,
@@ -584,14 +555,7 @@ impl Environment for FshostEnvironment {
         if let Some(container) = self.container.as_mut() {
             container.shred_data().await
         } else {
-            if self.config.data_filesystem_format != "fxfs" {
-                return Err(anyhow!("Can't shred data; not fxfs"));
-            }
-            if let Filesystem::ServingMultiVolume(_, fs, _) = &self.data {
-                fxfs::shred_key_bag(fs).await
-            } else {
-                Err(anyhow!("No Fxfs serving multi volume filesystem"))
-            }
+            Err(anyhow!("can't shred data; no container"))
         }
     }
 
@@ -678,24 +642,6 @@ pub struct FilesystemLauncher {
 }
 
 impl FilesystemLauncher {
-    pub async fn attach_driver(
-        &self,
-        device: &mut dyn Device,
-        driver_path: &str,
-    ) -> Result<(), Error> {
-        log::info!(path:% = device.path(), driver_path:%; "Binding driver to device");
-        match device.controller().bind(driver_path).await?.map_err(zx::Status::from_raw) {
-            Err(e) if e == zx::Status::ALREADY_BOUND => {
-                // It's fine if we get an ALREADY_BOUND error.
-                log::info!(path:% = device.path(), driver_path:%;
-                    "Ignoring ALREADY_BOUND error.");
-                Ok(())
-            }
-            Err(e) => Err(e.into()),
-            Ok(()) => Ok(()),
-        }
-    }
-
     pub fn requires_zxcrypt(&self, format: DiskFormat, is_ramdisk: bool) -> bool {
         match format {
             // Fxfs never has zxcrypt underneath
@@ -704,98 +650,6 @@ impl FilesystemLauncher {
             // No point using zxcrypt for ramdisk devices.
             _ if is_ramdisk => false,
             _ => true,
-        }
-    }
-
-    pub async fn serve_data<FSC: FSConfig>(
-        &self,
-        device: &mut dyn Device,
-        config: FSC,
-    ) -> Result<ServeFilesystemStatus, Error> {
-        let fs = fs_management::filesystem::Filesystem::from_boxed_config(
-            device.block_connector()?,
-            Box::new(config),
-        );
-        let format = fs.config().disk_format();
-        log::info!(
-            path:% = device.path(),
-            expected_format:? = format;
-            "Mounting /data"
-        );
-
-        let detected_format = device.content_format().await?;
-        if detected_format != format {
-            log::info!(
-                detected_format:?,
-                expected_format:? = format;
-                "Expected format not detected. Reformatting.",
-            );
-            return Ok(ServeFilesystemStatus::FormatRequired);
-        }
-        self.serve_data_from(fs).await
-    }
-
-    // NB: keep these larger functions monomorphized, otherwise they cause significant code size
-    // increases.
-    pub async fn serve_data_from(
-        &self,
-        mut fs: fs_management::filesystem::Filesystem,
-    ) -> Result<ServeFilesystemStatus, Error> {
-        let format = fs.config().disk_format();
-        if self.config.check_filesystems {
-            log::info!(format:?; "fsck started");
-            if let Err(error) = fs.fsck().await {
-                self.report_corruption(format.as_str(), &error);
-                if self.config.format_data_on_corruption {
-                    log::info!("Reformatting filesystem, expect data loss...");
-                    return Ok(ServeFilesystemStatus::FormatRequired);
-                } else {
-                    log::error!(format:?; "format on corruption is disabled, not continuing");
-                    return Err(error);
-                }
-            } else {
-                log::info!(format:?; "fsck completed OK");
-            }
-        }
-
-        // Wrap the serving in an async block so we can catch all errors.
-        let serve_fut = async {
-            match format {
-                DiskFormat::Fxfs => {
-                    let mut serving_multi_vol_fs = fs.serve_multi_volume().await?;
-                    match fxfs::unlock_data_volume(&mut serving_multi_vol_fs, &self.config).await? {
-                        Some((crypt_service, _, volume)) => {
-                            Ok(ServeFilesystemStatus::Serving(Filesystem::ServingMultiVolume(
-                                Some(crypt_service),
-                                serving_multi_vol_fs,
-                                Some(volume),
-                            )))
-                        }
-                        // If unlocking returns none, the keybag got deleted by something.
-                        None => {
-                            log::warn!(
-                                "keybag not found. Perhaps the keys were shredded? \
-                                 Reformatting the data volume."
-                            );
-                            Ok(ServeFilesystemStatus::FormatRequired)
-                        }
-                    }
-                }
-                _ => Ok(ServeFilesystemStatus::Serving(Filesystem::Serving(fs.serve().await?))),
-            }
-        };
-        match serve_fut.await {
-            Ok(fs) => Ok(fs),
-            Err(error) => {
-                self.report_corruption(format.as_str(), &error);
-                if self.config.format_data_on_corruption {
-                    log::info!("Reformatting filesystem, expect data loss...");
-                    Ok(ServeFilesystemStatus::FormatRequired)
-                } else {
-                    log::error!(format:?; "format on corruption is disabled, not continuing");
-                    Err(error)
-                }
-            }
         }
     }
 
@@ -838,73 +692,6 @@ impl FilesystemLauncher {
     ) -> Result<ServingMultiVolumeFilesystem, Error> {
         let fs = fs_management::filesystem::Filesystem::from_boxed_config(block_connector, config);
         fs.serve_multi_volume().await
-    }
-
-    pub async fn format_data<FSC: FSConfig>(
-        &self,
-        device: &mut dyn Device,
-        config: FSC,
-    ) -> Result<Filesystem, Error> {
-        let fs = fs_management::filesystem::Filesystem::from_boxed_config(
-            device.block_connector()?,
-            Box::new(config),
-        );
-        self.format_data_from(device, fs).await
-    }
-
-    async fn format_data_from(
-        &self,
-        device: &mut dyn Device,
-        mut fs: fs_management::filesystem::Filesystem,
-    ) -> Result<Filesystem, Error> {
-        let format = fs.config().disk_format();
-        log::info!(path = device.path(), format = format.as_str(); "Formatting");
-        match format {
-            DiskFormat::Fxfs => {
-                let target_bytes = self.config.data_max_bytes;
-                log::info!(target_bytes; "Resizing data volume");
-                let allocated_bytes =
-                    device.resize(target_bytes).await.context("format volume resize")?;
-                if allocated_bytes < target_bytes {
-                    log::warn!(target_bytes, allocated_bytes; "Allocated less space than desired");
-                }
-            }
-            DiskFormat::F2fs => {
-                let target_bytes =
-                    std::cmp::max(self.config.data_max_bytes, DEFAULT_F2FS_MIN_BYTES);
-                log::info!(target_bytes; "Resizing data volume");
-                let allocated_bytes =
-                    device.resize(target_bytes).await.context("format volume resize")?;
-                if allocated_bytes < DEFAULT_F2FS_MIN_BYTES {
-                    log::error!(
-                        minimum_bytes = DEFAULT_F2FS_MIN_BYTES,
-                        allocated_bytes;
-                        "Not enough space for f2fs"
-                    )
-                }
-                if allocated_bytes < target_bytes {
-                    log::warn!(target_bytes, allocated_bytes; "Allocated less space than desired");
-                }
-            }
-            _ => (),
-        }
-
-        fs.format().await.context("formatting data partition")?;
-
-        log::info!(path = device.path(), format = format.as_str(); "Serving");
-        let filesystem = if let DiskFormat::Fxfs = format {
-            let mut serving_multi_vol_fs =
-                fs.serve_multi_volume().await.context("serving multi volume data partition")?;
-            let (crypt_service, _, volume) =
-                fxfs::init_data_volume(&mut serving_multi_vol_fs, &self.config)
-                    .await
-                    .context("initializing data volume encryption")?;
-            Filesystem::ServingMultiVolume(Some(crypt_service), serving_multi_vol_fs, Some(volume))
-        } else {
-            Filesystem::Serving(fs.serve().await.context("serving single volume data partition")?)
-        };
-
-        Ok(filesystem)
     }
 
     fn report_corruption(&self, format: &str, error: &Error) {
