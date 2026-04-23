@@ -381,6 +381,7 @@ mod tests {
     use fidl_fuchsia_input_report::InputDeviceMarker;
     use fuchsia_async as fasync;
     use maplit::{hashmap, hashset};
+    use sorted_vec_map_rs::SortedVecSet;
     use test_case::test_case;
 
     fn fixed_now() -> zx::MonotonicInstant {
@@ -457,7 +458,7 @@ mod tests {
             contacts: vec![],
         });
 
-        let pressed_buttons = HashSet::from([1u8, 21u8, 15u8]);
+        let pressed_buttons = SortedVecSet::from(vec![1u8, 21u8, 15u8]);
         let mut pressed_buttons_vec: Vec<u64> = vec![];
         pressed_buttons.iter().for_each(|button| {
             pressed_buttons_vec.push(*button as u64);
@@ -502,7 +503,7 @@ mod tests {
                 }),
                 Some(PrecisionScroll::Yes),
                 MousePhase::Move,
-                HashSet::from([1u8]),
+                SortedVecSet::from(vec![1u8]),
                 pressed_buttons.clone(),
                 zx::MonotonicInstant::get(),
                 &mouse_descriptor,
@@ -522,7 +523,7 @@ mod tests {
                     create_touch_contact(1u32, Position { x: 0.0, y: 0.0 }),
                     create_touch_contact(2u32, Position { x: 10.0, y: 10.0 }),
                 ],
-                HashSet::new(),
+                SortedVecSet::new(),
                 zx::MonotonicInstant::get(),
                 &touchpad_descriptor,
             ),

@@ -19,7 +19,8 @@ use fidl_fuchsia_ui_input as fidl_ui_input;
 use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;
 use maplit::hashmap;
 use metrics_registry::*;
-use std::collections::{HashMap, HashSet};
+use sorted_vec_map_rs::SortedVecSet;
+use std::collections::HashMap;
 
 /// A [`TouchScreenEvent`] represents a set of contacts and the phase those contacts are in.
 ///
@@ -154,7 +155,7 @@ pub struct TouchpadEvent {
     pub injector_contacts: Vec<TouchContact>,
 
     /// The complete button state including this event.
-    pub pressed_buttons: HashSet<mouse_binding::MouseButton>,
+    pub pressed_buttons: SortedVecSet<mouse_binding::MouseButton>,
 }
 
 impl TouchpadEvent {
@@ -873,23 +874,25 @@ fn process_single_touchpad_report(
         })
         .unwrap_or_default();
 
-    let buttons: HashSet<mouse_binding::MouseButton> = match &touch_report.pressed_buttons {
-        Some(buttons) => HashSet::from_iter(buttons.iter().filter_map(|button| match button {
-            fidl_next_fuchsia_input_report::TouchButton::Palm => Some(1),
-            fidl_next_fuchsia_input_report::TouchButton::SwipeUp
-            | fidl_next_fuchsia_input_report::TouchButton::SwipeLeft
-            | fidl_next_fuchsia_input_report::TouchButton::SwipeRight
-            | fidl_next_fuchsia_input_report::TouchButton::SwipeDown => {
-                // TODO(https://fxbug.dev/487728300): Support swipe buttons.
-                log::warn!("Swipe buttons {:?} are not supported", button);
-                None
-            }
-            fidl_next_fuchsia_input_report::TouchButton::UnknownOrdinal_(unknown_ordinal) => {
-                log::warn!("unknown TouchButton ordinal {unknown_ordinal:?}");
-                None
-            }
-        })),
-        None => HashSet::new(),
+    let buttons: SortedVecSet<mouse_binding::MouseButton> = match &touch_report.pressed_buttons {
+        Some(buttons) => {
+            SortedVecSet::from_iter(buttons.iter().filter_map(|button| match button {
+                fidl_next_fuchsia_input_report::TouchButton::Palm => Some(1),
+                fidl_next_fuchsia_input_report::TouchButton::SwipeUp
+                | fidl_next_fuchsia_input_report::TouchButton::SwipeLeft
+                | fidl_next_fuchsia_input_report::TouchButton::SwipeRight
+                | fidl_next_fuchsia_input_report::TouchButton::SwipeDown => {
+                    // TODO(https://fxbug.dev/487728300): Support swipe buttons.
+                    log::warn!("Swipe buttons {:?} are not supported", button);
+                    None
+                }
+                fidl_next_fuchsia_input_report::TouchButton::UnknownOrdinal_(unknown_ordinal) => {
+                    log::warn!("unknown TouchButton ordinal {unknown_ordinal:?}");
+                    None
+                }
+            }))
+        }
+        None => SortedVecSet::new(),
     };
 
     let trace_id = fuchsia_trace::Id::random();
@@ -966,7 +969,7 @@ fn create_touch_screen_event(
 /// - `input_event_sender`: The sender for the device binding's input event stream.
 fn send_touchpad_event(
     injector_contacts: Vec<TouchContact>,
-    pressed_buttons: HashSet<mouse_binding::MouseButton>,
+    pressed_buttons: SortedVecSet<mouse_binding::MouseButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
     trace_id: fuchsia_trace::Id,
@@ -1600,11 +1603,11 @@ mod tests {
                     create_touch_contact(TOUCH_ID_1, Position { x: 0.0, y: 0.0 }),
                     create_touch_contact(TOUCH_ID_2, Position { x: 10.0, y: 10.0 }),
                 ],
-                HashSet::new(),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
-            create_touchpad_event(vec![], HashSet::new(), event_time_u64, &descriptor),
+            create_touchpad_event(vec![], SortedVecSet::new(), event_time_u64, &descriptor),
         ];
 
         assert_input_report_sequence_generates_events!(
@@ -1661,13 +1664,13 @@ mod tests {
         let expected_events = vec![
             create_touchpad_event(
                 vec![create_touch_contact(TOUCH_ID, p0)],
-                HashSet::new(),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
             create_touchpad_event(
                 vec![create_touch_contact(TOUCH_ID, p1)],
-                HashSet::new(),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),

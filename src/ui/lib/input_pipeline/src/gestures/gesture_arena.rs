@@ -1317,7 +1317,7 @@ mod tests {
         use crate::{Position, input_device, keyboard_binding, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report as fidl_input_report;
-        use maplit::hashset;
+        use sorted_vec_map_rs::SortedVecSet;
         use std::cell::{Cell, RefCell};
         use std::rc::Rc;
 
@@ -1328,7 +1328,7 @@ mod tests {
                 device_event: input_device::InputDeviceEvent::Touchpad(
                     touch_binding::TouchpadEvent {
                         injector_contacts: vec![],
-                        pressed_buttons: hashset! {},
+                        pressed_buttons: SortedVecSet::new(),
                     },
                 ),
                 device_descriptor: make_touchpad_descriptor(),
@@ -1349,8 +1349,8 @@ mod tests {
                     wheel_delta_h: None,
                     wheel_delta_v: None,
                     phase: mouse_binding::MousePhase::Move,
-                    affected_buttons: hashset! {},
-                    pressed_buttons: hashset! {},
+                    affected_buttons: SortedVecSet::new(),
+                    pressed_buttons: SortedVecSet::new(),
                     is_precision_scroll: None,
                     wake_lease: None.into(),
                 }),
@@ -1773,7 +1773,7 @@ mod tests {
         use crate::{Position, input_device, metrics, touch_binding};
         use assert_matches::assert_matches;
 
-        use maplit::hashset;
+        use sorted_vec_map_rs::SortedVecSet;
         use std::cell::RefCell;
         use std::rc::Rc;
         use test_case::test_case;
@@ -2000,7 +2000,7 @@ mod tests {
                 device_event: input_device::InputDeviceEvent::Touchpad(
                     touch_binding::TouchpadEvent {
                         injector_contacts: vec![TOUCH_CONTACT_INDEX_FINGER],
-                        pressed_buttons: hashset! {0},
+                        pressed_buttons: SortedVecSet::from(vec![0]),
                     },
                 ),
                 device_descriptor: make_touchpad_descriptor(),
@@ -2064,7 +2064,7 @@ mod tests {
                             position: Position { x: 0.0, y: 0.0 },
                             ..TOUCH_CONTACT_INDEX_FINGER
                         }],
-                        pressed_buttons: hashset! {},
+                        pressed_buttons: SortedVecSet::new(),
                     },
                 ),
                 device_descriptor: make_touchpad_descriptor(),
@@ -2194,8 +2194,8 @@ mod tests {
         use crate::{Position, input_device, metrics, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
 
-        use maplit::hashset;
         use pretty_assertions::assert_eq;
+        use sorted_vec_map_rs::SortedVecSet;
         use std::cell::RefCell;
         use std::rc::Rc;
         use test_case::test_case;
@@ -2460,7 +2460,7 @@ mod tests {
                             position: Position { x: 0.0, y: 0.0 },
                             ..TOUCH_CONTACT_INDEX_FINGER
                         }],
-                        pressed_buttons: hashset! {},
+                        pressed_buttons: SortedVecSet::new(),
                     },
                 ),
                 device_descriptor: make_touchpad_descriptor(),
@@ -2528,8 +2528,8 @@ mod tests {
                                 wheel_delta_v: None,
                                 wheel_delta_h: None,
                                 phase: mouse_binding::MousePhase::Down,
-                                affected_buttons: hashset! { PRIMARY_BUTTON },
-                                pressed_buttons: hashset! { PRIMARY_BUTTON },
+                                affected_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                                pressed_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
                                 is_precision_scroll: None,
                                 wake_lease: None.into(),
                             },
@@ -2545,8 +2545,8 @@ mod tests {
                                 wheel_delta_v: None,
                                 wheel_delta_h: None,
                                 phase: mouse_binding::MousePhase::Up,
-                                affected_buttons: hashset! { PRIMARY_BUTTON },
-                                pressed_buttons: hashset! {},
+                                affected_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                                pressed_buttons: SortedVecSet::new(),
                                 is_precision_scroll: None,
                                 wake_lease: None.into(),
                             },
@@ -2581,8 +2581,8 @@ mod tests {
                         ..
                     },
                 ] => {
-                    pretty_assertions::assert_eq!(*first_pressed_buttons, hashset! { PRIMARY_BUTTON });
-                    pretty_assertions::assert_eq!(*second_pressed_buttons, hashset! {});
+                    pretty_assertions::assert_eq!(*first_pressed_buttons, SortedVecSet::from(vec![PRIMARY_BUTTON]));
+                    pretty_assertions::assert_eq!(*second_pressed_buttons, SortedVecSet::new());
                 }
             );
         }
@@ -2618,7 +2618,7 @@ mod tests {
                     device_event: input_device::InputDeviceEvent::Touchpad(
                         touch_binding::TouchpadEvent {
                             injector_contacts: vec![],
-                            pressed_buttons: hashset! {},
+                            pressed_buttons: SortedVecSet::new(),
                         },
                     ),
                     device_descriptor: make_touchpad_descriptor(),
@@ -2645,7 +2645,7 @@ mod tests {
                     device_event: input_device::InputDeviceEvent::Touchpad(
                         touch_binding::TouchpadEvent {
                             injector_contacts: vec![],
-                            pressed_buttons: hashset! {},
+                            pressed_buttons: SortedVecSet::new(),
                         },
                     ),
                     device_descriptor: make_touchpad_descriptor(),
@@ -2767,8 +2767,8 @@ mod tests {
         use crate::{Position, input_device, metrics, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
 
-        use maplit::hashset;
         use pretty_assertions::assert_eq;
+        use sorted_vec_map_rs::SortedVecSet;
         use std::cell::RefCell;
         use std::rc::Rc;
         use test_case::test_case;
@@ -2888,8 +2888,8 @@ mod tests {
                         wheel_delta_v: None,
                         wheel_delta_h: None,
                         phase: mouse_binding::MousePhase::Move,
-                        affected_buttons: hashset! {},
-                        pressed_buttons: hashset! {},
+                        affected_buttons: SortedVecSet::new(),
+                        pressed_buttons: SortedVecSet::new(),
                         is_precision_scroll: None,
                         wake_lease: None.into(),
                     },
@@ -3003,7 +3003,7 @@ mod tests {
                             position: Position { x: 0.0, y: 0.0 },
                             ..TOUCH_CONTACT_INDEX_FINGER
                         }],
-                        pressed_buttons: hashset! {},
+                        pressed_buttons: SortedVecSet::new(),
                     },
                 ),
                 device_descriptor: make_touchpad_descriptor(),
@@ -3037,8 +3037,8 @@ mod tests {
                     wheel_delta_v: None,
                     wheel_delta_h: None,
                     phase: mouse_binding::MousePhase::Move,
-                    affected_buttons: hashset! {},
-                    pressed_buttons: hashset! {},
+                    affected_buttons: SortedVecSet::new(),
+                    pressed_buttons: SortedVecSet::new(),
                     is_precision_scroll: None,
                     wake_lease: None.into(),
                 },
@@ -3073,8 +3073,8 @@ mod tests {
                 wheel_delta_v: None,
                 wheel_delta_h: None,
                 phase: mouse_binding::MousePhase::Move,
-                affected_buttons: hashset! {},
-                pressed_buttons: hashset! {},
+                affected_buttons: SortedVecSet::new(),
+                pressed_buttons: SortedVecSet::new(),
                 is_precision_scroll: None,
                     wake_lease: None.into(),
 
@@ -3106,8 +3106,8 @@ mod tests {
                     wheel_delta_v: None,
                     wheel_delta_h: None,
                     phase: mouse_binding::MousePhase::Move,
-                    affected_buttons: hashset! {},
-                    pressed_buttons: hashset! {},
+                    affected_buttons: SortedVecSet::new(),
+                    pressed_buttons: SortedVecSet::new(),
                     is_precision_scroll: None,
                     wake_lease: None.into(),
                 },
@@ -3133,8 +3133,8 @@ mod tests {
                     wheel_delta_v: None,
                     wheel_delta_h: None,
                     phase: mouse_binding::MousePhase::Move,
-                    affected_buttons: hashset! {},
-                    pressed_buttons: hashset! {},
+                    affected_buttons: SortedVecSet::new(),
+                    pressed_buttons: SortedVecSet::new(),
                     is_precision_scroll: None,
                     wake_lease: None.into(),
                 },
@@ -3152,7 +3152,7 @@ mod tests {
                             position: Position { x: 0.0, y: 0.0 },
                             ..TOUCH_CONTACT_INDEX_FINGER
                         }],
-                        pressed_buttons: hashset! {},
+                        pressed_buttons: SortedVecSet::new(),
                     },
                 ),
                 device_descriptor: make_touchpad_descriptor(),
@@ -3216,7 +3216,7 @@ mod tests {
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report::{self as fidl_input_report, UnitType};
 
-        use maplit::hashset;
+        use sorted_vec_map_rs::SortedVecSet;
         use std::rc::Rc;
         use test_case::test_case;
         use test_util::assert_near;
@@ -3250,7 +3250,7 @@ mod tests {
                 device_event: input_device::InputDeviceEvent::Touchpad(
                     touch_binding::TouchpadEvent {
                         injector_contacts,
-                        pressed_buttons: hashset! {},
+                        pressed_buttons: SortedVecSet::new(),
                     },
                 ),
                 device_descriptor: make_touchpad_descriptor(contact_position_units),
@@ -3353,7 +3353,7 @@ mod tests {
                         pressure: None,
                     }
                 ],
-                pressed_buttons: hashset! {},
+                pressed_buttons: SortedVecSet::new(),
             }; "only palm contact"
         )]
         #[fuchsia::test(allow_stalls = false)]
@@ -3397,7 +3397,7 @@ mod tests {
                         pressure: None,
                     }
                 ],
-                pressed_buttons: hashset! {},
+                pressed_buttons: SortedVecSet::new(),
             }, vec![]; "palm contact and finger"
         )]
         #[fuchsia::test(allow_stalls = false)]
@@ -3445,7 +3445,7 @@ mod tests {
                         pressure: None,
                     }
                 ],
-                pressed_buttons: hashset! {1},
+                pressed_buttons: SortedVecSet::from(vec![1]),
             }; "palm contact"
         )]
         #[test_case(
@@ -3470,7 +3470,7 @@ mod tests {
                         pressure: None,
                     },
                 ],
-                pressed_buttons: hashset! {1},
+                pressed_buttons: SortedVecSet::from(vec![1]),
             }; "palm and finger contact"
         )]
         #[fuchsia::test(allow_stalls = false)]
@@ -3587,7 +3587,7 @@ mod tests {
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report as fidl_input_report;
         use fuchsia_async as fasync;
-        use maplit::hashset;
+        use sorted_vec_map_rs::SortedVecSet;
         use std::rc::Rc;
         use test_case::test_case;
 
@@ -3765,7 +3765,7 @@ mod tests {
                                 pressure: None,
                             },
                         ],
-                        pressed_buttons: hashset! {1},
+                        pressed_buttons: SortedVecSet::from(vec![1]),
                     },
                 ),
                 device_descriptor: touchpad_descriptor.clone(),
@@ -3829,7 +3829,7 @@ mod tests {
                             contact_size: Some(Size { width: 3.0, height: 4.0 }),
                             pressure: None,
                         }],
-                        pressed_buttons: hashset! {},
+                        pressed_buttons: SortedVecSet::new(),
                     },
                 ),
                 device_descriptor: touchpad_descriptor.clone(),
@@ -4051,8 +4051,8 @@ mod tests {
                 wheel_delta_v: None,
                 wheel_delta_h: None,
                 phase: mouse_binding::MousePhase::Move,
-                affected_buttons: hashset! {},
-                pressed_buttons: hashset! {},
+                affected_buttons: SortedVecSet::new(),
+                pressed_buttons: SortedVecSet::new(),
                 is_precision_scroll: None,
                     wake_lease: None.into(),
 
@@ -4099,7 +4099,7 @@ mod tests {
                     device_event: input_device::InputDeviceEvent::Touchpad(
                         touch_binding::TouchpadEvent {
                             injector_contacts: vec![],
-                            pressed_buttons: hashset! {},
+                            pressed_buttons: SortedVecSet::new(),
                         },
                     ),
                     device_descriptor: make_touchpad_descriptor(),
@@ -4129,7 +4129,7 @@ mod tests {
                     device_event: input_device::InputDeviceEvent::Touchpad(
                         touch_binding::TouchpadEvent {
                             injector_contacts: vec![],
-                            pressed_buttons: hashset! {},
+                            pressed_buttons: SortedVecSet::new(),
                         },
                     ),
                     device_descriptor: make_touchpad_descriptor(),
@@ -4206,7 +4206,7 @@ mod tests {
                             }),
                             pressure: None,
                         }],
-                        pressed_buttons: hashset! {},
+                        pressed_buttons: SortedVecSet::new(),
                     },
                 ),
                 device_descriptor: make_touchpad_descriptor(),

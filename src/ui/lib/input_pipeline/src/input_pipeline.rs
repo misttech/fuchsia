@@ -829,7 +829,7 @@ mod tests {
     use futures::FutureExt;
     use pretty_assertions::assert_eq;
     use rand::Rng;
-    use std::collections::HashSet;
+    use sorted_vec_map_rs::SortedVecSet;
     use vfs::{pseudo_directory, service as pseudo_fs_service};
 
     const COUNTS_PER_MM: u32 = 12;
@@ -855,8 +855,8 @@ mod tests {
                 None, /* wheel_delta_v */
                 None, /* wheel_delta_h */
                 mouse_binding::MousePhase::Move,
-                HashSet::new(),
-                HashSet::new(),
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 None, /* is_precision_scroll */
                 None, /* wake_lease */
             )),
@@ -1411,8 +1411,8 @@ mod tests {
                 None,
                 None,
                 mouse_binding::MousePhase::Move,
-                HashSet::new(),
-                HashSet::new(),
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 None,
                 None,
             )),

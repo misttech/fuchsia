@@ -829,7 +829,7 @@ mod tests {
     use futures::{FutureExt, TryStreamExt};
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
-    use std::collections::HashSet;
+    use sorted_vec_map_rs::SortedVecSet;
     use std::convert::TryFrom as _;
     use std::ops::Add;
 
@@ -1363,7 +1363,7 @@ mod tests {
         let descriptor = get_touchpad_device_descriptor();
         let input_event = input_device::UnhandledInputEvent::try_from(create_touchpad_event(
             vec![contact.clone()],
-            HashSet::new(),
+            SortedVecSet::new(),
             event_time,
             &descriptor,
         ))

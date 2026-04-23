@@ -478,7 +478,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use fuchsia_inspect;
-    use maplit::hashset;
+    use sorted_vec_map_rs::SortedVecSet;
     use std::cell::Cell;
     use std::ops::Add;
     use test_util::{assert_gt, assert_lt, assert_near};
@@ -571,8 +571,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Wheel,
-                hashset! {},
-                hashset! {},
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time1,
                 &DEVICE_DESCRIPTOR,
             ),
@@ -584,8 +584,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Move,
-                hashset! {},
-                hashset! {},
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time2,
                 &DEVICE_DESCRIPTOR,
             ),
@@ -598,8 +598,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Wheel,
-                hashset! {},
-                hashset! {},
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time3,
                 &DEVICE_DESCRIPTOR,
                 input_device::Handled::Yes,
@@ -694,8 +694,8 @@ mod tests {
                     wheel_delta_v: None,
                     wheel_delta_h: None,
                     phase: mouse_binding::MousePhase::Move,
-                    affected_buttons: hashset! {},
-                    pressed_buttons: hashset! {},
+                    affected_buttons: SortedVecSet::new(),
+                    pressed_buttons: SortedVecSet::new(),
                     is_precision_scroll: None,
                     wake_lease: None.into(),
                 }),
@@ -714,8 +714,8 @@ mod tests {
                     wheel_delta_v: None,
                     wheel_delta_h: None,
                     phase: mouse_binding::MousePhase::Move,
-                    affected_buttons: hashset! {},
-                    pressed_buttons: hashset! {},
+                    affected_buttons: SortedVecSet::new(),
+                    pressed_buttons: SortedVecSet::new(),
                     is_precision_scroll: None,
                     wake_lease: None.into(),
                 }),
@@ -888,8 +888,8 @@ mod tests {
             }),
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         } => (Some(PIXELS_PER_TICK), None); "v")]
@@ -903,8 +903,8 @@ mod tests {
                 physical_pixel: None,
             }),
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         } => (None, Some(PIXELS_PER_TICK)); "h")]
@@ -974,8 +974,8 @@ mod tests {
                     }),
                     wheel_delta_h: None,
                     phase: mouse_binding::MousePhase::Wheel,
-                    affected_buttons: hashset! {},
-                    pressed_buttons: hashset! {},
+                    affected_buttons: SortedVecSet::new(),
+                    pressed_buttons: SortedVecSet::new(),
                     is_precision_scroll: None,
                     wake_lease: None.into(),
                 }),
@@ -1004,8 +1004,8 @@ mod tests {
                         }),
                     },
                     phase: mouse_binding::MousePhase::Wheel,
-                    affected_buttons: hashset! {},
-                    pressed_buttons: hashset! {},
+                    affected_buttons: SortedVecSet::new(),
+                    pressed_buttons: SortedVecSet::new(),
                     is_precision_scroll: None,
                     wake_lease: None.into(),
                 }),
@@ -1248,8 +1248,8 @@ mod tests {
             wheel_delta_v: None,
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Move,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "move event")]
@@ -1263,8 +1263,8 @@ mod tests {
             }),
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "wheel event")]
@@ -1290,8 +1290,8 @@ mod tests {
             wheel_delta_v: None,
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Move,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "move event")]
@@ -1305,8 +1305,8 @@ mod tests {
             }),
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "wheel event")]
@@ -1336,8 +1336,8 @@ mod tests {
                 }),
                 wheel_delta_h: None,
                 phase: mouse_binding::MousePhase::Wheel,
-                affected_buttons: hashset! {},
-                pressed_buttons: hashset! {},
+                affected_buttons: SortedVecSet::new(),
+                pressed_buttons: SortedVecSet::new(),
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::No),
             wake_lease: None.into(),
             } => matches input_device::InputEvent {
@@ -1358,8 +1358,8 @@ mod tests {
                 }),
                 wheel_delta_h: None,
                 phase: mouse_binding::MousePhase::Wheel,
-                affected_buttons: hashset! {},
-                pressed_buttons: hashset! {},
+                affected_buttons: SortedVecSet::new(),
+                pressed_buttons: SortedVecSet::new(),
                 is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
                 wake_lease: None.into(),
             } => matches input_device::InputEvent {

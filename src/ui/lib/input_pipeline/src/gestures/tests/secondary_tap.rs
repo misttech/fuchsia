@@ -5,11 +5,11 @@
 mod test {
     use super::super::utils;
     use crate::gestures::args;
-    use crate::{input_device, mouse_binding, touch_binding, Position};
+    use crate::{Position, input_device, mouse_binding, touch_binding};
     use assert_matches::assert_matches;
 
-    use maplit::hashset;
     use pretty_assertions::assert_eq;
+    use sorted_vec_map_rs::SortedVecSet;
 
     fn touchpad_event(
         positions: Vec<Position>,
@@ -30,7 +30,7 @@ mod test {
             event_time: time,
             ..utils::make_touchpad_event(touch_binding::TouchpadEvent {
                 injector_contacts,
-                pressed_buttons: hashset!(),
+                pressed_buttons: SortedVecSet::new(),
             })
         }
     }
@@ -58,12 +58,12 @@ mod test {
           utils::expect_mouse_event!(phase: phase_b, pressed_buttons: pressed_button_b, affected_buttons: affected_button_b, location: location_b),
         ] => {
           assert_eq!(phase_a, &mouse_binding::MousePhase::Down);
-          assert_eq!(pressed_button_a, &hashset! {2});
-          assert_eq!(affected_button_a, &hashset! {2});
+          assert_eq!(pressed_button_a, &SortedVecSet::from(vec![2]));
+          assert_eq!(affected_button_a, &SortedVecSet::from(vec![2]));
           assert_eq!(location_a, &utils::NO_MOVEMENT_LOCATION);
           assert_eq!(phase_b, &mouse_binding::MousePhase::Up);
-          assert_eq!(pressed_button_b, &hashset! {});
-          assert_eq!(affected_button_b, &hashset! {2});
+          assert_eq!(pressed_button_b, &SortedVecSet::new());
+          assert_eq!(affected_button_b, &SortedVecSet::from(vec![2]));
           assert_eq!(location_b, &utils::NO_MOVEMENT_LOCATION);
         });
     }
@@ -94,12 +94,12 @@ mod test {
           utils::expect_mouse_event!(phase: phase_b, pressed_buttons: pressed_button_b, affected_buttons: affected_button_b, location: location_b),
         ] => {
           assert_eq!(phase_a, &mouse_binding::MousePhase::Down);
-          assert_eq!(pressed_button_a, &hashset! {2});
-          assert_eq!(affected_button_a, &hashset! {2});
+          assert_eq!(pressed_button_a, &SortedVecSet::from(vec![2]));
+          assert_eq!(affected_button_a, &SortedVecSet::from(vec![2]));
           assert_eq!(location_a, &utils::NO_MOVEMENT_LOCATION);
           assert_eq!(phase_b, &mouse_binding::MousePhase::Up);
-          assert_eq!(pressed_button_b, &hashset! {});
-          assert_eq!(affected_button_b, &hashset! {2});
+          assert_eq!(pressed_button_b, &SortedVecSet::new());
+          assert_eq!(affected_button_b, &SortedVecSet::from(vec![2]));
           assert_eq!(location_b, &utils::NO_MOVEMENT_LOCATION);
         });
     }
@@ -133,12 +133,12 @@ mod test {
           utils::expect_mouse_event!(phase: phase_b, pressed_buttons: pressed_button_b, affected_buttons: affected_button_b, location: location_b),
         ] => {
           assert_eq!(phase_a, &mouse_binding::MousePhase::Down);
-          assert_eq!(pressed_button_a, &hashset! {2});
-          assert_eq!(affected_button_a, &hashset! {2});
+          assert_eq!(pressed_button_a, &SortedVecSet::from(vec![2]));
+          assert_eq!(affected_button_a, &SortedVecSet::from(vec![2]));
           assert_eq!(location_a, &utils::NO_MOVEMENT_LOCATION);
           assert_eq!(phase_b, &mouse_binding::MousePhase::Up);
-          assert_eq!(pressed_button_b, &hashset! {});
-          assert_eq!(affected_button_b, &hashset! {2});
+          assert_eq!(pressed_button_b, &SortedVecSet::new());
+          assert_eq!(affected_button_b, &SortedVecSet::from(vec![2]));
           assert_eq!(location_b, &utils::NO_MOVEMENT_LOCATION);
         });
     }

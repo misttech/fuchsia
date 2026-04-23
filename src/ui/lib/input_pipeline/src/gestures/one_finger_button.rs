@@ -11,8 +11,7 @@ use super::utils::{MovementDetail, movement_from_events};
 use crate::mouse_binding::{self, MouseButton};
 use crate::utils::{Position, euclidean_distance};
 
-use maplit::hashset;
-use std::collections::HashSet;
+use sorted_vec_map_rs::SortedVecSet;
 
 /// The initial state of this recognizer, before a click has been detected.
 #[derive(Debug)]
@@ -449,8 +448,8 @@ fn touchpad_event_to_mouse_down_event(event: &TouchpadEvent) -> MouseEvent {
         event.timestamp,
         Position::zero(),
         mouse_binding::MousePhase::Down,
-        hashset! {1},
-        hashset! {1},
+        SortedVecSet::from(vec![1]),
+        SortedVecSet::from(vec![1]),
     )
 }
 
@@ -459,8 +458,8 @@ fn touchpad_event_to_mouse_up_event(event: &TouchpadEvent) -> MouseEvent {
         event.timestamp,
         Position::zero(),
         mouse_binding::MousePhase::Up,
-        hashset! {1},
-        hashset! {},
+        SortedVecSet::from(vec![1]),
+        SortedVecSet::new(),
     )
 }
 
@@ -474,8 +473,8 @@ fn touchpad_event_to_mouse_drag_event(
         event.timestamp,
         movement,
         mouse_binding::MousePhase::Move,
-        hashset! {},
-        hashset! {1},
+        SortedVecSet::new(),
+        SortedVecSet::from(vec![1]),
     )
 }
 
@@ -483,8 +482,8 @@ fn make_mouse_event(
     timestamp: zx::MonotonicInstant,
     movement_in_mm: Position,
     phase: mouse_binding::MousePhase,
-    affected_buttons: HashSet<MouseButton>,
-    pressed_buttons: HashSet<MouseButton>,
+    affected_buttons: SortedVecSet<MouseButton>,
+    pressed_buttons: SortedVecSet<MouseButton>,
 ) -> MouseEvent {
     MouseEvent {
         timestamp,
@@ -725,8 +724,8 @@ mod tests {
                   /* wheel_delta_v= */ None,
                   /* wheel_delta_h= */ None,
                   mouse_binding::MousePhase::Down,
-                  /* affected_buttons= */ hashset!{1},
-                  /* pressed_buttons= */ hashset!{1},
+                  /* affected_buttons= */ SortedVecSet::from(vec![1]),
+                  /* pressed_buttons= */ SortedVecSet::from(vec![1]),
                   /* is_precision_scroll= */ None,
                   /* wake_lease= */ None,
               ),
@@ -801,8 +800,8 @@ mod tests {
                 /* wheel_delta_v= */ None,
                 /* wheel_delta_h= */ None,
                 mouse_binding::MousePhase::Up,
-                /* affected_buttons= */ hashset!{1},
-                /* pressed_buttons= */ hashset!{},
+                /* affected_buttons= */ SortedVecSet::from(vec![1]),
+                /* pressed_buttons= */ SortedVecSet::new(),
                 /* is_precision_scroll= */ None,
                 /* wake_lease= */ None,
             ));
@@ -935,8 +934,8 @@ mod tests {
                 /* wheel_delta_v= */ None,
                 /* wheel_delta_h= */ None,
                 mouse_binding::MousePhase::Up,
-                /* affected_buttons= */ hashset!{1},
-                /* pressed_buttons= */ hashset!{},
+                /* affected_buttons= */ SortedVecSet::from(vec![1]),
+                /* pressed_buttons= */ SortedVecSet::new(),
                 /* is_precision_scroll= */ None,
                 /* wake_lease= */ None,
             ));
@@ -974,8 +973,8 @@ mod tests {
                 /* wheel_delta_v= */ None,
                 /* wheel_delta_h= */ None,
                 mouse_binding::MousePhase::Move,
-                /* affected_buttons= */ hashset!{},
-                /* pressed_buttons= */ hashset!{1},
+                /* affected_buttons= */ SortedVecSet::new(),
+                /* pressed_buttons= */ SortedVecSet::from(vec![1]),
                 /* is_precision_scroll= */ None,
                 /* wake_lease= */ None,
             ));
@@ -1016,8 +1015,8 @@ mod tests {
                 /* wheel_delta_v= */ None,
                 /* wheel_delta_h= */ None,
                 mouse_binding::MousePhase::Move,
-                /* affected_buttons= */ hashset!{},
-                /* pressed_buttons= */ hashset!{1},
+                /* affected_buttons= */ SortedVecSet::new(),
+                /* pressed_buttons= */ SortedVecSet::from(vec![1]),
                 /* is_precision_scroll= */ None,
                 /* wake_lease= */ None,
             ));
@@ -1044,8 +1043,8 @@ mod tests {
                 /* wheel_delta_v= */ None,
                 /* wheel_delta_h= */ None,
                 mouse_binding::MousePhase::Move,
-                /* affected_buttons= */ hashset!{},
-                /* pressed_buttons= */ hashset!{1},
+                /* affected_buttons= */ SortedVecSet::new(),
+                /* pressed_buttons= */ SortedVecSet::from(vec![1]),
                 /* is_precision_scroll= */ None,
                 /* wake_lease= */ None,
             ));

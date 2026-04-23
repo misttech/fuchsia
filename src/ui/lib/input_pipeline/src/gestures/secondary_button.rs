@@ -11,8 +11,7 @@ use super::utils::{MovementDetail, movement_from_events};
 use crate::mouse_binding::{MouseButton, MouseEvent, MouseLocation, MousePhase, RelativeLocation};
 use crate::utils::{Position, euclidean_distance};
 
-use maplit::hashset;
-use std::collections::HashSet;
+use sorted_vec_map_rs::SortedVecSet;
 
 /// The initial state of this recognizer, before a secondary tap has been
 /// detected.
@@ -573,8 +572,8 @@ fn touchpad_event_to_mouse_down_event(event: &TouchpadEvent) -> gesture_arena::M
         event.timestamp,
         Position::zero(),
         MousePhase::Down,
-        hashset! {gesture_arena::SECONDARY_BUTTON},
-        hashset! {gesture_arena::SECONDARY_BUTTON},
+        SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
+        SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
     )
 }
 
@@ -583,8 +582,8 @@ fn touchpad_event_to_mouse_up_event(event: &TouchpadEvent) -> gesture_arena::Mou
         event.timestamp,
         Position::zero(),
         MousePhase::Up,
-        hashset! {gesture_arena::SECONDARY_BUTTON},
-        hashset! {},
+        SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
+        SortedVecSet::new(),
     )
 }
 
@@ -598,8 +597,8 @@ fn touchpad_event_to_mouse_drag_event(
         event.timestamp,
         movement,
         MousePhase::Move,
-        hashset! {},
-        hashset! {gesture_arena::SECONDARY_BUTTON},
+        SortedVecSet::new(),
+        SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
     )
 }
 
@@ -607,8 +606,8 @@ fn make_mouse_event(
     timestamp: zx::MonotonicInstant,
     movement_in_mm: Position,
     phase: MousePhase,
-    affected_buttons: HashSet<MouseButton>,
-    pressed_buttons: HashSet<MouseButton>,
+    affected_buttons: SortedVecSet<MouseButton>,
+    pressed_buttons: SortedVecSet<MouseButton>,
 ) -> gesture_arena::MouseEvent {
     gesture_arena::MouseEvent {
         timestamp,
@@ -1066,8 +1065,8 @@ mod test {
                   /* wheel_delta_v= */ None,
                   /* wheel_delta_h= */ None,
                   MousePhase::Down,
-                  /* affected_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
-                  /* pressed_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
+                  /* affected_buttons= */ SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
+                  /* pressed_buttons= */ SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
                   /* is_precision_scroll= */ None,
             /* wake_lease= */ None,
 
@@ -1169,8 +1168,8 @@ mod test {
                 /* wheel_delta_v= */ None,
                 /* wheel_delta_h= */ None,
                 MousePhase::Up,
-                /* affected_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
-                /* pressed_buttons= */ hashset!{},
+                /* affected_buttons= */ SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
+                /* pressed_buttons= */ SortedVecSet::new(),
                 /* is_precision_scroll= */ None,
             /* wake_lease= */ None,
 
@@ -1318,8 +1317,8 @@ mod test {
                 /* wheel_delta_v= */ None,
                 /* wheel_delta_h= */ None,
                 MousePhase::Up,
-                /* affected_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
-                /* pressed_buttons= */ hashset!{},
+                /* affected_buttons= */ SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
+                /* pressed_buttons= */ SortedVecSet::new(),
                 /* is_precision_scroll= */ None,
             /* wake_lease= */ None,
 
@@ -1371,8 +1370,8 @@ mod test {
                 /* wheel_delta_v= */ None,
                 /* wheel_delta_h= */ None,
                 MousePhase::Move,
-                /* affected_buttons= */ hashset!{},
-                /* pressed_buttons= */ hashset!{gesture_arena::SECONDARY_BUTTON},
+                /* affected_buttons= */ SortedVecSet::new(),
+                /* pressed_buttons= */ SortedVecSet::from(vec![gesture_arena::SECONDARY_BUTTON]),
                 /* is_precision_scroll= */ None,
             /* wake_lease= */ None,
 

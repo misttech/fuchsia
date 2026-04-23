@@ -8,14 +8,15 @@ use crate::{Transport, metrics, mouse_model_database};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl::HandleBased;
+use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
-use std::collections::HashSet;
-use {fidl_fuchsia_input_report as fidl_input_report, zx};
+use sorted_vec_map_rs::SortedVecSet;
+use zx;
 
 pub type MouseButton = u8;
 
@@ -92,8 +93,8 @@ pub struct WheelDelta {
 ///     Some(1),
 ///     Some(1),
 ///     MousePhase::Move,
-///     HashSet::from_iter(vec![1]).into_iter()),
-///     HashSet::from_iter(vec![1]).into_iter()),,
+///     SortedVecSet::from(vec![1]),
+///     SortedVecSet::from(vec![1]),
 ///     None, // wake_lease
 /// ));
 /// ```
@@ -115,10 +116,10 @@ pub struct MouseEvent {
     pub phase: MousePhase,
 
     /// The buttons relevant to this event.
-    pub affected_buttons: HashSet<MouseButton>,
+    pub affected_buttons: SortedVecSet<MouseButton>,
 
     /// The complete button state including this event.
-    pub pressed_buttons: HashSet<MouseButton>,
+    pub pressed_buttons: SortedVecSet<MouseButton>,
 
     /// The wake lease for this event.
     pub wake_lease: Mutex<Option<zx::EventPair>>,
@@ -165,8 +166,8 @@ impl MouseEvent {
         wheel_delta_v: Option<WheelDelta>,
         wheel_delta_h: Option<WheelDelta>,
         phase: MousePhase,
-        affected_buttons: HashSet<MouseButton>,
-        pressed_buttons: HashSet<MouseButton>,
+        affected_buttons: SortedVecSet<MouseButton>,
+        pressed_buttons: SortedVecSet<MouseButton>,
         is_precision_scroll: Option<PrecisionScroll>,
         wake_lease: Option<zx::EventPair>,
     ) -> MouseEvent {
@@ -497,9 +498,9 @@ impl MouseBinding {
             }
         };
 
-        let previous_buttons: HashSet<MouseButton> =
+        let previous_buttons: SortedVecSet<MouseButton> =
             buttons_from_optional_report(&previous_report.as_ref());
-        let current_buttons: HashSet<MouseButton> = buttons_from_report(&report);
+        let current_buttons: SortedVecSet<MouseButton> = buttons_from_report(&report);
 
         // Send a Down event with:
         // * affected_buttons: the buttons that were pressed since the previous report,
@@ -647,8 +648,8 @@ fn send_mouse_event(
     wheel_delta_v: Option<WheelDelta>,
     wheel_delta_h: Option<WheelDelta>,
     phase: MousePhase,
-    affected_buttons: HashSet<MouseButton>,
-    pressed_buttons: HashSet<MouseButton>,
+    affected_buttons: SortedVecSet<MouseButton>,
+    pressed_buttons: SortedVecSet<MouseButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
     inspect_status: &InputDeviceStatus,
@@ -707,37 +708,13 @@ fn send_mouse_event(
     }
 }
 
-/// Returns a u32 representation of `buttons`, where each u8 of `buttons` is an id of a button and
-/// indicates the position of a bit to set.
-///
-/// This supports hashsets with numbers from 1 to fidl_input_report::MOUSE_MAX_NUM_BUTTONS.
-///
-/// # Parameters
-/// - `buttons`: The hashset containing the position of bits to be set.
-///
-/// # Example
-/// ```
-/// let bits = get_u32_from_buttons(&HashSet::from_iter(vec![1, 3, 5]).into_iter());
-/// assert_eq!(bits, 21 /* ...00010101 */)
-/// ```
-pub fn get_u32_from_buttons(buttons: &HashSet<MouseButton>) -> u32 {
-    let mut bits: u32 = 0;
-    for button in buttons {
-        if *button > 0 && *button <= fidl_input_report::MOUSE_MAX_NUM_BUTTONS as u8 {
-            bits = ((1 as u32) << *button - 1) | bits;
-        }
-    }
-
-    bits
-}
-
 /// Returns the set of pressed buttons present in the given input report.
 ///
 /// # Parameters
 /// - `report`: The input report to parse the mouse buttons from.
 fn buttons_from_report(
     input_report: &fidl_next_fuchsia_input_report::InputReport,
-) -> HashSet<MouseButton> {
+) -> SortedVecSet<MouseButton> {
     buttons_from_optional_report(&Some(input_report))
 }
 
@@ -747,12 +724,12 @@ fn buttons_from_report(
 /// - `report`: The input report to parse the mouse buttons from.
 fn buttons_from_optional_report(
     input_report: &Option<&fidl_next_fuchsia_input_report::InputReport>,
-) -> HashSet<MouseButton> {
+) -> SortedVecSet<MouseButton> {
     input_report
         .as_ref()
         .and_then(|unwrapped_report| unwrapped_report.mouse.as_ref())
         .and_then(|mouse_report| match &mouse_report.pressed_buttons {
-            Some(buttons) => Some(HashSet::from_iter(buttons.iter().cloned())),
+            Some(buttons) => Some(SortedVecSet::from(buttons.clone())),
             None => None,
         })
         .unwrap_or_default()
@@ -764,7 +741,7 @@ mod tests {
     use crate::testing_utilities;
     use fuchsia_async as fasync;
     use futures::StreamExt;
-    use pretty_assertions::assert_eq;
+    use sorted_vec_map_rs::SortedVecSet;
 
     const DEVICE_ID: u32 = 1;
     const COUNTS_PER_MM: u32 = 12;
@@ -797,44 +774,6 @@ mod tests {
         Some(WheelDelta { raw_data: RawWheelDelta::Ticks(delta), physical_pixel: None })
     }
 
-    // Tests that the right u32 representation is returned from a vector of digits.
-    #[test]
-    fn get_u32_from_buttons_test() {
-        let bits = get_u32_from_buttons(&HashSet::from_iter(vec![1, 3, 5].into_iter()));
-        assert_eq!(bits, 21 /* 0...00010101 */)
-    }
-
-    // Tests that the right u32 representation is returned from a vector of digits that includes 0.
-    #[test]
-    fn get_u32_with_0_in_vector() {
-        let bits = get_u32_from_buttons(&HashSet::from_iter(vec![0, 1, 3].into_iter()));
-        assert_eq!(bits, 5 /* 0...00000101 */)
-    }
-
-    // Tests that the right u32 representation is returned from an empty vector.
-    #[test]
-    fn get_u32_with_empty_vector() {
-        let bits = get_u32_from_buttons(&HashSet::new());
-        assert_eq!(bits, 0 /* 0...00000000 */)
-    }
-
-    // Tests that the right u32 representation is returned from a vector containing std::u8::MAX.
-    #[test]
-    fn get_u32_with_u8_max_in_vector() {
-        let bits = get_u32_from_buttons(&HashSet::from_iter(vec![1, 3, std::u8::MAX].into_iter()));
-        assert_eq!(bits, 5 /* 0...00000101 */)
-    }
-
-    // Tests that the right u32 representation is returned from a vector containing the largest
-    // button id possible.
-    #[test]
-    fn get_u32_with_max_mouse_buttons() {
-        let bits = get_u32_from_buttons(&HashSet::from_iter(
-            vec![1, 3, fidl_input_report::MOUSE_MAX_NUM_BUTTONS as MouseButton].into_iter(),
-        ));
-        assert_eq!(bits, 2147483653 /* 10...00000101 */)
-    }
-
     /// Tests that a report containing no buttons but with movement generates a move event.
     #[fasync::run_singlethreaded(test)]
     async fn movement_without_button() {
@@ -860,8 +799,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             MousePhase::Move,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             event_time_u64,
             &descriptor,
         )];
@@ -895,8 +834,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             MousePhase::Down,
-            HashSet::from_iter(vec![mouse_button].into_iter()),
-            HashSet::from_iter(vec![mouse_button].into_iter()),
+            SortedVecSet::from(vec![mouse_button]),
+            SortedVecSet::from(vec![mouse_button]),
             event_time_u64,
             &descriptor,
         )];
@@ -932,8 +871,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![mouse_button].into_iter()),
-                HashSet::from_iter(vec![mouse_button].into_iter()),
+                SortedVecSet::from(vec![mouse_button]),
+                SortedVecSet::from(vec![mouse_button]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -948,8 +887,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Move,
-                HashSet::from_iter(vec![mouse_button].into_iter()),
-                HashSet::from_iter(vec![mouse_button].into_iter()),
+                SortedVecSet::from(vec![mouse_button]),
+                SortedVecSet::from(vec![mouse_button]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -992,8 +931,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![button].into_iter()),
-                HashSet::from_iter(vec![button].into_iter()),
+                SortedVecSet::from(vec![button]),
+                SortedVecSet::from(vec![button]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1003,8 +942,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Up,
-                HashSet::from_iter(vec![button].into_iter()),
-                HashSet::new(),
+                SortedVecSet::from(vec![button]),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1048,8 +987,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![button].into_iter()),
-                HashSet::from_iter(vec![button].into_iter()),
+                SortedVecSet::from(vec![button]),
+                SortedVecSet::from(vec![button]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1064,8 +1003,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Move,
-                HashSet::from_iter(vec![button].into_iter()),
-                HashSet::from_iter(vec![button].into_iter()),
+                SortedVecSet::from(vec![button]),
+                SortedVecSet::from(vec![button]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1075,8 +1014,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Up,
-                HashSet::from_iter(vec![button].into_iter()),
-                HashSet::new(),
+                SortedVecSet::from(vec![button]),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1129,8 +1068,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![button].into_iter()),
-                HashSet::from_iter(vec![button].into_iter()),
+                SortedVecSet::from(vec![button]),
+                SortedVecSet::from(vec![button]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1145,8 +1084,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Move,
-                HashSet::from_iter(vec![button].into_iter()),
-                HashSet::from_iter(vec![button].into_iter()),
+                SortedVecSet::from(vec![button]),
+                SortedVecSet::from(vec![button]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1156,8 +1095,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Up,
-                HashSet::from_iter(vec![button].into_iter()),
-                HashSet::new(),
+                SortedVecSet::from(vec![button]),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1190,8 +1129,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             MousePhase::Move,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             event_time_u64,
             &descriptor,
         )];
@@ -1240,8 +1179,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             MousePhase::Move,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             event_time_u64,
             &descriptor,
         )];
@@ -1286,8 +1225,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1297,8 +1236,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![SECONDARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON, SECONDARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![SECONDARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON, SECONDARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1365,8 +1304,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1376,8 +1315,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![SECONDARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON, SECONDARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![SECONDARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON, SECONDARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1387,8 +1326,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Up,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![SECONDARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::from(vec![SECONDARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1398,8 +1337,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Up,
-                HashSet::from_iter(vec![SECONDARY_BUTTON].into_iter()),
-                HashSet::new(),
+                SortedVecSet::from(vec![SECONDARY_BUTTON]),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1442,8 +1381,8 @@ mod tests {
                 None,
                 Some(PrecisionScroll::No),
                 MousePhase::Wheel,
-                HashSet::new(),
-                HashSet::new(),
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1453,8 +1392,8 @@ mod tests {
                 wheel_delta_ticks(1),
                 Some(PrecisionScroll::No),
                 MousePhase::Wheel,
-                HashSet::new(),
-                HashSet::new(),
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1513,8 +1452,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1524,8 +1463,8 @@ mod tests {
                 None,
                 Some(PrecisionScroll::No),
                 MousePhase::Wheel,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1535,8 +1474,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Up,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::new(),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1546,8 +1485,8 @@ mod tests {
                 None,
                 Some(PrecisionScroll::No),
                 MousePhase::Wheel,
-                HashSet::new(),
-                HashSet::new(),
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1599,8 +1538,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Down,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1610,8 +1549,8 @@ mod tests {
                 None,
                 Some(PrecisionScroll::No),
                 MousePhase::Wheel,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1621,8 +1560,8 @@ mod tests {
                 None,
                 Some(PrecisionScroll::No),
                 MousePhase::Wheel,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1632,8 +1571,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 MousePhase::Up,
-                HashSet::from_iter(vec![PRIMARY_BUTTON].into_iter()),
-                HashSet::new(),
+                SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1643,8 +1582,8 @@ mod tests {
                 None,
                 Some(PrecisionScroll::No),
                 MousePhase::Wheel,
-                HashSet::new(),
-                HashSet::new(),
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time_u64,
                 &descriptor,
             ),

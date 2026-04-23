@@ -11,7 +11,7 @@ use crate::mouse_binding::{MouseEvent, MouseLocation, MousePhase, RelativeLocati
 use crate::utils::{Position, euclidean_distance};
 use fuchsia_sync::Mutex;
 
-use maplit::hashset;
+use sorted_vec_map_rs::SortedVecSet;
 
 /// The initial state of this recognizer, before a tap has been detected.
 #[derive(Debug)]
@@ -214,8 +214,8 @@ impl gesture_arena::MatchedContender for MatchedContender {
                         wheel_delta_v: None,
                         wheel_delta_h: None,
                         phase: MousePhase::Down,
-                        affected_buttons: hashset! {PRIMARY_BUTTON},
-                        pressed_buttons: hashset! {PRIMARY_BUTTON},
+                        affected_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                        pressed_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
                         is_precision_scroll: None,
                         wake_lease: Mutex::new(None),
                     },
@@ -229,8 +229,8 @@ impl gesture_arena::MatchedContender for MatchedContender {
                         wheel_delta_v: None,
                         wheel_delta_h: None,
                         phase: MousePhase::Up,
-                        affected_buttons: hashset! {PRIMARY_BUTTON},
-                        pressed_buttons: hashset! {},
+                        affected_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                        pressed_buttons: SortedVecSet::new(),
                         is_precision_scroll: None,
                         wake_lease: Mutex::new(None),
                     },
@@ -815,8 +815,8 @@ mod tests {
                         wheel_delta_v: None,
                         wheel_delta_h: None,
                         phase: MousePhase::Down,
-                        affected_buttons: hashset! {PRIMARY_BUTTON},
-                        pressed_buttons: hashset! {PRIMARY_BUTTON},
+                        affected_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                        pressed_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
                         is_precision_scroll: None,
                         wake_lease: Mutex::new(None),
                     },
@@ -830,8 +830,8 @@ mod tests {
                         wheel_delta_v: None,
                         wheel_delta_h: None,
                         phase: MousePhase::Up,
-                        affected_buttons: hashset! {PRIMARY_BUTTON},
-                        pressed_buttons: hashset! {},
+                        affected_buttons: SortedVecSet::from(vec![PRIMARY_BUTTON]),
+                        pressed_buttons: SortedVecSet::new(),
                         is_precision_scroll: None,
                         wake_lease: Mutex::new(None),
                     },

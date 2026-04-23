@@ -240,9 +240,8 @@ mod tests {
     use crate::testing_utilities;
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
-    use maplit::hashset;
+    use sorted_vec_map_rs::SortedVecSet;
     use std::cell::Cell;
-    use std::collections::HashSet;
     use std::ops::Add;
     use test_case::test_case;
 
@@ -305,8 +304,8 @@ mod tests {
             wheel_delta_v: None,
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Move,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         });
@@ -334,8 +333,8 @@ mod tests {
             wheel_delta_v: None,
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Move,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "move event")]
@@ -350,8 +349,8 @@ mod tests {
             }),
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "wheel event")]
@@ -369,11 +368,11 @@ mod tests {
         );
     }
 
-    #[test_case(hashset! {       }; "empty buttons")]
-    #[test_case(hashset! {      1}; "one button")]
-    #[test_case(hashset! {1, 2, 3}; "multiple buttons")]
+    #[test_case(SortedVecSet::new(); "empty buttons")]
+    #[test_case(SortedVecSet::from(vec![1]); "one button")]
+    #[test_case(SortedVecSet::from(vec![1, 2, 3]); "multiple buttons")]
     #[fuchsia::test(allow_stalls = false)]
-    async fn preserves_buttons_move_event(input_buttons: HashSet<u8>) {
+    async fn preserves_buttons_move_event(input_buttons: SortedVecSet<u8>) {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
         let handler =
@@ -401,11 +400,11 @@ mod tests {
         );
     }
 
-    #[test_case(hashset! {       }; "empty buttons")]
-    #[test_case(hashset! {      1}; "one button")]
-    #[test_case(hashset! {1, 2, 3}; "multiple buttons")]
+    #[test_case(SortedVecSet::new(); "empty buttons")]
+    #[test_case(SortedVecSet::from(vec![1]); "one button")]
+    #[test_case(SortedVecSet::from(vec![1, 2, 3]); "multiple buttons")]
     #[fuchsia::test(allow_stalls = false)]
-    async fn preserves_buttons_wheel_event(input_buttons: HashSet<u8>) {
+    async fn preserves_buttons_wheel_event(input_buttons: SortedVecSet<u8>) {
         let inspector = fuchsia_inspect::Inspector::default();
         let test_node = inspector.root().create_child("test_node");
         let handler =
@@ -446,8 +445,8 @@ mod tests {
             wheel_delta_v: None,
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Move,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "move event")]
@@ -462,8 +461,8 @@ mod tests {
             }),
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "wheel event")]
@@ -491,8 +490,8 @@ mod tests {
             wheel_delta_v: None,
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Move,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "move event")]
@@ -507,8 +506,8 @@ mod tests {
             }),
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         }; "wheel event")]
@@ -539,8 +538,8 @@ mod tests {
             }),
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: Some(mouse_binding::PrecisionScroll::No),
             wake_lease: None.into(),
         } => matches input_device::InputEvent {
@@ -561,8 +560,8 @@ mod tests {
             }),
             wheel_delta_h: None,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: Some(mouse_binding::PrecisionScroll::Yes),
             wake_lease: None.into(),
         } => matches input_device::InputEvent {
@@ -629,8 +628,8 @@ mod tests {
             wheel_delta_v,
             wheel_delta_h,
             phase: mouse_binding::MousePhase::Wheel,
-            affected_buttons: hashset! {},
-            pressed_buttons: hashset! {},
+            affected_buttons: SortedVecSet::new(),
+            pressed_buttons: SortedVecSet::new(),
             is_precision_scroll: None,
             wake_lease: None.into(),
         });
@@ -715,8 +714,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Wheel,
-                hashset! {},
-                hashset! {},
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time1,
                 &DEVICE_DESCRIPTOR,
             ),
@@ -728,8 +727,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Move,
-                hashset! {},
-                hashset! {},
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time2,
                 &DEVICE_DESCRIPTOR,
             ),
@@ -742,8 +741,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Wheel,
-                hashset! {},
-                hashset! {},
+                SortedVecSet::new(),
+                SortedVecSet::new(),
                 event_time3,
                 &DEVICE_DESCRIPTOR,
                 input_device::Handled::Yes,

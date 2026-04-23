@@ -9,7 +9,7 @@ use super::gesture_arena::{
 };
 use crate::mouse_binding;
 use crate::utils::{Position, euclidean_distance};
-use maplit::hashset;
+use sorted_vec_map_rs::SortedVecSet;
 
 /// The initial state of this recognizer, before a finger contact has been detected.
 #[derive(Debug)]
@@ -231,8 +231,8 @@ fn touchpad_event_to_mouse_motion_event(
             /* wheel_delta_v= */ None,
             /* wheel_delta_h= */ None,
             mouse_binding::MousePhase::Move,
-            /* affected_buttons= */ hashset! {},
-            /* pressed_buttons= */ hashset! {},
+            /* affected_buttons= */ SortedVecSet::new(),
+            /* pressed_buttons= */ SortedVecSet::new(),
             /* is_precision_scroll= */ None,
             /* wake_lease= */ None,
         ),
@@ -453,8 +453,8 @@ mod tests {
                     /* wheel_delta_v= */ None,
                     /* wheel_delta_h= */ None,
                     mouse_binding::MousePhase::Move,
-                    /* affected_buttons= */ hashset! {},
-                    /* pressed_buttons= */ hashset! {},
+                    /* affected_buttons= */ SortedVecSet::new(),
+                    /* pressed_buttons= */ SortedVecSet::new(),
                     /* is_precision_scroll= */ None,
                     /* wake_lease= */ None,
                 ),
@@ -548,8 +548,8 @@ mod tests {
                             wheel_delta_v: None,
                             wheel_delta_h: None,
                             phase: mouse_binding::MousePhase::Move,
-                            affected_buttons: hashset! {},
-                            pressed_buttons: hashset! {},
+                            affected_buttons: SortedVecSet::new(),
+                            pressed_buttons: SortedVecSet::new(),
                             is_precision_scroll: None,
                             wake_lease: None.into(),
                         },
@@ -592,8 +592,8 @@ mod tests {
                             wheel_delta_v: None,
                             wheel_delta_h: None,
                             phase: mouse_binding::MousePhase::Move,
-                            affected_buttons: hashset! {},
-                            pressed_buttons: hashset! {},
+                            affected_buttons: SortedVecSet::new(),
+                            pressed_buttons: SortedVecSet::new(),
                             is_precision_scroll: None,
                             wake_lease: None.into(),
                         },
@@ -633,8 +633,8 @@ mod tests {
                             wheel_delta_v: None,
                             wheel_delta_h: None,
                             phase: mouse_binding::MousePhase::Move,
-                            affected_buttons: hashset! {},
-                            pressed_buttons: hashset! {},
+                            affected_buttons: SortedVecSet::new(),
+                            pressed_buttons: SortedVecSet::new(),
                             is_precision_scroll: None,
                             wake_lease: None.into(),
                         },

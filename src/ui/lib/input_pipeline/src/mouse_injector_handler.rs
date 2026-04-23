@@ -552,7 +552,7 @@ impl MouseInjectorHandler {
                 },
                 _ => None,
             },
-            pressed_buttons: Some(Vec::from_iter(mouse_event.pressed_buttons.iter().cloned())),
+            pressed_buttons: Some(mouse_event.pressed_buttons.clone().into()),
             relative_motion,
             ..Default::default()
         };
@@ -639,7 +639,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use pretty_assertions::assert_eq;
-    use std::collections::HashSet;
+    use sorted_vec_map_rs::SortedVecSet;
     use std::ops::Add;
     use test_case::test_case;
 
@@ -1010,8 +1010,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Move,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             event_time,
             &DESCRIPTOR,
         );
@@ -1128,8 +1128,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Move,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             event_time,
             &descriptor,
         );
@@ -1234,8 +1234,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             phase,
-            HashSet::from_iter(affected_buttons.clone()),
-            HashSet::from_iter(pressed_buttons.clone()),
+            affected_buttons.clone().into(),
+            pressed_buttons.clone().into(),
             event_time,
             &DESCRIPTOR,
         );
@@ -1245,13 +1245,13 @@ mod tests {
         let expected_position = Position { x: 0.0, y: 0.0 };
         let expected_events = vec![
             create_mouse_pointer_sample_event_phase_add(
-                pressed_buttons.clone(),
+                pressed_buttons.clone().into(),
                 expected_position,
                 event_time,
             ),
             create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
-                pressed_buttons.clone(),
+                pressed_buttons.clone().into(),
                 expected_position,
                 None, /*relative_motion*/
                 None, /*wheel_delta_v*/
@@ -1332,8 +1332,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Down,
-            HashSet::from_iter(vec![1]),
-            HashSet::from_iter(vec![1]),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::from(vec![1]),
             event_time1,
             &DESCRIPTOR,
         );
@@ -1344,8 +1344,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Up,
-            HashSet::from_iter(vec![1]),
-            HashSet::new(),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::new(),
             event_time2,
             &DESCRIPTOR,
         );
@@ -1473,8 +1473,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Down,
-            HashSet::from_iter(vec![1]),
-            HashSet::from_iter(vec![1]),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::from(vec![1]),
             event_time1,
             &DESCRIPTOR,
         );
@@ -1484,8 +1484,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Down,
-            HashSet::from_iter(vec![2]),
-            HashSet::from_iter(vec![1, 2]),
+            SortedVecSet::from(vec![2]),
+            SortedVecSet::from(vec![1, 2]),
             event_time2,
             &DESCRIPTOR,
         );
@@ -1495,8 +1495,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Up,
-            HashSet::from_iter(vec![1]),
-            HashSet::from_iter(vec![2]),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::from(vec![2]),
             event_time3,
             &DESCRIPTOR,
         );
@@ -1506,8 +1506,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Up,
-            HashSet::from_iter(vec![2]),
-            HashSet::new(),
+            SortedVecSet::from(vec![2]),
+            SortedVecSet::new(),
             event_time4,
             &DESCRIPTOR,
         );
@@ -1584,10 +1584,7 @@ mod tests {
                 assert_eq!(*actual_event_time, expected_event_time);
                 assert_eq!(actual_position[0], expected_position.x);
                 assert_eq!(actual_position[1], expected_position.y);
-                assert_eq!(
-                    HashSet::<mouse_binding::MouseButton>::from_iter(actual_buttons.clone()),
-                    HashSet::from_iter(vec![1, 2])
-                );
+                assert_eq!(actual_buttons.as_slice(), &[1u8, 2u8]);
             }
             _ => panic!("Unexpected pointer sample event: {:?}", pointer_sample_event2[0]),
         }
@@ -1690,8 +1687,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Down,
-            HashSet::from_iter(vec![1]),
-            HashSet::from_iter(vec![1]),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::from(vec![1]),
             event_time1,
             &DESCRIPTOR,
         );
@@ -1703,8 +1700,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Move,
-            HashSet::from_iter(vec![1]),
-            HashSet::from_iter(vec![1]),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::from(vec![1]),
             event_time2,
             &DESCRIPTOR,
         );
@@ -1716,8 +1713,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Up,
-            HashSet::from_iter(vec![1]),
-            HashSet::from_iter(vec![]),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::new(),
             event_time3,
             &DESCRIPTOR,
         );
@@ -1872,8 +1869,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Move,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             event_time,
             &DESCRIPTOR,
             input_device::Handled::Yes,
@@ -1903,8 +1900,8 @@ mod tests {
             None,                                     /*wheel_delta_h*/
             Some(mouse_binding::PrecisionScroll::No), /*is_precision_scroll*/
             mouse_binding::MousePhase::Wheel,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             zx::MonotonicInstant::ZERO,
             &DESCRIPTOR,
         ),
@@ -1926,8 +1923,8 @@ mod tests {
             wheel_delta_ticks(1, None),               /*wheel_delta_h*/
             Some(mouse_binding::PrecisionScroll::No), /*is_precision_scroll*/
             mouse_binding::MousePhase::Wheel,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             zx::MonotonicInstant::ZERO,
             &DESCRIPTOR,
         ),
@@ -1949,8 +1946,8 @@ mod tests {
             None,                                     /*wheel_delta_h*/
             Some(mouse_binding::PrecisionScroll::No), /*is_precision_scroll*/
             mouse_binding::MousePhase::Wheel,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             zx::MonotonicInstant::ZERO,
             &DESCRIPTOR,
         ),
@@ -1974,8 +1971,8 @@ mod tests {
             wheel_delta_ticks(1, Some(120.0)),        /*wheel_delta_h*/
             Some(mouse_binding::PrecisionScroll::No), /*is_precision_scroll*/
             mouse_binding::MousePhase::Wheel,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             zx::MonotonicInstant::ZERO,
             &DESCRIPTOR,
         ),
@@ -1999,8 +1996,8 @@ mod tests {
             None,                                      /*wheel_delta_h*/
             Some(mouse_binding::PrecisionScroll::Yes), /*is_precision_scroll*/
             mouse_binding::MousePhase::Wheel,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             zx::MonotonicInstant::ZERO,
             &DESCRIPTOR,
         ),
@@ -2024,8 +2021,8 @@ mod tests {
             wheel_delta_mm(1.0, Some(120.0)),          /*wheel_delta_h*/
             Some(mouse_binding::PrecisionScroll::Yes), /*is_precision_scroll*/
             mouse_binding::MousePhase::Wheel,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             zx::MonotonicInstant::ZERO,
             &DESCRIPTOR,
         ),
@@ -2173,8 +2170,8 @@ mod tests {
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Down,
-            HashSet::from_iter(vec![1]),
-            HashSet::from_iter(vec![1]),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::from(vec![1]),
             event_time1,
             &DESCRIPTOR,
         );
@@ -2185,8 +2182,8 @@ mod tests {
             None,                                     /* wheel_delta_h */
             Some(mouse_binding::PrecisionScroll::No), /* is_precision_scroll */
             mouse_binding::MousePhase::Wheel,
-            HashSet::from_iter(vec![1]),
-            HashSet::from_iter(vec![1]),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::from(vec![1]),
             event_time2,
             &DESCRIPTOR,
         );
@@ -2197,8 +2194,8 @@ mod tests {
             None,
             None, /* is_precision_scroll */
             mouse_binding::MousePhase::Up,
-            HashSet::from_iter(vec![1]),
-            HashSet::new(),
+            SortedVecSet::from(vec![1]),
+            SortedVecSet::new(),
             event_time3,
             &DESCRIPTOR,
         );
@@ -2209,8 +2206,8 @@ mod tests {
             None,                                     /* wheel_delta_h */
             Some(mouse_binding::PrecisionScroll::No), /* is_precision_scroll */
             mouse_binding::MousePhase::Wheel,
-            HashSet::new(),
-            HashSet::new(),
+            SortedVecSet::new(),
+            SortedVecSet::new(),
             event_time4,
             &DESCRIPTOR,
         );
@@ -2378,8 +2375,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Down,
-                HashSet::from_iter(vec![1]),
-                HashSet::from_iter(vec![1]),
+                SortedVecSet::from(vec![1]),
+                SortedVecSet::from(vec![1]),
                 event_time1,
                 &DESCRIPTOR,
             ),
@@ -2389,8 +2386,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Up,
-                HashSet::from_iter(vec![1]),
-                HashSet::new(),
+                SortedVecSet::from(vec![1]),
+                SortedVecSet::new(),
                 event_time2,
                 &DESCRIPTOR,
             ),
@@ -2400,8 +2397,8 @@ mod tests {
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
                 mouse_binding::MousePhase::Down,
-                HashSet::from_iter(vec![1]),
-                HashSet::from_iter(vec![1]),
+                SortedVecSet::from(vec![1]),
+                SortedVecSet::from(vec![1]),
                 event_time3,
                 &DESCRIPTOR,
                 input_device::Handled::Yes,

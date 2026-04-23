@@ -19,7 +19,8 @@ use fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next;
 use futures::{FutureExt as _, TryFutureExt, TryStreamExt};
 use log::error;
 use maplit::hashmap;
-use std::collections::{HashMap, HashSet};
+use sorted_vec_map_rs::SortedVecSet;
+use std::collections::HashMap;
 use zx;
 
 pub use diagnostics_assertions;
@@ -406,8 +407,8 @@ pub fn create_mouse_event_with_handled(
     wheel_delta_h: Option<mouse_binding::WheelDelta>,
     is_precision_scroll: Option<mouse_binding::PrecisionScroll>,
     phase: mouse_binding::MousePhase,
-    affected_buttons: HashSet<mouse_binding::MouseButton>,
-    pressed_buttons: HashSet<mouse_binding::MouseButton>,
+    affected_buttons: SortedVecSet<mouse_binding::MouseButton>,
+    pressed_buttons: SortedVecSet<mouse_binding::MouseButton>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,
     handled: input_device::Handled,
@@ -447,8 +448,8 @@ pub fn create_mouse_event(
     wheel_delta_h: Option<mouse_binding::WheelDelta>,
     is_precision_scroll: Option<mouse_binding::PrecisionScroll>,
     phase: mouse_binding::MousePhase,
-    affected_buttons: HashSet<mouse_binding::MouseButton>,
-    pressed_buttons: HashSet<mouse_binding::MouseButton>,
+    affected_buttons: SortedVecSet<mouse_binding::MouseButton>,
+    pressed_buttons: SortedVecSet<mouse_binding::MouseButton>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,
 ) -> input_device::InputEvent {
@@ -723,13 +724,13 @@ pub fn create_touch_screen_event_with_buttons(
 /// - `handled`: Whether the event has been consumed.
 pub fn create_touchpad_event_with_handled(
     injector_contacts: Vec<touch_binding::TouchContact>,
-    pressed_buttons: HashSet<fidl_input_report::TouchButton>,
+    pressed_buttons: SortedVecSet<fidl_input_report::TouchButton>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,
     handled: input_device::Handled,
 ) -> input_device::InputEvent {
-    let buttons: HashSet<mouse_binding::MouseButton> =
-        HashSet::from_iter(pressed_buttons.iter().filter_map(|button| match button {
+    let buttons: SortedVecSet<mouse_binding::MouseButton> =
+        SortedVecSet::from_iter(pressed_buttons.iter().filter_map(|button| match button {
             fidl_fuchsia_input_report::TouchButton::Palm => Some(1),
             _ => None,
         }));
@@ -755,7 +756,7 @@ pub fn create_touchpad_event_with_handled(
 /// - `device_descriptor`: The device descriptor to add to the event.
 pub fn create_touchpad_event(
     contacts: Vec<touch_binding::TouchContact>,
-    pressed_buttons: HashSet<fidl_input_report::TouchButton>,
+    pressed_buttons: SortedVecSet<fidl_input_report::TouchButton>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,
 ) -> input_device::InputEvent {
