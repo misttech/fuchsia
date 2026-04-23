@@ -9,7 +9,6 @@ use ffx_diagnostics_analytics::{PointOfFailure, ResultExt};
 use ffx_ssh::keys::{MatchingKeysInfo, SshKey};
 use std::collections::HashSet;
 
-#[allow(async_fn_in_trait)]
 pub trait SshKeyVerifier {
     /// Finds and verifies SSH keys from the device. Returns an error if no keys were found (the
     /// hashset should guarantee that at least one key has been found if returning `Ok()`).

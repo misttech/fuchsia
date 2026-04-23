@@ -9,6 +9,7 @@
 use diagnostics_traits::InspectableInstant;
 use fuchsia_async as fasync;
 use rand::Rng;
+use std::future::Future;
 
 /// Provides access to random number generation.
 pub trait RngProvider {
@@ -63,26 +64,19 @@ pub enum SocketError {
 }
 
 /// Abstracts sending and receiving datagrams on a socket.
-// `async_fn_in_trait` is stabilized, but currently emits a lint warning when
-// used in pub traits due to the inability to specify Send or Sync bounds on
-// the Future returned by the async fn. We suppress this lint as the DHCP client
-// uses only a local executor and thus doesn't require Send + Sync.
-#[allow(async_fn_in_trait)]
 pub trait Socket<T> {
     /// Sends a datagram containing the contents of `buf` to `addr`.
-    async fn send_to(&self, buf: &[u8], addr: T) -> Result<(), SocketError>;
+    fn send_to(&self, buf: &[u8], addr: T) -> impl Future<Output = Result<(), SocketError>>;
 
     /// Receives a datagram into `buf`, returning the number of bytes received
     /// and the address the datagram was received from.
-    async fn recv_from(&self, buf: &mut [u8]) -> Result<DatagramInfo<T>, SocketError>;
+    fn recv_from(
+        &self,
+        buf: &mut [u8],
+    ) -> impl Future<Output = Result<DatagramInfo<T>, SocketError>>;
 }
 
 /// Provides access to AF_PACKET sockets.
-// `async_fn_in_trait` is stabilized, but currently emits a lint warning when
-// used in pub traits due to the inability to specify Send or Sync bounds on
-// the Future returned by the async fn. We suppress this lint as the DHCP client
-// uses only a local executor and thus doesn't require Send + Sync.
-#[allow(async_fn_in_trait)]
 pub trait PacketSocketProvider {
     /// The type of sockets provided by this `PacketSocketProvider`.
     type Sock: Socket<net_types::ethernet::Mac>;
@@ -90,25 +84,20 @@ pub trait PacketSocketProvider {
     /// Gets a packet socket bound to the device on which the DHCP client
     /// protocol is being performed. The packet socket should already be bound
     /// to the appropriate device and protocol number.
-    async fn get_packet_socket(&self) -> Result<Self::Sock, SocketError>;
+    fn get_packet_socket(&self) -> impl Future<Output = Result<Self::Sock, SocketError>>;
 }
 
 /// Provides access to UDP sockets.
-// `async_fn_in_trait` is stabilized, but currently emits a lint warning when
-// used in pub traits due to the inability to specify Send or Sync bounds on
-// the Future returned by the async fn. We suppress this lint as the DHCP client
-// uses only a local executor and thus doesn't require Send + Sync.
-#[allow(async_fn_in_trait)]
 pub trait UdpSocketProvider {
     /// The type of sockets provided by this `UdpSocketProvider`.
     type Sock: Socket<std::net::SocketAddr>;
 
     /// Gets a UDP socket bound to the given address. The UDP socket should be
     /// allowed to send broadcast packets.
-    async fn bind_new_udp_socket(
+    fn bind_new_udp_socket(
         &self,
         bound_addr: std::net::SocketAddr,
-    ) -> Result<Self::Sock, SocketError>;
+    ) -> impl Future<Output = Result<Self::Sock, SocketError>>;
 }
 
 /// A type representing an instant in time.
@@ -141,17 +130,12 @@ impl Instant for fasync::MonotonicInstant {
 }
 
 /// Provides access to system-time-related operations.
-// `async_fn_in_trait` is stabilized, but currently emits a lint warning when
-// used in pub traits due to the inability to specify Send or Sync bounds on
-// the Future returned by the async fn. We suppress this lint as the DHCP client
-// uses only a local executor and thus doesn't require Send + Sync.
-#[allow(async_fn_in_trait)]
 pub trait Clock {
     /// The type representing monotonic system time.
     type Instant: Instant;
 
     /// Completes once the monotonic system time is at or after the given time.
-    async fn wait_until(&self, time: Self::Instant);
+    fn wait_until(&self, time: Self::Instant) -> impl Future<Output = ()>;
 
     /// Gets the monotonic system time.
     fn now(&self) -> Self::Instant;

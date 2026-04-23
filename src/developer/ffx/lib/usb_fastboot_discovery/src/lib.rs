@@ -5,6 +5,7 @@
 use anyhow::{Result, anyhow};
 use fuchsia_async::{Task, Timer};
 use std::collections::BTreeSet;
+use std::future::Future;
 use std::time::Duration;
 pub use usb_rs::bulk_interface::BulkInterface as Interface;
 use usb_rs::enumerate_devices;
@@ -34,11 +35,10 @@ pub async fn wait_for_live(
     }
 }
 
-#[allow(async_fn_in_trait)]
 pub trait FastbootUsbLiveTester: Send + 'static {
     /// Checks if the interface with the given serial number is Ready to accept
     /// fastboot commands
-    async fn is_fastboot_usb_live(&mut self, serial: &str) -> bool;
+    fn is_fastboot_usb_live(&mut self, serial: &str) -> impl Future<Output = bool> + Send;
 }
 
 pub struct GetVarFastbootUsbLiveTester;
@@ -49,10 +49,9 @@ impl FastbootUsbLiveTester for GetVarFastbootUsbLiveTester {
     }
 }
 
-#[allow(async_fn_in_trait)]
 pub trait FastbootUsbTester: Send + 'static {
     /// Checks if the interface with the given serial number is in Fastboot
-    async fn is_fastboot_usb(&mut self, serial: &str) -> bool;
+    fn is_fastboot_usb(&mut self, serial: &str) -> impl Future<Output = bool> + Send;
 }
 
 /// Checks if the USB Interface for the given serial is live and a fastboot match
@@ -85,24 +84,22 @@ pub enum FastbootEvent {
     Lost(String),
 }
 
-#[allow(async_fn_in_trait)]
 pub trait FastbootEventHandler: Send + 'static {
     /// Handles an event.
-    async fn handle_event(&mut self, event: FastbootEvent);
+    fn handle_event(&mut self, event: FastbootEvent) -> impl Future<Output = ()> + Send;
 }
 
 impl<F> FastbootEventHandler for F
 where
     F: FnMut(FastbootEvent) -> () + Send + 'static,
 {
-    async fn handle_event(&mut self, x: FastbootEvent) -> () {
+    async fn handle_event(&mut self, x: FastbootEvent) {
         self(x)
     }
 }
 
-#[allow(async_fn_in_trait)]
 pub trait SerialNumberFinder: Send + 'static {
-    async fn find_serial_numbers(&mut self) -> Vec<String>;
+    fn find_serial_numbers(&mut self) -> impl Future<Output = Vec<String>> + Send;
 }
 
 pub struct DefaultSerialFinder {}

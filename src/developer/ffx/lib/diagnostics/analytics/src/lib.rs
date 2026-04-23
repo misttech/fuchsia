@@ -4,6 +4,7 @@
 
 use discovery::{TargetHandle, TargetState};
 use std::collections::BTreeMap;
+use std::future::Future;
 
 /// An enum used for our analytics to have a well-defined way of specifying a point of failure.
 /// We can assume that all previous steps that would precede our checks would have succeeded.
@@ -67,14 +68,13 @@ fn format_target_state(state: &TargetState) -> String {
 
 /// Convenience combinators for uploading analytics when using Result<_> types. Simpler than using
 /// a newtype.
-#[allow(async_fn_in_trait)]
 pub trait ResultExt {
     type Error;
     type Success;
 
     /// In the event of an error, takes `self` and returns the same value. If the value of `self`
     /// is an error, then sends the `pof` analytics failure before returning.
-    async fn or_analytics<I>(self, event: I) -> Result<Self::Success, Self::Error>
+    fn or_analytics<I>(self, event: I) -> impl Future<Output = Result<Self::Success, Self::Error>>
     where
         I: Into<CustomEvent>;
 
@@ -91,16 +91,16 @@ pub trait ResultExt {
     ///     .or_else_analytics(|e| YouStruct(e).into())
     ///     .await?;
     /// ```
-    async fn or_else_analytics<F: FnOnce(&Self::Error) -> CustomEvent>(
+    fn or_else_analytics<F: FnOnce(&Self::Error) -> CustomEvent>(
         self,
         f: F,
-    ) -> Result<Self::Success, Self::Error>;
+    ) -> impl Future<Output = Result<Self::Success, Self::Error>>;
 
     /// See [or_else_analytics]. Behaves the same, but the closure can return None.
-    async fn or_else_maybe_analytics<F: FnOnce(&Self::Error) -> Option<CustomEvent>>(
+    fn or_else_maybe_analytics<F: FnOnce(&Self::Error) -> Option<CustomEvent>>(
         self,
         f: F,
-    ) -> Result<Self::Success, Self::Error>;
+    ) -> impl Future<Output = Result<Self::Success, Self::Error>>;
 }
 
 impl<S, E> ResultExt for Result<S, E> {

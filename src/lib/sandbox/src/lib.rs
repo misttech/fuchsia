@@ -7,11 +7,13 @@
 //! This library provides type-safe wrappers around the raw FIDL types for
 //! capabilities and the capability store, simplifying their use.
 
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
 use fuchsia_component::client;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio};
 
 /// A trait for value types that can be imported into a [`CapabilityStore`], such as
 /// String, u64, and fsandbox::DictionaryRef.
@@ -132,7 +134,6 @@ impl<'a> CapabilityStore {
 ///
 /// This reference represents a capability of an unconfirmed type. Specify type
 /// parameters on `export()` methods to derive the type.
-#[allow(async_fn_in_trait)]
 pub trait CapabilityRef<'a>: Sized {
     /// Create a [`CapabilityRef`] referencing the given store and id.
     ///
@@ -149,25 +150,29 @@ pub trait CapabilityRef<'a>: Sized {
 
     /// Duplicates the capability referenced by this ref, returning a new
     /// ref to the duplicated capability.
-    async fn duplicate(&'a self) -> Result<Self, Error> {
-        let dup_id = self.store().id_gen.next();
-        self.store().proxy.duplicate(self.id(), dup_id).await??;
-        Ok(Self::from_store(self.store(), dup_id))
+    fn duplicate(&'a self) -> impl Future<Output = Result<Self, Error>> {
+        async move {
+            let dup_id = self.store().id_gen.next();
+            self.store().proxy.duplicate(self.id(), dup_id).await??;
+            Ok(Self::from_store(self.store(), dup_id))
+        }
     }
 
     /// Drop the referenced Capability held by the component framework runtime.
-    async fn drop(self) -> Result<(), Error> {
-        Ok(self.store().proxy.drop(self.id()).await??)
+    fn drop(self) -> impl Future<Output = Result<(), Error>> {
+        async move { Ok(self.store().proxy.drop(self.id()).await??) }
     }
 
     /// Extract the value of the referenced Capability and remove it from the
     /// component framework runtime.
-    async fn export<T>(self) -> Result<T, Error>
+    fn export<T>(self) -> impl Future<Output = Result<T, Error>>
     where
         T: Importable<'a, Ref = Self>,
     {
-        let cap = self.store().proxy.export(self.id()).await??;
-        T::try_from(cap.into())
+        async move {
+            let cap = self.store().proxy.export(self.id()).await??;
+            T::try_from(cap.into())
+        }
     }
 }
 

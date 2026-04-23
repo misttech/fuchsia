@@ -6,6 +6,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::future::Future;
 
 use cm_rust::NativeIntoFidl as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker};
@@ -1107,13 +1108,14 @@ impl TestSandboxExt for netemul::TestSandbox {
 }
 
 /// Helpers for `netemul::TestRealm`.
-#[allow(async_fn_in_trait)]
 pub trait TestRealmExt {
     /// Returns the properties of the loopback interface, or `None` if there is no
     /// loopback interface.
-    async fn loopback_properties(
+    fn loopback_properties(
         &self,
-    ) -> Result<Option<fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>>>;
+    ) -> impl Future<
+        Output = Result<Option<fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>>>,
+    >;
 
     /// Get a `fuchsia.net.interfaces.admin/Control` client proxy for the
     /// interface identified by [`id`] via `fuchsia.net.root`.

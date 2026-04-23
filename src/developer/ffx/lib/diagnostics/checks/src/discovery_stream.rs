@@ -13,6 +13,7 @@ use fho::{FfxContext, Result};
 use fidl_fuchsia_developer_ffx as ffx;
 use futures::channel::mpsc::{self, UnboundedSender};
 use manual_targets::watcher::ManualTargetEvent;
+use std::future::Future;
 use std::path::PathBuf;
 use usb_fastboot_discovery::FastbootEvent;
 
@@ -24,7 +25,6 @@ pub struct NotifierMessage {
 /// A trait for resolving targets for diagnostics. Intends to be used where the caller requests
 /// a stream to be constructed with a specific notifier, and the caller then joins on the stream
 /// and the incoming information sent by the stream discovery methods.
-#[allow(async_fn_in_trait)]
 pub trait DiagnosticsResolver {
     /// Creates a new resolver with the given discovery sources and notifier sender.
     fn from_sources_and_notifier_sender(
@@ -33,11 +33,11 @@ pub trait DiagnosticsResolver {
     ) -> Self;
 
     /// Converts the resolver into Vec<TargetHandle> of discovered devices.
-    async fn discovered_targets(
+    fn discovered_targets(
         self,
         query: TargetInfoQuery,
         ctx: &EnvironmentContext,
-    ) -> Result<Vec<TargetHandle>>;
+    ) -> impl Future<Output = Result<Vec<TargetHandle>>>;
 }
 
 pub struct SingleTargetResolver {

@@ -17,6 +17,7 @@ use futures::{FutureExt, Stream, StreamExt, pin_mut};
 use netext::IsLocalAddr;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display};
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -170,44 +171,45 @@ pub async fn discover_single_default_target(ctx: &EnvironmentContext) -> Result<
 /// Implementors of this trait are responsible for searching for targets,
 /// handling ambiguity, and returning a `Resolution` object that can be used
 /// to connect to the target.
-#[allow(async_fn_in_trait)]
 pub trait TargetResolver: Default {
     /// Gets a set of handles from the resolver's sources that match the query
-    async fn discovered_targets(
+    fn discovered_targets(
         &self,
         query: TargetInfoQuery,
         ctx: &EnvironmentContext,
-    ) -> Result<Vec<TargetHandle>>;
+    ) -> impl Future<Output = Result<Vec<TargetHandle>>>;
 
     /// Attempts to resolve a target by name from a manually configured list.
     ///
     /// This method is used to check for targets that have been explicitly
     /// defined by the user, outside of the standard discovery mechanisms.
-    async fn try_resolve_manual_target(
+    fn try_resolve_manual_target(
         &self,
         name: &str,
         ctx: &EnvironmentContext,
-    ) -> Result<Option<Resolution>>;
+    ) -> impl Future<Output = Result<Option<Resolution>>>;
 
     /// Resolves a target specifier into a `Resolution` containing a connectable address.
     ///
     /// This is a high-level method that should handle various query types and
     /// ensure that a single, unambiguous target is found. It is an error if the query
     /// does not resolve to exactly one target.
-    async fn resolve_target_address(
+    fn resolve_target_address(
         &self,
         target_spec: &TargetInfoQuery,
         use_cache: bool,
         ctx: &EnvironmentContext,
-    ) -> Result<Resolution, FfxTargetError> {
-        let query = TargetInfoQuery::from(target_spec.clone());
-        if let TargetInfoQuery::Addr(a) = query {
-            return Ok(Resolution::from_addr(a));
+    ) -> impl Future<Output = Result<Resolution, FfxTargetError>> {
+        async move {
+            let query = TargetInfoQuery::from(target_spec.clone());
+            if let TargetInfoQuery::Addr(a) = query {
+                return Ok(Resolution::from_addr(a));
+            }
+            let res = self.resolve_single_target(&target_spec, use_cache, ctx).await?;
+            let target_spec_info: String = target_spec.into();
+            log::debug!("resolved target spec {target_spec_info} to address {:?}", res.addr());
+            Ok(res)
         }
-        let res = self.resolve_single_target(&target_spec, use_cache, ctx).await?;
-        let target_spec_info: String = target_spec.into();
-        log::debug!("resolved target spec {target_spec_info} to address {:?}", res.addr());
-        Ok(res)
     }
 
     /// Resolves a target specifier to a single `Resolution`.
@@ -216,121 +218,128 @@ pub trait TargetResolver: Default {
     /// manual targets. We return a Resolution because checking manual
     /// targets involves talking to them, so we want to take advantage of
     /// that to preserve the full Resolution state.
-    async fn discover_matching_targets(
+    fn discover_matching_targets(
         &self,
         target_spec: &TargetInfoQuery,
         env_context: &EnvironmentContext,
-    ) -> Result<Vec<Resolution>, FfxTargetError> {
-        let handles_fut = self.discovered_targets(target_spec.clone(), env_context).fuse();
-        pin_mut!(handles_fut);
-        let mut discovered: Option<Vec<TargetHandle>> = None;
+    ) -> impl Future<Output = Result<Vec<Resolution>, FfxTargetError>> {
+        async move {
+            let handles_fut = self.discovered_targets(target_spec.clone(), env_context).fuse();
+            pin_mut!(handles_fut);
+            let mut discovered: Option<Vec<TargetHandle>> = None;
 
-        // If the query is not specified, we won't even bother with trying to resolve a manual target.
-        if let TargetInfoQuery::NodenameOrSerial(s) = &target_spec {
-            // We want to query both the manual targets and the discoverable handles concurrently.
-            let manual_target_fut = self.try_resolve_manual_target(s, env_context).fuse();
-            pin_mut!(manual_target_fut);
-            futures::select! {
-                mtr = &mut manual_target_fut => match mtr {
-                    Err(e) => {
-                        log::debug!("Failed to resolve target {s} as manual target: {e:?}");
-                        // Keep going, waiting for the discovery to complete
-                    }
-                    Ok(Some(res)) => return Ok(vec![res]), // We found a manual target, so we're done
-                    _ => (), // No manual target with this name
-                },
-                handles_res = handles_fut => match handles_res {
-                    Ok(r) => discovered = Some(r),
-                    Err(e) => {
-                        log::warn!("Target discovery failed: {e:?}");
-                        return Err(FfxTargetError::OpenTargetError {
-                            err: ffx::OpenTargetError::FailedDiscovery,
-                            target: Some(target_spec.into()),
-                            targets: vec![],
-                        })
+            // If the query is not specified, we won't even bother with trying to resolve a manual target.
+            if let TargetInfoQuery::NodenameOrSerial(s) = &target_spec {
+                // We want to query both the manual targets and the discoverable handles concurrently.
+                let manual_target_fut = self.try_resolve_manual_target(s, env_context).fuse();
+                pin_mut!(manual_target_fut);
+                futures::select! {
+                    mtr = &mut manual_target_fut => match mtr {
+                        Err(e) => {
+                            log::debug!("Failed to resolve target {s} as manual target: {e:?}");
+                            // Keep going, waiting for the discovery to complete
+                        }
+                        Ok(Some(res)) => return Ok(vec![res]), // We found a manual target, so we're done
+                        _ => (), // No manual target with this name
                     },
-                },
-            }
-        }
-
-        // If we haven't gotten a result yet (because the query wasn't
-        // NodenameOrSerial, or because the manual-target query completed
-        // without finding a target), get it now.
-        let discovered = match discovered {
-            Some(targets) => targets,
-            None => handles_fut.await.map_err(|e| {
-                log::warn!("Target discovery failed: {e:?}");
-                FfxTargetError::OpenTargetError {
-                    err: ffx::OpenTargetError::FailedDiscovery,
-                    target: Some(target_spec.into()),
-                    targets: vec![],
+                    handles_res = handles_fut => match handles_res {
+                        Ok(r) => discovered = Some(r),
+                        Err(e) => {
+                            log::warn!("Target discovery failed: {e:?}");
+                            return Err(FfxTargetError::OpenTargetError {
+                                err: ffx::OpenTargetError::FailedDiscovery,
+                                target: Some(target_spec.into()),
+                                targets: vec![],
+                            })
+                        },
+                    },
                 }
-            })?,
-        };
-        discovered
-            .into_iter()
-            .map(|th| {
-                Resolution::from_target_handle(th).map_err(|e| {
-                    log::warn!("Conversion to Resolution failed: {e:?}");
+            }
+
+            // If we haven't gotten a result yet (because the query wasn't
+            // NodenameOrSerial, or because the manual-target query completed
+            // without finding a target), get it now.
+            let discovered = match discovered {
+                Some(targets) => targets,
+                None => handles_fut.await.map_err(|e| {
+                    log::warn!("Target discovery failed: {e:?}");
                     FfxTargetError::OpenTargetError {
                         err: ffx::OpenTargetError::FailedDiscovery,
                         target: Some(target_spec.into()),
                         targets: vec![],
                     }
+                })?,
+            };
+            discovered
+                .into_iter()
+                .map(|th| {
+                    Resolution::from_target_handle(th).map_err(|e| {
+                        log::warn!("Conversion to Resolution failed: {e:?}");
+                        FfxTargetError::OpenTargetError {
+                            err: ffx::OpenTargetError::FailedDiscovery,
+                            target: Some(target_spec.into()),
+                            targets: vec![],
+                        }
+                    })
                 })
-            })
-            .collect()
+                .collect()
+        }
     }
 
     /// Resolves a target specifier to a single `Resolution`.
     ///
     /// This method tries to look up the query in the cache. If it is not
     /// available there, it calls "discover_matching_targets()"
-    async fn resolve_single_target(
+    fn resolve_single_target(
         &self,
         target_spec: &TargetInfoQuery,
         use_cache: bool,
         env_context: &EnvironmentContext,
-    ) -> Result<Resolution, FfxTargetError> {
-        // If the user passed in an address, we're going to use that, so we
-        // can even if there are multiple ways of reaching the target, we'll
-        // use the one they provided.
-        if let TargetInfoQuery::Addr(a) = target_spec {
-            return Ok(Resolution::from_addr(*a));
-        }
-        let mut resolutions: Option<Vec<Resolution>> = None;
-        if use_cache && let Some(cache_file) = crate::cache::get_discovery_cache_file(env_context) {
-            match crate::cache::Cache::load(&cache_file) {
-                Ok(cache) => {
-                    // Given a TargetInfo from the cache, we don't have much information -- just the target we've resolved
-                    // it to
-                    resolutions = Some(
-                        // Get all the TargetInfos from the cache, filtering out (via flatten()) those not in product mode
-                        cache
-                            .targets
-                            .into_iter()
-                            .filter(|ti| ti.match_query(target_spec))
-                            .map(|ti| {
-                                ResolutionTarget::from_target_info(&ti).map(Resolution::from_target)
-                            })
-                            .flatten()
-                            .collect(),
-                    );
-                }
-                Err(e) => {
-                    log::warn!("Cache loading failed: {e:?}");
+    ) -> impl Future<Output = Result<Resolution, FfxTargetError>> {
+        async move {
+            // If the user passed in an address, we're going to use that, so we
+            // can even if there are multiple ways of reaching the target, we'll
+            // use the one they provided.
+            if let TargetInfoQuery::Addr(a) = target_spec {
+                return Ok(Resolution::from_addr(*a));
+            }
+            let mut resolutions: Option<Vec<Resolution>> = None;
+            if use_cache
+                && let Some(cache_file) = crate::cache::get_discovery_cache_file(env_context)
+            {
+                match crate::cache::Cache::load(&cache_file) {
+                    Ok(cache) => {
+                        // Given a TargetInfo from the cache, we don't have much information -- just the target we've resolved
+                        // it to
+                        resolutions = Some(
+                            // Get all the TargetInfos from the cache, filtering out (via flatten()) those not in product mode
+                            cache
+                                .targets
+                                .into_iter()
+                                .filter(|ti| ti.match_query(target_spec))
+                                .map(|ti| {
+                                    ResolutionTarget::from_target_info(&ti)
+                                        .map(Resolution::from_target)
+                                })
+                                .flatten()
+                                .collect(),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("Cache loading failed: {e:?}");
+                    }
                 }
             }
+
+            let resolutions = match resolutions {
+                Some(rs) => rs,
+                None => self.discover_matching_targets(target_spec, env_context).await?,
+            };
+
+            expect_single_target(target_spec, resolutions)
+                .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
+                .await
         }
-
-        let resolutions = match resolutions {
-            Some(rs) => rs,
-            None => self.discover_matching_targets(target_spec, env_context).await?,
-        };
-
-        expect_single_target(target_spec, resolutions)
-            .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
-            .await
     }
 }
 

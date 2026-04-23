@@ -11,7 +11,6 @@ use ffx_target::ssh_connector::SshConnector;
 use ffx_target::{Connection, TargetConnection, TargetConnectionError, TargetConnector};
 use termion::{color, style};
 
-#[allow(async_fn_in_trait)]
 pub trait SshConnectorProvider {
     async fn connector_for_target<N>(
         &self,

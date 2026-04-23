@@ -11,6 +11,7 @@ use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::{File, OpenOptions, create_dir_all};
+use std::future::Future;
 use std::hash::Hash;
 use std::io::{BufRead, BufReader};
 use std::net::{AddrParseError, SocketAddr};
@@ -122,17 +123,16 @@ pub enum FastbootEvent {
     Lost(FastbootEntry),
 }
 
-#[allow(async_fn_in_trait)]
 pub trait FastbootEventHandler: Send + 'static {
     /// Handles an event.
-    async fn handle_event(&mut self, event: FastbootEvent);
+    fn handle_event(&mut self, event: FastbootEvent) -> impl Future<Output = ()> + Send;
 }
 
 impl<F> FastbootEventHandler for F
 where
     F: FnMut(FastbootEvent) -> () + Send + 'static,
 {
-    async fn handle_event(&mut self, x: FastbootEvent) -> () {
+    async fn handle_event(&mut self, x: FastbootEvent) {
         self(x)
     }
 }

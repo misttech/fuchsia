@@ -256,10 +256,9 @@ pub async fn wait_for_online(
 }
 
 /// Helpers for `netemul::TestInterface`.
-#[allow(async_fn_in_trait)]
 pub trait TestInterfaceExt {
     /// Calls [`crate::nud::apply_nud_flake_workaround`] for this interface.
-    async fn apply_nud_flake_workaround(&self) -> Result;
+    fn apply_nud_flake_workaround(&self) -> impl Future<Output = Result>;
 }
 
 impl<'a> TestInterfaceExt for netemul::TestInterface<'a> {
