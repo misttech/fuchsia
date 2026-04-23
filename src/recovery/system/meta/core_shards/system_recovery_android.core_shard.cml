@@ -13,15 +13,6 @@
             startup: "eager",
         },
     ],
-    capabilities: [
-        // TODO(https://fxbug.dev/445907120): Route from vbmeta once available.
-        {
-            config: "fuchsia.zircon.system.pkgfs.cmd",
-            type: "string",
-            max_size: 100,
-            value: "",
-        },
-    ],
     offer: [
         {
             protocol: "fuchsia.hardware.adb.StateController",
@@ -66,8 +57,8 @@
             availability: "same_as_target",
         },
         {
-            config: [ "fuchsia.zircon.system.pkgfs.cmd" ],
-            from: "self",
+            config: "fuchsia.system.base_merkle",
+            from: "parent/boot_args",
             to: "#system_recovery",
         },
         {

@@ -248,10 +248,15 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
             .await
             .unwrap();
 
+        let system_image = fuchsia_pkg_testing::SystemImageBuilder::new().build().await;
+        let mut expected_blobfs_contents = params.expected_blobfs_contents;
+        expected_blobfs_contents.extend(system_image.list_blobs());
+
         let (blobfs_ramdisk, blobfs_handle) = match params.blobfs {
             Some(blobfs_handle) => (None, blobfs_handle),
             None => {
                 let blobfs_ramdisk = BlobfsRamdisk::start().await.expect("launching blobfs");
+                system_image.write_to_blobfs(&blobfs_ramdisk).await;
                 let blobfs_handle =
                     blobfs_ramdisk.root_dir_handle().expect("getting blobfs root handle");
                 (Some(blobfs_ramdisk), blobfs_handle)
@@ -354,15 +359,15 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
             .unwrap();
         realm_builder
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.zircon.system.pkgfs.cmd".parse().unwrap(),
-                value: "".into(),
+                name: "fuchsia.system.base_merkle".parse().unwrap(),
+                value: system_image.hash().to_string().into(),
             }))
             .await
             .unwrap();
         realm_builder
             .add_route(
                 Route::new()
-                    .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
+                    .capability(Capability::configuration("fuchsia.system.base_merkle"))
                     .from(Ref::self_())
                     .to(&pkg_component),
             )
@@ -392,7 +397,7 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
 
         TestResult {
             blobfs: blobfs_ramdisk,
-            expected_blobfs_contents: params.expected_blobfs_contents,
+            expected_blobfs_contents,
             paver_events: params.paver.take_events(),
             result,
         }

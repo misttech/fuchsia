@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runtime as fruntime;
 use fuchsia_component::client;
 use fuchsia_component::runtime::{Data, DataValue, Dictionary, DictionaryRouterReceiver};
 use fuchsia_component::server::ServiceFs;
 use futures::{FutureExt, StreamExt};
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_runtime as fruntime,
-};
 
 async fn initialize_dictionary(
     boot_args: fboot::ArgumentsProxy,
@@ -35,6 +34,7 @@ async fn initialize_dictionary(
         "ota_realm".to_string(),
         "product_id".to_string(),
         "TERM".to_string(),
+        "system.base_merkle".to_string(),
         "zircon.autorun.boot".to_string(),
         "zircon.autorun.system".to_string(),
         "zircon.namegen".to_string(),
@@ -169,6 +169,6 @@ mod tests {
         .detach();
 
         let _dictionary = initialize_dictionary(boot_args_proxy, capabilities_proxy).await.unwrap();
-        assert_eq!(insert_count.get(), 22);
+        assert_eq!(insert_count.get(), 23);
     }
 }

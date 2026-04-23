@@ -18,29 +18,21 @@ pub use crate::errors::{
 pub use crate::path_hash_mapping::{Bootfs, PathHashMapping, StaticPackages};
 pub use crate::system_image::{ExecutabilityRestrictions, SystemImage};
 
-static PKGFS_BOOT_ARG_KEY: &str = "zircon.system.pkgfs.cmd";
 static PKGFS_BOOT_ARG_VALUE_PREFIX: &str = "bin/pkgsvr+";
 
 pub fn get_system_image_hash(
     system_image_hash: &str,
 ) -> Result<fuchsia_hash::Hash, SystemImageHashError> {
-    let hash = system_image_hash
-        .strip_prefix(PKGFS_BOOT_ARG_VALUE_PREFIX)
-        .ok_or_else(|| SystemImageHashError::BadPrefix(system_image_hash.to_string()))?;
+    // To drop support for the prefix the ota tests would have to branch based on the build version.
+    // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/host-target-testing/zbi/zbi.go;l=142;drc=8ef678f1bcc92eb0a87adbad0111ed73310bac19
+    let hash =
+        system_image_hash.strip_prefix(PKGFS_BOOT_ARG_VALUE_PREFIX).unwrap_or(system_image_hash);
     hash.parse().map_err(SystemImageHashError::BadHash)
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum SystemImageHashError {
-    #[error(
-        "boot arg for key {} does not start with {}: {:?}",
-        PKGFS_BOOT_ARG_KEY,
-        PKGFS_BOOT_ARG_VALUE_PREFIX,
-        .0
-    )]
-    BadPrefix(String),
-
-    #[error("boot arg for key {} has invalid hash {:?}", PKGFS_BOOT_ARG_KEY, .0)]
+    #[error("invalid system image hash: {:?}", .0)]
     BadHash(#[source] fuchsia_hash::ParseHashError),
 }
 
@@ -51,10 +43,7 @@ mod test_get_system_image_hash {
 
     #[test]
     fn bad_prefix() {
-        assert_matches!(
-            get_system_image_hash("bad-prefix"),
-            Err(SystemImageHashError::BadPrefix(prefix)) if prefix == "bad-prefix"
-        );
+        assert_matches!(get_system_image_hash("bad-prefix"), Err(SystemImageHashError::BadHash(_)));
     }
 
     #[test]
@@ -70,6 +59,17 @@ mod test_get_system_image_hash {
         assert_eq!(
             get_system_image_hash(
                 "bin/pkgsvr+0000000000000000000000000000000000000000000000000000000000000000"
+            )
+            .unwrap(),
+            fuchsia_hash::Hash::from([0; 32])
+        );
+    }
+
+    #[test]
+    fn success_no_prefix() {
+        assert_eq!(
+            get_system_image_hash(
+                "0000000000000000000000000000000000000000000000000000000000000000"
             )
             .unwrap(),
             fuchsia_hash::Hash::from([0; 32])

@@ -41,15 +41,15 @@ pub(crate) mod for_tests {
     use super::*;
     use blobfs_ramdisk::BlobfsRamdisk;
     use fidl::endpoints::{ServerEnd, SynchronousProxy};
+    use fidl_fuchsia_fxfs as ffxfs;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_metrics as fmetrics;
+    use fuchsia_async as fasync;
     use fuchsia_component_test::{
         Capability, ChildOptions, ChildRef, RealmBuilder, RealmInstance, Ref, Route,
     };
     use futures::prelude::*;
     use std::sync::Arc;
-    use {
-        fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics,
-        fuchsia_async as fasync,
-    };
 
     pub struct CacheForTest {
         pub blobfs: blobfs_ramdisk::BlobfsRamdisk,
@@ -136,41 +136,31 @@ pub(crate) mod for_tests {
                 .await
                 .unwrap();
 
-            realm_builder
-                .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                    name: "fuchsia.zircon.system.pkgfs.cmd".parse().unwrap(),
-                    value: "test".into(),
-                }))
-                .await
-                .unwrap();
-            realm_builder
-                .add_route(
-                    Route::new()
-                        .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
-                        .from(Ref::self_())
-                        .to(&pkg_cache),
-                )
-                .await
-                .unwrap();
-            let pkg_cache_config = realm_builder
-                .add_child("pkg_cache_config", "#meta/pkg-cache-config.cm", ChildOptions::new())
-                .await
-                .unwrap();
-            realm_builder
-                .add_route(
-                    Route::new()
-                        .capability(Capability::configuration(
-                            "fuchsia.pkgcache.AllPackagesExecutable",
-                        ))
-                        .capability(Capability::configuration("fuchsia.pkgcache.UseSystemImage"))
-                        .capability(Capability::configuration(
-                            "fuchsia.pkgcache.EnableUpgradablePackages",
-                        ))
-                        .from(&pkg_cache_config)
-                        .to(&pkg_cache),
-                )
-                .await
-                .unwrap();
+            let system_image_package = fuchsia_pkg_testing::SystemImageBuilder::new().build().await;
+            system_image_package.write_to_blobfs(blobfs).await;
+
+            for (name, value) in [
+                ("fuchsia.zircon.system.pkgfs.cmd", system_image_package.hash().to_string().into()),
+                ("fuchsia.pkgcache.AllPackagesExecutable", false.into()),
+                ("fuchsia.pkgcache.UseSystemImage", true.into()),
+                ("fuchsia.pkgcache.EnableUpgradablePackages", false.into()),
+            ] {
+                realm_builder
+                    .add_capability(
+                        cm_rust::ConfigurationDecl { name: name.parse().unwrap(), value }.into(),
+                    )
+                    .await
+                    .unwrap();
+                realm_builder
+                    .add_route(
+                        Route::new()
+                            .capability(Capability::configuration(name))
+                            .from(Ref::self_())
+                            .to(&pkg_cache),
+                    )
+                    .await
+                    .unwrap();
+            }
             let system_update_committer = realm_builder
                 .add_child(
                     "system-update-committer",

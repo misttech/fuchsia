@@ -16,10 +16,6 @@
             url: "#meta/pkg-cache.cm",
         },
         {
-            name: "pkg-cache-config",
-            url: "#meta/pkg-cache-config.cm",
-        },
-        {
             name: "pkg-resolver",
             url: "#meta/pkg-resolver.cm",
         },
@@ -37,6 +33,21 @@
         },
     ],
     capabilities: [
+        {
+            config: "fuchsia.pkgcache.AllPackagesExecutable",
+            type: "bool",
+            value: false,
+        },
+        {
+            config: "fuchsia.pkgcache.EnableUpgradablePackages",
+            type: "bool",
+            value: false,
+        },
+        {
+            config: "fuchsia.pkgcache.UseSystemImage",
+            type: "bool",
+            value: true,
+        },
         {
             config: "fuchsia.pkgresolver.TufNetworkHeaderTimeoutSeconds",
             type: "uint32",
@@ -94,12 +105,13 @@
                 "fuchsia.pkgcache.EnableUpgradablePackages",
                 "fuchsia.pkgcache.UseSystemImage",
             ],
-            from: "#pkg-cache-config",
+            from: "self",
             to: "#pkg-cache",
         },
         {
-            config: "fuchsia.zircon.system.pkgfs.cmd",
+            config: "fuchsia.system.base_merkle",
             from: "parent",
+            as: "fuchsia.zircon.system.pkgfs.cmd",
             to: "#pkg-cache",
         },
         {

@@ -142,18 +142,6 @@ fuchsia_structured_config_values2("config_values_from_gn") {
   visibility = [ ":*" ]
 }
 
-fuchsia_structured_config_values2("config_values_from_gn-ignore-system-image") {
-  cm_label = ":manifest"
-  output_component_name = "pkg-cache-config"
-  values = {
-    # TODO(https://fxbug.dev/331302451) Populate this correctly.
-    all_packages_executable = false
-    use_system_image = false
-    enable_upgradable_packages = false
-  }
-  visibility = [ ":*" ]
-}
-
 fuchsia_structured_config_values2("config_values_from_gn-cpp-blobfs") {
   cm_label = ":manifest"
   output_component_name = "pkg-cache-config"
@@ -188,13 +176,6 @@ group("production-component-and-config") {
   public_deps = [
     ":component",
     ":config_values_from_gn",
-  ]
-}
-
-group("ignore-system-image-component-and-config") {
-  public_deps = [
-    ":component",
-    ":config_values_from_gn-ignore-system-image",
   ]
 }
 

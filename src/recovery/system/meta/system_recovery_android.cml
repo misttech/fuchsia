@@ -107,7 +107,7 @@
         {
             config: [
                 "fuchsia.system-updater.ManifestPublicKeys",
-                "fuchsia.zircon.system.pkgfs.cmd",
+                "fuchsia.system.base_merkle",
             ],
             from: "parent",
             to: "#pkg-recovery",

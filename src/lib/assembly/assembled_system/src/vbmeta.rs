@@ -58,7 +58,7 @@ const PVM_PROP_VIRT_CAP_KEY: &str = "com.android.virt.cap";
 const PVM_PROP_VIRT_CAP_VALUE: &str = "trusty_security_vm";
 
 /// The property key for the base merkle in the VBMeta kernel command line.
-const BASE_MERKLE_CMDLINE_KEY: &str = "com.fuchsia.system.base_merkle";
+const BASE_MERKLE_CMDLINE_KEY: &str = "system.base_merkle";
 
 /// Represents a constructed VBMeta in one of the two supported forms.
 #[derive(Debug)]
