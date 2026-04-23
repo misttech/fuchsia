@@ -18,41 +18,6 @@ zx::result<> PerCpuState::SetUp(const zx_sampler_config_t& config, cpu_num_t cpu
   return zx::ok();
 }
 
-// Atomically mark a pending write to the write state iff writes are enabled and returns true.
-//
-// Returns false if a pending write was not set because writes are not enabled.
-[[nodiscard]] bool PerCpuState::SetPendingWrite() {
-  // TODO(https://fxbug.dev/410034543): Make this compatible with Timer Migration
-  DEBUG_ASSERT(arch_ints_disabled());
-  ASSERT(arch_curr_cpu_num() == cpu_number_);
-  // We could be racing with a "DisableWrites" here. We need to atomically set the kPendingWrite
-  // bit, but only if someone hasn't come along and reset the kWritesEnabled bit from under us.
-  //
-  // Once we set kPendingWrite, that will prevent the buffer state from being cleaned up until we
-  // ResetPendingWrite when we are done writing, even if the kWritesEnabled bit is reset after we
-  // claim the PendingWrite.
-  uint64_t expected = write_state_.load(ktl::memory_order_relaxed);
-  // Ensure we preserve the kPendingTimer bit
-  uint64_t desired;
-  do {
-    desired = expected | kPendingWrite | kWritesEnabled;
-    // We should never have multiple writes on the same cpu occur at once.
-    DEBUG_ASSERT((expected & kPendingWrite) == 0);
-    // Are writes enabled?
-    if ((expected & kWritesEnabled) != kWritesEnabled) {
-      return false;
-    }
-  } while (!write_state_.compare_exchange_weak(expected, desired, ktl::memory_order_acq_rel,
-                                               ktl::memory_order_relaxed));
-  return true;
-}
-
-void PerCpuState::ResetPendingWrite() {
-  [[maybe_unused]] uint64_t previous_value =
-      write_state_.fetch_and(~kPendingWrite, ktl::memory_order_release);
-  DEBUG_ASSERT((previous_value & kPendingWrite) != 0);
-}
-
 void PerCpuState::EnableWrites() {
   write_state_.fetch_or(kWritesEnabled, ktl::memory_order_release);
 }
@@ -64,14 +29,6 @@ void PerCpuState::DisableWrites() {
 bool PerCpuState::WritesEnabled() const {
   uint64_t state = write_state_.load(ktl::memory_order_relaxed);
   return (state & kWritesEnabled) != 0;
-}
-
-bool PerCpuState::PendingWrites() const {
-  // Writers decrement pending writes with release semantics after writing their data. Using acquire
-  // semantics here ensures that if we see that there is no longer a pending write, we also see the
-  // full contents of what was written.
-  uint64_t state = write_state_.load(ktl::memory_order_acquire);
-  return (state & kPendingWrite) != 0;
 }
 
 bool PerCpuState::PendingTimer() const {
@@ -118,11 +75,6 @@ void PerCpuState::SetTimer() {
   uint64_t expected = write_state_.load(ktl::memory_order_relaxed);
   const uint64_t desired = kPendingTimer | kWritesEnabled;
   do {
-    // Writers disable interrupts while they are writing, we should never observe a kPendingWrite
-    // bit unless we read the atomic from a different CPU than the writer. Since we set the timer on
-    // the same CPU the writer is on, we should never see this set.
-    ASSERT((expected & kPendingWrite) == 0);
-
     // If writes aren't enabled, we need to reset the kPendingTimerBit so that the stop operation
     // knows there are no more timers on this cpu.
     if ((expected & kWritesEnabled) != kWritesEnabled) {
