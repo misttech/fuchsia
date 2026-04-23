@@ -13,6 +13,8 @@ use fidl_fuchsia_component_decl::{
     Child, ChildRef, CollectionRef, ConfigOverride, ConfigSingleValue, ConfigValue, DependencyType,
     Durability, Offer, OfferDirectory, Ref as CompRef, StartupMode,
 };
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::Operations;
 use fidl_fuchsia_logger::LogSinkMarker;
 use fuchsia_bluetooth::constants::{
@@ -28,7 +30,6 @@ use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use std::sync::Arc;
-use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_io as fio};
 
 mod constants {
     pub mod receiver {
@@ -41,6 +42,12 @@ pub async fn add_host_routes(
     to: impl Into<fuchsia_component_test::Ref> + Clone,
 ) -> Result<(), Error> {
     // Route config capabilities from root to bt-init
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.HciCommandTimeout".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(10)),
+        }))
+        .await?;
     builder
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: "fuchsia.bluetooth.LegacyPairing".parse()?,
@@ -66,6 +73,105 @@ pub async fn add_host_routes(
         }))
         .await?;
 
+    let le_configs = vec![
+        "fuchsia.bluetooth.LeSlowAdvIntervalMin",
+        "fuchsia.bluetooth.LeSlowAdvIntervalMax",
+        "fuchsia.bluetooth.LeSlowAdvMaxTxPower",
+        "fuchsia.bluetooth.LeFastAdvIntervalMin",
+        "fuchsia.bluetooth.LeFastAdvIntervalMax",
+        "fuchsia.bluetooth.LeFastAdvMaxTxPower",
+        "fuchsia.bluetooth.LeVeryFastAdvIntervalMin",
+        "fuchsia.bluetooth.LeVeryFastAdvIntervalMax",
+        "fuchsia.bluetooth.LeVeryFastAdvMaxTxPower",
+        "fuchsia.bluetooth.LeActiveScanInterval",
+        "fuchsia.bluetooth.LeActiveScanWindow",
+    ];
+
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeSlowAdvIntervalMin".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeSlowAdvIntervalMax".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeSlowAdvMaxTxPower".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(-127)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeFastAdvIntervalMin".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeFastAdvIntervalMax".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeFastAdvMaxTxPower".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(-127)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeVeryFastAdvIntervalMin".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeVeryFastAdvIntervalMax".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeVeryFastAdvMaxTxPower".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(-127)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeActiveScanInterval".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeActiveScanWindow".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Dictionary(cm_rust::DictionaryDecl {
+            name: "bluetooth-le-config".parse()?,
+            source_path: None,
+        }))
+        .await?;
+
+    for config in le_configs {
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(config))
+                    .from(Ref::self_())
+                    .to(Ref::capability("bluetooth-le-config")),
+            )
+            .await?;
+    }
+
     macro_rules! add_capability_route {
         ($name:expr) => {
             builder.add_route(
@@ -77,10 +183,20 @@ pub async fn add_host_routes(
         };
     }
 
+    add_capability_route!("fuchsia.bluetooth.HciCommandTimeout").await?;
     add_capability_route!("fuchsia.bluetooth.LegacyPairing").await?;
-    add_capability_route!("fuchsia.bluetooth.ScoOffloadPathIndex").await?;
     add_capability_route!("fuchsia.bluetooth.OverrideVendorCapabilitiesVersion").await?;
+    add_capability_route!("fuchsia.bluetooth.ScoOffloadPathIndex").await?;
     add_capability_route!("fuchsia.power.SuspendEnabled").await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::dictionary("bluetooth-le-config"))
+                .from(Ref::self_())
+                .to(to.clone()),
+        )
+        .await?;
 
     // Add directory routing between components within CoreRealm
     builder
