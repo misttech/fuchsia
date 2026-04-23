@@ -58,10 +58,6 @@
                 "SeLinuxFsAccess.ClassIdMayHaveTrailingNonNumericData",
                 "SeLinuxFsAccess.FourthArgumentIsNotValidated",
 
-                // TODO: https://fxbug.dev/505135693 - Fix fsnode permission checks for socket bind.
-                "SocketBindTests/SocketBindTest.Bind/RequiresDirAddName",
-                "SocketBindTests/SocketBindTest.Bind/RequiresSockFileCreate",
-
                 // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",
             ],

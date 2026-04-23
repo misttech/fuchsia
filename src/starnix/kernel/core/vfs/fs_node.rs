@@ -1492,7 +1492,7 @@ impl FsNode {
             // directories" in starnix the mkdir syscall (`sys_mkdirat`) ends up calling
             //create_node.
             security::check_fs_node_mkdir_access(current_task, self, mode, name)?;
-        } else if !matches!(
+        } else if matches!(
             mode.fmt(),
             FileMode::IFCHR | FileMode::IFBLK | FileMode::IFIFO | FileMode::IFSOCK
         ) {
