@@ -398,6 +398,8 @@ guide](docs/contribute/commit-message-style-guide.md).
         added, and what kind of tests they are (unit, integration, or end-to-end
         tests). If no new tests are needed (e.g., for a documentation
         change), you can use `Test: None` with a brief explanation.
+    *   **Change-Ids:** Preserve `Change-Id` footers when editing commit
+        messages, as Gerrit uses these to link git commits to Change Lists.
 
 **Example:**
 ```
