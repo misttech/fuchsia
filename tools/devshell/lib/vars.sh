@@ -189,6 +189,57 @@ function fx-get-last-build-log-dir() {
 }
 # LINT.ThenChange(//build/scripts/main_build.py:build_log_dir_structure)
 
+# Wait for a command while ignoring signals to ensure the parent outlives the child.
+# This prevents the shell from exiting prematurely and orphaning backgrounded
+# subprocesses during a signal (like Ctrl-C).
+#
+# Successive signals will continue to reach the child as long as it is alive.
+#
+# Arguments:
+#   $1: caller name (used in acknowledgement message)
+#   $@: command and arguments
+#
+function fx-wait-ignoring-signals {
+  local caller_name="$1"
+  shift
+
+  # Save original trap for signals.
+  local orig_trap
+  orig_trap=$(trap -p INT TERM HUP)
+
+  local sig_count=0
+  # Acknowledge signals but stay alive while waiting.
+  function _fx_signal_acknowledgement_handler {
+    local sig="$1"
+    sig_count=$((sig_count + 1))
+    if [[ $sig_count -eq 1 ]]; then
+      echo >&2 "[${caller_name}] Received ${sig}. Waiting for command to shut down gracefully..."
+    else
+      echo >&2 "[${caller_name}] Received ${sig} again (${sig_count}). Still waiting for cleanup..."
+    fi
+  }
+  trap '_fx_signal_acknowledgement_handler SIGINT' INT
+  trap '_fx_signal_acknowledgement_handler SIGTERM' TERM
+  trap '_fx_signal_acknowledgement_handler SIGHUP' HUP
+
+  # Run the command in a subshell that restores default signal dispositions.
+  # This ensures the child doesn't inherit the 'ignore' disposition,
+  # which would prevent high-level languages (Python/Go) from seeing
+  # the signal.
+  ( trap - INT TERM HUP ; exec "$@" )
+  local status=$?
+
+  # Restore original traps immediately so the shell is responsive during
+  # its own exit and cleanup phase.
+  if [[ -n "$orig_trap" ]]; then
+    eval "$orig_trap"
+  else
+    trap - INT TERM HUP
+  fi
+
+  return "$status"
+}
+
 # Use this to conditionally prefix a command with "${RBE_WRAPPER[@]}".
 # NOTE: this function depends on FUCHSIA_BUILD_DIR which is set only after
 # initialization.
@@ -331,8 +382,9 @@ function fx-fail-if-main-pb-is-not-set {
 }
 
 function fx-regenerator {
-  env "PYTHONPYCACHEPREFIX=${PYTHONPYCACHEPREFIX}" \
-  "${FUCHSIA_DIR}/build/regenerator" \
+  PYTHONPYCACHEPREFIX="${PYTHONPYCACHEPREFIX}" \
+  fx-wait-ignoring-signals "fx-regenerator" \
+    "${FUCHSIA_DIR}/build/regenerator" \
     --fuchsia-dir="${FUCHSIA_DIR}" \
     --fuchsia-build-dir="${FUCHSIA_BUILD_DIR}" \
     "$@"
@@ -1115,7 +1167,7 @@ function fx-run-build-command {
     "${command_type}"
     "$@"
   )
-  "${PREBUILT_PYTHON3}" "${main_build_script}" "${args[@]}"
+  fx-wait-ignoring-signals "fx-build" "${PREBUILT_PYTHON3}" "${main_build_script}" "${args[@]}"
 }
 
 # Run a Ninja build command after setting up the environment and prepending

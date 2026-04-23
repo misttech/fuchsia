@@ -340,4 +340,36 @@ _bazel_command+=(
 # Save the final invocation to a log file.
 echo "${_bazel_command[*]}" >> "${_BAZEL_INVOCATION_LOG_DIR}/bazel_invocation"
 
-cd "${_BAZEL_WORKSPACE}" && "${_bazel_command[@]}"
+# Wait for a command while ignoring signals to ensure the parent outlives the child.
+# This prevents the shell from exiting prematurely and orphaning backgrounded
+# subprocesses during a signal (like Ctrl-C).
+#
+# Because the command is run in the same process group, signals (like SIGINT)
+# are broadcast by the TTY to both the shell and the child, so no manual
+# signal forwarding is required here. Successive signals will continue to reach
+# the child as long as it is alive.
+function wait-ignoring-signals {
+  local sig_count=0
+  # Acknowledge signals but stay alive while waiting.
+  function _signal_acknowledgement_handler {
+    local sig="$1"
+    sig_count=$((sig_count + 1))
+    if [[ $sig_count -eq 1 ]]; then
+      echo >&2 "[bazel-wrapper] Received ${sig}. Waiting for command to shut down gracefully..."
+    else
+      echo >&2 "[bazel-wrapper] Received ${sig} again (${sig_count}). Still waiting for cleanup..."
+    fi
+  }
+  trap '_signal_acknowledgement_handler SIGINT' INT
+  trap '_signal_acknowledgement_handler SIGTERM' TERM
+  trap '_signal_acknowledgement_handler SIGHUP' HUP
+
+  # Run the command in a subshell that restores default signal dispositions.
+  ( trap - INT TERM HUP ; exec "$@" )
+  local status=$?
+
+  trap - INT TERM HUP
+  return "$status"
+}
+
+cd "${_BAZEL_WORKSPACE}" && wait-ignoring-signals "${_bazel_command[@]}"

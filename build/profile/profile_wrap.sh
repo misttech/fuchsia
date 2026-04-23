@@ -17,8 +17,12 @@ readonly vmstat_trace_tool="$script_dir/vmstat_trace.py"
 readonly ifconfig_loop="$script_dir/ifconfig_loop.sh"
 readonly ifconfig_trace_tool="$script_dir/ifconfig_trace.py"
 
+function msg() {
+  echo >&2 "[$script_basename] $*"
+}
+
 function usage() {
-  cat <<EOF
+  cat <<END
 Usage: $script \
   --vmstat-log vmstat_logfile \
   --ifconfig-log ifconfig_logfile \
@@ -26,7 +30,7 @@ Usage: $script \
 
 to run a self-test:
   $script --self-test
-EOF
+END
 }
 
 self_test=0
@@ -191,23 +195,59 @@ fi
 # Terminate vmstat and ifconfig when main command is complete (or interrupted).
 function shutdown() {
   if [[ "$pids_not_found" > 0 ]]
-  then cat <<EOF
-[$script] Warning: Unable to find at least one of the backgrounded subprocesses
+  then cat <<EO_MESSAGE
+[$script_basename] Warning: Unable to find at least one of the backgrounded subprocesses
 that need to be terminated, so some residual subprocesses may still be running.
 Look for potentially unwanted subprocesses to kill with 'ps T'.
 See also known issue b/375201428.
 If this issue persists, you can:
   fx build-profile disable
   file a go/fuchsia-build-bug
-EOF
+EO_MESSAGE
   fi
   if [[ "${#shutdown_pids[@]}" > 0 ]]
-  then kill "${shutdown_pids[@]}"
+  then
+    if [[ "${_interrupted:-0}" == "1" ]]; then
+      msg "Stopping background profile collection..."
+    fi
+    kill "${shutdown_pids[@]}"
   fi
 }
 trap shutdown EXIT
 
-# Run the wrapped command.
-cmd_status=0
-"${cmd[@]}" || cmd_status="$?"
-exit "$cmd_status"
+# Wait for a command while ignoring signals to ensure the parent outlives the child.
+# This prevents the shell from exiting prematurely and orphaning backgrounded
+# subprocesses during a signal (like Ctrl-C).
+#
+# Because the command is run in the same process group, signals (like SIGINT)
+# are broadcast by the TTY to both the shell and the child, so no manual
+# signal forwarding is required here. Successive signals will continue to reach
+# the child as long as it is alive.
+function wait-ignoring-signals {
+  local sig_count=0
+  # Acknowledge signals but stay alive while waiting.
+  function _signal_acknowledgement_handler {
+    local sig="$1"
+    _interrupted=1
+    sig_count=$((sig_count + 1))
+    if [[ $sig_count -eq 1 ]]; then
+      msg "Received ${sig}. Waiting for command to shut down gracefully..."
+    else
+      msg "Received ${sig} again (${sig_count}). Still waiting for cleanup..."
+    fi
+  }
+  trap '_signal_acknowledgement_handler SIGINT' INT
+  trap '_signal_acknowledgement_handler SIGTERM' TERM
+  trap '_signal_acknowledgement_handler SIGHUP' HUP
+
+  # Run the command in a subshell that restores default signal dispositions.
+  ( trap - INT TERM HUP ; exec "$@" )
+  local status=$?
+
+  trap - INT TERM HUP
+  return "$status"
+}
+
+_interrupted=0
+wait-ignoring-signals "${cmd[@]}"
+exit "$?"

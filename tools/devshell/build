@@ -799,10 +799,10 @@ function main {
       ninja_path="${FUCHSIA_DIR}/build/resultstore/rsninja.sh"
     fi
 
-    (fx-run-ninja "${is_logging}" "${ninja_path}" \
+    fx-run-ninja "${is_logging}" "${ninja_path}" \
       "--chrome_trace" "${NINJA_BUILD_TRACE_FILE}" \
       -C "${FUCHSIA_BUILD_DIR}" \
-      "${extra_switches[@]}" "${ninja_targets[@]}")
+      "${extra_switches[@]}" "${ninja_targets[@]}"
 
     status=$?
     local -i ninja_log_timestamp_after

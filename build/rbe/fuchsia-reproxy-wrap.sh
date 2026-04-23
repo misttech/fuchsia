@@ -464,30 +464,30 @@ WRAPPED_PID=""
 # Forwards signals to the wrapped command and waits for it to exit.
 function handle_signal() {
   local signal_name="$1"
-  _timetrace "Received ${signal_name}, forwarding per policy: ${SIGNAL_POLICY}..."
+  timetrace "Received ${signal_name}, forwarding per policy: ${SIGNAL_POLICY}..."
 
   if [[ -n "${WRAPPED_PID:-}" ]] && kill -0 "${WRAPPED_PID}" 2>/dev/null; then
     case "${SIGNAL_POLICY}" in
       relay)
         # Forward to the PID only. The child was isolated via set -m.
-        _timetrace "Forwarding ${signal_name} to PID ${WRAPPED_PID}."
+        timetrace "Forwarding ${signal_name} to PID ${WRAPPED_PID}."
         kill "-${signal_name}" "${WRAPPED_PID}"
         ;;
       relay-group)
         # Forward to the entire process group.
-        _timetrace "Forwarding ${signal_name} to PGID -${WRAPPED_PID}."
+        timetrace "Forwarding ${signal_name} to PGID -${WRAPPED_PID}."
         kill "-${signal_name}" "-${WRAPPED_PID}"
         ;;
       passive)
         # Do nothing. TTY already sent the signal to the whole group.
-        _timetrace "Passive mode: waiting for child to exit on its own."
+        timetrace "Passive mode: waiting for child to exit on its own."
         ;;
     esac
 
     local exit_code=0
     # Wait for the process to terminate.
     wait "${WRAPPED_PID}" || exit_code=$?
-    _timetrace "Wrapped command exited with status ${exit_code} after receiving ${signal_name}."
+    timetrace "Wrapped command exited with status ${exit_code} after receiving ${signal_name}."
     # Exit this script with the same status code.
     # The EXIT trap will handle the rest of the cleanup.
     exit "${exit_code}"
