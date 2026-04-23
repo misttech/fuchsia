@@ -32,6 +32,66 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(resp.message)
         self.assertIn("Unknown command", resp.message or "")
 
+    async def test_attach_registration(self) -> None:
+        from daemon.daemon import Daemon
+
+        daemon = Daemon(port=15678)
+        self.assertIn("attach", daemon.registry.handlers)
+
+    async def test_handle_attach_success(self) -> None:
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from daemon.daemon import Daemon
+        from shared.protocol import AttachRequest
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        with patch.object(
+            daemon.dap_client, "attach", new_callable=AsyncMock
+        ) as mock_attach:
+            mock_attach.return_value = {"success": True}
+
+            req = AttachRequest(filter="my_process")
+            resp = await daemon.handle_attach(req)
+
+            self.assertTrue(resp.success)
+            self.assertEqual(resp.body, {"success": True})
+            mock_attach.assert_called_once()
+
+    async def test_handle_attach_failure(self) -> None:
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from daemon.daemon import Daemon
+        from shared.protocol import AttachRequest
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        with patch.object(
+            daemon.dap_client, "attach", new_callable=AsyncMock
+        ) as mock_attach:
+            mock_attach.side_effect = Exception("Failed to attach")
+
+            req = AttachRequest(filter="my_process")
+            resp = await daemon.handle_attach(req)
+
+            self.assertFalse(resp.success)
+            self.assertIn("Failed to attach", resp.message or "")
+
+    async def test_handle_attach_not_connected(self) -> None:
+        from daemon.daemon import Daemon
+        from shared.protocol import AttachRequest
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = None
+
+        req = AttachRequest(filter="my_process")
+        resp = await daemon.handle_attach(req)
+
+        self.assertFalse(resp.success)
+        self.assertIn("Not connected", resp.message or "")
+
 
 if __name__ == "__main__":
     unittest.main()

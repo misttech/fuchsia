@@ -12,6 +12,7 @@ from async_utils.command import AsyncCommand
 from ffx_cmd.lib import FfxCmd
 from pydap.client import DapClient
 from shared.protocol import (
+    AttachRequest,
     BaseRequest,
     GetStateRequest,
     Response,
@@ -74,6 +75,10 @@ class Daemon:
             "get-state",
             self.handle_get_state,
         )
+        self.registry.register(
+            "attach",
+            self.handle_attach,
+        )
 
     async def handle_stop(self, _req: StopRequest) -> Response:
         self.stop_event.set()
@@ -84,7 +89,6 @@ class Daemon:
             return Response(
                 success=False, message="Not connected to zxdb DAP server"
             )
-
         try:
             threads_resp = await self.dap_client.threads(self.zxdb_writer)
             threads = []
@@ -100,6 +104,24 @@ class Daemon:
             return Response(
                 success=False, message=f"Failed to get threads: {e}"
             )
+
+    async def handle_attach(self, req: AttachRequest) -> Response:
+        if not self.zxdb_writer:
+            return Response(
+                success=False, message="Not connected to zxdb DAP server"
+            )
+
+        from pydap.models import AttachRequestArguments
+
+        attach_args = AttachRequestArguments(
+            _restart=None, extra_fields={"process": req.filter}
+        )
+
+        try:
+            resp = await self.dap_client.attach(self.zxdb_writer, attach_args)
+            return Response(success=True, body=resp)
+        except Exception as e:
+            return Response(success=False, message=f"Failed to attach: {e}")
 
     async def run(self) -> int:
         if os.path.exists(UDS_PATH):

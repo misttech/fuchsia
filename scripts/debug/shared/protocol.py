@@ -7,19 +7,25 @@ import json
 from typing import Any
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(kw_only=True)
 class BaseRequest:
     command: str
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(kw_only=True)
 class StopRequest(BaseRequest):
     command: str = "stop"
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(kw_only=True)
 class GetStateRequest(BaseRequest):
     command: str = "get-state"
+
+
+@dataclasses.dataclass(kw_only=True)
+class AttachRequest(BaseRequest):
+    filter: str | int
+    command: str = "attach"
 
 
 @dataclasses.dataclass
@@ -51,6 +57,11 @@ def make_request(data: dict[str, Any]) -> BaseRequest:
         return StopRequest()
     elif command == "get-state":
         return GetStateRequest()
+    elif command == "attach":
+        filter = data.get("filter")
+        if filter is None:
+            raise ValueError("Filter must be specified for attach")
+        return AttachRequest(filter=filter)
     else:
         raise ValueError("Unknown command")
 
