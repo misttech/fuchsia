@@ -337,9 +337,10 @@ TEST_F(OverlayFsTest, SecurityLabelAccessDeniedIfMounterGetattrDenied) {
   }));
 }
 
-// Verify that the file's effective label remains correct for internal access checks even when the
-// mounter cannot perform 'getattr'.
-TEST_F(OverlayFsTest, FileIsEffectivelyUnlabeledIfMounterGetattrDenied) {
+// Verify that the file is inaccessible when the mounter cannot perform 'getattr' to allow the
+// security label to be determined. Audit log expectations verify that the denial is directly the
+// result of the `getattr` denial, rather than arising due to an effective "unlabeled" label.
+TEST_F(OverlayFsTest, FileIsInaccessibleIfMounterGetattrDenied) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
