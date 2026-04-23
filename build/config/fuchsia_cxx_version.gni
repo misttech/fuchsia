@@ -23,6 +23,7 @@ fuchsia_cxx_version = _default_cxx_version
 fuchsia_sdk_cxx_supported_versions = [
   17,
   20,
+  23,
 ]
 
 declare_args() {
