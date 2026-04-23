@@ -336,15 +336,13 @@ impl Drop for TestFixture {
     }
 }
 
-pub struct TestCallback(
-    std::sync::LazyLock<Mutex<Option<std::sync::Weak<dyn Fn() + Send + Sync>>>>,
-);
+pub struct TestCallback(Mutex<Option<Weak<dyn Fn() + Send + Sync>>>);
 
-pub struct TestCallbackGuard(#[allow(dead_code)] std::sync::Arc<dyn Fn() + Send + Sync>);
+pub struct TestCallbackGuard(#[allow(dead_code)] Arc<dyn Fn() + Send + Sync>);
 
 impl TestCallback {
     pub const fn new() -> Self {
-        Self(std::sync::LazyLock::new(|| Mutex::new(None)))
+        Self(Mutex::new(None))
     }
 
     /// Returns a guard that invalidates this callback and releases the resources when dropped.
@@ -352,8 +350,8 @@ impl TestCallback {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        let arc: std::sync::Arc<dyn Fn() + Send + Sync> = std::sync::Arc::new(callback);
-        *self.0.lock() = Some(std::sync::Arc::downgrade(&arc));
+        let arc: Arc<dyn Fn() + Send + Sync> = Arc::new(callback);
+        *self.0.lock() = Some(Arc::downgrade(&arc));
         TestCallbackGuard(arc)
     }
 
