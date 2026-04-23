@@ -117,8 +117,8 @@ class VmMapping::CurrentlyFaulting {
 
 VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
                      uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
-                     arch_mmu_flags_t first_mmu_flags, btree::BTree<arch_mmu_flags_t>&& ranges,
-                     Mergeable mergeable)
+                     arch_mmu_flags_t first_mmu_flags,
+                     btree::BTree<vaddr_t, arch_mmu_flags_t>&& ranges, Mergeable mergeable)
     : VmAddressRegionOrMapping(base, size, vmar_flags, parent.aspace_.get(), &parent, true),
       mergeable_(mergeable),
       private_clone_(private_clone),
@@ -134,7 +134,7 @@ VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, 
                      uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
                      arch_mmu_flags_t arch_mmu_flags, Mergeable mergeable)
     : VmMapping(parent, private_clone, base, size, vmar_flags, vmo, vmo_offset, arch_mmu_flags,
-                btree::BTree<arch_mmu_flags_t>(), mergeable) {}
+                btree::BTree<vaddr_t, arch_mmu_flags_t>(), mergeable) {}
 
 VmMapping::~VmMapping() {
   canary_.Assert();
@@ -229,7 +229,7 @@ zx_status_t VmMapping::ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr
 
 zx_status_t VmMapping::CopyProtectionRangesLocked(
     vaddr_t base, size_t size, arch_mmu_flags_t* out_first_flags,
-    btree::BTree<arch_mmu_flags_t>* out_ranges) const {
+    btree::BTree<vaddr_t, arch_mmu_flags_t>* out_ranges) const {
   DEBUG_ASSERT(is_in_range(base, size));
   DEBUG_ASSERT(out_first_flags);
   DEBUG_ASSERT(out_ranges);
@@ -470,9 +470,9 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     // Insert empty protection ranges for now as we will transform the existing protection_ranges_
     // tree into the target.
     fbl::AllocChecker ac;
-    left = fbl::AdoptRef(new (&ac) VmMapping(*parent_, private_clone_, base_, base - base_, flags_,
-                                             object_, object_offset_, 0,
-                                             btree::BTree<arch_mmu_flags_t>(), Mergeable::YES));
+    left = fbl::AdoptRef(new (&ac) VmMapping(
+        *parent_, private_clone_, base_, base - base_, flags_, object_, object_offset_, 0,
+        btree::BTree<vaddr_t, arch_mmu_flags_t>(), Mergeable::YES));
     if (!ac.check()) {
       return ZX_ERR_NO_MEMORY;
       AssertHeld(parent_->region_lock_ref());
@@ -483,7 +483,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     // ranges for this right mapping. We do this first here as this might need to allocate and can
     // fail.
     arch_mmu_flags_t right_first_mmu_flags = 0;
-    btree::BTree<arch_mmu_flags_t> right_prot_ranges;
+    btree::BTree<vaddr_t, arch_mmu_flags_t> right_prot_ranges;
     const vaddr_t offset = base + size - base_;
     if (left) {
       zx_status_t status = CopyProtectionRangesLocked(base + size, size_ - offset,
@@ -1505,7 +1505,7 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
   fbl::AllocChecker ac;
   fbl::RefPtr<VmMapping> new_mapping = fbl::AdoptRef(new (&ac) VmMapping(
       *parent_, private_clone_, base_, size_ + right_candidate->size_, flags_, object_,
-      object_offset_, 0, btree::BTree<arch_mmu_flags_t>(), Mergeable::YES));
+      object_offset_, 0, btree::BTree<vaddr_t, arch_mmu_flags_t>(), Mergeable::YES));
   if (!ac.check()) {
     return nullptr;
   }

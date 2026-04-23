@@ -19,9 +19,10 @@ namespace btree {
 
 // Use a custom datatype for items, instead of a pair, both for improved readability and because
 // pair value initializes its elements, which we would like to avoid in certain circumstances.
+template <typename Key, typename Value>
 struct Item {
-  uint64_t key;
-  uint64_t value;
+  Key key;
+  Value value;
 };
 
 // An observer allows augmenting the BTree with custom state that is maintained at each node.

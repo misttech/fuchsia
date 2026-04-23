@@ -7,6 +7,7 @@
 #include <lib/btree.h>
 #include <malloc.h>
 
+#include <compare>
 #include <numeric>
 #include <random>
 #include <set>
@@ -85,13 +86,14 @@ struct IndirectAllocator {
   HeapTestingAllocator& alloc;
 };
 
-template <typename T>
-using BTree = btree::BTree<T, btree::NoopObserver, IndirectAllocator, btree::DefaultTypeTraits<T>,
-                           256, btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
+template <typename K, typename V>
+using BTree =
+    btree::BTree<K, V, btree::NoopObserver, IndirectAllocator, btree::DefaultTypeTraits<V>, 256,
+                 btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
 
 TEST(BTreeTest, Smoke) {
   HeapTestingAllocator alloc;
-  BTree<uint64_t*> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t*> tree(IndirectAllocator{alloc});
   uint64_t item = 42;
 
   // Initially empty.
@@ -150,7 +152,7 @@ struct DestructionTracker {
 TEST(BTreeTest, ManagedPointers) {
   HeapTestingAllocator alloc;
   {
-    BTree<uint64_t> tree(IndirectAllocator{alloc});
+    BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
     auto it = tree.insert(10, 20);
     EXPECT_TRUE(it != tree.end());
     it = tree.begin();
@@ -160,7 +162,7 @@ TEST(BTreeTest, ManagedPointers) {
     EXPECT_TRUE(tree.is_empty());
   }
   {
-    BTree<std::unique_ptr<DestructionTracker>> tree(IndirectAllocator{alloc});
+    BTree<uint64_t, std::unique_ptr<DestructionTracker>> tree(IndirectAllocator{alloc});
     bool destroyed = false;
     std::unique_ptr<DestructionTracker> val = std::make_unique<DestructionTracker>(&destroyed);
     auto it = tree.insert(1, std::move(val));
@@ -172,7 +174,7 @@ TEST(BTreeTest, ManagedPointers) {
     EXPECT_TRUE(destroyed);
   }
   {
-    BTree<fbl::RefPtr<TestNode>> tree(IndirectAllocator{alloc});
+    BTree<uint64_t, fbl::RefPtr<TestNode>> tree(IndirectAllocator{alloc});
     fbl::RefPtr<TestNode> node = fbl::MakeRefCounted<TestNode>(42);
     auto it = tree.insert(1, fbl::RefPtr(node));
     EXPECT_TRUE(it != tree.end());
@@ -187,7 +189,7 @@ TEST(BTreeTest, ManagedPointers) {
 TEST(BTreeTest, AllocationFailure) {
   HeapTestingAllocator alloc;
 
-  BTree<uint64_t> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
 
   // An empty tree must allocate to insert.
   alloc.set_fail();
@@ -237,7 +239,8 @@ TEST(BTreeTest, AllocationFailure) {
 }
 
 // Helper method for performing a test that inserts, finds and then erases in different patterns.
-using InsertMethod = std::function<BTree<uint64_t*>::iterator(BTree<uint64_t*>&, uint64_t*)>;
+using InsertMethod =
+    std::function<BTree<uint64_t, uint64_t*>::iterator(BTree<uint64_t, uint64_t*>&, uint64_t*)>;
 using ShuffleMethod = std::function<void(std::vector<size_t>&)>;
 void single_insert_find_erase_many_test(size_t key_space, size_t num_keys, InsertMethod& do_insert,
                                         ShuffleMethod& shuffle_insert,
@@ -258,7 +261,7 @@ void single_insert_find_erase_many_test(size_t key_space, size_t num_keys, Inser
   // succeeds.
   HeapTestingAllocator alloc;
   alloc.set_random();
-  BTree<uint64_t*> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t*> tree(IndirectAllocator{alloc});
 
   // Keep a parallel set of expected keys to simplify validity checks later on.
   std::set<uint64_t> expected;
@@ -334,17 +337,18 @@ TEST(BTreeTest, InsertFindEraseMany) {
   };
 
   // Insertion strategies to test insertion hints.
-  std::function<BTree<uint64_t*>::iterator(BTree<uint64_t*>&, uint64_t*)> inserts[] = {
-      [](BTree<uint64_t*>& tree, uint64_t* item) { return tree.insert(*item, item); },
-      [](BTree<uint64_t*>& tree, uint64_t* item) {
-        return tree.insert(tree.upper_bound(*item), *item, item);
-      },
-      [](BTree<uint64_t*>& tree, uint64_t* item) {
-        auto it = tree.upper_bound(*item);
-        it--;
-        return tree.insert(it, *item, item);
-      },
-  };
+  std::function<BTree<uint64_t, uint64_t*>::iterator(BTree<uint64_t, uint64_t*>&, uint64_t*)>
+      inserts[] = {
+          [](BTree<uint64_t, uint64_t*>& tree, uint64_t* item) { return tree.insert(*item, item); },
+          [](BTree<uint64_t, uint64_t*>& tree, uint64_t* item) {
+            return tree.insert(tree.upper_bound(*item), *item, item);
+          },
+          [](BTree<uint64_t, uint64_t*>& tree, uint64_t* item) {
+            auto it = tree.upper_bound(*item);
+            it--;
+            return tree.insert(it, *item, item);
+          },
+      };
 
   // Number of items that place in the tree
   size_t kNumItems[] = {1, 4, 40, 600, 10000};
@@ -370,7 +374,7 @@ TEST(BTreeTest, InsertFindEraseMany) {
 
 void run_bounds_test(std::vector<uint64_t>& insertion_order) {
   HeapTestingAllocator alloc;
-  BTree<uint64_t> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
 
   // Empty tree.
   EXPECT_TRUE(tree.lower_bound(10) == tree.end());
@@ -438,7 +442,7 @@ TEST(BTreeTest, Bounds) {
 
 TEST(BTreeTest, ReverseIteration) {
   HeapTestingAllocator alloc;
-  BTree<uint64_t> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
 
   for (uint64_t i = 0; i < 100; i++) {
     auto it = tree.insert(i, i);
@@ -455,7 +459,7 @@ TEST(BTreeTest, ReverseIteration) {
 
 TEST(BTreeTest, Clear) {
   HeapTestingAllocator alloc;
-  BTree<uint64_t> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
 
   for (uint64_t i = 0; i < 1000; i++) {
     auto it = tree.insert(i, i);
@@ -472,7 +476,7 @@ TEST(BTreeTest, Clear) {
 
 TEST(BTreeTest, Take) {
   HeapTestingAllocator alloc;
-  BTree<uint64_t> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
 
   auto it = tree.insert(1, 10);
   EXPECT_TRUE(it != tree.end());
@@ -488,7 +492,7 @@ TEST(BTreeTest, Take) {
 
 TEST(BTreeTest, EraseEdgeCases) {
   HeapTestingAllocator alloc;
-  BTree<uint64_t> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
 
   // Erase from single element tree.
   auto it = tree.insert(1, 1);
@@ -518,7 +522,7 @@ TEST(BTreeTest, EraseEdgeCases) {
 
 TEST(BTreeTest, HintedInsertion) {
   HeapTestingAllocator alloc;
-  BTree<uint64_t> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
 
   // Tail insertion hint.
   auto it = tree.insert(1, 1);
@@ -547,7 +551,7 @@ TEST(BTreeTest, HintedInsertion) {
 
 TEST(BTreeTest, Utilization) {
   HeapTestingAllocator alloc;
-  BTree<uint64_t> tree(IndirectAllocator{alloc});
+  BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
 
   // Empty tree utilization.
   auto util = tree.calculate_utilization_slow();
@@ -611,7 +615,7 @@ TEST(BTreeTest, Utilization) {
 TEST(BTreeTest, IntegralTypes) {
   HeapTestingAllocator alloc;
   {
-    BTree<int32_t> tree(IndirectAllocator{alloc});
+    BTree<uint64_t, int32_t> tree(IndirectAllocator{alloc});
     auto it = tree.insert(1, -42);
     EXPECT_TRUE(it != tree.end());
     int32_t value = (*it).second;
@@ -619,7 +623,7 @@ TEST(BTreeTest, IntegralTypes) {
     tree.erase(it);
   }
   {
-    BTree<uint8_t> tree(IndirectAllocator{alloc});
+    BTree<uint64_t, uint8_t> tree(IndirectAllocator{alloc});
     auto it = tree.insert(1, 255);
     EXPECT_TRUE(it != tree.end());
     uint8_t value = (*it).second;
@@ -627,7 +631,7 @@ TEST(BTreeTest, IntegralTypes) {
     tree.erase(it);
   }
   {
-    BTree<bool> tree(IndirectAllocator{alloc});
+    BTree<uint64_t, bool> tree(IndirectAllocator{alloc});
     auto it = tree.insert(1, true);
     EXPECT_TRUE(it != tree.end());
     bool value = (*it).second;
@@ -639,7 +643,7 @@ TEST(BTreeTest, IntegralTypes) {
 TEST(BTreeTest, Update) {
   HeapTestingAllocator alloc;
   {
-    BTree<uint64_t> tree(IndirectAllocator{alloc});
+    BTree<uint64_t, uint64_t> tree(IndirectAllocator{alloc});
     auto it = tree.insert(10, 20);
     EXPECT_TRUE(it != tree.end());
     tree.update(it, 30);
@@ -653,7 +657,7 @@ TEST(BTreeTest, Update) {
     EXPECT_EQ((*it).second, 40u);
   }
   {
-    BTree<std::unique_ptr<DestructionTracker>> tree(IndirectAllocator{alloc});
+    BTree<uint64_t, std::unique_ptr<DestructionTracker>> tree(IndirectAllocator{alloc});
     bool destroyed1 = false;
     bool destroyed2 = false;
 
@@ -680,10 +684,7 @@ struct HashObserver {
   struct AugmentedState {
     uint64_t val1 = 0;
     uint64_t val2 = 0;
-    bool operator==(const AugmentedState& other) const {
-      return val1 == other.val1 && val2 == other.val2;
-    }
-    bool operator!=(const AugmentedState& other) const { return !(*this == other); }
+    bool operator==(const AugmentedState& other) const = default;
   };
 
   template <typename iterator>
@@ -710,9 +711,9 @@ struct HashObserver {
   }
 };
 
-using HashTree =
-    btree::BTree<uint64_t, HashObserver, IndirectAllocator, btree::DefaultTypeTraits<uint64_t>, 256,
-                 btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
+using HashTree = btree::BTree<uint64_t, uint64_t, HashObserver, IndirectAllocator,
+                              btree::DefaultTypeTraits<uint64_t>, 256,
+                              btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
 
 TEST(BTreeTest, AugmentedHash) {
   HeapTestingAllocator alloc;
@@ -815,10 +816,7 @@ struct SumObserver {
   struct AugmentedState {
     uint64_t val1 = 0;
     uint64_t val2 = 0;
-    bool operator==(const AugmentedState& other) const {
-      return val1 == other.val1 && val2 == other.val2;
-    }
-    bool operator!=(const AugmentedState& other) const { return !(*this == other); }
+    bool operator==(const AugmentedState& other) const = default;
   };
 
   template <typename iterator>
@@ -836,9 +834,9 @@ struct SumObserver {
   }
 };
 
-using SumTree =
-    btree::BTree<uint64_t, SumObserver, IndirectAllocator, btree::DefaultTypeTraits<uint64_t>, 256,
-                 btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
+using SumTree = btree::BTree<uint64_t, uint64_t, SumObserver, IndirectAllocator,
+                             btree::DefaultTypeTraits<uint64_t>, 256,
+                             btree::IteratorValidation::Tracked, btree::TreeValidation::Assert>;
 
 TEST(BTreeTest, Walk) {
   HeapTestingAllocator alloc;
@@ -931,6 +929,92 @@ TEST(BTreeTest, Walk) {
   status = tree.walk([](const auto& state) { return ZX_ERR_INTERNAL; },
                      [](const auto& state, auto begin, auto end) { return ZX_OK; });
   EXPECT_EQ(status, ZX_ERR_INTERNAL);
+}
+
+struct CustomSmallKey {
+  uint32_t part1;
+  uint16_t part2;
+  uint16_t part3;
+
+  auto operator<=>(const CustomSmallKey& other) const = default;
+};
+
+TEST(BTreeTest, CustomSmallKey) {
+  HeapTestingAllocator alloc;
+  BTree<CustomSmallKey, uint64_t> tree(IndirectAllocator{alloc});
+
+  for (uint32_t i = 1; i <= 100; i++) {
+    auto it = tree.insert({i, 0, 0}, i * 2);
+    EXPECT_TRUE(it != tree.end());
+  }
+
+  auto it = tree.find({50, 0, 0});
+  EXPECT_TRUE(it != tree.end());
+  EXPECT_EQ((*it).second, 100u);
+  EXPECT_TRUE(tree.debug_validate_tree());
+
+  tree.erase(it);
+  EXPECT_TRUE(tree.find({50, 0, 0}) == tree.end());
+}
+
+struct CustomMediumKey {
+  uint64_t part1;
+  uint64_t part2;
+
+  auto operator<=>(const CustomMediumKey& other) const = default;
+};
+
+TEST(BTreeTest, CustomMediumKey) {
+  HeapTestingAllocator alloc;
+  BTree<CustomMediumKey, uint64_t> tree(IndirectAllocator{alloc});
+
+  for (uint64_t i = 1; i <= 100; i++) {
+    auto it = tree.insert({i, i * 2}, i);
+    EXPECT_TRUE(it != tree.end());
+  }
+
+  auto it = tree.find({50, 100});
+  EXPECT_TRUE(it != tree.end());
+  EXPECT_EQ((*it).second, 50u);
+  EXPECT_TRUE(tree.debug_validate_tree());
+
+  tree.erase(it);
+  EXPECT_TRUE(tree.find({50, 100}) == tree.end());
+}
+
+struct CustomLargeKey {
+  uint64_t parts[8];
+
+  auto operator<=>(const CustomLargeKey& other) const = default;
+};
+
+TEST(BTreeTest, CustomLargeKey) {
+  HeapTestingAllocator alloc;
+  // NodeSize must be able to hold at least a few items. A 256 byte node can hold ~2-3 72-byte items
+  // which is too few so we must override the node size.
+  btree::BTree<CustomLargeKey, uint64_t, btree::NoopObserver, IndirectAllocator,
+               btree::DefaultTypeTraits<uint64_t>, 1024, btree::IteratorValidation::Tracked,
+               btree::TreeValidation::Assert>
+      tree(IndirectAllocator{alloc});
+
+  for (uint64_t i = 1; i <= 50; i++) {
+    CustomLargeKey key{};
+    key.parts[0] = i;
+    key.parts[7] = i * 2;
+    auto it = tree.insert(key, i);
+    EXPECT_TRUE(it != tree.end());
+  }
+
+  CustomLargeKey search_key{};
+  search_key.parts[0] = 25;
+  search_key.parts[7] = 50;
+  auto it = tree.find(search_key);
+  EXPECT_TRUE(it != tree.end());
+  EXPECT_EQ((*it).second, 25u);
+  EXPECT_TRUE(tree.debug_validate_tree());
+
+  tree.erase(it);
+  EXPECT_TRUE(tree.find(search_key) == tree.end());
 }
 
 }  // namespace

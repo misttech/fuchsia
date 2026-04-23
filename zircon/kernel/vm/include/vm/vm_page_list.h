@@ -699,7 +699,7 @@ class VmPageListNode final {
 // retains iterators into the page list. It is, however, safe to insert new entries.
 // The cursor can be used to iterate over empty contiguous slots, however iteration will always
 // cease if entries are not contiguous.
-class VMPLCursor : private btree::BTree<VmPlnOwner>::iterator {
+class VMPLCursor : private btree::BTree<uint64_t, VmPlnOwner>::iterator {
  public:
   VMPLCursor() : index_(kPageFanOut) {}
 
@@ -770,8 +770,8 @@ class VMPLCursor : private btree::BTree<VmPlnOwner>::iterator {
  private:
   static constexpr size_t kPageFanOut = VmPageListNode::kPageFanOut;
 
-  VMPLCursor(btree::BTree<VmPlnOwner>::iterator node, uint index)
-      : btree::BTree<VmPlnOwner>::iterator(node), index_(index) {}
+  VMPLCursor(btree::BTree<uint64_t, VmPlnOwner>::iterator node, uint index)
+      : btree::BTree<uint64_t, VmPlnOwner>::iterator(node), index_(index) {}
 
   // Helper to increment the underlying node_, testing for contiguity.
   bool inc_node() {
@@ -843,7 +843,7 @@ class VmPageList final {
       return ZX_OK;
     }
     return ForEveryPageInRangeInternal<const VmPageOrMarker*, NodeCheck::Skip>(
-        this, per_page_func, *static_cast<btree::BTree<VmPlnOwner>::iterator*>(&cursor),
+        this, per_page_func, *static_cast<btree::BTree<uint64_t, VmPlnOwner>::iterator*>(&cursor),
         start_offset, end_offset);
   }
 
@@ -1049,8 +1049,8 @@ class VmPageList final {
     void reset() { node_ = {}; }
 
    private:
-    btree::BTree<VmPlnOwner>& list_;
-    btree::BTree<VmPlnOwner>::iterator node_;
+    btree::BTree<uint64_t, VmPlnOwner>& list_;
+    btree::BTree<uint64_t, VmPlnOwner>::iterator node_;
   };
 
   // Returns a slot that was empty after LookupOrAllocate, and that the caller did not end up
@@ -1276,7 +1276,7 @@ class VmPageList final {
   // returned.
   template <typename T>
   static const VmPageOrMarker* IsOffsetInIntervalHelper(
-      uint64_t offset, btree::BTree<VmPlnOwner>::iterator_impl<T> lower_bound) {
+      uint64_t offset, btree::BTree<uint64_t, VmPlnOwner>::iterator_impl<T> lower_bound) {
     auto [obj_offset, node] = *lower_bound;
     if (offset < obj_offset) {
       return node->NodeStartsInInterval();
@@ -1719,7 +1719,7 @@ class VmPageList final {
     return ZX_OK;
   }
 
-  using NodeList = btree::BTree<VmPlnOwner>;
+  using NodeList = btree::BTree<uint64_t, VmPlnOwner>;
   NodeList list_;
 };
 

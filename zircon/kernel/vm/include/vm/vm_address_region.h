@@ -1080,7 +1080,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
             arch_mmu_flags_t arch_mmu_flags, Mergeable mergeable);
   VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
             uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
-            arch_mmu_flags_t first_mmu_flags, btree::BTree<arch_mmu_flags_t>&& ranges,
+            arch_mmu_flags_t first_mmu_flags, btree::BTree<vaddr_t, arch_mmu_flags_t>&& ranges,
             Mergeable mergeable);
 
   zx_status_t DestroyLocked() TA_REQ(region_lock()) TA_REQ(lock()) override;
@@ -1133,7 +1133,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // The sub-range [base, base + size) must be within [base_, base_ + size_).
   zx_status_t CopyProtectionRangesLocked(vaddr_t base, size_t size,
                                          arch_mmu_flags_t* out_first_flags,
-                                         btree::BTree<arch_mmu_flags_t>* out_ranges) const
+                                         btree::BTree<vaddr_t, arch_mmu_flags_t>* out_ranges) const
       TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS;
 
   // Merges a copy of the protection ranges of |right| into this mapping.
@@ -1268,7 +1268,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   //
   // This can be read with either lock held, but requires both locks to write it.
   arch_mmu_flags_t first_region_arch_mmu_flags_ TA_GUARDED(lock()) TA_GUARDED(object_->lock());
-  btree::BTree<arch_mmu_flags_t> rest_protection_ranges_ TA_GUARDED(lock())
+  btree::BTree<vaddr_t, arch_mmu_flags_t> rest_protection_ranges_ TA_GUARDED(lock())
       TA_GUARDED(object_->lock());
 
   fbl::WAVLTreeNodeState<VmMapping*> vmo_mapping_node_ TA_GUARDED(object_->lock());

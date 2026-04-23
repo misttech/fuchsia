@@ -23,29 +23,34 @@ namespace btree {
 // child subtrees.
 //
 // A key property of this representation is that the first key (at index 0) of every non-leaf node
-// must be 0 (or more generally, the minimum possible key value). This 0 key effectively represents
-// -infinity and ensures that any key less than the first explicit key in the second slot will
-// correctly traverse into the first child. This differs from standard B-trees where keys are stored
-// 'between' child pointers.
+// must be the minimum possible key value, which also must be the default initialized value of Key.
+// This minimum key effectively represents -infinity and ensures that any key less than the first
+// explicit key in the second slot will correctly traverse into the first child. This differs from
+// standard B-trees where keys are stored 'between' child pointers.
 //
 // Because intermediate nodes store minimum keys rather than exact keys, symmetric lower_bound
 // operation across both leaf and intermediate nodes is not possible. Search operations therefore
 // always use upper_bound to find the correct subtree.
-template <size_t NodeSize, TreeValidation Validator, typename AugmentedState>
+template <typename Key, typename Value, size_t NodeSize, TreeValidation Validator,
+          typename AugmentedState>
 class Node {
+ public:
+  using ItemType = Item<Key, Value>;
+
  public:
   // All node constructors need to be told what size they are and whether or not they are a leaf
   // type. Additional constructors also take various initial items or nodes to copy from.
   Node(size_t size_bytes, bool leaf) : Node(size_bytes, nullptr, nullptr, leaf, 0) {}
-  Node(size_t size_bytes, Node&& node, Item item, uint32_t index)
+  Node(size_t size_bytes, Node&& node, const ItemType& item, uint32_t index)
       : Node(size_bytes, node.prev(), node.next(), node.is_leaf(), node.count() + 1) {
     BTREE_CHECK(size_bytes > node.size_bytes());
     copy_insert(0, index, item, node, 0, node.count());
   }
-  Node(size_t size_bytes, bool leaf, Item item) : Node(size_bytes, nullptr, nullptr, leaf, 1) {
+  Node(size_t size_bytes, bool leaf, const ItemType& item)
+      : Node(size_bytes, nullptr, nullptr, leaf, 1) {
     items_[0] = item;
   }
-  Node(size_t size_bytes, bool leaf, Item item1, Item item2)
+  Node(size_t size_bytes, bool leaf, const ItemType& item1, const ItemType& item2)
       : Node(size_bytes, nullptr, nullptr, leaf, 2) {
     items_[0] = item1;
     items_[1] = item2;
@@ -64,14 +69,14 @@ class Node {
 
   bool valid_index(uint32_t index) const { return index < count(); }
 
-  Item get(uint32_t index) const {
+  const ItemType& get(uint32_t index) const {
     BTREE_CHECK(valid_index(index));
     return items_[index];
   }
 
   // Updates the key at the given index. It is the callers responsibility to ensure this results in
   // a valid tree.
-  void update_key(uint32_t index, uint64_t key) {
+  void update_key(uint32_t index, const Key& key) {
     ZX_DEBUG_ASSERT(valid_index(index) && (index == 0 || items_[index - 1].key < key) &&
                     (index == count() - 1 || key < items_[index + 1].key));
     items_[index].key = key;
@@ -85,7 +90,7 @@ class Node {
   // Returns the index of the upper bound of key, or count() if key is beyond this node. Due to how
   // intermediate nodes are represented there is no equivalent lower_bound operation as it does not
   // have a symmetric implementation for both intermediate and leaf nodes.
-  uint32_t upper_bound(uint64_t key) {
+  uint32_t upper_bound(const Key& key) {
     const uint32_t c = count();
     for (uint32_t i = 0; i < c; i++) {
       if (key < items_[i].key) {
@@ -97,7 +102,7 @@ class Node {
 
   // Inserts an item at the specified index, which must either be a valid_index, or at the end of
   // the valid indexes and shifts the rest of the items up and updates the count.
-  void insert(uint32_t index, Item item) {
+  void insert(uint32_t index, const ItemType& item) {
     // This will not catch all duplicate key insertions, since the duplicate key could be in a
     // neighboring (full) node, but should catch most accidents.
     ZX_DEBUG_ASSERT((index == 0 || items_[index - 1].key < item.key) &&
@@ -115,7 +120,7 @@ class Node {
   }
 
   // Pushes a single item onto the end of the node.
-  void push(Item item) {
+  void push(const ItemType& item) {
     BTREE_CHECK(!is_full());
     const uint32_t c = count();
     ZX_DEBUG_ASSERT(c == 0 || items_[c - 1].key < item.key);
@@ -175,7 +180,7 @@ class Node {
       16 + (std::is_empty_v<AugmentedState> ? 0 : sizeof(AugmentedState));
 
   static constexpr size_t SizeForCount(size_t count) {
-    return std::bit_ceil(kHeaderSize + (sizeof(Item) * count));
+    return std::bit_ceil(kHeaderSize + (sizeof(ItemType) * count));
   }
 
   // Size of the smallest node that can hold at least 1 item. It is invalid to attempt to create a
@@ -207,7 +212,7 @@ class Node {
 
   // Calculates our maximum count given a size in bytes.
   static constexpr uint32_t MaxCountFromSize(size_t bytes) {
-    return static_cast<uint32_t>((bytes - kHeaderSize) / sizeof(Item));
+    return static_cast<uint32_t>((bytes - kHeaderSize) / sizeof(ItemType));
   }
 
   // Ensure that the largest node can hold a 'decent' number of items. This ensures that a tree is
@@ -280,7 +285,7 @@ class Node {
     std::copy(src.items_ + src_index, src.items_ + src_index + count, items_ + dst_index);
   }
 
-  void copy_insert(uint32_t dst_index, uint32_t dst_insert_index, Item insert_item,
+  void copy_insert(uint32_t dst_index, uint32_t dst_insert_index, const ItemType& insert_item,
                    Node& __restrict src, uint32_t src_index, uint32_t copy_count) __restrict {
     copy(dst_index, src, src_index, dst_insert_index - dst_index);
     items_[dst_insert_index] = insert_item;
@@ -310,9 +315,10 @@ class Node {
   // |Item| itself must be trivially constructible and destructible as the items are implicitly
   // constructed via assignment when growing the number of active elements in the node, and are
   // implicitly destructed when the node goes away.
-  static_assert(std::is_trivially_constructible_v<Item>);
-  static_assert(std::is_trivially_destructible_v<Item>);
-  Item items_[];
+  static_assert(std::is_trivially_constructible_v<ItemType>);
+  static_assert(std::is_trivially_destructible_v<ItemType>);
+  static_assert(std::is_trivially_copyable_v<ItemType>);
+  ItemType items_[];
 };
 
 }  // namespace btree
