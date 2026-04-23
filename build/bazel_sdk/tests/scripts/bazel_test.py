@@ -1125,6 +1125,14 @@ def main() -> int:
     # noise in the failure output.
     _run_command(command_args, check_failure=True, **command_kwargs)
 
+    # Shutdown the Bazel server daemon immediately to avoid Ninja build timeouts
+    # See https://fxbug.dev/498320348
+    _run_command(
+        bazel_startup_args + ["shutdown"],
+        check_failure=False,
+        cwd=workspace_dir,
+    )
+
     if args.stamp_file:
         args.stamp_file.write_bytes(b"")
 

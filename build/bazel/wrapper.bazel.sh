@@ -244,6 +244,10 @@ use_gcert_auth=()
 
 _BAZEL_PRE_COMMAND_ARGS+=(
 
+  # Set a max idle duration of 10 minutes (default is 3 hours)
+  # To avoid Ninja build timeouts on CI. See https://fxbug.dev/498320348
+  --max_idle_secs=600
+
   # Do not parse $HOME/.bazelrc
   --nohome_rc
 
