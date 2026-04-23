@@ -8,7 +8,7 @@ per-file             tests/subcommands/fx_serve_update_test = file: /src/sys/pkg
 
 per-file             flash,flash-migration,flash-remote                = file: /src/firmware/OWNERS
 
-per-file             args,build,clean,clean-build,gen,get-build-artifacts   = file: /build/OWNERS
+per-file             args,bazel,build,build-profile,clean,clean-build,gen,get-build-artifacts   = file: /build/OWNERS
 per-file             get-build-dir,get-flash-source,get-src-dir,list-boards = file: /build/OWNERS
 per-file             list-build-artifacts,list-products,ninjatrace2json     = file: /build/OWNERS
 per-file             build-logs,rbe,resultstore,set-build-dir,use           = file: /build/OWNERS
