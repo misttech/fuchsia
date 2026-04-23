@@ -1476,7 +1476,11 @@ impl FsNode {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        assert!(mode & FileMode::IFMT != FileMode::EMPTY, "mknod called without node type.");
+        assert!(
+            !matches!(mode.fmt(), FileMode::EMPTY | FileMode::IFLNK),
+            "create_node with missing or symlink node type"
+        );
+
         self.check_access(
             locked,
             current_task,
@@ -1485,25 +1489,12 @@ impl FsNode {
             CheckAccessReason::InternalPermissionChecks,
             security::Auditable::Name(name),
         )?;
-        if mode.is_reg() {
-            security::check_fs_node_create_access(current_task, self, mode, name)?;
-        } else if mode.is_dir() {
+
+        if mode.is_dir() {
             // Even though the man page for mknod(2) says that mknod "cannot be used to create
             // directories" in starnix the mkdir syscall (`sys_mkdirat`) ends up calling
-            //create_node.
+            // create_node.
             security::check_fs_node_mkdir_access(current_task, self, mode, name)?;
-        } else if matches!(
-            mode.fmt(),
-            FileMode::IFCHR | FileMode::IFBLK | FileMode::IFIFO | FileMode::IFSOCK
-        ) {
-            security::check_fs_node_mknod_access(current_task, self, mode, name, dev)?;
-        }
-
-        self.update_metadata_for_child(current_task, &mut mode, &mut owner);
-
-        let new_node = if mode.is_dir() {
-            let locked = locked.cast_locked::<FileOpsCore>();
-            self.ops().mkdir(locked, self, current_task, name, mode, owner)?
         } else {
             // https://man7.org/linux/man-pages/man2/mknod.2.html says on error EPERM:
             //
@@ -1518,10 +1509,26 @@ impl FsNode {
                 FileMode::IFCHR if dev == DeviceId::NONE => (),
                 _ => security::check_task_capable(current_task, CAP_MKNOD)?,
             }
-            let locked = locked.cast_locked::<FileOpsCore>();
+
+            if mode.is_reg() {
+                security::check_fs_node_create_access(current_task, self, mode, name)?;
+            } else {
+                security::check_fs_node_mknod_access(current_task, self, mode, name, dev)?;
+            }
+        }
+
+        // Propagate sticky bit(s) from parent directory to the child.
+        self.update_metadata_for_child(current_task, &mut mode, &mut owner);
+
+        // Delegate to the `ops` implementation to actually create the node.
+        let locked = locked.cast_locked::<FileOpsCore>();
+        let new_node = if mode.is_dir() {
+            self.ops().mkdir(locked, self, current_task, name, mode, owner)?
+        } else {
             self.ops().mknod(locked, self, current_task, name, mode, dev, owner)?
         };
 
+        // Allow the LSM to apply a security label to the new node.
         self.init_new_node_security_on_create(locked, current_task, &new_node, name)?;
 
         Ok(new_node)
