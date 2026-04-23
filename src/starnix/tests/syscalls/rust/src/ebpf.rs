@@ -307,6 +307,12 @@ mod tests {
         sockaddr_family: u32,
         sockaddr_port: u32,
         sockaddr_ip: [u32; 4],
+
+        sk_type: u32,
+        sk_protocol: u32,
+        sk_family: u32,
+
+        _padding: u32,
     }
 
     #[repr(C)]
@@ -549,6 +555,10 @@ mod tests {
         let end_variable = maps.get_global_variables();
 
         assert!(new_count - last_count >= 1);
+        let test_result = maps.get_test_result();
+        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
+        assert_eq!(test_result.sk_family, libc::AF_INET as u32);
         assert!(end_variable.global_counter1 - initial_variable.global_counter1 >= 1);
         assert!(end_variable.global_counter2 - initial_variable.global_counter2 >= 2);
         assert!(initial_variable.global_counter2 >= 2 * initial_variable.global_counter1);
@@ -585,6 +595,9 @@ mod tests {
         assert_eq!(new_count, last_count + 1);
 
         let test_result = maps.get_test_result();
+        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
+        assert_eq!(test_result.sk_family, libc::AF_INET as u32);
 
         // SAFETY: These libc functions are safe to call.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
@@ -623,6 +636,9 @@ mod tests {
         let test_result = maps.get_test_result();
         assert_eq!(test_result.optlen, 10000);
         assert_eq!(test_result.optval_size, getpagesize() as u64);
+        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_protocol, 0);
+        assert_eq!(test_result.sk_family, libc::AF_UNIX as u32);
 
         // Try again with the `optval[0]=1`. The program will set `optlen`
         // above buffer size, which should result in `EFAULT`.
@@ -690,6 +706,9 @@ mod tests {
         let test_result = maps.get_test_result();
         assert_eq!(test_result.retval, -libc::ENOPROTOOPT);
         assert_eq!(test_result.get_retval, -libc::ENOPROTOOPT);
+        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_protocol, 0);
+        assert_eq!(test_result.sk_family, libc::AF_UNIX as u32);
 
         // The original error is still returned if the program returns 0.
         let err = get_test_sock_opt(3).expect_err("getsockopt expected to fail");
@@ -767,6 +786,9 @@ mod tests {
         assert_eq!(test_result.sockaddr_port, src_port.to_be() as u32);
         assert_eq!(test_result.sockaddr_family, linux_uapi::AF_INET6);
         assert_eq!(test_result.sockaddr_ip, [0, 0, 0xffff0000, 0x0100007F]);
+        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
+        assert_eq!(test_result.sk_family, linux_uapi::AF_INET6);
     }
 
     // The following tests both attach eBPF programs to
@@ -810,6 +832,9 @@ mod tests {
         assert_eq!(test_result.sockaddr_port, dst_port.to_be() as u32);
         assert_eq!(test_result.sockaddr_family, linux_uapi::AF_INET);
         assert_eq!(test_result.sockaddr_ip[0], 0x0100007F);
+        assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
+        assert_eq!(test_result.sk_family, libc::AF_INET as u32);
     }
 
     #[test]

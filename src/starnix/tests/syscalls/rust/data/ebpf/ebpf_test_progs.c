@@ -49,6 +49,11 @@ struct test_result {
   __u32 sockaddr_family;
   __u32 sockaddr_port;
   __u32 sockaddr_ip[4];
+
+  __u32 sk_type;
+  __u32 sk_protocol;
+  __u32 sk_family;
+  __u32 _padding;
 };
 
 // Global variable that will be stored in a .data section (which is a BPF map).
@@ -110,6 +115,13 @@ int sock_create_prog(struct bpf_sock* sock) {
 
   __sync_fetch_and_add(counter, 1);
 
+  struct test_result result = {
+      .sk_type = sock->type,
+      .sk_protocol = sock->protocol,
+      .sk_family = sock->family,
+  };
+  bpf_map_update_elem(&test_result, &zero, &result, 0);
+
   return 1;
 }
 
@@ -132,6 +144,9 @@ int sock_release_prog(struct bpf_sock* sock) {
   struct test_result result = {
       .uid_gid = bpf_get_current_uid_gid(),
       .pid_tgid = bpf_get_current_pid_tgid(),
+      .sk_type = sock->type,
+      .sk_protocol = sock->protocol,
+      .sk_family = sock->family,
   };
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 
@@ -146,6 +161,11 @@ int setsockopt_prog(struct bpf_sockopt* sockopt) {
         .optval_size = buffer_size,
         .get_retval = bpf_get_retval(),
     };
+    if (sockopt->sk) {
+      result.sk_type = sockopt->sk->type;
+      result.sk_protocol = sockopt->sk->protocol;
+      result.sk_family = sockopt->sk->family;
+    }
     int zero = 0;
     bpf_map_update_elem(&test_result, &zero, &result, 0);
 
@@ -202,6 +222,11 @@ int getsockopt_prog(struct bpf_sockopt* sockopt) {
       .retval = sockopt->retval,
       .get_retval = bpf_get_retval(),
   };
+  if (sockopt->sk) {
+    result.sk_type = sockopt->sk->type;
+    result.sk_protocol = sockopt->sk->protocol;
+    result.sk_family = sockopt->sk->family;
+  }
   int zero = 0;
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 
@@ -291,6 +316,12 @@ int udprecv6_prog(struct bpf_sock_addr* sockaddr) {
   result.sockaddr_ip[1] = sockaddr->user_ip6[1];
   result.sockaddr_ip[2] = sockaddr->user_ip6[2];
   result.sockaddr_ip[3] = sockaddr->user_ip6[3];
+  if (sockaddr->sk) {
+    result.sk_type = sockaddr->sk->type;
+    result.sk_protocol = sockaddr->sk->protocol;
+    result.sk_family = sockaddr->sk->family;
+  }
+
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 
   return 1;
@@ -317,6 +348,11 @@ int udpsend4_prog(struct bpf_sock_addr* sockaddr) {
       .sockaddr_family = sockaddr->user_family,
   };
   result.sockaddr_ip[0] = sockaddr->user_ip4;
+  if (sockaddr->sk) {
+    result.sk_type = sockaddr->sk->type;
+    result.sk_protocol = sockaddr->sk->protocol;
+    result.sk_family = sockaddr->sk->family;
+  }
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 
   // Fail sendmsg() with EFAIL.

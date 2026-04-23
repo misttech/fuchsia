@@ -1021,7 +1021,7 @@ pub fn sys_getsockopt(
         optval,
         optlen,
         error,
-        socket.downcast_socket(),
+        socket,
     )?;
 
     assert!(optlen <= optval_buffer_len);
@@ -1053,7 +1053,7 @@ pub fn sys_setsockopt(
         level,
         optname,
         user_opt.into(),
-        socket.downcast_socket(),
+        socket,
     ) {
         SetSockOptProgramResult::Allow(value) => value,
         SetSockOptProgramResult::Fail(errno) => return Err(errno),

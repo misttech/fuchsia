@@ -423,7 +423,7 @@ impl ZxioBackedSocket {
                 socket.socket_type,
                 socket.protocol,
                 socket_address.as_sockaddr_bytes()?,
-                self,
+                socket,
             )?;
         match ebpf_result {
             SockAddrProgramResult::Allow => Ok(()),

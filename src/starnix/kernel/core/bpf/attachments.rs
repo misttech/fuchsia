@@ -13,7 +13,7 @@ use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::FdNumber;
 use crate::vfs::socket::{
-    SockOptValue, SocketDomain, SocketProtocol, SocketType, ZxioBackedSocket,
+    SockOptValue, Socket, SocketDomain, SocketProtocol, SocketType, ZxioBackedSocket,
 };
 use ebpf::{BpfValue, EbpfProgram, EbpfProgramContext, EbpfPtr, ProgramArgument, Type};
 use ebpf_api::{
@@ -234,6 +234,20 @@ pub struct BpfSock<'a> {
     value: bpf_sock,
 
     socket: Option<&'a ZxioBackedSocket>,
+}
+
+impl<'a> BpfSock<'a> {
+    fn from_socket(socket: &'a Socket) -> Self {
+        Self {
+            value: bpf_sock {
+                family: socket.domain.as_raw().into(),
+                type_: socket.socket_type.as_raw(),
+                protocol: socket.protocol.as_raw(),
+                ..Default::default()
+            },
+            socket: socket.downcast_socket(),
+        }
+    }
 }
 
 impl<'a> Deref for BpfSock<'a> {
@@ -582,7 +596,7 @@ impl CgroupEbpfProgramSet {
         socket_type: SocketType,
         protocol: SocketProtocol,
         socket_address: &[u8],
-        socket: &ZxioBackedSocket,
+        socket: &Socket,
     ) -> Result<SockAddrProgramResult, Errno> {
         let prog_cell = match (domain, op) {
             (SocketDomain::Inet, SockAddrOp::Bind) => &self.inet4_bind,
@@ -601,7 +615,7 @@ impl CgroupEbpfProgramSet {
             return Ok(SockAddrProgramResult::Allow);
         };
 
-        let bpf_sock = BpfSock { value: Default::default(), socket: Some(socket) };
+        let bpf_sock = BpfSock::from_socket(socket);
 
         let mut bpf_sockaddr = BpfSockAddr { sock_addr: Default::default(), bpf_sock: &bpf_sock };
         bpf_sockaddr.family = domain.as_raw().into();
@@ -682,14 +696,14 @@ impl CgroupEbpfProgramSet {
         optval: Vec<u8>,
         optlen: usize,
         error: Option<Errno>,
-        socket: Option<&ZxioBackedSocket>,
+        socket: &Socket,
     ) -> Result<(Vec<u8>, usize), Errno> {
         let (prog_guard, locked) = self.get_sockopt.read_and(locked);
         let Some(prog) = prog_guard.as_ref() else {
             return error.map(|e| Err(e)).unwrap_or_else(|| Ok((optval, optlen)));
         };
 
-        let bpf_sock = BpfSock { value: Default::default(), socket };
+        let bpf_sock = BpfSock::from_socket(socket);
 
         let retval = error.as_ref().map(|e| -(e.code.error_code() as i32)).unwrap_or(0);
         let mut bpf_sockopt = BpfSockOptWithValue::new(
@@ -743,7 +757,7 @@ impl CgroupEbpfProgramSet {
         level: u32,
         optname: u32,
         value: SockOptValue,
-        socket: Option<&ZxioBackedSocket>,
+        socket: &Socket,
     ) -> SetSockOptProgramResult {
         let (prog_guard, locked) = self.set_sockopt.read_and(locked);
         let Some(prog) = prog_guard.as_ref() else {
@@ -759,7 +773,7 @@ impl CgroupEbpfProgramSet {
             Err(err) => return SetSockOptProgramResult::Fail(err),
         };
 
-        let bpf_sock = BpfSock { value: Default::default(), socket };
+        let bpf_sock = BpfSock::from_socket(socket);
 
         let buffer_len = buffer.len();
         let optlen = value.len();
