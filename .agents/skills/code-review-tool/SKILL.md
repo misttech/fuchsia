@@ -39,6 +39,34 @@ key mappings and differences you need to know:
   "assignee". The `-a, --assignee` flag is mapped to filter by **reviewer** in
   Gerrit.
 - To filter by author/owner, use the `--author` flag.
+- **Advanced Searching**: The `--search` flag allows access to all of Gerrit's
+  advanced search functionality.
+  - **Search Operators**: Common and useful Gerrit operators include:
+    - `message:` / `subject:`: Match keywords or patterns (e.g.,
+      `message:"fixing a bug"` or `message:^.*regex.*`) in the commit message or
+      subject.
+    - `file:` / `path:`: Match affected files by exact path or regex (e.g.,
+      `file:src/main.rs` or `file:^.*\.rs`).
+    - `owner:`, `reviewer:`, `cc:`: Match based on users involved in the CL.
+    - `age:`: Filter by the time since the last update (e.g., `age:2d`,
+      `-age:1w`).
+    - `has:`: Filter by properties like `has:unresolved`, `has:draft`.
+    - `is:`: Filter by state or properties like `is:open`, `is:wip`,
+      `is:mergeable`.
+    - `label:`: Match by label votes (e.g., `label:Code-Review+2`).
+    - See https://gerrit-review.googlesource.com/Documentation/user-search.html
+      for complete documentation.
+  - **Direct Query Pass-Through**: The search string is appended directly to the
+    Gerrit REST API query, fully supporting explicit boolean operations (`AND`,
+    `OR`, `NOT`), grouping parentheses, and negation (e.g., `-is:wip`).
+  - **Combination With Flags**: Any flags supplied alongside `--search` (like
+    `--author` or `--label`) are joined with a space (implicitly acting as an
+    `AND` in Gerrit search syntax).
+  - **Important Caveat (`--state`)**: By default, `status:open` is prepended to
+    the search query. If you use custom status operators (e.g., `status:merged`
+    or `status:abandoned`) within `--search`, they will conflict and yield no
+    results. **Workaround**: Pass `--state=all` along with `--search` to take
+    full control over the status filter.
 
 #### `pr comment`
 - **Threading and Replying to Comments**: When posting a comment with `--path`
