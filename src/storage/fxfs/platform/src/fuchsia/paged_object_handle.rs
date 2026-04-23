@@ -28,7 +28,11 @@ use storage_device::buffer::{Buffer, BufferFuture};
 use vfs::temp_clone::{TempClonable, unblock};
 
 /// How much data each sync transaction in a given flush will cover.
-const FLUSH_BATCH_SIZE: u64 = 524_288;
+pub const FLUSH_BATCH_SIZE: u64 = 524_288;
+/// The amount of dirty bytes to trigger a background flush. This is double the `FLUSH_BATCH_SIZE`
+/// because bytes can be reserved and unreserved which are split into separate batches, so this
+/// value ensures that at least one of the two dirty page states has enough for a full batch.
+pub const BACKGROUND_FLUSH_THRESHOLD: u64 = FLUSH_BATCH_SIZE * 2;
 
 /// An expanding write will: mark a page as dirty, write to the page, and then update the content
 /// size. If a flush is triggered during an expanding write then query_dirty_ranges may return pages
@@ -533,10 +537,12 @@ impl PagedObjectHandle {
         self.flush(false).await
     }
 
+    /// Attempts to mark the page range as dirty. On success, returns the number of current dirty
+    /// bytes.
     pub fn mark_dirty<T: PagerBacked>(
         &self,
         page_range: MarkDirtyRange<T>,
-    ) -> Result<(), zx::Status> {
+    ) -> Result<u64, zx::Status> {
         let mut inner = self.inner.lock();
         if inner.read_only {
             // Enable-verity has already been called on this file.
@@ -588,7 +594,7 @@ impl PagedObjectHandle {
             // always be derivable from `Inner`.
             reservation.forget();
         }
-        Ok(())
+        Ok(inner.dirty_pages.total() * zx::system_get_page_size() as u64)
     }
 
     /// Queries the VMO to see if it was modified since the last time this function was called.
@@ -998,8 +1004,8 @@ impl PagedObjectHandle {
         ensure!(new_size <= MAX_FILE_SIZE, FxfsError::InvalidArgs);
         let store = self.handle.store();
         let fs = store.filesystem();
-        let keys = lock_keys![LockKey::truncate(store.store_object_id(), self.handle.object_id())];
-        let _truncate_guard = fs.lock_manager().write_lock(keys).await;
+        let _truncate_guard =
+            fs.truncate_guard(store.store_object_id(), self.handle.object_id()).await;
 
         // mark_dirty uses the in-memory tracking of overwrite ranges to decide if it needs to
         // reserve pages or not, so we make sure we update that tracking first thing so we start
@@ -1555,8 +1561,12 @@ mod tests {
             &Default::default(),
         )
         .await;
-        let info = file.describe().await.unwrap();
-        let stream: zx::Stream = info.stream.unwrap();
+        let stream = file.describe().await.unwrap().stream.unwrap();
+        let file_id =
+            file.get_attributes(fio::NodeAttributesQuery::ID).await.unwrap().unwrap().1.id.unwrap();
+        // Block background flushes by holding the truncate lock.
+        let truncate_guard =
+            fs.truncate_guard(volume.volume().store().store_object_id(), file_id).await;
 
         // Touch enough pages that 3 transaction will be required.
         unblock(move || {
@@ -1571,6 +1581,9 @@ mod tests {
         .await;
 
         transaction_count.store(0, Ordering::Relaxed);
+        // Let go of the truncation guard. This will let the background flush complete, and this
+        // sync.
+        std::mem::drop(truncate_guard);
         file.sync().await.unwrap().unwrap();
         assert_eq!(transaction_count.load(Ordering::Relaxed), 3);
 
@@ -1607,8 +1620,12 @@ mod tests {
         )
         .await;
 
-        let info = file.describe().await.unwrap();
-        let stream: zx::Stream = info.stream.unwrap();
+        let stream = file.describe().await.unwrap().stream.unwrap();
+        let file_id =
+            file.get_attributes(fio::NodeAttributesQuery::ID).await.unwrap().unwrap().1.id.unwrap();
+        // Block background flushes by holding the truncate lock.
+        let truncate_guard =
+            fs.truncate_guard(volume.volume().store().store_object_id(), file_id).await;
         // Touch enough pages that 3 transaction will be required.
         unblock(move || {
             let page_size = zx::system_get_page_size() as u64;
@@ -1626,6 +1643,9 @@ mod tests {
         // written to disk until the journal is synced which happens in FxFile::sync after all of
         // the multi_writes.
         fail_transaction_after.store(1, Ordering::Relaxed);
+        // Let go of the truncation guard. This will let the background flush complete, and this
+        // sync.
+        std::mem::drop(truncate_guard);
         file.sync().await.unwrap().expect_err("sync should fail");
         fail_transaction_after.store(i64::MAX, Ordering::Relaxed);
 
