@@ -263,7 +263,7 @@ pub struct VirtualCpu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Result;
+    use crate::Result;
     use std::str::FromStr;
 
     #[test]

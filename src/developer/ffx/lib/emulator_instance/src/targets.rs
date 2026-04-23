@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::{
-    EmulatorInstanceData, EmulatorInstanceInfo, EmulatorInstances, EngineOption, NetworkingMode,
+    EmulatorInstanceData, EmulatorInstanceError, EmulatorInstanceInfo, EmulatorInstances,
+    EngineOption, NetworkingMode, Result,
 };
-use anyhow::{Context, Result};
 use ffx::{TargetAddrInfo, TargetVSockCtx};
 use fidl_fuchsia_developer_ffx::{self as ffx, TargetVSockNamespace};
 use fidl_fuchsia_net::{IpAddress, Ipv4Address};
@@ -77,7 +77,10 @@ struct EmulatorWatcherHandler {
 pub fn start_emulator_watching(instance_root: PathBuf) -> Result<EmulatorWatcher> {
     let (emu_instance_tx, emu_instance_rx) = mpsc::channel::<EmulatorInstanceEvent>(100);
     if !instance_root.exists() {
-        create_dir_all(&instance_root).context("Creating instance root directory")?;
+        create_dir_all(&instance_root).map_err(|e| EmulatorInstanceError::CreateDirectory {
+            path: instance_root.clone(),
+            source: e,
+        })?;
     }
     let watch_handler = EmulatorWatcherHandler {
         instance_dir: instance_root.clone(),
@@ -93,10 +96,10 @@ pub fn start_emulator_watching(instance_root: PathBuf) -> Result<EmulatorWatcher
     );
     #[cfg(not(target_os = "macos"))]
     let res = RecommendedWatcher::new(watch_handler, notify::Config::default());
-    let mut watcher = res.context("Creating emulator watcher")?;
-    watcher
-        .watch(&instance_root, RecursiveMode::Recursive)
-        .context("Setting emulator watcher context")?;
+    let mut watcher = res.map_err(EmulatorInstanceError::WatcherCreation)?;
+    watcher.watch(&instance_root, RecursiveMode::Recursive).map_err(|e| {
+        EmulatorInstanceError::WatchDirectory { path: instance_root.clone(), source: e }
+    })?;
     let watcher_handler = EmulatorWatcher {
         emu_instances: EmulatorInstances::new(instance_root),
         emu_instance_rx: emu_instance_rx,
@@ -128,7 +131,7 @@ impl EmulatorWatcherHandler {
     }
 }
 impl notify::EventHandler for EmulatorWatcherHandler {
-    fn handle_event(&mut self, event: Result<notify::Event, notify::Error>) {
+    fn handle_event(&mut self, event: std::result::Result<notify::Event, notify::Error>) {
         match event {
             Ok(Event { kind: Create(_), paths, .. }) | Ok(Event { kind: Modify(_), paths, .. }) => {
                 for p in paths {
@@ -261,7 +264,10 @@ impl EmulatorWatcher {
     pub async fn check_all_instances(&mut self) -> Result<()> {
         let instances = self.emu_instances.get_all_instances()?;
         for emu in instances {
-            self.emu_instance_tx.send(EmulatorInstanceEvent::Data(Box::new(emu))).await?;
+            self.emu_instance_tx
+                .send(EmulatorInstanceEvent::Data(Box::new(emu)))
+                .await
+                .map_err(|e| EmulatorInstanceError::SendError(e.to_string()))?;
         }
         Ok(())
     }
@@ -347,7 +353,7 @@ mod tests {
         let temp = tempdir().expect("cannot get tempdir");
         let instance_dir = temp.path().to_path_buf();
         if !instance_dir.exists() {
-            create_dir_all(&instance_dir).context("Creating instance root directory")?;
+            create_dir_all(&instance_dir)?;
         }
         let watch_handler = EmulatorWatcherHandler {
             instance_dir: instance_dir.clone(),
@@ -374,7 +380,7 @@ mod tests {
         let temp = tempdir().expect("cannot get tempdir");
         let instance_dir = temp.path().to_path_buf();
         if !instance_dir.exists() {
-            create_dir_all(&instance_dir).context("Creating instance root directory")?;
+            create_dir_all(&instance_dir)?;
         }
         let emu_instance_name = String::from("new-emu-instance");
         let new_instance_dir = instance_dir.join(emu_instance_name.clone());
@@ -538,7 +544,7 @@ mod tests {
         let temp = tempdir().expect("cannot get tempdir");
         let instance_dir = temp.path().to_path_buf();
         if !instance_dir.exists() {
-            create_dir_all(&instance_dir).context("Creating instance root directory")?;
+            create_dir_all(&instance_dir)?;
         }
         let emu_instance_name = String::from("new-emu-instance");
         let new_instance_dir = instance_dir.join(emu_instance_name.clone());
@@ -603,7 +609,9 @@ mod tests {
                 emu_instance_tx: emu_instance_tx.clone(),
                 _watcher: iwatcher,
             };
-            emu_instance_tx.try_send(event.clone())?;
+            emu_instance_tx
+                .try_send(event.clone())
+                .map_err(|e| EmulatorInstanceError::SendError(e.to_string()))?;
             let actual = watcher.emulator_target_detected().await;
             assert_eq!(expected, actual, "for event {event:?}");
         }

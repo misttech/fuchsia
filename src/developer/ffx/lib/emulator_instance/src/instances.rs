@@ -1,8 +1,7 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::{EmulatorInstanceData, EngineOption, EngineState};
-use anyhow::{Context, Result, anyhow};
+use crate::{EmulatorInstanceData, EmulatorInstanceError, EngineOption, EngineState, Result};
 use std::fs::{File, create_dir_all};
 use std::path::PathBuf;
 
@@ -41,7 +40,9 @@ impl EmulatorInstances {
         let path = self.get_instance_dir(instance_name, false)?;
         if path.exists() {
             log::debug!("Removing {:?} for {:?}", path, path.as_path().file_name().unwrap());
-            std::fs::remove_dir_all(&path.as_path()).context("Request to remove directory failed")
+            std::fs::remove_dir_all(&path.as_path()).map_err(|e| {
+                EmulatorInstanceError::RemoveDirectory { path: path.to_path_buf(), source: e }
+            })
         } else {
             // It's already gone, so just return Ok(()).
             Ok(())
@@ -97,9 +98,9 @@ pub fn read_from_disk(instance_directory: &PathBuf) -> Result<EngineOption> {
     // Read the engine.json file and deserialize it from disk into a new TypedEngine instance
     if filepath.exists() {
         let file = File::open(&filepath)
-            .context(format!("Unable to open file {:?} for deserialization", filepath))?;
-        let res: Result<EmulatorInstanceData> =
-            serde_json::from_reader(file).context(format!("Invalid JSON syntax in {:?}", filepath));
+            .map_err(|e| EmulatorInstanceError::OpenFile { path: filepath.clone(), source: e })?;
+        let res: Result<EmulatorInstanceData> = serde_json::from_reader(file)
+            .map_err(|e| EmulatorInstanceError::ParseJson { path: filepath.clone(), source: e });
         if res.is_err() {
             log::warn!("Failed to parse emulator instance: {res:?}");
         }
@@ -117,12 +118,12 @@ pub fn read_from_disk_untyped(instance_directory: &PathBuf) -> Result<serde_json
     // Read the engine.json file and deserialize it from disk into a new TypedEngine instance
     if filepath.exists() {
         let file = File::open(&filepath)
-            .context(format!("Unable to open file {:?} for deserialization", filepath))?;
+            .map_err(|e| EmulatorInstanceError::OpenFile { path: filepath.clone(), source: e })?;
         let value: serde_json::Value = serde_json::from_reader(file)
-            .context(format!("Invalid JSON syntax in {:?}", filepath))?;
+            .map_err(|e| EmulatorInstanceError::ParseJson { path: filepath.clone(), source: e })?;
         Ok(value)
     } else {
-        Err(anyhow!("Engine file doesn't exist at {:?}", filepath))
+        Err(EmulatorInstanceError::MissingEngineFile(filepath))
     }
 }
 
@@ -133,11 +134,11 @@ pub fn write_to_disk(data: &EmulatorInstanceData, instance_directory: &PathBuf) 
     // Create the engine.json file to hold the serialized data, and write it out to disk,
     let filepath = instance_directory.join(SERIALIZE_FILE_NAME);
     let file = File::create(&filepath)
-        .context(format!("Unable to create file {:?} for serialization", filepath))?;
+        .map_err(|e| EmulatorInstanceError::CreateFile { path: filepath.clone(), source: e })?;
     log::debug!("Writing serialized engine out to {:?}", filepath);
     match serde_json::to_writer(file, data) {
         Ok(_) => Ok(()),
-        Err(e) => Err(anyhow!(e)),
+        Err(e) => Err(EmulatorInstanceError::SerializeJson(e)),
     }
 }
 

@@ -208,7 +208,10 @@ impl EmulatorEngine for FemuEngine {
     async fn save_to_disk(&self) -> Result<()> {
         emulator_instance::write_to_disk(
             &self.data,
-            &self.emu_instances.get_instance_dir(self.data.get_name(), true)?,
+            &self
+                .emu_instances
+                .get_instance_dir(self.data.get_name(), true)
+                .map_err(|e| anyhow::Error::from(e))?,
         )
         .map_err(|e| bug!("Error saving instance to disk: {e}"))
     }

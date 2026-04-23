@@ -47,7 +47,7 @@ impl TryFromEnv for InstanceData {
 #[async_trait]
 impl Instances for InstanceData {
     async fn get_all_instances(&self) -> Result<Vec<EmulatorInstanceData>, fho::Error> {
-        self.emu_instances.get_all_instances().map_err(|e| e.into())
+        self.emu_instances.get_all_instances().map_err(|e| anyhow::Error::from(e).into())
     }
 }
 

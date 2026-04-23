@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result, bail};
 use schemars::JsonSchema;
 pub use sdk_metadata::{AudioDevice, DataAmount, DataUnits, PointingDevice, Screen, VsockDevice};
 use serde::{Deserialize, Serialize};
@@ -10,6 +9,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use thiserror::Error;
 
 mod enumerations;
 pub mod fletcher64;
@@ -20,6 +20,65 @@ pub use enumerations::{
     AccelerationMode, ConsoleType, CpuArchitecture, EngineState, EngineType, GpuType, LogLevel,
     NetworkingMode, OperatingSystem, VirtualCpu,
 };
+#[derive(Error, Debug)]
+pub enum EmulatorInstanceError {
+    #[error("Could not calculate hash for {path:?}: {source}")]
+    HashCalculation { path: PathBuf, source: std::io::Error },
+
+    #[error("Kernel file {0:?} does not exist.")]
+    MissingKernel(PathBuf),
+
+    #[error("FAT file {0:?} does not exist.")]
+    MissingFatImage(PathBuf),
+
+    #[error("Full GPT disk file {0:?} does not exist.")]
+    MissingGptImage(PathBuf),
+
+    #[error("No kernel file or bootloader file configured.")]
+    MissingConfiguration,
+
+    #[error("Ramdisk {0:?} does not exist.")]
+    MissingRamdisk(PathBuf),
+
+    #[error("Disk image file {0:?} does not exist.")]
+    MissingDiskImage(PathBuf),
+
+    #[error("Failed to remove directory {path:?}: {source}")]
+    RemoveDirectory { path: PathBuf, source: std::io::Error },
+
+    #[error("Unable to open file {path:?}: {source}")]
+    OpenFile { path: PathBuf, source: std::io::Error },
+
+    #[error("Invalid JSON syntax in {path:?}: {source}")]
+    ParseJson { path: PathBuf, source: serde_json::Error },
+
+    #[error("Engine file doesn't exist at {0:?}")]
+    MissingEngineFile(PathBuf),
+
+    #[error("Unable to create file {path:?}: {source}")]
+    CreateFile { path: PathBuf, source: std::io::Error },
+
+    #[error("Failed to serialize JSON: {0}")]
+    SerializeJson(#[from] serde_json::Error),
+
+    #[error("Failed to create directory {path:?}: {source}")]
+    CreateDirectory { path: PathBuf, source: std::io::Error },
+
+    #[error("Failed to create watcher: {0}")]
+    WatcherCreation(#[from] notify::Error),
+
+    #[error("Failed to watch directory {path:?}: {source}")]
+    WatchDirectory { path: PathBuf, source: notify::Error },
+
+    #[error("Failed to send event: {0}")]
+    SendError(String),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+pub type Result<T> = std::result::Result<T, EmulatorInstanceError>;
+
 use fletcher64::get_file_hash;
 pub use instances::{EmulatorInstances, read_from_disk, read_from_disk_untyped, write_to_disk};
 pub use targets::{
@@ -206,13 +265,19 @@ impl GuestConfig {
         // If there is an efi kernel, and no zbi, use the kernel to calculate the hash.
 
         let zbi_hash = if let Some(Ramdisk { path, kind: RamdiskKind::Zbi }) = &self.ramdisk {
-            get_file_hash(path).context("could not calculate ramdisk hash")?
+            get_file_hash(path).map_err(|e| EmulatorInstanceError::HashCalculation {
+                path: path.to_path_buf(),
+                source: e,
+            })?
         } else {
             0
         };
 
         let disk_hash = if let Some(disk) = &self.disk_image {
-            get_file_hash(disk.as_ref()).context("could not calculate disk hash")?
+            get_file_hash(disk.as_ref()).map_err(|e| EmulatorInstanceError::HashCalculation {
+                path: disk.as_path().to_path_buf(),
+                source: e,
+            })?
         } else {
             0
         };
@@ -237,35 +302,35 @@ impl GuestConfig {
         match kernel_path {
             Some(file_path) => {
                 if !file_path.exists() {
-                    bail!("kernel file {:?} does not exist.", kernel_path);
+                    return Err(EmulatorInstanceError::MissingKernel(file_path.to_path_buf()));
                 }
             }
             None => match disk_image_path {
                 Some(DiskImage::Fat(fat_path)) => {
                     if !fat_path.exists() {
-                        bail!("FAT file {:?} does not exist.", fat_path);
+                        return Err(EmulatorInstanceError::MissingFatImage(fat_path.to_path_buf()));
                     }
                 }
                 Some(DiskImage::Gpt(gpt_path)) => {
                     if !gpt_path.exists() {
-                        bail!("Full GPT disk file {:?} does not exist.", gpt_path);
+                        return Err(EmulatorInstanceError::MissingGptImage(gpt_path.to_path_buf()));
                     }
                 }
                 _ => {
-                    bail!("No kernel file or bootloader file configured.");
+                    return Err(EmulatorInstanceError::MissingConfiguration);
                 }
             },
         };
 
         if let Some(ramdisk) = ramdisk {
             if !ramdisk.path.exists() {
-                bail!("ramdisk {:?} does not exist.", ramdisk.path);
+                return Err(EmulatorInstanceError::MissingRamdisk(ramdisk.path.to_path_buf()));
             }
         }
 
         if let Some(file_path) = disk_image_path.as_ref() {
             if !file_path.exists() {
-                bail!("disk image file {:?} does not exist.", file_path);
+                return Err(EmulatorInstanceError::MissingDiskImage(file_path.to_path_buf()));
             }
         }
         Ok(())

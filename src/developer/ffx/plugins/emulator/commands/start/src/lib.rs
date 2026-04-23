@@ -190,7 +190,9 @@ impl EngineOperations for EngineOperationsData {
     }
 
     async fn clean_up_instance_dir(&self, instance_name: &str) -> Result<()> {
-        self.emu_instances.clean_up_instance_dir(instance_name).map_err(|e| e.into())
+        self.emu_instances
+            .clean_up_instance_dir(instance_name)
+            .map_err(|e| anyhow::Error::from(e).into())
     }
 
     fn context(&self) -> EnvironmentContext {

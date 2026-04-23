@@ -132,7 +132,7 @@ impl EngineBuilder {
         let name = &self.emulator_configuration.runtime.name;
         self.emulator_configuration.runtime.engine_type = self.engine_type;
         self.emulator_configuration.runtime.instance_directory =
-            self.emu_instances.get_instance_dir(name, true)?;
+            self.emu_instances.get_instance_dir(name, true).map_err(|e| anyhow::Error::from(e))?;
 
         // Make sure we don't overwrite an existing instance.
         if let Ok(EngineOption::DoesExist(instance_data)) =
@@ -200,8 +200,11 @@ impl EngineBuilder {
 
         // If we got this far, name is set to either what the user asked for, or the only one running.
         if let Some(local_name) = name {
-            let instance_dir = self.emu_instances.get_instance_dir(local_name, false)?;
-            match read_from_disk(&instance_dir)? {
+            let instance_dir = self
+                .emu_instances
+                .get_instance_dir(local_name, false)
+                .map_err(|e| anyhow::Error::from(e))?;
+            match read_from_disk(&instance_dir).map_err(|e| anyhow::Error::from(e))? {
                 EngineOption::DoesExist(data) => Ok(Some(self.from_data(*data))),
                 EngineOption::DoesNotExist(_) => Ok(None),
             }

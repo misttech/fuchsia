@@ -13,7 +13,8 @@ pub async fn read_engine_from_disk(
     emu_instances: &EmulatorInstances,
     name: &str,
 ) -> Result<Box<dyn EmulatorEngine>> {
-    let instance_dir = emu_instances.get_instance_dir(name, false)?;
+    let instance_dir =
+        emu_instances.get_instance_dir(name, false).map_err(|e| anyhow::Error::from(e))?;
     let builder = EngineBuilder::new(context, emu_instances.clone());
     match read_from_disk(&instance_dir) {
         Ok(EngineOption::DoesExist(data)) => Ok(builder.from_data(*data)),
