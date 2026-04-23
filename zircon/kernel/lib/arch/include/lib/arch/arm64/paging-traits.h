@@ -699,7 +699,7 @@ class ArmAddressTranslationPageDescriptor
   DEF_BIT(52, contiguous);
   DEF_BIT(51, dbm);  // Dirty Bit Modifier
 
-  DEF_BIT(50, gp);  // Guard Page
+  DEF_BIT(50, gp);  // Guarded Page (FEAT_BTI)
 
   // Bits [49:12] conditionally represent the output address field, which is
   // handled manually below.
