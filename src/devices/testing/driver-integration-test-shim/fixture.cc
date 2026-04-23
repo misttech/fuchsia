@@ -125,16 +125,11 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
                            std::move(realm_args));
 
   // Setup Fshost.
-  if (args->enable_storage_host) {
-    realm_builder.AddChild("fshost", "#meta/test-fshost-storage-host.cm");
-    realm_builder.AddChild("fshost_config", "#meta/test-fshost-storage-host_config.cm");
-  } else {
-    realm_builder.AddChild("fshost", "#meta/test-fshost.cm");
-    realm_builder.AddChild("fshost_config", "#meta/test-fshost_config.cm");
-    if (args->disable_block_watcher) {
-      args->fshost_config.emplace_back(ConfigCapability{
-          .name = "fuchsia.fshost.DisableBlockWatcher", .value = ConfigValue::Bool(true)});
-    }
+  realm_builder.AddChild("fshost", "#meta/test-fshost.cm");
+  realm_builder.AddChild("fshost_config", "#meta/test-fshost_config.cm");
+  if (args->disable_block_watcher) {
+    args->fshost_config.emplace_back(ConfigCapability{.name = "fuchsia.fshost.DisableBlockWatcher",
+                                                      .value = ConfigValue::Bool(true)});
   }
 
   std::vector<Capability> config_routes = {

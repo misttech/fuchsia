@@ -252,7 +252,6 @@ class PaverServiceTest : public PaverTest {
   virtual IsolatedDevmgr::Args DevmgrArgs() {
     IsolatedDevmgr::Args args;
     args.disable_block_watcher = false;
-    args.enable_storage_host = true;
     return args;
   }
 
@@ -2264,7 +2263,6 @@ std::unique_ptr<BlockDevice> PaverServiceUefiTest::InstallUefiGpt(paver::Partiti
        .start = kFvmBlockStart,
        .length = kFvmBlockSize},
   };
-  ZX_ASSERT(DevmgrArgs().enable_storage_host);
   fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
   fbl::unique_fd fd;
   EXPECT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
@@ -2386,7 +2384,6 @@ class PaverServiceGptDeviceTest : public PaverServiceTest {
                            const std::vector<PartitionDescription>& partitions) {
     block_count_ = block_count;
     block_size_ = block_size;
-    ZX_ASSERT(DevmgrArgs().enable_storage_host);
     fidl::ClientEnd svc_root = devmgr_.RealmExposedDir();
     fbl::unique_fd fd;
     EXPECT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));

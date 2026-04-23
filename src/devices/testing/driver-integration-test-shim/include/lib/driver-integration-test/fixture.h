@@ -36,10 +36,6 @@ class IsolatedDevmgr {
     // If this is true then tell fshost not to create a block watcher.
     bool disable_block_watcher = true;
 
-    // Enable storage-host in fshost.  GPT and FVM drivers won't be bound by the driver framework.
-    // `disable_block_watcher` is ignored when this is set.
-    bool enable_storage_host = false;
-
     // A board name to appear.
     fbl::String board_name;
     std::vector<std::string> driver_disable;

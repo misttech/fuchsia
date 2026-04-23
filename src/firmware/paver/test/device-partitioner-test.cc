@@ -182,7 +182,6 @@ class GptDevicePartitionerTests : public PaverTest {
   virtual IsolatedDevmgr::Args BaseDevmgrArgs() {
     IsolatedDevmgr::Args args;
     args.disable_block_watcher = false;
-    args.enable_storage_host = true;
     return args;
   }
 
@@ -955,7 +954,6 @@ class MoonflowerPartitionerTests : public GptDevicePartitionerTests {
 
   IsolatedDevmgr::Args BaseDevmgrArgs() override {
     IsolatedDevmgr::Args args = GptDevicePartitionerTests::BaseDevmgrArgs();
-    args.disable_block_watcher = true;
     args.fshost_config.emplace_back(
         component_testing::ConfigCapability{.name = "fuchsia.fshost.MergeSuperAndUserdata",
                                             .value = component_testing::ConfigValue::Bool(true)});

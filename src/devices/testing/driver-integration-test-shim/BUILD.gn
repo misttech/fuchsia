@@ -84,7 +84,6 @@ source_set("driver-integration-test-shim") {
     ":driver-integration-test-shim-headers",
     "//src/devices/board/drivers/integration-test",
     "//src/storage/fshost/testing:test-fshost",
-    "//src/storage/fshost/testing:test-fshost-storage-host",
   ]
   deps = [
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",

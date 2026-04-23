@@ -35,96 +35,6 @@ using driver_integration_test::IsolatedDevmgr;
 using paver::MoonflowerGptEntryAttributes;
 using uuid::Uuid;
 
-TEST(AstroAbrTests, CreateFails) {
-  IsolatedDevmgr devmgr;
-  IsolatedDevmgr::Args args;
-  args.disable_block_watcher = false;
-  args.board_name = "sherlock";
-
-  ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr));
-  ASSERT_OK(RecursiveWaitForFile(devmgr.devfs_root().get(), "sys/platform").status_value());
-
-  zx::result devices = paver::BlockDevices::CreateDevfs(devmgr.devfs_root().duplicate());
-  ASSERT_OK(devices);
-  std::shared_ptr<paver::Context> context;
-  zx::result partitioner = paver::AstroPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(),
-      paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
-  ASSERT_NOT_OK(partitioner);
-}
-
-TEST(SherlockAbrTests, CreateFails) {
-  IsolatedDevmgr devmgr;
-  IsolatedDevmgr::Args args;
-  args.disable_block_watcher = false;
-  args.board_name = "astro";
-
-  ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr));
-  ASSERT_OK(RecursiveWaitForFile(devmgr.devfs_root().get(), "sys/platform").status_value());
-
-  zx::result devices = paver::BlockDevices::CreateDevfs(devmgr.devfs_root().duplicate());
-  ASSERT_OK(devices);
-  std::shared_ptr<paver::Context> context;
-  zx::result partitioner = paver::SherlockPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(),
-      paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
-  ASSERT_NOT_OK(partitioner);
-}
-
-TEST(MoonflowerAbrTests, CreateFails) {
-  IsolatedDevmgr devmgr;
-  IsolatedDevmgr::Args args;
-  args.disable_block_watcher = false;
-  args.board_name = "astro";
-
-  ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr));
-  ASSERT_OK(RecursiveWaitForFile(devmgr.devfs_root().get(), "sys/platform").status_value());
-
-  zx::result devices = paver::BlockDevices::CreateDevfs(devmgr.devfs_root().duplicate());
-  ASSERT_OK(devices);
-  std::shared_ptr<paver::Context> context;
-  zx::result partitioner = paver::MoonflowerPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(),
-      paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
-  ASSERT_NOT_OK(partitioner);
-}
-
-TEST(LuisAbrTests, CreateFails) {
-  IsolatedDevmgr devmgr;
-  IsolatedDevmgr::Args args;
-  args.disable_block_watcher = false;
-  args.board_name = "astro";
-
-  ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr));
-  ASSERT_OK(RecursiveWaitForFile(devmgr.devfs_root().get(), "sys/platform").status_value());
-
-  zx::result devices = paver::BlockDevices::CreateDevfs(devmgr.devfs_root().duplicate());
-  ASSERT_OK(devices);
-  std::shared_ptr<paver::Context> context;
-  zx::result partitioner = paver::LuisPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(),
-      paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
-  ASSERT_NOT_OK(partitioner);
-}
-
-TEST(X64AbrTests, CreateFails) {
-  IsolatedDevmgr devmgr;
-  IsolatedDevmgr::Args args;
-  args.disable_block_watcher = false;
-  args.board_name = "x64";
-
-  ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr));
-  ASSERT_OK(RecursiveWaitForFile(devmgr.devfs_root().get(), "sys/platform").status_value());
-
-  zx::result devices = paver::BlockDevices::CreateDevfs(devmgr.devfs_root().duplicate());
-  ASSERT_OK(devices);
-  std::shared_ptr<paver::Context> context;
-  zx::result partitioner = paver::UefiPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(),
-      paver::PaverConfig{.arch = paver::Arch::kX64, .zvb_current_slot = "_a"}, context, {});
-  ASSERT_NOT_OK(partitioner);
-}
-
 class CurrentSlotUuidTest : public PaverTest {
  protected:
   static constexpr int kBlockSize = 512;
@@ -144,8 +54,7 @@ class CurrentSlotUuidTest : public PaverTest {
 
   virtual IsolatedDevmgr::Args DevmgrArgs() {
     IsolatedDevmgr::Args args;
-    // storage-host publishes devices synchronously so it's easier to test with.
-    args.enable_storage_host = true;
+    args.disable_block_watcher = false;
     return args;
   }
 
@@ -160,9 +69,7 @@ class CurrentSlotUuidTest : public PaverTest {
   }
 
   zx::result<paver::BlockDevices> CreateBlockDevices() {
-    return DevmgrArgs().enable_storage_host
-               ? paver::BlockDevices::CreateFromFshostBlockDir(BlockDirFd())
-               : paver::BlockDevices::CreateDevfs(devmgr_.devfs_root().duplicate());
+    return paver::BlockDevices::CreateFromFshostBlockDir(BlockDirFd());
   }
 
   void CreatePartitioner(std::unique_ptr<paver::GptDevicePartitioner>& out) {
@@ -297,7 +204,6 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
     IsolatedDevmgr::Args args;
     args.board_name = "sorrel";
     args.disable_block_watcher = false;
-    args.enable_storage_host = true;
     return args;
   }
 
