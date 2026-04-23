@@ -2679,6 +2679,7 @@ assembly_input_bundle("factory_data") {
 #
 assembly_input_bundle("fshost_common") {
   bootstrap_shards = [ "//src/storage/fshost/meta/fshost.bootstrap_shard.cml" ]
+  root_shards = [ "//src/storage/fshost/meta/fshost.root_shard.cml" ]
   compiled_packages = [
     {
       bootfs_package = true
