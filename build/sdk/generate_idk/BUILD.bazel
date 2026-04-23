@@ -11,6 +11,7 @@ py_binary(
         "cmd.py",
         "validate_idk.py",
     ],
+    imports = [".."],
     legacy_create_init = False,
     main = "cmd.py",
     visibility = ["//visibility:public"],

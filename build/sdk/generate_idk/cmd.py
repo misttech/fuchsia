@@ -20,15 +20,11 @@ import os
 import pathlib
 import sys
 
-_SCRIPT_DIR = pathlib.Path(__file__).parent.parent
-
-# See comment in BUILD.bazel to see why changing sys.path manually
-# is required here. Bytecode generation is also disallowed to avoid
+# Bytecode generation is disallowed to avoid
 # polluting the Bazel execroot with .pyc files that can end up in
 # the generated TreeArtifact, resulting in issues when dependent
 # actions try to read it.
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(_SCRIPT_DIR))
 import generate_idk
 
 

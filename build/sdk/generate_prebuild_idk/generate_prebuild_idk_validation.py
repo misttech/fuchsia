@@ -16,7 +16,6 @@ import typing as T
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
 
 # Assume the script is in //build/sdk/generate_prebuild_idk/.
 _FUCHSIA_ROOT_DIR = _SCRIPT_DIR.parent.parent.parent
@@ -108,6 +107,11 @@ def main() -> int:
     parser.add_argument(
         "--stamp-file", type=Path, help="Output stamp file path."
     )
+    parser.add_argument(
+        "--python-path",
+        action="append",
+        help="Additional paths to add to PYTHONPATH for the subprocess.",
+    )
 
     args = parser.parse_args()
 
@@ -141,8 +145,14 @@ def main() -> int:
         f"--output-dir={output_idk_dir}",
     ]
 
+    env = os.environ.copy()
+    python_paths = args.python_path or []
+    if "PYTHONPATH" in env:
+        python_paths.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = ":".join(python_paths)
     ret = subprocess.run(
         generate_prebuild_command_args,
+        env=env,
     )
     ret.check_returncode()
 

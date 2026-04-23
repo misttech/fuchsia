@@ -37,12 +37,15 @@ if (is_host) {
       "idk_generator.py",
     ]
 
+    # LINT.IfChange(idk_generator_lib_deps)
     deps = [
       "//build/cpp",
       "//build/sdk/generate_version_history",
       "//build/sdk/sdk_common",
       "//third_party/pyyaml:yaml",
     ]
+
+    # LINT.ThenChange(:generate_prebuild_idk_integration_test_python_path)
   }
 
   # All tests here should be run at build time, as they are critical
@@ -76,11 +79,21 @@ if (is_host) {
       "//third_party/pyyaml/src/lib/yaml/tokens.py",
     ]
     outputs = [ "$target_out_dir/$target_name.check" ]
+
+    # LINT.IfChange(generate_prebuild_idk_integration_test_python_path)
     args = [
       "--quiet",
       "--stamp",
       rebase_path(outputs[0], root_build_dir),
+      "--python-path",
+      rebase_path("//build", root_build_dir),
+      "--python-path",
+      rebase_path("//build/sdk", root_build_dir),
+      "--python-path",
+      rebase_path("//third_party/pyyaml/src/lib", root_build_dir),
     ]
+
+    # LINT.ThenChange(:idk_generator_lib_deps)
 
     hermetic_inputs_file = "$target_out_dir/$target_name.hermetic_inputs"
   }
