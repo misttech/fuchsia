@@ -62,7 +62,8 @@ impl FileOps for TraceMarkerFile {
         let _guard = fuchsia_trace::async_enter!(
             queue.async_id_write,
             CATEGORY_TRACE_META,
-            queue.write_track_name()
+            queue.write_track_name(),
+            "tid" => current_task.get_tid()
         );
         if self.event_queue_collection.is_enabled() {
             let mut bytes = data.read_all()?;

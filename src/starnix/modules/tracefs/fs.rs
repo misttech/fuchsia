@@ -179,15 +179,19 @@ impl FileOps for TraceRawFile {
         &self,
         _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        assert!(data.available() as u64 == *PAGE_SIZE);
+        // TODO(b/505532201): Consider supporting larger buffers.
+        if data.available() as u64 != *PAGE_SIZE {
+            return error!(EINVAL);
+        }
         let _guard = fuchsia_trace::async_enter!(
             self.queue.async_id_read,
             CATEGORY_TRACE_META,
-            self.queue.read_track_name()
+            self.queue.read_track_name(),
+            "tid" => current_task.tid
         );
         self.queue.read(data)
     }
