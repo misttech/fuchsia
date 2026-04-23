@@ -244,7 +244,7 @@ thiserror = "2.0.18"
 tokio-rustls = "0.24.1"
 toml = "0.9.11"
 toml_edit = "0.24.0"
-tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes", "log"] }
+tracing = { version = "0.1.44", default-features = false, features = ["std", "attributes", "log"] }
 tracing-mutex = { version = "0.3.2", features = ["experimental", "lockapi", "parkinglot"] }
 tuf = { version = "=0.3.0-beta14", default-features = false, features = ["hyper"] }
 typed-builder = "0.23.2"
@@ -332,7 +332,7 @@ petgraph = { version = "0.6.2" }
 proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
 pulldown-cmark = { version = "0.9.3", features = ["serde"] }
 quote = "1.0.45"
-rustfix = "0.9.4"
+rustfix = "0.9.5"
 rustls-native-certs = "0.6.3"
 semver = "1.0.26"
 serde_yaml = "0.9.14" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.

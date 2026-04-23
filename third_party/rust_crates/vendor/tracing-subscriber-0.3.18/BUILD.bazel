@@ -97,7 +97,7 @@ rust_library(
         "//third_party/rust_crates/vendor/sharded-slab-0.1.7:sharded_slab",
         "//third_party/rust_crates/vendor/smallvec-1.15.1:smallvec",
         "//third_party/rust_crates/vendor/thread_local-1.1.9:thread_local",
-        "//third_party/rust_crates/vendor/tracing-0.1.41:tracing",
+        "//third_party/rust_crates/vendor/tracing-0.1.44:tracing",
         "//third_party/rust_crates/vendor/tracing-log-0.2.0:tracing_log",
     ],
 )

@@ -2437,14 +2437,14 @@ alias(
 )
 
 alias(
-    name = "rustfix-0.9.4",
-    actual = "//third_party/rust_crates/vendor/rustfix-0.9.4:rustfix",
+    name = "rustfix-0.9.5",
+    actual = "//third_party/rust_crates/vendor/rustfix-0.9.5:rustfix",
     tags = ["manual"],
 )
 
 alias(
     name = "rustfix",
-    actual = "//third_party/rust_crates/vendor/rustfix-0.9.4:rustfix",
+    actual = "//third_party/rust_crates/vendor/rustfix-0.9.5:rustfix",
     tags = ["manual"],
 )
 
@@ -3025,14 +3025,14 @@ alias(
 )
 
 alias(
-    name = "tracing-0.1.41",
-    actual = "//third_party/rust_crates/vendor/tracing-0.1.41:tracing",
+    name = "tracing-0.1.44",
+    actual = "//third_party/rust_crates/vendor/tracing-0.1.44:tracing",
     tags = ["manual"],
 )
 
 alias(
     name = "tracing",
-    actual = "//third_party/rust_crates/vendor/tracing-0.1.41:tracing",
+    actual = "//third_party/rust_crates/vendor/tracing-0.1.44:tracing",
     tags = ["manual"],
 )
 
