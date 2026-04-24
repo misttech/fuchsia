@@ -11,16 +11,13 @@ pub enum PointOfFailure<'a> {
     /// Error encountered running `InterfaceFactoryBase::<_>::open`.
     FactoryOpenError(String, &'a InterfaceFactoryError),
 
-    /// Pre-InterfaceFactoryError wrapped Error encountered running
-    /// `InterfaceFactoryBase::<_>::open`. Exists for convenience.
-    FactoryOpenErrorGeneral(String, &'a anyhow::Error),
-
     /// Error encountered running `InterfaceFactoryBase::<_>::rediscover`.
     FactoryRediscoveryError(String, &'a InterfaceFactoryError),
 }
 
 fn format_interface_factory_error_type(error: &InterfaceFactoryError) -> String {
     match error {
+        InterfaceFactoryError::Usb(..) => "usb_discovery_error",
         InterfaceFactoryError::InterfaceOpenError(..) => "interface_open_error",
         InterfaceFactoryError::RediscoverTargetError(..) => "rediscover_target_error",
         InterfaceFactoryError::RediscoverTargetNotInFastboot(..) => {
@@ -38,6 +35,7 @@ fn redacted_clone(err: &InterfaceFactoryError) -> Option<InterfaceFactoryError> 
     const REDACTED_DEVICE: &'static str = "<redacted>";
     const REDACTED_ADDRESS: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
     match err {
+        InterfaceFactoryError::Usb(_) => None,
         InterfaceFactoryError::InterfaceOpenError(_) => None,
         InterfaceFactoryError::RediscoverTargetError(s) => {
             Some(InterfaceFactoryError::RediscoverTargetError(s.clone()))
@@ -70,19 +68,6 @@ impl Into<CustomEvent> for PointOfFailure<'_> {
         let (category, ty, err) = match self {
             Self::FactoryOpenError(ty, err) => ("open_fastboot_interface", ty, err),
             Self::FactoryRediscoveryError(ty, err) => ("fastboot_rediscovery", ty, err),
-            Self::FactoryOpenErrorGeneral(ty, err) => {
-                return CustomEvent {
-                    category: "open_fastboot_interface",
-                    custom_dimensions: [
-                        ("error_type", "interface_open_error".into()),
-                        ("error", err.to_string().into()),
-                        ("connection_type", ty.into()),
-                    ]
-                    .into_iter()
-                    .collect(),
-                    ..Default::default()
-                };
-            }
         };
         CustomEvent {
             category,
@@ -116,19 +101,6 @@ mod tests {
             GA4Value::Str(s) => Some(s.as_str()),
             _ => None,
         }
-    }
-
-    #[test]
-    fn test_factory_open_error_general() {
-        let err = anyhow!("some error");
-        let pof = PointOfFailure::FactoryOpenErrorGeneral("tcp".to_string(), &err);
-        let event: CustomEvent = pof.into();
-
-        assert_eq!(event.category, "open_fastboot_interface");
-        let dims = event.custom_dimensions;
-        assert_eq!(dims.get("error_type").and_then(get_str_value), Some("interface_open_error"));
-        assert_eq!(dims.get("error").and_then(get_str_value), Some("some error"));
-        assert_eq!(dims.get("connection_type").and_then(get_str_value), Some("tcp"));
     }
 
     #[test]

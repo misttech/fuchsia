@@ -20,15 +20,16 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/diagnostics/checks:*",
     "//src/developer/ffx/lib/discovery:*",
     "//src/developer/ffx/lib/fastboot/connection_factory:*",
+    "//src/developer/ffx/lib/fastboot/interface:*",
     "//src/developer/ffx/lib/fastboot/transport/factory:*",
   ]
 
   deps = [
     "//src/lib/fuchsia-async",
     "//src/lib/usb_rs",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-channel",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:thiserror",
   ]
 
   test_deps = [

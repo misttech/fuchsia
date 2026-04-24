@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::analytics::PointOfFailure;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use fastboot::command::{ClientVariable, Command};
 use fastboot::reply::Reply;
@@ -115,16 +115,9 @@ impl FastbootUsbLiveTester for StrictGetVarFastbootUsbLiveTester {
 impl InterfaceFactoryBase<AsyncInterface> for UsbFactory {
     async fn open(&mut self) -> Result<AsyncInterface, InterfaceFactoryError> {
         let interface = open_interface_with_serial(&self.serial)
-            .or_else_analytics(|e| {
-                PointOfFailure::FactoryOpenErrorGeneral("usb".to_owned(), e).into()
-            })
-            .await
-            .with_context(|| {
-                format!(
-                    "USB Factory: Failed to open target usb interface by serial {}",
-                    self.serial
-                )
-            })?;
+            .map_err(InterfaceFactoryError::Usb)
+            .or_else_analytics(|e| PointOfFailure::FactoryOpenError("usb".to_owned(), e).into())
+            .await?;
         log::debug!("serial now in use: {}", self.serial);
         Ok(interface)
     }

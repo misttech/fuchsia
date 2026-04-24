@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
 use fuchsia_async::{Task, Timer};
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::time::Duration;
+use thiserror::Error;
 pub use usb_rs::bulk_interface::BulkInterface as Interface;
 use usb_rs::enumerate_devices;
 
@@ -17,6 +17,15 @@ const FASTBOOT_USB_INTERFACE_PROTOCOL: u8 = 0x03;
 
 // Vendor ID
 const USB_DEV_VENDOR: u16 = 0x18d1;
+
+#[derive(Error, Debug)]
+pub enum UsbDiscoveryError {
+    #[error("No valid interface found")]
+    InterfaceNotFound,
+
+    #[error("USB error: {0}")]
+    Usb(#[from] usb_rs::Error),
+}
 
 /// Loops continually testing if the usb device with given `serial` is
 /// accepting fastboot connections, returning when it does.
@@ -259,7 +268,7 @@ fn find_serial_numbers() -> Vec<String> {
     return serials;
 }
 
-pub fn open_interface_with_serial<P>(serial: P) -> Result<Interface>
+pub fn open_interface_with_serial<P>(serial: P) -> Result<Interface, UsbDiscoveryError>
 where
     P: AsRef<str>,
 {
@@ -272,18 +281,18 @@ where
             }) {
                 Ok(iface) => iface,
                 Err(usb_rs::Error::InterfaceNotFound) => {
-                    return Err(anyhow!("No valid interface found"));
+                    return Err(UsbDiscoveryError::InterfaceNotFound);
                 }
                 Err(e) => {
                     log::warn!(device = device.debug_name().as_str(), error:? = e;
                                    "Error scanning USB device");
-                    return Err(e.into());
+                    return Err(UsbDiscoveryError::Usb(e));
                 }
             };
             return Ok(Interface::new(interface));
         }
     }
-    Err(anyhow!("No valid interface found"))
+    Err(UsbDiscoveryError::InterfaceNotFound)
 }
 
 #[cfg(test)]
@@ -322,7 +331,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_usb_watcher() -> Result<()> {
+    async fn test_usb_watcher() -> () {
         let empty_signal = Arc::new(Mutex::new(false));
         let serial_finder = TestSerialNumberFinder {
             responses: vec![
@@ -384,7 +393,6 @@ mod test {
             ]
         );
         // Reiterating... serial ABCD was not in fastboot so it should not appear in our results
-        Ok(())
     }
 
     struct StackedFastbootUsbLiveTester {
@@ -400,7 +408,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_wait_for_live() -> Result<()> {
+    async fn test_wait_for_live() -> () {
         let mut tester = StackedFastbootUsbLiveTester {
             is_live_queue: VecDeque::from([false, false, false, true]),
             call_count: 0,
@@ -409,7 +417,5 @@ mod test {
         wait_for_live("some-awesome-serial", &mut tester, Duration::from_millis(10)).await;
 
         assert_eq!(tester.call_count, 4);
-
-        Ok(())
     }
 }

@@ -31,6 +31,7 @@ rustc_library("lib") {
 
   deps = [
     "//src/developer/fastboot:lib",
+    "//src/developer/ffx/lib/usb_fastboot_discovery:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:chrono",

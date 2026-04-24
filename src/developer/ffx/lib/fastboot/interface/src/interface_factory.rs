@@ -14,6 +14,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum InterfaceFactoryError {
+    #[error("USB discovery error: {0}")]
+    Usb(#[from] usb_fastboot_discovery::UsbDiscoveryError),
+
     #[error("{}", .0)]
     InterfaceOpenError(#[from] anyhow::Error),
     #[error("{}", .0)]
