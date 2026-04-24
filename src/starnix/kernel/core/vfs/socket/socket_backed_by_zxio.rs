@@ -21,7 +21,6 @@ use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
-use fuchsia_sync::Mutex;
 use linux_uapi::{IP_MULTICAST_ALL, IP_PASSSEC};
 use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked};
@@ -109,10 +108,6 @@ impl AsSockAddrBytes for &Vec<u8> {
     }
 }
 
-/// TODO(https://fxbug.dev/496276975): These come from Android, and are currently stubbed out.
-const TCP_ANDROID_L4S: u32 = 0xAD01D01;
-const SOL_TCP: u32 = 6;
-
 /// A socket backed by an underlying Zircon I/O object.
 pub struct ZxioBackedSocket {
     /// The underlying Zircon I/O object.
@@ -126,9 +121,6 @@ pub struct ZxioBackedSocket {
 
     // UID of the process that created socket.
     uid: uid_t,
-
-    // TODO(https://fxbug.dev/496276975): Stub TCP_ANDROID_L4S implementation.
-    tcp_android_l4s: Mutex<bool>,
 }
 
 impl ZxioBackedSocket {
@@ -195,13 +187,7 @@ impl ZxioBackedSocket {
             .kernel()
             .socket_tokens_store
             .get_token_resolver(current_task.kernel(), uid);
-        ZxioBackedSocket {
-            zxio,
-            cookie: Default::default(),
-            token_resolver,
-            uid,
-            tcp_android_l4s: Mutex::new(true),
-        }
+        ZxioBackedSocket { zxio, cookie: Default::default(), token_resolver, uid }
     }
 
     fn sendmsg(
@@ -772,12 +758,6 @@ impl SocketOps for ZxioBackedSocket {
                     )
                 })?;
             }
-            (SOL_TCP, TCP_ANDROID_L4S) => {
-                track_stub!(TODO("https://fxbug.dev/496276975"), "SOL_TCP.TCP_ANDROID_L4S");
-                let optval: u8 = optval.read(current_task)?;
-                *self.tcp_android_l4s.lock() = optval != 0;
-                return Ok(());
-            }
             _ => {}
         }
 
@@ -835,9 +815,6 @@ impl SocketOps for ZxioBackedSocket {
             }
             (SOL_SOCKET, SO_COOKIE) => {
                 self.get_socket_cookie().map(|cookie| cookie.as_bytes().to_owned())
-            }
-            (SOL_TCP, TCP_ANDROID_L4S) => {
-                Ok(vec![if *self.tcp_android_l4s.lock() { 1 } else { 0 }])
             }
             _ => self
                 .zxio
