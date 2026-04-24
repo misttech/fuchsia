@@ -701,7 +701,6 @@ mod tests {
             image_mode: pfc::FilesystemImageMode::Partition,
             volume: pfc::VolumeConfig::Fvm(pfc::FvmConfig {
                 data: pfc::DataFvmVolumeConfig {
-                    use_disk_based_minfs_migration: true,
                     data_filesystem_format: pfc::DataFilesystemFormat::Minfs,
                 },
                 blob: pfc::BlobFvmVolumeConfig { blob_layout: BlobfsLayout::Compact },
@@ -799,7 +798,6 @@ mod tests {
             image_mode: pfc::FilesystemImageMode::Partition,
             volume: pfc::VolumeConfig::Fvm(pfc::FvmConfig {
                 data: pfc::DataFvmVolumeConfig {
-                    use_disk_based_minfs_migration: true,
                     data_filesystem_format: pfc::DataFilesystemFormat::Minfs,
                 },
                 blob: pfc::BlobFvmVolumeConfig { blob_layout: BlobfsLayout::Compact },

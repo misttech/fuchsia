@@ -56,6 +56,9 @@
                 "fuchsia.process.Launcher",
             ],
         },
+        {
+            service: [ "fuchsia.hardware.block.volume.Service" ],
+        },
 
         // This service doesn't really exist, the route is here to tell component manager that
         // fshost should get the signal to shut down before anything in the collection. Using this,

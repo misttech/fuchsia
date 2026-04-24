@@ -126,14 +126,6 @@ pub struct FvmConfig {
 #[derive(Serialize, Deserialize, Debug, Default, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DataFvmVolumeConfig {
-    /// If true, will enable content-detection for partition format, supporting
-    /// both minfs and fxfs filesystems. A special "fs_switch" file can be
-    /// written to the root directory containing the string "minfs", "fxfs" or
-    /// "toggle" to trigger a migration from the current format to the specified
-    /// format. (The "toggle" option will migrate back and forth at each boot.)
-    #[serde(default)]
-    pub use_disk_based_minfs_migration: bool,
-
     /// Set to one of "minfs", "fxfs", "f2fs" (unstable).
     /// If set to anything other than "minfs", any existing minfs partition will be
     /// migrated in-place to the specified format when fshost mounts it.

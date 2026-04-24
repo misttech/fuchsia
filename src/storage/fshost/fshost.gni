@@ -46,9 +46,8 @@ template("fshost_cml") {
       sources += [
         "//src/storage/fshost/meta/block_relay_child_test.shard.cml",
         "//src/storage/fshost/meta/core_fshost.cml",
+        "//src/storage/fshost/meta/gpt_fshost.shard.cml",
         "//src/storage/fshost/meta/provision_fxfs_fshost.shard.cml",
-        "//src/storage/fshost/meta/storage_host_base.shard.cml",
-        "//src/storage/fshost/meta/storage_host_gpt.shard.cml",
       ]
       if (_fxblob) {
         sources += [
@@ -58,8 +57,8 @@ template("fshost_cml") {
         ]
       } else {
         sources += [
-          "//src/storage/fshost/meta/storage_host_fvm_base.shard.cml",
-          "//src/storage/fshost/meta/storage_host_fvm_test.cml",
+          "//src/storage/fshost/meta/fvm_fshost_base.shard.cml",
+          "//src/storage/fshost/meta/fvm_fshost_test.cml",
         ]
       }
 

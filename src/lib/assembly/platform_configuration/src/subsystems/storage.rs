@@ -176,7 +176,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             VolumeConfig::Fxfs => {
                 ensure!(gpt, "GPT required for Fxfs-based product assemblies");
                 fxfs_blob = true;
-                builder.platform_bundle("fshost_storage_host_fxfs")?;
+                builder.platform_bundle("fshost_fxfs")?;
                 if provision_fxfs {
                     builder.platform_bundle("fshost_provision_fxfs")?;
                 }
@@ -185,32 +185,26 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                 blob_deprecated_padded = blob.blob_layout == BlobfsLayout::DeprecatedPadded;
                 match data.data_filesystem_format {
                     DataFilesystemFormat::Fxfs => {
-                        bail!("Fxfs-in-FVM isn't supported in storage-host");
+                        bail!("Fxfs-in-FVM isn't supported");
                     }
                     DataFilesystemFormat::F2fs => {
                         context.ensure_build_type(&[BuildType::Eng], "GPT with FVM and F2FS")?;
                         data_filesystem_format_str = "f2fs";
                         if gpt {
-                            builder.platform_bundle("fshost_storage_host_gpt_fvm_f2fs")?;
+                            builder.platform_bundle("fshost_gpt_fvm_f2fs")?;
                         } else {
                             // NOTE: There is no technical reason that this can't be supported,
                             // but there is no need for it at this time, as no products use f2fs
                             // without GPT.
-                            bail!("f2fs without GPT is not supported with storage-host");
+                            bail!("f2fs without GPT is not supported");
                         }
                     }
                     DataFilesystemFormat::Minfs => {
                         data_filesystem_format_str = "minfs";
-                        // TODO(https://fxbug.dev/339491886): Implement support for migration
-                        // images in storage-host.
-                        ensure!(
-                            !data.use_disk_based_minfs_migration,
-                            "Migration isn't supported in storage-host yet",
-                        );
                         if gpt {
-                            builder.platform_bundle("fshost_storage_host_gpt_fvm_minfs")?;
+                            builder.platform_bundle("fshost_gpt_fvm_minfs")?;
                         } else {
-                            builder.platform_bundle("fshost_storage_host_fvm_minfs")?;
+                            builder.platform_bundle("fshost_fvm_minfs")?;
                         }
                     }
                 }
