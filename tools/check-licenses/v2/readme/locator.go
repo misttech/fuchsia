@@ -16,12 +16,32 @@ import (
 // It also matches the specific file to the correct sub-project (DEPENDENCY DIVIDER)
 // defined within that README.
 func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]string) (*Readme, string, error) {
+	absPath, err := filepath.Abs(absPath)
+	if err != nil {
+		return nil, "", err
+	}
+
 	var dir string
 	if stat, err := os.Stat(absPath); err == nil && stat.IsDir() {
 		dir = absPath
 	} else {
 		dir = filepath.Dir(absPath)
 	}
+
+	// Special rule for Rust mirrors: boundary is always the top-level folder under mirrors/
+	mirrorsPath := filepath.Join(fuchsiaDir, "third_party/rust_crates/mirrors")
+	inMirrors := false
+	if strings.HasPrefix(dir, mirrorsPath) {
+		rel, err := filepath.Rel(mirrorsPath, dir)
+		if err == nil && rel != "." {
+			parts := strings.Split(rel, string(filepath.Separator))
+			if len(parts) > 0 {
+				dir = filepath.Join(mirrorsPath, parts[0])
+				inMirrors = true
+			}
+		}
+	}
+
 	for {
 		var foundReadmePaths []string
 
@@ -29,6 +49,16 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 		for _, name := range []string{"README.fuchsia", "go.mod", "Cargo.toml", "pubspec.yaml"} {
 			possiblePath := filepath.Join(dir, name)
 			if _, err := os.Stat(possiblePath); err == nil {
+				// Special rule for Rust mirrors: ignore Cargo.toml in subdirectories
+				if name == "Cargo.toml" && strings.Contains(dir, "third_party/rust_crates/mirrors/") {
+					relToMirrors, err := filepath.Rel(filepath.Join(fuchsiaDir, "third_party/rust_crates/mirrors"), dir)
+					if err == nil {
+						parts := strings.Split(relToMirrors, string(filepath.Separator))
+						if len(parts) > 1 {
+							continue
+						}
+					}
+				}
 				foundReadmePaths = append(foundReadmePaths, possiblePath)
 			}
 		}
@@ -102,6 +132,7 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 					return rootReadmes[0], foundPath, nil
 				}
 			}
+			fmt.Printf("[Locator] Failed to find matching boundary for %s in %v\n", absPath, foundReadmePaths)
 			return nil, "", fmt.Errorf("boundary metadata failed to parse")
 		}
 
@@ -112,6 +143,9 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 			break
 		}
 
+		if inMirrors {
+			break // Don't walk up for mirrors!
+		}
 		dir = parent
 	}
 

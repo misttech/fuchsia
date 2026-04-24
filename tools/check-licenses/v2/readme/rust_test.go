@@ -64,3 +64,45 @@ members = [
 		t.Errorf("Unexpected member 2: %+v", m2)
 	}
 }
+
+func TestParseCargoToml_WorkspacePackage(t *testing.T) {
+	tempDir := t.TempDir()
+	mirrorsDir := filepath.Join(tempDir, "third_party/rust_crates/mirrors")
+	if err := os.MkdirAll(filepath.Join(mirrorsDir, "google-cloud-rust"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	cargoPath := filepath.Join(mirrorsDir, "google-cloud-rust", "Cargo.toml")
+	content := `# Copyright 2024 Google LLC
+[workspace]
+resolver = "2"
+
+members = [
+  "guide/samples",
+  "src/auth",
+  "src/generated/cloud/dataform/v1",
+]
+
+[workspace.package]
+edition      = "2024"
+license      = "Apache-2.0"
+repository   = "https://github.com/googleapis/google-cloud-rust/tree/main"
+`
+	if err := os.WriteFile(cargoPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	readmes, err := ParseCargoToml(cargoPath)
+	if err != nil {
+		t.Fatalf("ParseCargoToml failed: %v", err)
+	}
+
+	// Expect 1 readme (the workspace root) because we are in mirrors!
+	if len(readmes) != 1 {
+		t.Errorf("Expected 1 readme, got %d", len(readmes))
+	}
+
+	m := readmes[0]
+	if m.Name != "google-cloud-rust" || m.Location != "." {
+		t.Errorf("Unexpected member: %+v", m)
+	}
+}

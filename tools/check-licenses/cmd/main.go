@@ -29,6 +29,7 @@ func main() {
 	commander.Register(&ReadmeCommand{}, "")
 	commander.Register(&ProjectCommand{}, "")
 	commander.Register(&PolicyCommand{}, "")
+	commander.Register(&AllowlistCommand{}, "")
 	commander.Register(&CopyrightCommand{}, "")
 	commander.Register(&ClassifyCommand{}, "")
 

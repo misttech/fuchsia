@@ -7,6 +7,7 @@ package readme
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -26,7 +27,8 @@ type cargoPackage struct {
 }
 
 type cargoWorkspace struct {
-	Members []string `toml:"members"`
+	Members []string      `toml:"members"`
+	Package *cargoPackage `toml:"package"`
 }
 
 // ParseCargoToml reads a Cargo.toml file and returns a slice of synthetic Readme structs.
@@ -60,10 +62,18 @@ func ParseCargoToml(path string) ([]*Readme, error) {
 			// Standalone Cargo.toml describes the project at its own directory
 			Location: ".",
 		})
+	} else if cargo.Workspace != nil && strings.Contains(path, "third_party/rust_crates/mirrors/") {
+		// Special case for mirrors: workspace without package (e.g. google-cloud-rust)
+		readmes = append(readmes, &Readme{
+			Name:     filepath.Base(filepath.Dir(path)), // Use folder name as project name
+			Location: ".",
+		})
 	}
 
 	// 2. Handle workspace members
-	if cargo.Workspace != nil {
+	// Default behavior: add members as sub-projects.
+	// For mirrors: skip members to keep them grouped under the workspace project.
+	if cargo.Workspace != nil && !strings.Contains(path, "third_party/rust_crates/mirrors/") {
 		for _, member := range cargo.Workspace.Members {
 			// We only handle simple member paths for now.
 			// Full glob support would requires more logic.
