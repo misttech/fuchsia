@@ -38,12 +38,12 @@ namespace amlogic_display {
 namespace {
 
 // TODO(https://fxbug.dev/42072949): Consider creating and using a unified set of sysmem
-// testing doubles instead of writing mocks for each display driver test.
-class MockBufferCollectionBase
+// testing doubles instead of writing fakes for each display driver test.
+class FakeBufferCollectionBase
     : public fidl::testing::WireTestBase<fuchsia_sysmem2::BufferCollection> {
  public:
-  MockBufferCollectionBase() = default;
-  ~MockBufferCollectionBase() override = default;
+  FakeBufferCollectionBase() = default;
+  ~FakeBufferCollectionBase() override = default;
 
   virtual void VerifyBufferCollectionConstraints(
       const fuchsia_sysmem2::wire::BufferCollectionConstraints& constraints) = 0;
@@ -105,9 +105,9 @@ class MockBufferCollectionBase
   fuchsia_sysmem2::wire::ImageFormatConstraints image_format_constraints_;
 };
 
-class MockBufferCollection : public MockBufferCollectionBase {
+class FakeBufferCollection : public FakeBufferCollectionBase {
  public:
-  explicit MockBufferCollection(
+  explicit FakeBufferCollection(
       const std::vector<fuchsia_images2::wire::PixelFormat>& pixel_format_types =
           {fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
            fuchsia_images2::wire::PixelFormat::kR8G8B8A8})
@@ -120,7 +120,7 @@ class MockBufferCollection : public MockBufferCollectionBase {
             .min_bytes_per_row(4096)
             .Build());
   }
-  ~MockBufferCollection() override = default;
+  ~FakeBufferCollection() override = default;
 
   void VerifyBufferCollectionConstraints(
       const fuchsia_sysmem2::wire::BufferCollectionConstraints& constraints) override {
@@ -183,9 +183,9 @@ class MockBufferCollection : public MockBufferCollectionBase {
   std::vector<fuchsia_images2::wire::PixelFormat> supported_pixel_format_types_;
 };
 
-class MockBufferCollectionForCapture : public MockBufferCollectionBase {
+class FakeBufferCollectionForCapture : public FakeBufferCollectionBase {
  public:
-  MockBufferCollectionForCapture() {
+  FakeBufferCollectionForCapture() {
     set_allocated_image_format_constraints(
         fuchsia_sysmem2::wire::ImageFormatConstraints::Builder(arena_)
             .pixel_format(fuchsia_images2::wire::PixelFormat::kB8G8R8)
@@ -194,7 +194,7 @@ class MockBufferCollectionForCapture : public MockBufferCollectionBase {
             .min_bytes_per_row(4096)
             .Build());
   }
-  ~MockBufferCollectionForCapture() override = default;
+  ~FakeBufferCollectionForCapture() override = default;
 
   void VerifyBufferCollectionConstraints(
       const fuchsia_sysmem2::wire::BufferCollectionConstraints& constraints) override {
@@ -221,12 +221,12 @@ class MockBufferCollectionForCapture : public MockBufferCollectionBase {
 
 // This class is thread-unsafe. It must be created, used and destroyed in the
 // `dispatcher` passed in the constructor.
-class MockAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Allocator> {
+class FakeAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Allocator> {
  public:
-  using MockBufferCollectionBuilder =
-      fit::function<std::unique_ptr<MockBufferCollectionBase>(void)>;
+  using FakeBufferCollectionBuilder =
+      fit::function<std::unique_ptr<FakeBufferCollectionBase>(void)>;
 
-  explicit MockAllocator(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
+  explicit FakeAllocator(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
     ZX_ASSERT(dispatcher_ != nullptr);
   }
 
@@ -234,23 +234,23 @@ class MockAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
     fidl::BindServer(dispatcher_, std::move(server), this);
   }
 
-  void set_mock_buffer_collection_builder(MockBufferCollectionBuilder builder) {
-    mock_buffer_collection_builder_ = std::move(builder);
+  void set_fake_buffer_collection_builder(FakeBufferCollectionBuilder builder) {
+    fake_buffer_collection_builder_ = std::move(builder);
   }
 
   void BindSharedCollection(BindSharedCollectionRequestView request,
                             BindSharedCollectionCompleter::Sync& completer) override {
-    ZX_ASSERT(mock_buffer_collection_builder_ != nullptr);
+    ZX_ASSERT(fake_buffer_collection_builder_ != nullptr);
     auto buffer_collection_id = next_buffer_collection_id_++;
     active_buffer_collections_[buffer_collection_id] = {
         .token_client = std::move(request->token()),
-        .mock_buffer_collection = mock_buffer_collection_builder_(),
+        .fake_buffer_collection = fake_buffer_collection_builder_(),
     };
 
     fidl::BindServer(
         dispatcher_, std::move(request->buffer_collection_request()),
-        active_buffer_collections_[buffer_collection_id].mock_buffer_collection.get(),
-        [this, buffer_collection_id](MockBufferCollectionBase*, fidl::UnbindInfo,
+        active_buffer_collections_[buffer_collection_id].fake_buffer_collection.get(),
+        [this, buffer_collection_id](FakeBufferCollectionBase*, fidl::UnbindInfo,
                                      fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>) {
           inactive_buffer_collection_tokens_.push_back(
               std::move(active_buffer_collections_[buffer_collection_id].token_client));
@@ -258,14 +258,14 @@ class MockAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
         });
   }
 
-  MockBufferCollectionBase* GetMostRecentBufferCollection() {
+  FakeBufferCollectionBase* GetMostRecentBufferCollection() {
     const display::DriverBufferCollectionId most_recent_collection_id(
         next_buffer_collection_id_.value() - 1);
     if (active_buffer_collections_.find(most_recent_collection_id) ==
         active_buffer_collections_.end()) {
       return nullptr;
     }
-    return active_buffer_collections_.at(most_recent_collection_id).mock_buffer_collection.get();
+    return active_buffer_collections_.at(most_recent_collection_id).fake_buffer_collection.get();
   }
 
   std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
@@ -299,7 +299,7 @@ class MockAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
  private:
   struct BufferCollection {
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_client;
-    std::unique_ptr<MockBufferCollectionBase> mock_buffer_collection;
+    std::unique_ptr<FakeBufferCollectionBase> fake_buffer_collection;
   };
 
   std::unordered_map<display::DriverBufferCollectionId, BufferCollection>
@@ -309,7 +309,7 @@ class MockAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
 
   display::DriverBufferCollectionId next_buffer_collection_id_ =
       display::DriverBufferCollectionId(0);
-  MockBufferCollectionBuilder mock_buffer_collection_builder_ = nullptr;
+  FakeBufferCollectionBuilder fake_buffer_collection_builder_ = nullptr;
 
   async_dispatcher_t* dispatcher_ = nullptr;
 };
@@ -410,16 +410,16 @@ class FakeSysmemTest : public testing::Test {
     ASSERT_OK(video_input_unit_result);
     display_engine_->SetVideoInputUnitForTesting(std::move(video_input_unit_result).value());
 
-    allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder, [] {
+    allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder, [] {
       // Allocate importable primary Image by default.
       const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
           fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
           fuchsia_images2::wire::PixelFormat::kR8G8B8A8};
-      return std::make_unique<MockBufferCollection>(kPixelFormats);
+      return std::make_unique<FakeBufferCollection>(kPixelFormats);
     });
 
     auto [sysmem_client, sysmem_server] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
-    allocator_.SyncCall(&MockAllocator::Bind, std::move(sysmem_server));
+    allocator_.SyncCall(&FakeAllocator::Bind, std::move(sysmem_server));
     display_engine_->SetSysmemAllocatorForTesting(fidl::WireSyncClient(std::move(sysmem_client)));
   }
 
@@ -438,7 +438,7 @@ class FakeSysmemTest : public testing::Test {
   async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_{
       env_dispatcher_->async_dispatcher(), std::in_place};
 
-  async_patterns::TestDispatcherBound<MockAllocator> allocator_{
+  async_patterns::TestDispatcherBound<FakeAllocator> allocator_{
       sysmem_dispatcher_->async_dispatcher(), std::in_place, async_patterns::PassDispatcher};
   async_patterns::TestDispatcherBound<FakeCanvas> canvas_{
       env_dispatcher_->async_dispatcher(), std::in_place, async_patterns::PassDispatcher};
@@ -474,7 +474,7 @@ TEST_F(FakeSysmemTest, ImportBufferCollection) {
   bool poll_success = display::PollUntil(
       [&]() {
         std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>> clients =
-            allocator_.SyncCall(&MockAllocator::GetActiveBufferCollectionTokenClients);
+            allocator_.SyncCall(&FakeAllocator::GetActiveBufferCollectionTokenClients);
         return !clients.empty();
       },
       zx::msec(5), 1000);
@@ -484,12 +484,12 @@ TEST_F(FakeSysmemTest, ImportBufferCollection) {
   {
     std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
         active_buffer_token_clients =
-            allocator_.SyncCall(&MockAllocator::GetActiveBufferCollectionTokenClients);
+            allocator_.SyncCall(&FakeAllocator::GetActiveBufferCollectionTokenClients);
     EXPECT_EQ(active_buffer_token_clients.size(), 1u);
 
     std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
         inactive_buffer_token_clients =
-            allocator_.SyncCall(&MockAllocator::GetInactiveBufferCollectionTokenClients);
+            allocator_.SyncCall(&FakeAllocator::GetInactiveBufferCollectionTokenClients);
     EXPECT_EQ(inactive_buffer_token_clients.size(), 0u);
 
     auto [client_koid, client_related_koid] =
@@ -515,7 +515,7 @@ TEST_F(FakeSysmemTest, ImportBufferCollection) {
   EXPECT_TRUE(display::PollUntil(
       [&]() {
         std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>> clients =
-            allocator_.SyncCall(&MockAllocator::GetActiveBufferCollectionTokenClients);
+            allocator_.SyncCall(&FakeAllocator::GetActiveBufferCollectionTokenClients);
         return clients.empty();
       },
       zx::msec(5), 1000));
@@ -524,12 +524,12 @@ TEST_F(FakeSysmemTest, ImportBufferCollection) {
   {
     std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
         active_buffer_token_clients =
-            allocator_.SyncCall(&MockAllocator::GetActiveBufferCollectionTokenClients);
+            allocator_.SyncCall(&FakeAllocator::GetActiveBufferCollectionTokenClients);
     EXPECT_EQ(active_buffer_token_clients.size(), 0u);
 
     std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
         inactive_buffer_token_clients =
-            allocator_.SyncCall(&MockAllocator::GetInactiveBufferCollectionTokenClients);
+            allocator_.SyncCall(&FakeAllocator::GetInactiveBufferCollectionTokenClients);
     EXPECT_EQ(inactive_buffer_token_clients.size(), 1u);
 
     auto [client_koid, client_related_koid] =
@@ -605,8 +605,8 @@ TEST_F(FakeSysmemTest, ImportImage) {
 }
 
 TEST_F(FakeSysmemTest, ImportImageForCapture) {
-  allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder,
-                      [] { return std::make_unique<MockBufferCollectionForCapture>(); });
+  allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder,
+                      [] { return std::make_unique<FakeBufferCollectionForCapture>(); });
 
   auto [token_client, token_server] =
       fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
@@ -646,12 +646,12 @@ TEST_F(FakeSysmemTest, ImportImageForCapture) {
 }
 
 TEST_F(FakeSysmemTest, SysmemRequirements) {
-  MockBufferCollectionBase* collection = nullptr;
-  allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder, [&collection] {
+  FakeBufferCollectionBase* collection = nullptr;
+  allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder, [&collection] {
     const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
         fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
         fuchsia_images2::wire::PixelFormat::kR8G8B8A8};
-    auto new_buffer_collection = std::make_unique<MockBufferCollection>(kPixelFormats);
+    auto new_buffer_collection = std::make_unique<FakeBufferCollection>(kPixelFormats);
     collection = new_buffer_collection.get();
     return new_buffer_collection;
   });
@@ -675,12 +675,12 @@ TEST_F(FakeSysmemTest, SysmemRequirements) {
 }
 
 TEST_F(FakeSysmemTest, SysmemRequirements_BgraOnly) {
-  MockBufferCollectionBase* collection = nullptr;
-  allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder, [&collection] {
+  FakeBufferCollectionBase* collection = nullptr;
+  allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder, [&collection] {
     const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
         fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
     };
-    auto new_buffer_collection = std::make_unique<MockBufferCollection>(kPixelFormats);
+    auto new_buffer_collection = std::make_unique<FakeBufferCollection>(kPixelFormats);
     collection = new_buffer_collection.get();
     return new_buffer_collection;
   });
@@ -734,8 +734,8 @@ TEST(AmlogicDisplay, FloatToFixed2_10) {
 }
 
 TEST_F(FakeSysmemTest, NoLeakCaptureCanvas) {
-  allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder,
-                      [] { return std::make_unique<MockBufferCollectionForCapture>(); });
+  allocator_.SyncCall(&FakeAllocator::set_fake_buffer_collection_builder,
+                      [] { return std::make_unique<FakeBufferCollectionForCapture>(); });
 
   auto [token_client, token_server] =
       fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
