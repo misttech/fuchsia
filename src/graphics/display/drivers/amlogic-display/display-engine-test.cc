@@ -219,6 +219,8 @@ class MockBufferCollectionForCapture : public MockBufferCollectionBase {
   fidl::Arena<fidl::kDefaultArenaInitialCapacity> arena_;
 };
 
+// This class is thread-unsafe. It must be created, used and destroyed in the
+// `dispatcher` passed in the constructor.
 class MockAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Allocator> {
  public:
   using MockBufferCollectionBuilder =
@@ -226,6 +228,10 @@ class MockAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
 
   explicit MockAllocator(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
     ZX_ASSERT(dispatcher_ != nullptr);
+  }
+
+  void Bind(fidl::ServerEnd<fuchsia_sysmem2::Allocator> server) {
+    fidl::BindServer(dispatcher_, std::move(server), this);
   }
 
   void set_mock_buffer_collection_builder(MockBufferCollectionBuilder builder) {
@@ -308,21 +314,22 @@ class MockAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
   async_dispatcher_t* dispatcher_ = nullptr;
 };
 
-class FakeCanvasProtocol : public fidl::WireServer<fuchsia_hardware_amlogiccanvas::Device> {
+// This class is thread-unsafe. It must be created, used and destroyed in the
+// `dispatcher` passed in the constructor.
+class FakeCanvas : public fidl::WireServer<fuchsia_hardware_amlogiccanvas::Device> {
  public:
-  explicit FakeCanvasProtocol(async_dispatcher_t* dispatcher = nullptr)
-      : dispatcher_(dispatcher ? dispatcher : async_get_default_dispatcher()) {}
-
-  void Serve(fidl::ServerEnd<fuchsia_hardware_amlogiccanvas::Device> server_end) {
-    binding_.emplace(dispatcher_, std::move(server_end), this,
-                     std::mem_fn(&FakeCanvasProtocol::OnFidlClosed));
+  explicit FakeCanvas(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {
+    ZX_ASSERT(dispatcher_ != nullptr);
   }
 
-  void OnFidlClosed(fidl::UnbindInfo info) {}
+  void Bind(fidl::ServerEnd<fuchsia_hardware_amlogiccanvas::Device> server_end) {
+    fidl::BindServer(dispatcher_, std::move(server_end), this);
+  }
 
   void Config(ConfigRequestView request, ConfigCompleter::Sync& completer) override {
     for (size_t i = 0; i < std::size(in_use_); i++) {
-      ZX_DEBUG_ASSERT_MSG(i <= std::numeric_limits<uint8_t>::max(), "%zu", i);
+      ZX_DEBUG_ASSERT_MSG(i <= std::numeric_limits<uint8_t>::max(),
+                          "Canvas index out of range: %zu", i);
       if (!in_use_[i]) {
         in_use_[i] = true;
         completer.ReplySuccess(static_cast<uint8_t>(i));
@@ -358,8 +365,6 @@ class FakeSysmemTest : public testing::Test {
   static constexpr int kWidth = 1024;
   static constexpr int kHeight = 600;
 
-  FakeSysmemTest() : loop_(&kAsyncLoopConfigNoAttachToCurrentThread) {}
-
   void InitializeTestEnvironment() {
     auto [directory_client, directory_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
     std::vector<fuchsia_component_runner::ComponentNamespaceEntry> entries;
@@ -375,16 +380,16 @@ class FakeSysmemTest : public testing::Test {
   }
 
   void SetUp() override {
-    loop_.StartThread("sysmem-handler-loop");
-    auto endpoints = fidl::Endpoints<fuchsia_hardware_amlogiccanvas::Device>::Create();
-    canvas_.SyncCall(&FakeCanvasProtocol::Serve, std::move(endpoints.server));
+    auto [canvas_client, canvas_server] =
+        fidl::Endpoints<fuchsia_hardware_amlogiccanvas::Device>::Create();
+    canvas_.SyncCall(&FakeCanvas::Bind, std::move(canvas_server));
 
     InitializeTestEnvironment();
 
     display_engine_ =
         std::make_unique<DisplayEngine>(incoming_, &engine_events_, structured_config::Config());
     display_engine_->SetFormatSupportCheck([](auto) { return true; });
-    display_engine_->SetCanvasForTesting(std::move(endpoints.client));
+    display_engine_->SetCanvasForTesting(std::move(canvas_client));
 
     zx::result<std::unique_ptr<VoutDsi>> create_dsi_vout_result =
         VoutDsi::CreateForTesting(display::PanelType::kBoeTv070wsmFitipowerJd9364Astro);
@@ -405,8 +410,7 @@ class FakeSysmemTest : public testing::Test {
     ASSERT_OK(video_input_unit_result);
     display_engine_->SetVideoInputUnitForTesting(std::move(video_input_unit_result).value());
 
-    allocator_ = std::make_unique<MockAllocator>(loop_.dispatcher());
-    allocator_->set_mock_buffer_collection_builder([] {
+    allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder, [] {
       // Allocate importable primary Image by default.
       const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
           fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
@@ -414,41 +418,39 @@ class FakeSysmemTest : public testing::Test {
       return std::make_unique<MockBufferCollection>(kPixelFormats);
     });
 
-    {
-      auto endpoints = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
-      fidl::BindServer(loop_.dispatcher(), std::move(endpoints.server), allocator_.get());
-      display_engine_->SetSysmemAllocatorForTesting(
-          fidl::WireSyncClient(std::move(endpoints.client)));
-    }
+    auto [sysmem_client, sysmem_server] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
+    allocator_.SyncCall(&MockAllocator::Bind, std::move(sysmem_server));
+    display_engine_->SetSysmemAllocatorForTesting(fidl::WireSyncClient(std::move(sysmem_client)));
   }
 
   void TearDown() override {
-    // Shutdown the loop before destroying the MockAllocator which may still have
-    // pending callbacks.
-    loop_.Shutdown();
-    loop_.JoinThreads();
+    display_engine_.reset();
+    test_environment_.reset();
+    runtime_.ShutdownAllDispatchers(nullptr);
   }
 
  protected:
   fdf_testing::ScopedGlobalLogger logger_;
 
   fdf_testing::DriverRuntime runtime_;
+  fdf::UnownedSynchronizedDispatcher sysmem_dispatcher_ = runtime_.StartBackgroundDispatcher();
   fdf::UnownedSynchronizedDispatcher env_dispatcher_ = runtime_.StartBackgroundDispatcher();
   async_patterns::TestDispatcherBound<fdf_testing::internal::TestEnvironment> test_environment_{
       env_dispatcher_->async_dispatcher(), std::in_place};
 
-  std::shared_ptr<fdf::Namespace> incoming_;
+  async_patterns::TestDispatcherBound<MockAllocator> allocator_{
+      sysmem_dispatcher_->async_dispatcher(), std::in_place, async_patterns::PassDispatcher};
+  async_patterns::TestDispatcherBound<FakeCanvas> canvas_{
+      env_dispatcher_->async_dispatcher(), std::in_place, async_patterns::PassDispatcher};
 
-  async::Loop loop_;
+  std::shared_ptr<fdf::Namespace> incoming_;
 
   display::DisplayEngineEventsFidl engine_events_;
 
   ddk_fake::FakeMmioRegRegion vpu_mmio_ =
       ddk_fake::FakeMmioRegRegion(/*reg_size=*/4, /*reg_count=*/0x10000);
+
   std::unique_ptr<DisplayEngine> display_engine_;
-  std::unique_ptr<MockAllocator> allocator_;
-  async_patterns::TestDispatcherBound<FakeCanvasProtocol> canvas_{loop_.dispatcher(),
-                                                                  std::in_place};
 };
 
 TEST_F(FakeSysmemTest, ImportBufferCollection) {
@@ -469,16 +471,25 @@ TEST_F(FakeSysmemTest, ImportBufferCollection) {
                                                         std::move(token2_endpoints->client)),
                 zx::error(ZX_ERR_ALREADY_EXISTS));
 
-  EXPECT_TRUE(display::PollUntil(
-      [&]() { return !allocator_->GetActiveBufferCollectionTokenClients().empty(); }, zx::msec(5),
-      1000));
+  bool poll_success = display::PollUntil(
+      [&]() {
+        std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>> clients =
+            allocator_.SyncCall(&MockAllocator::GetActiveBufferCollectionTokenClients);
+        return !clients.empty();
+      },
+      zx::msec(5), 1000);
+  EXPECT_TRUE(poll_success);
 
   // Verify that the current buffer collection token is used (active).
   {
-    auto active_buffer_token_clients = allocator_->GetActiveBufferCollectionTokenClients();
+    std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
+        active_buffer_token_clients =
+            allocator_.SyncCall(&MockAllocator::GetActiveBufferCollectionTokenClients);
     EXPECT_EQ(active_buffer_token_clients.size(), 1u);
 
-    auto inactive_buffer_token_clients = allocator_->GetInactiveBufferCollectionTokenClients();
+    std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
+        inactive_buffer_token_clients =
+            allocator_.SyncCall(&MockAllocator::GetInactiveBufferCollectionTokenClients);
     EXPECT_EQ(inactive_buffer_token_clients.size(), 0u);
 
     auto [client_koid, client_related_koid] =
@@ -502,15 +513,23 @@ TEST_F(FakeSysmemTest, ImportBufferCollection) {
   EXPECT_OK(display_engine_->ReleaseBufferCollection(kValidBufferCollectionId));
 
   EXPECT_TRUE(display::PollUntil(
-      [&]() { return allocator_->GetActiveBufferCollectionTokenClients().empty(); }, zx::msec(5),
-      1000));
+      [&]() {
+        std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>> clients =
+            allocator_.SyncCall(&MockAllocator::GetActiveBufferCollectionTokenClients);
+        return clients.empty();
+      },
+      zx::msec(5), 1000));
 
   // Verify that the current buffer collection token is released (inactive).
   {
-    auto active_buffer_token_clients = allocator_->GetActiveBufferCollectionTokenClients();
+    std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
+        active_buffer_token_clients =
+            allocator_.SyncCall(&MockAllocator::GetActiveBufferCollectionTokenClients);
     EXPECT_EQ(active_buffer_token_clients.size(), 0u);
 
-    auto inactive_buffer_token_clients = allocator_->GetInactiveBufferCollectionTokenClients();
+    std::vector<fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken>>
+        inactive_buffer_token_clients =
+            allocator_.SyncCall(&MockAllocator::GetInactiveBufferCollectionTokenClients);
     EXPECT_EQ(inactive_buffer_token_clients.size(), 1u);
 
     auto [client_koid, client_related_koid] =
@@ -586,8 +605,8 @@ TEST_F(FakeSysmemTest, ImportImage) {
 }
 
 TEST_F(FakeSysmemTest, ImportImageForCapture) {
-  allocator_->set_mock_buffer_collection_builder(
-      [] { return std::make_unique<MockBufferCollectionForCapture>(); });
+  allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder,
+                      [] { return std::make_unique<MockBufferCollectionForCapture>(); });
 
   auto [token_client, token_server] =
       fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
@@ -628,7 +647,7 @@ TEST_F(FakeSysmemTest, ImportImageForCapture) {
 
 TEST_F(FakeSysmemTest, SysmemRequirements) {
   MockBufferCollectionBase* collection = nullptr;
-  allocator_->set_mock_buffer_collection_builder([&collection] {
+  allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder, [&collection] {
     const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
         fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
         fuchsia_images2::wire::PixelFormat::kR8G8B8A8};
@@ -657,7 +676,7 @@ TEST_F(FakeSysmemTest, SysmemRequirements) {
 
 TEST_F(FakeSysmemTest, SysmemRequirements_BgraOnly) {
   MockBufferCollectionBase* collection = nullptr;
-  allocator_->set_mock_buffer_collection_builder([&collection] {
+  allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder, [&collection] {
     const std::vector<fuchsia_images2::wire::PixelFormat> kPixelFormats = {
         fuchsia_images2::wire::PixelFormat::kB8G8R8A8,
     };
@@ -715,8 +734,8 @@ TEST(AmlogicDisplay, FloatToFixed2_10) {
 }
 
 TEST_F(FakeSysmemTest, NoLeakCaptureCanvas) {
-  allocator_->set_mock_buffer_collection_builder(
-      [] { return std::make_unique<MockBufferCollectionForCapture>(); });
+  allocator_.SyncCall(&MockAllocator::set_mock_buffer_collection_builder,
+                      [] { return std::make_unique<MockBufferCollectionForCapture>(); });
 
   auto [token_client, token_server] =
       fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
@@ -731,7 +750,7 @@ TEST_F(FakeSysmemTest, NoLeakCaptureCanvas) {
   display::DriverCaptureImageId capture_image_id = std::move(successful_import_result).value();
   EXPECT_OK(display_engine_->ReleaseCapture(capture_image_id));
 
-  canvas_.SyncCall(&FakeCanvasProtocol::CheckThatNoEntriesInUse);
+  canvas_.SyncCall(&FakeCanvas::CheckThatNoEntriesInUse);
 }
 
 }  // namespace
