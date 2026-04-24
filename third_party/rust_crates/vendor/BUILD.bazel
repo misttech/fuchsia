@@ -247,14 +247,14 @@ alias(
 )
 
 alias(
-    name = "async-ringbuf-0.3.4",
-    actual = "//third_party/rust_crates/vendor/async-ringbuf-0.3.4:async_ringbuf",
+    name = "async-ringbuf-0.3.5",
+    actual = "//third_party/rust_crates/vendor/async-ringbuf-0.3.5:async_ringbuf",
     tags = ["manual"],
 )
 
 alias(
     name = "async-ringbuf",
-    actual = "//third_party/rust_crates/vendor/async-ringbuf-0.3.4:async_ringbuf",
+    actual = "//third_party/rust_crates/vendor/async-ringbuf-0.3.5:async_ringbuf",
     tags = ["manual"],
 )
 
