@@ -16,7 +16,7 @@ rustc_library("sorted_vec_map_rs") {
   ]
   deps = [ "//third_party/rust_crates:serde" ]
   test_deps = [
-    "//third_party/rust_crates:bincode",
+    "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:test-case",
   ]
 }

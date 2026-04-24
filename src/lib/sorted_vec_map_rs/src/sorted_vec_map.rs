@@ -263,8 +263,8 @@ mod tests {
     #[test_case(vec![]; "empty_map")]
     fn test_serialize_deserialize(input: Vec<(i32, i32)>) {
         let map: SortedVecMap<i32, i32> = input.into_iter().collect();
-        let serialized = bincode::serialize(&map).unwrap();
-        let deserialized: SortedVecMap<i32, i32> = bincode::deserialize(&serialized).unwrap();
+        let serialized = serde_json::to_vec(&map).unwrap();
+        let deserialized: SortedVecMap<i32, i32> = serde_json::from_slice(&serialized).unwrap();
         assert_eq!(map, deserialized);
     }
 
@@ -272,8 +272,8 @@ mod tests {
     #[test_case(vec![]; "empty_map")]
     fn test_deserialize_from_btree_map(input: Vec<(i32, i32)>) {
         let map: BTreeMap<i32, i32> = input.into_iter().collect();
-        let serialized = bincode::serialize(&map).unwrap();
-        let deserialized: SortedVecMap<i32, i32> = bincode::deserialize(&serialized).unwrap();
+        let serialized = serde_json::to_vec(&map).unwrap();
+        let deserialized: SortedVecMap<i32, i32> = serde_json::from_slice(&serialized).unwrap();
 
         let map_entries: Vec<(i32, i32)> = map.into_iter().collect();
         assert_eq!(map_entries, deserialized.vec);
