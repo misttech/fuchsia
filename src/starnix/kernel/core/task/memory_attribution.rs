@@ -74,14 +74,17 @@ impl MemoryAttributionManager {
             // Initial scan of the PID table when a client connects.
             let mut events = vec![];
             let Some(kernel) = weak_kernel.upgrade() else { return vec![] };
-            let pids = kernel.pids.read();
+            let pids = kernel.pids.write();
             let mut processes: HashSet<pid_t> = HashSet::new();
             for thread_group in pids.get_thread_groups() {
                 let name = get_thread_group_identifier(&thread_group);
                 events.append(&mut attribution_info_for_thread_group(name, &thread_group));
                 processes.insert(thread_group.leader);
             }
-            drop(pids);
+
+            // Hold the PID table lock until the thread group notifier is set. This avoids a race
+            // condition in which tasks added between the initial scan and the notifier registration
+            // are not detected.
 
             // Spawn the pid table monitoring thread once.
             if let Some(publisher_rx) = publisher_rx.lock().take() {
@@ -91,6 +94,9 @@ impl MemoryAttributionManager {
 
                 let (pid_sender, pid_receiver) = std::sync::mpsc::channel();
 
+                pids.set_thread_group_notifier(pid_sender);
+                drop(pids);
+
                 let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {
                     Self::run(weak_kernel, publisher_rx, initial_state_rx, pid_receiver);
                 };
@@ -99,7 +105,8 @@ impl MemoryAttributionManager {
                     .with_sync_closure(closure)
                     .build();
                 kernel.kthreads.spawner().spawn_from_request(req);
-                kernel.pids.write().set_thread_group_notifier(pid_sender);
+            } else {
+                drop(pids);
             }
             events
         }));
