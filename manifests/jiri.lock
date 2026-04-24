@@ -231,8 +231,8 @@
     },
     {
         "package": "fuchsia/prebuilt/proprietary/vendor/arm/libvulkan/libvulkan_arm_mali_g52_r0p0",
-        "version": "git_revision:330c12f8b04e82dec3d6a00647c79b2047d7fde8",
-        "instance_id": "6QZaMGm3rFWEifixtrGSp-sveSxPEktMiYGp66w1SScC"
+        "version": "git_revision:c909a0c8ef2f741cefebb8f4358052c43fe1b89e",
+        "instance_id": "aRtUZgc5oueIxT4wQ6vH26y7zUnrekNFgcU29m5aprQC"
     },
     {
         "package": "fuchsia/prebuilt/third_party/firmware/vim3",
