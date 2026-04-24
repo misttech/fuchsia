@@ -11,18 +11,20 @@ use crate::ddk_converter;
 use crate::device::{self, DeviceOps};
 use crate::error::Error;
 use fdf::ArenaStaticBox;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_minstrel as fidl_minstrel;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fuchsia_trace as trace;
 use ieee80211::{Bssid, MacAddr, Ssid};
 use log::{debug, error, info, trace, warn};
 use std::fmt;
 use wlan_common::TimeUnit;
 use wlan_common::mac::{self, CapabilityInfo};
 use wlan_common::timer::Timer;
+use wlan_trace as wtrace;
 use zerocopy::SplitByteSlice;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_minstrel as fidl_minstrel,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_softmac as fidl_softmac,
-    fuchsia_trace as trace, wlan_trace as wtrace,
-};
 
 use context::*;
 use infra_bss::*;
@@ -226,7 +228,7 @@ impl<D: DeviceOps> Ap<D> {
             return Ok(());
         }
 
-        if req.bss_type != fidl_common::BssType::Infrastructure {
+        if req.bss_type != fidl_ieee80211::BssType::Infrastructure {
             info!("MLME-START.request: BSS type {:?} not supported", req.bss_type);
             self.ctx.send_mlme_start_conf(fidl_mlme::StartResultCode::NotSupported)?;
             return Ok(());
@@ -455,6 +457,9 @@ mod tests {
     use crate::device::{FakeDevice, FakeDeviceConfig, FakeDeviceState, LinkStatus, test_utils};
     use crate::test_utils::MockWlanRxInfo;
     use assert_matches::assert_matches;
+    use fidl_fuchsia_wlan_common as fidl_common;
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_softmac as fidl_softmac;
     use fuchsia_sync::Mutex;
     use ieee80211::MacAddrBytes;
     use std::sync::{Arc, LazyLock};
@@ -463,10 +468,6 @@ mod tests {
     use wlan_frame_writer::write_frame_to_vec;
     use wlan_sme::responder::Responder;
     use zerocopy::byteorder::big_endian::U16 as BigEndianU16;
-    use {
-        fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-        fidl_fuchsia_wlan_softmac as fidl_softmac,
-    };
 
     static CLIENT_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [4u8; 6].into());
     static BSSID: LazyLock<Bssid> = LazyLock::new(|| [2u8; 6].into());
@@ -804,7 +805,7 @@ mod tests {
             fidl_softmac::WlanRxInfo {
                 rx_flags: fidl_softmac::WlanRxInfoFlags::empty(),
                 valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
-                phy: fidl_common::WlanPhyType::Dsss,
+                phy: fidl_ieee80211::WlanPhyType::Dsss,
                 data_rate: 0,
                 channel: fidl_ieee80211::WlanChannel {
                     primary: 0,
@@ -851,7 +852,7 @@ mod tests {
         let rx_info_wrong_channel = fidl_softmac::WlanRxInfo {
             rx_flags: fidl_softmac::WlanRxInfoFlags::empty(),
             valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
-            phy: fidl_common::WlanPhyType::Dsss,
+            phy: fidl_ieee80211::WlanPhyType::Dsss,
             data_rate: 0,
             channel: fidl_ieee80211::WlanChannel {
                 primary: 0,
@@ -886,7 +887,7 @@ mod tests {
         let (mut ap, fake_device_state, _) = make_ap().await;
         ap.handle_mlme_start_req(fidl_mlme::StartRequest {
             ssid: Ssid::try_from("coolnet").unwrap().into(),
-            bss_type: fidl_common::BssType::Infrastructure,
+            bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 5,
             dtim_period: 1,
             channel: 2,
@@ -895,7 +896,7 @@ mod tests {
             country: fidl_mlme::Country { alpha2: *b"xx", suffix: fidl_mlme::COUNTRY_ENVIRON_ALL },
             mesh_id: vec![],
             rsne: None,
-            phy: fidl_common::WlanPhyType::Erp,
+            phy: fidl_ieee80211::WlanPhyType::Erp,
             channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         })
         .await
@@ -943,7 +944,7 @@ mod tests {
 
         ap.handle_mlme_start_req(fidl_mlme::StartRequest {
             ssid: Ssid::try_from("coolnet").unwrap().into(),
-            bss_type: fidl_common::BssType::Infrastructure,
+            bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 5,
             dtim_period: 1,
             channel: 2,
@@ -952,7 +953,7 @@ mod tests {
             country: fidl_mlme::Country { alpha2: *b"xx", suffix: fidl_mlme::COUNTRY_ENVIRON_ALL },
             mesh_id: vec![],
             rsne: None,
-            phy: fidl_common::WlanPhyType::Erp,
+            phy: fidl_ieee80211::WlanPhyType::Erp,
             channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         })
         .await

@@ -360,7 +360,8 @@ void DataFrameTest::OnDisassocInd(
 void DataFrameTest::StartConnect() {
   // Send connect request
   auto builder = wlan_fullmac_wire::WlanFullmacImplConnectRequest::Builder(client_ifc_.test_arena_);
-  fuchsia_wlan_common::wire::BssDescription bss;
+  fuchsia_wlan_ieee80211::wire::BssDescription bss;
+
   std::memcpy(bss.bssid.data(), assoc_context_.bssid.byte, ETH_ALEN);
   bss.ies =
       fidl::VectorView<uint8_t>::FromExternal(assoc_context_.ies.data(), assoc_context_.ies.size());

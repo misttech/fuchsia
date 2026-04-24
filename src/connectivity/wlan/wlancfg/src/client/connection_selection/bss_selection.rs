@@ -87,15 +87,13 @@ mod test {
     use diagnostics_assertions::{
         AnyBoolProperty, AnyNumericProperty, AnyProperty, AnyStringProperty, assert_data_tree,
     };
+    use fuchsia_async as fasync;
+    use fuchsia_inspect as inspect;
     use futures::channel::mpsc;
     use ieee80211_testutils::{BSSID_REGEX, SSID_REGEX};
     use rand::Rng;
     use wlan_common::random_fidl_bss_description;
     use wlan_common::scan::Incompatible;
-    use {
-        fidl_fuchsia_wlan_common as fidl_common, fuchsia_async as fasync,
-        fuchsia_inspect as inspect,
-    };
 
     struct TestValues {
         inspector: inspect::Inspector,
@@ -126,7 +124,7 @@ mod test {
         let bss = types::Bss {
             signal: types::Signal { rssi_dbm: rssi, snr_db },
             channel,
-            bss_description: fidl_common::BssDescription {
+            bss_description: fidl_fuchsia_wlan_ieee80211::BssDescription {
                 rssi_dbm: rssi,
                 snr_db,
                 channel: channel.into(),

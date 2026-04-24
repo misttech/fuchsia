@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_device as fidl_device;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fidl_fuchsia_wlan_tap as wlantap;
 use ieee80211::{MacAddr, MacAddrBytes};
 use wlan_common::ie::*;
 use zerocopy::IntoBytes;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_device as fidl_device,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_softmac as fidl_softmac,
-    fidl_fuchsia_wlan_tap as wlantap,
-};
 
 pub(crate) fn create_wlantap_config(
     name: String,
@@ -21,11 +21,11 @@ pub(crate) fn create_wlantap_config(
         sta_addr: sta_addr.to_array(),
         factory_addr: sta_addr.to_array(),
         supported_phys: vec![
-            fidl_common::WlanPhyType::Dsss,
-            fidl_common::WlanPhyType::Hr,
-            fidl_common::WlanPhyType::Ofdm,
-            fidl_common::WlanPhyType::Erp,
-            fidl_common::WlanPhyType::Ht,
+            fidl_ieee80211::WlanPhyType::Dsss,
+            fidl_ieee80211::WlanPhyType::Hr,
+            fidl_ieee80211::WlanPhyType::Ofdm,
+            fidl_ieee80211::WlanPhyType::Erp,
+            fidl_ieee80211::WlanPhyType::Ht,
         ],
         mac_role: mac_role,
         hardware_capability: 0,

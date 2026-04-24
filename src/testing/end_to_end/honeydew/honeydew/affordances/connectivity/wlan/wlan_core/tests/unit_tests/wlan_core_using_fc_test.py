@@ -50,7 +50,7 @@ _TEST_PSK = (
     )
 )
 
-_TEST_BSS_DESC_1 = f_wlan_common.BssDescription(
+_TEST_BSS_DESC_1 = f_wlan_ieee80211.BssDescription(
     bssid=[1, 2, 3],
     bss_type=f_wlan_common.BssType.PERSONAL,
     beacon_period=2,
@@ -65,7 +65,7 @@ _TEST_BSS_DESC_1 = f_wlan_common.BssDescription(
 
 # Use the same SSID such that the two scan results will be merged under the same
 # SSID key, allowing the user to choose from multiple BSSes.
-_TEST_BSS_DESC_2 = f_wlan_common.BssDescription(
+_TEST_BSS_DESC_2 = f_wlan_ieee80211.BssDescription(
     bssid=[3, 2, 1],
     bss_type=f_wlan_common.BssType.PERSONAL,
     beacon_period=5,

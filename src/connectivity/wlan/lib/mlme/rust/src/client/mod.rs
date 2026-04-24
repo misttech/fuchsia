@@ -18,6 +18,14 @@ use crate::{akm_algorithm, ddk_converter};
 use anyhow::format_err;
 use channel_switch::ChannelState;
 use fdf::{Arena, ArenaBox, ArenaStaticBox};
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_driver as fidl_driver_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_minstrel as fidl_minstrel;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fuchsia_trace as trace;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes, Ssid};
 use log::{error, warn};
 use scanner::Scanner;
@@ -37,13 +45,8 @@ use wlan_common::time::TimeUnit;
 use wlan_common::timer::{EventHandle, Timer};
 use wlan_common::{data_writer, mgmt_writer, wmm};
 use wlan_frame_writer::{append_frame_to, write_frame, write_frame_with_fixed_slice};
+use wlan_trace as wtrace;
 use zerocopy::SplitByteSlice;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_minstrel as fidl_minstrel,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_softmac as fidl_softmac,
-    fuchsia_trace as trace, wlan_trace as wtrace,
-};
 
 pub use scanner::ScanError;
 
@@ -432,9 +435,9 @@ impl<D: DeviceOps> ClientMlme<D> {
             .await
             .map_err(|status| Error::Status(format!("Error setting device channel"), status))?;
 
-        let join_bss_request = fidl_common::JoinBssRequest {
+        let join_bss_request = fidl_driver_common::JoinBssRequest {
             bssid: Some(bss.bssid.to_array()),
-            bss_type: Some(fidl_common::BssType::Infrastructure),
+            bss_type: Some(fidl_ieee80211::BssType::Infrastructure),
             remote: Some(true),
             beacon_period: Some(bss.beacon_period),
             ..Default::default()
@@ -1284,6 +1287,8 @@ mod tests {
     use crate::device::{FakeDevice, FakeDeviceConfig, FakeDeviceState, LinkStatus, test_utils};
     use crate::test_utils::{MockWlanRxInfo, fake_wlan_channel};
     use assert_matches::assert_matches;
+    use fidl_fuchsia_wlan_common as fidl_common;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
     use fuchsia_sync::Mutex;
     use std::sync::{Arc, LazyLock};
     use wlan_common::capabilities::StaCapabilities;
@@ -1295,7 +1300,6 @@ mod tests {
     use wlan_common::{fake_bss_description, fake_fidl_bss_description};
     use wlan_sme::responder::Responder;
     use wlan_statemachine::*;
-    use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal};
     static BSSID: LazyLock<Bssid> = LazyLock::new(|| [6u8; 6].into());
     static IFACE_MAC: LazyLock<MacAddr> = LazyLock::new(|| [7u8; 6].into());
     const RSNE: &[u8] = &[
@@ -1672,7 +1676,7 @@ mod tests {
             fidl_softmac::WlanRxInfo {
                 rx_flags: fidl_softmac::WlanRxInfoFlags::empty(),
                 valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
-                phy: fidl_common::WlanPhyType::Dsss,
+                phy: fidl_ieee80211::WlanPhyType::Dsss,
                 data_rate: 0,
                 channel: mlme.channel_state.get_main_channel().unwrap(),
                 mcs: 0,

@@ -123,8 +123,8 @@ class BasicWlanSoftmacServer : public UnimplementedWlanSoftmacServer {
     fuchsia_wlan_softmac::WlanSoftmacQueryResponse response;
     response.sta_addr(std::array<uint8_t, 6>{8, 8, 8, 8, 8, 8})
         .mac_role(fuchsia_wlan_common::WlanMacRole::kClient)
-        .supported_phys(
-            std::vector<fuchsia_wlan_common::WlanPhyType>{fuchsia_wlan_common::WlanPhyType::kDsss})
+        .supported_phys(std::vector<fuchsia_wlan_ieee80211::WlanPhyType>{
+            fuchsia_wlan_ieee80211::WlanPhyType::kDsss})
         .hardware_capability(0)
         .factory_addr({std::array<uint8_t, 6>{8, 8, 8, 8, 8, 8}});
 

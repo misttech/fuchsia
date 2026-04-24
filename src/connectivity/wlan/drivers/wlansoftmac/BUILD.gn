@@ -31,6 +31,7 @@ source_set("source_set") {
   public_deps = [
     ":wlansoftmac-bind",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
+    "//sdk/fidl/fuchsia.wlan.driver:fuchsia.wlan.driver_cpp",
     "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/driver/compat/cpp",

@@ -6,6 +6,7 @@ use crate::mode_management::iface_manager_api::IfaceManagerApi;
 use crate::util::listener;
 use anyhow::{Error, format_err};
 use fidl::epitaph::ChannelEpitaphExt;
+use fidl_fuchsia_wlan_policy as fidl_policy;
 use futures::channel::mpsc;
 use futures::future::LocalBoxFuture;
 use futures::lock::{Mutex, MutexGuard};
@@ -16,7 +17,6 @@ use log::{error, info, warn};
 use std::sync::Arc;
 use wlan_common::RadioConfig;
 use wlan_common::channel::Cbw;
-use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_policy as fidl_policy};
 
 pub mod state_machine;
 pub mod types;
@@ -312,7 +312,8 @@ fn derive_ap_config(
         fidl_policy::OperatingBand::Only5Ghz => 36,
     };
 
-    let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, channel);
+    let radio_config =
+        RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, channel);
 
     Ok(state_machine::ApConfig {
         id: network_id.into(),

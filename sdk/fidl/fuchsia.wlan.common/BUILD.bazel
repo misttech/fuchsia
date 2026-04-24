@@ -7,7 +7,6 @@ load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 fidl_library(
     name = "fuchsia.wlan.common",
     srcs = [
-        "associnfo.fidl",
         "driver_features.fidl",
         "history.fidl",
         "overview.fidl",

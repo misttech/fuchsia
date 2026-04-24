@@ -78,6 +78,7 @@ type WlanBand = flexible enum : uint8 {
     FIVE_GHZ = 1;
 };
 
+// LINT.IfChange
 @available(added=27)
 type KeyType = flexible enum : uint8 {
     PAIRWISE = 1;
@@ -85,6 +86,7 @@ type KeyType = flexible enum : uint8 {
     IGTK = 3;
     PEER = 4;
 };
+// LINT.ThenChange(//src/connectivity/wlan/lib/mlme/rust/src/key.rs)
 
 /// IEEE Std 802.11-2020 6.3.19.1.2
 @available(added=27)
@@ -115,4 +117,123 @@ type SetKeyDescriptor = table {
     /// The cipher type.
     /// Required.
     7: cipher_type CipherSuiteType;
+};
+
+@available(added=NEXT)
+type BssType = flexible enum : uint32 {
+    // The UNKNOWN value is added to this type instead of created a new
+    // enum like `DetectedBssType` so that language bindings can avoid the use
+    // of verbose constants like DETECTED_BSS_TYPE_INFRASTRUCTURE. The tradeoff
+    // is to handle UNKNOWN when specifying the BSS type of a new AP.
+    @unknown
+    UNKNOWN = 0;
+    INFRASTRUCTURE = 1;
+    INDEPENDENT = 2;
+    MESH = 3;
+    PERSONAL = 4;
+};
+
+/// Corresponds to the Capability Information field defined by IEEE Std 802.11-2020, 9.4.1.4.
+/// This contains subfields that indicate support for requested or optional capabilities.
+///
+/// TODO(https://fxbug.dev/367315525) Consider making this a bitfield.
+@available(added=HEAD)
+alias CapabilityInfo = uint16;
+
+/// Type corresponding to a BSSDescription defined by IEEE Std 802.11-2020 6.3.3.3.2
+///
+/// This type only includes explicit fields for information frequently required
+/// from a BSSDescription. All other fields are left in a raw buffer of IEs as
+/// received in an advertisement from the AP, e.g., from a Beacon or Probe
+/// Response frame.
+///
+/// The inclusion of a raw buffer of IEs ensures this type always includes all
+/// the information an AP advertises, no matter the version of Fuchsia the
+/// advertisement was received in.
+@available(added=HEAD)
+type BssDescription = struct {
+    bssid MacAddr;
+
+    bss_type BssType;
+    beacon_period uint16; // in TU
+    capability_info CapabilityInfo;
+
+    /// Buffer of IEs as received in an advertisement. E.g., from a Beacon
+    /// or Probe Response frame.
+    ies vector<uint8>:MAX;
+
+    /// Channel information for this BSS.
+    channel WlanChannel;
+    /// The running average of received signal strength indicator in units of dBm.
+    rssi_dbm int8;
+    /// The running average of snr in units of dB.
+    snr_db int8;
+};
+
+@available(added=NEXT)
+type WlanPhyType = flexible enum {
+    /// IEEE 802.11-2016 Clause 15:
+    ///     Direct Sequence Spread Spectrum
+    /// Supports 1, 2 Mbps.
+    DSSS = 1;
+
+    /// IEEE 802.11-2016 Clause 16:
+    ///     High Rate DSSS
+    /// Supports 5.5, 11 Mbps.
+    /// Also referred to as ERP-CCK
+    HR = 2;
+
+    /// IEEE 802.11a/g or IEEE 802.11-2016 Clause 17:
+    ///     Orthogonal Frequency Division Multiplexing
+    /// Supports 6, 9, 12, 18, 24, 36, 48, and 54 Mbps.
+    OFDM = 3;
+
+    /// IEEE 802.11g or IEEE 802.11-2016 Clause 18:
+    ///     Extended Rate PHY
+    /// Supports 1, 2, 5.5, 11, 12, 24 Mbps + optionally 6, 54 Mbps.
+    /// Encompasses DSSS/HR/OFDM rates and modulation.
+    ERP = 4;
+
+    /// IEEE 802.11n or IEEE 802.11-2016 Clause 19:
+    ///     High Throughput PHY
+    /// Supports rates up to 495 Mbps.
+    HT = 5;
+
+    /// 802.11ad or IEEE 802.11-2016 Clause 20:
+    ///     Directional Multi-Gigabit PHY
+    DMG = 6;
+
+    /// IEEE 802.11ac or IEEE 802.11-2016 Clause 21:
+    ///     Very High Throughput PHY
+    /// Supports rates up to 6.9 Gbps.
+    VHT = 7;
+
+    /// IEEE 802.11af or IEEE 802.11-2016 Clause 22:
+    ///     Television Very High Throughput PHY
+    /// Supports rates of up to 568.9 Mbps in TV spectrum
+    TVHT = 8;
+
+    /// IEEE 802.11ah or IEEE 802.11-2020 Clause 23:
+    ///     Sub 1-GHz PHY
+    S1G = 9;
+
+    /// IEEE 802.11aj or IEEE 802.11-2020 Clause 24:
+    ///     China Directional Multi-Gigabit PHY
+    CDMG = 10;
+
+    /// IEEE 802.11aj or IEEE 802.11-2020 Clause 25:
+    ///     China Millimeter-wave Multi-Gigabit PHY
+    CMMG = 11;
+
+    /// IEEE 802.11ax: High Efficiency PHY
+    /// Supports rates of up to 9.6 Gbps (whew!)
+    HE = 12;
+};
+
+/// HT and VHT guard interval.
+/// See IEEE 802.11-2016 Table 19-1 and Table 21-1.
+@available(added=NEXT)
+type GuardInterval = strict enum : uint8 {
+    LONG_GI = 1; // 800 ns
+    SHORT_GI = 2; // 400 ns
 };

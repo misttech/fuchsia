@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
-use fidl_fuchsia_wlan_common::{WlanTxResult, WlanTxResultCode, WlanTxResultEntry};
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_softmac::{WlanTxResult, WlanTxResultCode, WlanTxResultEntry};
+use fidl_fuchsia_wlan_tap as fidl_tap;
 use fidl_test_wlan_realm::WlanConfig;
 use fuchsia_async::Interval;
 use futures::StreamExt;
@@ -25,7 +27,6 @@ use wlan_hw_sim::{
 };
 use zerocopy::IntoBytes;
 use zerocopy::byteorder::big_endian::U16 as BigEndianU16;
-use {fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_tap as fidl_tap};
 // Remedy for https://fxbug.dev/42162128 (https://fxbug.dev/42108316)
 // Refer to |KMinstrelUpdateIntervalForHwSim| in //src/connectivity/wlan/drivers/wlan/device.cpp
 const DATA_FRAME_INTERVAL_NANOS: i64 = 4_000_000;

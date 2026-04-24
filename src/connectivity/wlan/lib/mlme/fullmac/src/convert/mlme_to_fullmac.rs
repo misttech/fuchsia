@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, bail};
+use fidl_fuchsia_wlan_driver as fidl_driver_common;
+use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_ieee80211::MAX_SSID_BYTE_LEN;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme,
-};
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
 
 pub fn convert_scan_request(
     req: fidl_mlme::ScanRequest,
@@ -281,11 +281,11 @@ fn convert_set_key_descriptor(
 }
 fn convert_set_key_descriptor_legacy(
     mlme_key: &fidl_mlme::SetKeyDescriptor,
-) -> fidl_common::WlanKeyConfig {
-    fidl_common::WlanKeyConfig {
+) -> fidl_driver_common::WlanKeyConfig {
+    fidl_driver_common::WlanKeyConfig {
         // TODO(https://fxbug.dev/301104836): This is always set to RxTx. Consider removing if it's
         // always the same value.
-        protection: Some(fidl_common::WlanProtection::RxTx),
+        protection: Some(fidl_driver_common::WlanProtection::RxTx),
         cipher_oui: Some(mlme_key.cipher_suite_oui.clone()),
         cipher_type: Some(mlme_key.cipher_suite_type),
         key_type: Some(convert_key_type_legacy(mlme_key.key_type)),
@@ -306,12 +306,12 @@ fn convert_key_type(mlme_key_type: fidl_mlme::KeyType) -> fidl_ieee80211::KeyTyp
     }
 }
 
-fn convert_key_type_legacy(mlme_key_type: fidl_mlme::KeyType) -> fidl_common::WlanKeyType {
+fn convert_key_type_legacy(mlme_key_type: fidl_mlme::KeyType) -> fidl_ieee80211::KeyType {
     match mlme_key_type {
-        fidl_mlme::KeyType::Group => fidl_common::WlanKeyType::Group,
-        fidl_mlme::KeyType::Pairwise => fidl_common::WlanKeyType::Pairwise,
-        fidl_mlme::KeyType::PeerKey => fidl_common::WlanKeyType::Peer,
-        fidl_mlme::KeyType::Igtk => fidl_common::WlanKeyType::Igtk,
+        fidl_mlme::KeyType::Group => fidl_ieee80211::KeyType::Group,
+        fidl_mlme::KeyType::Pairwise => fidl_ieee80211::KeyType::Pairwise,
+        fidl_mlme::KeyType::PeerKey => fidl_ieee80211::KeyType::Peer,
+        fidl_mlme::KeyType::Igtk => fidl_ieee80211::KeyType::Igtk,
     }
 }
 
@@ -336,12 +336,12 @@ pub fn convert_set_apf_packet_filter_enabled_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal};
+    use fidl_fuchsia_wlan_internal as fidl_internal;
 
-    fn fake_bss_description() -> fidl_common::BssDescription {
-        fidl_common::BssDescription {
+    fn fake_bss_description() -> fidl_ieee80211::BssDescription {
+        fidl_ieee80211::BssDescription {
             bssid: [6, 5, 4, 3, 2, 1],
-            bss_type: fidl_common::BssType::Infrastructure,
+            bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 123u16,
             capability_info: 456u16,
             ies: vec![1, 2, 3, 4],
@@ -470,7 +470,7 @@ mod tests {
     fn test_convert_start_bss_request_rsne_too_long() {
         let mlme = fidl_mlme::StartRequest {
             ssid: vec![1, 2, 3, 4],
-            bss_type: fidl_common::BssType::Independent,
+            bss_type: fidl_ieee80211::BssType::Independent,
             beacon_period: 10000,
             dtim_period: 123,
             channel: 12,
@@ -479,7 +479,7 @@ mod tests {
             country: fidl_mlme::Country { alpha2: [1, 2], suffix: 45 },
             mesh_id: vec![6, 5, 6, 5],
             rsne: Some(vec![123; fidl_ieee80211::WLAN_IE_MAX_LEN as usize + 1]),
-            phy: fidl_common::WlanPhyType::Ofdm,
+            phy: fidl_ieee80211::WlanPhyType::Ofdm,
             channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
         };
 

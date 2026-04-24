@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, Result, bail};
+use fidl_fuchsia_wlan_driver as fidl_driver_common;
+use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use log::warn;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_mlme as fidl_mlme,
-};
 
 pub fn convert_device_info(
     info: fidl_fullmac::WlanFullmacImplQueryResponse,
@@ -363,7 +363,7 @@ pub fn convert_sae_frame(frame: fidl_fullmac::SaeFrame) -> Result<fidl_mlme::Sae
     })
 }
 pub fn convert_wmm_params(
-    wmm_params: fidl_common::WlanWmmParameters,
+    wmm_params: fidl_driver_common::WlanWmmParameters,
 ) -> fidl_internal::WmmStatusResponse {
     fidl_internal::WmmStatusResponse {
         apsd: wmm_params.apsd,
@@ -374,7 +374,7 @@ pub fn convert_wmm_params(
     }
 }
 fn convert_wmm_ac_params(
-    params: fidl_common::WlanWmmAccessCategoryParameters,
+    params: fidl_driver_common::WlanWmmAccessCategoryParameters,
 ) -> fidl_internal::WmmAcParams {
     fidl_internal::WmmAcParams {
         ecw_min: params.ecw_min,

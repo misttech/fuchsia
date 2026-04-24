@@ -6,6 +6,7 @@ use crate::FullmacDriverFixture;
 use assert_matches::assert_matches;
 use drivers_only_common::sme_helpers;
 use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_driver as fidl_driver_common;
 use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_internal as fidl_wlan_security;
@@ -1109,8 +1110,8 @@ async fn test_wmm_status() {
     let (client_sme_proxy, _connect_txn_event_stream, mut fullmac_driver) =
         setup_connected_to_open_bss(FullmacDriverConfig { ..Default::default() }).await;
 
-    let gen_random_wmm_ac_params = || -> fidl_common::WlanWmmAccessCategoryParameters {
-        fidl_common::WlanWmmAccessCategoryParameters {
+    let gen_random_wmm_ac_params = || -> fidl_driver_common::WlanWmmAccessCategoryParameters {
+        fidl_driver_common::WlanWmmAccessCategoryParameters {
             ecw_min: rand::random(),
             ecw_max: rand::random(),
             aifsn: rand::random(),
@@ -1119,7 +1120,7 @@ async fn test_wmm_status() {
         }
     };
 
-    let wmm_params = fidl_common::WlanWmmParameters {
+    let wmm_params = fidl_driver_common::WlanWmmParameters {
         apsd: rand::random(),
         ac_be_params: gen_random_wmm_ac_params(),
         ac_bk_params: gen_random_wmm_ac_params(),
@@ -1148,7 +1149,7 @@ async fn test_wmm_status() {
         .expect("FIDL error on WMM status")
         .expect("ClientSme returned error on WMM status");
 
-    let wmm_ac_params_eq = |common: &fidl_common::WlanWmmAccessCategoryParameters,
+    let wmm_ac_params_eq = |common: &fidl_driver_common::WlanWmmAccessCategoryParameters,
                             internal: &fidl_internal::WmmAcParams|
      -> bool {
         common.ecw_min == internal.ecw_min

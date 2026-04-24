@@ -12,15 +12,13 @@ use crate::test_utils::fake_frames::{
     fake_wpa3_enterprise_192_bit_rsne, fake_wpa3_rsne, fake_wpa3_transition_rsne,
 };
 use anyhow::Context;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use ieee80211::Ssid;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use rand::Rng;
 use rand::distr::{Distribution, StandardUniform};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 #[rustfmt::skip]
 const DEFAULT_MOCK_IES: &'static [u8] = &[
@@ -69,7 +67,7 @@ const DEFAULT_MOCK_IES: &'static [u8] = &[
 pub struct BssDescriptionCreator {
     // *** Fields already in fidl_common::BssDescription
     pub bssid: [u8; 6],
-    pub bss_type: fidl_common::BssType,
+    pub bss_type: fidl_ieee80211::BssType,
     pub beacon_period: u16,
     pub channel: Channel,
     pub rssi_dbm: i8,
@@ -101,7 +99,7 @@ pub struct BssDescriptionCreator {
 }
 
 impl BssDescriptionCreator {
-    pub fn create_bss_description(self) -> Result<fidl_common::BssDescription, anyhow::Error> {
+    pub fn create_bss_description(self) -> Result<fidl_ieee80211::BssDescription, anyhow::Error> {
         let mut ies_updater = ie::IesUpdater::new(DEFAULT_MOCK_IES.to_vec());
         ies_updater.set(IeType::SSID, &self.ssid[..]).context("set SSID")?;
 
@@ -159,7 +157,9 @@ impl BssDescriptionCreator {
             _ => capability_info.with_privacy(true),
         };
         let capability_info = match self.bss_type {
-            fidl_common::BssType::Infrastructure => capability_info.with_ess(true).with_ibss(false),
+            fidl_ieee80211::BssType::Infrastructure => {
+                capability_info.with_ess(true).with_ibss(false)
+            }
             _ => panic!("{:?} is not supported", self.bss_type),
         };
         let capability_info = capability_info.0;
@@ -178,7 +178,7 @@ impl BssDescriptionCreator {
             }
         }
 
-        Ok(fidl_common::BssDescription {
+        Ok(fidl_ieee80211::BssDescription {
             bssid: self.bssid,
             bss_type: self.bss_type,
             beacon_period: self.beacon_period,
@@ -280,7 +280,7 @@ pub fn build_fake_bss_description_creator__(
 ) -> BssDescriptionCreator {
     BssDescriptionCreator {
         bssid: [0x07, 0x01, 0x02, 0x4d, 0x35, 0x08],
-        bss_type: fidl_common::BssType::Infrastructure,
+        bss_type: fidl_ieee80211::BssType::Infrastructure,
         beacon_period: 100,
         channel: Channel::new(3, Cbw::Cbw40),
         rssi_dbm: 0,
@@ -317,7 +317,7 @@ pub fn build_random_bss_description_creator__(
     protection_cfg: FakeProtectionCfg,
 ) -> BssDescriptionCreator {
     // Only the Infrastructure BSS type is supported.
-    let bss_type = fidl_common::BssType::Infrastructure;
+    let bss_type = fidl_ieee80211::BssType::Infrastructure;
 
     let mut rng = rand::rng();
 
@@ -725,7 +725,7 @@ mod tests {
     #[cfg_attr(feature = "variant_asan", ignore)]
     #[cfg_attr(feature = "variant_hwasan", ignore)]
     fn unsupported_bss_type() {
-        fake_fidl_bss_description!(Open, bss_type: fidl_common::BssType::Personal);
+        fake_fidl_bss_description!(Open, bss_type: fidl_ieee80211::BssType::Personal);
     }
 
     #[test]
@@ -781,7 +781,7 @@ mod tests {
     fn some_random_bss_bits_are_fixed() {
         for _ in 0..5 {
             let random_bss = random_fidl_bss_description!(Open);
-            assert_eq!(random_bss.bss_type, fidl_common::BssType::Infrastructure);
+            assert_eq!(random_bss.bss_type, fidl_ieee80211::BssType::Infrastructure);
             assert!(mac::CapabilityInfo(random_bss.capability_info).ess());
             assert!(!mac::CapabilityInfo(random_bss.capability_info).ibss());
             assert!(!mac::CapabilityInfo(random_bss.capability_info).privacy());

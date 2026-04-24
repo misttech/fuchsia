@@ -5,6 +5,7 @@
 library fuchsia.wlan.fullmac;
 
 using fuchsia.wlan.common;
+using fuchsia.wlan.driver;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using fuchsia.wlan.stats;
 using zx;
@@ -165,7 +166,7 @@ closed protocol WlanFullmacImplIfc {
         // Time of the scan result relative to when the system was powered on.
         // See https://fuchsia.dev/fuchsia-src/concepts/time/language_support#monotonic_time
         2: timestamp_nanos zx.Time;
-        3: bss fuchsia.wlan.common.BssDescription;
+        3: bss ieee80211.BssDescription;
     }) -> ();
     strict OnScanEnd(table {
         1: txn_id uint64;
@@ -208,7 +209,7 @@ closed protocol WlanFullmacImplIfc {
         /// Full BSS description of the target BSS. Required.
         /// If the data in BssDescription is incorrect or incomplete, the roam cannot succeed,
         /// because higher layers will not be able to complete required actions (e.g. SAE).
-        2: selected_bss fuchsia.wlan.common.BssDescription;
+        2: selected_bss ieee80211.BssDescription;
         /// Whether the original BSS association has been maintained at the start of a roam attempt.
         /// Required. 802.11 dictates that a STA can only be associated with a single BSS, so a roam
         /// attempt typically incurs disassociation at the start of the roam attempt. However,
@@ -341,7 +342,7 @@ closed protocol WlanFullmacImplIfc {
     }) -> ();
     strict OnWmmStatusResp(struct {
         status zx.Status;
-        wmm_params fuchsia.wlan.common.WlanWmmParameters;
+        wmm_params fuchsia.wlan.driver.WlanWmmParameters;
     }) -> ();
 };
 
@@ -432,7 +433,7 @@ open protocol WlanFullmacImpl {
         6: max_channel_time uint32;
     }) -> ();
     strict Connect(table {
-        1: selected_bss fuchsia.wlan.common.BssDescription;
+        1: selected_bss ieee80211.BssDescription;
         /// Timeout specified in beacon interval.
         2: connect_failure_timeout uint32;
 
@@ -445,7 +446,7 @@ open protocol WlanFullmacImpl {
         /// WEP key used in the authentication exchange.
         /// This is only populated for the WEP security type, otherwise this field is empty.
         // TODO(https://fxbug.dev/399839691): Will be removed after v/g is updated to use ieee80211.SetKeyDescriptor.
-        5: wep_key fuchsia.wlan.common.WlanKeyConfig;
+        5: wep_key fuchsia.wlan.driver.WlanKeyConfig;
 
         /// Additional parameters specific to the association exchange.
         6: security_ie vector<uint8>:ieee80211.WLAN_IE_MAX_LEN;
@@ -466,7 +467,7 @@ open protocol WlanFullmacImpl {
         /// Full BSS description of the target BSS. Required.
         /// If the data in BssDescription is incorrect or incomplete, the roam cannot succeed,
         /// because higher layers will not be able to complete required actions (e.g. SAE).
-        1: selected_bss fuchsia.wlan.common.BssDescription;
+        1: selected_bss ieee80211.BssDescription;
     }) -> ();
     strict AuthResp(table {
         1: peer_sta_address ieee80211.MacAddr;
@@ -487,7 +488,7 @@ open protocol WlanFullmacImpl {
     }) -> ();
     strict StartBss(table {
         1: ssid ieee80211.Ssid;
-        2: bss_type fuchsia.wlan.common.BssType;
+        2: bss_type ieee80211.BssType;
         3: beacon_period uint32;
         4: dtim_period uint32;
         5: channel uint8;
@@ -504,7 +505,7 @@ open protocol WlanFullmacImpl {
     /// disconnect or key rotation.
     strict SetKeys(table {
         // TODO(https://fxbug.dev/399839691): keylist will be removed after v/g is updated to use ieee80211.SetKeyDescriptor.
-        1: keylist vector<fuchsia.wlan.common.WlanKeyConfig>:WLAN_MAX_KEYLIST_SIZE;
+        1: keylist vector<fuchsia.wlan.driver.WlanKeyConfig>:WLAN_MAX_KEYLIST_SIZE;
         2: key_descriptors vector<ieee80211.SetKeyDescriptor>:WLAN_MAX_KEYLIST_SIZE;
     }) -> (struct {
         resp WlanFullmacSetKeysResp;

@@ -5,77 +5,6 @@ library fuchsia.wlan.common;
 
 using fuchsia.wlan.ieee80211;
 
-@available(removed=25)
-type RequestStatus = strict enum {
-    ACKNOWLEDGED = 0;
-    REJECTED_NOT_SUPPORTED = 1;
-    REJECTED_INCOMPATIBLE_MODE = 2;
-    REJECTED_ALREADY_IN_USE = 3;
-    REJECTED_DUPLICATE_REQUEST = 4;
-};
-
-/// PHY types supporting different MCS and payload data rates.
-/// Based off of dot11PHYType from IEEE 802.11-2016/2020 Annex C + Amendments
-type WlanPhyType = strict(removed=13) flexible(added=13) enum {
-    /// IEEE 802.11-2016 Clause 15:
-    ///     Direct Sequence Spread Spectrum
-    /// Supports 1, 2 Mbps.
-    DSSS = 1;
-
-    /// IEEE 802.11-2016 Clause 16:
-    ///     High Rate DSSS
-    /// Supports 5.5, 11 Mbps.
-    /// Also referred to as ERP-CCK
-    HR = 2;
-
-    /// IEEE 802.11a/g or IEEE 802.11-2016 Clause 17:
-    ///     Orthogonal Frequency Division Multiplexing
-    /// Supports 6, 9, 12, 18, 24, 36, 48, and 54 Mbps.
-    OFDM = 3;
-
-    /// IEEE 802.11g or IEEE 802.11-2016 Clause 18:
-    ///     Extended Rate PHY
-    /// Supports 1, 2, 5.5, 11, 12, 24 Mbps + optionally 6, 54 Mbps.
-    /// Encompasses DSSS/HR/OFDM rates and modulation.
-    ERP = 4;
-
-    /// IEEE 802.11n or IEEE 802.11-2016 Clause 19:
-    ///     High Throughput PHY
-    /// Supports rates up to 495 Mbps.
-    HT = 5;
-
-    /// 802.11ad or IEEE 802.11-2016 Clause 20:
-    ///     Directional Multi-Gigabit PHY
-    DMG = 6;
-
-    /// IEEE 802.11ac or IEEE 802.11-2016 Clause 21:
-    ///     Very High Throughput PHY
-    /// Supports rates up to 6.9 Gbps.
-    VHT = 7;
-
-    /// IEEE 802.11af or IEEE 802.11-2016 Clause 22:
-    ///     Television Very High Throughput PHY
-    /// Supports rates of up to 568.9 Mbps in TV spectrum
-    TVHT = 8;
-
-    /// IEEE 802.11ah or IEEE 802.11-2020 Clause 23:
-    ///     Sub 1-GHz PHY
-    S1G = 9;
-
-    /// IEEE 802.11aj or IEEE 802.11-2020 Clause 24:
-    ///     China Directional Multi-Gigabit PHY
-    CDMG = 10;
-
-    /// IEEE 802.11aj or IEEE 802.11-2020 Clause 25:
-    ///     China Millimeter-wave Multi-Gigabit PHY
-    CMMG = 11;
-
-    /// IEEE 802.11ax: High Efficiency PHY
-    /// Supports rates of up to 9.6 Gbps (whew!)
-    HE = 12;
-};
-
-
 /// This constant defines fixed length for arrays containing PHY types supported by
 /// PHY entities.
 @namespaced
@@ -105,14 +34,6 @@ type ScanType = strict enum {
     PASSIVE = 2;
 };
 
-/// HT and VHT guard interval.
-/// See IEEE 802.11-2016 Table 19-1 and Table 21-1.
-@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
-type GuardInterval = strict enum : uint8 {
-    LONG_GI = 1; // 800 ns
-    SHORT_GI = 2; // 400 ns
-};
-
 // Powersave types. Since vendor implementations of power save mode vary
 // greatly, this is an attempt to generalize the setting and indicated
 // as an enum (bitfield).
@@ -128,173 +49,6 @@ type PowerSaveType = strict enum : uint32 {
     PS_MODE_PERFORMANCE = 0x3;
 };
 
-@namespaced
-const WLAN_TX_VECTOR_IDX_INVALID uint16 = 0;
-@namespaced
-@available(added=13)
-const WLAN_TX_RESULT_MAX_ENTRY uint32 = 8;
-
-/// One entry in a WlanTxResult report. Indicates a number of attempted transmissions on
-/// a particular tx vector, but does not imply successful transmission.
-@available(added=13)
-type WlanTxResultEntry = struct {
-    tx_vector_idx uint16;
-    /// Number of total attempts with this specific tx vector, including successful attempts.
-    /// DDK assumes the number of attempts per packet will not exceed 255. (typically <= 8)
-    attempts uint8;
-};
-
-/// Outcome of a packet transmission.
-@available(added=13)
-type WlanTxResultCode = flexible enum : uint8 {
-    /// ACK was not received or transmission otherwise failed.
-    FAILED = 0x0;
-    /// ACK was received from peer.
-    SUCCESS = 0x1;
-};
-
-/// TX status reports are used by the Minstrel rate selection algorithm
-/// Tests should use the default value in //src/connectivity/wlan/testing/hw-sim/src/lib.rs
-@available(added=13)
-type WlanTxResult = struct {
-    /// up to 8 different tx_vector for one PPDU frame.
-    /// WLAN_TX_VECTOR_IDX_INVALID indicates no more entries.
-    tx_result_entry array<WlanTxResultEntry, WLAN_TX_RESULT_MAX_ENTRY>;
-    /// Destination mac address, or addr1 in packet header.
-    peer_addr fuchsia.wlan.ieee80211.MacAddr;
-    result_code WlanTxResultCode;
-};
-
-@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
-type WlanSoftmacHardwareCapabilityBit = strict enum : uint32 {
-    /// Short packet preamble.
-    SHORT_PREAMBLE = 0x0020;
-
-    /// Spectrum management.
-    SPECTRUM_MGMT = 0x0100;
-
-    // QoS capable.
-    QOS = 0x0200;
-
-    /// Short slot times after packet collision.
-    SHORT_SLOT_TIME = 0x0400;
-
-    /// Radio measurement.
-    RADIO_MSMT = 0x1000;
-
-    // Supports simutaneous client-ap use
-    // TODO(https://fxbug.dev/42132496): Move SIMULTANEOUS_CLIENT_AP to a different Fuchsia specific
-    // capability enum. This enum should only be used for IEEE 802.11 fields. This type
-    // should also be reduced to uint16_t once this is done.
-    SIMULTANEOUS_CLIENT_AP = 0x10000;
-};
-
-// IEEE Std 802.11-2016, 9.4.1.4
-alias WlanSoftmacHardwareCapability = uint32;
-
-@available(added=13)
-type BssType = flexible enum : uint32 {
-    // The UNKNOWN value is added to this type instead of created a new
-    // enum like `DetectedBssType` so that language bindings can avoid the use
-    // of verbose constants like DETECTED_BSS_TYPE_INFRASTRUCTURE. The tradeoff
-    // is to handle UNKNOWN when specifying the BSS type of a new AP.
-    @unknown
-    UNKNOWN = 0;
-    INFRASTRUCTURE = 1;
-    INDEPENDENT = 2;
-    MESH = 3;
-    PERSONAL = 4;
-};
-
-// Input parameters for a join request. This definition is shared between softmac.fidl
-// and wlantap.fidl.
-@available(added=13)
-type JoinBssRequest = table {
-    1: bssid fuchsia.wlan.ieee80211.MacAddr;
-    2: bss_type BssType;
-    3: remote bool;
-    4: beacon_period uint16; // in TU
-};
-
-@available(added=HEAD)
-type WlanProtection = strict enum : uint8 {
-    NONE = 0;
-    RX = 1;
-    TX = 2;
-    RX_TX = 3;
-};
-
-@available(added=HEAD)
-type WlanKeyConfig = table {
-    /// Which path to protect: None, TX, RX, or TX and RX.
-    1: protection WlanProtection;
-    /// IEEE Cipher suite selector.
-    /// See IEEE Std 802.11-2016, 9.4.2.25.2, Table 9-131
-    /// Optional. If not specified, it's assumed that this is the IEEE OUI.
-    2: cipher_oui array<uint8, 3>;
-    /// The cipher type.
-    /// Required.
-    3: cipher_type fuchsia.wlan.ieee80211.CipherSuiteType;
-    /// Whether this key is a pairwise, group or peer key.
-    /// Required.
-    4: key_type WlanKeyType;
-    /// The peer MAC address for pairwise and peer keys.
-    /// For group keys this value is always the broadcast address.
-    /// Required.
-    5: peer_addr fuchsia.wlan.ieee80211.MacAddr;
-    /// Index for rotating keys, e.g. group keys.
-    /// This value is always 0 for key types which aren't rotating, e.g. pairwise keys.
-    /// Required.
-    ///
-    /// TODO(https://fxbug.dev/301104836): This is a uint8, but SetKeyDescriptor in MLME FIDL and
-    /// DeleteKeysDescriptor in Fullmac FIDL use a uint16 for key_id/key_idx. We should consider
-    /// making all these use the same type.
-    6: key_idx uint8;
-    /// They key's actual bytes.
-    /// Required.
-    7: key vector<uint8>:fuchsia.wlan.ieee80211.MAX_KEY_LEN;
-    /// Receive Sequence Counter for group keys only.
-    /// In all other cases the RSC will be 0.
-    /// Optional.
-    8: rsc uint64;
-};
-
-/// Corresponds to the Capability Information field defined by IEEE Std 802.11-2020, 9.4.1.4.
-/// This contains subfields that indicate support for requested or optional capabilities.
-///
-/// TODO(https://fxbug.dev/367315525) Consider making this a bitfield.
-@available(added=HEAD)
-alias CapabilityInfo = uint16;
-
-/// Type corresponding to a BSSDescription defined by IEEE Std 802.11-2020 6.3.3.3.2
-///
-/// This type only includes explicit fields for information frequently required
-/// from a BSSDescription. All other fields are left in a raw buffer of IEs as
-/// received in an advertisement from the AP, e.g., from a Beacon or Probe
-/// Response frame.
-///
-/// The inclusion of a raw buffer of IEs ensures this type always includes all
-/// the information an AP advertises, no matter the version of Fuchsia the
-/// advertisement was received in.
-@available(added=HEAD)
-type BssDescription = struct {
-    bssid fuchsia.wlan.ieee80211.MacAddr;
-
-    bss_type BssType;
-    beacon_period uint16; // in TU
-    capability_info CapabilityInfo;
-
-    /// Buffer of IEs as received in an advertisement. E.g., from a Beacon
-    /// or Probe Response frame.
-    ies vector<uint8>:MAX;
-
-    /// Channel information for this BSS.
-    channel fuchsia.wlan.ieee80211.WlanChannel;
-    /// The running average of received signal strength indicator in units of dBm.
-    rssi_dbm int8;
-    /// The running average of snr in units of dB.
-    snr_db int8;
-};
 
 /// Request for scheduled scanning.
 @available(added=HEAD)
@@ -326,7 +80,6 @@ type ScheduledScanRequest = table {
     /// of the match sets will be reported.
     7: match_sets vector<ScheduledScanMatchSet>:MAX;
 };
-
 /// A scan plan defines the number of scan iterations and the interval between scans. Time of first
 /// scan (e.g. t=0, t=interval, etc.) is determined by the firmware.
 @available(added=HEAD)

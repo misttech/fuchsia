@@ -4,6 +4,7 @@
 library fuchsia.wlan.mlme;
 
 using fuchsia.wlan.common;
+using fuchsia.wlan.driver;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using fuchsia.wlan.internal as internal;
 using fuchsia.wlan.stats;
@@ -59,7 +60,7 @@ type DeviceInfo = struct {
 
     // TODO(https://fxbug.dev/42169534): This field will be replaced in the new driver features
     // framework.
-    softmac_hardware_capability fuchsia.wlan.common.WlanSoftmacHardwareCapability;
+    softmac_hardware_capability fuchsia.wlan.driver.WlanSoftmacHardwareCapability;
 
     // TODO(https://fxbug.dev/42120297): This field is stubbed out for future use.
     qos_capable bool;
@@ -156,7 +157,7 @@ type CapturedFrameResult = struct {
 // TODO(https://fxbug.dev/42119326): Remove if we are able to intersect the capabilities with beacon before associating
 type NegotiatedCapabilities = struct {
     channel ieee80211.WlanChannel;
-    capability_info fuchsia.wlan.common.CapabilityInfo;
+    capability_info ieee80211.CapabilityInfo;
     rates vector<uint8>:internal.MAX_ASSOC_BASIC_RATES;
     wmm_param box<WmmParameter>;
     ht_cap box<ieee80211.HtCapabilities>;

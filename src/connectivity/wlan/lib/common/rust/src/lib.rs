@@ -35,14 +35,15 @@ pub mod tx_vector;
 pub mod wmm;
 
 use channel::{Cbw, Channel};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use zerocopy::{Ref, Unalign};
-use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_sme as fidl_sme};
 
 pub use time::TimeUnit;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RadioConfig {
-    pub phy: fidl_common::WlanPhyType,
+    pub phy: fidl_ieee80211::WlanPhyType,
     pub channel: Channel,
 }
 
@@ -60,7 +61,7 @@ impl TryFrom<fidl_sme::RadioConfig> for RadioConfig {
 }
 
 impl RadioConfig {
-    pub fn new(phy: fidl_common::WlanPhyType, cbw: Cbw, primary_channel: u8) -> Self {
+    pub fn new(phy: fidl_ieee80211::WlanPhyType, cbw: Cbw, primary_channel: u8) -> Self {
         RadioConfig { phy, channel: Channel::new(primary_channel, cbw) }
     }
 }

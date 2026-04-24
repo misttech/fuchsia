@@ -18,6 +18,7 @@ fidl_library(
     deps = [
         "//sdk/fidl/fuchsia.wlan.common",
         "//sdk/fidl/fuchsia.wlan.device",
+        "//sdk/fidl/fuchsia.wlan.driver",
         "//sdk/fidl/fuchsia.wlan.ieee80211",
         "//sdk/fidl/fuchsia.wlan.softmac",
         "//zircon/vdso/zx",

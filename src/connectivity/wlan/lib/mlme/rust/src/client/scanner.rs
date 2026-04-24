@@ -9,6 +9,10 @@ use crate::ddk_converter::cssid_from_ssid_unchecked;
 use crate::device::{self, DeviceOps};
 use crate::error::Error;
 use anyhow::format_err;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fuchsia_trace as trace;
 use ieee80211::{Bssid, MacAddr};
 use log::{error, warn};
 use thiserror::Error;
@@ -16,11 +20,7 @@ use wlan_common::mac::{self, CapabilityInfo};
 use wlan_common::mgmt_writer;
 use wlan_common::time::TimeUnit;
 use wlan_frame_writer::write_frame_to_vec;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_softmac as fidl_softmac,
-    fuchsia_trace as trace, wlan_trace as wtrace,
-};
+use wlan_trace as wtrace;
 
 // TODO(https://fxbug.dev/42171393): Currently hardcoded until parameters supported.
 const MIN_HOME_TIME: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(0);
@@ -520,7 +520,11 @@ fn active_scan_request_series(
     Ok(active_scan_request_series)
 }
 
-fn send_scan_result<D: DeviceOps>(txn_id: u64, bss: fidl_common::BssDescription, device: &mut D) {
+fn send_scan_result<D: DeviceOps>(
+    txn_id: u64,
+    bss: fidl_ieee80211::BssDescription,
+    device: &mut D,
+) {
     if trace::is_enabled() {
         let trace_bss = wlan_common::bss::BssDescription::try_from(bss.clone())
             .map(|bss| format!("{}", bss))
@@ -545,7 +549,6 @@ mod tests {
     use crate::device::{FakeDevice, FakeDeviceState};
     use crate::test_utils::{MockWlanRxInfo, fake_wlan_channel};
     use assert_matches::assert_matches;
-    use fidl_fuchsia_wlan_common as fidl_common;
     use fuchsia_sync::Mutex;
     use ieee80211::{MacAddrBytes, Ssid};
     use std::sync::{Arc, LazyLock};
@@ -571,10 +574,10 @@ mod tests {
         MockWlanRxInfo { rssi_dbm: -30, ..MockWlanRxInfo::with_channel(fake_wlan_channel().into()) }
             .into()
     });
-    static BSS_DESCRIPTION_FOO: LazyLock<fidl_common::BssDescription> =
-        LazyLock::new(|| fidl_common::BssDescription {
+    static BSS_DESCRIPTION_FOO: LazyLock<fidl_ieee80211::BssDescription> =
+        LazyLock::new(|| fidl_ieee80211::BssDescription {
             bssid: BSSID_FOO.to_array(),
-            bss_type: fidl_common::BssType::Infrastructure,
+            bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: BEACON_INTERVAL_FOO,
             capability_info: CAPABILITY_INFO_FOO.0,
             ies: BEACON_IES_FOO.to_vec(),
@@ -603,10 +606,10 @@ mod tests {
         MockWlanRxInfo { rssi_dbm: -60, ..MockWlanRxInfo::with_channel(fake_wlan_channel().into()) }
             .into()
     });
-    static BSS_DESCRIPTION_BAR: LazyLock<fidl_common::BssDescription> =
-        LazyLock::new(|| fidl_common::BssDescription {
+    static BSS_DESCRIPTION_BAR: LazyLock<fidl_ieee80211::BssDescription> =
+        LazyLock::new(|| fidl_ieee80211::BssDescription {
             bssid: BSSID_BAR.to_array(),
-            bss_type: fidl_common::BssType::Infrastructure,
+            bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: BEACON_INTERVAL_BAR,
             capability_info: CAPABILITY_INFO_BAR.0,
             ies: BEACON_IES_BAR.to_vec(),

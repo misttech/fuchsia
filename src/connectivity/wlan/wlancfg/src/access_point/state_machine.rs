@@ -28,8 +28,8 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::pin::pin;
 use std::sync::Arc;
-use wlan_common::channel::{Cbw, Channel};
 use wlan_common::RadioConfig;
+use wlan_common::channel::{Cbw, Channel};
 
 const AP_STATUS_INTERVAL_SEC: i64 = 10;
 
@@ -625,13 +625,12 @@ async fn started_state(
 mod tests {
     use super::*;
     use crate::util::listener;
-    use crate::util::state_machine::{status_publisher_and_reader, StateMachineStatusReader};
+    use crate::util::state_machine::{StateMachineStatusReader, status_publisher_and_reader};
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy;
-    use fidl_fuchsia_wlan_common as fidl_common;
+    use futures::Future;
     use futures::stream::StreamFuture;
     use futures::task::Poll;
-    use futures::Future;
     use std::pin::pin;
 
     struct TestValues {
@@ -707,7 +706,8 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
 
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -770,7 +770,8 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
 
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -824,7 +825,8 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
 
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -866,7 +868,8 @@ mod tests {
         // Issue a start request.
         let mut ap = AccessPoint::new(test_values.ap_req_sender);
         let (sender, mut receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -905,7 +908,8 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
 
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -959,7 +963,8 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let test_values = test_setup();
 
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1042,7 +1047,8 @@ mod tests {
         // Drop the serving side of the SME so that a status request will result in an error.
         drop(test_values.sme_req_stream);
 
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1133,7 +1139,8 @@ mod tests {
 
         // Issue a start request.
         let (sender, mut receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1288,7 +1295,8 @@ mod tests {
 
         // Issue a start request.
         let (start_sender, mut start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1415,7 +1423,8 @@ mod tests {
         let mut test_values = test_setup();
 
         let (start_sender, mut start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1493,7 +1502,8 @@ mod tests {
         let mut test_values = test_setup();
 
         let (start_sender, mut start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1532,7 +1542,8 @@ mod tests {
 
         // Issue a second start request.
         let (second_start_sender, mut second_start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1596,7 +1607,8 @@ mod tests {
         let mut test_values = test_setup();
 
         let (start_sender, mut start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1668,7 +1680,8 @@ mod tests {
         drop(test_values.sme_req_stream);
 
         let (start_sender, _start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1695,7 +1708,8 @@ mod tests {
         let mut test_values = test_setup();
 
         let (start_sender, _start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1746,7 +1760,8 @@ mod tests {
         let mut test_values = test_setup();
 
         let (start_sender, mut start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1851,7 +1866,8 @@ mod tests {
         let mut test_values = test_setup();
 
         let (start_sender, mut start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -1963,7 +1979,8 @@ mod tests {
         let mut test_values = test_setup();
 
         let (start_sender, mut start_receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -2082,7 +2099,8 @@ mod tests {
         let mut test_values = test_setup();
 
         let (start_sender, _) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -2168,7 +2186,8 @@ mod tests {
         let mut test_values = test_setup();
 
         // Create a start request and enter the state machine with a manual start request.
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let requested_config = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -2303,7 +2322,8 @@ mod tests {
         // Make a request to start the access point.
         let mut ap = AccessPoint::new(test_values.ap_req_sender);
         let (sender, _receiver) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let config = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -2665,7 +2685,8 @@ mod tests {
 
         // Run the starting state.
         let (start_sender, _) = oneshot::channel();
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],
@@ -2688,7 +2709,8 @@ mod tests {
         let test_values = test_setup();
 
         // Run the started state.
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         let req = ApConfig {
             id: create_network_id(),
             credential: vec![],

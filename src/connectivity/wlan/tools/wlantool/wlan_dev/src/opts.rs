@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use clap::{Parser, ValueEnum};
+use fidl_fuchsia_wlan_common as wlan_common;
 use fidl_fuchsia_wlan_common::PowerSaveType;
-use {fidl_fuchsia_wlan_common as wlan_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 
 #[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
 pub enum RoleArg {
@@ -55,12 +56,12 @@ impl ::std::convert::From<RoleArg> for wlan_common::WlanMacRole {
     }
 }
 
-impl ::std::convert::From<PhyArg> for wlan_common::WlanPhyType {
+impl ::std::convert::From<PhyArg> for fidl_ieee80211::WlanPhyType {
     fn from(arg: PhyArg) -> Self {
         match arg {
-            PhyArg::Erp => wlan_common::WlanPhyType::Erp,
-            PhyArg::Ht => wlan_common::WlanPhyType::Ht,
-            PhyArg::Vht => wlan_common::WlanPhyType::Vht,
+            PhyArg::Erp => fidl_ieee80211::WlanPhyType::Erp,
+            PhyArg::Ht => fidl_ieee80211::WlanPhyType::Ht,
+            PhyArg::Vht => fidl_ieee80211::WlanPhyType::Vht,
         }
     }
 }

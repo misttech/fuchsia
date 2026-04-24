@@ -126,7 +126,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
     async def connect(
         self,
         ssid: str,
-        bss_desc: f_wlan_common.BssDescription,
+        bss_desc: f_wlan_ieee80211.BssDescription,
         authentication: f_wlan_internal.Authentication,
     ) -> bool:
         """Trigger connection to a network.
@@ -441,7 +441,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
     @ensure_ready
     async def scan_for_bss_info(
         self,
-    ) -> dict[str, list[f_wlan_common.BssDescription]]:
+    ) -> dict[str, list[f_wlan_ieee80211.BssDescription]]:
         """Scans and returns BSS info.
 
         Returns:
@@ -467,7 +467,7 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
                 "ClientSme.ScanForController() error"
             ) from e
 
-        results: dict[str, list[f_wlan_common.BssDescription]] = {}
+        results: dict[str, list[f_wlan_ieee80211.BssDescription]] = {}
 
         for scan_result in scan_for_controller_response.scan_results:
             desc = scan_result.bss_description
@@ -615,7 +615,7 @@ class WlanCore(wlan_core.WlanCore):
     def connect(
         self,
         ssid: str,
-        bss_desc: f_wlan_common.BssDescription,
+        bss_desc: f_wlan_ieee80211.BssDescription,
         authentication: f_wlan_internal.Authentication,
     ) -> bool:
         """Trigger connection to a network.
@@ -774,7 +774,7 @@ class WlanCore(wlan_core.WlanCore):
 
     def scan_for_bss_info(
         self,
-    ) -> dict[str, list[f_wlan_common.BssDescription]]:
+    ) -> dict[str, list[f_wlan_ieee80211.BssDescription]]:
         """Scans and returns BSS info.
 
         Returns:

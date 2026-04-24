@@ -4,6 +4,7 @@
 library fuchsia.wlan.softmac;
 
 using fuchsia.wlan.common;
+using fuchsia.wlan.driver;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using zx;
 
@@ -146,12 +147,20 @@ type WlanSoftmacQueryResponse = table {
     2: mac_role fuchsia.wlan.common.WlanMacRole;
 
     /// Bitmask indicating WlanInfoPhyType values supported by the hardware.
+    @available(replaced=HEAD)
     @mutable
     3: supported_phys
             vector<fuchsia.wlan.common.WlanPhyType>:fuchsia.wlan.common.MAX_SUPPORTED_PHY_TYPES;
+    @available(added=HEAD)
+    @mutable
+    3: supported_phys vector<ieee80211.WlanPhyType>:fuchsia.wlan.common.MAX_SUPPORTED_PHY_TYPES;
 
     /// Bitmask indicating enabled WlanInfoHardwareCapability values. Values defined as fuchsia.wlan.common.WlanSoftmacHardwareCapability
+    @available(replaced=HEAD)
     4: hardware_capability fuchsia.wlan.common.WlanSoftmacHardwareCapability;
+    /// Bitmask indicating enabled WlanInfoHardwareCapability values. Values defined as fuchsia.wlan.driver.WlanSoftmacHardwareCapability
+    @available(added=HEAD)
+    4: hardware_capability fuchsia.wlan.driver.WlanSoftmacHardwareCapability;
 
     /// Supported bands.
     @mutable
@@ -194,7 +203,10 @@ type WlanRxInfo = struct {
     valid_fields WlanRxInfoValid;
 
     /// The PHY format of the device at the time of the operation.
+    @available(replaced=HEAD)
     phy fuchsia.wlan.common.WlanPhyType;
+    @available(added=HEAD)
+    phy ieee80211.WlanPhyType;
     /// The data rate of the device, measured in units of 0.5 Mb/s.
     data_rate uint32;
     /// The channel of the device at the time of the operation. This field must be included.
@@ -247,7 +259,10 @@ type WlanTxInfo = struct {
     // WLAN_TX_INFO_VALID_TX_VECTOR_IDX.
     tx_vector_idx uint16;
     // The PHY format to be used to transmit this packet.
+    @available(replaced=HEAD)
     phy fuchsia.wlan.common.WlanPhyType;
+    @available(added=HEAD)
+    phy ieee80211.WlanPhyType;
     // The channel width to be used to transmit this packet.
     @available(replaced=28)
     channel_bandwidth fuchsia.wlan.common.ChannelBandwidth;
@@ -330,7 +345,7 @@ closed protocol WlanSoftmacIfcBase {
     @available(added=HEAD)
     @selector("fuchsia.wlan.softmac/WlanSoftmacIfc.ReportTxResult")
     strict ReportTxResult(struct {
-        tx_result fuchsia.wlan.common.WlanTxResult;
+        tx_result WlanTxResult;
     }) -> ();
 
     /// Reports completion of a scan associated with the unique `scan_id`. `status`
@@ -527,7 +542,7 @@ type WlanSoftmacStartActiveScanRequest = table {
     ///
     /// The IEs specified must not result in a Probe Request MMPDU that exceed the
     /// limits defined by IEEE Std 802.11-2016, 9.2.4.7. MMPDU limit constants can
-    /// be found in fuchsia.wlan.ieee80211. These limits are very large and will
+    /// be found in ieee80211. These limits are very large and will
     /// likely not be exceeded by specifying the most common IEs found in
     /// Probe Request frames.
     @buffer
@@ -587,7 +602,10 @@ type WlanAssociationConfig = table {
     /// QoS capable and parameters
     5: qos bool;
     /// WFA WMM v1.2, 2.2.2
+    @available(replaced=HEAD)
     6: wmm_params fuchsia.wlan.common.WlanWmmParameters;
+    @available(added=HEAD)
+    6: wmm_params fuchsia.wlan.driver.WlanWmmParameters;
 
     /// Concatenation of SupportedRates and ExtendedSupportedRates
     /// IEEE Std 802.11-2016, 9.4.2.3 & 9.4.2.13
@@ -692,7 +710,7 @@ open protocol WlanSoftmacBase {
     @available(added=HEAD)
     @selector("fuchsia.wlan.softmac/WlanSoftmac.JoinBss")
     strict JoinBss(struct {
-        join_request fuchsia.wlan.common.JoinBssRequest;
+        join_request fuchsia.wlan.driver.JoinBssRequest;
     }) -> () error zx.Status;
 
     /// Enables hardware Beaconing.
@@ -847,7 +865,7 @@ open protocol WlanSoftmacBase {
     @selector("fuchsia.wlan.softmac/WlanSoftmac.UpdateWmmParameters")
     strict UpdateWmmParameters(table {
         1: ac ieee80211.WlanAccessCategory;
-        2: params fuchsia.wlan.common.WlanWmmParameters;
+        2: params fuchsia.wlan.driver.WlanWmmParameters;
     }) -> () error zx.Status;
 };
 

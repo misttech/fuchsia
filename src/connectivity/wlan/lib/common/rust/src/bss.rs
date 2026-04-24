@@ -9,6 +9,8 @@ use crate::ie::wsc::{ProbeRespWsc, parse_probe_resp_wsc};
 use crate::ie::{self, IeType};
 use crate::mac::CapabilityInfo;
 use anyhow::format_err;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use static_assertions::assert_eq_size;
 use std::cmp::Ordering;
@@ -17,10 +19,6 @@ use std::fmt;
 use std::hash::Hash;
 use std::ops::Range;
 use zerocopy::{IntoBytes, Ref};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Protection {
@@ -120,7 +118,7 @@ pub struct BssDescription {
     // *** Fields originally in fidl_common::BssDescription
     pub ssid: Ssid,
     pub bssid: Bssid,
-    pub bss_type: fidl_common::BssType,
+    pub bss_type: fidl_ieee80211::BssType,
     pub beacon_period: u16,
     pub capability_info: u16,
     pub channel: Channel,
@@ -531,9 +529,9 @@ impl BssDescription {
     }
 }
 
-impl From<BssDescription> for fidl_common::BssDescription {
-    fn from(bss: BssDescription) -> fidl_common::BssDescription {
-        fidl_common::BssDescription {
+impl From<BssDescription> for fidl_ieee80211::BssDescription {
+    fn from(bss: BssDescription) -> fidl_ieee80211::BssDescription {
+        fidl_ieee80211::BssDescription {
             bssid: bss.bssid.to_array(),
             bss_type: bss.bss_type,
             beacon_period: bss.beacon_period,
@@ -561,10 +559,10 @@ impl fmt::Display for BssDescription {
 }
 // TODO(https://fxbug.dev/42164415): The error printed should include a minimal amount of information
 // about the BSS Description that could not be converted to aid debugging.
-impl TryFrom<fidl_common::BssDescription> for BssDescription {
+impl TryFrom<fidl_ieee80211::BssDescription> for BssDescription {
     type Error = anyhow::Error;
 
-    fn try_from(bss: fidl_common::BssDescription) -> Result<BssDescription, Self::Error> {
+    fn try_from(bss: fidl_ieee80211::BssDescription) -> Result<BssDescription, Self::Error> {
         let mut ssid_range = None;
         let mut rates = None;
         let mut tim_range = None;
@@ -743,11 +741,13 @@ mod tests {
         rates: vec![0x02, 0x04, 0x0c],
     ))]
     fn test_bss_lossless_conversion(bss: BssDescription) {
-        let fidl_bss = fidl_common::BssDescription::from(bss.clone());
+        let fidl_bss = fidl_ieee80211::BssDescription::from(bss.clone());
         assert_eq!(bss, BssDescription::try_from(fidl_bss.clone()).unwrap());
         assert_eq!(
             fidl_bss,
-            fidl_common::BssDescription::from(BssDescription::try_from(fidl_bss.clone()).unwrap())
+            fidl_ieee80211::BssDescription::from(
+                BssDescription::try_from(fidl_bss.clone()).unwrap()
+            )
         );
     }
 

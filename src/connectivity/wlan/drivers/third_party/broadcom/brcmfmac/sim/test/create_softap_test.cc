@@ -261,7 +261,7 @@ uint16_t CreateSoftAPTest::CreateRsneIe(uint8_t* buffer) {
 zx_status_t CreateSoftAPTest::StartSoftAP() {
   const fuchsia_wlan_ieee80211::Ssid ssid = {'S', 'i', 'm', '_', 'A', 'P'};
   auto builder = wlan_fullmac_wire::WlanFullmacImplStartBssRequest::Builder(test_arena_)
-                     .bss_type(fuchsia_wlan_common_wire::BssType::kInfrastructure)
+                     .bss_type(fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure)
                      .beacon_period(100)
                      .dtim_period(100)
                      .channel(kDefaultCh)
@@ -492,7 +492,7 @@ TEST_F(CreateSoftAPTest, CreateSoftAPFail) {
 TEST_F(CreateSoftAPTest, CreateSoftAPMissingParams) {
   // Create the Start BSS request without the SSID.
   auto builder = wlan_fullmac_wire::WlanFullmacImplStartBssRequest::Builder(test_arena_)
-                     .bss_type(fuchsia_wlan_common_wire::BssType::kInfrastructure)
+                     .bss_type(fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure)
                      .beacon_period(100)
                      .dtim_period(100)
                      .channel(kDefaultCh);
@@ -544,7 +544,7 @@ TEST_F(CreateSoftAPTest, BssStopMissingParam) {
   auto result = softap_ifc_.client_.buffer(softap_ifc_.test_arena_)->StopBss(builder.Build());
   EXPECT_TRUE(result.ok());
   // Should have received a StartConf with kNotSupported result.
-  VerifyStopAPConf(wlan_fullmac_wire::StopResult ::kInternalError);
+  VerifyStopAPConf(wlan_fullmac_wire::StopResult::kInternalError);
 }
 
 // Start SoftAP in secure mode and then restart in open mode.

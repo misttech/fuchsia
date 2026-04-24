@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use ieee80211::{Bssid, MacAddrBytes};
 use wlan_common::channel::derive_channel;
 use wlan_common::mac::CapabilityInfo;
 use wlan_common::{TimeUnit, ie};
-use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_softmac as fidl_softmac};
 
 /// Given information from beacon or probe response, convert to BssDescription.
 pub fn construct_bss_description(
@@ -16,7 +17,7 @@ pub fn construct_bss_description(
     capability_info: CapabilityInfo,
     ies: &[u8],
     rx_info: fidl_softmac::WlanRxInfo,
-) -> Result<fidl_common::BssDescription, Error> {
+) -> Result<fidl_ieee80211::BssDescription, Error> {
     let mut dsss_channel = None;
     let mut parsed_ht_op = None;
     let mut parsed_vht_op = None;
@@ -42,7 +43,7 @@ pub fn construct_bss_description(
     let channel =
         derive_channel(rx_info.channel.primary, dsss_channel, parsed_ht_op, parsed_vht_op);
 
-    Ok(fidl_common::BssDescription {
+    Ok(fidl_ieee80211::BssDescription {
         bssid: bssid.to_array(),
         bss_type,
         beacon_period: beacon_interval.0,
@@ -56,12 +57,12 @@ pub fn construct_bss_description(
 
 /// Note: This is in Beacon / Probe Response frames context.
 /// IEEE Std 802.11-2016, 9.4.1.4
-fn get_bss_type(capability_info: CapabilityInfo) -> fidl_common::BssType {
+fn get_bss_type(capability_info: CapabilityInfo) -> fidl_ieee80211::BssType {
     match (capability_info.ess(), capability_info.ibss()) {
-        (true, false) => fidl_common::BssType::Infrastructure,
-        (false, true) => fidl_common::BssType::Independent,
-        (false, false) => fidl_common::BssType::Mesh,
-        _ => fidl_common::BssType::Unknown,
+        (true, false) => fidl_ieee80211::BssType::Infrastructure,
+        (false, true) => fidl_ieee80211::BssType::Independent,
+        (false, false) => fidl_ieee80211::BssType::Mesh,
+        _ => fidl_ieee80211::BssType::Unknown,
     }
 }
 
@@ -88,7 +89,7 @@ mod tests {
         // Unused fields
         rx_flags: fidl_softmac::WlanRxInfoFlags::empty(),
         valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
-        phy: fidl_common::WlanPhyType::Dsss,
+        phy: fidl_ieee80211::WlanPhyType::Dsss,
         data_rate: 0,
         mcs: 0,
     };
@@ -174,9 +175,9 @@ mod tests {
 
         assert_eq!(
             bss_description,
-            fidl_common::BssDescription {
+            fidl_ieee80211::BssDescription {
                 bssid: BSSID.to_array(),
-                bss_type: fidl_common::BssType::Infrastructure,
+                bss_type: fidl_ieee80211::BssType::Infrastructure,
                 beacon_period: BEACON_INTERVAL,
                 capability_info: CAPABILITY_INFO.0,
                 ies,

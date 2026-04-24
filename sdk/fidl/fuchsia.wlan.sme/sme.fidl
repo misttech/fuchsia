@@ -123,7 +123,7 @@ type ScanResult = struct {
     // See https://fuchsia.dev/fuchsia-src/concepts/time/language_support#monotonic_time
     timestamp_nanos zx.Time;
     // Describes the BSS detected by the scan.
-    bss_description fuchsia.wlan.common.BssDescription;
+    bss_description ieee80211.BssDescription;
 };
 
 type ScanResultVector = struct {
@@ -182,7 +182,7 @@ type RoamResult = struct {
     /// from the original BSS, but may not in some cases (e.g. in some Fast BSS Transition scenarios).
     original_association_maintained bool;
 
-    bss_description box<fuchsia.wlan.common.BssDescription>;
+    bss_description box<ieee80211.BssDescription>;
 
     /// If the roam attempt failed and the original association was not maintained, this field must
     /// be populated; otherwise this field must be empty.
@@ -229,7 +229,7 @@ closed protocol ConnectTransaction {
 };
 
 type RadioConfig = struct {
-    phy fuchsia.wlan.common.WlanPhyType;
+    phy ieee80211.WlanPhyType;
     channel ieee80211.WlanChannel;
 };
 
@@ -238,7 +238,7 @@ type Empty = struct {};
 
 type ConnectRequest = struct {
     ssid ieee80211.Ssid;
-    bss_description fuchsia.wlan.common.BssDescription;
+    bss_description ieee80211.BssDescription;
     /// Informs SME whether multiple candidates were available, for metrics.
     multiple_bss_candidates bool;
     /// Authentication method.
@@ -253,7 +253,7 @@ type ConnectRequest = struct {
 };
 
 type RoamRequest = struct {
-    bss_description fuchsia.wlan.common.BssDescription;
+    bss_description ieee80211.BssDescription;
 };
 
 type ServingApInfo = struct {

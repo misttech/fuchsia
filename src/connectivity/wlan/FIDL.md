@@ -30,7 +30,7 @@ These FIDL definitions are located in `//sdk/fidl` (except where noted).
 - `fuchsia.wlan.minstrel`: Minstrel rate selection algorithm.
 
 ### Core <-> Drivers (stable and versioned)
-- `fuchsia.wlan.drivers.common`: Types which are shared by SoftMAC and FullMAC drivers.
+- `fuchsia.wlan.driver`: Types which are shared by SoftMAC and FullMAC drivers.
 - `fuchsia.wlan.fullmac`: Vendor driver interface for FullMAC devices.
 - `fuchsia.wlan.softmac`: Vendor driver interface for SoftMAC devices.
 - `fuchsia.wlan.phyimpl`: Vendor driver interface for PHY control.

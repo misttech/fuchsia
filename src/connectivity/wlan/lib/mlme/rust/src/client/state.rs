@@ -15,6 +15,10 @@ use crate::ddk_converter::{get_rssi_dbm, softmac_key_configuration_from_mlme};
 use crate::device::DeviceOps;
 use crate::disconnect::LocallyInitiated;
 use crate::error::Error;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use fuchsia_trace::Id as TraceId;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes};
 use log::{debug, error, info, trace, warn};
@@ -26,12 +30,8 @@ use wlan_common::stats::SignalStrengthAverage;
 use wlan_common::timer::{EventHandle, Timer};
 use wlan_common::{ie, tim};
 use wlan_statemachine::*;
+use wlan_trace as wtrace;
 use zerocopy::SplitByteSlice;
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_softmac as fidl_softmac,
-    wlan_trace as wtrace,
-};
 
 /// Reconnect timeout in Beacon periods.
 /// If no association response was received from the BSS within this time window, an association is
@@ -1424,6 +1424,7 @@ mod tests {
     use crate::test_utils::{MockWlanRxInfo, fake_set_keys_req, fake_wlan_channel};
     use akm::AkmAlgorithm;
     use assert_matches::assert_matches;
+    use fidl_fuchsia_wlan_driver as fidl_driver_common;
     use fuchsia_sync::Mutex;
     use std::sync::{Arc, LazyLock};
     use test_case::test_case;
@@ -1437,7 +1438,7 @@ mod tests {
     use wlan_common::timer::{self, create_timer};
     use wlan_common::{fake_bss_description, mgmt_writer};
     use wlan_frame_writer::append_frame_to;
-    use {fidl_fuchsia_wlan_common as fidl_common, wlan_statemachine as statemachine};
+    use wlan_statemachine as statemachine;
 
     static BSSID: LazyLock<Bssid> = LazyLock::new(|| [6u8; 6].into());
     static IFACE_MAC: LazyLock<MacAddr> = LazyLock::new(|| [3u8; 6].into());
@@ -1482,9 +1483,9 @@ mod tests {
                 .await
                 .expect("fake device is obedient");
             self.fake_device
-                .join_bss(&fidl_common::JoinBssRequest {
+                .join_bss(&fidl_driver_common::JoinBssRequest {
                     bssid: Some([1, 2, 3, 4, 5, 6]),
-                    bss_type: Some(fidl_common::BssType::Personal),
+                    bss_type: Some(fidl_ieee80211::BssType::Personal),
                     remote: Some(true),
                     beacon_period: Some(100),
                     ..Default::default()

@@ -162,7 +162,7 @@ pub async fn connect(
     iface_sme_proxy: &fidl_sme::ClientSmeProxy,
     target_ssid: Ssid,
     target_pwd: Vec<u8>,
-    target_bss_desc: fidl_common::BssDescription,
+    target_bss_desc: fidl_ieee80211::BssDescription,
 ) -> Result<bool, Error> {
     let (connection_proxy, connection_remote) = endpoints::create_proxy();
 
@@ -979,7 +979,7 @@ mod tests {
         server: &mut StreamFuture<ClientSmeRequestStream>,
         expected_ssid: &Ssid,
         expected_authentication: fidl_internal::Authentication,
-        expected_bss_desc: fidl_common::BssDescription,
+        expected_bss_desc: fidl_ieee80211::BssDescription,
     ) {
         match poll_client_sme_request(exec, server) {
             Poll::Ready(ClientSmeRequest::Connect { req, .. }) => {

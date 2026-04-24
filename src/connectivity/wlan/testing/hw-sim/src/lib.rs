@@ -6,6 +6,10 @@ use crate::event::action::{self, AuthenticationControl, AuthenticationTap};
 use crate::event::{Handler, branch};
 use fidl::endpoints::{create_endpoints, create_proxy};
 use fidl_fuchsia_wlan_common::WlanMacRole;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_softmac as fidl_wlan_softmac;
 use fidl_fuchsia_wlan_tap::{WlanRxInfo, WlantapPhyConfig, WlantapPhyProxy};
 use fuchsia_component::client::connect_to_protocol_at;
 use ieee80211::{Bssid, MacAddr, Ssid};
@@ -21,11 +25,6 @@ use wlan_common::ie::wpa;
 use wlan_common::{TimeUnit, data_writer, mac, mgmt_writer};
 use wlan_frame_writer::write_frame_to_vec;
 use wlan_rsn::rsna::UpdateSink;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_policy as fidl_policy,
-    fidl_fuchsia_wlan_softmac as fidl_wlan_softmac,
-};
 
 pub mod event;
 pub mod netdevice_helper;
@@ -121,7 +120,7 @@ fn rx_info_with_valid_rssi(channel: &Channel, rssi_dbm: i8) -> WlanRxInfo {
         } else {
             fidl_wlan_softmac::WlanRxInfoValid::RSSI.bits()
         },
-        phy: fidl_common::WlanPhyType::Dsss,
+        phy: fidl_ieee80211::WlanPhyType::Dsss,
         data_rate: 0,
         channel: fidl_ieee80211::WlanChannel::from(channel),
         mcs: 0,

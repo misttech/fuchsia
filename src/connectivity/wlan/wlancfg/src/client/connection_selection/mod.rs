@@ -13,6 +13,8 @@ use crate::config_management::{
 use crate::telemetry::{self, TelemetryEvent, TelemetrySender};
 use anyhow::format_err;
 use async_trait::async_trait;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fuchsia_async as fasync;
 use fuchsia_inspect::Node as InspectNode;
 use fuchsia_inspect_contrib::inspect_insert;
 use fuchsia_inspect_contrib::log::WriteInspect;
@@ -28,7 +30,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use wlan_common::security::SecurityAuthenticator;
 use wlan_common::sequestered::Sequestered;
-use {fidl_fuchsia_wlan_common as fidl_common, fuchsia_async as fasync};
 
 pub mod bss_selection;
 pub mod fut_manager;
@@ -277,7 +278,7 @@ impl ConnectionSelector {
         async fn get_enhanced_bss_description(
             scanned_candidate: &types::ScannedCandidate,
             scan_requester: Arc<dyn scan::ScanRequestApi>,
-        ) -> Result<Sequestered<fidl_common::BssDescription>, ()> {
+        ) -> Result<Sequestered<fidl_fuchsia_wlan_ieee80211::BssDescription>, ()> {
             match scanned_candidate.bss.observation {
                 types::ScanObservation::Passive => {
                     info!("Performing directed active scan on selected network")
@@ -758,6 +759,10 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use diagnostics_assertions::{AnyNumericProperty, assert_data_tree};
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_sme as fidl_sme;
+    use fuchsia_async as fasync;
+    use fuchsia_inspect as inspect;
     use futures::task::Poll;
     use ieee80211_testutils::BSSID_REGEX;
     use rand::Rng;
@@ -769,10 +774,6 @@ mod tests {
     use wlan_common::random_fidl_bss_description;
     use wlan_common::scan::Compatible;
     use wlan_common::security::SecurityDescriptor;
-    use {
-        fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
-        fuchsia_async as fasync, fuchsia_inspect as inspect,
-    };
 
     pub static TEST_PASSWORD: LazyLock<Credential> =
         LazyLock::new(|| Credential::Password(b"password".to_vec()));

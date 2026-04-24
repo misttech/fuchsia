@@ -37,7 +37,6 @@ if (is_host) {
 
 fidl("fuchsia.wlan.common") {
   sources = [
-    "associnfo.fidl",
     "driver_features.fidl",
     "history.fidl",
     "overview.fidl",

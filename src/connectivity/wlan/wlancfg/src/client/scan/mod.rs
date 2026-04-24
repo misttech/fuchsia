@@ -10,7 +10,6 @@ use crate::telemetry::{ScanEventInspectData, ScanIssue, TelemetryEvent, Telemetr
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_location_sensor as fidl_location_sensor;
-use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
@@ -409,7 +408,7 @@ fn bss_to_network_map(
                 },
                 compatibility: scan_result.compatibility,
                 bss_description: wlan_common::sequestered::Sequestered::from(
-                    fidl_common::BssDescription::from(scan_result.bss_description),
+                    fidl_fuchsia_wlan_ieee80211::BssDescription::from(scan_result.bss_description),
                 ),
             });
         };

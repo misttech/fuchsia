@@ -4,6 +4,9 @@
 
 use crate::common::mac::WlanGi;
 use crate::probe_sequence::{ProbeEntry, ProbeSequence};
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_minstrel as fidl_minstrel;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use ieee80211::{MacAddr, MacAddrBytes};
 use log::{debug, error};
 use std::collections::{HashMap, HashSet, hash_map};
@@ -12,10 +15,6 @@ use wlan_common::ie::{HtCapabilities, RxMcsBitmask, SupportedRate};
 use wlan_common::mac::FrameControl;
 use wlan_common::tx_vector::{
     ERP_NUM_TX_VECTOR, ERP_START_IDX, HT_NUM_MCS, HT_NUM_UNIQUE_MCS, TxVecIdx, TxVector,
-};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_minstrel as fidl_minstrel, fidl_fuchsia_wlan_softmac as fidl_softmac,
 };
 
 // TODO(https://fxbug.dev/42103418): Enable CBW40 support once its information is available from AssocCtx.
@@ -176,7 +175,7 @@ impl Peer {
         Ok(peer)
     }
 
-    fn handle_tx_result_report(&mut self, tx_result: &fidl_common::WlanTxResult) {
+    fn handle_tx_result_report(&mut self, tx_result: &fidl_softmac::WlanTxResult) {
         let mut last_attempted_idx = None;
         for status_entry in &tx_result.tx_result_entry[..] {
             let idx = match TxVecIdx::new(status_entry.tx_vector_idx) {
@@ -200,7 +199,7 @@ impl Peer {
             }
         }
         if let Some(idx) = last_attempted_idx {
-            if tx_result.result_code == fidl_common::WlanTxResultCode::Success {
+            if tx_result.result_code == fidl_softmac::WlanTxResultCode::Success {
                 // last_attempted_idx will always have a corresponding tx_stats_map entry.
                 self.tx_stats_map.get_mut(&idx).unwrap().success_cur += 1;
             }
@@ -267,7 +266,7 @@ impl Peer {
         for mcs_idx in 0..HT_NUM_MCS {
             if mcs_set.support(mcs_idx) {
                 let tx_vector =
-                    TxVector::new(fidl_common::WlanPhyType::Ht, gi, channel_bandwidth, mcs_idx)
+                    TxVector::new(fidl_ieee80211::WlanPhyType::Ht, gi, channel_bandwidth, mcs_idx)
                         .expect("Should be a valid TxVector");
                 let tx_vector_idx = tx_vector.to_idx();
                 let perfect_tx_time = tx_time_ht(channel_bandwidth, gi, mcs_idx);
@@ -295,7 +294,7 @@ impl Peer {
                         None
                     }
                 }?;
-                if tx_vector.phy() != fidl_common::WlanPhyType::Erp {
+                if tx_vector.phy() != fidl_ieee80211::WlanPhyType::Erp {
                     return None;
                 }
                 let tx_vector_idx = tx_vector.to_idx();
@@ -529,7 +528,7 @@ impl<T: TimerManager> MinstrelRateSelector<T> {
         }
     }
 
-    pub fn handle_tx_result_report(&mut self, tx_result: &fidl_common::WlanTxResult) {
+    pub fn handle_tx_result_report(&mut self, tx_result: &fidl_softmac::WlanTxResult) {
         let peer_addr: MacAddr = tx_result.peer_addr.into();
         match self.peer_map.get_mut(&peer_addr) {
             Some(peer) => {
@@ -695,7 +694,7 @@ fn erp_idx_stats(tx_vector_idx: TxVecIdx, rate: SupportedRate) -> TxStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_wlan_common as fidl_common;
+    use fidl_fuchsia_wlan_softmac as fidl_softmac;
     use fuchsia_sync::Mutex;
     use std::sync::{Arc, LazyLock};
     use wlan_common::ie::{ChanWidthSet, HtCapabilityInfo};
@@ -863,25 +862,25 @@ mod tests {
     }
 
     /// Helper fn to easily create tx result reports.
-    fn make_tx_result(entries: Vec<(u16, u8)>, success: bool) -> fidl_common::WlanTxResult {
+    fn make_tx_result(entries: Vec<(u16, u8)>, success: bool) -> fidl_softmac::WlanTxResult {
         assert!(entries.len() <= 8);
         let mut tx_result_entry =
-            [fidl_common::WlanTxResultEntry { tx_vector_idx: 0, attempts: 0 }; 8];
+            [fidl_softmac::WlanTxResultEntry { tx_vector_idx: 0, attempts: 0 }; 8];
         tx_result_entry[0..entries.len()].copy_from_slice(
             &entries
                 .into_iter()
-                .map(|(tx_vector_idx, attempts)| fidl_common::WlanTxResultEntry {
+                .map(|(tx_vector_idx, attempts)| fidl_softmac::WlanTxResultEntry {
                     tx_vector_idx,
                     attempts,
                 })
-                .collect::<Vec<fidl_common::WlanTxResultEntry>>()[..],
+                .collect::<Vec<fidl_softmac::WlanTxResultEntry>>()[..],
         );
         let result_code = if success {
-            fidl_common::WlanTxResultCode::Success
+            fidl_softmac::WlanTxResultCode::Success
         } else {
-            fidl_common::WlanTxResultCode::Failed
+            fidl_softmac::WlanTxResultCode::Failed
         };
-        fidl_common::WlanTxResult {
+        fidl_softmac::WlanTxResult {
             tx_result_entry,
             peer_addr: TEST_MAC_ADDR.to_array(),
             result_code,

@@ -1502,6 +1502,7 @@ mod tests {
     use async_trait::async_trait;
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async::TestExecutor;
+    use fuchsia_inspect as inspect;
     use fuchsia_inspect::reader;
     use futures::stream::StreamFuture;
     use futures::task::Poll;
@@ -1512,7 +1513,6 @@ mod tests {
     use test_case::test_case;
     use wlan_common::RadioConfig;
     use wlan_common::channel::Cbw;
-    use {fidl_fuchsia_wlan_common as fidl_common, fuchsia_inspect as inspect};
 
     // Responses that FakePhyManager will provide
     pub const TEST_CLIENT_IFACE_ID: u16 = 0;
@@ -1861,7 +1861,8 @@ mod tests {
     }
 
     fn create_ap_config(ssid: &ap_types::Ssid, password: &str) -> ap_fsm::ApConfig {
-        let radio_config = RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6);
+        let radio_config =
+            RadioConfig::new(fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht, Cbw::Cbw20, 6);
         ap_fsm::ApConfig {
             id: ap_types::NetworkIdentifier {
                 ssid: ssid.clone(),

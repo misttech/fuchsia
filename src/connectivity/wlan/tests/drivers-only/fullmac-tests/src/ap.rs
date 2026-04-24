@@ -5,16 +5,15 @@
 use crate::FullmacDriverFixture;
 use assert_matches::assert_matches;
 use drivers_only_common::sme_helpers::{
-    self, random_password, random_ssid, DEFAULT_OPEN_AP_CONFIG,
+    self, DEFAULT_OPEN_AP_CONFIG, random_password, random_ssid,
 };
+use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fullmac_helpers::config::FullmacDriverConfig;
 use fullmac_helpers::recorded_request_stream::FullmacRequest;
 use rand::seq::IndexedRandom;
 use wlan_common::ie::rsn::rsne;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 /// Many tests require a started BSS. This helper function creates and starts an AP in the test
 /// realm and returns the ApSmeProxy, FullmacDriverFixture, and GenericSmeProxy.
@@ -64,11 +63,11 @@ async fn test_start_2ghz_bss_success() {
     let ap_sme_proxy = sme_helpers::get_ap_sme(&fullmac_driver.generic_sme_proxy).await;
 
     let phy_types = [
-        fidl_common::WlanPhyType::Dsss,
-        fidl_common::WlanPhyType::Hr,
-        fidl_common::WlanPhyType::Ofdm,
-        fidl_common::WlanPhyType::Erp,
-        fidl_common::WlanPhyType::Ht,
+        fidl_ieee80211::WlanPhyType::Dsss,
+        fidl_ieee80211::WlanPhyType::Hr,
+        fidl_ieee80211::WlanPhyType::Ofdm,
+        fidl_ieee80211::WlanPhyType::Erp,
+        fidl_ieee80211::WlanPhyType::Ht,
     ];
 
     // channel support is defined by fullmac driver config
@@ -122,7 +121,7 @@ async fn test_start_2ghz_bss_success() {
         fullmac_request_history[0],
         FullmacRequest::StartBss(fidl_fullmac::WlanFullmacImplStartBssRequest {
             ssid: Some(sme_ap_config.ssid.clone()),
-            bss_type: Some(fidl_common::BssType::Infrastructure),
+            bss_type: Some(fidl_ieee80211::BssType::Infrastructure),
             beacon_period: Some(100),
             dtim_period: Some(2),
             channel: Some(sme_ap_config.radio_cfg.channel.primary),
@@ -165,7 +164,7 @@ async fn test_start_bss_fail_non_ascii_password() {
         ssid: random_ssid(),
         password: vec![1, 2, 3],
         radio_cfg: fidl_sme::RadioConfig {
-            phy: fidl_common::WlanPhyType::Ofdm,
+            phy: fidl_ieee80211::WlanPhyType::Ofdm,
             channel: fidl_ieee80211::WlanChannel {
                 primary: 1,
                 cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
@@ -189,7 +188,7 @@ async fn test_start_bss_fail_bad_channel() {
         ssid: random_ssid(),
         password: vec![],
         radio_cfg: fidl_sme::RadioConfig {
-            phy: fidl_common::WlanPhyType::Ofdm,
+            phy: fidl_ieee80211::WlanPhyType::Ofdm,
             channel: fidl_ieee80211::WlanChannel {
                 primary: 27,
                 cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,

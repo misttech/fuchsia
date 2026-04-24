@@ -1134,9 +1134,9 @@ pub mod test_utils {
                 disjoint_security_protocols: None,
             }),
             timestamp_nanos: 1000,
-            bss_description: fidl_common::BssDescription {
+            bss_description: fidl_ieee80211::BssDescription {
                 bssid: [1, 2, 3, 4, 5, 6],
-                bss_type: fidl_common::BssType::Infrastructure,
+                bss_type: fidl_ieee80211::BssType::Infrastructure,
                 beacon_period: 100,
                 capability_info: 123,
                 ies: vec![1, 2, 3, 2, 1],
@@ -3070,8 +3070,8 @@ mod tests {
     )]
     #[fuchsia::test(add_test_attr = false)]
     fn test_connect_to_network_bss_selection(
-        scan_bss_descriptions: Vec<fidl_common::BssDescription>,
-        recent_connect_failure: Option<(fidl_common::BssDescription, fidl_sme::ConnectResult)>,
+        scan_bss_descriptions: Vec<fidl_ieee80211::BssDescription>,
+        recent_connect_failure: Option<(fidl_ieee80211::BssDescription, fidl_sme::ConnectResult)>,
         expected_bssid: Bssid,
     ) {
         let mut test_values = setup_test_manager_with_iface();

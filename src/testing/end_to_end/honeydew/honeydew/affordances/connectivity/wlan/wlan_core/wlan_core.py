@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
+import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_internal as f_wlan_internal
 
 from honeydew.affordances import affordance
@@ -25,7 +26,7 @@ class AsyncWlanCore(abc.ABC):
     async def connect(
         self,
         ssid: str,
-        bss_desc: f_wlan_common.BssDescription,
+        bss_desc: f_wlan_ieee80211.BssDescription,
         authentication: f_wlan_internal.Authentication,
     ) -> bool:
         """Trigger connection to a network.
@@ -163,7 +164,7 @@ class AsyncWlanCore(abc.ABC):
     @abc.abstractmethod
     async def scan_for_bss_info(
         self,
-    ) -> dict[str, list[f_wlan_common.BssDescription]]:
+    ) -> dict[str, list[f_wlan_ieee80211.BssDescription]]:
         """Scans and returns BSS info.
 
         Returns:
@@ -198,7 +199,7 @@ class WlanCore(affordance.Affordance):
     def connect(
         self,
         ssid: str,
-        bss_desc: f_wlan_common.BssDescription,
+        bss_desc: f_wlan_ieee80211.BssDescription,
         authentication: f_wlan_internal.Authentication,
     ) -> bool:
         """Trigger connection to a network.
@@ -336,7 +337,7 @@ class WlanCore(affordance.Affordance):
     @abc.abstractmethod
     def scan_for_bss_info(
         self,
-    ) -> dict[str, list[f_wlan_common.BssDescription]]:
+    ) -> dict[str, list[f_wlan_ieee80211.BssDescription]]:
         """Scans and returns BSS info.
 
         Returns:

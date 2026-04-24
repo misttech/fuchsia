@@ -2,20 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use rand::Rng;
 use rand::distr::Alphanumeric;
 use std::sync::LazyLock;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 pub static DEFAULT_OPEN_AP_CONFIG: LazyLock<fidl_sme::ApConfig> =
     LazyLock::new(|| fidl_sme::ApConfig {
         ssid: random_ssid(),
         password: vec![],
         radio_cfg: fidl_sme::RadioConfig {
-            phy: fidl_common::WlanPhyType::Ofdm,
+            phy: fidl_ieee80211::WlanPhyType::Ofdm,
             channel: fidl_ieee80211::WlanChannel {
                 primary: 1,
                 cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,

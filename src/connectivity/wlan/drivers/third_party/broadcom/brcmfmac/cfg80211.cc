@@ -1942,7 +1942,7 @@ void brcmf_return_roam_start(struct net_device* ndev) {
 
   auto roam_start_builder =
       fuchsia_wlan_fullmac_wire::WlanFullmacImplIfcRoamStartIndRequest::Builder(*arena);
-  fuchsia_wlan_common::wire::BssDescription selected_bss;
+  fuchsia_wlan_ieee80211::wire::BssDescription selected_bss;
 
   // In the current implementation, roam attempts do not maintain association with the original BSS.
   // TODO(https://fxbug.dev/370513949): Support Fast BSS Transition.
@@ -1952,7 +1952,7 @@ void brcmf_return_roam_start(struct net_device* ndev) {
   selected_bss.beacon_period = target_bss_info->beacon_period;
 
   // TODO(https://fxbug.dev/80230): The probably shouldn't be hardcoded (here and elsewhere).
-  selected_bss.bss_type = fuchsia_wlan_common::BssType::kInfrastructure;
+  selected_bss.bss_type = fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure;
 
   auto selected_bssid = ::fidl::Array<uint8_t, ETH_ALEN>{};
   memcpy(selected_bssid.data(), cfg->target_bssid->data(), ETH_ALEN);
@@ -2123,7 +2123,8 @@ std::vector<uint8_t> brcmf_find_ssid_in_ies(const uint8_t* ie, size_t ie_len) {
 
 // Construct chanspec manually for 2.4 GHz 40 MHz channels.
 // Note: bcmdhd functions do not handle this case correctly, hence this function.
-static zx::result<chanspec_t> bss_chanspec_2g_bw40(const fuchsia_wlan_common::BssDescription& bss) {
+static zx::result<chanspec_t> bss_chanspec_2g_bw40(
+    const fuchsia_wlan_ieee80211::BssDescription& bss) {
   const auto& primary = bss.channel().primary();
   if (primary > CH_MAX_2G_CHANNEL) {
     return zx::error(ZX_ERR_INVALID_ARGS);
@@ -2157,7 +2158,7 @@ static zx::result<chanspec_t> bss_chanspec_2g_bw40(const fuchsia_wlan_common::Bs
 
 // Return the chanspec for the given BSS description.
 static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
-                                           const fuchsia_wlan_common::BssDescription& bss) {
+                                           const fuchsia_wlan_ieee80211::BssDescription& bss) {
   using fuchsia_wlan_ieee80211::ChannelBandwidth;
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
 
@@ -3202,15 +3203,15 @@ static void brcmf_return_scan_result(struct net_device* ndev, uint16_t channel,
   }
   auto scan_result_builder =
       fuchsia_wlan_fullmac_wire::WlanFullmacImplIfcOnScanResultRequest::Builder(*arena);
-  fuchsia_wlan_common::BssType bss_type = fuchsia_wlan_common::BssType::kInfrastructure;
-  fuchsia_wlan_common::wire::BssDescription bss;
+  fuchsia_wlan_ieee80211::BssType bss_type = fuchsia_wlan_ieee80211::BssType::kInfrastructure;
+  fuchsia_wlan_ieee80211::wire::BssDescription bss;
 
   if ((capability & IEEE80211_BCN_CAPS_ESS) && !(capability & IEEE80211_BCN_CAPS_IBSS)) {
-    bss_type = fuchsia_wlan_common::BssType::kInfrastructure;
+    bss_type = fuchsia_wlan_ieee80211::BssType::kInfrastructure;
   } else if (!(capability & IEEE80211_BCN_CAPS_ESS) && (capability & IEEE80211_BCN_CAPS_IBSS)) {
-    bss_type = fuchsia_wlan_common::BssType::kIndependent;
+    bss_type = fuchsia_wlan_ieee80211::BssType::kIndependent;
   } else if (!(capability & IEEE80211_BCN_CAPS_ESS) && !(capability & IEEE80211_BCN_CAPS_IBSS)) {
-    bss_type = fuchsia_wlan_common::BssType::kMesh;
+    bss_type = fuchsia_wlan_ieee80211::BssType::kMesh;
   }
 
   scan_result_builder.txn_id(ndev->scan_txn_id);
@@ -3799,7 +3800,7 @@ static fuchsia_wlan_fullmac_wire::StartResult brcmf_cfg80211_start_ap(
     return fuchsia_wlan_fullmac_wire::StartResult::kBssAlreadyStartedOrJoined;
   }
 
-  if (req->bss_type() != fuchsia_wlan_common::BssType::kInfrastructure) {
+  if (req->bss_type() != fuchsia_wlan_ieee80211::BssType::kInfrastructure) {
     BRCMF_ERR("Attempt to start AP in unsupported mode (%d)", fidl::ToUnderlying(req->bss_type()));
     return fuchsia_wlan_fullmac_wire::StartResult::kNotSupported;
   }
@@ -6252,7 +6253,7 @@ zx_status_t brcmf_if_set_multicast_promisc(net_device* ndev, bool enable) {
 
 static void brcmf_if_convert_ac_param(
     const edcf_acparam_t* acparam,
-    fuchsia_wlan_common_wire::WlanWmmAccessCategoryParameters* out_ac_params) {
+    fuchsia_wlan_driver::wire::WlanWmmAccessCategoryParameters* out_ac_params) {
   out_ac_params->aifsn = acparam->aci & EDCF_AIFSN_MASK;
   out_ac_params->acm = (acparam->aci & EDCF_ACM_MASK) != 0;
   out_ac_params->ecw_min = acparam->ecw & EDCF_ECWMIN_MASK;
@@ -6264,7 +6265,7 @@ void brcmf_if_wmm_status_req(net_device* ndev) {
   zx_status_t status = ZX_OK;
   bcme_status_t fw_err = BCME_OK;
   edcf_acparam_t ac_params[AC_COUNT];
-  fuchsia_wlan_common_wire::WlanWmmParameters resp = {};
+  fuchsia_wlan_driver::wire::WlanWmmParameters resp = {};
   uint32_t wme_bss_disable;
   brcmf_if* ifp = ndev_to_if(ndev);
 

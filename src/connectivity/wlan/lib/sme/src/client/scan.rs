@@ -4,6 +4,10 @@
 
 use crate::Error;
 use crate::client::inspect;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_inspect::NumericProperty;
 use ieee80211::{Bssid, Ssid};
 use log::warn;
@@ -13,10 +17,6 @@ use std::sync::{Arc, LazyLock};
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_common::ie::IesMerger;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_mlme as fidl_mlme,
-    fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 const PASSIVE_SCAN_CHANNEL_MS: u32 = 200;
 const ACTIVE_SCAN_PROBE_DELAY_MS: u32 = 5;
@@ -60,7 +60,7 @@ enum ScanState<T> {
     ScanningToDiscover {
         cmd: DiscoveryScan<T>,
         mlme_txn_id: u64,
-        bss_map: HashMap<Bssid, (fidl_common::BssDescription, IesMerger)>,
+        bss_map: HashMap<Bssid, (fidl_ieee80211::BssDescription, IesMerger)>,
     },
 }
 
@@ -167,8 +167,8 @@ impl<T> ScanScheduler<T> {
 }
 
 fn maybe_insert_bss(
-    bss_map: &mut HashMap<Bssid, (fidl_common::BssDescription, IesMerger)>,
-    mut fidl_bss: fidl_common::BssDescription,
+    bss_map: &mut HashMap<Bssid, (fidl_ieee80211::BssDescription, IesMerger)>,
+    mut fidl_bss: fidl_ieee80211::BssDescription,
 ) {
     let mut ies = vec![];
     std::mem::swap(&mut ies, &mut fidl_bss.ies);
@@ -200,7 +200,7 @@ fn maybe_insert_bss(
 }
 
 fn convert_bss_map(
-    bss_map: HashMap<Bssid, (fidl_common::BssDescription, IesMerger)>,
+    bss_map: HashMap<Bssid, (fidl_ieee80211::BssDescription, IesMerger)>,
     ssid_selector: Option<Ssid>,
     sme_inspect: &Arc<inspect::SmeTree>,
 ) -> Vec<BssDescription> {
@@ -392,7 +392,7 @@ mod tests {
             .on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id,
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [1; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
@@ -402,7 +402,7 @@ mod tests {
             sched.on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id: txn_id + 100, // mismatching transaction id
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [2; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
                 },
@@ -413,7 +413,7 @@ mod tests {
             .on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id,
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [3; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("qux").unwrap())
                 },
@@ -476,7 +476,7 @@ mod tests {
                                   channel: Channel::new(165, Cbw::Cbw20))];
                 "overwrite latest chosen channel")]
     fn deduplicate_by_bssid(
-        bss_description_list_from_mlme: Vec<fidl_common::BssDescription>,
+        bss_description_list_from_mlme: Vec<fidl_ieee80211::BssDescription>,
         returned_bss_description_list: Vec<BssDescription>,
     ) {
         let mut sched = create_sched();
@@ -685,7 +685,7 @@ mod tests {
             .on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id,
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [1; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
@@ -701,7 +701,7 @@ mod tests {
             .on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id,
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [2; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
                 },
@@ -767,7 +767,7 @@ mod tests {
             .on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id,
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [1; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
@@ -795,7 +795,7 @@ mod tests {
             .on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id,
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [2; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("bar").unwrap())
                 },
@@ -831,7 +831,7 @@ mod tests {
             sched.on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id: txn_id + 1,
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [1; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },
@@ -847,7 +847,7 @@ mod tests {
             sched.on_mlme_scan_result(fidl_mlme::ScanResult {
                 txn_id: 0,
                 timestamp_nanos: zx::MonotonicInstant::get().into_nanos(),
-                bss: fidl_common::BssDescription {
+                bss: fidl_ieee80211::BssDescription {
                     bssid: [1; 6],
                     ..fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap())
                 },

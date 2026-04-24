@@ -4,7 +4,7 @@
 
 use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints;
-use fidl_fuchsia_wlan_common::{self as fidl_common, WlanMacRole};
+use fidl_fuchsia_wlan_common::WlanMacRole;
 use fidl_fuchsia_wlan_device_service::{
     self as wlan_service, DeviceMonitorProxy, QueryIfaceResponse,
 };
@@ -387,7 +387,7 @@ async fn do_client_connect(
         scan_result: fidl_sme::ClientSmeScanResult,
         ssid: &Ssid,
         bssid: Option<&Bssid>,
-    ) -> Result<fidl_common::BssDescription, Error> {
+    ) -> Result<fidl_ieee80211::BssDescription, Error> {
         let mut bss_description = None;
         match scan_result {
             Ok(vmo) => {
@@ -1107,7 +1107,7 @@ mod tests {
                 assert_eq!(req.phy_id, 45);
                 assert_eq!(
                     req.ps_mode,
-                    fidl_common::PowerSaveType::PsModeBalanced
+                    fidl_fuchsia_wlan_common::PowerSaveType::PsModeBalanced
                 );
                 responder.send(zx_status::Status::OK.into_raw()).expect("failed to send response");
             }
@@ -1131,7 +1131,7 @@ mod tests {
                 assert_eq!(phy_id, 45);
                 responder
                     .send(Ok(&fidl_fuchsia_wlan_device_service::GetPowerSaveModeResponse {
-                        ps_mode: fidl_common::PowerSaveType::PsModeBalanced,
+                        ps_mode: fidl_fuchsia_wlan_common::PowerSaveType::PsModeBalanced,
                     }))
                     .expect("failed to send response");
             }

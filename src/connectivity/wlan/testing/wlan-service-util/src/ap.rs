@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints;
+
 use fidl_fuchsia_wlan_common::WlanMacRole;
 use fidl_fuchsia_wlan_device_service::DeviceMonitorProxy;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use ieee80211::Ssid;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_sme as fidl_sme,
-};
 
 type WlanService = DeviceMonitorProxy;
 
@@ -60,7 +59,7 @@ pub async fn start(
         ssid: target_ssid.into(),
         password: target_pwd,
         radio_cfg: fidl_sme::RadioConfig {
-            phy: fidl_common::WlanPhyType::Ht,
+            phy: fidl_ieee80211::WlanPhyType::Ht,
             channel: fidl_ieee80211::WlanChannel {
                 primary: channel,
                 cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,
@@ -144,7 +143,7 @@ mod tests {
             ssid: target_ssid.to_vec(),
             password: target_password.to_vec(),
             radio_cfg: fidl_sme::RadioConfig {
-                phy: fidl_common::WlanPhyType::Ht,
+                phy: fidl_ieee80211::WlanPhyType::Ht,
                 channel: fidl_ieee80211::WlanChannel {
                     primary: channel,
                     cbw: fidl_ieee80211::ChannelBandwidth::Cbw20,

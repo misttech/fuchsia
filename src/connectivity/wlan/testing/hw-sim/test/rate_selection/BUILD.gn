@@ -8,8 +8,8 @@ import(
 rust_wlan_integration_test("rate_selection") {
   edition = "2024"
   binary_deps = [
-    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
+    "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_rust",
     "//sdk/fidl/fuchsia.wlan.tap:fuchsia.wlan.tap_rust",
     "//sdk/rust/zx",
     "//src/connectivity/lib/network-device/rust",

@@ -4,6 +4,9 @@
 
 use anyhow::{Error, format_err};
 use fidl::endpoints::{ProtocolMarker, Proxy};
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_sme as fidl_sme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use fuchsia_async::{MonotonicDuration, Task};
 use fuchsia_inspect::Inspector;
 use futures::channel::mpsc;
@@ -17,10 +20,7 @@ use wlan_fidl_ext::{ResponderExt, SendResultExt, WithName};
 use wlan_mlme::device::DeviceOps;
 use wlan_mlme::{DriverEvent, DriverEventSink};
 use wlan_sme::serve::create_sme;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_sme as fidl_sme,
-    fidl_fuchsia_wlan_softmac as fidl_softmac, wlan_trace as wtrace,
-};
+use wlan_trace as wtrace;
 
 const INSPECT_VMO_SIZE_BYTES: usize = 1000 * 1024;
 
@@ -1003,13 +1003,13 @@ mod tests {
             serve_wlan_softmac_ifc_bridge(driver_event_sink, softmac_ifc_bridge_request_stream);
         let mut server_fut = pin!(server_fut);
 
-        let resp_fut = softmac_ifc_bridge_proxy.report_tx_result(&fidl_common::WlanTxResult {
-            tx_result_entry: [fidl_common::WlanTxResultEntry {
-                tx_vector_idx: fidl_common::WLAN_TX_VECTOR_IDX_INVALID,
+        let resp_fut = softmac_ifc_bridge_proxy.report_tx_result(&fidl_softmac::WlanTxResult {
+            tx_result_entry: [fidl_softmac::WlanTxResultEntry {
+                tx_vector_idx: fidl_softmac::WLAN_TX_VECTOR_IDX_INVALID,
                 attempts: 0,
-            }; fidl_common::WLAN_TX_RESULT_MAX_ENTRY as usize],
+            }; fidl_softmac::WLAN_TX_RESULT_MAX_ENTRY as usize],
             peer_addr: [3; 6],
-            result_code: fidl_common::WlanTxResultCode::Failed,
+            result_code: fidl_softmac::WlanTxResultCode::Failed,
         });
         let mut resp_fut = pin!(resp_fut);
         assert_matches!(TestExecutor::poll_until_stalled(&mut resp_fut).await, Poll::Pending);
@@ -1020,14 +1020,14 @@ mod tests {
             DriverEvent::TxResultReport { tx_result } => {
                 assert_eq!(
                     tx_result,
-                    fidl_common::WlanTxResult {
-                        tx_result_entry: [fidl_common::WlanTxResultEntry {
-                            tx_vector_idx: fidl_common::WLAN_TX_VECTOR_IDX_INVALID,
+                    fidl_softmac::WlanTxResult {
+                        tx_result_entry: [fidl_softmac::WlanTxResultEntry {
+                            tx_vector_idx: fidl_softmac::WLAN_TX_VECTOR_IDX_INVALID,
                             attempts: 0
                         };
-                            fidl_common::WLAN_TX_RESULT_MAX_ENTRY as usize],
+                            fidl_softmac::WLAN_TX_RESULT_MAX_ENTRY as usize],
                         peer_addr: [3; 6],
-                        result_code: fidl_common::WlanTxResultCode::Failed,
+                        result_code: fidl_softmac::WlanTxResultCode::Failed,
                     }
                 );
             }

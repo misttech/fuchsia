@@ -25,7 +25,11 @@ mod probe_sequence;
 use anyhow::{Error, bail, format_err};
 pub use ddk_converter::*;
 use device::DeviceOps;
+use fidl_fuchsia_wlan_common as fidl_common;
+pub use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use fuchsia_sync::Mutex;
+use fuchsia_trace as trace;
 use futures::channel::mpsc::{self, TrySendError};
 use futures::channel::oneshot;
 use futures::{Future, StreamExt, select};
@@ -33,13 +37,10 @@ use log::info;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{cmp, fmt};
+pub use wlan_common as common;
 use wlan_ffi_transport::{EthernetTxEvent, EthernetTxEventSender, WlanRxEvent, WlanRxEventSender};
 use wlan_fidl_ext::{ResponderExt, SendResultExt};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_softmac as fidl_softmac,
-    fuchsia_trace as trace, wlan_trace as wtrace,
-};
-pub use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, wlan_common as common};
+use wlan_trace as wtrace;
 
 // TODO(https://fxbug.dev/42084990): This trait is migratory and reads both newer and deprecated fields that
 //                         encode the same information (and prioritizes the newer fields). Remove
@@ -101,7 +102,7 @@ impl WlanTxPacketExt for fidl_softmac::WlanTxPacket {
                 tx_flags: 0,
                 valid_fields: 0,
                 tx_vector_idx: 0,
-                phy: fidl_common::WlanPhyType::Dsss,
+                phy: fidl_ieee80211::WlanPhyType::Dsss,
                 channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw20,
                 mcs: 0,
             },
@@ -238,7 +239,7 @@ pub enum DriverEvent {
     // Reports a scan is complete.
     ScanComplete { status: zx::Status, scan_id: u64 },
     // Reports the result of an attempted frame transmission.
-    TxResultReport { tx_result: fidl_common::WlanTxResult },
+    TxResultReport { tx_result: fidl_softmac::WlanTxResult },
     EthernetTxEvent(EthernetTxEvent),
     WlanRxEvent(WlanRxEvent),
 }
@@ -433,9 +434,9 @@ async fn main_loop_impl<T: MlmeImpl>(
 pub mod test_utils {
     use super::*;
     use crate::device::FakeDevice;
+    use fidl_fuchsia_wlan_mlme as fidl_mlme;
     use ieee80211::{MacAddr, MacAddrBytes};
     use wlan_common::channel;
-    use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_mlme as fidl_mlme};
 
     pub struct FakeMlme {
         device: FakeDevice,
@@ -499,7 +500,7 @@ pub mod test_utils {
     pub struct MockWlanRxInfo {
         pub rx_flags: fidl_softmac::WlanRxInfoFlags,
         pub valid_fields: fidl_softmac::WlanRxInfoValid,
-        pub phy: fidl_common::WlanPhyType,
+        pub phy: fidl_ieee80211::WlanPhyType,
         pub data_rate: u32,
         pub channel: fidl_ieee80211::WlanChannel,
         pub mcs: u8,
@@ -520,7 +521,7 @@ pub mod test_utils {
                 // Default to 0 for these fields since there are no
                 // other reasonable values to mock.
                 rx_flags: fidl_softmac::WlanRxInfoFlags::empty(),
-                phy: fidl_common::WlanPhyType::Dsss,
+                phy: fidl_ieee80211::WlanPhyType::Dsss,
                 data_rate: 0,
                 mcs: 0,
             }

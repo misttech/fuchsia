@@ -15,7 +15,6 @@ use crate::client::{
 };
 use crate::{MlmeRequest, MlmeSink, mlme_event_name};
 use anyhow::{bail, format_err};
-use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_internal::Authentication;
@@ -1554,7 +1553,7 @@ impl ClientState {
         new_state
     }
 
-    pub fn roam(self, context: &mut Context, selected_bss: fidl_common::BssDescription) -> Self {
+    pub fn roam(self, context: &mut Context, selected_bss: fidl_ieee80211::BssDescription) -> Self {
         let start_state = self.state_name();
         let mut state_change_ctx =
             Some(StateChangeContext::Msg("Policy-initiated roam attempt in progress".to_owned()));
@@ -1751,7 +1750,7 @@ fn roam_internal(
     state: Associated,
     context: &mut Context,
     selected_bssid: Bssid,
-    selected_bss: fidl_common::BssDescription,
+    selected_bss: fidl_ieee80211::BssDescription,
     state_change_ctx: &mut Option<StateChangeContext>,
     roam_initiator: RoamInitiator,
 ) -> Result<Roaming, Disconnecting> {
@@ -2286,8 +2285,6 @@ mod tests {
     use diagnostics_assertions::{
         AnyBytesProperty, AnyNumericProperty, AnyStringProperty, assert_data_tree,
     };
-    use fidl_fuchsia_wlan_common as fidl_common;
-
     use fidl_fuchsia_wlan_internal::{Credentials, Protocol};
     use fidl_internal;
     use fuchsia_async::DurationExt;
@@ -4021,7 +4018,7 @@ mod tests {
         let selected_bssid = [0, 1, 2, 3, 4, 5];
         selected_bss.bssid = selected_bssid.into();
 
-        let fidl_selected_bss = fidl_common::BssDescription::from(*selected_bss.clone());
+        let fidl_selected_bss = fidl_ieee80211::BssDescription::from(*selected_bss.clone());
         let state = state.roam(&mut h.context, fidl_selected_bss);
 
         assert_roaming(&state);
@@ -4150,7 +4147,7 @@ mod tests {
 
         let state = link_up_state(cmd);
         // Initiate a roam attempt.
-        let fidl_selected_bss = fidl_common::BssDescription::from(selected_bss.clone());
+        let fidl_selected_bss = fidl_ieee80211::BssDescription::from(selected_bss.clone());
         let state = state.roam(&mut h.context, fidl_selected_bss);
 
         assert_roaming(&state);
@@ -4203,10 +4200,10 @@ mod tests {
     }
 
     // An all-zero BssDescription: malformed, in particular due to empty IEs (missing SSID).
-    fn malformed_bss_description() -> fidl_common::BssDescription {
-        fidl_common::BssDescription {
+    fn malformed_bss_description() -> fidl_ieee80211::BssDescription {
+        fidl_ieee80211::BssDescription {
             bssid: [0, 0, 0, 0, 0, 0],
-            bss_type: fidl_common::BssType::Infrastructure,
+            bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 0,
             capability_info: 0,
             ies: Vec::new(),
@@ -4440,7 +4437,7 @@ mod tests {
         let state = idle_state();
         let selected_bssid = [0, 1, 2, 3, 4, 5];
         selected_bss.bssid = selected_bssid.into();
-        let fidl_selected_bss = fidl_common::BssDescription::from(*selected_bss.clone());
+        let fidl_selected_bss = fidl_ieee80211::BssDescription::from(*selected_bss.clone());
 
         let state = state.roam(&mut h.context, fidl_selected_bss);
 
@@ -4481,7 +4478,7 @@ mod tests {
         let state = connecting_state(cmd);
         let selected_bssid = [0, 1, 2, 3, 4, 5];
         selected_bss.bssid = selected_bssid.into();
-        let fidl_selected_bss = fidl_common::BssDescription::from(*selected_bss.clone());
+        let fidl_selected_bss = fidl_ieee80211::BssDescription::from(*selected_bss.clone());
 
         let state = state.roam(&mut h.context, fidl_selected_bss);
 
@@ -4521,7 +4518,7 @@ mod tests {
         let state = disconnecting_state(PostDisconnectAction::BeginConnect(Box::new(cmd)));
         let selected_bssid = [0, 1, 2, 3, 4, 5];
         selected_bss.bssid = selected_bssid.into();
-        let fidl_selected_bss = fidl_common::BssDescription::from(*selected_bss.clone());
+        let fidl_selected_bss = fidl_ieee80211::BssDescription::from(*selected_bss.clone());
 
         let state = state.roam(&mut h.context, fidl_selected_bss);
 

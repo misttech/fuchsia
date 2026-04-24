@@ -6,6 +6,12 @@ use crate::common::mac::WlanGi;
 use crate::error::Error;
 use anyhow::format_err;
 use fdf::ArenaStaticBox;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_driver as fidl_driver_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fuchsia_trace as trace;
 use futures::Future;
 use futures::channel::mpsc;
 use ieee80211::MacAddr;
@@ -17,11 +23,7 @@ use trace::Id as TraceId;
 use wlan_common::mac::FrameControl;
 use wlan_common::{TimeUnit, tx_vector};
 use wlan_ffi_transport::{EthernetRx, EthernetTx, FfiEthernetTx, FfiWlanRx, WlanRx, WlanTx};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_softmac as fidl_softmac,
-    fuchsia_trace as trace, wlan_trace as wtrace,
-};
+use wlan_trace as wtrace;
 
 pub use test_utils::*;
 
@@ -157,7 +159,7 @@ pub trait DeviceOps {
     ) -> impl Future<Output = Result<(), zx::Status>>;
     fn join_bss(
         &mut self,
-        request: &fidl_common::JoinBssRequest,
+        request: &fidl_driver_common::JoinBssRequest,
     ) -> impl Future<Output = Result<(), zx::Status>>;
     fn enable_beaconing(
         &mut self,
@@ -205,7 +207,7 @@ pub trait DeviceOps {
                 // TODO(https://fxbug.dev/42119762): Log stats about minstrel usage vs default tx vector.
                 let mcs_idx = if frame_control.is_data() { 7 } else { 3 };
                 tx_vector::TxVector::new(
-                    fidl_common::WlanPhyType::Erp,
+                    fidl_ieee80211::WlanPhyType::Erp,
                     WlanGi::G_800NS,
                     fidl_ieee80211::ChannelBandwidth::Cbw20,
                     mcs_idx,
@@ -485,7 +487,10 @@ impl DeviceOps for Device {
         )
     }
 
-    async fn join_bss(&mut self, request: &fidl_common::JoinBssRequest) -> Result<(), zx::Status> {
+    async fn join_bss(
+        &mut self,
+        request: &fidl_driver_common::JoinBssRequest,
+    ) -> Result<(), zx::Status> {
         Self::flatten_and_log_error(
             "JoinBss",
             self.wlan_softmac_bridge_proxy.join_bss(request).await,
@@ -594,13 +599,13 @@ impl DeviceOps for Device {
 pub mod test_utils {
     use super::*;
     use crate::ddk_converter;
+    use fidl_fuchsia_wlan_common as fidl_common;
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
+    use fidl_fuchsia_wlan_sme as fidl_sme;
     use fuchsia_sync::Mutex;
     use paste::paste;
     use std::collections::VecDeque;
-    use {
-        fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-        fidl_fuchsia_wlan_internal as fidl_internal, fidl_fuchsia_wlan_sme as fidl_sme,
-    };
 
     pub trait FromMlmeEvent {
         fn from_event(event: fidl_mlme::MlmeEvent) -> Option<Self>
@@ -784,12 +789,12 @@ pub mod test_utils {
                 sta_addr: Some([7u8; 6]),
                 mac_role: Some(fidl_common::WlanMacRole::Client),
                 supported_phys: Some(vec![
-                    fidl_common::WlanPhyType::Dsss,
-                    fidl_common::WlanPhyType::Hr,
-                    fidl_common::WlanPhyType::Ofdm,
-                    fidl_common::WlanPhyType::Erp,
-                    fidl_common::WlanPhyType::Ht,
-                    fidl_common::WlanPhyType::Vht,
+                    fidl_ieee80211::WlanPhyType::Dsss,
+                    fidl_ieee80211::WlanPhyType::Hr,
+                    fidl_ieee80211::WlanPhyType::Ofdm,
+                    fidl_ieee80211::WlanPhyType::Erp,
+                    fidl_ieee80211::WlanPhyType::Ht,
+                    fidl_ieee80211::WlanPhyType::Vht,
                 ]),
                 hardware_capability: Some(0),
                 band_caps: Some(fake_band_caps()),
@@ -902,7 +907,7 @@ pub mod test_utils {
             Option<fidl_softmac::WlanSoftmacBaseStartPassiveScanRequest>,
         pub captured_active_scan_request: Option<fidl_softmac::WlanSoftmacStartActiveScanRequest>,
 
-        pub join_bss_request: Option<fidl_common::JoinBssRequest>,
+        pub join_bss_request: Option<fidl_driver_common::JoinBssRequest>,
         pub beacon_config: Option<(Vec<u8>, usize, TimeUnit)>,
         pub link_status: LinkStatus,
         pub assocs: std::collections::HashMap<MacAddr, fidl_softmac::WlanAssociationConfig>,
@@ -1156,7 +1161,7 @@ pub mod test_utils {
 
         async fn join_bss(
             &mut self,
-            request: &fidl_common::JoinBssRequest,
+            request: &fidl_driver_common::JoinBssRequest,
         ) -> Result<(), zx::Status> {
             self.state.lock().join_bss_request.replace(request.clone());
             Ok(())
@@ -1312,8 +1317,10 @@ mod tests {
     use crate::{WlanTxPacketExt as _, ddk_converter};
     use assert_matches::assert_matches;
     use fdf::Arena;
+    use fidl_fuchsia_wlan_common as fidl_common;
+    use fidl_fuchsia_wlan_driver as fidl_driver_common;
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
     use ieee80211::Ssid;
-    use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211};
 
     fn make_deauth_confirm_msg() -> fidl_mlme::DeauthenticateConfirm {
         fidl_mlme::DeauthenticateConfirm { peer_sta_address: [1; 6] }
@@ -1335,12 +1342,12 @@ mod tests {
         assert_eq!(
             query_response.supported_phys,
             Some(vec![
-                fidl_common::WlanPhyType::Dsss,
-                fidl_common::WlanPhyType::Hr,
-                fidl_common::WlanPhyType::Ofdm,
-                fidl_common::WlanPhyType::Erp,
-                fidl_common::WlanPhyType::Ht,
-                fidl_common::WlanPhyType::Vht,
+                fidl_ieee80211::WlanPhyType::Dsss,
+                fidl_ieee80211::WlanPhyType::Hr,
+                fidl_ieee80211::WlanPhyType::Ofdm,
+                fidl_ieee80211::WlanPhyType::Erp,
+                fidl_ieee80211::WlanPhyType::Ht,
+                fidl_ieee80211::WlanPhyType::Vht,
             ]),
         );
         assert_eq!(query_response.hardware_capability, Some(0));
@@ -1684,9 +1691,9 @@ mod tests {
     async fn join_bss() {
         let (mut fake_device, fake_device_state) = FakeDevice::new().await;
         fake_device
-            .join_bss(&fidl_common::JoinBssRequest {
+            .join_bss(&fidl_driver_common::JoinBssRequest {
                 bssid: Some([1, 2, 3, 4, 5, 6]),
-                bss_type: Some(fidl_common::BssType::Personal),
+                bss_type: Some(fidl_ieee80211::BssType::Personal),
                 remote: Some(true),
                 beacon_period: Some(100),
                 ..Default::default()
@@ -1766,9 +1773,9 @@ mod tests {
     async fn clear_association() {
         let (mut fake_device, fake_device_state) = FakeDevice::new().await;
         fake_device
-            .join_bss(&fidl_common::JoinBssRequest {
+            .join_bss(&fidl_driver_common::JoinBssRequest {
                 bssid: Some([1, 2, 3, 4, 5, 6]),
-                bss_type: Some(fidl_common::BssType::Personal),
+                bss_type: Some(fidl_ieee80211::BssType::Personal),
                 remote: Some(true),
                 beacon_period: Some(100),
                 ..Default::default()
@@ -1807,30 +1814,30 @@ mod tests {
 
         let request = fidl_softmac::WlanSoftmacBaseUpdateWmmParametersRequest {
             ac: Some(fidl_ieee80211::WlanAccessCategory::Background),
-            params: Some(fidl_common::WlanWmmParameters {
+            params: Some(fidl_driver_common::WlanWmmParameters {
                 apsd: true,
-                ac_be_params: fidl_common::WlanWmmAccessCategoryParameters {
+                ac_be_params: fidl_driver_common::WlanWmmAccessCategoryParameters {
                     ecw_min: 10,
                     ecw_max: 100,
                     aifsn: 1,
                     txop_limit: 5,
                     acm: true,
                 },
-                ac_bk_params: fidl_common::WlanWmmAccessCategoryParameters {
+                ac_bk_params: fidl_driver_common::WlanWmmAccessCategoryParameters {
                     ecw_min: 11,
                     ecw_max: 100,
                     aifsn: 1,
                     txop_limit: 5,
                     acm: true,
                 },
-                ac_vi_params: fidl_common::WlanWmmAccessCategoryParameters {
+                ac_vi_params: fidl_driver_common::WlanWmmAccessCategoryParameters {
                     ecw_min: 12,
                     ecw_max: 100,
                     aifsn: 1,
                     txop_limit: 5,
                     acm: true,
                 },
-                ac_vo_params: fidl_common::WlanWmmAccessCategoryParameters {
+                ac_vo_params: fidl_driver_common::WlanWmmAccessCategoryParameters {
                     ecw_min: 13,
                     ecw_max: 100,
                     aifsn: 1,

@@ -4,11 +4,10 @@
 
 use crate::ie::SupportedRate;
 use crate::mac::WlanGi;
-use anyhow::{bail, Error};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_softmac as fidl_softmac,
-};
+use anyhow::{Error, bail};
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
 
 pub const HT_NUM_MCS: u8 = 32; // Only support MCS 0-31
 pub const HT_NUM_UNIQUE_MCS: u8 = 8;
@@ -66,7 +65,7 @@ pub const MAX_VALID_IDX: u16 = DSSS_CCK_START_IDX + DSSS_CCK_NUM_TX_VECTOR as u1
 ///     * 2: 11 -> 5.5 Mbps CCK
 ///     * 3: 22 -> 11  Mbps CCK
 pub struct TxVector {
-    phy: fidl_common::WlanPhyType,
+    phy: fidl_ieee80211::WlanPhyType,
     gi: WlanGi,
     cbw: fidl_ieee80211::ChannelBandwidth,
     nss: u8, // Number of spatial streams for VHT and beyond.
@@ -78,15 +77,15 @@ pub struct TxVector {
 
 impl TxVector {
     pub fn new(
-        phy: fidl_common::WlanPhyType,
+        phy: fidl_ieee80211::WlanPhyType,
         gi: WlanGi,
         cbw: fidl_ieee80211::ChannelBandwidth,
         mcs_idx: u8,
     ) -> Result<Self, Error> {
         let supported_mcs = match phy {
-            fidl_common::WlanPhyType::Dsss => mcs_idx == 0 || mcs_idx == 1,
-            fidl_common::WlanPhyType::Hr => mcs_idx == 2 || mcs_idx == 3,
-            fidl_common::WlanPhyType::Ht => {
+            fidl_ieee80211::WlanPhyType::Dsss => mcs_idx == 0 || mcs_idx == 1,
+            fidl_ieee80211::WlanPhyType::Hr => mcs_idx == 2 || mcs_idx == 3,
+            fidl_ieee80211::WlanPhyType::Ht => {
                 match gi {
                     WlanGi::G_800NS | WlanGi::G_400NS => (),
                     other => bail!("Unsupported GI for HT PHY: {:?}", other),
@@ -99,12 +98,12 @@ impl TxVector {
                 }
                 mcs_idx < HT_NUM_MCS
             }
-            fidl_common::WlanPhyType::Erp => mcs_idx < ERP_NUM_TX_VECTOR,
+            fidl_ieee80211::WlanPhyType::Erp => mcs_idx < ERP_NUM_TX_VECTOR,
             other => bail!("Unsupported phy type: {:?}", other),
         };
         if supported_mcs {
             let nss = match phy {
-                fidl_common::WlanPhyType::Ht => 1 + mcs_idx / HT_NUM_UNIQUE_MCS,
+                fidl_ieee80211::WlanPhyType::Ht => 1 + mcs_idx / HT_NUM_UNIQUE_MCS,
                 // TODO(https://fxbug.dev/42094755): Support VHT NSS
                 _ => 1,
             };
@@ -114,24 +113,24 @@ impl TxVector {
         }
     }
 
-    pub fn phy(&self) -> fidl_common::WlanPhyType {
+    pub fn phy(&self) -> fidl_ieee80211::WlanPhyType {
         self.phy
     }
 
     pub fn from_supported_rate(erp_rate: &SupportedRate) -> Result<Self, Error> {
         let (phy, mcs_idx) = match erp_rate.rate() {
-            2 => (fidl_common::WlanPhyType::Dsss, 0),
-            4 => (fidl_common::WlanPhyType::Dsss, 1),
-            11 => (fidl_common::WlanPhyType::Hr, 2),
-            22 => (fidl_common::WlanPhyType::Hr, 3),
-            12 => (fidl_common::WlanPhyType::Erp, 0),
-            18 => (fidl_common::WlanPhyType::Erp, 1),
-            24 => (fidl_common::WlanPhyType::Erp, 2),
-            36 => (fidl_common::WlanPhyType::Erp, 3),
-            48 => (fidl_common::WlanPhyType::Erp, 4),
-            72 => (fidl_common::WlanPhyType::Erp, 5),
-            96 => (fidl_common::WlanPhyType::Erp, 6),
-            108 => (fidl_common::WlanPhyType::Erp, 7),
+            2 => (fidl_ieee80211::WlanPhyType::Dsss, 0),
+            4 => (fidl_ieee80211::WlanPhyType::Dsss, 1),
+            11 => (fidl_ieee80211::WlanPhyType::Hr, 2),
+            22 => (fidl_ieee80211::WlanPhyType::Hr, 3),
+            12 => (fidl_ieee80211::WlanPhyType::Erp, 0),
+            18 => (fidl_ieee80211::WlanPhyType::Erp, 1),
+            24 => (fidl_ieee80211::WlanPhyType::Erp, 2),
+            36 => (fidl_ieee80211::WlanPhyType::Erp, 3),
+            48 => (fidl_ieee80211::WlanPhyType::Erp, 4),
+            72 => (fidl_ieee80211::WlanPhyType::Erp, 5),
+            96 => (fidl_ieee80211::WlanPhyType::Erp, 6),
+            108 => (fidl_ieee80211::WlanPhyType::Erp, 7),
             other_rate => {
                 bail!("Invalid rate {} * 0.5 Mbps for 802.11a/b/g.", other_rate);
             }
@@ -145,7 +144,7 @@ impl TxVector {
     pub fn from_idx(idx: TxVecIdx) -> Self {
         let phy = idx.to_phy();
         match phy {
-            fidl_common::WlanPhyType::Ht => {
+            fidl_ieee80211::WlanPhyType::Ht => {
                 let group_idx = (*idx - HT_START_IDX) / HT_NUM_MCS as u16;
                 let gi = match (group_idx / HT_NUM_CBW as u16) % HT_NUM_GI as u16 {
                     1 => WlanGi::G_400NS,
@@ -158,14 +157,14 @@ impl TxVector {
                 let mcs_idx = ((*idx - HT_START_IDX) % HT_NUM_MCS as u16) as u8;
                 Self::new(phy, gi, cbw, mcs_idx).unwrap()
             }
-            fidl_common::WlanPhyType::Erp => Self::new(
+            fidl_ieee80211::WlanPhyType::Erp => Self::new(
                 phy,
                 WlanGi::G_800NS,
                 fidl_ieee80211::ChannelBandwidth::Cbw20,
                 (*idx - ERP_START_IDX) as u8,
             )
             .unwrap(),
-            fidl_common::WlanPhyType::Dsss | fidl_common::WlanPhyType::Hr => Self::new(
+            fidl_ieee80211::WlanPhyType::Dsss | fidl_ieee80211::WlanPhyType::Hr => Self::new(
                 phy,
                 WlanGi::G_800NS,
                 fidl_ieee80211::ChannelBandwidth::Cbw20,
@@ -178,7 +177,7 @@ impl TxVector {
 
     pub fn to_idx(&self) -> TxVecIdx {
         match self.phy {
-            fidl_common::WlanPhyType::Ht => {
+            fidl_ieee80211::WlanPhyType::Ht => {
                 let group_idx = match self.gi {
                     WlanGi::G_400NS => HT_NUM_CBW as u16,
                     _ => 0,
@@ -190,10 +189,10 @@ impl TxVector {
                 TxVecIdx::new(HT_START_IDX + group_idx * HT_NUM_MCS as u16 + self.mcs_idx as u16)
                     .unwrap()
             }
-            fidl_common::WlanPhyType::Erp => {
+            fidl_ieee80211::WlanPhyType::Erp => {
                 TxVecIdx::new(ERP_START_IDX + self.mcs_idx as u16).unwrap()
             }
-            fidl_common::WlanPhyType::Hr | fidl_common::WlanPhyType::Dsss => {
+            fidl_ieee80211::WlanPhyType::Hr | fidl_ieee80211::WlanPhyType::Dsss => {
                 TxVecIdx::new(DSSS_CCK_START_IDX + self.mcs_idx as u16).unwrap()
             }
             _ => unreachable!(),
@@ -253,13 +252,15 @@ impl TxVecIdx {
         }
     }
 
-    pub fn to_phy(&self) -> fidl_common::WlanPhyType {
+    pub fn to_phy(&self) -> fidl_ieee80211::WlanPhyType {
         match self.0 {
-            idx if idx < HT_START_IDX + HT_NUM_TX_VECTOR as u16 => fidl_common::WlanPhyType::Ht,
-            idx if idx < ERP_START_IDX + ERP_NUM_TX_VECTOR as u16 => fidl_common::WlanPhyType::Erp,
-            idx if idx < DSSS_CCK_START_IDX + 2 => fidl_common::WlanPhyType::Dsss,
+            idx if idx < HT_START_IDX + HT_NUM_TX_VECTOR as u16 => fidl_ieee80211::WlanPhyType::Ht,
+            idx if idx < ERP_START_IDX + ERP_NUM_TX_VECTOR as u16 => {
+                fidl_ieee80211::WlanPhyType::Erp
+            }
+            idx if idx < DSSS_CCK_START_IDX + 2 => fidl_ieee80211::WlanPhyType::Dsss,
             idx if idx < DSSS_CCK_START_IDX + DSSS_CCK_NUM_TX_VECTOR as u16 => {
-                fidl_common::WlanPhyType::Hr
+                fidl_ieee80211::WlanPhyType::Hr
             }
             // This panic is unreachable for any TxVecIdx constructed with TxVecIdx::new.
             // Verified by exhaustive test cases.
@@ -316,13 +317,13 @@ mod tests {
         for idx in INVALID_TX_VECTOR_IDX + 1..=MAX_VALID_IDX {
             let idx = TxVecIdx::new(idx).expect("Could not make TxVecIdx from valid index");
             if idx.is_erp() {
-                assert_eq!(idx.to_phy(), fidl_common::WlanPhyType::Erp);
+                assert_eq!(idx.to_phy(), fidl_ieee80211::WlanPhyType::Erp);
             } else if idx.is_ht() {
-                assert_eq!(idx.to_phy(), fidl_common::WlanPhyType::Ht);
+                assert_eq!(idx.to_phy(), fidl_ieee80211::WlanPhyType::Ht);
             } else {
                 assert!(
-                    idx.to_phy() == fidl_common::WlanPhyType::Dsss
-                        || idx.to_phy() == fidl_common::WlanPhyType::Hr
+                    idx.to_phy() == fidl_ieee80211::WlanPhyType::Dsss
+                        || idx.to_phy() == fidl_ieee80211::WlanPhyType::Hr
                 );
             }
         }
@@ -343,9 +344,9 @@ mod tests {
             let idx = TxVecIdx::new(idx).expect("Could not make TxVecIdx from valid index");
             let tx_vector = TxVector::from_idx(idx);
             if idx.is_erp() {
-                assert_eq!(tx_vector.phy(), fidl_common::WlanPhyType::Erp);
+                assert_eq!(tx_vector.phy(), fidl_ieee80211::WlanPhyType::Erp);
             } else if idx.is_ht() {
-                assert_eq!(tx_vector.phy(), fidl_common::WlanPhyType::Ht);
+                assert_eq!(tx_vector.phy(), fidl_ieee80211::WlanPhyType::Ht);
             }
         }
     }

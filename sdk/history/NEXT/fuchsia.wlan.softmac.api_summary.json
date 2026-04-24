@@ -6,6 +6,18 @@
         "value": "263"
     },
     {
+        "kind": "const",
+        "name": "fuchsia.wlan.softmac/WLAN_TX_RESULT_MAX_ENTRY",
+        "type": "uint32",
+        "value": "8"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.wlan.softmac/WLAN_TX_VECTOR_IDX_INVALID",
+        "type": "uint16",
+        "value": "0"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.wlan.softmac/WlanAssociationConfig.aid",
         "ordinal": "2",
@@ -1025,6 +1037,60 @@
     {
         "kind": "struct",
         "name": "fuchsia.wlan.softmac/WlanTxPacket"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.wlan.softmac/WlanTxResult.peer_addr",
+        "ordinal": "2",
+        "type": "array<uint8,6>"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.wlan.softmac/WlanTxResult.result_code",
+        "ordinal": "3",
+        "type": "fuchsia.wlan.softmac/WlanTxResultCode"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.wlan.softmac/WlanTxResult.tx_result_entry",
+        "ordinal": "1",
+        "type": "array<fuchsia.wlan.softmac/WlanTxResultEntry,8>"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.wlan.softmac/WlanTxResult"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.softmac/WlanTxResultCode.FAILED",
+        "value": "0"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.softmac/WlanTxResultCode.SUCCESS",
+        "value": "1"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.wlan.softmac/WlanTxResultCode",
+        "strictness": "flexible",
+        "type": "uint8"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.wlan.softmac/WlanTxResultEntry.attempts",
+        "ordinal": "2",
+        "type": "uint8"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.wlan.softmac/WlanTxResultEntry.tx_vector_idx",
+        "ordinal": "1",
+        "type": "uint16"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.wlan.softmac/WlanTxResultEntry"
     },
     {
         "kind": "library",

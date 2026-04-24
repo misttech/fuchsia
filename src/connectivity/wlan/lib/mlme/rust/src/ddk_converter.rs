@@ -4,11 +4,10 @@
 
 use crate::WlanSoftmacBandCapabilityExt as _;
 use anyhow::format_err;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_softmac as fidl_softmac;
 use std::fmt::Display;
-use {
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme,
-    fidl_fuchsia_wlan_softmac as fidl_softmac,
-};
 
 #[macro_export]
 macro_rules! zeroed_array_from_prefix {
@@ -127,13 +126,11 @@ pub fn cssid_from_ssid_unchecked(ssid: &Vec<u8>) -> fidl_ieee80211::CSsid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl_fuchsia_wlan_common as fidl_common;
-
     fn empty_rx_info() -> fidl_softmac::WlanRxInfo {
         fidl_softmac::WlanRxInfo {
             rx_flags: fidl_softmac::WlanRxInfoFlags::empty(),
             valid_fields: fidl_softmac::WlanRxInfoValid::empty(),
-            phy: fidl_common::WlanPhyType::Dsss,
+            phy: fidl_ieee80211::WlanPhyType::Dsss,
             data_rate: 0,
             channel: fidl_ieee80211::WlanChannel {
                 primary: 0,

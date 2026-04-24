@@ -492,6 +492,9 @@ mod tests {
     use anyhow::format_err;
     use assert_matches::assert_matches;
     use fidl::endpoints::{RequestStream, create_proxy};
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
+    use fuchsia_async as fasync;
     use futures::StreamExt;
     use futures::future::LocalBoxFuture;
     use futures::stream::StreamFuture;
@@ -502,10 +505,6 @@ mod tests {
     use wlan_common::channel::Cbw;
     use wlan_common::sequestered::Sequestered;
     use wlan_common::{RadioConfig, random_fidl_bss_description};
-    use {
-        fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-        fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync,
-    };
 
     struct TestValues {
         exec: fasync::TestExecutor,
@@ -1238,7 +1237,11 @@ mod tests {
                 security_type: types::SecurityType::None,
             },
             credential: vec![],
-            radio_config: RadioConfig::new(fidl_common::WlanPhyType::Ht, Cbw::Cbw20, 6),
+            radio_config: RadioConfig::new(
+                fidl_fuchsia_wlan_ieee80211::WlanPhyType::Ht,
+                Cbw::Cbw20,
+                6,
+            ),
             mode: types::ConnectivityMode::Unrestricted,
             band: types::OperatingBand::Any,
         }

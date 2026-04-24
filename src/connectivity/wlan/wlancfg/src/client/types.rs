@@ -4,6 +4,9 @@
 
 use crate::config_management::{self};
 use crate::util::historical_list::Timestamped;
+use fidl_fuchsia_wlan_internal as fidl_internal;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_async::MonotonicInstant;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::Channel;
@@ -12,10 +15,6 @@ use wlan_common::sequestered::Sequestered;
 use wlan_metrics_registry::{
     PolicyConnectionAttemptMigratedMetricDimensionReason,
     PolicyDisconnectionMigratedMetricDimensionReason,
-};
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal,
-    fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_sme as fidl_sme,
 };
 
 pub(crate) use crate::regulatory_manager::CountryCode;
@@ -119,7 +118,7 @@ pub struct Bss {
     /// Compatibility with this device's network stack.
     pub compatibility: wlan_common::scan::Compatibility,
     /// The BSS description with information that SME needs for connecting.
-    pub bss_description: Sequestered<fidl_common::BssDescription>,
+    pub bss_description: Sequestered<fidl_fuchsia_wlan_ieee80211::BssDescription>,
 }
 
 impl Bss {

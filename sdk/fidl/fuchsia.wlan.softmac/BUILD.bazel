@@ -10,6 +10,7 @@ fidl_library(
         "features.fidl",
         "overview.fidl",
         "softmac.fidl",
+        "tx.fidl",
     ],
     api_area = "WLAN",
     category = "partner",
@@ -18,6 +19,7 @@ fidl_library(
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.wlan.common",
+        "//sdk/fidl/fuchsia.wlan.driver",
         "//sdk/fidl/fuchsia.wlan.ieee80211",
         "//zircon/vdso/zx",
     ],

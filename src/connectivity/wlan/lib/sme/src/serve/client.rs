@@ -8,7 +8,10 @@ use crate::client::{
 };
 use crate::{MlmeEventStream, MlmeSink, MlmeStream};
 use fidl::endpoints::{RequestStream, ServerEnd};
-use fidl_fuchsia_wlan_common::BssDescription as BssDescriptionFidl;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_ieee80211::BssDescription as BssDescriptionFidl;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fidl_fuchsia_wlan_sme::{self as fidl_sme, ClientSmeRequest, TelemetryRequest};
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
@@ -19,10 +22,6 @@ use log::error;
 use std::pin::pin;
 use std::sync::Arc;
 use wlan_common::scan::write_vmo;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_mlme as fidl_mlme,
-};
 
 pub type Endpoint = ServerEnd<fidl_sme::ClientSmeMarker>;
 type Sme = client_sme::ClientSme;
@@ -389,8 +388,10 @@ mod tests {
     use crate::test_utils;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
     use fidl_fuchsia_wlan_mlme::ScanResultCode;
     use fidl_fuchsia_wlan_sme::{self as fidl_sme};
+    use fuchsia_async as fasync;
     use futures::stream::StreamFuture;
     use futures::task::Poll;
     use rand::Rng;
@@ -400,7 +401,6 @@ mod tests {
     use wlan_common::random_bss_description;
     use wlan_common::scan::{self, Incompatible};
     use wlan_rsn::auth;
-    use {fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync};
 
     #[test]
     fn test_convert_connect_result() {

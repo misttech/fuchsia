@@ -38,6 +38,7 @@ fidl("fuchsia.wlan.softmac") {
     "features.fidl",
     "overview.fidl",
     "softmac.fidl",
+    "tx.fidl",
   ]
   sdk_area = "WLAN"
   sdk_category = "partner"
@@ -46,6 +47,7 @@ fidl("fuchsia.wlan.softmac") {
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.wlan.common",
+    "//sdk/fidl/fuchsia.wlan.driver",
     "//sdk/fidl/fuchsia.wlan.ieee80211",
     "//zircon/vdso/zx",
   ]

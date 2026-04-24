@@ -43,8 +43,8 @@ wlan_tap::SetKeyArgs ToSetKeyArgs(const wlan_softmac::WlanKeyConfiguration& conf
 
 wlan_tap::TxArgs ToTxArgs(const wlan_softmac::WlanTxPacket pkt) {
   WLAN_TRACE_DURATION();
-  if (pkt.info.phy < wlan_common::WlanPhyType::kDsss ||
-      pkt.info.phy > wlan_common::WlanPhyType::kHe) {
+  if (pkt.info.phy < fuchsia_wlan_ieee80211::wire::WlanPhyType::kDsss ||
+      pkt.info.phy > fuchsia_wlan_ieee80211::wire::WlanPhyType::kHe) {
     ZX_PANIC("Unknown PHY in wlan_tx_packet_t: %u.", static_cast<uint32_t>(pkt.info.phy));
   }
 
@@ -258,7 +258,7 @@ void WlantapPhy::WlantapMacSetChannel(const fuchsia_wlan_ieee80211::wire::WlanCh
   }
 }
 
-void WlantapPhy::WlantapMacJoinBss(const wlan_common::JoinBssRequest& config) {
+void WlantapPhy::WlantapMacJoinBss(const fuchsia_wlan_driver::wire::JoinBssRequest& config) {
   WLAN_TRACE_DURATION();
   fdf::info("{}: WlantapMacJoinBss", name_);
 

@@ -380,18 +380,6 @@
     },
     {
         "kind": "const",
-        "name": "fuchsia.wlan.common/WLAN_MAC_MAX_EXT_RATES",
-        "type": "uint32",
-        "value": "255"
-    },
-    {
-        "kind": "const",
-        "name": "fuchsia.wlan.common/WLAN_MAC_MAX_SUPP_RATES",
-        "type": "uint32",
-        "value": "8"
-    },
-    {
-        "kind": "const",
         "name": "fuchsia.wlan.common/WLAN_TX_RESULT_MAX_ENTRY",
         "type": "uint32",
         "value": "8"

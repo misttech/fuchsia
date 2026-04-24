@@ -1,5 +1,36 @@
 [
     {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/BssType.INDEPENDENT",
+        "value": "2"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/BssType.INFRASTRUCTURE",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/BssType.MESH",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/BssType.PERSONAL",
+        "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/BssType.UNKNOWN",
+        "value": "0"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.wlan.ieee80211/BssType",
+        "strictness": "flexible",
+        "type": "uint32"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.wlan.ieee80211/CCMP_128_MIC_LEN",
         "type": "uint32",
@@ -155,6 +186,22 @@
         "name": "fuchsia.wlan.ieee80211/CipherSuiteType",
         "strictness": "flexible",
         "type": "uint32"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/GuardInterval.LONG_GI",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/GuardInterval.SHORT_GI",
+        "value": "2"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.wlan.ieee80211/GuardInterval",
+        "strictness": "strict",
+        "type": "uint8"
     },
     {
         "kind": "const",
@@ -1389,6 +1436,72 @@
     {
         "kind": "struct",
         "name": "fuchsia.wlan.ieee80211/WlanChannel"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.CDMG",
+        "value": "10"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.CMMG",
+        "value": "11"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.DMG",
+        "value": "6"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.DSSS",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.ERP",
+        "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.HE",
+        "value": "12"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.HR",
+        "value": "2"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.HT",
+        "value": "5"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.OFDM",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.S1G",
+        "value": "9"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.TVHT",
+        "value": "8"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType.VHT",
+        "value": "7"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.wlan.ieee80211/WlanPhyType",
+        "strictness": "flexible",
+        "type": "uint32"
     },
     {
         "kind": "library",

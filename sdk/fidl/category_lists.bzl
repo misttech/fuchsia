@@ -129,6 +129,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.weave:fuchsia.weave_idk",
     "//sdk/fidl/fuchsia.web:fuchsia.web_idk",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_idk",
+    "//sdk/fidl/fuchsia.wlan.driver:fuchsia.wlan.driver_idk",
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_idk",
     "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_idk",
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_idk",

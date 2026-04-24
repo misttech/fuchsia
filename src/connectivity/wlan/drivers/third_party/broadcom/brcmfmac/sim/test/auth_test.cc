@@ -241,7 +241,8 @@ fuchsia_wlan_ieee80211::wire::SetKeyDescriptor AuthTest::CreateKeyConfig(
 
 void AuthTest::StartConnect() {
   auto builder = wlan_fullmac_wire::WlanFullmacImplConnectRequest::Builder(client_ifc_.test_arena_);
-  fuchsia_wlan_common::wire::BssDescription bss;
+  fuchsia_wlan_ieee80211::wire::BssDescription bss;
+
   memcpy(bss.bssid.data(), kDefaultBssid.byte, ETH_ALEN);
   bss.ies = fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(kIes), sizeof(kIes));
   bss.channel = kDefaultChannel;

@@ -1119,7 +1119,7 @@ mod tests {
     fn report_fake_scan_result(
         sme: &mut ClientSme,
         timestamp_nanos: i64,
-        bss: fidl_common::BssDescription,
+        bss: fidl_ieee80211::BssDescription,
     ) {
         sme.on_mlme_event(fidl_mlme::MlmeEvent::OnScanResult {
             result: fidl_mlme::ScanResult { txn_id: 1, timestamp_nanos, bss },
@@ -1935,7 +1935,7 @@ mod tests {
         );
         // Manually override the privacy bit since fake_fidl_bss_description!()
         // does not allow setting it directly.
-        let bss_description = fidl_common::BssDescription {
+        let bss_description = fidl_ieee80211::BssDescription {
             capability_info: wlan_common::mac::CapabilityInfo(bss_description.capability_info)
                 .with_privacy(false)
                 .0,
@@ -2260,7 +2260,7 @@ mod tests {
 
     fn connect_req(
         ssid: Ssid,
-        bss_description: fidl_common::BssDescription,
+        bss_description: fidl_ieee80211::BssDescription,
         authentication: fidl_internal::Authentication,
     ) -> fidl_sme::ConnectRequest {
         fidl_sme::ConnectRequest {

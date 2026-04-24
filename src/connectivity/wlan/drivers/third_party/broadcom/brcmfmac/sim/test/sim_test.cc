@@ -351,13 +351,13 @@ void SimInterface::StartConnect(const common::MacAddr& bssid,
 
   // Send connect request
   auto builder = wlan_fullmac_wire::WlanFullmacImplConnectRequest::Builder(test_arena_);
-  fuchsia_wlan_common::wire::BssDescription bss;
+  fuchsia_wlan_ieee80211::wire::BssDescription bss;
   memcpy(bss.bssid.data(), bssid.byte, ETH_ALEN);
   auto ies =
       std::vector<uint8_t>(assoc_ctx_.ies.data(), assoc_ctx_.ies.data() + assoc_ctx_.ies.size());
   bss.ies = fidl::VectorView(test_arena_, ies);
   bss.channel = channel;
-  bss.bss_type = fuchsia_wlan_common::wire::BssType::kInfrastructure;
+  bss.bss_type = fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure;
   builder.selected_bss(bss);
   builder.auth_type(wlan_fullmac_wire::WlanAuthType::kOpenSystem);
   builder.connect_failure_timeout(1000);  // ~1s (although value is ignored for now)
@@ -390,13 +390,13 @@ void SimInterface::StartRoam(const common::MacAddr& bssid,
 
   // Send roam request
   auto builder = wlan_fullmac_wire::WlanFullmacImplRoamRequest::Builder(test_arena_);
-  fuchsia_wlan_common::wire::BssDescription bss;
+  fuchsia_wlan_ieee80211::wire::BssDescription bss;
   memcpy(bss.bssid.data(), bssid.byte, ETH_ALEN);
   auto ies =
       std::vector<uint8_t>(assoc_ctx_.ies.data(), assoc_ctx_.ies.data() + assoc_ctx_.ies.size());
   bss.ies = fidl::VectorView(test_arena_, ies);
   bss.channel = channel;
-  bss.bss_type = fuchsia_wlan_common::wire::BssType::kInfrastructure;
+  bss.bss_type = fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure;
   builder.selected_bss(bss);
   auto result = client_.buffer(test_arena_)->Roam(builder.Build());
   ZX_ASSERT(result.ok());
@@ -483,7 +483,7 @@ void SimInterface::StartSoftAp(const fuchsia_wlan_ieee80211::Ssid& ssid,
   ZX_ASSERT(role_ == wlan_common::WlanMacRole::kAp);
 
   auto builder = wlan_fullmac_wire::WlanFullmacImplStartBssRequest::Builder(test_arena_)
-                     .bss_type(fuchsia_wlan_common_wire::BssType::kInfrastructure)
+                     .bss_type(fuchsia_wlan_ieee80211::wire::BssType::kInfrastructure)
                      .beacon_period(beacon_period)
                      .dtim_period(dtim_period)
                      .channel(channel.primary)

@@ -569,7 +569,7 @@ class BssDescriptionParser:
     """BssDescription with parsed information elements."""
 
     @staticmethod
-    def ssid(bss_description: f_wlan_common.BssDescription) -> str | None:
+    def ssid(bss_description: f_wlan_ieee80211.BssDescription) -> str | None:
         """Parse information elements for SSID."""
         ies = bytes(bss_description.ies)
         i = 0

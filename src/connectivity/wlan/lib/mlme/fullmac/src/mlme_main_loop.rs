@@ -7,15 +7,15 @@ use crate::device::DeviceOps;
 use crate::wlan_fullmac_impl_ifc_request_handler::serve_wlan_fullmac_impl_ifc_request_handler;
 use crate::{DriverState, FullmacDriverEvent, FullmacDriverEventSink};
 use anyhow::{Context, bail};
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
 use futures::{Future, StreamExt, select};
 use log::{error, info};
 use std::pin::Pin;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
-    fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme,
-    fuchsia_async as fasync,
-};
 
 /// Creates a future that implements the MLME main loop.
 ///
@@ -395,14 +395,13 @@ mod handle_mlme_request_tests {
     use super::*;
     use crate::device::test_utils::{DriverCall, FakeFullmacDevice, FakeFullmacDeviceMocks};
     use assert_matches::assert_matches;
+    use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
+    use fidl_fuchsia_wlan_stats as fidl_stats;
     use fuchsia_sync::Mutex;
     use std::sync::Arc;
     use test_case::test_case;
     use wlan_common::sink::UnboundedSink;
-    use {
-        fidl_fuchsia_wlan_fullmac as fidl_fullmac, fidl_fuchsia_wlan_internal as fidl_internal,
-        fidl_fuchsia_wlan_stats as fidl_stats,
-    };
 
     #[test]
     fn test_scan_request() {
@@ -475,9 +474,9 @@ mod handle_mlme_request_tests {
     fn test_connect_request() {
         let mut h = TestHelper::set_up_with_link_state(fidl_mlme::ControlledPortState::Open);
         let fidl_req = wlan_sme::MlmeRequest::Connect(fidl_mlme::ConnectRequest {
-            selected_bss: fidl_common::BssDescription {
+            selected_bss: fidl_ieee80211::BssDescription {
                 bssid: [100u8; 6],
-                bss_type: fidl_common::BssType::Infrastructure,
+                bss_type: fidl_ieee80211::BssType::Infrastructure,
                 beacon_period: 101,
                 capability_info: 102,
                 ies: vec![103u8, 104, 105],
@@ -523,7 +522,7 @@ mod handle_mlme_request_tests {
         assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::ConnectReq { req })) => {
             let selected_bss = req.selected_bss.clone().unwrap();
             assert_eq!(selected_bss.bssid, [100u8; 6]);
-            assert_eq!(selected_bss.bss_type, fidl_common::BssType::Infrastructure);
+            assert_eq!(selected_bss.bss_type, fidl_ieee80211::BssType::Infrastructure);
             assert_eq!(selected_bss.beacon_period, 101);
             assert_eq!(selected_bss.capability_info, 102);
             assert_eq!(selected_bss.ies, vec![103u8, 104, 105]);
@@ -672,7 +671,7 @@ mod handle_mlme_request_tests {
         const RSNE_LEN: usize = 15;
         let fidl_req = wlan_sme::MlmeRequest::Start(fidl_mlme::StartRequest {
             ssid: vec![1u8; SSID_LEN],
-            bss_type: fidl_common::BssType::Infrastructure,
+            bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 3,
             dtim_period: 4,
             channel: 5,
@@ -681,7 +680,7 @@ mod handle_mlme_request_tests {
             country: fidl_mlme::Country { alpha2: [10, 11], suffix: 12 },
             mesh_id: vec![13],
             rsne: Some(vec![14; RSNE_LEN]),
-            phy: fidl_common::WlanPhyType::Vht,
+            phy: fidl_ieee80211::WlanPhyType::Vht,
             channel_bandwidth: fidl_ieee80211::ChannelBandwidth::Cbw80,
         });
 
@@ -690,7 +689,7 @@ mod handle_mlme_request_tests {
         let driver_req = assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::StartBss { req })) => req);
 
         assert_eq!(driver_req.ssid, Some(vec![1u8; SSID_LEN]));
-        assert_eq!(driver_req.bss_type, Some(fidl_common::BssType::Infrastructure));
+        assert_eq!(driver_req.bss_type, Some(fidl_ieee80211::BssType::Infrastructure));
         assert_eq!(driver_req.beacon_period, Some(3));
         assert_eq!(driver_req.dtim_period, Some(4));
         assert_eq!(driver_req.channel, Some(5));
@@ -1215,6 +1214,11 @@ mod handle_driver_event_tests {
     use super::*;
     use crate::device::test_utils::{DriverCall, FakeFullmacDevice, FakeFullmacDeviceMocks};
     use assert_matches::assert_matches;
+    use fidl_fuchsia_wlan_driver as fidl_driver_common;
+    use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
+    use fidl_fuchsia_wlan_mlme as fidl_mlme;
+    use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::Future;
     use futures::channel::mpsc;
@@ -1224,15 +1228,11 @@ mod handle_driver_event_tests {
     use test_case::test_case;
     use wlan_common::fake_fidl_bss_description;
     use wlan_common::sink::UnboundedSink;
-    use {
-        fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
-        fidl_fuchsia_wlan_mlme as fidl_mlme, fuchsia_async as fasync,
-    };
 
-    fn create_bss_descriptions() -> fidl_common::BssDescription {
-        fidl_common::BssDescription {
+    fn create_bss_descriptions() -> fidl_ieee80211::BssDescription {
+        fidl_ieee80211::BssDescription {
             bssid: [9u8; 6],
-            bss_type: fidl_common::BssType::Infrastructure,
+            bss_type: fidl_ieee80211::BssType::Infrastructure,
             beacon_period: 1,
             capability_info: 2,
             ies: vec![3, 4, 5],
@@ -2013,30 +2013,30 @@ mod handle_driver_event_tests {
         assert_matches!(h.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
         let status = zx::sys::ZX_OK;
-        let wmm_params = fidl_common::WlanWmmParameters {
+        let wmm_params = fidl_driver_common::WlanWmmParameters {
             apsd: true,
-            ac_be_params: fidl_common::WlanWmmAccessCategoryParameters {
+            ac_be_params: fidl_driver_common::WlanWmmAccessCategoryParameters {
                 ecw_min: 1,
                 ecw_max: 2,
                 aifsn: 3,
                 txop_limit: 4,
                 acm: true,
             },
-            ac_bk_params: fidl_common::WlanWmmAccessCategoryParameters {
+            ac_bk_params: fidl_driver_common::WlanWmmAccessCategoryParameters {
                 ecw_min: 5,
                 ecw_max: 6,
                 aifsn: 7,
                 txop_limit: 8,
                 acm: false,
             },
-            ac_vi_params: fidl_common::WlanWmmAccessCategoryParameters {
+            ac_vi_params: fidl_driver_common::WlanWmmAccessCategoryParameters {
                 ecw_min: 9,
                 ecw_max: 10,
                 aifsn: 11,
                 txop_limit: 12,
                 acm: true,
             },
-            ac_vo_params: fidl_common::WlanWmmAccessCategoryParameters {
+            ac_vo_params: fidl_driver_common::WlanWmmAccessCategoryParameters {
                 ecw_min: 13,
                 ecw_max: 14,
                 aifsn: 15,
