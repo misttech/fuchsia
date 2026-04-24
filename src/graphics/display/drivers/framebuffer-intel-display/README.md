@@ -15,16 +15,28 @@ Start with a [supported Intel device][fuchsia-hardware-support].
    `src/graphics/display/drivers/intel-display/meta/intel-display.bind` so the
    display binds to this driver instead of `intel-display`.
 
-2. Build and flash `core.x64`.
+2. Launch the `squares` demo in the `display-tool` test utility.
 
-3. Verify that the virtcon (Fuchsia `f` logo) shows on the display and that the
-   terminal responds to keyboard input.
+   ```posix-terminal
+   ffx target ssh display-tool squares
+   ```
 
-4. Add the following footer to your CL description, to document having
+3. Add the following footer to your CL description, to document having
    performed the test.
 
    ```
-   Test: Manual virtcon check with keyboard input on <supported Intel device>
+   Test: ffx target ssh display-tool squares
    ```
+
+These instructions will work with a `workbench_eng.x64` build that includes the
+`//src/graphics/display:tools` GN target. The `//src/graphics/display:tests`
+target is also recommended, as it builds the automated unit tests. Debug
+assertions, which are extensively used in display drivers, are only enabled in
+debug builds.
+
+```posix-terminal
+fx set workbench_eng.x64 --debug --with //src/graphics/display:tools \
+    --with //src/graphics/display:tests
+```
 
 [fuchsia-hardware-support]: https://fuchsia.dev/fuchsia-src/reference/hardware/support-system-config

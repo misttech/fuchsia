@@ -5,7 +5,6 @@
 #include "src/graphics/display/lib/framebuffer-display/framebuffer-display-driver.h"
 
 #include <fidl/fuchsia.hardware.display.engine/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -79,15 +78,6 @@ FramebufferDisplayDriver::CreateAndInitializeFramebufferDisplay() {
   }
   DisplayProperties display_properties = std::move(display_properties_result).value();
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_sysmem::Sysmem>> sysmem_hardware_client_result =
-      incoming()->Connect<fuchsia_hardware_sysmem::Sysmem>();
-  if (sysmem_hardware_client_result.is_error()) {
-    fdf::error("Failed to get hardware sysmem protocol: {}", sysmem_hardware_client_result);
-    return sysmem_hardware_client_result.take_error();
-  }
-  fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem_hardware_client(
-      std::move(sysmem_hardware_client_result).value());
-
   zx::result<fidl::ClientEnd<fuchsia_sysmem2::Allocator>> sysmem_client_result =
       incoming()->Connect<fuchsia_sysmem2::Allocator>();
   if (sysmem_client_result.is_error()) {
@@ -108,8 +98,7 @@ FramebufferDisplayDriver::CreateAndInitializeFramebufferDisplay() {
   framebuffer_display_dispatcher_ = std::move(create_dispatcher_result).value();
 
   auto framebuffer_display = fbl::make_unique_checked<FramebufferDisplay>(
-      &alloc_checker, engine_events_.get(), std::move(sysmem_client),
-      std::move(sysmem_hardware_client), std::move(frame_buffer_mmio),
+      &alloc_checker, engine_events_.get(), std::move(sysmem_client), std::move(frame_buffer_mmio),
       std::move(display_properties), framebuffer_display_dispatcher_.async_dispatcher());
   if (!alloc_checker.check()) {
     fdf::error("Failed to allocate memory for FramebufferDisplay");

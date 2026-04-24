@@ -4,18 +4,12 @@
 
 #include "src/graphics/display/lib/framebuffer-display/framebuffer-display.h"
 
-#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <fidl/fuchsia.sysmem/cpp/wire.h>
-#include <lib/device-protocol/pci.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/image-format/image_format.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zx/result.h>
-#include <unistd.h>
-#include <zircon/process.h>
-#include <zircon/syscalls.h>
 #include <zircon/types.h>
 
 #include <cinttypes>
@@ -23,9 +17,6 @@
 #include <memory>
 #include <mutex>
 #include <utility>
-
-#include <bind/fuchsia/sysmem/heap/cpp/bind.h>
-#include <fbl/alloc_checker.h>
 
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
@@ -60,41 +51,7 @@ constexpr display::DisplayId kDisplayId(1);
 constexpr display::ModeId kDisplayModeId(1);
 constexpr int kRefreshRateHz = 30;
 
-constexpr uint64_t kImageHandle = 0xdecafc0ffee;
-
 constexpr auto kVSyncInterval = zx::usec(1000000 / kRefreshRateHz);
-
-fuchsia_hardware_sysmem::wire::HeapProperties GetHeapProperties(fidl::AnyArena& arena) {
-  fuchsia_hardware_sysmem::wire::CoherencyDomainSupport coherency_domain_support =
-      fuchsia_hardware_sysmem::wire::CoherencyDomainSupport::Builder(arena)
-          .cpu_supported(false)
-          .ram_supported(true)
-          .inaccessible_supported(false)
-          .Build();
-
-  fuchsia_hardware_sysmem::wire::HeapProperties heap_properties =
-      fuchsia_hardware_sysmem::wire::HeapProperties::Builder(arena)
-          .coherency_domain_support(std::move(coherency_domain_support))
-          .need_clear(false)
-          .Build();
-  return heap_properties;
-}
-
-void OnHeapServerClose(fidl::UnbindInfo info, zx::channel channel) {
-  if (info.is_dispatcher_shutdown()) {
-    // Pending wait is canceled because the display device that the heap belongs
-    // to has been destroyed.
-    fdf::info("Framebuffer display destroyed: status: {}", info.status_string());
-    return;
-  }
-
-  if (info.is_peer_closed()) {
-    fdf::info("Client closed heap connection");
-    return;
-  }
-
-  fdf::error("Channel internal error: status: {}", info.FormatDescription().c_str());
-}
 
 zx_koid_t GetCurrentProcessKoid() {
   zx_handle_t handle = zx_process_self();
@@ -222,8 +179,9 @@ zx::result<display::DriverImageId> FramebufferDisplay::ImportImage(
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  if (buffer_index > 0) {
-    fdf::error("invalid index {}, greater than 0", buffer_index);
+  if (buffer_index >= collection_info.buffers().size()) {
+    fdf::error("invalid buffer index {}, greater than or equal to collection size {}", buffer_index,
+               collection_info.buffers().size());
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
@@ -236,46 +194,23 @@ zx::result<display::DriverImageId> FramebufferDisplay::ImportImage(
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  // We only need the VMO temporarily to get the BufferKey. The BufferCollection client_end in
-  // buffer_collections_ is not SetWeakOk (and therefore is known to be strong at this point), so
-  // it's not necessary to keep this VMO for the buffer to remain alive.
-  zx::vmo vmo = std::move(collection_info.buffers()[0].vmo());
-
-  fidl::Arena arena;
-  fidl::WireResult<fuchsia_sysmem2::Allocator::GetVmoInfo> get_vmo_info_transport_result =
-      sysmem_client_->GetVmoInfo(fuchsia_sysmem2::wire::AllocatorGetVmoInfoRequest::Builder(arena)
-                                     .vmo(std::move(vmo))
-                                     .Build());
-  if (!get_vmo_info_transport_result.ok()) {
-    fdf::error("FIDL error calling GetVmoInfo: {}", get_vmo_info_transport_result.error());
-    return zx::error(get_vmo_info_transport_result.status());
-  }
-  fit::result<fuchsia_sysmem2::wire::Error, fuchsia_sysmem2::wire::AllocatorGetVmoInfoResponse*>&
-      get_vmo_info_domain_result = get_vmo_info_transport_result.value();
-  if (get_vmo_info_domain_result.is_error()) {
-    fdf::warn("GetVmoInfo failed: {}",
-              static_cast<uint32_t>(get_vmo_info_domain_result.error_value()));
-    return zx::error(sysmem::V1CopyFromV2Error(get_vmo_info_domain_result.error_value()));
-  }
-  fuchsia_sysmem2::wire::AllocatorGetVmoInfoResponse*& vmo_info =
-      get_vmo_info_domain_result.value();
-  BufferKey buffer_key(vmo_info->buffer_collection_id(), vmo_info->buffer_index());
-
-  bool key_matched;
-  {
-    std::lock_guard lock(framebuffer_key_mtx_);
-    key_matched = framebuffer_key_.has_value() && (*framebuffer_key_ == buffer_key);
-  }
-  if (!key_matched) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
   if (image_metadata.width() != properties_.width_px ||
       image_metadata.height() != properties_.height_px) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  return zx::ok(kImageHandle);
+  // Map VMO at Import to avoid mapping buffer per-frame
+  zx::vmo vmo = std::move(collection_info.buffers()[buffer_index].vmo());
+  fzl::VmoMapper mapper;
+  zx_status_t status = mapper.Map(vmo, /*offset=*/0, /*size=*/0, ZX_VM_PERM_READ);
+  if (status != ZX_OK) {
+    fdf::error("Failed to map VMO: {}", zx::make_result(status));
+    return zx::error(status);
+  }
+
+  const display::DriverImageId image_id = next_image_id_++;
+  imported_images_[image_id] = std::move(mapper);
+  return zx::ok(image_id);
 }
 
 zx::result<display::DriverCaptureImageId> FramebufferDisplay::ImportImageForCapture(
@@ -284,7 +219,7 @@ zx::result<display::DriverCaptureImageId> FramebufferDisplay::ImportImageForCapt
 }
 
 void FramebufferDisplay::ReleaseImage(display::DriverImageId image_id) {
-  // noop
+  imported_images_.erase(image_id);
 }
 
 display::ConfigCheckResult FramebufferDisplay::CheckConfiguration(
@@ -336,6 +271,24 @@ void FramebufferDisplay::SubmitConfiguration(display::DisplayId display_id,
 
   ZX_DEBUG_ASSERT_MSG(layers.size() == kEngineInfo.max_layer_count(), "Invalid layer size: %zu",
                       layers.size());
+
+  // framebuffer-display's |kEngineInfo| only supports 1 layer
+  auto it = imported_images_.find(layers[0].image_id());
+  if (it == imported_images_.end()) {
+    fdf::error("SubmitConfiguration: unknown image ID {}", layers[0].image_id());
+    return;
+  }
+
+  // Copy image buffer into the linear framebuffer. Note that the underlying framebuffer is in
+  // regular RAM, so this is a bulk memory copy and not a write to a device register window.
+  const uint32_t bytes_per_pixel = ImageFormatStrideBytesPerWidthPixel(
+      PixelFormatAndModifier(properties_.pixel_format.ToFidl(), kFormatModifier));
+  const size_t row_bytes = static_cast<size_t>(properties_.row_stride_px) * bytes_per_pixel;
+  const size_t total_bytes = row_bytes * static_cast<size_t>(properties_.height_px);
+  const size_t copy_bytes =
+      std::min({total_bytes, it->second.size(), framebuffer_mmio_.get_size()});
+  framebuffer_mmio_.WriteBuffer(0, it->second.start(), copy_bytes);
+
   has_image_ = true;
   {
     std::lock_guard lock(mtx_);
@@ -370,10 +323,6 @@ zx::result<> FramebufferDisplay::SetBufferCollectionConstraints(
   buffer_constraints.secure_required(false);
   buffer_constraints.ram_domain_supported(true);
   buffer_constraints.cpu_domain_supported(true);
-  auto heap = fuchsia_sysmem2::wire::Heap::Builder(arena);
-  heap.heap_type(bind_fuchsia_sysmem_heap::HEAP_TYPE_FRAMEBUFFER);
-  heap.id(0);
-  buffer_constraints.permitted_heaps(std::array{heap.Build()});
   constraints.buffer_memory_constraints(buffer_constraints.Build());
   auto image_constraints = fuchsia_sysmem2::wire::ImageFormatConstraints::Builder(arena);
   image_constraints.pixel_format(properties_.pixel_format.ToFidl());
@@ -401,7 +350,6 @@ zx::result<> FramebufferDisplay::SetBufferCollectionConstraints(
 }
 
 zx::result<> FramebufferDisplay::SetDisplayPowerMode(display::DisplayId display_id,
-
                                                      display::PowerMode power_mode) {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
@@ -418,89 +366,9 @@ zx::result<> FramebufferDisplay::SetMinimumRgb(uint8_t minimum_rgb) {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
-// implement sysmem heap protocol:
-
-void FramebufferDisplay::AllocateVmo(AllocateVmoRequestView request,
-                                     AllocateVmoCompleter::Sync& completer) {
-  BufferKey buffer_key(request->buffer_collection_id, request->buffer_index);
-
-  zx_info_handle_count handle_count;
-  zx_status_t status = framebuffer_mmio_.get_vmo()->get_info(
-      ZX_INFO_HANDLE_COUNT, &handle_count, sizeof(handle_count), nullptr, nullptr);
-  if (status != ZX_OK) {
-    completer.ReplyError(status);
-    return;
-  }
-  if (handle_count.handle_count != 1) {
-    completer.ReplyError(ZX_ERR_NO_RESOURCES);
-    return;
-  }
-  zx::vmo vmo;
-  status = framebuffer_mmio_.get_vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo);
-  if (status != ZX_OK) {
-    completer.ReplyError(status);
-  }
-
-  bool had_framebuffer_key;
-  {
-    std::lock_guard lock(framebuffer_key_mtx_);
-    had_framebuffer_key = framebuffer_key_.has_value();
-    if (!had_framebuffer_key) {
-      framebuffer_key_ = buffer_key;
-    }
-  }
-  if (had_framebuffer_key) {
-    completer.ReplyError(ZX_ERR_NO_RESOURCES);
-    return;
-  }
-
-  completer.ReplySuccess(std::move(vmo));
-}
-
-void FramebufferDisplay::DeleteVmo(DeleteVmoRequestView request,
-                                   DeleteVmoCompleter::Sync& completer) {
-  {
-    std::lock_guard lock(framebuffer_key_mtx_);
-    framebuffer_key_.reset();
-  }
-
-  // Semantics of DeleteVmo are to recycle all resources tied to the sysmem allocation before
-  // replying, so we close the VMO handle here before replying. Even if it shares an object and
-  // pages with a VMO handle we're not closing, this helps clarify wrt semantics of DeleteVmo.
-  request->vmo.reset();
-
-  completer.Reply();
-}
-
 // implement driver object:
 
 zx::result<> FramebufferDisplay::Initialize() {
-  auto [heap_client, heap_server] = fidl::Endpoints<fuchsia_hardware_sysmem::Heap>::Create();
-
-  fidl::OneWayStatus register_heap_transport_status = sysmem_hardware_client_->RegisterHeap(
-      static_cast<uint64_t>(fuchsia_sysmem::wire::HeapType::kFramebuffer), std::move(heap_client));
-  if (!register_heap_transport_status.ok()) {
-    fdf::error("FIDL error calling RegisterHeap: {}", register_heap_transport_status.error());
-    return zx::error(register_heap_transport_status.status());
-  }
-
-  // Start heap server.
-  auto arena = std::make_unique<fidl::Arena<512>>();
-  fuchsia_hardware_sysmem::wire::HeapProperties heap_properties = GetHeapProperties(*arena.get());
-  async::PostTask(&dispatcher_, [server_end = std::move(heap_server), arena = std::move(arena),
-                                 heap_properties = std::move(heap_properties), this]() mutable {
-    auto binding = fidl::BindServer(&dispatcher_, std::move(server_end), this,
-                                    [](FramebufferDisplay* self, fidl::UnbindInfo info,
-                                       fidl::ServerEnd<fuchsia_hardware_sysmem::Heap> server_end) {
-                                      OnHeapServerClose(info, server_end.TakeChannel());
-                                    });
-    fidl::OneWayStatus on_register_transport_status =
-        fidl::WireSendEvent(binding)->OnRegister(std::move(heap_properties));
-    if (!on_register_transport_status.ok()) {
-      fdf::error("FIDL error calling OnRegister: {}", on_register_transport_status.error());
-    }
-  });
-
   // Start vsync loop.
   vsync_task_.Post(&dispatcher_);
 
@@ -514,11 +382,9 @@ zx::result<> FramebufferDisplay::Initialize() {
 FramebufferDisplay::FramebufferDisplay(
     display::DisplayEngineEventsInterface* engine_events,
     fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem_client,
-    fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem_hardware_client,
     fdf::MmioBuffer framebuffer_mmio, const DisplayProperties& properties,
     async_dispatcher_t* dispatcher)
-    : sysmem_hardware_client_(std::move(sysmem_hardware_client)),
-      sysmem_client_(std::move(sysmem_client)),
+    : sysmem_client_(std::move(sysmem_client)),
       dispatcher_(*dispatcher),
       has_image_(false),
       framebuffer_mmio_(std::move(framebuffer_mmio)),

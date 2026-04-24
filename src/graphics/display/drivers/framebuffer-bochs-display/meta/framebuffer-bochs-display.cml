@@ -18,10 +18,7 @@
     use: [
         { service: "fuchsia.hardware.pci.Service" },
         {
-            protocol: [
-                "fuchsia.hardware.sysmem.Sysmem",
-                "fuchsia.sysmem2.Allocator",
-            ],
+            protocol: [ "fuchsia.sysmem2.Allocator" ],
         },
     ],
     expose: [

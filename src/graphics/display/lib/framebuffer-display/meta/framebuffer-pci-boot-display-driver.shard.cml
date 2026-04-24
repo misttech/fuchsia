@@ -14,7 +14,6 @@
         {
             protocol: [
                 "fuchsia.boot.Items",
-                "fuchsia.hardware.sysmem.Sysmem",
                 "fuchsia.sysmem2.Allocator",
             ],
         },

@@ -5,24 +5,22 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_FRAMEBUFFER_DISPLAY_FRAMEBUFFER_DISPLAY_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_FRAMEBUFFER_DISPLAY_FRAMEBUFFER_DISPLAY_H_
 
-#include <fidl/fuchsia.hardware.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.images2/cpp/wire.h>
-#include <fidl/fuchsia.sysmem/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/mmio/cpp/mmio.h>
-#include <lib/fidl/cpp/wire/server.h>
 #include <lib/fit/function.h>
+#include <lib/fzl/vmo-mapper.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/result.h>
-#include <lib/zx/vmo.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
 
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <unordered_map>
 
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-interface.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-interface.h"
@@ -48,24 +46,17 @@ struct DisplayProperties {
   display::PixelFormat pixel_format;
 };
 
-class FramebufferDisplay;
-using HeapServer = fidl::WireServer<fuchsia_hardware_sysmem::Heap>;
-using BufferKey = std::pair<uint64_t, uint32_t>;
-class FramebufferDisplay : public HeapServer, public display::DisplayEngineInterface {
+class FramebufferDisplay final : public display::DisplayEngineInterface {
  public:
   // `dispatcher` must be non-null and outlive the newly created instance.
   FramebufferDisplay(display::DisplayEngineEventsInterface* engine_events,
                      fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem_client,
-                     fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem_hardware_client,
                      fdf::MmioBuffer framebuffer_mmio, const DisplayProperties& properties,
                      async_dispatcher_t* dispatcher);
   ~FramebufferDisplay() = default;
 
   // Initialization logic not suitable in the constructor.
   zx::result<> Initialize();
-
-  void AllocateVmo(AllocateVmoRequestView request, AllocateVmoCompleter::Sync& completer) override;
-  void DeleteVmo(DeleteVmoRequestView request, DeleteVmoCompleter::Sync& completer) override;
 
   // DisplayEngineInterface:
   display::EngineInfo CompleteCoordinatorConnection() override;
@@ -104,8 +95,6 @@ class FramebufferDisplay : public HeapServer, public display::DisplayEngineInter
  private:
   void OnPeriodicVSync(async_dispatcher_t* dispatcher, async::TaskBase* task, zx_status_t status);
 
-  fidl::WireSyncClient<fuchsia_hardware_sysmem::Sysmem> sysmem_hardware_client_;
-
   // The sysmem allocator client used to bind incoming buffer collection tokens.
   fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem_client_;
 
@@ -117,9 +106,10 @@ class FramebufferDisplay : public HeapServer, public display::DisplayEngineInter
   async_dispatcher_t& dispatcher_;
   async::TaskMethod<FramebufferDisplay, &FramebufferDisplay::OnPeriodicVSync> vsync_task_{this};
 
-  // protects only framebuffer_key_
-  std::mutex framebuffer_key_mtx_;
-  std::optional<BufferKey> framebuffer_key_ TA_GUARDED(framebuffer_key_mtx_);
+  // Accessed only from the display engine driver dispatcher (ImportImage, ReleaseImage,
+  // SubmitConfiguration); no synchronization needed.
+  std::unordered_map<display::DriverImageId, fzl::VmoMapper> imported_images_;
+  display::DriverImageId next_image_id_{1};
 
   static_assert(std::atomic<bool>::is_always_lock_free);
   std::atomic<bool> has_image_;
@@ -129,6 +119,7 @@ class FramebufferDisplay : public HeapServer, public display::DisplayEngineInter
   std::mutex mtx_;
   display::DriverConfigStamp config_stamp_ TA_GUARDED(mtx_) = display::kInvalidDriverConfigStamp;
 
+  // Note that the underlying framebuffer is in regular RAM, not a device register window.
   const fdf::MmioBuffer framebuffer_mmio_;
   const DisplayProperties properties_;
 
