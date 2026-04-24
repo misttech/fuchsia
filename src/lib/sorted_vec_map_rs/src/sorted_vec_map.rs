@@ -200,47 +200,48 @@ fn dedup_comparator<K: Ord, V>(a: &mut (K, V), b: &mut (K, V)) -> bool {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use test_case::test_case;
 
-    #[test]
-    fn test_get() {
-        let mut map = SortedVecMap::new();
-        assert!(map.get(&1).is_none());
-
-        map.insert(1, 21);
-        assert_eq!(map.get(&1), Some(&21));
-
-        map.insert(0, 20);
-        assert_eq!(map.get(&0), Some(&20));
-        assert_eq!(map.get(&1), Some(&21));
-
-        map.insert(2, 22);
-        assert_eq!(map.get(&0), Some(&20));
-        assert_eq!(map.get(&1), Some(&21));
-        assert_eq!(map.get(&2), Some(&22));
+    #[test_case(vec![], 1 => None; "empty_map")]
+    #[test_case(vec![(1, 21)], 1 => Some(21); "contains_key")]
+    #[test_case(vec![(1, 21), (0, 20)], 0 => Some(20); "contains_key_unsorted_init")]
+    #[test_case(vec![(1, 21), (0, 20), (2, 22)], 2 => Some(22); "contains_key_middle")]
+    #[test_case(vec![(1, 21), (0, 20), (2, 22)], 3 => None; "missing_key")]
+    fn test_get(initial: Vec<(i32, i32)>, lookup: i32) -> Option<i32> {
+        let map: SortedVecMap<i32, i32> = initial.into_iter().collect();
+        map.get(&lookup).copied()
     }
 
-    #[test]
-    fn test_insert() {
-        let mut map = SortedVecMap::new();
-        for (k, v) in [(50, 50), (47, 47), (48, 48), (51, 51), (49, 49)] {
-            assert!(map.insert(k, v).is_none());
-        }
-        assert_eq!(map.insert(48, 88), Some(48));
-        assert_eq!(map.vec.as_slice(), &[(47, 47), (48, 88), (49, 49), (50, 50), (51, 51)])
+    #[test_case(vec![], (50, 50), None, vec![(50, 50)]; "insert_empty")]
+    #[test_case(vec![(50, 50)], (47, 47), None, vec![(47, 47), (50, 50)]; "insert_lesser")]
+    #[test_case(vec![(47, 47), (50, 50)], (48, 48), None, vec![(47, 47), (48, 48), (50, 50)]; "insert_middle")]
+    #[test_case(vec![(47, 47), (50, 50)], (51, 51), None, vec![(47, 47), (50, 50), (51, 51)]; "insert_greater")]
+    #[test_case(vec![(47, 47), (48, 48), (50, 50)], (48, 88), Some(48), vec![(47, 47), (48, 88), (50, 50)]; "insert_overwrite")]
+    fn test_insert(
+        initial: Vec<(i32, i32)>,
+        to_insert: (i32, i32),
+        expected_return: Option<i32>,
+        expected_vec: Vec<(i32, i32)>,
+    ) {
+        let mut map: SortedVecMap<i32, i32> = initial.into_iter().collect();
+        let ret = map.insert(to_insert.0, to_insert.1);
+        assert_eq!(ret, expected_return);
+        assert_eq!(map.vec, expected_vec);
     }
 
-    #[test]
-    fn test_serialize_deserialize() {
-        let map: SortedVecMap<i32, i32> =
-            [(56, 56), (47, 47), (53, 53), (51, 51), (49, 49)].into_iter().collect();
+    #[test_case(vec![(56, 56), (47, 47), (53, 53), (51, 51), (49, 49)]; "normal_map")]
+    #[test_case(vec![]; "empty_map")]
+    fn test_serialize_deserialize(input: Vec<(i32, i32)>) {
+        let map: SortedVecMap<i32, i32> = input.into_iter().collect();
         let serialized = bincode::serialize(&map).unwrap();
         let deserialized: SortedVecMap<i32, i32> = bincode::deserialize(&serialized).unwrap();
         assert_eq!(map, deserialized);
     }
 
-    #[test]
-    fn test_deserialize_from_btree_map() {
-        let map: BTreeMap<i32, i32> = [(56, 56), (47, 47), (53, 53), (51, 51), (49, 49)].into();
+    #[test_case(vec![(56, 56), (47, 47), (53, 53), (51, 51), (49, 49)]; "normal_map")]
+    #[test_case(vec![]; "empty_map")]
+    fn test_deserialize_from_btree_map(input: Vec<(i32, i32)>) {
+        let map: BTreeMap<i32, i32> = input.into_iter().collect();
         let serialized = bincode::serialize(&map).unwrap();
         let deserialized: SortedVecMap<i32, i32> = bincode::deserialize(&serialized).unwrap();
 
