@@ -430,7 +430,8 @@ Reboot the Target to the bootloader and re-run this command."
             TargetState::Fastboot(fastboot_state) => match fastboot_state.connection_state {
                 FastbootConnectionState::Usb => {
                     let serial_num = fastboot_state.serial_number;
-                    let mut proxy = usb_proxy(serial_num).await?;
+                    let mut proxy =
+                        usb_proxy(serial_num).await.map_err(|e| anyhow::Error::from(e))?;
                     let (client, server) = mpsc::channel(1);
                     if writer.is_machine() {
                         try_join!(
@@ -479,7 +480,8 @@ Reboot the Target to the bootloader and re-run this command."
                             &socket_addr,
                             config,
                         )
-                        .await?;
+                        .await
+                        .map_err(|e| anyhow::Error::from(e))?;
                         let (client, server) = mpsc::channel(1);
                         if writer.is_machine() {
                             try_join!(
@@ -530,7 +532,8 @@ Reboot the Target to the bootloader and re-run this command."
                             &socket_addr,
                             config,
                         )
-                        .await?;
+                        .await
+                        .map_err(|e| anyhow::Error::from(e))?;
                         let (client, server) = mpsc::channel(1);
                         if writer.is_machine() {
                             try_join!(

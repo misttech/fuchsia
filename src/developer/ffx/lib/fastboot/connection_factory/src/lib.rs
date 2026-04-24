@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, bail};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
@@ -16,8 +15,36 @@ use ffx_fastboot_transport_interface::udp::UdpNetworkInterface;
 use netext::MultithreadedTokioAsyncWrapper;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use thiserror::Error;
 use tokio::net::TcpStream;
 use usb_fastboot_discovery::Interface as AsyncInterface;
+
+#[derive(Error, Debug)]
+pub enum ConnectionFactoryError {
+    #[error("Could not get a valid TCP address for target")]
+    NoTcpAddress,
+
+    #[error("Could not get a valid UDP address for target")]
+    NoUdpAddress,
+
+    #[error("USB Interface creation error for serial {serial}: {source}")]
+    UsbInterfaceCreation {
+        serial: String,
+        source: ffx_fastboot_interface::interface_factory::InterfaceFactoryError,
+    },
+
+    #[error("TCP Interface creation error for address {addr}: {source}")]
+    TcpInterfaceCreation {
+        addr: std::net::SocketAddr,
+        source: ffx_fastboot_interface::interface_factory::InterfaceFactoryError,
+    },
+
+    #[error("UDP Interface creation error for address {addr}: {source}")]
+    UdpInterfaceCreation {
+        addr: std::net::SocketAddr,
+        source: ffx_fastboot_interface::interface_factory::InterfaceFactoryError,
+    },
+}
 
 pub enum FastbootConnectionKind {
     Usb(String),
@@ -30,7 +57,7 @@ pub trait FastbootConnectionFactory {
     async fn build_interface(
         &self,
         connection: FastbootConnectionKind,
-    ) -> Result<Box<dyn FastbootInterface>>;
+    ) -> Result<Box<dyn FastbootInterface>, ConnectionFactoryError>;
 }
 
 pub struct ConnectionFactory {
@@ -48,7 +75,7 @@ impl FastbootConnectionFactory for ConnectionFactory {
     async fn build_interface(
         &self,
         connection: FastbootConnectionKind,
-    ) -> Result<Box<dyn FastbootInterface>> {
+    ) -> Result<Box<dyn FastbootInterface>, ConnectionFactoryError> {
         match connection {
             FastbootConnectionKind::Usb(serial_number) => {
                 Ok(Box::new(usb_proxy(serial_number).await?))
@@ -137,10 +164,12 @@ impl FastbootNetworkConnectionConfig {
 //
 
 /// Creates a FastbootProxy over USB for a device with the given serial number
-pub async fn usb_proxy(serial_number: String) -> Result<FastbootProxy<AsyncInterface>> {
+pub async fn usb_proxy(
+    serial_number: String,
+) -> Result<FastbootProxy<AsyncInterface>, ConnectionFactoryError> {
     let mut interface_factory = UsbFactory::new(serial_number.clone());
-    let interface = interface_factory.open().await.with_context(|| {
-        format!("Usb Proxy: Failed to open target usb interface by serial {serial_number}")
+    let interface = interface_factory.open().await.map_err(|e| {
+        ConnectionFactoryError::UsbInterfaceCreation { serial: serial_number.clone(), source: e }
     })?;
 
     Ok(FastbootProxy::<AsyncInterface>::new(serial_number, interface, interface_factory))
@@ -157,7 +186,10 @@ pub async fn tcp_proxy(
     fastboot_device_file_path: Option<PathBuf>,
     addr: &SocketAddr,
     config: FastbootNetworkConnectionConfig,
-) -> Result<FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>> {
+) -> Result<
+    FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>,
+    ConnectionFactoryError,
+> {
     let mut factory = TcpFactory::new(
         context,
         target_name,
@@ -170,7 +202,7 @@ pub async fn tcp_proxy(
     let interface = factory
         .open()
         .await
-        .with_context(|| format!("FastbootProxy connecting via TCP to Fastboot address: {addr}"))?;
+        .map_err(|e| ConnectionFactoryError::TcpInterfaceCreation { addr: *addr, source: e })?;
     Ok(FastbootProxy::<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>::new(
         addr.to_string(),
         interface,
@@ -189,7 +221,7 @@ pub async fn udp_proxy(
     fastboot_device_file_path: Option<PathBuf>,
     addr: &SocketAddr,
     config: FastbootNetworkConnectionConfig,
-) -> Result<FastbootProxy<UdpNetworkInterface>> {
+) -> Result<FastbootProxy<UdpNetworkInterface>, ConnectionFactoryError> {
     let mut factory = UdpFactory::new(
         context,
         target_name,
@@ -201,7 +233,7 @@ pub async fn udp_proxy(
     let interface = factory
         .open()
         .await
-        .with_context(|| format!("connecting via UDP to Fastboot address: {addr}"))?;
+        .map_err(|e| ConnectionFactoryError::UdpInterfaceCreation { addr: *addr, source: e })?;
     Ok(FastbootProxy::<UdpNetworkInterface>::new(addr.to_string(), interface, factory))
 }
 
@@ -210,7 +242,7 @@ pub async fn get_fastboot_interface(
     fastboot_state: &discovery::FastbootTargetState,
     node_name: Option<String>,
     context: &EnvironmentContext,
-) -> Result<Box<dyn FastbootInterface>> {
+) -> Result<Box<dyn FastbootInterface>, ConnectionFactoryError> {
     let connection_kind = get_connection_kind(fastboot_state, node_name)?;
     let factory = ConnectionFactory::new(context);
     factory.build_interface(connection_kind).await
@@ -219,7 +251,7 @@ pub async fn get_fastboot_interface(
 pub fn get_connection_kind(
     fastboot_state: &discovery::FastbootTargetState,
     node_name: Option<String>,
-) -> Result<FastbootConnectionKind> {
+) -> Result<FastbootConnectionKind, ConnectionFactoryError> {
     let node_name = node_name.unwrap_or_default();
     let connection_kind = match fastboot_state.connection_state {
         discovery::FastbootConnectionState::Usb => {
@@ -229,13 +261,13 @@ pub fn get_connection_kind(
         // correct_ address from which we're selecting.
         discovery::FastbootConnectionState::Tcp(ref v) => {
             let Some(addr) = v.first() else {
-                bail!("Could not get a valid TCP address for target");
+                return Err(ConnectionFactoryError::NoTcpAddress);
             };
             FastbootConnectionKind::Tcp(node_name, addr.into())
         }
         discovery::FastbootConnectionState::Udp(ref v) => {
             let Some(addr) = v.first() else {
-                bail!("Could not get a valid UDP address for target");
+                return Err(ConnectionFactoryError::NoUdpAddress);
             };
             FastbootConnectionKind::Udp(node_name, addr.into())
         }
@@ -257,7 +289,7 @@ pub mod test {
         async fn build_interface(
             &self,
             _connection: FastbootConnectionKind,
-        ) -> Result<Box<dyn FastbootInterface>> {
+        ) -> Result<Box<dyn FastbootInterface>, ConnectionFactoryError> {
             Ok(Box::new(TestFastbootInterface::new(self.state.clone())))
         }
     }

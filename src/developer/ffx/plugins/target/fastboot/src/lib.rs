@@ -260,7 +260,7 @@ async fn cmd_impl(
         TargetState::Fastboot(fastboot_state) => match fastboot_state.connection_state {
             FastbootConnectionState::Usb => {
                 let serial_num = fastboot_state.serial_number;
-                let mut proxy = usb_proxy(serial_num).await?;
+                let mut proxy = usb_proxy(serial_num).await.map_err(|e| anyhow::Error::from(e))?;
                 fastboot_impl(ctx, writer, command, &mut proxy).await
             }
             FastbootConnectionState::Udp(addrs) => {
@@ -268,7 +268,9 @@ async fn cmd_impl(
                 let NetworkConnectionInfo { target_name, addr, fastboot_device_file_path } =
                     gather_connection_info(ctx, &handle.node_name, addrs)?;
                 let mut proxy =
-                    udp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config).await?;
+                    udp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config)
+                        .await
+                        .map_err(|e| anyhow::Error::from(e))?;
                 fastboot_impl(ctx, writer, command, &mut proxy).await
             }
             FastbootConnectionState::Tcp(addrs) => {
@@ -276,7 +278,9 @@ async fn cmd_impl(
                 let NetworkConnectionInfo { target_name, addr, fastboot_device_file_path } =
                     gather_connection_info(ctx, &handle.node_name, addrs)?;
                 let mut proxy =
-                    tcp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config).await?;
+                    tcp_proxy(ctx, target_name, fastboot_device_file_path, &addr, config)
+                        .await
+                        .map_err(|e| anyhow::Error::from(e))?;
                 fastboot_impl(ctx, writer, command, &mut proxy).await
             }
         },

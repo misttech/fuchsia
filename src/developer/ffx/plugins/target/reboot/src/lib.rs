@@ -143,7 +143,8 @@ async fn reboot_direct_from_fastboot(
         node_name,
         context,
     )
-    .await?;
+    .await
+    .map_err(|e| ffx_error!("Cannot get fastboot interface: {:?}", e))?;
     match target_state {
         TargetRebootState::Product => {
             fastboot_interface.reboot().await.map_err(|e| ffx_error!("Cannot reboot: {e:?}"))?

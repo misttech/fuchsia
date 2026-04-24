@@ -154,7 +154,9 @@ Reboot the Target to the bootloader and re-run this command."
             TargetState::Fastboot(fastboot_state) => {
                 match fastboot_state.connection_state {
                     FastbootConnectionState::Usb => {
-                        let proxy = usb_proxy(fastboot_state.serial_number).await?;
+                        let proxy = usb_proxy(fastboot_state.serial_number)
+                            .await
+                            .map_err(|e| anyhow::Error::from(e))?;
                         bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
                     }
                     FastbootConnectionState::Tcp(addrs) => {
@@ -186,7 +188,8 @@ Reboot the Target to the bootloader and re-run this command."
                                 &socket_addr,
                                 config,
                             )
-                            .await?;
+                            .await
+                            .map_err(|e| anyhow::Error::from(e))?;
                             bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
                         } else {
                             ffx_bail!("Could not get a valid address for target");
@@ -220,7 +223,8 @@ Reboot the Target to the bootloader and re-run this command."
                                 &socket_addr,
                                 config,
                             )
-                            .await?;
+                            .await
+                            .map_err(|e| anyhow::Error::from(e))?;
                             bootloader_impl(&self.ctx, proxy, self.cmd, &mut writer).await
                         } else {
                             ffx_bail!("Could not get a valid address for target");
