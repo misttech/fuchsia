@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include <lib/driver/component/cpp/composite_node_spec.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
@@ -16,13 +17,13 @@ namespace helpers = reload_test_driver_helpers;
 
 namespace {
 
-class RootDriver : public fdf::DriverBase {
+class RootDriver : public fdf::DriverBase2 {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("root", std::move(start_args), std::move(driver_dispatcher)) {}
+  RootDriver() : fdf::DriverBase2("root") {}
 
-  zx::result<> Start() override {
-    node_client_.Bind(std::move(node()));
+  zx::result<> Start(fdf::DriverContext context) override {
+    auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+    node_client_.Bind(take_node());
 
     zx::result result =
         helpers::AddChild(logger(), "B", node_client_, bindlib::TEST_BIND_PROPERTY_NODE_B);
@@ -43,16 +44,16 @@ class RootDriver : public fdf::DriverBase {
     }
     node_controller_3_.Bind(std::move(result.value()));
 
-    zx::result spec_result = MakeCompositeSpec();
+    zx::result spec_result = MakeCompositeSpec(*incoming_ptr);
     if (spec_result.is_error()) {
       return spec_result.take_error();
     }
 
-    return helpers::SendAck(logger(), node_name().value_or("None"), incoming(), name());
+    return helpers::SendAck(logger(), context.node_name().value_or("None"), incoming_ptr, name());
   }
 
  private:
-  zx::result<> MakeCompositeSpec() {
+  zx::result<> MakeCompositeSpec(const fdf::Namespace& incoming) {
     auto parent_b = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
@@ -121,7 +122,7 @@ class RootDriver : public fdf::DriverBase {
         }},
     }};
 
-    auto cnm_client = incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
+    auto cnm_client = incoming.Connect<fuchsia_driver_framework::CompositeNodeManager>();
     if (cnm_client.is_error()) {
       fdf::error("Failed to connect to CompositeNodeManager: {}",
                  zx_status_get_string(cnm_client.error_value()));
@@ -152,4 +153,4 @@ class RootDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

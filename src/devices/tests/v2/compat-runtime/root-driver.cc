@@ -7,8 +7,8 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/compat/cpp/symbols.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
@@ -26,15 +26,18 @@ namespace {
 
 const std::string_view kChildName = "v1";
 
-class RootDriver : public fdf::DriverBase, public fdf::Server<ft::Root> {
+class RootDriver : public fdf::DriverBase2, public fdf::Server<ft::Root> {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("root", std::move(start_args), std::move(driver_dispatcher)),
-        node_(fidl::WireClient(std::move(node()), dispatcher())) {}
+  RootDriver() : fdf::DriverBase2("root") {}
 
   static constexpr const char* Name() { return "root"; }
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_ = context.take_incoming();
+    node_name_ = context.node_name().value_or("");
+
+    node_.Bind(take_node(), dispatcher());
+
     // Setup the outgoing directory.
     zx::result outgoing_result = outgoing()->AddService<ft::Service>(
         ft::Service::InstanceHandler({
@@ -99,8 +102,11 @@ class RootDriver : public fdf::DriverBase, public fdf::Server<ft::Root> {
   fidl::WireSharedClient<fdf::NodeController> controller_;
 
   fdf::ServerBindingGroup<ft::Root> bindings_;
+
+  std::unique_ptr<fdf::Namespace> incoming_;
+  std::string node_name_;
 };
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

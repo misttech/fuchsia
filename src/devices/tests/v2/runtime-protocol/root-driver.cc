@@ -8,7 +8,8 @@
 #include <fidl/fuchsia.runtime.test/cpp/fidl.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/channel.h>
@@ -32,15 +33,14 @@ namespace {
 
 const std::string_view kChildName = "leaf";
 
-class RootDriver : public fdf::DriverBase,
+class RootDriver : public fdf::DriverBase2,
                    public fdf::Server<ft::Setter>,
                    public fdf::Server<ft::Getter> {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("root", std::move(start_args), std::move(driver_dispatcher)),
-        node_(fidl::WireClient(std::move(node()), dispatcher())) {}
+  RootDriver() : DriverBase2("root") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
+    node_ = fidl::WireClient(take_node(), dispatcher());
     auto setter = [this](fdf::ServerEnd<ft::Setter> server_end) mutable -> void {
       fdf::BindServer(driver_dispatcher()->get(), std::move(server_end), this);
     };
@@ -116,4 +116,4 @@ class RootDriver : public fdf::DriverBase,
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

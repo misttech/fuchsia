@@ -5,7 +5,8 @@
 #include <fidl/fuchsia.component.decl/cpp/fidl.h>
 #include <fidl/fuchsia.runtime.test/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
@@ -21,14 +22,13 @@ namespace ft = fuchsia_runtime_test;
 
 namespace {
 
-class RootDriver : public fdf::DriverBase, public fidl::WireServer<ft::Handshake> {
+class RootDriver : public fdf::DriverBase2, public fidl::WireServer<ft::Handshake> {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("root", std::move(start_args), std::move(driver_dispatcher)) {}
+  RootDriver() : fdf::DriverBase2("root") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     fdf::info("Start hook reached");
-    node_.Bind(std::move(node()), dispatcher());
+    node_.Bind(take_node(), dispatcher());
     // Setup the outgoing directory.
     auto handler = ft::Service::InstanceHandler({
         .handshake =
@@ -86,4 +86,4 @@ class RootDriver : public fdf::DriverBase, public fidl::WireServer<ft::Handshake
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

@@ -5,8 +5,8 @@
 #include <lib/ddk/device.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/compat/cpp/symbols.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
@@ -19,15 +19,15 @@ using namespace fuchsia_driver_framework;
 
 namespace {
 
-class RootDriver : public fdf::DriverBase {
+class RootDriver : public fdf::DriverBase2 {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("root", std::move(start_args), std::move(driver_dispatcher)) {}
+  RootDriver() : fdf::DriverBase2("root") {}
 
-  void Start(fdf::StartCompleter completer) override {
-    node_.Bind(std::move(node()), dispatcher());
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override {
+    node_.Bind(take_node(), dispatcher());
     start_completer_.emplace(std::move(completer));
-    child_.Begin(incoming(), outgoing(), node_name(), "v1",
+    incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+    child_.Begin(incoming_, outgoing(), context.node_name(), "v1",
                  fit::bind_member<&RootDriver::CompatServerInitialized>(this),
                  compat::ForwardMetadata::None(), get_banjo_config());
   }
@@ -87,8 +87,10 @@ class RootDriver : public fdf::DriverBase {
   std::optional<fdf::StartCompleter> start_completer_;
 
   compat::AsyncInitializedDeviceServer child_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
 };
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

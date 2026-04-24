@@ -3,28 +3,27 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.interop.test/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace ft = fuchsia_interop_test;
 
 namespace {
 
-class LeafDriver : public fdf::DriverBase {
+class LeafDriver : public fdf::DriverBase2 {
  public:
-  LeafDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("leaf", std::move(start_args), std::move(driver_dispatcher)) {}
+  LeafDriver() : fdf::DriverBase2("leaf") {}
 
-  zx::result<> Start() override {
-    auto waiter = incoming()->Connect<ft::Waiter>();
+  zx::result<> Start(fdf::DriverContext context) override {
+    auto waiter = context.incoming().Connect<ft::Waiter>();
     if (waiter.is_error()) {
-      node().reset();
+      take_node().reset();
       return waiter.take_error();
     }
     const fidl::WireSharedClient<ft::Waiter> client{std::move(waiter.value()), dispatcher()};
     auto result = client.sync()->Ack();
     if (!result.ok()) {
-      node().reset();
+      take_node().reset();
       return zx::error(result.error().status());
     }
 
@@ -34,4 +33,4 @@ class LeafDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(LeafDriver);
+FUCHSIA_DRIVER_EXPORT2(LeafDriver);

@@ -5,7 +5,8 @@
 #include <fidl/fuchsia.rebind.test/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
@@ -17,13 +18,12 @@ const std::string kDriverName = "rebind-child";
 
 class RebindChildServer : public fidl::Server<fuchsia_rebind_test::RebindChild> {};
 
-class RebindChild : public fdf::DriverBase {
+class RebindChild : public fdf::DriverBase2 {
  public:
-  RebindChild(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)),
-        devfs_connector_(fit::bind_member<&RebindChild::Serve>(this)) {}
+  RebindChild()
+      : DriverBase2(kDriverName), devfs_connector_(fit::bind_member<&RebindChild::Serve>(this)) {}
 
-  zx::result<> Start() override { return ExportToDevfs(); }
+  zx::result<> Start(fdf::DriverContext context) override { return ExportToDevfs(); }
 
  private:
   zx::result<> ExportToDevfs() {
@@ -73,4 +73,4 @@ class RebindChild : public fdf::DriverBase {
 
 }  // namespace rebind_child
 
-FUCHSIA_DRIVER_EXPORT(rebind_child::RebindChild);
+FUCHSIA_DRIVER_EXPORT2(rebind_child::RebindChild);

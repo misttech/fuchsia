@@ -4,7 +4,8 @@
 
 #include <fidl/fuchsia.services.test/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
@@ -13,15 +14,14 @@ namespace ft = fuchsia_services_test;
 
 namespace {
 
-class RootDriver : public fdf::DriverBase,
+class RootDriver : public fdf::DriverBase2,
                    public fidl::WireServer<ft::ControlPlane>,
                    public fidl::WireServer<ft::DataPlane> {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("root", std::move(start_args), std::move(driver_dispatcher)),
-        devfs_connector_(fit::bind_member<&RootDriver::Serve>(this)) {}
+  RootDriver()
+      : DriverBase2("root"), devfs_connector_(fit::bind_member<&RootDriver::Serve>(this)) {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     FDF_SLOG(INFO, "Starting up this here root driver");
     auto control = [this](fidl::ServerEnd<ft::ControlPlane> server_end) -> void {
       fidl::BindServer(dispatcher(), std::move(server_end), this);
@@ -91,4 +91,4 @@ class RootDriver : public fdf::DriverBase,
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

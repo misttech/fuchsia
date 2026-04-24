@@ -16,6 +16,7 @@ fuchsia_cc_driver("driver") {
   deps = [
     ":bind",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/fdio",
     "//src/devices/lib/driver:driver_runtime",
     "//src/devices/tests/v2/restart-on-crash/fidl:fuchsia.crashdriver.test_cpp",
   ]

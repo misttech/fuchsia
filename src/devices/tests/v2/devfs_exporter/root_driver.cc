@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.devfs.test/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
@@ -17,15 +17,14 @@ namespace ft = fuchsia_devfs_test;
 
 namespace {
 
-class RootDriver : public fdf::DriverBase, public fidl::WireServer<ft::Device> {
+class RootDriver : public fdf::DriverBase2, public fidl::WireServer<ft::Device> {
   static constexpr std::string_view name = "root-device";
 
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(name, std::move(start_args), std::move(driver_dispatcher)),
-        devfs_connector_(fit::bind_member<&RootDriver::Serve>(this)) {}
+  RootDriver()
+      : fdf::DriverBase2(name), devfs_connector_(fit::bind_member<&RootDriver::Serve>(this)) {}
 
-  zx::result<> Start() override { return CreateDevfsNode(); }
+  zx::result<> Start(fdf::DriverContext context) override { return CreateDevfsNode(); }
 
  private:
   zx::result<> CreateDevfsNode() {
@@ -65,11 +64,6 @@ class RootDriver : public fdf::DriverBase, public fidl::WireServer<ft::Device> {
     bindings_.AddBinding(dispatcher(), std::move(server), this, fidl::kIgnoreBindingClosure);
   }
 
-  void UnbindNode(zx_status_t status) {
-    fdf::error("Failed to start root driver: {}", zx_status_get_string(status));
-    node().reset();
-  }
-
   // fidl::WireServer<ft::Device>
   void Ping(PingCompleter::Sync& completer) override { completer.Reply(); }
 
@@ -82,4 +76,4 @@ class RootDriver : public fdf::DriverBase, public fidl::WireServer<ft::Device> {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

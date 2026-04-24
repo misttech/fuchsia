@@ -4,8 +4,8 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.offers.test/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace fdf {
@@ -16,19 +16,18 @@ namespace ft = fuchsia_offers_test;
 
 namespace {
 
-class LeafDriver : public fdf::DriverBase {
+class LeafDriver : public fdf::DriverBase2 {
  public:
-  LeafDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("leaf", std::move(start_args), std::move(driver_dispatcher)) {}
+  LeafDriver() : fdf::DriverBase2("leaf") {}
 
-  zx::result<> Start() override {
-    auto handshake = incoming()->Connect<ft::Service::Device>();
+  zx::result<> Start(fdf::DriverContext context) override {
+    auto handshake = context.incoming().Connect<ft::Service::Device>();
     if (handshake.is_error()) {
       return handshake.take_error();
     }
     handshake_.Bind(*std::move(handshake), dispatcher());
 
-    auto waiter = incoming()->Connect<ft::Waiter>();
+    auto waiter = context.incoming().Connect<ft::Waiter>();
     if (waiter.is_error()) {
       return waiter.take_error();
     }
@@ -57,7 +56,7 @@ class LeafDriver : public fdf::DriverBase {
 
   void UnbindNode(const zx_status_t& status) {
     fdf::error("Failed to start leaf driver: {}", zx_status_get_string(status));
-    node().reset();
+    take_node().reset();
   }
 
   fidl::SharedClient<ft::Handshake> handshake_;
@@ -66,4 +65,4 @@ class LeafDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(LeafDriver);
+FUCHSIA_DRIVER_EXPORT2(LeafDriver);

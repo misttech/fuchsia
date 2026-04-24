@@ -5,7 +5,8 @@
 #include <fidl/fuchsia.rebind.test/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/legacy-bind-constants/legacy-bind-constants.h>
@@ -81,14 +82,12 @@ class RebindParentServer : public fidl::Server<fuchsia_rebind_test::RebindParent
   std::optional<fidl::WireSyncClient<fuchsia_driver_framework::NodeController>> node_controller_;
 };
 
-class RebindParent : public fdf::DriverBase {
+class RebindParent : public fdf::DriverBase2 {
  public:
-  RebindParent(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)),
-        devfs_connector_(fit::bind_member<&RebindParent::Serve>(this)) {}
+  RebindParent()
+      : DriverBase2(kDriverName), devfs_connector_(fit::bind_member<&RebindParent::Serve>(this)) {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     // Export ourselves to devfs.
     fidl::Arena arena;
     zx::result connector = devfs_connector_.Bind(dispatcher());
@@ -135,4 +134,4 @@ class RebindParent : public fdf::DriverBase {
 
 }  // namespace rebind_parent
 
-FUCHSIA_DRIVER_EXPORT(rebind_parent::RebindParent);
+FUCHSIA_DRIVER_EXPORT2(rebind_parent::RebindParent);

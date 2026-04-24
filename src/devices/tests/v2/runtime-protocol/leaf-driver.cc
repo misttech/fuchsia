@@ -7,7 +7,8 @@
 #include <fidl/fuchsia.runtime.test/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/arena.h>
@@ -31,27 +32,27 @@ using fpromise::result;
 
 namespace {
 
-class LeafDriver : public fdf::DriverBase {
+class LeafDriver : public fdf::DriverBase2 {
  public:
-  LeafDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("leaf", std::move(start_args), std::move(driver_dispatcher)),
-        executor_(dispatcher()),
-        node_(fidl::WireSharedClient(std::move(node()), dispatcher())) {}
+  LeafDriver() : DriverBase2("leaf") {}
 
-  zx::result<> Start() override {
-    auto setter_client = incoming()->Connect<ft::Service::Setter>();
+  zx::result<> Start(fdf::DriverContext context) override {
+    executor_.emplace(dispatcher());
+    node_ = fidl::WireSharedClient(take_node(), dispatcher());
+
+    auto setter_client = context.incoming().Connect<ft::Service::Setter>();
     if (setter_client.is_error()) {
       return setter_client.take_error();
     }
     setter_.Bind(*std::move(setter_client), driver_dispatcher()->get());
 
-    auto getter_client = incoming()->Connect<ft::Service::Getter>();
+    auto getter_client = context.incoming().Connect<ft::Service::Getter>();
     if (getter_client.is_error()) {
       return getter_client.take_error();
     }
     getter_.Bind(*std::move(getter_client), driver_dispatcher()->get());
 
-    auto waiter_client = incoming()->Connect<ft::Waiter>();
+    auto waiter_client = context.incoming().Connect<ft::Waiter>();
     if (waiter_client.is_error()) {
       return waiter_client.take_error();
     }
@@ -62,7 +63,7 @@ class LeafDriver : public fdf::DriverBase {
                     .and_then(fit::bind_member(this, &LeafDriver::CallAck))
                     .or_else(fit::bind_member(this, &LeafDriver::UnbindNode))
                     .wrap_with(scope_);
-    executor_.schedule_task(std::move(task));
+    executor_->schedule_task(std::move(task));
     return zx::ok();
   }
 
@@ -118,7 +119,7 @@ class LeafDriver : public fdf::DriverBase {
     return ok();
   }
 
-  async::Executor executor_;
+  std::optional<async::Executor> executor_;
   fidl::WireSharedClient<fdf::Node> node_;
 
   // This is specifically a |WireClient| so we can test using |fdf::Arena|.
@@ -132,4 +133,4 @@ class LeafDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(LeafDriver);
+FUCHSIA_DRIVER_EXPORT2(LeafDriver);

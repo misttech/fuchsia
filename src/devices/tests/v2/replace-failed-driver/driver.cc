@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/errors.h>
 
 namespace {
 
-class FailerDriver : public fdf::DriverBase {
+class FailerDriver : public fdf::DriverBase2 {
  public:
-  FailerDriver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("failer", std::move(start_args), std::move(driver_dispatcher)) {}
+  FailerDriver() : fdf::DriverBase2("failer") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     fdf::info("This driver is returning a ZX_ERR_NOT_SUPPORTED error.");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
@@ -22,4 +21,4 @@ class FailerDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(FailerDriver);
+FUCHSIA_DRIVER_EXPORT2(FailerDriver);

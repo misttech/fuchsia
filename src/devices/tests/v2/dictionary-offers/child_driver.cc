@@ -4,19 +4,19 @@
 
 #include <fidl/fuchsia.dictionaryoffers.test/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace ft = fuchsia_dictionaryoffers_test;
 
 namespace {
 
-class ChildDriver : public fdf::DriverBase {
+class ChildDriver : public fdf::DriverBase2 {
  public:
-  ChildDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("child", std::move(start_args), std::move(driver_dispatcher)) {}
+  ChildDriver() : fdf::DriverBase2("child") {}
 
-  zx::result<> Start() override {
-    auto control = incoming()->Connect<ft::ControlService::Control>();
+  zx::result<> Start(fdf::DriverContext context) override {
+    auto control = context.incoming().Connect<ft::ControlService::Control>();
     if (control.is_ok()) {
       fidl::Result result = fidl::Call(control.value())->Check();
       if (result.is_error()) {
@@ -29,20 +29,20 @@ class ChildDriver : public fdf::DriverBase {
       fdf::info("child has no control provided");
     }
 
-    auto data = incoming()->Connect<ft::DataService::Data>();
+    auto data = context.incoming().Connect<ft::DataService::Data>();
     if (data.is_error()) {
       if (data.error_value() != ZX_ERR_NOT_FOUND) {
         fdf::warn("Failed to connect to default DataService: {}", data);
       } else {
         fdf::info("switching to left");
       }
-      data = incoming()->Connect<ft::DataService::Data>("left");
+      data = context.incoming().Connect<ft::DataService::Data>("left");
       if (data.is_error()) {
         fdf::error("Failed to connect to DataService: {}", data);
         return zx::error(ZX_ERR_INTERNAL);
       }
 
-      data = incoming()->Connect<ft::DataService::Data>("opt");
+      data = context.incoming().Connect<ft::DataService::Data>("opt");
       if (data.is_error()) {
         fdf::error("Failed to connect to DataService: {}", data);
         return zx::error(ZX_ERR_INTERNAL);
@@ -63,4 +63,4 @@ class ChildDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(ChildDriver);
+FUCHSIA_DRIVER_EXPORT2(ChildDriver);

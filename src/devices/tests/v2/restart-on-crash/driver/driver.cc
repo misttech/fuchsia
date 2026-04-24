@@ -3,19 +3,17 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.crashdriver.test/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace {
 
-class RestartOnCrashDriver : public fdf::DriverBase,
+class RestartOnCrashDriver : public fdf::DriverBase2,
                              public fidl::Server<fuchsia_crashdriver_test::Crasher> {
  public:
-  RestartOnCrashDriver(fdf::DriverStartArgs start_args,
-                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("restart_on_crash", std::move(start_args), std::move(driver_dispatcher)) {}
+  RestartOnCrashDriver() : fdf::DriverBase2("restart_on_crash") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     // Create an event to get a random number from its koid.
     zx_status_t status = zx::event::create(0, &event_);
     if (status != ZX_OK) {
@@ -61,4 +59,4 @@ class RestartOnCrashDriver : public fdf::DriverBase,
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RestartOnCrashDriver);
+FUCHSIA_DRIVER_EXPORT2(RestartOnCrashDriver);

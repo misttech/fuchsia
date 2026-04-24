@@ -4,8 +4,8 @@
 
 #include <fidl/fuchsia.nodegroup.test/cpp/wire.h>
 #include <lib/async/cpp/task.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace fdf {
@@ -16,13 +16,14 @@ namespace ft = fuchsia_nodegroup_test;
 
 namespace {
 
-class LeafDriver : public fdf::DriverBase {
+class LeafDriver : public fdf::DriverBase2 {
  public:
-  LeafDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("leaf", std::move(start_args), std::move(driver_dispatcher)) {}
+  LeafDriver() : fdf::DriverBase2("leaf") {}
 
-  zx::result<> Start() override {
-    auto result = async::PostTask(dispatcher(), [&]() { RunAsync(); });
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_ = context.take_incoming();
+    node_ = take_node();
+    auto result = async::PostTask(dispatcher(), [this]() { RunAsync(); });
     if (result == ZX_OK) {
       return zx::ok();
     }
@@ -31,10 +32,10 @@ class LeafDriver : public fdf::DriverBase {
   }
 
   void RunAsync() {
-    auto connect_result = incoming()->Connect<ft::Waiter>();
+    auto connect_result = incoming_->Connect<ft::Waiter>();
     if (connect_result.is_error()) {
       fdf::error("Failed to start leaf driver: {}", connect_result);
-      node().reset();
+      node_.reset();
       return;
     }
 
@@ -51,7 +52,7 @@ class LeafDriver : public fdf::DriverBase {
 
  private:
   zx::result<uint32_t> GetNumber(std::string_view instance) {
-    auto device = incoming()->Connect<ft::Service::Device>(instance);
+    auto device = incoming_->Connect<ft::Service::Device>(instance);
     if (device.status_value() != ZX_OK) {
       fdf::warn("Failed to connect to {}: {}", instance.data(), device);
       return device.take_error();
@@ -115,8 +116,11 @@ class LeafDriver : public fdf::DriverBase {
     [[maybe_unused]] auto result = waiter->Ack(ZX_OK);
     return zx::ok();
   }
+
+  std::unique_ptr<fdf::Namespace> incoming_;
+  fidl::ClientEnd<fuchsia_driver_framework::Node> node_;
 };
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(LeafDriver);
+FUCHSIA_DRIVER_EXPORT2(LeafDriver);

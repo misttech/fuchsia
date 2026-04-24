@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 #include <bind/fuchsia/reloaddriverbind/test/cpp/bind.h>
 
@@ -13,14 +14,13 @@ namespace helpers = reload_test_driver_helpers;
 
 namespace {
 
-class TargetTwoDriver : public fdf::DriverBase {
+class TargetTwoDriver : public fdf::DriverBase2 {
  public:
-  TargetTwoDriver(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("target_2_replaced", std::move(start_args), std::move(driver_dispatcher)) {}
+  TargetTwoDriver() : fdf::DriverBase2("target_2_replaced") {}
 
-  zx::result<> Start() override {
-    node_client_.Bind(std::move(node()));
+  zx::result<> Start(fdf::DriverContext context) override {
+    auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+    node_client_.Bind(take_node());
 
     zx::result result =
         helpers::AddChild(logger(), "Y", node_client_, bindlib::TEST_BIND_PROPERTY_LEAF);
@@ -29,7 +29,7 @@ class TargetTwoDriver : public fdf::DriverBase {
     }
     node_controller_.Bind(std::move(result.value()));
 
-    return helpers::SendAck(logger(), node_name().value_or("None"), incoming(), name());
+    return helpers::SendAck(logger(), context.node_name().value_or("None"), incoming_ptr, name());
   }
 
  private:
@@ -39,4 +39,4 @@ class TargetTwoDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(TargetTwoDriver);
+FUCHSIA_DRIVER_EXPORT2(TargetTwoDriver);

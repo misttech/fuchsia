@@ -3,32 +3,32 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.basicdriver.ctftest/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace {
 
-class BasicDriver : public fdf::DriverBase,
+class BasicDriver : public fdf::DriverBase2,
                     public fidl::WireServer<fuchsia_basicdriver_ctftest::Device> {
  public:
-  BasicDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("basic", std::move(start_args), std::move(driver_dispatcher)) {}
+  BasicDriver() : fdf::DriverBase2("basic") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     fuchsia_basicdriver_ctftest::Service::InstanceHandler handler({
         .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
     });
     ZX_ASSERT(
         outgoing()->AddService<fuchsia_basicdriver_ctftest::Service>(std::move(handler)).is_ok());
 
-    SendAck();
+    SendAck(context.incoming());
     fdf::info("Started driver!");
     return zx::ok();
   }
 
-  void SendAck() {
+  void SendAck(const fdf::Namespace& incoming) {
     fdf::info("Sending ack!");
-    auto waiter = incoming()->Connect<fuchsia_basicdriver_ctftest::Waiter>();
+    auto waiter = incoming.Connect<fuchsia_basicdriver_ctftest::Waiter>();
     ZX_ASSERT(waiter.is_ok());
     ZX_ASSERT(fidl::Call(waiter.value())->Ack().is_ok());
   }
@@ -44,4 +44,4 @@ class BasicDriver : public fdf::DriverBase,
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(BasicDriver);
+FUCHSIA_DRIVER_EXPORT2(BasicDriver);

@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include <lib/driver/component/cpp/composite_node_spec.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
 #include <bind/fuchsia/reloaddriverbind/test/cpp/bind.h>
@@ -15,14 +16,13 @@ namespace helpers = reload_test_driver_helpers;
 
 namespace {
 
-class CompositeBDriver : public fdf::DriverBase {
+class CompositeBDriver : public fdf::DriverBase2 {
  public:
-  CompositeBDriver(fdf::DriverStartArgs start_args,
-                   fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("composite-b", std::move(start_args), std::move(driver_dispatcher)) {}
+  CompositeBDriver() : fdf::DriverBase2("composite-b") {}
 
-  zx::result<> Start() override {
-    node_client_.Bind(std::move(node()));
+  zx::result<> Start(fdf::DriverContext context) override {
+    auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+    node_client_.Bind(take_node());
 
     zx::result result =
         helpers::AddChild(logger(), "I", node_client_, bindlib::TEST_BIND_PROPERTY_NODE_I);
@@ -31,7 +31,7 @@ class CompositeBDriver : public fdf::DriverBase {
     }
     node_controller_1_.Bind(std::move(result.value()));
 
-    return helpers::SendAck(logger(), node_name().value_or("None"), incoming(), name());
+    return helpers::SendAck(logger(), context.node_name().value_or("None"), incoming_ptr, name());
   }
 
  private:
@@ -41,4 +41,4 @@ class CompositeBDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(CompositeBDriver);
+FUCHSIA_DRIVER_EXPORT2(CompositeBDriver);

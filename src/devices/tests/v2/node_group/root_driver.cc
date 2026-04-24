@@ -5,8 +5,8 @@
 #include <fidl/fuchsia.nodegroup.test/cpp/wire.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
@@ -179,13 +179,12 @@ class NumberServer : public fidl::WireServer<ft::Device> {
   uint32_t number_;
 };
 
-class RootDriver : public fdf::DriverBase {
+class RootDriver : public fdf::DriverBase2 {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("root", std::move(start_args), std::move(driver_dispatcher)) {}
+  RootDriver() : fdf::DriverBase2("root") {}
 
-  zx::result<> Start() override {
-    node_client_.Bind(std::move(node()), dispatcher());
+  zx::result<> Start(fdf::DriverContext context) override {
+    node_client_.Bind(take_node(), dispatcher());
     // Add service "left".
     {
       auto device = [this](fidl::ServerEnd<ft::Device> server_end) mutable -> void {
@@ -223,7 +222,7 @@ class RootDriver : public fdf::DriverBase {
     }
 
     // Setup the node group manager client.
-    auto dgm_client = incoming()->Connect<fdf::CompositeNodeManager>();
+    auto dgm_client = context.incoming().Connect<fdf::CompositeNodeManager>();
     if (dgm_client.is_error()) {
       fdf::error("Failed to connect to NodeGroupManager: {}",
                  zx_status_get_string(dgm_client.error_value()));
@@ -431,4 +430,4 @@ class RootDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

@@ -4,7 +4,8 @@
 
 #include <fidl/fuchsia.runtime.test/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace fdf {
 using namespace fuchsia_driver_framework;
@@ -14,19 +15,18 @@ namespace ft = fuchsia_runtime_test;
 
 namespace {
 
-class LeafDriver : public fdf::DriverBase {
+class LeafDriver : public fdf::DriverBase2 {
  public:
-  LeafDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("leaf", std::move(start_args), std::move(driver_dispatcher)) {}
+  LeafDriver() : fdf::DriverBase2("leaf") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     fdf::info("Start hook reached leaf");
     // Test we can block on the dispatcher thread.
-    ZX_ASSERT(ZX_OK == DoHandshakeSynchronously());
+    ZX_ASSERT(ZX_OK == DoHandshakeSynchronously(context.incoming()));
 
-    auto waiter = incoming()->Connect<ft::Waiter>();
+    auto waiter = context.incoming().Connect<ft::Waiter>();
     if (waiter.is_error()) {
-      node().reset();
+      take_node().reset();
       fdf::info("failed to connect to waiter");
       return waiter.take_error();
     }
@@ -34,7 +34,7 @@ class LeafDriver : public fdf::DriverBase {
     const fidl::WireSharedClient<ft::Waiter> client(std::move(waiter.value()), dispatcher());
     auto result = client.sync()->Ack();
     if (!result.ok()) {
-      node().reset();
+      take_node().reset();
       fdf::info("failed to ack waiter");
       return zx::error(result.error().status());
     }
@@ -43,11 +43,11 @@ class LeafDriver : public fdf::DriverBase {
   }
 
  private:
-  zx_status_t DoHandshakeSynchronously() {
+  zx_status_t DoHandshakeSynchronously(const fdf::Namespace& incoming) {
     ZX_ASSERT((*driver_dispatcher()->options() & FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS) ==
               FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS);
 
-    auto result = incoming()->Connect<ft::Service::Handshake>();
+    auto result = incoming.Connect<ft::Service::Handshake>();
     if (result.is_error()) {
       return result.status_value();
     }
@@ -58,4 +58,4 @@ class LeafDriver : public fdf::DriverBase {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(LeafDriver);
+FUCHSIA_DRIVER_EXPORT2(LeafDriver);

@@ -6,7 +6,8 @@
 #include <fidl/fuchsia.driver.framework/cpp/common_types_format.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
 #include <bind/fuchsia/nodegroupbind/test/cpp/bind.h>
@@ -60,12 +61,11 @@ fuchsia_driver_framework::CompositeNodeSpec NodeGroupOne() {
   return {{.name = "test_group_1", .parents2 = parents}};
 }
 
-class RootDriver final : public fdf::DriverBase, public fidl::WireServer<ft::ControlPlane> {
+class RootDriver final : public fdf::DriverBase2, public fidl::WireServer<ft::ControlPlane> {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("root", std::move(start_args), std::move(driver_dispatcher)) {}
+  RootDriver() : fdf::DriverBase2("root") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     auto control = [this](fidl::ServerEnd<ft::ControlPlane> server_end) -> void {
       fidl::BindServer(dispatcher(), std::move(server_end), this);
     };
@@ -78,7 +78,7 @@ class RootDriver final : public fdf::DriverBase, public fidl::WireServer<ft::Con
       return result.take_error();
     }
 
-    auto dgm_client = incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
+    auto dgm_client = context.incoming().Connect<fuchsia_driver_framework::CompositeNodeManager>();
     if (dgm_client.is_error()) {
       fdf::error("Failed to connect to NodeGroupManager: {}",
                  zx_status_get_string(dgm_client.error_value()));
@@ -100,8 +100,8 @@ class RootDriver final : public fdf::DriverBase, public fidl::WireServer<ft::Con
     return zx::ok();
   }
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override {
-    fdf::info("PrepareStop");
+  void Stop(fdf::StopCompleter completer) override {
+    fdf::info("Stop");
     completer(zx::ok());
   }
 
@@ -147,4 +147,4 @@ class RootDriver final : public fdf::DriverBase, public fidl::WireServer<ft::Con
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

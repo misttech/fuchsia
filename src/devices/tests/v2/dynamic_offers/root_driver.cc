@@ -5,8 +5,8 @@
 #include <fidl/fuchsia.component.decl/cpp/fidl.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.offers.test/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
@@ -24,13 +24,12 @@ namespace {
 
 const std::string_view kChildName = "leaf";
 
-class RootDriver : public fdf::DriverBase, public fidl::Server<ft::Handshake> {
+class RootDriver : public fdf::DriverBase2, public fidl::Server<ft::Handshake> {
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("root", std::move(start_args), std::move(driver_dispatcher)) {}
+  RootDriver() : fdf::DriverBase2("root") {}
 
-  zx::result<> Start() override {
-    node_.Bind(std::move(node()), dispatcher());
+  zx::result<> Start(fdf::DriverContext context) override {
+    node_.Bind(take_node(), dispatcher());
     // Setup the outgoing directory.
     {
       auto device = [this](fidl::ServerEnd<ft::Handshake> server_end) -> void {
@@ -100,4 +99,4 @@ class RootDriver : public fdf::DriverBase, public fidl::Server<ft::Handshake> {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);
