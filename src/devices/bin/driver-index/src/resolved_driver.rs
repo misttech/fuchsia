@@ -2,23 +2,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use bind::interpreter::decode_bind_rules::DecodedRules;
-use bind::interpreter::match_bind::{match_bind, DeviceProperties, MatchBindData};
+use bind::interpreter::match_bind::{DeviceProperties, MatchBindData, match_bind};
 use cm_rust::FidlIntoNative;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_index as fdi;
 use fidl_fuchsia_pkg_ext::BlobId;
 use fuchsia_pkg::PackageDirectory;
 use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_index as fdi,
-};
+
+use crate::rkyv_ext;
 
 pub const DEFAULT_DEVICE_CATEGORY: &str = "misc";
 
 // Cached drivers don't exist yet so we allow dead code.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 #[allow(dead_code)]
 pub enum DriverPackageType {
     Boot = 0,
@@ -42,21 +54,43 @@ impl From<fdf::DriverPackageType> for DriverPackageType {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct DeviceCategoryDef {
     pub category: Option<String>,
     pub subcategory: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct ResolvedDriver {
+    #[rkyv(with = rkyv_ext::UrlDef)]
     pub component_url: cm_types::Url,
+    #[rkyv(with = rkyv_ext::DecodedRulesDef)]
     pub bind_rules: DecodedRules,
     pub bind_bytecode: Vec<u8>,
     pub colocate: bool,
     pub device_categories: Vec<DeviceCategoryDef>,
     pub fallback: bool,
     pub package_type: DriverPackageType,
+    #[rkyv(with = rkyv::with::Map<rkyv_ext::BlobIdDef>)]
     pub package_hash: Option<BlobId>,
     pub is_dfv2: Option<bool>,
     pub disabled: bool,

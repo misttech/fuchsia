@@ -4,22 +4,23 @@
 
 use crate::match_common::{get_composite_rules_from_composite_driver, node_to_device_property};
 use crate::resolved_driver::ResolvedDriver;
-use crate::serde_ext::ConditionDef;
+use crate::rkyv_ext;
 use bind::compiler::Symbol;
 use bind::compiler::symbol_table::{get_deprecated_key_identifier, get_deprecated_key_value};
 use bind::interpreter::match_bind::{DeviceProperties, MatchBindData, PropertyKey, match_bind};
 use fidl_fuchsia_driver_framework as fdf;
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use zx::Status;
 use zx::sys::zx_status_t;
 
 pub type BindRules = BTreeMap<PropertyKey, BindRuleCondition>;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(derive(Hash, PartialEq, Eq))]
 pub struct BindRuleCondition {
-    #[serde(with = "ConditionDef")]
+    #[rkyv(with = rkyv_ext::ConditionDef)]
     pub condition: fdf::Condition,
+    #[rkyv(with = rkyv::with::Map<rkyv_ext::SymbolDef>)]
     pub values: Vec<Symbol>,
 }
 

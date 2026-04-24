@@ -6,9 +6,10 @@ use crate::composite_node_spec_manager::CompositeNodeSpecManager;
 use crate::indexer::*;
 use crate::resolved_driver::ResolvedDriver;
 use anyhow::anyhow;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_process_lifecycle as flifecycle;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_process_lifecycle as flifecycle};
 
 const STATE_DRIVER_NOTIFIER: &str = "notifier";
 const STATE_SAVED_STATE: &str = "saved_state";
@@ -21,7 +22,7 @@ pub struct ResumedState {
     pub ephemeral_repo: HashMap<cm_types::Url, ResolvedDriver>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 struct SavedState {
     composite_specs: CompositeNodeSpecManager,
     boot_repo: Vec<ResolvedDriver>,
@@ -120,8 +121,7 @@ pub async fn resume_state(
     )
     .await?;
     let read_and_decompress_time = now.elapsed();
-    let saved_state = bincode::deserialize::<SavedState>(saved_state_bytes.as_slice())
-        .map_err(|e| anyhow!("Failed to deserialize saved state: {:?}", e))?;
+    let saved_state = rkyv::from_bytes::<SavedState, rkyv::rancor::Failure>(&saved_state_bytes)?;
     let deserialize_time = now.elapsed();
 
     let composite_specs = saved_state.composite_specs;
@@ -191,8 +191,8 @@ async fn save_state(
 
     let now = std::time::Instant::now();
 
-    let data = bincode::serialize(&saved_state)
-        .map_err(|e| anyhow!("Failed to serialize saved state: {:?}", e))?;
+    let data = rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&saved_state, Vec::new())
+        .map_err(|e| anyhow!("Failed to serialize saved state with rkyv: {:?}", e))?;
 
     let serialize_time = now.elapsed();
     compress_and_save_to_dictionary_vmo(data, capability_store, id_gen, dict_id, STATE_SAVED_STATE)

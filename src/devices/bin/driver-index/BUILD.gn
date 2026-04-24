@@ -74,10 +74,10 @@ rustc_binary("bin") {
     "//src/sys/pkg/lib/fuchsia-hash",
     "//src/sys/pkg/lib/fuchsia-pkg",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:bincode",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:rkyv",
     "//third_party/rust_crates:serde",
     "//zircon/third_party/ulib/lz4/rust:lz4",
   ]
@@ -99,7 +99,7 @@ rustc_binary("bin") {
     "src/main.rs",
     "src/match_common.rs",
     "src/resolved_driver.rs",
-    "src/serde_ext.rs",
+    "src/rkyv_ext.rs",
     "src/test_common.rs",
   ]
 }

@@ -4,16 +4,16 @@
 
 use crate::composite_helper::*;
 use crate::resolved_driver::ResolvedDriver;
-use crate::serde_ext::CompositeInfoDef;
+use crate::rkyv_ext;
 use bind::interpreter::decode_bind_rules::DecodedRules;
-use bind::interpreter::match_bind::{DeviceProperties, PropertyKey};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use bind::interpreter::match_bind::DeviceProperties;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_index as fdi;
 use std::collections::HashMap;
 use zx::Status;
 use zx::sys::zx_status_t;
-use {fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_index as fdi};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone)]
 pub struct CompositeParentRef {
     // This is the spec name. Corresponds with the key of spec_list.
     pub name: String,
@@ -22,69 +22,9 @@ pub struct CompositeParentRef {
     pub index: u32,
 }
 
-pub fn serialize_parent_refs<S>(
-    target: &HashMap<BindRules, Vec<CompositeParentRef>>,
-    ser: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let container = target
-        .iter()
-        .map(|entry| (entry.0.iter().collect::<Vec<_>>(), entry.1))
-        .collect::<Vec<_>>();
-    serde::Serialize::serialize(&container, ser)
-}
-
-pub fn deserialize_parent_refs<'de, D>(
-    des: D,
-) -> Result<HashMap<BindRules, Vec<CompositeParentRef>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let container: Vec<(Vec<(PropertyKey, BindRuleCondition)>, Vec<CompositeParentRef>)> =
-        serde::Deserialize::deserialize(des)?;
-
-    let result: HashMap<BindRules, Vec<CompositeParentRef>> = HashMap::from_iter(
-        container.into_iter().map(|entry| (BindRules::from_iter(entry.0.into_iter()), entry.1)),
-    );
-    Ok(result)
-}
-
-pub fn serialize_spec_list<S>(
-    spec_list: &HashMap<String, fdf::CompositeInfo>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    #[derive(Serialize)]
-    struct Wrapper<'a>(#[serde(with = "CompositeInfoDef")] &'a fdf::CompositeInfo);
-
-    let converted = spec_list.iter().map(|(_name, sl)| Wrapper(sl)).collect::<Vec<_>>();
-    serde::Serialize::serialize(&converted, serializer)
-}
-
-fn deserialize_spec_list<'de, D>(
-    deserializer: D,
-) -> Result<HashMap<String, fdf::CompositeInfo>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    struct Wrapper(#[serde(with = "CompositeInfoDef")] fdf::CompositeInfo);
-
-    let wrapper_vec: Vec<Wrapper> = serde::Deserialize::deserialize(deserializer)?;
-    Ok(HashMap::from_iter(wrapper_vec.into_iter().map(|entry| {
-        let name = entry.0.spec.as_ref().and_then(|s| s.name.as_ref()).unwrap().to_owned();
-        (name, entry.0)
-    })))
-}
-
 // The CompositeNodeSpecManager struct is responsible of managing a list of specs
 // for matching.
-#[derive(Serialize, Deserialize, Default)]
-
+#[derive(Default, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct CompositeNodeSpecManager {
     // Maps a list of specs to the bind rules of their nodes. This is to handle multiple
     // specs that share a node with the same bind rules. Used for matching nodes.
@@ -92,10 +32,10 @@ pub struct CompositeNodeSpecManager {
     // This requires the custom serializer/deserializer as serde does not handle maps
     // with non-string keys. Both the root HashMap and the inner BTree (BindRules type)
     // get converted to vectors in the custom serialization and from vectors in the deserialization.
-    #[serde(
-        serialize_with = "serialize_parent_refs",
-        deserialize_with = "deserialize_parent_refs"
-    )]
+    #[rkyv(with = rkyv::with::MapKV<
+        rkyv::with::MapKV<rkyv_ext::PropertyKeyDef, rkyv::with::Identity>,
+        rkyv::with::Identity,
+    >)]
     pub parent_refs: HashMap<BindRules, Vec<CompositeParentRef>>,
 
     // Maps specs to the name. This list ensures that we don't add multiple specs with
@@ -104,7 +44,7 @@ pub struct CompositeNodeSpecManager {
     // This requires a custom serializer/deserializer as the value type is a fidl type without
     // built-in serde support. We manually create a local duplicate of the type using serde's remote
     // types feature and use a wrapper type to do the serialization/deserialization for us.
-    #[serde(serialize_with = "serialize_spec_list", deserialize_with = "deserialize_spec_list")]
+    #[rkyv(with = rkyv::with::MapKV<rkyv::with::Identity, rkyv_ext::CompositeInfoDef>)]
     pub spec_list: HashMap<String, fdf::CompositeInfo>,
 }
 
@@ -412,6 +352,7 @@ mod tests {
     use bind::compiler::{
         CompiledBindRules, CompositeBindRules, CompositeParent, Symbol, SymbolicInstructionInfo,
     };
+    use bind::interpreter::match_bind::PropertyKey;
 
     use bind::parser::bind_library::ValueType;
     use fuchsia_async as fasync;

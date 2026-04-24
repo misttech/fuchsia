@@ -37,7 +37,7 @@ mod indexer;
 mod load_driver;
 mod match_common;
 mod resolved_driver;
-mod serde_ext;
+mod rkyv_ext;
 
 #[cfg(test)]
 mod test_common;
