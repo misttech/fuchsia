@@ -279,6 +279,7 @@ TEST(ProfileConfig, Parse) {
       "test.core.parameterized.role:input=foo",
       "test.core.parameterized.role:input=bar",
       "test.core.parameterized.role:param1=foo,param2=bar",
+      "test.core.deadline.only",
       "test.bringup.a",
       "fuchsia.default",
       "test.board.a",

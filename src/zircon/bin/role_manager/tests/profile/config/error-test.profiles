@@ -13,7 +13,7 @@
     "error-test.deadline:object": { "capacity": "10ns", "deadline": "20us", "period": {} },
     "error-test.empty": {},
     "error-test.exclusive": { "priority": 10, "capacity": "5ms", "deadline": "10ms", "period": "10ms" },
-    "error-test.partial": { "capacity": "5000000", "period": "10ms" },
+    "error-test.partial": { "capacity": "5000000" },
   },
   "memory": {
     "error-test.priority:units": { "priority": "20x" },

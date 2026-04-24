@@ -308,7 +308,9 @@ std::optional<zx_profile_info_t> ParseThreadProfile(const std::string& filename,
   const bool has_affinity = profile.value.HasMember("affinity");
   const bool has_critical = profile.value.HasMember("critical");
 
-  const bool has_complete_deadline = has_capacity && has_deadline && has_period;
+  // The Zircon scheduler treats deadline as equal to period, so consider the profile as complete if
+  // either deadline or period (or both) are present.
+  const bool has_complete_deadline = has_capacity && (has_deadline || has_period);
   const bool has_some_deadline = has_capacity || has_deadline || has_period || has_critical;
 
   zx_profile_info_t info{};
@@ -329,18 +331,28 @@ std::optional<zx_profile_info_t> ParseThreadProfile(const std::string& filename,
                 FX_KV("tag", "RoleManager"));
       return std::nullopt;
     }
-    auto deadline_result = ParseDuration(profile.value["deadline"]);
-    if (deadline_result.is_error()) {
-      FX_LOG_KV(WARNING, deadline_result.error_value().c_str(), FX_KV("profile_name", profile_name),
-                FX_KV("tag", "RoleManager"));
-      return std::nullopt;
+
+    zx_duration_mono_t deadline;
+    zx_duration_mono_t period;
+    if (has_deadline) {
+      auto deadline_result = ParseDuration(profile.value["deadline"]);
+      if (deadline_result.is_error()) {
+        FX_LOG_KV(WARNING, deadline_result.error_value().c_str(),
+                  FX_KV("profile_name", profile_name), FX_KV("tag", "RoleManager"));
+        return std::nullopt;
+      }
+      deadline = deadline_result->get();
     }
-    auto period_result = ParseDuration(profile.value["period"]);
-    if (period_result.is_error()) {
-      FX_LOG_KV(WARNING, period_result.error_value().c_str(), FX_KV("profile_name", profile_name),
-                FX_KV("tag", "RoleManager"));
-      return std::nullopt;
+    if (has_period) {
+      auto period_result = ParseDuration(profile.value["period"]);
+      if (period_result.is_error()) {
+        FX_LOG_KV(WARNING, period_result.error_value().c_str(), FX_KV("profile_name", profile_name),
+                  FX_KV("tag", "RoleManager"));
+        return std::nullopt;
+      }
+      period = period_result->get();
     }
+
     info.flags = ZX_PROFILE_INFO_FLAG_DEADLINE;
     if (has_critical) {
       const auto& critical_member = profile.value["critical"];
@@ -354,16 +366,19 @@ std::optional<zx_profile_info_t> ParseThreadProfile(const std::string& filename,
         info.flags |= ZX_PROFILE_INFO_FLAG_CRITICAL;
       }
     }
-    info.deadline_params = zx_sched_deadline_params_t{.capacity = capacity_result->get(),
-                                                      .relative_deadline = deadline_result->get(),
-                                                      .period = period_result->get()};
+    // has_complete_deadline guarantees that at least one of deadline or period exists in profile.
+    info.deadline_params =
+        zx_sched_deadline_params_t{.capacity = capacity_result->get(),
+                                   .relative_deadline = has_deadline ? deadline : period,
+                                   .period = has_period ? period : deadline};
   } else if (has_priority && has_some_deadline) {
     FX_LOG_KV(WARNING, "Priority and deadline parameters are mutually exclusive!",
               FX_KV("filename", filename), FX_KV("profile_name", profile_name),
               FX_KV("tag", "RoleManager"));
     return std::nullopt;
   } else if (!has_priority && !has_complete_deadline && has_some_deadline) {
-    FX_LOG_KV(WARNING, "Deadline profiles must specify \"capacity\", \"deadline\", and \"period\"!",
+    FX_LOG_KV(WARNING,
+              "Deadline profiles must specify \"capacity\" and (\"deadline\" or \"period\")!",
               FX_KV("filename", filename), FX_KV("profile_name", profile_name),
               FX_KV("tag", "RoleManager"));
     return std::nullopt;
