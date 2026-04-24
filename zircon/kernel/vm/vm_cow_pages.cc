@@ -863,7 +863,6 @@ zx_status_t VmCowPages::AllocateCopyPage(paddr_t parent_paddr, list_node_t* allo
 }
 
 zx_status_t VmCowPages::AllocUninitializedPage(vm_page_t** page, AnonymousPageRequest* request) {
-  paddr_t paddr = 0;
   DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
                page_source_type() == PageSourceType::UserPager);
   // Another layer has already allocated a page for us.
@@ -872,7 +871,7 @@ zx_status_t VmCowPages::AllocUninitializedPage(vm_page_t** page, AnonymousPageRe
     return ZX_OK;
   }
 
-  zx_status_t status = CacheAllocPage(pmm_alloc_flags_, page, &paddr);
+  zx_status_t status = CacheAllocPage(pmm_alloc_flags_, page);
   if (status == ZX_ERR_SHOULD_WAIT) {
     request->MakeActive();
   }
@@ -907,9 +906,13 @@ void VmCowPages::RemovePageLocked(vm_page_t* page, DeferredOps& ops) {
   }
 }
 
-zx_status_t VmCowPages::CacheAllocPage(uint alloc_flags, vm_page_t** p, paddr_t* pa) {
+zx_status_t VmCowPages::CacheAllocPage(uint alloc_flags, vm_page_t** p) {
   if (!page_cache_) {
-    return pmm_alloc_page(alloc_flags, p, pa);
+    auto result = Pmm::Node().AllocPage(alloc_flags);
+    if (result.is_ok()) {
+      *p = *result;
+    }
+    return result.status_value();
   }
 
   zx::result result = page_cache_.Allocate(1, alloc_flags);
@@ -922,7 +925,6 @@ zx_status_t VmCowPages::CacheAllocPage(uint alloc_flags, vm_page_t** p, paddr_t*
   DEBUG_ASSERT(result->page_list.is_empty());
 
   *p = page;
-  *pa = page->paddr();
   return ZX_OK;
 }
 

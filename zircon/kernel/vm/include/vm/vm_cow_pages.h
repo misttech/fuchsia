@@ -1150,7 +1150,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   zx_status_t AllocateCopyPage(paddr_t parent_paddr, list_node_t* alloc_list,
                                AnonymousPageRequest* request, vm_page_t** clone);
 
-  static zx_status_t CacheAllocPage(uint alloc_flags, vm_page_t** p, paddr_t* pa);
+  static zx_status_t CacheAllocPage(uint alloc_flags, vm_page_t** p);
   static void CacheFree(list_node_t* list, PmmOptDelayReuse delay_reuse);
   static void CacheFree(vm_page_t* p, PmmOptDelayReuse delay_reuse);
 
