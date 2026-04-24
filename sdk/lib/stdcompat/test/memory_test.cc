@@ -23,6 +23,16 @@ struct weird_ptr {
   T value;
 };
 
+struct mismatched_traits {
+  int value = 42;
+  constexpr int* operator->() const { return const_cast<int*>(&value); }
+};
+
+struct dereference_only {
+  int value = 100;
+  constexpr int& operator*() const { return const_cast<int&>(value); }
+};
+
 namespace std {
 template <>
 struct pointer_traits<arrow> {
@@ -31,6 +41,10 @@ struct pointer_traits<arrow> {
 template <typename T>
 struct pointer_traits<weird_ptr<T>> {
   using element_type = const T;
+};
+template <>
+struct pointer_traits<mismatched_traits> {
+  using element_type = double;
 };
 }  // namespace std
 
@@ -98,6 +112,22 @@ TEST(MemoryTest, BannedUses) {
   // weird_ptr<std::optional<const int>> d;
   // EXPECT_EQ(&*d.value, cpp20::to_address(d));
 }
+
+#if defined(LIB_STDCOMPAT_USE_POLYFILLS) || __cpp_lib_to_address < 201711L
+
+TEST(MemoryTest, ToAddressHandlesMismatchedTraits) {
+  mismatched_traits ptr;
+  static_assert(std::is_same_v<decltype(cpp20::to_address(ptr)), int*>);
+  EXPECT_EQ(cpp20::to_address(ptr), &ptr.value);
+}
+
+TEST(MemoryTest, ToAddressHandlesDereferenceOnlyFallback) {
+  dereference_only ptr;
+  static_assert(std::is_same_v<decltype(cpp20::to_address(ptr)), int*>);
+  EXPECT_EQ(cpp20::to_address(ptr), &ptr.value);
+}
+
+#endif
 
 // TODO(https://fxbug.dev/42180908) Disable these tests until we can avoid taking  the address of
 // std:: functions #if __cpp_lib_to_address >= 201711L && !defined(LIB_STDCOMPAT_USE_POLYFILLS)

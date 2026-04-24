@@ -18,7 +18,7 @@
   "pkg/stdcompat/include/lib/stdcompat/internal/type_traits.h": "b1392f907fcd2edc31ca39149521c890",
   "pkg/stdcompat/include/lib/stdcompat/internal/utility.h": "b0773f9f983fca8d366d6cf094bbd2d0",
   "pkg/stdcompat/include/lib/stdcompat/iterator.h": "9ce1ae897f33eeb4b524217df2fb2562",
-  "pkg/stdcompat/include/lib/stdcompat/memory.h": "24d7a4f8a0d009c707bec5150ad64b90",
+  "pkg/stdcompat/include/lib/stdcompat/memory.h": "67564628b283e4c84703488a7e6ef0bb",
   "pkg/stdcompat/include/lib/stdcompat/optional.h": "9d1bbe0a882f802651a227252633524c",
   "pkg/stdcompat/include/lib/stdcompat/queue.h": "12f95f9632f15085710744ef0c845820",
   "pkg/stdcompat/include/lib/stdcompat/ranges.h": "47f6bdb27ef0452ef5e6b8b4383560e0",
