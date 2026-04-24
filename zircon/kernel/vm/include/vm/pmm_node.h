@@ -28,13 +28,12 @@ struct Range;
 
 // flags for allocation routines below
 #define PMM_ALLOC_FLAG_ANY (0 << 0)     // no restrictions on which arena to allocate from
-#define PMM_ALLOC_FLAG_LO_MEM (1 << 0)  // allocate only from arenas marked LO_MEM
 // The caller is able to wait and retry this allocation and so pmm allocation functions are allowed
 // to return ZX_ERR_SHOULD_WAIT, as opposed to ZX_ERR_NO_MEMORY, to indicate that the caller should
 // wait and try again. This is intended for the PMM to tell callers who are able to wait that memory
 // is low. The caller should not infer anything about memory state if it is told to wait, as the PMM
 // may tell it to wait for any reason.
-#define PMM_ALLOC_FLAG_CAN_WAIT (1 << 1)
+#define PMM_ALLOC_FLAG_CAN_WAIT (1 << 0)
 
 // This enum is used to specify whether a page, when freed, should have its reuse
 // (i.e. reallocation) delayed.  This feature exists to both improve the PMM checker's ability to

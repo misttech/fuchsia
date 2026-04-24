@@ -111,16 +111,6 @@ class PageCache {
     DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
     DEBUG_ASSERT(per_cpu_caches_);
 
-    // Fall back to the PMM for low mem pages.
-    if (alloc_flags & PMM_ALLOC_FLAG_LO_MEM) {
-      list_node page_list = LIST_INITIAL_VALUE(page_list);
-      const zx_status_t status = pmm_alloc_pages(page_count, alloc_flags, &page_list);
-      if (status != ZX_OK) {
-        return zx::error_result(status);
-      }
-      return zx::ok(AllocateResult{ktl::move(page_list), page_count});
-    }
-
     AutoPreemptDisabler preempt_disable;
     const cpu_num_t current_cpu = arch_curr_cpu_num();
     return Allocate(per_cpu_caches_[current_cpu], page_count, alloc_flags);
