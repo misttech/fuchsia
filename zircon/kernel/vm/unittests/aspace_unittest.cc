@@ -72,29 +72,6 @@ void ConsumeValue(T value) {
   __asm__ volatile("" : : "r"(value));
 }
 
-// Allocates a region in kernel space, reads/writes it, then destroys it.
-static bool vmm_alloc_smoke_test() {
-  BEGIN_TEST;
-  static const size_t alloc_size = 256 * 1024;
-
-  // allocate a region of memory
-  void* ptr;
-  auto kaspace = VmAspace::kernel_aspace();
-  auto err = kaspace->Alloc("test", alloc_size, &ptr, 0, VmAspace::VMM_FLAG_COMMIT, kArchRwFlags);
-  ASSERT_EQ(ZX_OK, err, "VmAspace::Alloc region of memory");
-  ASSERT_NONNULL(ptr, "VmAspace::Alloc region of memory");
-
-  // fill with known pattern and test
-  if (!fill_and_test(ptr, alloc_size)) {
-    all_ok = false;
-  }
-
-  // free the region
-  err = kaspace->FreeRegion(reinterpret_cast<vaddr_t>(ptr));
-  EXPECT_EQ(ZX_OK, err, "VmAspace::FreeRegion region of memory");
-  END_TEST;
-}
-
 // Allocates a contiguous region in kernel space, reads/writes it,
 // then destroys it.
 static bool vmm_alloc_contiguous_smoke_test() {
@@ -178,26 +155,6 @@ static bool multiple_regions_test() {
   // free the address space all at once
   err = aspace->Destroy();
   EXPECT_EQ(ZX_OK, err, "VmAspace::Destroy");
-  END_TEST;
-}
-
-static bool vmm_alloc_zero_size_fails() {
-  BEGIN_TEST;
-  const size_t zero_size = 0;
-  void* ptr;
-  zx_status_t err = VmAspace::kernel_aspace()->Alloc("test", zero_size, &ptr, 0, 0, kArchRwFlags);
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, err);
-  END_TEST;
-}
-
-static bool vmm_alloc_bad_specific_pointer_fails() {
-  BEGIN_TEST;
-  // bad specific pointer
-  void* ptr = (void*)1;
-  zx_status_t err = VmAspace::kernel_aspace()->Alloc(
-      "test", 16384, &ptr, 0, VmAspace::VMM_FLAG_VALLOC_SPECIFIC | VmAspace::VMM_FLAG_COMMIT,
-      kArchRwFlags);
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, err);
   END_TEST;
 }
 
@@ -3088,11 +3045,8 @@ static bool arch_is_user_accessible_range() { return check_user_accessible_range
 static bool validate_user_address_range() { return check_user_accessible_range_test(true); }
 
 UNITTEST_START_TESTCASE(aspace_tests)
-VM_UNITTEST(vmm_alloc_smoke_test)
 VM_UNITTEST(vmm_alloc_contiguous_smoke_test)
 VM_UNITTEST(multiple_regions_test)
-VM_UNITTEST(vmm_alloc_zero_size_fails)
-VM_UNITTEST(vmm_alloc_bad_specific_pointer_fails)
 VM_UNITTEST(vmm_alloc_contiguous_missing_flag_commit_fails)
 VM_UNITTEST(vmm_alloc_contiguous_zero_size_fails)
 VM_UNITTEST(vmaspace_create_smoke_test)

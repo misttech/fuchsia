@@ -174,15 +174,6 @@ static int cmd_vmm(int argc, const cmd_args* argv, uint32_t flags) {
     VmAspace::DumpAllAspaces(true);
   } else if (!strcmp(argv[1].str, "kaspace")) {
     VmAspace::kernel_aspace()->Dump(true);
-  } else if (!strcmp(argv[1].str, "alloc")) {
-    if (argc < 3) {
-      goto notenoughargs;
-    }
-
-    void* ptr = (void*)0x99;
-    uint8_t align = (argc >= 4) ? (uint8_t)argv[3].u : 0u;
-    zx_status_t err = test_aspace->Alloc("alloc test", argv[2].u, &ptr, align, 0, 0);
-    printf("VmAspace::Alloc returns %d, ptr %p\n", err, ptr);
   } else if (!strcmp(argv[1].str, "alloc_physical")) {
     if (argc < 4) {
       goto notenoughargs;

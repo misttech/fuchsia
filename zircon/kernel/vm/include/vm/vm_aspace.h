@@ -207,8 +207,6 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
                             paddr_t paddr, uint vmm_flags, arch_mmu_flags_t arch_mmu_flags);
   zx_status_t AllocContiguous(const char* name, size_t size, void** ptr, uint8_t align_pow2,
                               uint vmm_flags, arch_mmu_flags_t arch_mmu_flags);
-  zx_status_t Alloc(const char* name, size_t size, void** ptr, uint8_t align_pow2, uint vmm_flags,
-                    arch_mmu_flags_t arch_mmu_flags);
   zx_status_t FreeRegion(vaddr_t va);
 
   // Internal use function for mapping VMOs.  Do not use.  This is exposed in

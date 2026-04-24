@@ -487,30 +487,6 @@ zx_status_t VmAspace::AllocContiguous(const char* name, size_t size, void** ptr,
                            arch_mmu_flags);
 }
 
-zx_status_t VmAspace::Alloc(const char* name, size_t size, void** ptr, uint8_t align_pow2,
-                            uint vmm_flags, arch_mmu_flags_t arch_mmu_flags) {
-  canary_.Assert();
-  LTRACEF("aspace %p name '%s' size 0x%zx ptr %p align %hhu vmm_flags 0x%x arch_mmu_flags 0x%x\n",
-          this, name, size, ptr ? *ptr : 0, align_pow2, vmm_flags, arch_mmu_flags);
-
-  size = RoundUpPageSize(size);
-  if (size == 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  // allocate a vm object to back it
-  fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, size, &vmo);
-  if (status != ZX_OK) {
-    return status;
-  }
-  vmo->set_name(name, strlen(name));
-
-  // map it, creating a new region
-  return MapObjectInternal(ktl::move(vmo), name, 0, size, ptr, align_pow2, vmm_flags,
-                           arch_mmu_flags);
-}
-
 zx_status_t VmAspace::FreeRegion(vaddr_t va) {
   DEBUG_ASSERT(!is_user());
 
