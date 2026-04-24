@@ -5,9 +5,7 @@
 use anyhow::anyhow;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_bluetooth::{
-    AddressType, ChannelMode, ChannelParameters, DeviceClass, PeerId, Uuid,
-};
+use fidl_fuchsia_bluetooth::{ChannelMode, ChannelParameters, DeviceClass, PeerId, Uuid};
 use fidl_fuchsia_bluetooth_bredr::{
     ConnectParameters, ConnectionReceiverMarker, ConnectionReceiverRequest,
     ConnectionReceiverRequestStream, DataElement, L2capParameters, ProfileMarker, ProfileProxy,
@@ -76,8 +74,7 @@ enum Request {
     StopLeScan(oneshot::Sender<bool>),
     ConnectLe(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     AdvertisePeripheral(
-        bool,
-        Option<AddressType>,
+        Box<AdvertisingParameters>,
         std::time::Duration,
         oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>,
     ),
@@ -265,30 +262,14 @@ impl WorkThread {
                 Request::ConnectLe(peer_id, result_sender) => {
                     result_sender.send(proxies.connect_le(&peer_id).await).unwrap();
                 }
-                Request::AdvertisePeripheral(connectable, address_type, timeout, result_sender) => {
-                    if let Err(err) = proxies.refresh_host_cache(&mut host_cache).await {
-                        result_sender
-                            .send(Err(anyhow!("refresh_host_cache() error: {err}")))
-                            .unwrap();
-                        continue;
-                    }
-                    let device_name = host_cache
-                        .iter()
-                        .find(|info| info.active.unwrap_or_default())
-                        .and_then(|info| info.local_name.clone());
-                    match proxies
-                        .advertise_peripheral(connectable, address_type, device_name, timeout)
-                        .await
-                    {
+                Request::AdvertisePeripheral(parameters, timeout, result_sender) => {
+                    match proxies.advertise_peripheral(*parameters, timeout).await {
                         Ok(Some((peer_id, connection))) => {
                             _peripheral_connection = connection;
                             result_sender.send(Ok(Some(peer_id))).unwrap();
                         }
-                        Ok(None) => {
-                            result_sender.send(Ok(None)).unwrap();
-                        }
-                        Err(err) => {
-                            result_sender.send(Err(err)).unwrap();
+                        result => {
+                            result_sender.send(result.map(|_| None)).unwrap();
                         }
                     }
                 }
@@ -592,24 +573,16 @@ impl WorkThread {
     }
 
     // Start advertising as an LE peripheral, accept the first connection, and return the PeerId of
-    // its initiator. If `connectable` is false, then advertise for 10 seconds and return None.
-    // TODO(https://fxbug.dev/407618718): Accept additional AdvertisingParameters and support
-    // non-blocking non-connectable advertising.
+    // its initiator. If `connectable` is false, then advertise and return None.
     pub async fn advertise_peripheral(
         &self,
-        connectable: bool,
-        address_type: Option<AddressType>,
+        parameters: AdvertisingParameters,
         timeout: std::time::Duration,
     ) -> Result<Option<PeerId>, anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<Option<PeerId>, anyhow::Error>>();
         self.sender
             .clone()
-            .unbounded_send(Request::AdvertisePeripheral(
-                connectable,
-                address_type,
-                timeout,
-                sender,
-            ))
+            .unbounded_send(Request::AdvertisePeripheral(Box::new(parameters), timeout, sender))
             .unwrap();
         receiver.await?
     }
@@ -1161,26 +1134,14 @@ impl Proxies {
 
     async fn advertise_peripheral(
         &self,
-        connectable: bool,
-        address_type: Option<AddressType>,
-        device_name: Option<String>,
+        parameters: AdvertisingParameters,
         timeout: std::time::Duration,
     ) -> Result<Option<(PeerId, ClientEnd<ConnectionMarker>)>, anyhow::Error> {
         let (client, mut request_stream) =
             fidl::endpoints::create_request_stream::<AdvertisedPeripheralMarker>();
 
-        let params = AdvertisingParameters {
-            connectable: Some(connectable),
-            address_type,
-            data: device_name.map(|name| fidl_fuchsia_bluetooth_le::AdvertisingData {
-                name: Some(name),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
         select! {
-            result = self.peripheral_proxy.advertise(&params, client) => {
+            result = self.peripheral_proxy.advertise(&parameters, client) => {
                 return Err(anyhow!("LE advertisement finished with result: {result:?}"));
             }
             request = request_stream.next().on_timeout(timeout, || None).fuse() => {

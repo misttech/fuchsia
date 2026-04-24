@@ -15,6 +15,7 @@
     use: [
         {
             protocol: [
+                "fuchsia.bluetooth.affordances.PeripheralController",
                 "fuchsia.bluetooth.bredr.Profile",
                 "fuchsia.bluetooth.gatt2.Client",
                 "fuchsia.bluetooth.gatt2.RemoteService",

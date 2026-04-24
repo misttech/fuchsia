@@ -5,18 +5,19 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_HOST_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_HOST_H_
 
+#include <fidl/fuchsia.bluetooth.affordances/cpp/fidl.h>
 #include <fidl/fuchsia.bluetooth.sys/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <algorithm>
 
-#include "fidl/fuchsia.bluetooth.sys/cpp/markers.h"
-#include "fidl/fuchsia.bluetooth.sys/cpp/natural_types.h"
 #include "src/connectivity/bluetooth/testing/bt-affordances/ffi_c/bindings.h"
 #include "third_party/github.com/google/bt-test-interfaces/src/pandora/host.grpc.pb.h"
 
 class HostService : public pandora::Host::Service {
  public:
+  explicit HostService(async_dispatcher_t* dispatcher);
+
   ::grpc::Status FactoryReset(::grpc::ServerContext* context,
                               const ::google::protobuf::Empty* request,
                               ::google::protobuf::Empty* response) override;
@@ -125,10 +126,10 @@ class HostService : public pandora::Host::Service {
   std::vector<fuchsia_bluetooth_sys::Peer>::const_iterator WaitForPeer(
       const std::string& addr, bool enforce_connected = false);
 
-  // The synchronization primitives are utilized for configuring waiting/timeouts on FIDL callbacks
-  // and enforcing mutual exclusivity when writing/reading the structures that cache the updated
-  // state information that is received in these callbacks.
   fidl::SharedClient<fuchsia_bluetooth_sys::Access> access_client_;
+  fidl::SyncClient<fuchsia_bluetooth_affordances::PeripheralController>
+      peripheral_controller_client_;
+
   std::condition_variable cv_access_;
   std::mutex m_access_;
   std::vector<fuchsia_bluetooth_sys::Peer> peers_;

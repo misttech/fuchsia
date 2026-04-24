@@ -4,6 +4,12 @@
 
 #include "host.h"
 
+#include <fidl/fuchsia.bluetooth.le/cpp/fidl.h>
+#include <fidl/fuchsia.bluetooth.sys/cpp/markers.h>
+#include <lib/component/incoming/cpp/protocol.h>
+
+#include <algorithm>
+
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/message.h>
 
@@ -13,6 +19,18 @@ using grpc::StatusCode;
 using namespace std::chrono_literals;
 
 // TODO(https://fxbug.dev/316721276): Implement gRPCs necessary to enable GAP/A2DP testing.
+
+HostService::HostService(async_dispatcher_t* dispatcher) {
+  // Connect to fuchsia.bluetooth.affordances.PeripheralController
+  zx::result peripheral_controller_client_end =
+      component::Connect<fuchsia_bluetooth_affordances::PeripheralController>();
+  if (peripheral_controller_client_end.is_ok()) {
+    peripheral_controller_client_.Bind(std::move(*peripheral_controller_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to PeripheralController service: "
+                   << peripheral_controller_client_end.status_string();
+  }
+}
 
 Status HostService::FactoryReset(grpc::ServerContext* context,
                                  const google::protobuf::Empty* request,
@@ -107,26 +125,66 @@ Status HostService::WaitDisconnection(::grpc::ServerContext* context,
 Status HostService::Advertise(::grpc::ServerContext* context,
                               const ::pandora::AdvertiseRequest* request,
                               ::grpc::ServerWriter<::pandora::AdvertiseResponse>* writer) {
-  if (request->has_data() && request->data().le_discoverability_mode() ==
-                                 pandora::DiscoverabilityMode::DISCOVERABLE_GENERAL) {
-    set_discoverability(true);
+  fuchsia_bluetooth_le::AdvertisingParameters parameters;
+  fuchsia_bluetooth_le::AdvertisingData data;
+
+  if (request->has_data()) {
+    const pandora::DataTypes& req_data = request->data();
+
+    if (req_data.le_discoverability_mode() == pandora::DiscoverabilityMode::DISCOVERABLE_GENERAL) {
+      set_discoverability(true);
+    }
+    if (req_data.include_complete_local_name() || req_data.include_shortened_local_name()) {
+      data.name() = "sapphire";
+    }
+    if (!req_data.complete_service_class_uuids128().empty()) {
+      std::vector<fuchsia_bluetooth::Uuid> uuids;
+      for (const auto& uuid_str : req_data.complete_service_class_uuids128()) {
+        UuidBytes bytes = uuid_from_string(uuid_str.c_str());
+        std::array<uint8_t, 16> uuid_arr;
+        std::ranges::copy(bytes.value, uuid_arr.begin());
+
+        if (std::ranges::none_of(uuid_arr, [](uint8_t byte) { return byte != 0; })) {
+          return Status(StatusCode::INVALID_ARGUMENT, "Failed to parse UUID");
+        }
+        uuids.emplace_back(uuid_arr);
+      }
+
+      data.service_uuids() = std::move(uuids);
+    }
   }
 
-  uint8_t address_type =
-      request->own_address_type() == pandora::OwnAddressType::PUBLIC ||
-              request->own_address_type() == pandora::OwnAddressType::RESOLVABLE_OR_PUBLIC
-          ? 1
-          : 2;
-  uint64_t peer_id = advertise_peripheral(request->connectable(), address_type, /*timeout=*/10);
-  if (!peer_id) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  parameters.data() = std::move(data);
+  parameters.connectable() = request->connectable();
+
+  if (request->own_address_type() == pandora::OwnAddressType::RANDOM ||
+      request->own_address_type() == pandora::OwnAddressType::RESOLVABLE_OR_RANDOM) {
+    parameters.address_type() = fuchsia_bluetooth::AddressType::kRandom;
+  } else {
+    parameters.address_type() = fuchsia_bluetooth::AddressType::kPublic;
   }
-  if (request->connectable()) {
-    pandora::AdvertiseResponse response;
-    response.mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
-    writer->Write(response);
+
+  pandora::AdvertiseResponse response;
+  auto result = peripheral_controller_client_->Advertise(
+      {{.parameters = std::move(parameters), .timeout = 10 /*seconds*/}});
+  if (result.is_error()) {
+    auto err = result.error_value();
+    if (err.is_domain_error() &&
+        err.domain_error() == fuchsia_bluetooth_affordances::Error::kTimeout) {
+      FX_LOGS(WARNING) << "Advertisement timed out without connection";
+    } else {
+      return Status(
+          StatusCode::INTERNAL,
+          std::format("fuchsia.bluetooth.affordances.PeripheralController/Advertise error: {}",
+                      err.FormatDescription()));
+    }
+  } else {
+    response.mutable_connection()->mutable_cookie()->set_value(
+        std::to_string(result->peer_id().value().value()));
   }
-  return {/*OK*/};
+  writer->Write(response);
+
+  return Status::OK;
 }
 
 Status HostService::Scan(::grpc::ServerContext* context, const ::pandora::ScanRequest* request,

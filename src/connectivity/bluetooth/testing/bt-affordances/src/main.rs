@@ -7,7 +7,9 @@ use fidl_fuchsia_bluetooth_affordances::{
     HostControllerRequest, HostControllerRequestStream, HostControllerSetDeviceClassRequest,
     HostControllerSetDiscoverabilityRequest, HostControllerStartPairingDelegateRequest,
     PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
-    PeerControllerSetDiscoveryRequest, PeerSelector,
+    PeerControllerSetDiscoveryRequest, PeerSelector, PeripheralControllerAdvertiseRequest,
+    PeripheralControllerAdvertiseResponse, PeripheralControllerRequest,
+    PeripheralControllerRequestStream,
 };
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_component::server::ServiceFs;
@@ -18,6 +20,7 @@ use std::sync::Arc;
 pub enum Services {
     Peer(PeerControllerRequestStream),
     Host(HostControllerRequestStream),
+    Peripheral(PeripheralControllerRequestStream),
 }
 
 macro_rules! selector_to_peer_id {
@@ -279,11 +282,64 @@ async fn handle_host_request(
         .await
 }
 
+async fn handle_single_peripheral_request(
+    worker: Arc<WorkThread>,
+    request: PeripheralControllerRequest,
+) -> Result<(), Error> {
+    match request {
+        PeripheralControllerRequest::Advertise { payload, responder } => {
+            let PeripheralControllerAdvertiseRequest {
+                parameters: Some(parameters),
+                timeout: Some(timeout),
+                ..
+            } = payload
+            else {
+                error!("Advertise encountered error: parameters or timeout not set");
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                return Ok(());
+            };
+            let timeout = std::time::Duration::from_secs(timeout);
+            match worker.advertise_peripheral(parameters, timeout).await {
+                Ok(Some(peer_id)) => {
+                    responder.send(Ok(&PeripheralControllerAdvertiseResponse {
+                        peer_id: Some(peer_id),
+                        ..Default::default()
+                    }))?;
+                }
+                Ok(None) => {
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Timeout))?;
+                }
+                Err(err) => {
+                    error!("Advertise encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+
+        PeripheralControllerRequest::_UnknownMethod { ordinal, .. } => {
+            error!("PeripheralControllerRequest: unknown method received with ordinal {ordinal}");
+        }
+    }
+    Ok(())
+}
+
+async fn handle_peripheral_request(
+    stream: PeripheralControllerRequestStream,
+    worker: Arc<WorkThread>,
+) -> Result<(), Error> {
+    stream
+        .map(|result| result.context("failed request"))
+        .try_for_each(|request| handle_single_peripheral_request(worker.clone(), request))
+        .await
+}
+
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
     let mut fs = ServiceFs::new_local();
     let _ = fs.dir("svc").add_fidl_service(Services::Peer);
     let _ = fs.dir("svc").add_fidl_service(Services::Host);
+    let _ = fs.dir("svc").add_fidl_service(Services::Peripheral);
     let _ = fs.take_and_serve_directory_handle()?;
 
     let worker = Arc::new(WorkThread::spawn());
@@ -296,6 +352,9 @@ async fn main() -> Result<(), Error> {
                     .await
                     .unwrap_or_else(|e| error!("{e:?}")),
                 Services::Host(stream) => handle_host_request(stream, worker_clone)
+                    .await
+                    .unwrap_or_else(|e| error!("{e:?}")),
+                Services::Peripheral(stream) => handle_peripheral_request(stream, worker_clone)
                     .await
                     .unwrap_or_else(|e| error!("{e:?}")),
             }

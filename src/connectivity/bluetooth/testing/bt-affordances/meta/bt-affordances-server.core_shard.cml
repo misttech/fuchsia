@@ -11,13 +11,11 @@
     ],
     offer: [
         {
-            protocol: [ "fuchsia.bluetooth.sys.Access" ],
-            from: "#bluetooth-core",
-            to: "#bt-affordances-server",
-            source_availability: "unknown",
-        },
-        {
-            protocol: [ "fuchsia.bluetooth.sys.HostWatcher" ],
+            protocol: [
+                "fuchsia.bluetooth.le.PrivilegedPeripheral",
+                "fuchsia.bluetooth.sys.Access",
+                "fuchsia.bluetooth.sys.HostWatcher",
+            ],
             from: "#bluetooth-core",
             to: "#bt-affordances-server",
             source_availability: "unknown",

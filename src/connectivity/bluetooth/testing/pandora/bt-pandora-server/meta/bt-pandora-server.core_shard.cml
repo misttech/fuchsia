@@ -50,5 +50,11 @@
             to: "#bt-pandora-server",
             source_availability: "unknown",
         },
+        {
+            protocol: "fuchsia.bluetooth.affordances.PeripheralController",
+            from: "#bt-affordances-server",
+            to: "#bt-pandora-server",
+            source_availability: "unknown",
+        },
     ],
 }

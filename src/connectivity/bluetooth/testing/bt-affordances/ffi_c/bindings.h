@@ -24,6 +24,10 @@ struct DiscoveredPeer {
 /// `peer` is only valid for the duration of this callback.
 using GetKnownPeersCallback = void (*)(void *context, const DiscoveredPeer *peer);
 
+struct UuidBytes {
+  uint8_t value[16];
+};
+
 /// `address_type` is 1 for Public, 2 for Random, or 0 if no address was provided. These values
 /// correspond to fuchsia.bluetooth/AddressType. If no address was provided, `address` is zero.
 struct LePeer {
@@ -94,6 +98,15 @@ int32_t get_known_peers(void *context, GetKnownPeersCallback cb);
 /// The caller must ensure that `address` points to a valid C string encoding a BD_ADDR as a string
 /// of bytes in little-endian order.
 uint64_t get_peer_id(const char *address);
+
+/// Parse a UUID from a string.
+///
+/// Returns a zeroed `UuidBytes` on error.
+///
+/// # Safety
+///
+/// The caller must ensure that `uuid_str` points to a valid C string.
+UuidBytes uuid_from_string(const char *uuid_str);
 
 /// Connect to peer with given identifier.
 ///
@@ -177,15 +190,6 @@ int32_t stop_le_scan();
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 int32_t connect_le(uint64_t peer_id);
-
-/// Start advertising as an LE peripheral, accept the first connection, and return the PeerId of
-/// its initiator. If no LE peer connects within `timeout` seconds, then return an arbitrary valid
-/// PeerId (1). In case of error, return 0.
-///
-/// `address_type` is 1 for Public or 2 for Random. All other values are interpreted as unset, in
-/// which case the address type will be Public or Random depending on if privacy is enabled in the
-/// system. See fuchsia.bluetooth.le/AdvertisingParameters for details.
-uint64_t advertise_peripheral(bool connectable, uint8_t address_type, uint64_t timeout);
 
 /// Publish a local GATT service with one characteristic. GATT requests to the service are logged.
 ///

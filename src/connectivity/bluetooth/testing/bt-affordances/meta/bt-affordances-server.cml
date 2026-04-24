@@ -10,10 +10,12 @@
     capabilities: [
         { protocol: "fuchsia.bluetooth.affordances.PeerController" },
         { protocol: "fuchsia.bluetooth.affordances.HostController" },
+        { protocol: "fuchsia.bluetooth.affordances.PeripheralController" },
     ],
     use: [
         {
             protocol: [
+                "fuchsia.bluetooth.le.PrivilegedPeripheral",
                 "fuchsia.bluetooth.sys.Access",
                 "fuchsia.bluetooth.sys.HostWatcher",
                 "fuchsia.bluetooth.sys.Pairing",
@@ -27,6 +29,10 @@
         },
         {
             protocol: "fuchsia.bluetooth.affordances.HostController",
+            from: "self",
+        },
+        {
+            protocol: "fuchsia.bluetooth.affordances.PeripheralController",
             from: "self",
         },
     ],

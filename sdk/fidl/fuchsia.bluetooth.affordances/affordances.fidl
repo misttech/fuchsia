@@ -6,12 +6,17 @@ library fuchsia.bluetooth.affordances;
 
 using fuchsia.bluetooth as bt;
 using fuchsia.bluetooth.sys as sys;
+using fuchsia.bluetooth.le as le;
 
 // TODO(b/415341030): Evaluate consolidating fuchsia.bluetooth.*.test protocols here.
 
 type Error = strict enum {
     /// Operation failed (check logs).
     INTERNAL = 1;
+    /// Operation timed out.
+    TIMEOUT = 2;
+    /// Invalid parameters. This usually means that one or more required fields were not set.
+    INVALID_PARAMETERS = 3;
 };
 
 /// Defines how to find a peer to perform an operation on. At least one field must be present.
@@ -126,4 +131,21 @@ open protocol HostController {
         /// Required. The device class to assign to the host. See [`fuchsia.bluetooth.DeviceClass`].
         1: device_class bt.DeviceClass;
     }) -> () error Error;
+};
+
+@discoverable
+open protocol PeripheralController {
+    /// Start advertising.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `TIMEOUT` if the advertisement timed out without a connection.
+    flexible Advertise(table {
+        /// Required. Advertising parameters.
+        1: parameters le.AdvertisingParameters;
+        /// Required. Timeout for advertising in seconds.
+        2: timeout uint64;
+    }) -> (table {
+        /// The ID of the peer that connected.
+        1: peer_id bt.PeerId;
+    }) error Error;
 };

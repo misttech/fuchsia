@@ -4,7 +4,7 @@
 
 use anyhow::anyhow;
 use bitfield::bitfield;
-use fidl_fuchsia_bluetooth::{AddressType, PeerId};
+use fidl_fuchsia_bluetooth::PeerId;
 use fidl_fuchsia_bluetooth_gatt2::{
     AttributePermissions, Characteristic, CharacteristicPropertyBits, Handle, SecurityRequirements,
     ServiceHandle,
@@ -218,6 +218,33 @@ pub unsafe extern "C" fn get_peer_id(address: *const core::ffi::c_char) -> u64 {
             eprintln!("get_peer_id encountered error: {err}");
             0
         }
+    }
+}
+
+#[repr(C)]
+pub struct UuidBytes {
+    pub value: [u8; 16],
+}
+
+/// Parse a UUID from a string.
+///
+/// Returns a zeroed `UuidBytes` on error.
+///
+/// # Safety
+///
+/// The caller must ensure that `uuid_str` points to a valid C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn uuid_from_string(uuid_str: *const core::ffi::c_char) -> UuidBytes {
+    let uuid_str = unsafe { CStr::from_ptr(uuid_str) };
+    let Ok(uuid_str) = uuid_str.to_str() else {
+        return UuidBytes { value: [0; 16] };
+    };
+    match fuchsia_bluetooth::types::Uuid::from_str(uuid_str) {
+        Ok(uuid) => {
+            let fidl_uuid: fidl_fuchsia_bluetooth::Uuid = uuid.into();
+            UuidBytes { value: fidl_uuid.value }
+        }
+        Err(_) => UuidBytes { value: [0; 16] },
     }
 }
 
@@ -443,29 +470,6 @@ pub extern "C" fn connect_le(peer_id: u64) -> i32 {
         return zx::Status::INTERNAL.into_raw();
     }
     zx::Status::OK.into_raw()
-}
-
-/// Start advertising as an LE peripheral, accept the first connection, and return the PeerId of
-/// its initiator. If no LE peer connects within `timeout` seconds, then return an arbitrary valid
-/// PeerId (1). In case of error, return 0.
-///
-/// `address_type` is 1 for Public or 2 for Random. All other values are interpreted as unset, in
-/// which case the address type will be Public or Random depending on if privacy is enabled in the
-/// system. See fuchsia.bluetooth.le/AdvertisingParameters for details.
-#[unsafe(no_mangle)]
-pub extern "C" fn advertise_peripheral(connectable: bool, address_type: u8, timeout: u64) -> u64 {
-    match block_on(STATE.worker.advertise_peripheral(
-        connectable,
-        AddressType::from_primitive(address_type),
-        std::time::Duration::from_secs(timeout),
-    )) {
-        Ok(Some(peer_id)) => peer_id.value,
-        Ok(None) => 1,
-        Err(err) => {
-            eprintln!("advertise_peripheral encountered error: {err}");
-            0
-        }
-    }
 }
 
 // Copied from SL4F `GattServerFacade`.
