@@ -169,6 +169,7 @@ bincode_visibility = [
   # This is an allowlist of targets that use the `bincode` Rust crate.
   # Bincode is no longer maintained upstream, with an explanation to be found at:
   # https://crates.io/crates/bincode/3.0.0
+  # It should not be used for newer code. Please use 'rkyv' instead.
   #
   # To regenerate, run:
   # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:bincode' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
