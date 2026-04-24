@@ -21,6 +21,8 @@ from typing import (
     Sequence,
     TypedDict,
     TypeVar,
+    get_args,
+    get_type_hints,
 )
 
 from .validate_idk import *
@@ -94,22 +96,20 @@ class LoadableModuleMeta(TypedDict):
     stable: bool
 
 
-class UnmergableMeta(TypedDict):
+class UnmergeableMeta(TypedDict):
     name: str
-    type: (
-        # LINT.IfChange
-        Literal["bind_library"]
-        | Literal["cc_source_library"]
-        | Literal["component_manifest"]
-        | Literal["config"]
-        | Literal["dart_library"]
-        | Literal["documentation"]
-        | Literal["experimental_python_e2e_test"]
-        | Literal["fidl_library"]
-        | Literal["license"]
-        | Literal["version_history"]
-        # LINT.ThenChange(//build/sdk/generate_idk/generate_idk_unittest.py)
-    )
+    type: Literal[
+        "bind_library",
+        "cc_source_library",
+        "component_manifest",
+        "config",
+        "dart_library",
+        "documentation",
+        "experimental_python_e2e_test",
+        "fidl_library",
+        "license",
+        "version_history",
+    ]
     stable: bool
 
 
@@ -118,7 +118,7 @@ AtomMeta = (
     | LoadableModuleMeta
     | PackageMeta
     | SysrootMeta
-    | UnmergableMeta
+    | UnmergeableMeta
 )
 
 
@@ -605,20 +605,7 @@ def _merge_disjoint_dicts(
 
 def _merge_atom_meta(a: AtomMeta, b: AtomMeta) -> AtomMeta:
     """Merge two atoms, according to type-specific rules."""
-    if a["type"] in (
-        # LINT.IfChange
-        "bind_library",
-        "cc_source_library",
-        "component_manifest",
-        "config",
-        "dart_library",
-        "documentation",
-        "experimental_python_e2e_test",
-        "fidl_library",
-        "license",
-        "version_history",
-        # LINT.ThenChange(//build/sdk/generate_idk/generate_idk_unittest.py)
-    ):
+    if a["type"] in get_args(get_type_hints(UnmergeableMeta)["type"]):
         _assert_dicts_equal(a, b, [])
         return a
 
