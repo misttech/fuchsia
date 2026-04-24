@@ -15,8 +15,7 @@
 //
 // Since the function is so tiny, keep it naturally-aligned (it's a mere 8
 // bytes) just to be sure it can never straddle a cache line.
-.function _ld_tlsdesc_runtime_static, global, retain=TLSDESC_RETAIN, align=8
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_static, retain=TLSDESC_RETAIN, align=8
   .tlsdesc.lsda kStatic
 
   // On entry x0 contains the argument: the address of the GOT slot pair.
@@ -31,8 +30,7 @@
 
 #elif defined(__arm__)
 
-.function _ld_tlsdesc_runtime_static, global, retain=TLSDESC_RETAIN
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_static, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kStatic
 
   // On entry r0 contains the argument: the address of the GOT slot pair.
@@ -51,8 +49,7 @@
 //
 // Since the function is so tiny, keep it naturally-aligned (it's actually
 // only 5 bytes) just to be sure it can never straddle a cache line.
-.function _ld_tlsdesc_runtime_static, global, retain=TLSDESC_RETAIN, align=8
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_static, retain=TLSDESC_RETAIN, align=8
   .tlsdesc.lsda kStatic
 
   // On entry %rax contains the argument: the address of the GOT slot pair.
@@ -74,8 +71,7 @@
 //
 // Since the function is so tiny, keep it naturally-aligned just to be sure it
 // can never straddle a cache line.
-.function _ld_tlsdesc_runtime_static, global, retain=TLSDESC_RETAIN, align=4
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_static, retain=TLSDESC_RETAIN, align=4
   .tlsdesc.lsda kStatic
 
   // On entry a0 contains the argument: the address of the GOT slot range.

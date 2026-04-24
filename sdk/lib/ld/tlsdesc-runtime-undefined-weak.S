@@ -12,8 +12,7 @@
 #if defined(__aarch64__)
 
 // Return -$tp so that adding $tp yields zero, i.e. nullptr.
-.function _ld_tlsdesc_runtime_undefined_weak, global, retain=TLSDESC_RETAIN
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_undefined_weak, retain=TLSDESC_RETAIN, align=8
   .tlsdesc.lsda kUndefinedWeak
 
   mrs x0, TPIDR_EL0
@@ -24,8 +23,7 @@
 .end_function
 
 // Return addend-$tp so that adding $tp looks like nullptr+addend.
-.function _ld_tlsdesc_runtime_undefined_weak_addend, global, retain=TLSDESC_RETAIN
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_undefined_weak_addend, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeakAddend
 
   // Only x0 and x30 can be clobbered, so another register must be saved.
@@ -56,8 +54,7 @@
 #elif defined(__arm__)
 
 // Return -$tp so that adding $tp yields zero, i.e. nullptr.
-.function _ld_tlsdesc_runtime_undefined_weak, global, retain=TLSDESC_RETAIN
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_undefined_weak, retain=TLSDESC_RETAIN, align=4
   .tlsdesc.lsda kUndefinedWeak
 
   // On exit r0 contains the return value: offset from $tp (TPIDR_EL0).
@@ -71,8 +68,7 @@
 .end_function
 
 // Return addend-$tp so that adding $tp looks like nullptr+addend.
-.function _ld_tlsdesc_runtime_undefined_weak_addend, global, retain=TLSDESC_RETAIN
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_undefined_weak_addend, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeakAddend
 
   // Only r0 and lr can be clobbered, so another register must be saved.
@@ -99,8 +95,7 @@
 #elif defined(__riscv)
 
 // Return -$tp so that adding $tp yields zero, i.e. nullptr.
-.function _ld_tlsdesc_runtime_undefined_weak, global, retain=TLSDESC_RETAIN, align=4
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_undefined_weak, retain=TLSDESC_RETAIN, align=4
   .tlsdesc.lsda kUndefinedWeak
 
   tlsdesc.sub a0, zero, tp
@@ -114,8 +109,7 @@
 .end_function
 
 // Return addend-$tp so that adding $tp looks like nullptr+addend.
-.function _ld_tlsdesc_runtime_undefined_weak_addend, global, retain=TLSDESC_RETAIN
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_undefined_weak_addend, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeakAddend
 
   // On entry a0 contains the argument: the address of the GOT slot range.
@@ -134,8 +128,7 @@
 #elif defined(__x86_64__)
 
 // Return -$tp so that adding $tp yields zero, i.e. nullptr.
-.function _ld_tlsdesc_runtime_undefined_weak, global, retain=TLSDESC_RETAIN
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_undefined_weak, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeak
 
   // On entry %rax contains the argument: the address of the GOT slot pair.
@@ -149,8 +142,7 @@
 .end_function
 
 // Return addend-$tp so that adding $tp looks like nullptr+addend.
-.function _ld_tlsdesc_runtime_undefined_weak_addend, global, retain=TLSDESC_RETAIN
-  .tlsdesc.cfi
+.tlsdesc.function _ld_tlsdesc_runtime_undefined_weak_addend, retain=TLSDESC_RETAIN
   .tlsdesc.lsda kUndefinedWeakAddend
 
   // On entry %rax contains the argument: the address of the GOT slot pair.

@@ -69,8 +69,6 @@
 // depending on whether it's a base register (always 64 bits) or it's a
 // pointer-sized operand.
 .macro prologue
-  .tlsdesc.cfi
-
   stp.spill x1, x2
 
   // Fetch the blocks vector pointer using a standard IE model TLS read:
@@ -91,7 +89,7 @@
   .cfi_undefined x0
 .endm
 
-.function _dl_tlsdesc_runtime_dynamic_split, global
+.tlsdesc.function _dl_tlsdesc_runtime_dynamic_split
   // The first portion of the function is the same here and below.
   prologue
 
@@ -116,7 +114,7 @@
   ret
 .end_function
 
-.function _dl_tlsdesc_runtime_dynamic_indirect, global
+.tlsdesc.function _dl_tlsdesc_runtime_dynamic_indirect
   // The first portion of the function is the same here and above.
   prologue
 
@@ -151,7 +149,7 @@
   ldr r2, [r2, r1]
 .endm
 
-.function _dl_tlsdesc_runtime_dynamic_split, global
+.tlsdesc.function _dl_tlsdesc_runtime_dynamic_split
   // The first portion of the function is the same here and below.
   prologue
 
@@ -176,7 +174,7 @@
   bx lr
 .end_function
 
-.function _dl_tlsdesc_runtime_dynamic_indirect, global
+.tlsdesc.function _dl_tlsdesc_runtime_dynamic_indirect
   // The first portion of the function is the same here and above.
   prologue
 
@@ -194,8 +192,6 @@
 // versions.  It extracts the the GOT's value slot into a1 and the blocks
 // vector pointer into a2, with a0 then available for scratch.
 .macro prologue
-  .tlsdesc.cfi
-
   add sp, sp, -16
   .cfi_adjust_cfa_offset 16
   sd a1, 0(sp)
@@ -216,7 +212,7 @@
   .cfi_undefined a0
 .endm
 
-.function _dl_tlsdesc_runtime_dynamic_split, global
+.tlsdesc.function _dl_tlsdesc_runtime_dynamic_split
   // The first portion of the function is the same here and below.
   prologue
 
@@ -258,7 +254,7 @@
   jr t0
 .end_function
 
-.function _dl_tlsdesc_runtime_dynamic_indirect, global
+.tlsdesc.function _dl_tlsdesc_runtime_dynamic_indirect
   // The first portion of the function is the same here and above.
   prologue
 
@@ -277,8 +273,6 @@
 // versions.  It extracts the the GOT's value slot into %rax and the blocks
 // vector pointer into %rdx, with %rcx then available for scratch.
 .macro prologue
-  .tlsdesc.cfi
-
   push.spill %rcx
   push.spill %rdx
 
@@ -297,7 +291,7 @@
 // Note that on x86-64 ILP32, GOT entries are still 8 bytes, to facilitate
 // use of the indirect addressing modes.  This means that even ILP32 can
 // make use of a full 32 bits for each of index and offset.
-.function _dl_tlsdesc_runtime_dynamic_split, global
+.tlsdesc.function _dl_tlsdesc_runtime_dynamic_split
   // The first portion of the function is the same here and below.
   prologue
 
@@ -320,7 +314,7 @@
   ret
 .end_function
 
-.function _dl_tlsdesc_runtime_dynamic_indirect, global
+.tlsdesc.function _dl_tlsdesc_runtime_dynamic_indirect
   // The first portion of the function is the same here and above.
   prologue
 

@@ -105,6 +105,13 @@
 //
 // Other conveniences are defined specific to each machine.
 
+// This is like .function, but adds some appropriate default arguments
+// for TLSDESC resolver functions, and does .tlsdesc.cfi.
+.macro .tlsdesc.function name, scope=global, retain=, align=
+  .function \name, scope=\scope, retain=\retain, align=\align
+    .tlsdesc.cfi
+.endm
+
 #if defined(__aarch64__)
 
 .macro .tlsdesc.cfi

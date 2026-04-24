@@ -16,14 +16,15 @@
 // other than a0 and t0 may be clobbered.
 
 // For static TLS, the offset stored is the tp offset.  Just return it.
-.function __tlsdesc_static, global
+.tlsdesc.function __tlsdesc_static
   ld a0, 8(a0)
+  .cfi_undefined a0
   jr t0
 .end_function
 
 // For dynamic TLS, the offset stored is the offset within the module's
 // PT_TLS block and the module ID is stored too.
-.function __tlsdesc_dynamic, global
+.tlsdesc.function __tlsdesc_dynamic
 
   // __tlsdesc_dynamic must preserve all registers, with the exception of the
   // return value in a0. The fast path only needs to save and restore 3
