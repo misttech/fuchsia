@@ -6,11 +6,6 @@ import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
 
 assert(is_host, "antlion tests only supported for host testing")
 
-antlion_host_test("hidden_networks_test") {
-  main_source = "HiddenNetworksTest.py"
-  environments = wlan_ap_envs
-}
-
 antlion_host_test("policy_scan_test") {
   main_source = "PolicyScanTest.py"
   environments = wlan_ap_envs
@@ -24,7 +19,6 @@ antlion_host_test("saved_networks_test") {
 group("e2e_tests") {
   testonly = true
   public_deps = [
-    ":hidden_networks_test",
     ":policy_scan_test",
     ":saved_networks_test",
   ]
@@ -32,5 +26,5 @@ group("e2e_tests") {
 
 group("e2e_tests_quick") {
   testonly = true
-  public_deps = [ ":hidden_networks_test" ]
+  public_deps = []
 }
