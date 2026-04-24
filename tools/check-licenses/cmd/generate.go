@@ -267,10 +267,7 @@ func (p *GenerateCommand) setupLogging() error {
 func getLogWriters(logLevel int, outDir string) (io.Writer, error) {
 	logTargets := []io.Writer{}
 
-	switch logLevel {
-	case 0: // Discard all non-error logs.
-		logTargets = append(logTargets, io.Discard)
-	case 1: // Write all logs to a log file.
+	if logLevel == 1 || logLevel == 2 {
 		if outDir != "" {
 			if _, err := os.Stat(outDir); os.IsNotExist(err) {
 				err := os.MkdirAll(outDir, 0755)
@@ -287,7 +284,12 @@ func getLogWriters(logLevel int, outDir string) (io.Writer, error) {
 			// to hold it open for the duration of the application's runtime.
 			logTargets = append(logTargets, f)
 		}
-	case 2: // Write all logs to a log file and stdout.
+	}
+
+	switch logLevel {
+	case 0: // Discard all non-error logs.
+		logTargets = append(logTargets, io.Discard)
+	case 2: // Also print to stdout
 		logTargets = append(logTargets, os.Stdout)
 	}
 

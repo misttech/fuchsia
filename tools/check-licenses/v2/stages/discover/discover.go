@@ -6,8 +6,8 @@ package discover
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
+	"log"
 	"path/filepath"
 	"strings"
 
@@ -75,7 +75,7 @@ func (c *Crawler) Run(ctx context.Context, rootDirs []string) (<-chan pipeline.R
 			// Resolve absolute path to ensure consistent downstream processing
 			absRoot, err := filepath.Abs(root)
 			if err != nil {
-				fmt.Printf("Failed to resolve absolute path for %q: %v\n", root, err)
+				log.Printf("Failed to resolve absolute path for %q: %v\n", root, err)
 				continue
 			}
 
@@ -86,7 +86,7 @@ func (c *Crawler) Run(ctx context.Context, rootDirs []string) (<-chan pipeline.R
 				}
 				if err != nil {
 					// Log and continue if a specific file/dir has permissions issues
-					fmt.Printf("Error accessing path %q: %v\n", path, err)
+					log.Printf("Error accessing path %q: %v\n", path, err)
 					return nil
 				}
 
@@ -114,7 +114,7 @@ func (c *Crawler) Run(ctx context.Context, rootDirs []string) (<-chan pipeline.R
 			})
 
 			if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
-				fmt.Printf("Error walking directory %q: %v\n", absRoot, err)
+				log.Printf("Error walking directory %q: %v\n", absRoot, err)
 			}
 		}
 	}()

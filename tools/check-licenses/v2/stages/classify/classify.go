@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,7 +104,7 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 
 				classified, err := c.ClassifyFile(path, proj.RootPath, isLicense, fileInfo.LicenseParser)
 				if err != nil {
-					fmt.Printf("Failed to read/classify file %s: %v\n", path, err)
+					log.Printf("Failed to read/classify file %s: %v\n", path, err)
 					continue
 				}
 
