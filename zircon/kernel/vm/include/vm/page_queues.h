@@ -275,6 +275,12 @@ class PageQueues {
   // Returns whether or not the reclaim queues only include pager backed pages or not.
   bool ReclaimIsOnlyPagerBacked() const { return !anonymous_is_reclaimable_; }
 
+  // Returns true if the page is in an isolate queue.
+  static bool IsPageReclaimable(const vm_page_t* page) {
+    return page->object.get_page_queue_ref().load(ktl::memory_order_relaxed) ==
+           PageQueueReclaimIsolate;
+  }
+
   // These query functions are marked Debug as it is generally a racy way to determine a pages state
   // and these are exposed for the purpose of writing tests or asserts against the pagequeue.
 

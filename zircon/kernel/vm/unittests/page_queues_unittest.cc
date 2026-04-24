@@ -597,6 +597,34 @@ static bool pq_isolate_queues_priority() {
   END_TEST;
 }
 
+static bool pq_is_page_reclaimable() {
+  BEGIN_TEST;
+
+  PageQueues pq;
+
+  vm_page_t test_page = {};
+  test_page.set_state(vm_page_state::OBJECT);
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status = make_uncommitted_pager_vmo(1, false, false, &vmo);
+  ASSERT_OK(status);
+
+  // Only pages in the isolate queue sholud be considered relcaimable.
+  pq.SetReclaim(&test_page, vmo->DebugGetCowPages().get(), 0);
+  EXPECT_FALSE(pq.IsPageReclaimable(&test_page));
+
+  // Moving the page to the "Don't Need" queue should move to isolate.
+  pq.MoveToReclaimDontNeed(&test_page);
+  EXPECT_TRUE(pq.IsPageReclaimable(&test_page));
+
+  pq.MoveToReclaim(&test_page);
+  EXPECT_FALSE(pq.IsPageReclaimable(&test_page));
+
+  pq.Remove(&test_page);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(page_queues_tests)
 VM_UNITTEST(pq_add_remove)
 VM_UNITTEST(pq_move_queues)
@@ -607,6 +635,7 @@ VM_UNITTEST(pq_single_queue_fifo_order)
 VM_UNITTEST(pq_multiple_queues_fifo_order)
 VM_UNITTEST(pq_isolate_dont_need_fifo_order)
 VM_UNITTEST(pq_isolate_queues_priority)
+VM_UNITTEST(pq_is_page_reclaimable)
 UNITTEST_END_TESTCASE(page_queues_tests, "pq", "PageQueues tests")
 
 }  // namespace vm_unittest

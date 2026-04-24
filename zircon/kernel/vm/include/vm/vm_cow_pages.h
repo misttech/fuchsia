@@ -495,6 +495,9 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   static bool is_page_awaiting_clean(const vm_page_t* page) {
     return DirtyState(page->object.dirty_state) == DirtyState::AwaitingClean;
   }
+  static bool is_page_reclaimable(const vm_page_t* page) {
+    return PageQueues::IsPageReclaimable(page);
+  }
 
   // See VmObject::DirtyPages. |page_request| is required to support delayed PMM allocations; if
   // ZX_ERR_SHOULD_WAIT is returned the caller should wait on |page_request|. |alloc_list| will hold
