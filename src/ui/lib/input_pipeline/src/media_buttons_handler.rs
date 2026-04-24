@@ -15,8 +15,8 @@ use fuchsia_inspect::health::Reporter;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use metrics_registry::*;
+use sorted_vec_map_rs::sorted_vec_map::SortedVecMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use zx::AsHandleRef;
 
@@ -34,7 +34,7 @@ pub struct MediaButtonsHandler {
 #[derive(Debug)]
 struct MediaButtonsHandlerInner {
     /// The media button listeners, key referenced by proxy channel's raw handle.
-    pub listeners: HashMap<u32, fidl_ui_policy::MediaButtonsListenerProxy>,
+    pub listeners: SortedVecMap<u32, fidl_ui_policy::MediaButtonsListenerProxy>,
 
     /// The last MediaButtonsEvent sent to all listeners.
     /// This is used to send new listeners the state of the media buttons.
@@ -154,7 +154,7 @@ impl MediaButtonsHandler {
     ) -> Rc<Self> {
         let media_buttons_handler = Self {
             inner: RefCell::new(MediaButtonsHandlerInner {
-                listeners: HashMap::new(),
+                listeners: SortedVecMap::new(),
                 last_event: None,
                 send_event_task_tracker: LocalTaskTracker::new(),
             }),
@@ -220,7 +220,7 @@ impl MediaButtonsHandler {
     async fn send_event_to_listeners(self: &Rc<Self>, event: &fidl_ui_input::MediaButtonsEvent) {
         let tracker = &self.inner.borrow().send_event_task_tracker;
 
-        for (handle, listener) in &self.inner.borrow().listeners {
+        for (handle, listener) in self.inner.borrow().listeners.iter() {
             let weak_handler = Rc::downgrade(&self);
             let listener_clone = listener.clone();
             let handle_clone = handle.clone();
@@ -257,7 +257,7 @@ impl MediaButtonsHandler {
         self.inner
             .borrow_mut()
             .listeners
-            .insert(proxy.as_channel().as_handle_ref().as_handle_ref().raw_handle(), proxy.clone());
+            .insert(proxy.as_channel().as_handle_ref().raw_handle(), proxy.clone());
 
         // Send the listener the last media button event.
         if let Some(event) = &self.inner.borrow().last_event {
@@ -410,7 +410,7 @@ mod tests {
 
         let media_buttons_handler = Rc::new(MediaButtonsHandler {
             inner: RefCell::new(MediaButtonsHandlerInner {
-                listeners: HashMap::new(),
+                listeners: SortedVecMap::new(),
                 last_event: Some(create_ui_input_media_buttons_event(
                     Some(1),
                     None,

@@ -28,6 +28,11 @@ impl<K, V> SortedVecMap<K, V> {
         self.vec.is_empty()
     }
 
+    /// Returns the number of entries in the map.
+    pub fn len(&self) -> usize {
+        self.vec.len()
+    }
+
     /// Returns true if the map contains an entry for the given key.
     pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
@@ -71,6 +76,20 @@ impl<K, V> SortedVecMap<K, V> {
                 self.vec.insert(index, (key, value));
                 None
             }
+        }
+    }
+
+    /// Removes a key from the map, returning the value at the key if the key was previously in the map.
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord + ?Sized,
+    {
+        if let Ok(index) = self.index_of(key) {
+            let (_, value) = self.vec.remove(index);
+            Some(value)
+        } else {
+            None
         }
     }
 
@@ -227,6 +246,17 @@ mod tests {
         let ret = map.insert(to_insert.0, to_insert.1);
         assert_eq!(ret, expected_return);
         assert_eq!(map.vec, expected_vec);
+    }
+
+    #[test_case(vec![], 1 => (None, vec![]); "remove_empty")]
+    #[test_case(vec![(1, 21)], 1 => (Some(21), vec![]); "remove_only_element")]
+    #[test_case(vec![(0, 20), (1, 21)], 0 => (Some(20), vec![(1, 21)]); "remove_first")]
+    #[test_case(vec![(0, 20), (1, 21)], 1 => (Some(21), vec![(0, 20)]); "remove_last")]
+    #[test_case(vec![(0, 20), (1, 21)], 2 => (None, vec![(0, 20), (1, 21)]); "remove_missing")]
+    fn test_remove(initial: Vec<(i32, i32)>, to_remove: i32) -> (Option<i32>, Vec<(i32, i32)>) {
+        let mut map: SortedVecMap<i32, i32> = initial.into_iter().collect();
+        let ret = map.remove(&to_remove);
+        (ret, map.vec)
     }
 
     #[test_case(vec![(56, 56), (47, 47), (53, 53), (51, 51), (49, 49)]; "normal_map")]
