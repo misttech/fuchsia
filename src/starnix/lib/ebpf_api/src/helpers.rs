@@ -8,20 +8,21 @@ use ebpf::{BpfValue, EbpfBufferPtr, EbpfHelperImpl, EbpfProgramContext, FromBpfV
 use inspect_stubs::track_stub;
 use linux_uapi::{
     BPF_SK_STORAGE_GET_F_CREATE, bpf_func_id_BPF_FUNC_get_current_pid_tgid,
-    bpf_func_id_BPF_FUNC_get_current_uid_gid, bpf_func_id_BPF_FUNC_get_retval,
-    bpf_func_id_BPF_FUNC_get_smp_processor_id, bpf_func_id_BPF_FUNC_get_socket_cookie,
-    bpf_func_id_BPF_FUNC_get_socket_uid, bpf_func_id_BPF_FUNC_ktime_get_boot_ns,
-    bpf_func_id_BPF_FUNC_ktime_get_coarse_ns, bpf_func_id_BPF_FUNC_ktime_get_ns,
-    bpf_func_id_BPF_FUNC_map_delete_elem, bpf_func_id_BPF_FUNC_map_lookup_elem,
-    bpf_func_id_BPF_FUNC_map_update_elem, bpf_func_id_BPF_FUNC_probe_read_str,
-    bpf_func_id_BPF_FUNC_probe_read_user, bpf_func_id_BPF_FUNC_probe_read_user_str,
-    bpf_func_id_BPF_FUNC_ringbuf_discard, bpf_func_id_BPF_FUNC_ringbuf_reserve,
-    bpf_func_id_BPF_FUNC_ringbuf_submit, bpf_func_id_BPF_FUNC_set_retval,
-    bpf_func_id_BPF_FUNC_sk_fullsock, bpf_func_id_BPF_FUNC_sk_lookup_tcp,
-    bpf_func_id_BPF_FUNC_sk_lookup_udp, bpf_func_id_BPF_FUNC_sk_release,
-    bpf_func_id_BPF_FUNC_sk_storage_get, bpf_func_id_BPF_FUNC_skb_load_bytes,
-    bpf_func_id_BPF_FUNC_skb_load_bytes_relative, bpf_func_id_BPF_FUNC_trace_printk,
-    bpf_map_type_BPF_MAP_TYPE_RINGBUF, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, gid_t, pid_t, uid_t,
+    bpf_func_id_BPF_FUNC_get_current_uid_gid, bpf_func_id_BPF_FUNC_get_netns_cookie,
+    bpf_func_id_BPF_FUNC_get_retval, bpf_func_id_BPF_FUNC_get_smp_processor_id,
+    bpf_func_id_BPF_FUNC_get_socket_cookie, bpf_func_id_BPF_FUNC_get_socket_uid,
+    bpf_func_id_BPF_FUNC_ktime_get_boot_ns, bpf_func_id_BPF_FUNC_ktime_get_coarse_ns,
+    bpf_func_id_BPF_FUNC_ktime_get_ns, bpf_func_id_BPF_FUNC_map_delete_elem,
+    bpf_func_id_BPF_FUNC_map_lookup_elem, bpf_func_id_BPF_FUNC_map_update_elem,
+    bpf_func_id_BPF_FUNC_probe_read_str, bpf_func_id_BPF_FUNC_probe_read_user,
+    bpf_func_id_BPF_FUNC_probe_read_user_str, bpf_func_id_BPF_FUNC_ringbuf_discard,
+    bpf_func_id_BPF_FUNC_ringbuf_reserve, bpf_func_id_BPF_FUNC_ringbuf_submit,
+    bpf_func_id_BPF_FUNC_set_retval, bpf_func_id_BPF_FUNC_sk_fullsock,
+    bpf_func_id_BPF_FUNC_sk_lookup_tcp, bpf_func_id_BPF_FUNC_sk_lookup_udp,
+    bpf_func_id_BPF_FUNC_sk_release, bpf_func_id_BPF_FUNC_sk_storage_get,
+    bpf_func_id_BPF_FUNC_skb_load_bytes, bpf_func_id_BPF_FUNC_skb_load_bytes_relative,
+    bpf_func_id_BPF_FUNC_trace_printk, bpf_map_type_BPF_MAP_TYPE_RINGBUF,
+    bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, gid_t, pid_t, uid_t,
 };
 use smallvec::SmallVec;
 use std::slice;
@@ -643,6 +644,19 @@ fn bpf_sk_release<C: EbpfProgramContext>(
     0.into()
 }
 
+fn bpf_get_netns_cookie<C: EbpfProgramContext>(
+    _context: &mut C::RunContext<'_>,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+    _: BpfValue,
+) -> BpfValue {
+    track_stub!(TODO("https://fxbug.dev/287120494"), "bpf_get_netns_cookie");
+    const DEFAULT_NETWORK_NAMESPACE_COOKIE: u64 = 1;
+    DEFAULT_NETWORK_NAMESPACE_COOKIE.into()
+}
+
 fn get_common_helpers<C: MapsProgramContext>() -> impl Iterator<Item = (u32, EbpfHelperImpl<C>)> {
     [
         (bpf_func_id_BPF_FUNC_ktime_get_boot_ns, EbpfHelperImpl(bpf_ktime_get_boot_ns)),
@@ -683,6 +697,7 @@ pub trait CgroupSockProgramContext:
 {
     fn get_helpers() -> HelperSet<Self> {
         [
+            (bpf_func_id_BPF_FUNC_get_netns_cookie, EbpfHelperImpl(bpf_get_netns_cookie)),
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
             (bpf_func_id_BPF_FUNC_sk_storage_get, EbpfHelperImpl(bpf_sk_storage_get)),
             (bpf_func_id_BPF_FUNC_sk_lookup_tcp, EbpfHelperImpl(bpf_sk_lookup_tcp)),
@@ -706,6 +721,7 @@ pub trait CgroupSockAddrProgramContext:
 {
     fn get_helpers() -> HelperSet<Self> {
         [
+            (bpf_func_id_BPF_FUNC_get_netns_cookie, EbpfHelperImpl(bpf_get_netns_cookie)),
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
             (bpf_func_id_BPF_FUNC_sk_storage_get, EbpfHelperImpl(bpf_sk_storage_get)),
             (bpf_func_id_BPF_FUNC_sk_lookup_tcp, EbpfHelperImpl(bpf_sk_lookup_tcp)),
@@ -726,6 +742,7 @@ pub trait CgroupSockOptProgramContext:
 {
     fn get_helpers() -> HelperSet<Self> {
         [
+            (bpf_func_id_BPF_FUNC_get_netns_cookie, EbpfHelperImpl(bpf_get_netns_cookie)),
             (bpf_func_id_BPF_FUNC_set_retval, EbpfHelperImpl(bpf_set_retval)),
             (bpf_func_id_BPF_FUNC_get_retval, EbpfHelperImpl(bpf_get_retval)),
             (bpf_func_id_BPF_FUNC_sk_storage_get, EbpfHelperImpl(bpf_sk_storage_get)),
@@ -750,6 +767,7 @@ pub trait SocketFilterProgramContext:
 {
     fn get_helpers() -> HelperSet<Self> {
         vec![
+            (bpf_func_id_BPF_FUNC_get_netns_cookie, EbpfHelperImpl(bpf_get_netns_cookie)),
             (bpf_func_id_BPF_FUNC_get_socket_uid, EbpfHelperImpl(bpf_get_socket_uid)),
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
             (bpf_func_id_BPF_FUNC_skb_load_bytes, EbpfHelperImpl(bpf_skb_load_bytes)),
@@ -775,6 +793,7 @@ pub trait CgroupSkbProgramContext:
 {
     fn get_helpers() -> HelperSet<Self> {
         vec![
+            (bpf_func_id_BPF_FUNC_get_netns_cookie, EbpfHelperImpl(bpf_get_netns_cookie)),
             (bpf_func_id_BPF_FUNC_get_socket_uid, EbpfHelperImpl(bpf_get_socket_uid)),
             (bpf_func_id_BPF_FUNC_get_socket_cookie, EbpfHelperImpl(bpf_get_socket_cookie)),
             (bpf_func_id_BPF_FUNC_skb_load_bytes, EbpfHelperImpl(bpf_skb_load_bytes)),
