@@ -18,6 +18,7 @@ use wlan_legacy_metrics_registry as metrics;
 mod processors;
 pub(crate) mod util;
 pub use crate::processors::connect_disconnect::DisconnectInfo;
+pub use crate::processors::pno_scan::PnoScanDisabledReason;
 pub use crate::processors::power::{IfacePowerLevel, UnclearPowerDemand};
 pub use crate::processors::scan::ScanResult;
 pub use crate::processors::toggle_events::ClientConnectionsToggleEvent;
@@ -72,6 +73,11 @@ pub enum TelemetryEvent {
         scenario: fidl_internal::TxPowerScenario,
     },
     PnoScanFailure,
+    PnoScanEnabled,
+    PnoScanResultsReceived,
+    PnoScanDisabled {
+        reason: PnoScanDisabledReason,
+    },
 }
 
 /// If metrics cannot be reported for extended periods of time, logging new metrics will fail and
@@ -192,6 +198,7 @@ pub fn serve_telemetry(
     let recovery_logger = processors::recovery::RecoveryLogger::new(cobalt_proxy.clone());
     let mut scan_logger =
         processors::scan::ScanLogger::new(cobalt_proxy.clone(), &time_matrix_client);
+    let mut pno_scan_logger = processors::pno_scan::PnoScanLogger::new(cobalt_proxy.clone());
     let sme_timeout_logger = processors::sme_timeout::SmeTimeoutLogger::new(cobalt_proxy.clone());
     let mut toggle_logger =
         processors::toggle_events::ToggleLogger::new(cobalt_proxy.clone(), &inspect_node);
@@ -297,6 +304,15 @@ pub fn serve_telemetry(
                         }
                         PnoScanFailure => {
                             connect_disconnect.handle_pno_scan_failure().await;
+                        }
+                        PnoScanEnabled => {
+                            pno_scan_logger.handle_pno_scan_enabled().await;
+                        }
+                        PnoScanResultsReceived => {
+                            pno_scan_logger.handle_pno_scan_results_received().await;
+                        }
+                        PnoScanDisabled { reason } => {
+                            pno_scan_logger.handle_pno_scan_disabled(reason).await;
                         }
                     }
                 }
