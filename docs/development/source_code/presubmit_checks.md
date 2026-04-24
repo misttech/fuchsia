@@ -124,3 +124,15 @@ If an IfThisThenThat directive is violated, a comment is left on the CL:
 The warning also appears on the **Checks** tab:
 
 ![IfThisThenThat appearing in the Checks tab](ifttt_checks_tab.png)
+
+##### Opting out
+
+To opt out of the IfThisThenThat check for a specific change, include
+`NO_IFTTT=<reason>` in the commit message.
+
+{% dynamic if user.is_googler %}
+
+For more details, see the
+[IfThisThenThat documentation](https://goto.google.com/gerrit-ifthisthenthat).
+
+{% dynamic endif %}
