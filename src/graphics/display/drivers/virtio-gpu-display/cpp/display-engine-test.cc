@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/virtio-gpu-display/display-engine.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/display-engine.h"
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.math/cpp/wire.h>
@@ -24,7 +24,7 @@
 
 #include <virtio/virtio.h>
 
-#include "src/graphics/display/drivers/virtio-gpu-display/virtio-pci-device.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/virtio-pci-device.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-fidl.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"

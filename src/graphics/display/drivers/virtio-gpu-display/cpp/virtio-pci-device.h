@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_VIRTIO_PCI_DEVICE_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_VIRTIO_PCI_DEVICE_H_
+#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_VIRTIO_PCI_DEVICE_H_
+#define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_VIRTIO_PCI_DEVICE_H_
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/virtio/device.h>
@@ -307,4 +307,4 @@ const ResponseType& VirtioPciDevice::ExchangeCursorqRequestResponse(const Reques
 
 }  // namespace virtio_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_VIRTIO_PCI_DEVICE_H_
+#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_VIRTIO_PCI_DEVICE_H_

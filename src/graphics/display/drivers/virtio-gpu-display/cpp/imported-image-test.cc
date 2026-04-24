@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/virtio-gpu-display/imported-image.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/imported-image.h"
 
 #include <zircon/syscalls.h>
 

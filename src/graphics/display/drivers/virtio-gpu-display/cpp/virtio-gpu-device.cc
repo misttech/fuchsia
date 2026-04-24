@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/virtio-gpu-display/virtio-gpu-device.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/virtio-gpu-device.h"
 
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/result.h>
@@ -19,7 +19,7 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/vector.h>
 
-#include "src/graphics/display/drivers/virtio-gpu-display/virtio-pci-device.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/virtio-pci-device.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 #include "src/graphics/lib/virtio/virtio-abi.h"
 

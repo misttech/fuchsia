@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_GPU_DEVICE_DRIVER_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_GPU_DEVICE_DRIVER_H_
+#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_GPU_DEVICE_DRIVER_H_
+#define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_GPU_DEVICE_DRIVER_H_
 
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -16,8 +16,8 @@
 #include <span>
 #include <thread>
 
-#include "src/graphics/display/drivers/virtio-gpu-display/display-engine.h"
-#include "src/graphics/display/drivers/virtio-gpu-display/gpu-control-server.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/display-engine.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/gpu-control-server.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-fidl.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-fidl-adapter.h"
 
@@ -76,4 +76,4 @@ class GpuDeviceDriver : public fdf::DriverBase, public GpuControlServer::Owner {
 
 }  // namespace virtio_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_GPU_DEVICE_DRIVER_H_
+#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_GPU_DEVICE_DRIVER_H_

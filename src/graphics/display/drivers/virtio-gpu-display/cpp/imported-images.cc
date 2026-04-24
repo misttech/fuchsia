@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/virtio-gpu-display/imported-images.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/imported-images.h"
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
@@ -24,7 +24,7 @@
 #include <fbl/intrusive_hash_table.h>
 #include <fbl/string_printf.h>
 
-#include "src/graphics/display/drivers/virtio-gpu-display/imported-image.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/imported-image.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"

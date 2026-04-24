@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_IMPORTED_IMAGES_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_IMPORTED_IMAGES_H_
+#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_IMPORTED_IMAGES_H_
+#define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_IMPORTED_IMAGES_H_
 
 #include <fidl/fuchsia.images2/cpp/wire.h>
 #include <fidl/fuchsia.math/cpp/wire.h>
@@ -17,7 +17,7 @@
 #include <fbl/intrusive_hash_table.h>
 #include <fbl/intrusive_single_list.h>
 
-#include "src/graphics/display/drivers/virtio-gpu-display/imported-image.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/imported-image.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-buffer-collection-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
@@ -172,4 +172,4 @@ class ImportedImages {
 
 }  // namespace virtio_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_IMPORTED_IMAGES_H_
+#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_IMPORTED_IMAGES_H_

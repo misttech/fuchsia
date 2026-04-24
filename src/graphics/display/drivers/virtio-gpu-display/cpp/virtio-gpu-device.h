@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_VIRTIO_GPU_DEVICE_H_
-#define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_VIRTIO_GPU_DEVICE_H_
+#ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_VIRTIO_GPU_DEVICE_H_
+#define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_VIRTIO_GPU_DEVICE_H_
 
 #include <lib/zx/bti.h>
 #include <lib/zx/result.h>
@@ -14,7 +14,7 @@
 
 #include <fbl/vector.h>
 
-#include "src/graphics/display/drivers/virtio-gpu-display/virtio-pci-device.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/virtio-pci-device.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 #include "src/graphics/lib/virtio/virtio-abi.h"
 
@@ -136,4 +136,4 @@ class VirtioGpuDevice {
 
 }  // namespace virtio_display
 
-#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_VIRTIO_GPU_DEVICE_H_
+#endif  // SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_VIRTIO_GPU_DEVICE_H_

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/display/drivers/virtio-gpu-display/gpu-device-driver.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/gpu-device-driver.h"
 
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
@@ -21,7 +21,7 @@
 
 #include <fbl/alloc_checker.h>
 
-#include "src/graphics/display/drivers/virtio-gpu-display/display-engine.h"
+#include "src/graphics/display/drivers/virtio-gpu-display/cpp/display-engine.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-events-fidl.h"
 #include "src/graphics/display/lib/api-protocols/cpp/display-engine-fidl-adapter.h"
 
