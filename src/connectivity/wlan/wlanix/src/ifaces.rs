@@ -592,7 +592,8 @@ impl ClientIface for SmeClientIface {
     }
 
     async fn trigger_scan(&self) -> Result<ScanEnd, Error> {
-        let scan_request = fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest);
+        let scan_request =
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] });
         let (abort_sender, mut abort_receiver) = oneshot::channel();
         self.scan_abort_signal.lock().replace(abort_sender);
         let mut fut = pin!(

@@ -504,7 +504,7 @@ mod tests {
     }
 
     fn passive_sme_req() -> fidl_sme::ScanRequest {
-        fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {})
+        fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] })
     }
 
     struct FakeIfaceManager {
@@ -760,7 +760,8 @@ mod tests {
         let sme_proxy = SmeForScan::new(sme_proxy, 0, defect_sender);
 
         // Issue request to scan.
-        let scan_request = fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {});
+        let scan_request =
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] });
         let mut scan_defects = vec![];
         let scan_fut = sme_scan(&sme_proxy, &scan_request, &mut scan_defects);
         let mut scan_fut = pin!(scan_fut);
@@ -850,7 +851,8 @@ mod tests {
         let sme_proxy = SmeForScan::new(sme_proxy, 0, defect_sender);
 
         // Issue request to scan.
-        let scan_request = fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {});
+        let scan_request =
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] });
         let mut scan_defects = vec![];
         let scan_fut = sme_scan(&sme_proxy, &scan_request, &mut scan_defects);
         let mut scan_fut = pin!(scan_fut);

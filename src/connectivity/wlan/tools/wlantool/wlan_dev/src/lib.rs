@@ -439,7 +439,9 @@ async fn do_client_connect(
             ssids: vec![ssid.to_vec()],
             channels: vec![],
         }),
-        ScanTypeArg::Passive => fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}),
+        ScanTypeArg::Passive => {
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] })
+        }
     };
     let scan_result = sme.scan(&req).await.context("error sending scan request")?;
     let bss_description = try_get_bss_desc(scan_result, &ssid, bssid.as_ref()).await?;
@@ -484,7 +486,9 @@ async fn do_client_scan(
     let opts::ClientScanCmd { iface_id, scan_type } = cmd;
     let sme = get_client_sme(monitor_proxy, iface_id).await?;
     let req = match scan_type {
-        ScanTypeArg::Passive => fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}),
+        ScanTypeArg::Passive => {
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] })
+        }
         ScanTypeArg::Active => fidl_sme::ScanRequest::Active(fidl_sme::ActiveScanRequest {
             ssids: vec![],
             channels: vec![],

@@ -456,7 +456,9 @@ class AsyncWlanCoreUsingFc(wlan_core.AsyncWlanCore, AsyncLazyReady):
         client_sme = await self._get_client_sme(iface_id)
 
         # Perform a passive scan
-        req = f_wlan_sme.ScanRequest(passive=f_wlan_sme.PassiveScanRequest())
+        req = f_wlan_sme.ScanRequest(
+            passive=f_wlan_sme.PassiveScanRequest(channels=[])
+        )
 
         try:
             scan_for_controller_response = (

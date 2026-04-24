@@ -81,7 +81,49 @@ class WlanDriverRestartTest(base_test.CoreBaseTestClass):
         client_sme = fw_sme.ClientSmeClient(proxy)
 
         logger.info("Issuing scan request...")
-        scan_req = fw_sme.ScanRequest(passive=fw_sme.PassiveScanRequest())
+        # TODO(https://fxbug.dev/316037008): Get the list of supported channels when the call is supported.
+        # Scan on all channels to check that a full scan succeeds after the driver restart.
+        channels = [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            36,
+            40,
+            44,
+            48,
+            52,
+            56,
+            60,
+            64,
+            100,
+            104,
+            108,
+            112,
+            116,
+            120,
+            124,
+            128,
+            132,
+            136,
+            140,
+            144,
+            149,
+            153,
+            157,
+            161,
+            165,
+        ]
+        scan_req = fw_sme.ScanRequest(
+            passive=fw_sme.PassiveScanRequest(channels)
+        )
         scan_response = (
             await client_sme.scan_for_controller(req=scan_req)
         ).unwrap()

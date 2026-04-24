@@ -98,7 +98,12 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
             (
                 await self.test_kit.client_sme.scan_for_controller(
                     req=fidl_sme.ScanRequest(
-                        passive=fidl_sme.PassiveScanRequest()
+                        passive=fidl_sme.PassiveScanRequest(
+                            channels=[
+                                DEFAULT_2G_CHANNEL.number,
+                                AP_DEFAULT_CHANNEL_5G,
+                            ]
+                        )
                     )
                 )
             )

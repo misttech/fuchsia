@@ -525,7 +525,9 @@ mod tests {
             client_sme_proxy: &fidl_sme::ClientSmeProxy,
         ) -> fidl_sme::ClientSmeScanResult {
             client_sme_proxy
-                .scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}))
+                .scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {
+                    channels: vec![],
+                }))
                 .await
                 .expect("FIDL request failed")
         }

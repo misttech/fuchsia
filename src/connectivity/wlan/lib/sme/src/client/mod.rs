@@ -2092,7 +2092,9 @@ mod tests {
     async fn test_simple_scan_error() {
         let (mut sme, _mlme_strem, _time_stream) = create_sme().await;
         let mut recv =
-            sme.on_scan_command(fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}));
+            sme.on_scan_command(fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {
+                channels: vec![],
+            }));
 
         sme.on_mlme_event(fidl_mlme::MlmeEvent::OnScanEnd {
             end: fidl_mlme::ScanEnd {
@@ -2111,7 +2113,9 @@ mod tests {
     async fn test_scan_error_after_some_results_returned() {
         let (mut sme, _mlme_strem, _time_stream) = create_sme().await;
         let mut recv =
-            sme.on_scan_command(fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}));
+            sme.on_scan_command(fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {
+                channels: vec![],
+            }));
 
         let mut bss = fake_fidl_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap());
         bss.bssid = [3; 6];
@@ -2162,7 +2166,9 @@ mod tests {
 
         // Send a scan command and verify a ShouldWait response is returned
         let mut recv =
-            sme.on_scan_command(fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}));
+            sme.on_scan_command(fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {
+                channels: vec![],
+            }));
         assert_eq!(recv.try_recv(), Ok(Some(Err(fidl_mlme::ScanResultCode::ShouldWait))));
     }
 

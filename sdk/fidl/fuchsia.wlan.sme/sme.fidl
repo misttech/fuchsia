@@ -143,7 +143,12 @@ type ScanRequest = strict union {
     2: passive PassiveScanRequest;
 };
 
-type PassiveScanRequest = struct {};
+type PassiveScanRequest = struct {
+    // TODO(https://fxbug.dev/42170679): SME should instead require the higher layer to specify
+    // which channels to scan and return an error if the list is empty.
+    /// Channels to scan on. Leave empty for all supported channels.
+    channels vector<uint8>:500;
+};
 
 type ActiveScanRequest = struct {
     /// List of SSIDs to scan for. An empty list of ssids is the same as specifying

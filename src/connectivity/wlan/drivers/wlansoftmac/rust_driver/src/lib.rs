@@ -1445,7 +1445,9 @@ mod tests {
         ));
 
         let scan_response_fut =
-            client_sme_proxy.scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}));
+            client_sme_proxy.scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {
+                channels: vec![],
+            }));
         let mut scan_response_fut = pin!(scan_response_fut);
         assert!(matches!(
             TestExecutor::poll_until_stalled(&mut scan_response_fut).await,

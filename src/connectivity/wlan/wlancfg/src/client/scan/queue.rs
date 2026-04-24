@@ -32,7 +32,7 @@ impl QueuedRequest {
         if undirected_scan_fulfills_request {
             // Can be fulfilled by a passive scan or a wildcard active scan
             match sme_request {
-                fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}) => true,
+                fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { .. }) => true,
                 fidl_sme::ScanRequest::Active(active_req) => {
                     // Empty SSID list is equivalent to only having the wildcard SSID
                     active_req.ssids.is_empty()
@@ -42,7 +42,7 @@ impl QueuedRequest {
         } else {
             // Can only be fulfilled by an active scan
             match sme_request {
-                fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}) => false,
+                fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { .. }) => false,
                 fidl_sme::ScanRequest::Active(active_req) => {
                     // Every SSID in the queued request must be in the SME request
                     self.ssids.iter().all(|ssid| active_req.ssids.contains(&ssid.to_vec()))
@@ -54,7 +54,7 @@ impl QueuedRequest {
     /// Returns true if the request's channels can be fulfilled by the given SME request
     fn channels_match(&self, sme_request: &fidl_sme::ScanRequest) -> bool {
         match sme_request {
-            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}) => true,
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { .. }) => true,
             fidl_sme::ScanRequest::Active(active_req) => {
                 self.channels.iter().all(|chan| active_req.channels.contains(&chan.primary))
             }
@@ -105,7 +105,7 @@ impl RequestQueue {
         let (ssids, channels) = highest_priority_request;
         // For now, only fulfill the highest priority request
         if ssids.is_empty() {
-            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {})
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] })
         } else {
             fidl_sme::ScanRequest::Active(fidl_sme::ActiveScanRequest {
                 ssids: ssids.iter().map(|ssid| ssid.to_vec()).collect(),
@@ -188,7 +188,7 @@ mod tests {
     }
 
     fn passive_sme_req() -> fidl_sme::ScanRequest {
-        fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {})
+        fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] })
     }
 
     fn setup_queue() -> (RequestQueue, mpsc::Receiver<TelemetryEvent>) {

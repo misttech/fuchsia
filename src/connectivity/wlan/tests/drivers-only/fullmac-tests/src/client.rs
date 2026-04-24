@@ -106,7 +106,9 @@ async fn test_scan_request_success() {
 
     let client_fut = async {
         client_sme_proxy
-            .scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}))
+            .scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {
+                channels: vec![],
+            }))
             .await
             .expect("FIDL error")
             .expect("ScanRequest error")
@@ -184,7 +186,9 @@ async fn test_scan_request_error() {
 
     let client_fut = async {
         client_sme_proxy
-            .scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}))
+            .scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {
+                channels: vec![],
+            }))
             .await
             .expect("FIDL error")
     };

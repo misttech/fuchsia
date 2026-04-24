@@ -1274,7 +1274,8 @@ fn test_autoconnect_to_saved_network() {
     let mut iface_sme_stream = prepare_client_interface(&mut exec, &mut test_values);
 
     // Passive scanning should start due to the idle interface and saved network.
-    let expected_scan_request = fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest);
+    let expected_scan_request =
+        fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] });
     let mutual_security_protocols = security_protocols_from_protection(Scanned::Wpa2Personal);
     assert!(!mutual_security_protocols.is_empty(), "no mutual security protocols");
     let mock_scan_results = vec![fidl_sme::ScanResult {
@@ -3431,7 +3432,8 @@ fn test_autconnect_starts_after_roam_error() {
     assert_eq!(network.id.unwrap().ssid, TEST_SSID.clone());
 
     // Passive scanning should start due to the idle interface and saved network.
-    let expected_scan_request = fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest);
+    let expected_scan_request =
+        fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] });
     let mutual_security_protocols = security_protocols_from_protection(Scanned::Open);
     let mock_scan_results = vec![fidl_sme::ScanResult {
         compatibility: fidl_sme::Compatibility::Compatible(fidl_sme::Compatible {

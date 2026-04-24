@@ -298,7 +298,7 @@ fn get_operating_channels_for_scan(
 
     let requested_channels = match scan_request {
         fidl_sme::ScanRequest::Active(options) => &options.channels[..],
-        _ => &[],
+        fidl_sme::ScanRequest::Passive(options) => &options.channels[..],
     };
     let channels: Vec<u8> = CANDIDATE_OPERATING_CHANNELS
         .iter()
@@ -319,8 +319,7 @@ fn get_operating_channels_for_scan(
             true
         })
         .filter(|channel| {
-            // If this is an active scan and there are any channels specified by the caller,
-            // only include those channels.
+            // If there are any channels specified by the caller, only include those channels.
             if !requested_channels.is_empty() {
                 return requested_channels.contains(&channel.primary);
             }
@@ -377,7 +376,10 @@ mod tests {
         LazyLock::new(|| [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into());
 
     fn passive_discovery_scan(token: i32) -> DiscoveryScan<i32> {
-        DiscoveryScan::new(token, fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}))
+        DiscoveryScan::new(
+            token,
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] }),
+        )
     }
 
     #[test]
@@ -667,6 +669,86 @@ mod tests {
         assert_eq!(req.probe_delay, 5);
         assert_eq!(req.min_channel_time, 75);
         assert_eq!(req.max_channel_time, 75);
+    }
+
+    #[test]
+    fn test_passive_discovery_scan_args_filled() {
+        // Set up the device that can operate on channels 1, 36, and 165.
+        let device_info = device_info_with_channel(vec![1, 36, 165]);
+        let mut sched: ScanScheduler<i32> =
+            ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+        // Request a scan using only some of the supported channels.
+        let scan_cmd = DiscoveryScan::new(
+            10,
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![1, 36] }),
+        );
+        let req = sched.enqueue_scan_to_discover(scan_cmd).expect("expected a ScanRequest");
+
+        assert_eq!(req.txn_id, 1);
+        assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
+        // Verify that only the requested channels are included.
+        assert_eq!(req.channel_list.into_iter().collect::<HashSet<_>>(), HashSet::from([1, 36]));
+        assert_eq!(req.ssid_list, Vec::<Vec<u8>>::new());
+        assert_eq!(req.probe_delay, 0);
+        assert_eq!(req.min_channel_time, 200);
+        assert_eq!(req.max_channel_time, 200);
+    }
+
+    #[test]
+    fn test_passive_discovery_scan_args_unsupported_filtered() {
+        let device_info = device_info_with_channel(vec![1, 36]);
+        let mut sched: ScanScheduler<i32> =
+            ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+        // Request a scan that includes a channel not supported by the device.
+        let scan_cmd = DiscoveryScan::new(
+            10,
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {
+                channels: vec![1, 6, 36],
+            }),
+        );
+        let req = sched.enqueue_scan_to_discover(scan_cmd).expect("expected a ScanRequest");
+
+        assert_eq!(req.txn_id, 1);
+        assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
+        // Verify that the unsupported channel 6 was filtered out.
+        assert_eq!(req.channel_list.into_iter().collect::<HashSet<_>>(), HashSet::from([1, 36]));
+    }
+
+    #[test]
+    fn test_passive_discovery_scan_args_invalid_filtered() {
+        let device_info = device_info_with_channel(vec![1, 200]);
+        let mut sched: ScanScheduler<i32> =
+            ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+        // Request a scan that includes an invalid channel.
+        let scan_cmd = DiscoveryScan::new(
+            10,
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![1, 200] }),
+        );
+        let req = sched.enqueue_scan_to_discover(scan_cmd).expect("expected a ScanRequest");
+
+        assert_eq!(req.txn_id, 1);
+        assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
+        // Verify that the invalid channel 200 was filtered out and the valid channel is included.
+        assert_eq!(req.channel_list, vec![1]);
+    }
+
+    #[test]
+    fn test_passive_discovery_scan_args_empty_list() {
+        let device_info = device_info_with_channel(vec![1, 36, 165]);
+        let mut sched: ScanScheduler<i32> =
+            ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+        let scan_cmd = DiscoveryScan::new(
+            10,
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] }),
+        );
+        let req = sched.enqueue_scan_to_discover(scan_cmd).expect("expected a ScanRequest");
+
+        assert_eq!(req.txn_id, 1);
+        assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Passive);
+        assert_eq!(
+            req.channel_list.into_iter().collect::<HashSet<_>>(),
+            HashSet::from([1, 36, 165])
+        );
     }
 
     #[test]

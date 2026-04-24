@@ -93,7 +93,9 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
             (
                 await self.test_kit.client_sme.scan_for_controller(
                     req=fidl_sme.ScanRequest(
-                        passive=fidl_sme.PassiveScanRequest()
+                        passive=fidl_sme.PassiveScanRequest(
+                            channels=[AP_DEFAULT_CHANNEL_2G]
+                        )
                     )
                 )
             )

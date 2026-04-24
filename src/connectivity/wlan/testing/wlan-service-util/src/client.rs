@@ -302,7 +302,7 @@ pub async fn passive_scan(
     iface_sme_proxy: &fidl_sme::ClientSmeProxy,
 ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
     let vmo = iface_sme_proxy
-        .scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}))
+        .scan(&fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] }))
         .await
         .context("error sending scan request")?
         .map_err(|scan_error_code| format_err!("Scan error: {:?}", scan_error_code))?;

@@ -257,12 +257,17 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             target_ap_security_config,
         ) = self.setup_aps(test_params)
 
-        # Passive scan
+        # Passive scan on the channels used in this test, which are the default channels for 2.4GHz and 5GHz APs.
         scan_results = (
             (
                 await self.test_kit.client_sme.scan_for_controller(
                     req=fidl_sme.ScanRequest(
-                        passive=fidl_sme.PassiveScanRequest()
+                        passive=fidl_sme.PassiveScanRequest(
+                            channels=[
+                                hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                                hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                            ]
+                        )
                     )
                 )
             )
