@@ -18,6 +18,7 @@ use crate::vfs::{
     CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext, LookupVec,
     MAX_SYMLINK_FOLLOWS, NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
+use fuchsia_rcu::RcuReadGuard;
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{
@@ -217,12 +218,14 @@ impl CurrentTask {
         }
     }
 
-    /// Returns the live state of the task.
+    /// Returns the [`TaskLiveState`] for the [`Task`].
     ///
-    /// This panics if the task has already transitioned to a zombie state because `CurrentTask`
-    /// only exists for live tasks.
+    /// # Panics
+    ///
+    /// Calling `live()` on a [`CurrentTask`] for which the [`Task`] has no live state (i.e.
+    /// zombie tasks) panics. However, such tasks should not have a `CurrentTask`.
     #[track_caller]
-    pub fn live(&self) -> Arc<TaskLiveState> {
+    pub fn live(&self) -> RcuReadGuard<TaskLiveState> {
         self.task.live().expect("CurrentTask must have TaskLiveState")
     }
 
@@ -1680,7 +1683,16 @@ impl CurrentTask {
         // Only create the vfork event when the caller requested CLONE_VFORK.
         let vfork_event = if clone_vfork { Some(Arc::new(zx::Event::create())) } else { None };
 
-        let live = self.live();
+        // Clone live state in a nested scope to ensure that the RCU read scope is not held across
+        // the release_on_error block.
+        let abstract_socket_namespace;
+        let abstract_vsock_namespace;
+        {
+            let live = self.live();
+            abstract_socket_namespace = live.abstract_socket_namespace.clone();
+            abstract_vsock_namespace = live.abstract_vsock_namespace.clone();
+        }
+
         let mut child = TaskBuilder::new(Task::new(
             pid,
             command,
@@ -1690,8 +1702,8 @@ impl CurrentTask {
             memory_manager,
             fs,
             creds,
-            live.abstract_socket_namespace.clone(),
-            live.abstract_vsock_namespace.clone(),
+            abstract_socket_namespace,
+            abstract_vsock_namespace,
             child_signal_mask,
             child_kernel_signals,
             vfork_event,

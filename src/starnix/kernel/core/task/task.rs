@@ -18,7 +18,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, FsString};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuReadGuard};
+use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionCell, RcuReadGuard};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::{HeapRegs, RegisterStorageEnum};
@@ -946,7 +946,7 @@ pub struct Task {
     /// The live state of the task.
     ///
     /// This is `None` for zombie tasks.
-    pub live_state: RcuOptionArc<TaskLiveState>,
+    pub live_state: RcuOptionCell<TaskLiveState>,
 
     /// The stop state of the task, distinct from the stop state of the thread group.
     ///
@@ -1115,21 +1115,20 @@ impl Task {
     ) -> OwnedRef<Self> {
         let thread_group_key = ThreadGroupKey::from(&thread_group);
         OwnedRef::new_cyclic(|weak_self| {
-            let task_live = Arc::new(TaskLiveState {
-                thread: RwLock::new(thread.map(Arc::new)),
-                files,
-                mm: RcuOptionArc::new(mm),
-                fs: RcuArc::new(fs),
-                abstract_socket_namespace,
-                abstract_vsock_namespace,
-            });
             let task = Task {
                 weak_self,
                 tid,
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
-                live_state: RcuOptionArc::new(Some(task_live)),
+                live_state: RcuOptionCell::new(Some(TaskLiveState {
+                    thread: RwLock::new(thread.map(Arc::new)),
+                    files,
+                    mm: RcuOptionArc::new(mm),
+                    fs: RcuArc::new(fs),
+                    abstract_socket_namespace,
+                    abstract_vsock_namespace,
+                })),
                 vfork_event,
                 stop_state: AtomicStopState::new(StopState::Awake),
                 flags: AtomicTaskFlags::new(TaskFlags::empty()),
@@ -1212,8 +1211,8 @@ impl Task {
     /// Returns [`Err(ESRCH)`] if the task has already transitioned to a zombie state and its live
     /// resources have been dropped.
     #[track_caller]
-    pub fn live(&self) -> Result<Arc<TaskLiveState>, Errno> {
-        self.live_state.to_option_arc().ok_or_else(|| errno!(ESRCH))
+    pub fn live(&self) -> Result<RcuReadGuard<TaskLiveState>, Errno> {
+        self.live_state.read().ok_or_else(|| errno!(ESRCH))
     }
 
     /// Returns the memory manager of the task, if it exists.

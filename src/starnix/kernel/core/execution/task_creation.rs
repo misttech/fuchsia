@@ -153,7 +153,8 @@ where
 {
     let weak_init = kernel.pids.read().get_task(1);
     let init_task = weak_init.upgrade().ok_or_else(|| errno!(EINVAL))?;
-    let init_live = init_task.live()?;
+
+    let fs = init_task.live()?.fs().fork();
 
     let security_state = if let Some(seclabel) = seclabel {
         security::task_for_context(&init_task, seclabel.as_bytes().into())?
@@ -171,7 +172,7 @@ where
         locked,
         kernel,
         initial_name.clone(),
-        init_live.fs().fork(),
+        fs,
         |locked, pid, process_group| {
             create_zircon_process(
                 locked.cast_locked::<TaskRelease>(),
@@ -417,18 +418,29 @@ where
         default_timerslack_ns = state.default_timerslack_ns;
     }
 
-    let live_system_task = system_task.live().unwrap();
+    let mm;
+    let fs;
+    let abstract_socket_namespace;
+    let abstract_vsock_namespace;
+    {
+        let live = system_task.live()?;
+        mm = live.mm.to_option_arc();
+        fs = live.fs.to_arc();
+        abstract_socket_namespace = live.abstract_socket_namespace.clone();
+        abstract_vsock_namespace = live.abstract_vsock_namespace.clone();
+    }
+
     let current_task: CurrentTask = TaskBuilder::new(Task::new(
         pid,
         initial_name,
         system_task.thread_group().clone(),
         None,
         FdTable::default(),
-        live_system_task.mm.to_option_arc(),
-        live_system_task.fs.to_arc(),
+        mm,
+        fs,
         system_task.clone_creds(),
-        Arc::clone(&live_system_task.abstract_socket_namespace),
-        Arc::clone(&live_system_task.abstract_vsock_namespace),
+        abstract_socket_namespace,
+        abstract_vsock_namespace,
         Default::default(),
         Default::default(),
         None,
