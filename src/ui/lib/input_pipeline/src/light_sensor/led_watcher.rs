@@ -7,12 +7,12 @@ use fidl_fuchsia_settings::{LightGroup as LightGroupFidl, LightProxy, LightValue
 use fidl_fuchsia_ui_brightness::ControlProxy;
 use fuchsia_async as fasync;
 use fuchsia_inspect::Property;
+use futures::StreamExt;
 #[cfg(test)]
 use futures::channel::mpsc;
 use futures::channel::oneshot;
-use futures::StreamExt;
+use sorted_vec_map_rs::SortedVecMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
@@ -42,7 +42,9 @@ impl LightGroup {
         self.brightness = brightness;
     }
 
-    fn map_from_light_groups(light_groups: Vec<LightGroupFidl>) -> HashMap<String, LightGroup> {
+    fn map_from_light_groups(
+        light_groups: Vec<LightGroupFidl>,
+    ) -> SortedVecMap<String, LightGroup> {
         light_groups
             .into_iter()
             .filter_map(|light_group| {
@@ -72,7 +74,7 @@ impl LightGroup {
 
 pub struct LedWatcher {
     backlight_brightness: Rc<RefCell<f32>>,
-    light_groups: Rc<RefCell<HashMap<String, LightGroup>>>,
+    light_groups: Rc<RefCell<SortedVecMap<String, LightGroup>>>,
     #[cfg(test)]
     update: Option<RefCell<mpsc::Sender<Update>>>,
 }
@@ -171,12 +173,12 @@ impl LedWatcher {
 
 #[derive(Clone, Debug)]
 pub struct LedWatcherHandle {
-    light_groups: Rc<RefCell<HashMap<String, LightGroup>>>,
+    light_groups: Rc<RefCell<SortedVecMap<String, LightGroup>>>,
     backlight_brightness: Rc<RefCell<f32>>,
 }
 
 impl LedState for LedWatcherHandle {
-    fn light_groups(&self) -> HashMap<String, LightGroup> {
+    fn light_groups(&self) -> SortedVecMap<String, LightGroup> {
         Clone::clone(&*self.light_groups.borrow())
     }
 
@@ -186,7 +188,7 @@ impl LedState for LedWatcherHandle {
 }
 
 pub trait LedState {
-    fn light_groups(&self) -> HashMap<String, LightGroup>;
+    fn light_groups(&self) -> SortedVecMap<String, LightGroup>;
     fn backlight_brightness(&self) -> f32;
 }
 

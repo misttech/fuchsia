@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::light_sensor::calibrator::{calculate_coex, Calibrate, Calibrator, LedType};
+use crate::light_sensor::calibrator::{Calibrate, Calibrator, LedType, calculate_coex};
 use crate::light_sensor::led_watcher::{LedState, LightGroup};
-use crate::light_sensor::test_utils::{close_enough, LED1_NAME, LED2_NAME};
+use crate::light_sensor::test_utils::{LED1_NAME, LED2_NAME, close_enough};
 use crate::light_sensor::types::{Calibration, Parameters, Rgbc};
+use sorted_vec_map_rs::SortedVecMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::mem::size_of;
 use std::rc::Rc;
 
@@ -40,12 +40,12 @@ fn calculate_coex_only_accounts_for_intercept() {
 
 #[derive(Clone)]
 struct FakeLedState {
-    light_groups: Rc<RefCell<HashMap<String, LightGroup>>>,
+    light_groups: Rc<RefCell<SortedVecMap<String, LightGroup>>>,
     backlight_brightness: Rc<RefCell<f32>>,
 }
 
 impl FakeLedState {
-    fn new(light_groups: HashMap<String, LightGroup>, backlight_brightness: f32) -> Self {
+    fn new(light_groups: SortedVecMap<String, LightGroup>, backlight_brightness: f32) -> Self {
         Self {
             light_groups: Rc::new(RefCell::new(light_groups)),
             backlight_brightness: Rc::new(RefCell::new(backlight_brightness)),
@@ -66,7 +66,7 @@ impl FakeLedState {
 }
 
 impl LedState for FakeLedState {
-    fn light_groups(&self) -> HashMap<String, LightGroup> {
+    fn light_groups(&self) -> SortedVecMap<String, LightGroup> {
         Clone::clone(&*self.light_groups.borrow())
     }
 
@@ -77,7 +77,7 @@ impl LedState for FakeLedState {
 
 #[fuchsia::test(allow_stalls = false)]
 async fn controller_new_initializes_coex_leds() {
-    let light_groups = HashMap::from([
+    let light_groups = SortedVecMap::from_iter(vec![
         // A light group that's not in the calibration data is ignored.
         (String::from("not_calibrated"), LightGroup::new(String::from("not_calibrated"), None)),
         // Light groups found in the calibration data are incorporated.
@@ -86,7 +86,7 @@ async fn controller_new_initializes_coex_leds() {
     ]);
     let calibration = Calibration::new_for_test(
         // leds
-        HashMap::from([
+        SortedVecMap::from_iter(vec![
             (
                 String::from("calibrated1"),
                 Rgbc {
@@ -172,7 +172,7 @@ async fn controller_new_initializes_coex_leds() {
 async fn controller_calibrate_returns_calibrated_values() {
     let calibration = Calibration::new_for_test(
         // leds
-        HashMap::from([
+        SortedVecMap::from_iter(vec![
             (
                 String::from(LED1_NAME),
                 Rgbc {
@@ -210,7 +210,7 @@ async fn controller_calibrate_returns_calibrated_values() {
         Rgbc { red: 1.33, green: 1.13, blue: 1.03, clear: 1.23 },
     );
 
-    let light_groups = HashMap::from([
+    let light_groups = SortedVecMap::from_iter(vec![
         (String::from(LED1_NAME), LightGroup::new(String::from(LED1_NAME), None)),
         (String::from(LED2_NAME), LightGroup::new(String::from(LED2_NAME), None)),
     ]);
@@ -240,7 +240,7 @@ async fn controller_calibrate_returns_calibrated_values() {
 async fn controller_calibrate_returns_calibrated_values_when_lights_off() {
     let calibration = Calibration::new_for_test(
         // leds
-        HashMap::from([
+        SortedVecMap::from_iter(vec![
             (
                 String::from(LED1_NAME),
                 Rgbc {
@@ -279,7 +279,7 @@ async fn controller_calibrate_returns_calibrated_values_when_lights_off() {
     );
 
     // Default values are all off.
-    let light_groups = HashMap::from([
+    let light_groups = SortedVecMap::from_iter(vec![
         (String::from(LED1_NAME), LightGroup::new(String::from(LED1_NAME), None)),
         (String::from(LED2_NAME), LightGroup::new(String::from(LED2_NAME), None)),
     ]);
@@ -301,7 +301,7 @@ async fn controller_calibrate_returns_calibrated_values_when_lights_off() {
 async fn controller_calibrate_clamps_min_value_to_zeros() {
     let calibration = Calibration::new_for_test(
         // leds
-        HashMap::from([
+        SortedVecMap::from_iter(vec![
             (
                 String::from(LED1_NAME),
                 Rgbc {
@@ -340,7 +340,7 @@ async fn controller_calibrate_clamps_min_value_to_zeros() {
     );
 
     // Default values are all off.
-    let light_groups = HashMap::from([
+    let light_groups = SortedVecMap::from_iter(vec![
         (String::from(LED1_NAME), LightGroup::new(String::from(LED1_NAME), None)),
         (String::from(LED2_NAME), LightGroup::new(String::from(LED2_NAME), None)),
     ]);

@@ -6,7 +6,7 @@ use super::{Calibration, LedConfig, LedMap, Parameters, Rgbc};
 use crate::light_sensor::types::{CalibrationConfiguration, FileLoader};
 use anyhow::format_err;
 use async_trait::async_trait;
-use std::collections::HashMap;
+use sorted_vec_map_rs::SortedVecMap;
 use test_case::test_case;
 
 #[test_case(
@@ -33,15 +33,9 @@ use test_case::test_case;
 async fn rgbc_map_async(n: u8) -> Result<Rgbc<u8>, String> {
     let rgbc = Rgbc { red: 1, green: 2, blue: 3, clear: 4 };
 
-    rgbc.map_async(|c| async move {
-        if c == n {
-            Err(format_err!("my_error"))
-        } else {
-            Ok(c + 1)
-        }
-    })
-    .await
-    .map_err(|e| format!("{:?}", e))
+    rgbc.map_async(|c| async move { if c == n { Err(format_err!("my_error")) } else { Ok(c + 1) } })
+        .await
+        .map_err(|e| format!("{:?}", e))
 }
 
 #[fuchsia::test]
@@ -292,7 +286,7 @@ async fn calibration_new(missing_file: Option<&str>, error_strings: Option<&[&st
                 } else {
                     true
                 })
-                .collect::<HashMap<_, _>>()
+                .collect::<SortedVecMap<_, _>>()
             ));
         }
         (Err(e), Some(errors)) => {

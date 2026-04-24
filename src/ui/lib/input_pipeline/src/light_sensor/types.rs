@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Context, Error};
+use anyhow::{Context, Error, bail, format_err};
 use async_trait::async_trait;
 use futures::{Future, FutureExt as _, TryFutureExt as _};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use sorted_vec_map_rs::SortedVecMap;
 use std::ops::{Add, Div, Mul, Sub};
 
 /// Abstracts over grouping of red, green, blue and clear color channel data.
@@ -204,7 +204,7 @@ pub struct Parameters {
     pub(crate) intercept: f32,
 }
 
-type LedMap = HashMap<String, Rgbc<Parameters>>;
+type LedMap = SortedVecMap<String, Rgbc<Parameters>>;
 
 #[async_trait(?Send)]
 pub trait FileLoader {
@@ -230,7 +230,7 @@ impl Calibration {
         configuration: CalibrationConfiguration,
         file_loader: &impl FileLoader,
     ) -> Result<Self, Error> {
-        let mut leds = HashMap::new();
+        let mut leds = SortedVecMap::new();
         for led_config in configuration.leds {
             let name = led_config.name;
             let config = match led_config

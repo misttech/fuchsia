@@ -5,7 +5,7 @@
 use super::types::FileLoader;
 use crate::light_sensor::led_watcher::LedState;
 use crate::light_sensor::types::{Calibration, Parameters, Rgbc};
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_factory::MiscFactoryStoreProviderProxy;
@@ -65,9 +65,9 @@ where
     pub(crate) fn new(calibration: Calibration, led_state: T) -> Self {
         let mut coex_leds: Vec<_> = led_state
             .light_groups()
-            .into_iter()
+            .iter()
             .filter_map(|(name, light_group)| {
-                calibration.leds().get(&name).copied().map(|cal| (light_group, cal))
+                calibration.leds().get(name).copied().map(|cal| (light_group, cal))
             })
             .map(|(light_group, cal)| {
                 let coex_at_max = calculate_coex(cal, calibration.off());

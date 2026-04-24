@@ -5,13 +5,13 @@
 use super::{CancelableTask, LedWatcher, Update};
 use crate::light_sensor::led_watcher::LedState;
 use crate::light_sensor::test_utils::{
-    close_enough, setup_proxies_and_data, SetupData, LED1_NAME, LED2_NAME,
+    LED1_NAME, LED2_NAME, SetupData, close_enough, setup_proxies_and_data,
 };
 use fidl_fuchsia_settings::{LightGroup as LightGroupFidl, LightRequest, LightState, LightValue};
 use fidl_fuchsia_ui_brightness::ControlRequest;
 use fuchsia_async as fasync;
-use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
+use futures::channel::{mpsc, oneshot};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::task::Poll;
@@ -124,8 +124,8 @@ async fn led_watcher_updates_light_groups_on_watch() {
 
     // Ensure default is disabled.
     let light_groups = watcher_handle.light_groups();
-    assert!(light_groups[LED1_NAME].brightness.is_none());
-    assert!(light_groups[LED2_NAME].brightness.is_none());
+    assert!(light_groups.get(LED1_NAME).unwrap().brightness.is_none());
+    assert!(light_groups.get(LED2_NAME).unwrap().brightness.is_none());
 
     let light_request = light_request_rx
         .next()
@@ -170,8 +170,8 @@ async fn led_watcher_updates_light_groups_on_watch() {
 
     // Now try to get updated light groups.
     let light_groups = watcher_handle.light_groups();
-    assert!(close_enough(light_groups[LED1_NAME].brightness.unwrap(), NEW_LED1_VAL));
-    assert!(close_enough(light_groups[LED2_NAME].brightness.unwrap(), NEW_LED2_VAL));
+    assert!(close_enough(light_groups.get(LED1_NAME).unwrap().brightness.unwrap(), NEW_LED1_VAL));
+    assert!(close_enough(light_groups.get(LED2_NAME).unwrap().brightness.unwrap(), NEW_LED2_VAL));
     cancelation_tx.send(()).expect("should be running");
     task.await;
     server_tasks.await;
