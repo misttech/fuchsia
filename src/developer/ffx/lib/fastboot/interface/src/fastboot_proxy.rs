@@ -13,7 +13,7 @@ use chrono::Duration;
 use fastboot::command::{ClientVariable, Command};
 use fastboot::reply::Reply;
 use fastboot::{
-    FastbootContext, SendError, UploadError, download, send, send_with_listener, send_with_timeout,
+    FastbootContext, SendError, download, send, send_with_listener, send_with_timeout,
     upload, upload_with_read_timeout,
 };
 use futures::io::{AsyncRead, AsyncWrite};
@@ -57,10 +57,11 @@ impl VariableListener {
 
 #[async_trait]
 impl fastboot::InfoListener for VariableListener {
-    async fn on_info(&self, info: String) -> Result<()> {
+    async fn on_info(&self, info: String) -> std::result::Result<(), fastboot::ReadError> {
         if let Some((name, val)) = info.split_once(':') {
             log::debug!("Got a variable string: {}", info);
-            self.0.send(Variable { name: name.to_string(), value: val.to_string() }).await?;
+            self.0.send(Variable { name: name.to_string(), value: val.to_string() }).await
+                .map_err(|e| fastboot::ReadError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
         } else {
             log::warn!("Expected to get a variable string. Got: {}", info);
         }
@@ -79,20 +80,25 @@ impl ProgressListener {
 
 #[async_trait]
 impl fastboot::UploadProgressListener for ProgressListener {
-    async fn on_started(&self, size: usize) -> Result<()> {
-        self.0.send(UploadProgress::OnStarted { size: size.try_into()? }).await?;
+    async fn on_started(&self, size: usize) -> std::result::Result<(), fastboot::UploadError> {
+        let size = size.try_into().map_err(|e| fastboot::UploadError::CouldNotVerifyUpload(fastboot::ReadError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e))))?;
+        self.0.send(UploadProgress::OnStarted { size }).await
+            .map_err(|e| fastboot::UploadError::CouldNotWriteToInterface(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
         Ok(())
     }
-    async fn on_progress(&self, bytes_written: u64) -> Result<()> {
-        self.0.send(UploadProgress::OnProgress { bytes_written }).await?;
+    async fn on_progress(&self, bytes_written: u64) -> std::result::Result<(), fastboot::UploadError> {
+        self.0.send(UploadProgress::OnProgress { bytes_written }).await
+            .map_err(|e| fastboot::UploadError::CouldNotWriteToInterface(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
         Ok(())
     }
-    async fn on_error(&self, error: &UploadError) -> Result<()> {
-        self.0.send(UploadProgress::OnError { error: anyhow!(error.to_string()) }).await?;
+    async fn on_error(&self, error: &fastboot::UploadError) -> std::result::Result<(), fastboot::UploadError> {
+        self.0.send(UploadProgress::OnError { error: anyhow!(error.to_string()) }).await
+            .map_err(|e| fastboot::UploadError::CouldNotWriteToInterface(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
         Ok(())
     }
-    async fn on_finished(&self) -> Result<()> {
-        self.0.send(UploadProgress::OnFinished).await?;
+    async fn on_finished(&self) -> std::result::Result<(), fastboot::UploadError> {
+        self.0.send(UploadProgress::OnFinished).await
+            .map_err(|e| fastboot::UploadError::CouldNotWriteToInterface(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
         Ok(())
     }
 }
@@ -137,7 +143,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> FastbootProxy<T> {
 impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProxy<T> {
     async fn get_var(&mut self, name: &str) -> core::result::Result<String, FastbootError> {
         let command = Command::GetVar(ClientVariable::Oem(name.to_string()));
-        match send(self.ctx.clone(), command.clone(), self.interface().await?).await {
+        match send(self.ctx.clone(), command.clone(), self.interface().await?).await.map_err(anyhow::Error::from) {
             Ok(r) => match r {
                 Reply::Okay(v) => {
                     log::trace!("Got var {}. Content: '{:?}", name, v);
@@ -165,7 +171,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
             self.interface().await?,
             &variable_listener,
         )
-        .await?
+        .await.map_err(anyhow::Error::from)?
         {
             Reply::Okay(_) => Ok(()),
             Reply::Fail(s) => Err(FastbootError::GetAllVarsFailed(s)),
@@ -223,6 +229,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         let send_reply =
             send_with_timeout(self.ctx.clone(), command.clone(), self.interface().await?, timeout)
                 .await
+                .map_err(anyhow::Error::from)
                 .context("sending flash");
         match send_reply {
             Ok(reply) => match reply {
@@ -290,7 +297,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 self.interface().await?,
                 Duration::seconds(3),
             )
-            .await,
+            .await
+            .map_err(anyhow::Error::from),
         )
         .context("sending boot")?;
         match reply {
@@ -317,7 +325,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 self.interface().await?,
                 Duration::seconds(3),
             )
-            .await,
+            .await
+            .map_err(anyhow::Error::from),
         )
         .context("sending reboot")?;
         match reply {
@@ -346,7 +355,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 self.interface().await?,
                 Duration::seconds(3),
             )
-            .await,
+            .await
+            .map_err(anyhow::Error::from),
         )
         .context("sending reboot bootloader")?;
         match reply {
@@ -383,7 +393,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 self.interface().await?,
                 Duration::seconds(3),
             )
-            .await,
+            .await
+            .map_err(anyhow::Error::from),
         )
         .context("sending continue")?;
         match reply {
@@ -467,7 +478,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 self.interface().await?,
                 Duration::seconds(3),
             )
-            .await,
+            .await
+            .map_err(anyhow::Error::from),
         )
         .context("set active")?;
         match reply {

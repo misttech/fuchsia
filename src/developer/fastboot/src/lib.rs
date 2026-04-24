@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::reply::Reply;
-use anyhow::{anyhow, bail, Error, Result};
+
 use async_trait::async_trait;
 use chrono::Duration;
 use command::Command;
@@ -36,6 +36,34 @@ impl FastbootContext {
 }
 
 #[derive(Debug, Error)]
+pub enum ReadError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Parse error: {0}")]
+    Parse(#[from] crate::reply::ParseReplyError),
+    #[error("Timed out")]
+    Timeout,
+}
+
+#[derive(Debug, Error)]
+pub enum FastbootError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Read error: {0}")]
+    Read(#[from] ReadError),
+    #[error("Download error: {0}")]
+    Download(#[from] DownloadError),
+    #[error("Upload error: {0}")]
+    Upload(#[from] UploadError),
+    #[error("Parse error: {0}")]
+    Parse(#[from] crate::reply::ParseReplyError),
+    #[error("Serialize command error: {0}")]
+    Serialize(#[from] crate::command::SerializeCommandError),
+    #[error("Invalid file size: {0}")]
+    InvalidFileSize(#[from] std::num::TryFromIntError),
+}
+
+#[derive(Debug, Error)]
 pub enum SendError {
     #[error("timed out reading a reply from device")]
     Timeout,
@@ -45,8 +73,8 @@ pub enum SendError {
 pub enum DownloadError {
     #[error("Did not get expected Data reply: {:?}", reply)]
     UnexpectedReply { reply: Reply },
-    #[error("Could not verify download")]
-    CouldNotVerifyDownload(#[source] Error),
+    #[error("Could not verify download: {0}")]
+    CouldNotVerifyDownload(#[source] ReadError),
     #[error("Could not read to interface")]
     CouldNotReadToInterface(#[source] std::io::Error),
 }
@@ -59,15 +87,15 @@ pub enum UploadError {
     CouldNotReadBytesToUpload { source: std::io::Error },
     #[error("Could not write to interface")]
     CouldNotWriteToInterface(#[source] std::io::Error),
-    #[error("Could not verify upload")]
-    CouldNotVerifyUpload(#[source] Error),
+    #[error("Could not verify upload: {0}")]
+    CouldNotVerifyUpload(#[source] ReadError),
     #[error("Did not get expected Data reply: {:?}", reply)]
     UnexpectedReply { reply: Reply },
 }
 
 #[async_trait]
 pub trait InfoListener {
-    async fn on_info(&self, info: String) -> Result<()> {
+    async fn on_info(&self, info: String) -> Result<(), ReadError> {
         log::info!("Fastboot Info: \"{}\"", info);
         Ok(())
     }
@@ -78,44 +106,40 @@ impl InfoListener for LogInfoListener {}
 
 #[async_trait]
 pub trait UploadProgressListener {
-    async fn on_started(&self, size: usize) -> Result<()>;
-    async fn on_progress(&self, bytes_written: u64) -> Result<()>;
-    async fn on_error(&self, error: &UploadError) -> Result<()>;
-    async fn on_finished(&self) -> Result<()>;
+    async fn on_started(&self, size: usize) -> Result<(), UploadError>;
+    async fn on_progress(&self, bytes_written: u64) -> Result<(), UploadError>;
+    async fn on_error(&self, error: &UploadError) -> Result<(), UploadError>;
+    async fn on_finished(&self) -> Result<(), UploadError>;
 }
 
-async fn read_from_interface<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Reply> {
+async fn read_from_interface<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Reply, ReadError> {
     let mut buf: [u8; MAX_PACKET_SIZE] = [0; MAX_PACKET_SIZE];
     let size = interface.read(&mut buf).await?;
     let (trimmed, _) = buf.split_at(size);
     let trimmed = trimmed.to_vec();
-    match Reply::try_from(trimmed.as_slice()) {
-        Ok(r) => {
-            log::debug!("fastboot: received {r:?}: {}", String::from_utf8_lossy(&trimmed));
-            return Ok(r);
-        }
-        Err(e) => {
-            log::debug!("fastboot: could not parse reply: {}", String::from_utf8_lossy(&trimmed),);
-            bail!(e);
-        }
-    }
+    let reply = Reply::try_from(trimmed.as_slice()).map_err(|e| {
+        log::debug!("fastboot: could not parse reply: {}", String::from_utf8_lossy(&trimmed));
+        ReadError::Parse(e)
+    })?;
+    log::debug!("fastboot: received {reply:?}: {}", String::from_utf8_lossy(&trimmed));
+    Ok(reply)
 }
 
 async fn read<T: AsyncRead + Unpin>(
     interface: &mut T,
     listener: &(impl InfoListener + Sync),
-) -> Result<Reply> {
+) -> Result<Reply, ReadError> {
     read_with_timeout(interface, listener, Duration::seconds(DEFAULT_READ_TIMEOUT_SECS)).await
 }
 
-async fn read_and_log_info<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Reply> {
+async fn read_and_log_info<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Reply, ReadError> {
     read_and_log_info_with_timeout(interface, Duration::seconds(DEFAULT_READ_TIMEOUT_SECS)).await
 }
 
 async fn read_and_log_info_with_timeout<T: AsyncRead + Unpin>(
     interface: &mut T,
     duration: Duration,
-) -> Result<Reply> {
+) -> Result<Reply, ReadError> {
     read_with_timeout(interface, &LogInfoListener {}, duration).await
 }
 
@@ -123,12 +147,12 @@ async fn read_with_timeout<T: AsyncRead + Unpin>(
     interface: &mut T,
     listener: &(impl InfoListener + Sync),
     timeout: Duration,
-) -> Result<Reply> {
+) -> Result<Reply, ReadError> {
     let std_timeout = timeout.to_std().expect("converting chrono Duration to std");
     let end_time = std::time::Instant::now() + std_timeout;
     loop {
         match read_from_interface(interface)
-            .on_timeout(end_time, || Err(anyhow!(SendError::Timeout)))
+            .on_timeout(end_time, || Err(ReadError::Timeout))
             .await
         {
             Ok(Reply::Info(msg)) => listener.on_info(msg).await?,
@@ -148,7 +172,7 @@ async fn read_with_timeout<T: AsyncRead + Unpin>(
                 // Timeout.  So instead, let's just read the text of
                 // the error, ugh.
                 if e.to_string() != "Read error: -110" {
-                    bail!(e);
+                    return Err(e);
                 }
             }
             #[cfg(target_os = "macos")]
@@ -167,7 +191,7 @@ async fn read_with_timeout<T: AsyncRead + Unpin>(
         // to avoid problems in the future, and so our unit tests can remain
         // asynchronous.
         if std::time::Instant::now() > end_time {
-            bail!(SendError::Timeout);
+            return Err(ReadError::Timeout);
         }
     }
 }
@@ -177,24 +201,24 @@ pub async fn send_with_listener<T: AsyncRead + AsyncWrite + Unpin>(
     cmd: Command,
     interface: &mut T,
     listener: &(impl InfoListener + Sync),
-) -> Result<Reply> {
+) -> Result<Reply, FastbootError> {
     let _lock = ctx.send_lock.lock().await;
     let bytes = Vec::<u8>::try_from(&cmd)?;
     log::debug!("Fastboot: writing command {cmd:?}: {}", String::from_utf8_lossy(&bytes));
     interface.write_all(&bytes).await?;
-    read(interface, listener).await
+    Ok(read(interface, listener).await?)
 }
 
 pub async fn send<T: AsyncRead + AsyncWrite + Unpin>(
     ctx: FastbootContext,
     cmd: Command,
     interface: &mut T,
-) -> Result<Reply> {
+) -> Result<Reply, FastbootError> {
     let _lock = ctx.send_lock.lock().await;
     let bytes = Vec::<u8>::try_from(&cmd)?;
     log::debug!("Fastboot: writing command {cmd:?}: {}", String::from_utf8_lossy(&bytes));
     interface.write_all(&bytes).await?;
-    read_and_log_info(interface).await
+    Ok(read_and_log_info(interface).await?)
 }
 
 pub async fn send_with_timeout<T: AsyncRead + AsyncWrite + Unpin>(
@@ -202,12 +226,12 @@ pub async fn send_with_timeout<T: AsyncRead + AsyncWrite + Unpin>(
     cmd: Command,
     interface: &mut T,
     timeout: Duration,
-) -> Result<Reply> {
+) -> Result<Reply, FastbootError> {
     let _lock = ctx.send_lock.lock().await;
     let bytes = Vec::<u8>::try_from(&cmd)?;
     log::debug!("Fastboot: writing command {cmd:?}: {}", String::from_utf8_lossy(&bytes));
     interface.write_all(&bytes).await?;
-    read_with_timeout(interface, &LogInfoListener {}, timeout).await
+    Ok(read_with_timeout(interface, &LogInfoListener {}, timeout).await?)
 }
 
 pub async fn upload<T: AsyncRead + AsyncWrite + Unpin, R: Read>(
@@ -216,7 +240,7 @@ pub async fn upload<T: AsyncRead + AsyncWrite + Unpin, R: Read>(
     buf: &mut R,
     interface: &mut T,
     listener: &impl UploadProgressListener,
-) -> Result<Reply> {
+) -> Result<Reply, FastbootError> {
     upload_with_read_timeout(
         ctx,
         size,
@@ -235,7 +259,7 @@ pub async fn upload_with_read_timeout<T: AsyncRead + AsyncWrite + Unpin, R: Read
     interface: &mut T,
     listener: &impl UploadProgressListener,
     timeout: Duration,
-) -> Result<Reply> {
+) -> Result<Reply, FastbootError> {
     let _lock = ctx.transfer_lock.lock().await;
     // We are sending "Download" in our "upload" function because we are the
     // host -- from the device's point of view, it is a download
@@ -246,7 +270,7 @@ pub async fn upload_with_read_timeout<T: AsyncRead + AsyncWrite + Unpin, R: Read
                 let err = UploadError::WrongSizeResponse { received: s, expected: size };
                 log::error!("{}", err);
                 listener.on_error(&err).await?;
-                bail!(err);
+                return Err(FastbootError::Upload(err));
             }
             listener.on_started(size.try_into().unwrap()).await?;
             log::debug!("fastboot: writing {} bytes", size);
@@ -263,7 +287,7 @@ pub async fn upload_with_read_timeout<T: AsyncRead + AsyncWrite + Unpin, R: Read
                                 let err = UploadError::CouldNotWriteToInterface(e);
                                 log::error!("{}", err);
                                 listener.on_error(&err).await?;
-                                bail!(err);
+                                return Err(FastbootError::Upload(err));
                             }
                             Ok(()) => {
                                 listener.on_progress(n.try_into().unwrap()).await?;
@@ -275,7 +299,7 @@ pub async fn upload_with_read_timeout<T: AsyncRead + AsyncWrite + Unpin, R: Read
                         let err = UploadError::CouldNotReadBytesToUpload { source: e };
                         log::error!("{}", err);
                         listener.on_error(&err).await?;
-                        bail!(err);
+                        return Err(FastbootError::Upload(err));
                     }
                 }
             }
@@ -290,11 +314,11 @@ pub async fn upload_with_read_timeout<T: AsyncRead + AsyncWrite + Unpin, R: Read
                     let err = UploadError::CouldNotVerifyUpload(e);
                     log::error!("{}", err);
                     listener.on_error(&err).await?;
-                    bail!(err);
+                    return Err(FastbootError::Upload(err));
                 }
             }
         }
-        rep @ _ => bail!(UploadError::UnexpectedReply { reply: rep }),
+        rep @ _ => return Err(FastbootError::Upload(UploadError::UnexpectedReply { reply: rep })),
     }
 }
 
@@ -302,7 +326,7 @@ pub async fn download<T: AsyncRead + AsyncWrite + Unpin>(
     ctx: FastbootContext,
     path: &String,
     interface: &mut T,
-) -> Result<Reply> {
+) -> Result<Reply, FastbootError> {
     let _lock = ctx.transfer_lock.lock().await;
     // We are sending "Upload" in our "download" function because we are the
     // host -- from the device's point of view, it is an upload
@@ -321,7 +345,7 @@ pub async fn download<T: AsyncRead + AsyncWrite + Unpin>(
                 .await?;
             while bytes_read < size {
                 match interface.read(&mut buffer[..]).await {
-                    Err(e) => bail!(DownloadError::CouldNotReadToInterface(e)),
+                    Err(e) => return Err(FastbootError::Download(DownloadError::CouldNotReadToInterface(e))),
                     Ok(len) => {
                         let len = if (bytes_read + len) > size { size - bytes_read } else { len };
                         bytes_read += len;
@@ -333,9 +357,9 @@ pub async fn download<T: AsyncRead + AsyncWrite + Unpin>(
             file.flush().await?;
             Ok(read_and_log_info(interface)
                 .await
-                .map_err(|e| DownloadError::CouldNotVerifyDownload(e))?)
+                .map_err(|e| FastbootError::Download(DownloadError::CouldNotVerifyDownload(e)))?)
         }
-        rep @ _ => bail!(DownloadError::UnexpectedReply { reply: rep }),
+        rep @ _ => return Err(FastbootError::Download(DownloadError::UnexpectedReply { reply: rep })),
     }
 }
 
@@ -364,22 +388,22 @@ mod test {
 
     #[async_trait]
     impl UploadProgressListener for PushEventsUploadProgressListener {
-        async fn on_started(&self, size: usize) -> Result<()> {
+        async fn on_started(&self, size: usize) -> Result<(), UploadError> {
             let mut queue = self.event_queue.lock().await;
             queue.push(UploadEvent::OnStarted(size));
             Ok(())
         }
-        async fn on_progress(&self, bytes_written: u64) -> Result<()> {
+        async fn on_progress(&self, bytes_written: u64) -> Result<(), UploadError> {
             let mut queue = self.event_queue.lock().await;
             queue.push(UploadEvent::OnProgress(bytes_written));
             Ok(())
         }
-        async fn on_error(&self, error: &UploadError) -> Result<()> {
+        async fn on_error(&self, error: &UploadError) -> Result<(), UploadError> {
             let mut queue = self.event_queue.lock().await;
             queue.push(UploadEvent::OnError(error.to_string()));
             Ok(())
         }
-        async fn on_finished(&self) -> Result<()> {
+        async fn on_finished(&self) -> Result<(), UploadError> {
             let mut queue = self.event_queue.lock().await;
             queue.push(UploadEvent::OnFinished);
             Ok(())
