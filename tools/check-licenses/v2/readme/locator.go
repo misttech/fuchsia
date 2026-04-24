@@ -43,76 +43,38 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 	}
 
 	for {
-		var foundReadmePaths []string
-
-		// Check physical
-		for _, name := range []string{"README.fuchsia", "go.mod", "Cargo.toml", "pubspec.yaml"} {
-			possiblePath := filepath.Join(dir, name)
-			if _, err := os.Stat(possiblePath); err == nil {
-				// Special rule for Rust mirrors: ignore Cargo.toml in subdirectories
-				if name == "Cargo.toml" && strings.Contains(dir, "third_party/rust_crates/mirrors/") {
-					relToMirrors, err := filepath.Rel(filepath.Join(fuchsiaDir, "third_party/rust_crates/mirrors"), dir)
-					if err == nil {
-						parts := strings.Split(relToMirrors, string(filepath.Separator))
-						if len(parts) > 1 {
-							continue
-						}
-					}
-				}
-				foundReadmePaths = append(foundReadmePaths, possiblePath)
-			}
+		isBoundary, bestPath, allReadmes, err := IsProjectBoundary(dir, fuchsiaDir, outOfTreeReadmes)
+		if err != nil {
+			fmt.Printf("[Locator] Error checking boundary in %s: %v\n", dir, err)
 		}
 
-		// Check virtual
-		relDir, err := filepath.Rel(fuchsiaDir, dir)
-		if err == nil {
-			if virtualPath, ok := outOfTreeReadmes[relDir]; ok {
-				foundReadmePaths = append(foundReadmePaths, virtualPath)
-			}
-		}
-
-		if len(foundReadmePaths) > 0 {
+		if isBoundary {
 			var bestMatch *Readme
-			var bestReadmePath string
+			var bestReadmePath string = bestPath
 			bestPrefixLength := -1
 
-			for _, foundPath := range foundReadmePaths {
-				rootReadmes, subReadmes, parseErr := ParseAnyMetadata(foundPath)
-
-				if parseErr != nil || (len(rootReadmes) == 0 && len(subReadmes) == 0) {
-					continue
+			// Path of the file relative to the README's logical directory
+			logicalDir := filepath.Dir(bestPath)
+			for logPath, physPath := range outOfTreeReadmes {
+				if physPath == bestPath {
+					logicalDir = filepath.Join(fuchsiaDir, logPath)
+					break
 				}
+			}
 
-				// Path of the file relative to the README's logical directory
-				logicalDir := filepath.Dir(foundPath)
-				for logPath, physPath := range outOfTreeReadmes {
-					if physPath == foundPath {
-						logicalDir = filepath.Join(fuchsiaDir, logPath)
-						break
-					}
-				}
-
-				relToFile, relErr := filepath.Rel(logicalDir, absPath)
-				if relErr != nil {
-					continue
-				}
-
-				allReadmes := append([]*Readme{}, rootReadmes...)
-				allReadmes = append(allReadmes, subReadmes...)
-
+			relToFile, relErr := filepath.Rel(logicalDir, absPath)
+			if relErr == nil {
 				for _, r := range allReadmes {
 					loc := filepath.Clean(r.Location)
 					if loc == "" || loc == "." {
 						if bestPrefixLength < 0 {
 							bestMatch = r
-							bestReadmePath = foundPath
 							bestPrefixLength = 0
 						}
 					} else {
 						if strings.HasPrefix(relToFile, loc+"/") || relToFile == loc {
 							if len(loc) > bestPrefixLength {
 								bestMatch = r
-								bestReadmePath = foundPath
 								bestPrefixLength = len(loc)
 							}
 						}
@@ -124,15 +86,11 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 				return bestMatch, bestReadmePath, nil
 			}
 
-			// If we got here, we found boundary files but none matched the location, or all failed to parse.
-			// Return the first successfully parsed root readme as a fallback, or nil if none.
-			for _, foundPath := range foundReadmePaths {
-				rootReadmes, _, parseErr := ParseAnyMetadata(foundPath)
-				if parseErr == nil && len(rootReadmes) > 0 {
-					return rootReadmes[0], foundPath, nil
-				}
+			// Fallback to the first parsed readme if no best match found!
+			if len(allReadmes) > 0 {
+				return allReadmes[0], bestReadmePath, nil
 			}
-			fmt.Printf("[Locator] Failed to find matching boundary for %s in %v\n", absPath, foundReadmePaths)
+
 			return nil, "", fmt.Errorf("boundary metadata failed to parse")
 		}
 
@@ -150,4 +108,61 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 	}
 
 	return nil, "", nil
+}
+
+// IsProjectBoundary returns true if the given directory marks the start of a project.
+// It also returns the path to the boundary file and the parsed Readme structs.
+func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]string) (bool, string, []*Readme, error) {
+	// Special rule for Rust mirrors: boundary is always the top-level folder under mirrors/
+	mirrorsPath := filepath.Join(fuchsiaDir, "third_party/rust_crates/mirrors")
+	if strings.HasPrefix(dir, mirrorsPath) {
+		rel, err := filepath.Rel(mirrorsPath, dir)
+		if err == nil && rel != "." {
+			parts := strings.Split(rel, string(filepath.Separator))
+			if len(parts) > 0 {
+				projectDir := filepath.Join(mirrorsPath, parts[0])
+				if dir != projectDir {
+					return false, "", nil, nil // Not the boundary!
+				}
+			}
+		}
+	}
+
+	var foundReadmePaths []string
+
+	// Check physical
+	for _, name := range []string{"README.fuchsia", "go.mod", "Cargo.toml", "pubspec.yaml"} {
+		possiblePath := filepath.Join(dir, name)
+		if _, err := os.Stat(possiblePath); err == nil {
+			foundReadmePaths = append(foundReadmePaths, possiblePath)
+		}
+	}
+
+	// Check virtual
+	relDir, err := filepath.Rel(fuchsiaDir, dir)
+	if err == nil {
+		if virtualPath, ok := outOfTreeReadmes[relDir]; ok {
+			foundReadmePaths = append(foundReadmePaths, virtualPath)
+		}
+	}
+
+	if len(foundReadmePaths) > 0 {
+		var allReadmes []*Readme
+		var bestPath string
+		for _, path := range foundReadmePaths {
+			rootReadmes, subReadmes, parseErr := ParseAnyMetadata(path)
+			if parseErr == nil {
+				allReadmes = append(allReadmes, rootReadmes...)
+				allReadmes = append(allReadmes, subReadmes...)
+				if bestPath == "" {
+					bestPath = path
+				}
+			}
+		}
+		if len(allReadmes) > 0 {
+			return true, bestPath, allReadmes, nil
+		}
+	}
+
+	return false, "", nil, nil
 }

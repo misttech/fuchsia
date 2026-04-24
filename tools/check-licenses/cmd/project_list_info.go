@@ -7,7 +7,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,53 +19,51 @@ import (
 )
 
 func (c *ProjectCommand) executeList(ctx context.Context, args []string, config *v2config.MasterConfig) subcommands.ExitStatus {
-	dir := args[0]
+	dir := c.fuchsiaDir
+	if len(args) > 0 {
+		dir = args[0]
+	}
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to resolve absolute path: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	filepath.WalkDir(absDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if filepath.Base(path) == "README.fuchsia" {
-			readmes, _ := readme.ParseFile(path)
-			for _, r := range readmes {
-				rel, _ := filepath.Rel(c.fuchsiaDir, filepath.Dir(path))
-				if r.Location != "" {
-					rel = filepath.Join(rel, r.Location)
-				}
-				name := r.Name
-				if name == "" {
-					name = "Unknown Project"
-				}
-				fmt.Printf("//%s: %s\n", rel, name)
-			}
-		}
-		return nil
-	})
+	projects, err := readme.DiscoverProjects(absDir, c.fuchsiaDir, config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to discover projects: %v\n", err)
+		return subcommands.ExitFailure
+	}
 
+	// Also add out-of-tree readmes!
 	for logicalPath, physicalPath := range config.OutOfTreeReadmes {
 		absLogicalPath := filepath.Join(c.fuchsiaDir, logicalPath)
 		if strings.HasPrefix(absLogicalPath, absDir) || absLogicalPath == absDir {
 			readmes, _ := readme.ParseFile(physicalPath)
 			for _, r := range readmes {
 				rel := logicalPath
-				if r.Location != "" {
+				if r.Location != "" && r.Location != "." {
 					rel = filepath.Join(rel, r.Location)
 				}
 				name := r.Name
 				if name == "" {
 					name = "Unknown Project"
 				}
-				fmt.Printf("//%s: %s\n", rel, name)
+				projects = append(projects, readme.ProjectInfo{
+					Path: rel,
+					Name: name,
+				})
 			}
 		}
+	}
+
+	// Sort all projects by path for consistent output!
+	sort.Slice(projects, func(i, j int) bool {
+		return projects[i].Path < projects[j].Path
+	})
+
+	for _, p := range projects {
+		fmt.Printf("//%s: %s\n", p.Path, p.Name)
 	}
 
 	return subcommands.ExitSuccess
