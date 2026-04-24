@@ -23,6 +23,7 @@ fuchsia_cxx_version = _default_cxx_version
 fuchsia_sdk_cxx_supported_versions = [
   17,
   20,
+  23,
 ]
 
 declare_args() {
@@ -42,10 +43,9 @@ if (experimental_cxx_version != false) {
           [ experimental_cxx_version ] != _available_cxx_versions,
       "`experimental_cxx_version=$experimental_cxx_version` must be one of $_available_cxx_versions")
 
-  if (fuchsia_sdk_cxx_supported_versions + [ experimental_cxx_version ] -
-      [ experimental_cxx_version ] != fuchsia_sdk_cxx_supported_versions) {
-    # Temporarily act as if this is an SDK-supported version too.  This will
-    # enable testing the new experimental version as if it were SDK-supported.
-    fuchsia_sdk_cxx_supported_versions += [ experimental_cxx_version ]
-  }
+  # Temporarily act as if this is an SDK-supported version too.  This will
+  # enable testing the new experimental version as if it were SDK-supported.
+  fuchsia_sdk_cxx_supported_versions += [ experimental_cxx_version ]
+  fuchsia_sdk_cxx_supported_versions -= [ experimental_cxx_version ]
+  fuchsia_sdk_cxx_supported_versions += [ experimental_cxx_version ]
 }
