@@ -12,13 +12,9 @@ group("test") {
 
 test("aml-rawnand-unittest-bin") {
   output_name = "aml-rawnand-unittest"
-  sources = [
-    "aml-rawnand-test-constructor.cc",
-    "aml-rawnand-test.cc",
-  ]
+  sources = [ "aml-rawnand-test.cc" ]
   deps = [
     "..:common",
-    "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/fdio",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/mock-ddk",
