@@ -654,8 +654,8 @@ class TestWorkspace(unittest.TestCase):
                     "fuchsia": "fuchsia",
                     "integration": None,
                 },
-                "symlinks": {
-                    "@cartfs//src_path": "@cog//dest_path",
+                "symlinkMap": {
+                    "@cog//dest_path": "@cartfs//src_path",
                 },
             }
             self.addCleanup(mock_config_patcher.stop)
@@ -683,8 +683,8 @@ class TestWorkspace(unittest.TestCase):
                     "fuchsia": "fuchsia",
                     "integration": None,
                 },
-                "symlinks": {
-                    "@invalid//src_path": "@cog//dest_path",
+                "symlinkMap": {
+                    "@cog//dest_path": "@invalid//src_path",
                 },
             }
             with self.assertRaises(KeyError):

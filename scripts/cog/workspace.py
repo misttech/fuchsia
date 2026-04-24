@@ -1007,7 +1007,7 @@ class Workspace:
                 "@cog": self.repo_dir,
             }[root] / relative_path
 
-        for src, dest in self.config["symlinks"].items():
+        for dest, src in self.config["symlinkMap"].items():
             self._create_symlink(_get_path(src), _get_path(dest))
 
         # Manually execute jiri hooks. The hooks are defined in

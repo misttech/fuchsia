@@ -22,11 +22,11 @@ if (is_host) {
   common_sources = [
     "cartfs.py",
     "logger.py",
-    "mock_fs.py",
     "preflight.py",
     "setup_cog_workspace.py",
     "snapshotter.py",
     "sync_workspace.py",
+    "tests/mock_fs.py",
     "util.py",
     "workspace.py",
   ]
