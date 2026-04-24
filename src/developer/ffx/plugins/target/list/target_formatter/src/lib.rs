@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use addr::TargetAddr;
+use addr::{TargetAddr, TargetIpAddr};
 use anyhow::{Error, Result, bail};
 use ffx_list_args::{AddressTypes, Format};
 use ffx_target::TargetInfo;
@@ -89,8 +89,8 @@ fn matches_addr_type(addr: &TargetAddr, ty: AddressTypes) -> bool {
                 ty.contains(AddressTypes::IPV6)
             }
         }
-        TargetAddr::VSockCtx(_) => ty.contains(AddressTypes::USB),
-        TargetAddr::UsbCtx(_) => ty.contains(AddressTypes::VSOCK),
+        TargetAddr::VSockCtx(_) => ty.contains(AddressTypes::VSOCK),
+        TargetAddr::UsbCtx(_) => ty.contains(AddressTypes::USB),
     }
 }
 
@@ -449,8 +449,10 @@ impl From<TargetAddr> for JsonTargetAddress {
     fn from(addr: TargetAddr) -> Self {
         match &addr {
             TargetAddr::Net(sock_addr) => JsonTargetAddress::Ip {
-                ip: ScopedSocketAddr::from_socket_addr(*sock_addr).unwrap().ip_string(),
-                ssh_port: addr.port().unwrap(),
+                ip: ScopedSocketAddr::from_socket_addr(*sock_addr)
+                    .map(|s| s.ip_string())
+                    .unwrap_or_else(|_| TargetIpAddr::from(*sock_addr).resolved_str()),
+                ssh_port: sock_addr.port(),
             },
             TargetAddr::VSockCtx(cid) => JsonTargetAddress::VSock { cid: *cid },
             TargetAddr::UsbCtx(cid) => JsonTargetAddress::Usb { cid: *cid },
@@ -791,10 +793,23 @@ mod test {
         assert!(!matches_addr_type(&ipv4, AddressTypes::IPV6));
         assert!(matches_addr_type(&ipv6, AddressTypes::IPV6));
         assert!(!matches_addr_type(&ipv6, AddressTypes::IPV4));
-        assert!(matches_addr_type(&usb, AddressTypes::VSOCK));
-        assert!(!matches_addr_type(&usb, AddressTypes::USB));
-        assert!(matches_addr_type(&vsock, AddressTypes::USB));
-        assert!(!matches_addr_type(&vsock, AddressTypes::VSOCK));
+        assert!(matches_addr_type(&usb, AddressTypes::USB));
+        assert!(!matches_addr_type(&usb, AddressTypes::VSOCK));
+        assert!(matches_addr_type(&vsock, AddressTypes::VSOCK));
+        assert!(!matches_addr_type(&vsock, AddressTypes::USB));
+    }
+
+    #[test]
+    fn test_json_target_address_from_invalid_scope() {
+        let addr = TargetAddr::new(std_ip!("fe80::1"), 65535, 8080);
+        let json_addr = JsonTargetAddress::from(addr);
+        match json_addr {
+            JsonTargetAddress::Ip { ip, ssh_port } => {
+                assert_eq!(ip, "fe80::1%65535");
+                assert_eq!(ssh_port, 8080);
+            }
+            _ => panic!("Expected JsonTargetAddress::Ip"),
+        }
     }
 
     #[test]
