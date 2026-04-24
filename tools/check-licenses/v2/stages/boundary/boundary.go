@@ -43,7 +43,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 
 		var allFiles []string
 		// physicalReadmes maps an absolute directory path to its README.fuchsia, go.mod, or Cargo.toml
-		physicalReadmes := make(map[string]string)
+		physicalReadmes := make(map[string][]string)
 
 		// PHASE 1: Consume all incoming paths
 		for rp := range in {
@@ -60,17 +60,14 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			base := filepath.Base(cleanPath)
 			if base == "README.fuchsia" || base == "go.mod" || base == "Cargo.toml" || base == "pubspec.yaml" {
 				dir := filepath.Dir(cleanPath)
-				// Prioritize README.fuchsia if multiple metadata files exist
-				if existing, ok := physicalReadmes[dir]; !ok || filepath.Base(existing) != "README.fuchsia" {
-					physicalReadmes[dir] = cleanPath
-				}
+				physicalReadmes[dir] = append(physicalReadmes[dir], cleanPath)
 			}
 		}
 
 		// Incorporate Virtual (Out-Of-Tree) READMEs from Config
 		for logicalPath, physicalPath := range g.OutOfTreeReadmes {
 			absLogicalDir := filepath.Join(g.FuchsiaDir, logicalPath)
-			physicalReadmes[absLogicalDir] = physicalPath
+			physicalReadmes[absLogicalDir] = append(physicalReadmes[absLogicalDir], physicalPath)
 		}
 
 		// PHASE 2: Parse all READMEs to establish exact project boundaries
@@ -78,45 +75,29 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 		projectRoots := make(map[string][]*readme.Readme)
 
 		// First, register every directory that has a physical/virtual README or Cargo.toml as a root
-		for dir, readmePath := range physicalReadmes {
-			base := filepath.Base(readmePath)
+		for dir, readmePaths := range physicalReadmes {
+			for _, readmePath := range readmePaths {
+				rootReadmes, subReadmes, err := readme.ParseAnyMetadata(readmePath)
 
-			// Parse metadata sources
-			var parsedReadmes []*readme.Readme
-			var err error
-			if base == "go.mod" {
-				parsedReadmes, err = readme.ParseGoMod(readmePath)
-			} else if base == "Cargo.toml" {
-				parsedReadmes, err = readme.ParseCargoToml(readmePath)
-			} else if base == "pubspec.yaml" {
-				parsedReadmes, err = readme.ParsePubspecYaml(readmePath)
-			} else {
-				parsedReadmes, err = readme.ParseFile(readmePath)
-			}
+				if err != nil || (len(rootReadmes) == 0 && len(subReadmes) == 0) {
+					// Even if parsing fails, the file exists, so it is a boundary
+					if _, exists := projectRoots[dir]; !exists {
+						projectRoots[dir] = nil
+					}
+					continue
+				}
 
-			if err != nil || len(parsedReadmes) == 0 {
-				// Even if parsing fails, the file exists, so it is a boundary
-				projectRoots[dir] = nil
-				continue
-			}
+				if len(rootReadmes) > 0 {
+					projectRoots[dir] = append(projectRoots[dir], rootReadmes...)
+				}
 
-			// The primary project lives at the directory of the metadata file
-			if base != "go.mod" {
-				projectRoots[dir] = []*readme.Readme{parsedReadmes[0]}
-			}
+				for _, subReadme := range subReadmes {
+					if subReadme.Location != "" && subReadme.Location != "." {
+						absSubProjectDir := filepath.Join(dir, subReadme.Location)
 
-			// Register sub-projects (DEPENDENCY DIVIDER, Go Modules, or Rust Members) as distinct boundaries!
-			startIdx := 1
-			if base == "go.mod" || (base == "Cargo.toml" && parsedReadmes[0].Location != ".") {
-				startIdx = 0
-			}
-			for i := startIdx; i < len(parsedReadmes); i++ {
-				subReadme := parsedReadmes[i]
-				if subReadme.Location != "" && subReadme.Location != "." {
-					absSubProjectDir := filepath.Join(dir, subReadme.Location)
-
-					// It's possible multiple sub-projects share a directory. We append them.
-					projectRoots[absSubProjectDir] = append(projectRoots[absSubProjectDir], subReadme)
+						// It's possible multiple sub-projects share a directory. We append them.
+						projectRoots[absSubProjectDir] = append(projectRoots[absSubProjectDir], subReadme)
+					}
 				}
 			}
 		}

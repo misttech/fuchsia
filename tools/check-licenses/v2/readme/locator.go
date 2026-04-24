@@ -22,23 +22,87 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 	} else {
 		dir = filepath.Dir(absPath)
 	}
-	var foundReadmePath string
-
 	for {
+		var foundReadmePaths []string
+
 		// Check physical
-		possiblePath := filepath.Join(dir, "README.fuchsia")
-		if _, err := os.Stat(possiblePath); err == nil {
-			foundReadmePath = possiblePath
-			break
+		for _, name := range []string{"README.fuchsia", "go.mod", "Cargo.toml", "pubspec.yaml"} {
+			possiblePath := filepath.Join(dir, name)
+			if _, err := os.Stat(possiblePath); err == nil {
+				foundReadmePaths = append(foundReadmePaths, possiblePath)
+			}
 		}
 
 		// Check virtual
 		relDir, err := filepath.Rel(fuchsiaDir, dir)
 		if err == nil {
 			if virtualPath, ok := outOfTreeReadmes[relDir]; ok {
-				foundReadmePath = virtualPath
-				break
+				foundReadmePaths = append(foundReadmePaths, virtualPath)
 			}
+		}
+
+		if len(foundReadmePaths) > 0 {
+			var bestMatch *Readme
+			var bestReadmePath string
+			bestPrefixLength := -1
+
+			for _, foundPath := range foundReadmePaths {
+				rootReadmes, subReadmes, parseErr := ParseAnyMetadata(foundPath)
+
+				if parseErr != nil || (len(rootReadmes) == 0 && len(subReadmes) == 0) {
+					continue
+				}
+
+				// Path of the file relative to the README's logical directory
+				logicalDir := filepath.Dir(foundPath)
+				for logPath, physPath := range outOfTreeReadmes {
+					if physPath == foundPath {
+						logicalDir = filepath.Join(fuchsiaDir, logPath)
+						break
+					}
+				}
+
+				relToFile, relErr := filepath.Rel(logicalDir, absPath)
+				if relErr != nil {
+					continue
+				}
+
+				allReadmes := append([]*Readme{}, rootReadmes...)
+				allReadmes = append(allReadmes, subReadmes...)
+
+				for _, r := range allReadmes {
+					loc := filepath.Clean(r.Location)
+					if loc == "" || loc == "." {
+						if bestPrefixLength < 0 {
+							bestMatch = r
+							bestReadmePath = foundPath
+							bestPrefixLength = 0
+						}
+					} else {
+						if strings.HasPrefix(relToFile, loc+"/") || relToFile == loc {
+							if len(loc) > bestPrefixLength {
+								bestMatch = r
+								bestReadmePath = foundPath
+								bestPrefixLength = len(loc)
+							}
+						}
+					}
+				}
+			}
+
+			if bestMatch != nil {
+				return bestMatch, bestReadmePath, nil
+			}
+
+			// If we got here, we found boundary files but none matched the location, or all failed to parse.
+			// Return the first successfully parsed root readme as a fallback, or nil if none.
+			for _, foundPath := range foundReadmePaths {
+				rootReadmes, _, parseErr := ParseAnyMetadata(foundPath)
+				if parseErr == nil && len(rootReadmes) > 0 {
+					return rootReadmes[0], foundPath, nil
+				}
+			}
+			return nil, "", fmt.Errorf("boundary metadata failed to parse")
 		}
 
 		parent := filepath.Dir(dir)
@@ -51,53 +115,5 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 		dir = parent
 	}
 
-	if foundReadmePath == "" {
-		return nil, "", nil
-	}
-
-	readmes, err := ParseFile(foundReadmePath)
-	if err != nil {
-		return nil, foundReadmePath, fmt.Errorf("failed to parse README: %w", err)
-	}
-
-	if len(readmes) == 0 {
-		return nil, foundReadmePath, fmt.Errorf("README is empty")
-	}
-
-	// Match sub-projects based on longest Location prefix
-	var bestMatch *Readme
-	bestPrefixLength := -1
-
-	// Path of the file relative to the README's logical directory
-	logicalDir := filepath.Dir(foundReadmePath)
-	for logPath, physPath := range outOfTreeReadmes {
-		if physPath == foundReadmePath {
-			logicalDir = filepath.Join(fuchsiaDir, logPath)
-			break
-		}
-	}
-
-	relToFile, err := filepath.Rel(logicalDir, absPath)
-	if err != nil {
-		return nil, "", err
-	}
-
-	for _, r := range readmes {
-		loc := filepath.Clean(r.Location)
-		if loc == "" || loc == "." {
-			if bestPrefixLength < 0 {
-				bestMatch = r
-				bestPrefixLength = 0
-			}
-		} else {
-			if strings.HasPrefix(relToFile, loc+"/") || relToFile == loc {
-				if len(loc) > bestPrefixLength {
-					bestMatch = r
-					bestPrefixLength = len(loc)
-				}
-			}
-		}
-	}
-
-	return bestMatch, foundReadmePath, nil
+	return nil, "", nil
 }
