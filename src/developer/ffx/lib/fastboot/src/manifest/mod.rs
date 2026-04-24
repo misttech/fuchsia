@@ -339,13 +339,15 @@ mod test {
     #[fuchsia::test]
     async fn test_loading_version_1() -> Result<()> {
         let manifest_contents = MANIFEST.to_string();
-        FlashManifestVersion::load(BufReader::new(manifest_contents.as_bytes())).map(|_| ())
+        FlashManifestVersion::load(BufReader::new(manifest_contents.as_bytes()))?;
+        Ok(())
     }
 
     #[fuchsia::test]
     async fn test_loading_version_1_from_array() -> Result<()> {
         let manifest_contents = ARRAY_MANIFEST.to_string();
-        FlashManifestVersion::load(BufReader::new(manifest_contents.as_bytes())).map(|_| ())
+        FlashManifestVersion::load(BufReader::new(manifest_contents.as_bytes()))?;
+        Ok(())
     }
 
     #[test]

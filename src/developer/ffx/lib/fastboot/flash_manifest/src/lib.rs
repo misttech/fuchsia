@@ -5,9 +5,7 @@
 use crate::v1::FlashManifest as FlashManifestV1;
 use crate::v2::FlashManifest as FlashManifestV2;
 use crate::v3::{Condition, FlashManifest as FlashManifestV3, Partition, Product};
-use anyhow::{Context, Error, Result, bail};
 use assembly_partitions_config::{PartitionAndImage, PartitionImageMapper, Slot};
-use errors::ffx_bail;
 use product_bundle::{ProductBundle, ProductBundleV2};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, from_value, to_value};
@@ -21,8 +19,37 @@ pub mod v3;
 
 pub const UNKNOWN_VERSION: &str = "Unknown flash manifest version";
 
-pub(crate) const OEM_FILE_ERROR_MSG: &str =
-    "Unrecognized OEM staged file. Expected comma-separated pair: \"<OEM_COMMAND>,<PATH_TO_FILE>\"";
+#[derive(thiserror::Error, Debug)]
+pub enum FlashManifestError {
+    #[error(
+        "Unrecognized OEM staged file. Expected comma-separated pair: \"<OEM_COMMAND>,<PATH_TO_FILE>\""
+    )]
+    InvalidOemFile,
+
+    #[error("File does not exist: {0}")]
+    FileDoesNotExist(String),
+
+    #[error("JSON serialization error: {0}")]
+    Serialize(#[from] serde_json::Error),
+
+    #[error("JSON deserialization error: {0}")]
+    Deserialize(serde_json::Error),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Could not parse flash manifest")]
+    ParseManifest,
+
+    #[error("Unknown flash manifest version")]
+    UnknownVersion,
+
+    #[error("Product bundle error: {0}")]
+    ProductBundle(String),
+
+    #[error("Partition image mapper error: {0}")]
+    PartitionMapper(String),
+}
 
 #[derive()]
 pub struct ManifestParams {
@@ -91,22 +118,22 @@ impl OemFile {
 }
 
 impl std::str::FromStr for OemFile {
-    type Err = Error;
+    type Err = FlashManifestError;
 
-    fn from_str(s: &str) -> Result<Self> {
-        if s.len() == 0 {
-            bail!(OEM_FILE_ERROR_MSG);
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(FlashManifestError::InvalidOemFile);
         }
 
         let splits: Vec<&str> = s.split(",").collect();
 
         if splits.len() != 2 {
-            bail!(OEM_FILE_ERROR_MSG);
+            return Err(FlashManifestError::InvalidOemFile);
         }
 
         let file = Path::new(splits[1]);
         if !file.exists() {
-            bail!("File does not exist: {}", splits[1]);
+            return Err(FlashManifestError::FileDoesNotExist(splits[1].to_string()));
         }
 
         Ok(Self(splits[0].to_string(), file.to_string_lossy().to_string()))
@@ -120,45 +147,57 @@ pub enum FlashManifestVersion {
 }
 
 impl FlashManifestVersion {
-    pub fn write<W: Write>(&self, writer: W) -> Result<()> {
+    pub fn write<W: Write>(&self, writer: W) -> Result<(), FlashManifestError> {
         let manifest = match &self {
-            FlashManifestVersion::V1(manifest) => {
-                ManifestFile { version: 1, manifest: to_value(manifest)? }
-            }
-            FlashManifestVersion::V2(manifest) => {
-                ManifestFile { version: 2, manifest: to_value(manifest)? }
-            }
-            FlashManifestVersion::V3(manifest) => {
-                ManifestFile { version: 3, manifest: to_value(manifest)? }
-            }
+            FlashManifestVersion::V1(manifest) => ManifestFile {
+                version: 1,
+                manifest: to_value(manifest).map_err(FlashManifestError::Serialize)?,
+            },
+            FlashManifestVersion::V2(manifest) => ManifestFile {
+                version: 2,
+                manifest: to_value(manifest).map_err(FlashManifestError::Serialize)?,
+            },
+            FlashManifestVersion::V3(manifest) => ManifestFile {
+                version: 3,
+                manifest: to_value(manifest).map_err(FlashManifestError::Serialize)?,
+            },
         };
-        serde_json::to_writer_pretty(writer, &manifest).context("writing flash manifest")
+        serde_json::to_writer_pretty(writer, &manifest).map_err(FlashManifestError::Serialize)?;
+        Ok(())
     }
 
-    pub fn load<R: Read>(reader: R) -> Result<Self> {
-        let value: Value = serde_json::from_reader::<R, Value>(reader)
-            .context("reading flash manifest from disk")?;
+    pub fn load<R: Read>(reader: R) -> Result<Self, FlashManifestError> {
+        let value: Value =
+            serde_json::from_reader::<R, Value>(reader).map_err(FlashManifestError::Deserialize)?;
         // GN generated JSON always comes from a list
         let manifest: ManifestFile = match value {
-            Value::Array(v) => from_value(v[0].clone())?,
-            Value::Object(_) => from_value(value)?,
-            _ => ffx_bail!("Could not parse flash manifest."),
+            Value::Array(v) => from_value(v[0].clone()).map_err(FlashManifestError::Deserialize)?,
+            Value::Object(_) => from_value(value).map_err(FlashManifestError::Deserialize)?,
+            _ => return Err(FlashManifestError::ParseManifest),
         };
         match manifest.version {
-            1 => Ok(Self::V1(from_value(manifest.manifest)?)),
-            2 => Ok(Self::V2(from_value(manifest.manifest)?)),
-            3 => Ok(Self::V3(from_value(manifest.manifest)?)),
-            _ => ffx_bail!("{}", UNKNOWN_VERSION),
+            1 => Ok(Self::V1(
+                from_value(manifest.manifest).map_err(FlashManifestError::Deserialize)?,
+            )),
+            2 => Ok(Self::V2(
+                from_value(manifest.manifest).map_err(FlashManifestError::Deserialize)?,
+            )),
+            3 => Ok(Self::V3(
+                from_value(manifest.manifest).map_err(FlashManifestError::Deserialize)?,
+            )),
+            _ => return Err(FlashManifestError::UnknownVersion),
         }
     }
 
-    pub fn from_product_bundle(product_bundle: &ProductBundle) -> Result<Self> {
+    pub fn from_product_bundle(product_bundle: &ProductBundle) -> Result<Self, FlashManifestError> {
         match product_bundle {
             ProductBundle::V2(product_bundle) => Self::from_product_bundle_v2(product_bundle),
         }
     }
 
-    fn from_product_bundle_v2(product_bundle: &ProductBundleV2) -> Result<Self> {
+    fn from_product_bundle_v2(
+        product_bundle: &ProductBundleV2,
+    ) -> Result<Self, FlashManifestError> {
         log::debug!("Begin loading flash manifest from ProductBundleV2: {:#?}", product_bundle);
         // Copy the unlock credentials from the partitions config to the flash manifest.
         let mut credentials = vec![];
@@ -201,21 +240,28 @@ impl FlashManifestVersion {
         bootstrap_partitions.extend_from_slice(bootloader_partitions.as_slice());
 
         // Create a map from slot to available images by name (zbi, vbmeta, fvm).
-        let mut image_map = PartitionImageMapper::new(product_bundle.partitions.clone())?;
+        let mut image_map = PartitionImageMapper::new(product_bundle.partitions.clone())
+            .map_err(|e| FlashManifestError::PartitionMapper(e.to_string()))?;
         if let Some(manifest) = &product_bundle.system_a {
             let slot = Slot::A;
             log::debug!("Mapping images: {:?} to slot: {}", manifest, slot);
-            image_map.map_images_to_slot(&manifest, slot)?;
+            image_map
+                .map_images_to_slot(&manifest, slot)
+                .map_err(|e| FlashManifestError::PartitionMapper(e.to_string()))?;
         }
         if let Some(manifest) = &product_bundle.system_b {
             let slot = Slot::B;
             log::debug!("Mapping images: {:?} to slot: {}", manifest, slot);
-            image_map.map_images_to_slot(&manifest, slot)?;
+            image_map
+                .map_images_to_slot(&manifest, slot)
+                .map_err(|e| FlashManifestError::PartitionMapper(e.to_string()))?;
         }
         if let Some(manifest) = &product_bundle.system_r {
             let slot = Slot::R;
             log::debug!("Mapping images: {:?} to slot: {}", manifest, slot);
-            image_map.map_images_to_slot(&manifest, slot)?;
+            image_map
+                .map_images_to_slot(&manifest, slot)
+                .map_err(|e| FlashManifestError::PartitionMapper(e.to_string()))?;
         }
 
         // Define the flashable "products".
