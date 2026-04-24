@@ -745,6 +745,19 @@ mod tests {
         // Retval set by `bpf_set_retval` should be returned to the caller.
         let err = get_rcvbuf(59).expect_err("getsockopt expected to fail");
         assert_eq!(err.raw_os_error(), Some(5));
+
+        // Set SO_SNDBUF for the two tests below.
+        let buf_size: u32 = 65536;
+        setsockopt(socket.as_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, &buf_size.to_ne_bytes())
+            .expect("setsockopt(SO_SNDBUF)");
+
+        // Original value returned if program just returns 1.
+        let result = get_rcvbuf(60).expect("getsockopt failed");
+        assert_eq!(result, (buf_size * 2).to_ne_bytes());
+
+        // Original value returned if program sets `optlen = 0`.
+        let result = get_rcvbuf(61).expect("getsockopt failed");
+        assert_eq!(result, (buf_size * 2).to_ne_bytes());
     }
 
     #[test]

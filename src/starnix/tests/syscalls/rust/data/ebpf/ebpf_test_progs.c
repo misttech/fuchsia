@@ -286,6 +286,16 @@ int getsockopt_prog(struct bpf_sockopt* sockopt) {
         // Set return value by calling `bpf_set_retval`.
         bpf_set_retval(-5);
         break;
+
+      case 60:
+        // Return without changing anything.
+        break;
+
+      case 61:
+        // Set optlen = 0. Should result in the original being returned to the
+        // caller.
+        sockopt->optlen = 0;
+        break;
     }
   }
 

@@ -693,14 +693,14 @@ impl CgroupEbpfProgramSet {
         current_task: &CurrentTask,
         level: u32,
         optname: u32,
-        optval: Vec<u8>,
+        value_buf: Vec<u8>,
         optlen: usize,
         error: Option<Errno>,
         socket: &Socket,
     ) -> Result<(Vec<u8>, usize), Errno> {
         let (prog_guard, locked) = self.get_sockopt.read_and(locked);
         let Some(prog) = prog_guard.as_ref() else {
-            return error.map(|e| Err(e)).unwrap_or_else(|| Ok((optval, optlen)));
+            return error.map(|e| Err(e)).unwrap_or_else(|| Ok((value_buf, optlen)));
         };
 
         let bpf_sock = BpfSock::from_socket(socket);
@@ -709,7 +709,7 @@ impl CgroupEbpfProgramSet {
         let mut bpf_sockopt = BpfSockOptWithValue::new(
             level,
             optname,
-            optval.clone(),
+            value_buf.clone(),
             optlen as u32,
             retval,
             &bpf_sock,
@@ -736,18 +736,18 @@ impl CgroupEbpfProgramSet {
             return Err(Errno::new(ErrnoCode::from_error_code(-retval as i16)));
         }
 
-        let optlen = bpf_sockopt.optlen;
+        let new_optlen = bpf_sockopt.optlen;
 
-        // Fail if the program has set an invalid `optlen` (except for the
-        // case handled above).
-        if optlen < 0 || (optlen as usize) > optval.len() {
-            return error!(EFAULT);
+        match usize::try_from(new_optlen) {
+            // Fail if the program set an invalid `optlen`.
+            Err(_) => error!(EFAULT),
+            Ok(new_optlen) if new_optlen > value_buf.len() => error!(EFAULT),
+
+            // If `optlen` is set to 0 then proceed with the original value.
+            Ok(0) => Ok((value_buf, optlen)),
+
+            Ok(new_optlen) => Ok((bpf_sockopt.take_value(), new_optlen)),
         }
-
-        // If `optlen` is set to 0 then proceed with the original value.
-        let value = if optlen == 0 { optval } else { bpf_sockopt.take_value() };
-
-        Ok((value, optlen as usize))
     }
 
     pub fn run_setsockopt_prog(
