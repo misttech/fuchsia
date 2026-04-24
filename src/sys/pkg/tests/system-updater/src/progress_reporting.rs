@@ -96,16 +96,29 @@ async fn progress_reporting_fetch_multiple_packages() {
 
 #[fasync::run_singlethreaded(test)]
 async fn progress_reporting_fetch_multiple_blobs_packageless() {
+    let image_content = vec![0; 500];
+    let image_hash = fuchsia_merkle::root_from_slice(&image_content);
+
+    let mut manifest = make_manifest([
+        manifest::Blob { uncompressed_size: 100, fuchsia_merkle_root: hash(1) },
+        manifest::Blob { uncompressed_size: 20, fuchsia_merkle_root: hash(2) },
+        manifest::Blob { uncompressed_size: 3000, fuchsia_merkle_root: hash(3) },
+    ]);
+    manifest.images = vec![manifest::Image {
+        slot: manifest::Slot::AB,
+        image_type: manifest::ImageType::Asset(AssetType::Zbi),
+        sha256: EMPTY_SHA256.parse().unwrap(),
+        blob: manifest::Blob { uncompressed_size: 500, fuchsia_merkle_root: image_hash },
+    }];
+
     let env = TestEnv::builder()
-        .ota_manifest(make_manifest([
-            manifest::Blob { uncompressed_size: 100, fuchsia_merkle_root: hash(1) },
-            manifest::Blob { uncompressed_size: 20, fuchsia_merkle_root: hash(2) },
-            manifest::Blob { uncompressed_size: 3000, fuchsia_merkle_root: hash(3) },
-        ]))
+        .ota_manifest(manifest)
+        .blob(image_hash, image_content.clone())
         .build()
         .await;
 
     let handle_ota_manifest = env.http_loader_service.block_once();
+    let handle_image_blob = env.ota_downloader_service.block_once(image_hash);
     let handle_blob1 = env.ota_downloader_service.block_once(hash(1));
     let handle_blob2 = env.ota_downloader_service.block_once(hash(2));
     let handle_blob3 = env.ota_downloader_service.block_once(hash(3));
@@ -117,18 +130,29 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
 
     let info = UpdateInfo::builder().download_size(0).build();
     handle_ota_manifest.await.unwrap().send(()).unwrap();
+
     assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Stage);
-    assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Stage);
+
+    let sender = handle_image_blob.await.unwrap();
+    let () = env.blobfs.write_blob(image_hash, &image_content).await.unwrap();
+    sender.send(Ok(())).unwrap();
 
     assert_eq!(
         attempt.next().await.unwrap().unwrap(),
-        State::Fetch(
+        State::Stage(
             UpdateInfoAndProgress::builder()
                 .info(info)
-                .progress(Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build())
+                .progress(
+                    Progress::builder()
+                        .fraction_completed(1000.0 / 4120.0)
+                        .bytes_downloaded(0)
+                        .build()
+                )
                 .build()
         )
     );
+
+    assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Fetch);
 
     let mut remaining_blobs = vec![
         async move { (100.0, handle_blob1.await) }.boxed(),
@@ -136,8 +160,8 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
         async move { (3000.0, handle_blob3.await) }.boxed(),
     ];
 
-    let mut total_downloaded = 0.0;
-    let total_size = 3120.0;
+    let mut total_downloaded = 1000.0;
+    let total_size = 4120.0;
 
     while !remaining_blobs.is_empty() {
         let ((size, sender), _index, remaining) =

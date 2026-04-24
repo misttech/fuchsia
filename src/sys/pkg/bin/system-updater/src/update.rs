@@ -6,6 +6,12 @@ use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use fetch_url::fetch_url;
 use fidl::endpoints::ProtocolMarker as _;
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_paver as fpaver;
+use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_ext as fpkg_ext;
+use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
+use fidl_fuchsia_update_installer_ext as fupdate_installer_ext;
 use fuchsia_async::TimeoutExt as _;
 use fuchsia_hash::Hash;
 use fuchsia_sync::Mutex;
@@ -24,11 +30,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use update_package::manifest::OtaManifest;
-use {
-    fidl_fuchsia_mem as fmem, fidl_fuchsia_paver as fpaver, fidl_fuchsia_pkg as fpkg,
-    fidl_fuchsia_pkg_ext as fpkg_ext, fidl_fuchsia_pkg_garbagecollector as fpkg_gc,
-    fidl_fuchsia_update_installer_ext as fupdate_installer_ext,
-};
 
 mod config;
 mod environment;
@@ -58,6 +59,11 @@ pub(super) use {
 
 const COBALT_FLUSH_TIMEOUT: Duration = Duration::from_secs(30);
 const SOURCE_EPOCH_RAW: &str = include_str_from_working_dir_env!("EPOCH_PATH");
+
+/// Multiplier applied to the uncompressed size of image blobs to calculate their weight in progress
+/// reporting. Images require more work than regular blobs (hashing the partition, fetching blob,
+/// writing to partition).
+const IMAGE_BLOB_WEIGHT_MULTIPLIER: u64 = 2;
 
 /// Error encountered in the Prepare state.
 #[derive(Debug, thiserror::Error)]
@@ -1187,10 +1193,9 @@ impl PackagelessAttempt<'_> {
         let total_blob_sizes = manifest
             .images
             .iter()
-            .map(|image| &image.blob)
-            .chain(&manifest.blobs)
-            .map(|blob| blob.uncompressed_size)
-            .sum::<u64>();
+            .map(|image| image.blob.uncompressed_size * IMAGE_BLOB_WEIGHT_MULTIPLIER)
+            .sum::<u64>()
+            + manifest.blobs.iter().map(|blob| blob.uncompressed_size).sum::<u64>();
 
         // Write images
         let mut state = state
@@ -1376,7 +1381,7 @@ impl PackagelessAttempt<'_> {
                 if !self.config.should_write_recovery
                     && image.slot == update_package::manifest::Slot::R
                 {
-                    return Ok(image.blob.uncompressed_size);
+                    return Ok(image.blob.uncompressed_size * IMAGE_BLOB_WEIGHT_MULTIPLIER);
                 }
                 let target_config = if image.slot == update_package::manifest::Slot::R {
                     paver::TargetConfiguration::Single(fpaver::Configuration::Recovery)
@@ -1463,7 +1468,7 @@ impl PackagelessAttempt<'_> {
                         .await
                         .map_err(StageError::Write)?;
                 }
-                Ok(image.blob.uncompressed_size)
+                Ok(image.blob.uncompressed_size * IMAGE_BLOB_WEIGHT_MULTIPLIER)
             })
             .buffer_unordered(self.concurrent_blob_fetches);
 
