@@ -17,6 +17,7 @@ from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent
 
+
 # Assume the script is in //build/sdk/generate_prebuild_idk/.
 _FUCHSIA_ROOT_DIR = _SCRIPT_DIR.parent.parent.parent
 
@@ -88,7 +89,7 @@ def compare_directories(
 
 
 def main() -> int:
-    _generate_idk_script = _SCRIPT_DIR / "idk_generator.py"
+    _generate_idk_script = _SCRIPT_DIR / "cmd.py"
     _test_data_dir = _SCRIPT_DIR / "validation_data"
     _input_fuchsia_source_dir = _test_data_dir / "input_fuchsia_dir"
     _input_build_dir = _input_fuchsia_source_dir / "out/notdefault"

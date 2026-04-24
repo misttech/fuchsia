@@ -6,7 +6,11 @@ import("//build/python/python_binary.gni")
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 
+visibility = [ ":*" ]
+
 group("tests") {
+  visibility = []
+  visibility = [ "*" ]
   testonly = true
   deps = [
     ":generate_prebuild_idk_integration_test($host_toolchain)",
@@ -16,21 +20,23 @@ group("tests") {
 
 if (is_host) {
   python_binary("generate_prebuild_idk") {
+    visibility = []
     visibility = [
       "//build/sdk/tests:*",
       "//sdk/*",
       "//vendor/*",
     ]
+    output_name = "generate_prebuild_idk.pyz"
 
     # This template behaves badly when the main source filename is the same as
     # the library, so use a different name instead.
-    main_source = "idk_generator.py"
+    main_source = "cmd.py"
     deps = [ ":idk_generator_lib" ]
   }
 
   python_library("idk_generator_lib") {
-    visibility = [ ":*" ]
     library_name = "idk_generator"
+    source_root = "idk_generator"
     sources = [
       "__init__.py",
       "generate_sdk_package_manifest.py",
@@ -55,7 +61,9 @@ if (is_host) {
     script =
         "//build/sdk/generate_prebuild_idk/generate_prebuild_idk_validation.py"
     inputs = [
-      "idk_generator.py",
+      "cmd.py",
+      "idk_generator/idk_generator.py",
+      "idk_generator/generate_sdk_package_manifest.py",
 
       # Accessed by idk_generator.py.
       "//build/sdk/generate_version_history/__init__.py",
@@ -90,6 +98,8 @@ if (is_host) {
       "--python-path",
       rebase_path("//build/sdk", root_build_dir),
       "--python-path",
+      rebase_path("//build/sdk/generate_prebuild_idk", root_build_dir),
+      "--python-path",
       rebase_path("//third_party/pyyaml/src/lib", root_build_dir),
     ]
 
@@ -99,7 +109,6 @@ if (is_host) {
   }
 
   host_test_data("areas_file_test_data") {
-    visibility = [ ":*" ]
     sources = [ "//docs/contribute/governance/areas/_areas.yaml" ]
   }
 

@@ -29,6 +29,7 @@ _BUILD_SDK_SCRIPTS = _SCRIPT_DIR / ".." / "build" / "sdk"
 sys.path.insert(0, str(_BUILD_BAZEL_SCRIPTS))
 sys.path.insert(0, str(_BUILD_BAZEL_DIR))
 sys.path.insert(0, str(_BUILD_SDK_SCRIPTS))
+sys.path.insert(0, str(_BUILD_SDK_SCRIPTS / "generate_prebuild_idk"))
 
 import build_utils
 import compute_content_hash
@@ -36,7 +37,7 @@ import remote_services_utils
 import workspace_utils
 from bazel_action_file_copy_utils import write_file_if_changed
 from fuchsia_idk import generate_repository
-from generate_prebuild_idk import IdkGenerator
+from idk_generator.idk_generator import IdkGenerator
 
 _DEFAULT_HOST_TAG = "linux-x64"
 

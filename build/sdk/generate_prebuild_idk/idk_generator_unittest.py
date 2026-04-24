@@ -11,7 +11,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from idk_generator import AtomInfo, IdkGenerator, relative_to_walk_up
+from idk_generator.idk_generator import (
+    AtomInfo,
+    IdkGenerator,
+    relative_to_walk_up,
+)
 
 
 class IdkGeneratorTest(unittest.TestCase):
