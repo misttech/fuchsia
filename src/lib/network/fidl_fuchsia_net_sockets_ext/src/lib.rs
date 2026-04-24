@@ -578,11 +578,14 @@ impl From<fidl::Error> for IpIteratorError {
 /// `IpIterator` returns a series of batches of sockets matching the query, the
 /// returned stream flattens those batches into individual sockets. If an error
 /// is encuontered during iteration, it is returned and iteration halts.
+//
+// TODO(https://github.com/rust-lang/rust/issues/130043): Remove types from the
+// precise capturing clause on the stream.
 pub async fn iterate_ip<M, I>(
     diagnostics: &fnet_sockets::DiagnosticsProxy,
     extensions: fnet_sockets::Extensions,
     matchers: M,
-) -> Result<impl Stream<Item = Result<IpSocketState, IpIteratorError>>, IterateIpError>
+) -> Result<impl Stream<Item = Result<IpSocketState, IpIteratorError>> + use<M, I>, IterateIpError>
 where
     M: IntoIterator<Item = I>,
     I: Into<fnet_sockets::IpSocketMatcher>,
