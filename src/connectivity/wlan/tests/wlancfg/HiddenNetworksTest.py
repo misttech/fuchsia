@@ -7,6 +7,8 @@
 import logging
 import time
 
+import fuchsia_wlan_base_test
+from antlion.controllers import access_point
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
@@ -16,7 +18,6 @@ from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
 from antlion.utils import rand_ascii_str
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
@@ -25,6 +26,9 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from mobly import signals, test_runner
+from mobly.config_parser import TestRunConfig
+from mobly_controller import openwrt_access_point
+from mobly_controller.openwrt_access_point import OpenWrtAP
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -42,17 +46,40 @@ TIME_WAIT_FOR_CONNECT = 90
 TIME_ATTEMPT_SCANS = 90
 
 
-class HiddenNetworksTest(base_test.WifiBaseTest):
-    """Tests that WLAN Policy will detect hidden networks
+class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    """Tests for Hidden Networks.
 
     Test Bed Requirement:
     * One or more Fuchsia devices
     * One Access Point
     """
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    def __init__(self, configs: TestRunConfig) -> None:
+        super().__init__(configs)
+        self.openwrt_ap: OpenWrtAP | None = None
+        self.access_point: access_point.AccessPoint | None = None
+        self.access_points: list[access_point.AccessPoint] = []
+        self.openwrt_aps: list[OpenWrtAP] = []
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.log = logging.getLogger()
+
+        self.access_points = await self.register_controller(
+            access_point,
+            required=False,
+        )
+        self.openwrt_aps = await self.register_controller(
+            openwrt_access_point,
+            required=False,
+        )
+
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+        else:
+            raise signals.TestAbortClass("Requires at least one access point.")
 
         # Start an AP with a hidden network
         # TODO(https://fxbug.dev/489256041): Delete references to old AP when OpenWRT migration
@@ -91,7 +118,7 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             setup_ap(
                 self.access_point,
                 "whirlwind",
-                hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 self.hidden_ssid,
                 hidden=True,
                 security=DeprecatedSecurity(
@@ -102,21 +129,24 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
 
         if len(self.fuchsia_devices) < 1:
             raise EnvironmentError("No Fuchsia devices found.")
-        for fd in self.fuchsia_devices:
-            fd.configure_wlan(association_mechanism="policy")
 
-    def setup_test(self) -> None:
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.remove_all_networks()
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
-
-    def teardown_class(self) -> None:
-        if self.access_point:
+    async def teardown_class(self) -> None:
+        # We don't need this cleanup for OpenWRT APs, as the controller handles it in its destroy method.
+        if hasattr(self, "access_point") and self.access_point:
             self.access_point.stop_all_aps()
+        await super().teardown_class()
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
+
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
+        await super().teardown_test()
 
     # Tests
 
-    def test_scan_hidden_networks(self) -> None:
+    async def test_scan_hidden_networks(self) -> None:
         """Probabilistic test to see if we can see hidden networks with a scan.
 
         Scan a few times and check that we see the hidden networks in the results at
@@ -126,36 +156,31 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
         Raises:
             TestFailure if we fail to see hidden network in scans before timing out.
         """
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.stop_client_connections(
-                wait_for_confirmation=True
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.hidden_ssid, SecurityType.WPA2, self.hidden_password
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.start_client_connections()
-            start_time = time.time()
-            num_performed_scans = 0
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=True
+        )
+        await self.dut.wlan_policy.save_network(
+            self.hidden_ssid, SecurityType.WPA2, self.hidden_password
+        )
+        await self.dut.wlan_policy.start_client_connections()
+        start_time = time.time()
+        num_performed_scans = 0
 
-            while time.time() < start_time + TIME_ATTEMPT_SCANS:
-                num_performed_scans = num_performed_scans + 1
-                scan_result = (
-                    fd.honeydew_fd.wlan_policy_deprecated_sync.scan_for_networks()
+        while time.time() < start_time + TIME_ATTEMPT_SCANS:
+            num_performed_scans = num_performed_scans + 1
+            scan_result = await self.dut.wlan_policy.scan_for_networks()
+
+            if self.hidden_ssid in scan_result:
+                self.log.info(
+                    f"SSID of hidden network seen after {num_performed_scans} scans"
                 )
+                return
+            time.sleep(1)
 
-                if self.hidden_ssid in scan_result:
-                    self.log.info(
-                        f"SSID of hidden network seen after {num_performed_scans} scans"
-                    )
-                    return
-                time.sleep(1)
+        self.log.error(f"Failed to see SSID after {num_performed_scans} scans")
+        raise signals.TestFailure("Failed to see hidden network in scans")
 
-            self.log.error(
-                f"Failed to see SSID after {num_performed_scans} scans"
-            )
-            raise signals.TestFailure("Failed to see hidden network in scans")
-
-    def test_auto_connect_hidden_on_startup(self) -> None:
+    async def test_auto_connect_hidden_on_startup(self) -> None:
         """Test auto connect on startup.
 
         This test checks that if we are not connected to anything but have a hidden
@@ -166,28 +191,28 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
         """
         # Start up AP with an open network with a random SSID
 
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.stop_client_connections(
-                wait_for_confirmation=True
-            )
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.hidden_ssid, SecurityType.WPA2, self.hidden_password
-            )
+        await self.dut.wlan_policy.stop_client_connections(
+            wait_for_confirmation=True
+        )
+        await self.dut.wlan_policy.save_network(
+            self.hidden_ssid, SecurityType.WPA2, self.hidden_password
+        )
 
-            # Reboot the device and check that it auto connects.
-            fd.reboot()
-            try:
-                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                    self.hidden_ssid,
-                    ConnectionState.CONNECTED,
-                    timeout=TIME_WAIT_FOR_CONNECT,
-                )
-            except HoneydewWlanError as e:
-                raise signals.TestFailure(
-                    "Failed to auto connect to hidden network on startup"
-                ) from e
+        # Reboot the device and check that it auto connects.
+        self.dut.reboot()
+        await self.dut.wlan_policy.start_client_connections()
+        try:
+            await self.dut.wlan_policy.wait_for_network_state(
+                self.hidden_ssid,
+                ConnectionState.CONNECTED,
+                timeout=TIME_WAIT_FOR_CONNECT,
+            )
+        except HoneydewWlanError as e:
+            raise signals.TestFailure(
+                "Failed to auto connect to hidden network on startup"
+            ) from e
 
-    def test_auto_connect_hidden_on_save(self) -> None:
+    async def test_auto_connect_hidden_on_save(self) -> None:
         """Test auto connect to hidden network on save.
 
         This test checks that if we save a hidden network and are not connected to
@@ -197,21 +222,20 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             TestFailure if client fails to auto connect to a hidden network after saving
             it.
         """
-        for fd in self.fuchsia_devices:
-            fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_no_connections()
-            fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.hidden_ssid, SecurityType.WPA2, self.hidden_password
+        await self.dut.wlan_policy.wait_for_no_connections()
+        await self.dut.wlan_policy.save_network(
+            self.hidden_ssid, SecurityType.WPA2, self.hidden_password
+        )
+        try:
+            await self.dut.wlan_policy.wait_for_network_state(
+                self.hidden_ssid,
+                ConnectionState.CONNECTED,
+                timeout=TIME_WAIT_FOR_CONNECT,
             )
-            try:
-                fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                    self.hidden_ssid,
-                    ConnectionState.CONNECTED,
-                    timeout=TIME_WAIT_FOR_CONNECT,
-                )
-            except HoneydewWlanError as e:
-                raise signals.TestFailure(
-                    "Failed to auto connect to hidden network on save"
-                ) from e
+        except HoneydewWlanError as e:
+            raise signals.TestFailure(
+                "Failed to auto connect to hidden network on save"
+            ) from e
 
 
 if __name__ == "__main__":
