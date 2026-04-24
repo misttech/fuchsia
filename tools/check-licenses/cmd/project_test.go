@@ -195,3 +195,84 @@ func TestProjectCommand_ListAndInfo(t *testing.T) {
 		t.Errorf("Expected ExitSuccess for info, got %v", status)
 	}
 }
+
+func TestBelongsToProject(t *testing.T) {
+	tempDir := t.TempDir()
+	fuchsiaDir := tempDir
+
+	// Setup a fake project structure
+	// third_party/foo
+	// third_party/foo/vendor/bar
+
+	fooDir := filepath.Join(tempDir, "third_party", "foo")
+	if err := os.MkdirAll(fooDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fooDir, "README.fuchsia"), []byte("Name: foo\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	barDir := filepath.Join(fooDir, "vendor", "bar")
+	if err := os.MkdirAll(barDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(barDir, "README.fuchsia"), []byte("Name: bar\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// This is equivalent to outOfTreeReadmes
+	outOfTree := map[string]string{}
+
+	tests := []struct {
+		name        string
+		policyPath  string
+		projectRoot string
+		expected    bool
+	}{
+		{
+			name:        "Exact match",
+			policyPath:  "third_party/foo",
+			projectRoot: "third_party/foo",
+			expected:    true,
+		},
+		{
+			name:        "Policy on parent directory is inherited",
+			policyPath:  "third_party",
+			projectRoot: "third_party/foo",
+			expected:    true,
+		},
+		{
+			name:        "Policy on unrelated directory is false",
+			policyPath:  "src/other",
+			projectRoot: "third_party/foo",
+			expected:    false,
+		},
+		{
+			name:        "Policy on sub-project should NOT apply to parent project",
+			policyPath:  "third_party/foo/vendor/bar",
+			projectRoot: "third_party/foo",
+			expected:    false,
+		},
+		{
+			name:        "Policy on sub-project should apply to sub-project itself",
+			policyPath:  "third_party/foo/vendor/bar",
+			projectRoot: "third_party/foo/vendor/bar",
+			expected:    true,
+		},
+		{
+			name:        "Policy on regular sub-directory without boundary SHOULD apply to parent",
+			policyPath:  "third_party/foo/src",
+			projectRoot: "third_party/foo",
+			expected:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := belongsToProject(tt.policyPath, tt.projectRoot, fuchsiaDir, outOfTree)
+			if result != tt.expected {
+				t.Errorf("belongsToProject(%q, %q) = %v, want %v", tt.policyPath, tt.projectRoot, result, tt.expected)
+			}
+		})
+	}
+}

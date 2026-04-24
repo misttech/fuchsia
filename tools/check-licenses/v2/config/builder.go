@@ -172,6 +172,7 @@ func (b *Builder) parseConfigFile(path string) error {
 				b.Config.PolicyExceptions[checkName][allowedPath] = RuleMetadata{
 					Bug:         entry.Bug,
 					Description: entry.Description,
+					ConfigPath:  path,
 				}
 			}
 		}
@@ -190,6 +191,7 @@ func (b *Builder) parseConfigFile(path string) error {
 				b.Config.AllowedLicenses[licenseName][allowedPath] = RuleMetadata{
 					Bug:         entry.Bug,
 					Description: entry.Description,
+					ConfigPath:  path,
 				}
 			}
 		}

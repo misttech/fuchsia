@@ -125,7 +125,7 @@ func (c *ProjectCommand) executeInfo(ctx context.Context, args []string, config 
 	for policyName, paths := range config.PolicyExceptions {
 		for p, meta := range paths {
 			cleanP := strings.TrimPrefix(p, "//")
-			if cleanP == relRoot || strings.HasPrefix(cleanP, relRoot+string(filepath.Separator)) || strings.HasPrefix(relRoot, cleanP+string(filepath.Separator)) {
+			if belongsToProject(cleanP, relRoot, c.fuchsiaDir, config.OutOfTreeReadmes) {
 				activePolicies[policyName] = meta
 				activePolicyNames = append(activePolicyNames, policyName)
 				break
@@ -139,7 +139,7 @@ func (c *ProjectCommand) executeInfo(ctx context.Context, args []string, config 
 	for licenseID, paths := range config.AllowedLicenses {
 		for p, meta := range paths {
 			cleanP := strings.TrimPrefix(p, "//")
-			if cleanP == relRoot || strings.HasPrefix(cleanP, relRoot+string(filepath.Separator)) || strings.HasPrefix(relRoot, cleanP+string(filepath.Separator)) {
+			if belongsToProject(cleanP, relRoot, c.fuchsiaDir, config.OutOfTreeReadmes) {
 				allowedLicenses[licenseID] = meta
 				allowedLicenseNames = append(allowedLicenseNames, licenseID)
 				break
@@ -153,6 +153,10 @@ func (c *ProjectCommand) executeInfo(ctx context.Context, args []string, config 
 		for _, name := range activePolicyNames {
 			meta := activePolicies[name]
 			fmt.Printf("  - %s\n", name)
+			if meta.ConfigPath != "" {
+				relConfig, _ := filepath.Rel(c.fuchsiaDir, meta.ConfigPath)
+				fmt.Printf("      Config: %s\n", relConfig)
+			}
 			if meta.Bug != "" {
 				fmt.Printf("      Bug: %s\n", meta.Bug)
 			}
@@ -167,6 +171,10 @@ func (c *ProjectCommand) executeInfo(ctx context.Context, args []string, config 
 		for _, name := range allowedLicenseNames {
 			meta := allowedLicenses[name]
 			fmt.Printf("  - %s\n", name)
+			if meta.ConfigPath != "" {
+				relConfig, _ := filepath.Rel(c.fuchsiaDir, meta.ConfigPath)
+				fmt.Printf("      Config: %s\n", relConfig)
+			}
 			if meta.Bug != "" {
 				fmt.Printf("      Bug: %s\n", meta.Bug)
 			}
@@ -181,4 +189,51 @@ func (c *ProjectCommand) executeInfo(ctx context.Context, args []string, config 
 	fmt.Println(readme.Format([]*readme.Readme{r}))
 
 	return subcommands.ExitSuccess
+}
+
+func belongsToProject(policyPath string, projectRoot string, fuchsiaDir string, outOfTreeReadmes map[string]string) bool {
+	// If the policy applies to a broader root that contains this project, we inherit it.
+	// E.g. Policy on "third_party" applies to "third_party/foo".
+	if strings.HasPrefix(projectRoot, policyPath+string(filepath.Separator)) {
+		return true
+	}
+
+	// If it's an exact match, obviously true.
+	if policyPath == projectRoot {
+		return true
+	}
+
+	// If the policy path is outside our project hierarchy, false.
+	if !strings.HasPrefix(policyPath, projectRoot+string(filepath.Separator)) {
+		return false
+	}
+
+	// The policy path is SUBORDINATE to our project root (e.g. policy on "src/foo/bar" and we are querying "src/foo").
+	// We only claim this policy if "src/foo/bar" is actually part of our project, NOT a separate sub-project.
+	absPolicyPath := filepath.Join(fuchsiaDir, policyPath)
+	pReadme, pReadmePath, err := readme.FindProjectReadme(absPolicyPath, fuchsiaDir, outOfTreeReadmes)
+	if err != nil || pReadme == nil {
+		// If we can't find a boundary, default to naive prefix matching (it belongs to us)
+		return true
+	}
+
+	var pLogicalRoot string
+	for logPath, physPath := range outOfTreeReadmes {
+		if physPath == pReadmePath {
+			pLogicalRoot = filepath.Join(fuchsiaDir, logPath)
+			break
+		}
+	}
+	if pLogicalRoot == "" {
+		pLogicalRoot = filepath.Dir(pReadmePath)
+	}
+
+	if pReadme.Location != "" {
+		pLogicalRoot = filepath.Join(pLogicalRoot, pReadme.Location)
+	}
+
+	pRelRoot, _ := filepath.Rel(fuchsiaDir, pLogicalRoot)
+
+	// It belongs to us only if the closest project boundary to the policy file is US.
+	return pRelRoot == projectRoot
 }

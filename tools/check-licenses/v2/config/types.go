@@ -83,6 +83,7 @@ func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
 type RuleMetadata struct {
 	Bug         string
 	Description string
+	ConfigPath  string
 }
 
 // NewMasterConfig initializes an empty configuration ready to be populated by the builder.

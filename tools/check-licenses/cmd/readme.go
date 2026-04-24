@@ -121,7 +121,7 @@ func (c *ReadmeCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 		} else {
 			for _, lf := range r.LicenseFiles {
 				if lf.License == "" {
-					fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): License File '%s' is missing required '-> License:' metadata.\n", i+1, lf.Path)
+					fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): License File '%s' is missing required '  License:' metadata.\n", i+1, lf.Path)
 					hasValidationErrors = true
 				}
 			}
