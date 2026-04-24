@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result, bail};
 use futures::prelude::*;
 use futures::task::{Context, Poll};
 use netext::TokioAsyncReadExt;
@@ -192,12 +191,14 @@ where
     }
 }
 
-async fn handshake<T: AsyncWrite + AsyncRead + std::marker::Unpin>(stream: &mut T) -> Result<()> {
-    stream.write(&FB_HANDSHAKE).await.context("Sending handshake")?;
+async fn handshake<T: AsyncWrite + AsyncRead + std::marker::Unpin>(
+    stream: &mut T,
+) -> Result<(), crate::FastbootTransportError> {
+    stream.write_all(&FB_HANDSHAKE).await.map_err(crate::FastbootTransportError::SendError)?;
     let mut response = [0; 4];
-    stream.read_exact(&mut response).await.context("Receiving handshake response")?;
+    stream.read_exact(&mut response).await.map_err(crate::FastbootTransportError::RecvError)?;
     if response != FB_HANDSHAKE {
-        bail!("Invalid response to handshake");
+        return Err(crate::FastbootTransportError::InvalidHandshake);
     }
     Ok(())
 }
@@ -212,7 +213,10 @@ pub const HANDSHAKE_TIMEOUT_MILLIS: u64 = 1000;
 pub async fn open_once(
     target: &SocketAddr,
     handshake_timeout: Duration,
-) -> Result<TcpNetworkInterface<netext::MultithreadedTokioAsyncWrapper<TcpStream>>> {
+) -> Result<
+    TcpNetworkInterface<netext::MultithreadedTokioAsyncWrapper<TcpStream>>,
+    crate::FastbootTransportError,
+> {
     let mut addr: SocketAddr = target.clone();
     if addr.port() == 0 {
         log::debug!("Address does not have port set ({addr:?}. Using default:  {FASTBOOT_PORT}");
@@ -223,7 +227,7 @@ pub async fn open_once(
     timeout(handshake_timeout, async {
         let mut stream = TcpStream::connect(addr)
             .await
-            .context("Establishing TCP connection")?
+            .map_err(|e| crate::FastbootTransportError::Io(e))?
             .into_multithreaded_futures_stream();
         handshake(&mut stream).await?;
         Ok(TcpNetworkInterface {
@@ -235,12 +239,14 @@ pub async fn open_once(
             wrote_header: false,
         })
     })
-    .await?
+    .await
+    .map_err(|_| crate::FastbootTransportError::Timeout)?
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use anyhow::Result;
     use pretty_assertions::assert_eq;
     use std::sync::{Arc, Mutex};
 

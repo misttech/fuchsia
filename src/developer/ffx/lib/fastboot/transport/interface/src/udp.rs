@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result, anyhow, bail};
 use byteorder::{BigEndian, ByteOrder};
 use futures::Future;
 use futures::io::{AsyncRead, AsyncWrite};
@@ -53,13 +52,13 @@ impl<B: SplitByteSlice> Packet<B> {
         self.header.flags & 0x001 != 0
     }
 
-    fn packet_type(&self) -> Result<PacketType> {
+    fn packet_type(&self) -> Result<PacketType, crate::FastbootTransportError> {
         match self.header.id {
             0x00 => Ok(PacketType::Error),
             0x01 => Ok(PacketType::Query),
             0x02 => Ok(PacketType::Init),
             0x03 => Ok(PacketType::Fastboot),
-            _ => bail!("Unknown packet type"),
+            _ => Err(crate::FastbootTransportError::ParseError),
         }
     }
 }
@@ -87,7 +86,10 @@ impl fmt::Debug for UdpNetworkInterface {
 }
 
 impl UdpNetworkInterface {
-    fn create_fastboot_packets(&mut self, buf: &[u8]) -> Result<Vec<Vec<u8>>> {
+    fn create_fastboot_packets(
+        &mut self,
+        buf: &[u8],
+    ) -> Result<Vec<Vec<u8>>, crate::FastbootTransportError> {
         // Leave four bytes for the header.
         let header_size = std::mem::size_of::<Header>() as u16;
         let max_chunk_size = self.maximum_size - header_size;
@@ -235,30 +237,24 @@ impl AsyncWrite for UdpNetworkInterface {
     }
 }
 
-pub async fn open(addr: SocketAddr) -> Result<UdpNetworkInterface> {
+pub async fn open(addr: SocketAddr) -> Result<UdpNetworkInterface, crate::FastbootTransportError> {
     let mut to_sock: SocketAddr = addr.clone();
     // TODO(https://fxbug.dev/42159161): get the port from the mdns packet
     to_sock.set_port(HOST_PORT);
     let socket = make_sender_socket(to_sock).await?;
-    let (buf, sz) = send_to_device(&make_query_packet(), &socket)
-        .await
-        .map_err(|e| anyhow!("Sending error: {}", e))?;
-    let packet =
-        Packet::parse(&buf[..sz]).ok_or_else(|| anyhow!("Could not parse response packet."))?;
+    let (buf, sz) = send_to_device(&make_query_packet(), &socket).await?;
+    let packet = Packet::parse(&buf[..sz]).ok_or(crate::FastbootTransportError::ParseError)?;
     let sequence = match packet.packet_type() {
         Ok(PacketType::Query) => BigEndian::read_u16(&packet.data),
-        _ => bail!("Unexpected response to query packet"),
+        _ => return Err(crate::FastbootTransportError::ParseError),
     };
-    let (buf, sz) = send_to_device(&make_init_packet(sequence), &socket)
-        .await
-        .map_err(|e| anyhow!("Sending error: {}", e))?;
-    let packet =
-        Packet::parse(&buf[..sz]).ok_or_else(|| anyhow!("Could not parse response packet."))?;
+    let (buf, sz) = send_to_device(&make_init_packet(sequence), &socket).await?;
+    let packet = Packet::parse(&buf[..sz]).ok_or(crate::FastbootTransportError::ParseError)?;
     let (version, max) = match packet.packet_type() {
         Ok(PacketType::Init) => {
             (BigEndian::read_u16(&packet.data[..2]), BigEndian::read_u16(&packet.data[2..4]))
         }
-        _ => bail!("Unexpected response to init packet"),
+        _ => return Err(crate::FastbootTransportError::ParseError),
     };
     let maximum_size = std::cmp::min(max, MAX_SIZE);
     log::debug!(
@@ -276,48 +272,51 @@ pub async fn open(addr: SocketAddr) -> Result<UdpNetworkInterface> {
     })
 }
 
-async fn send_to_device(buf: &[u8], socket: &UdpSocket) -> Result<([u8; 1500], usize)> {
+async fn send_to_device(
+    buf: &[u8],
+    socket: &UdpSocket,
+) -> Result<([u8; 1500], usize), crate::FastbootTransportError> {
     // Try sending twice
-    socket.send(buf).await?;
+    socket.send(buf).await.map_err(crate::FastbootTransportError::SendError)?;
     match wait_for_response(socket).await {
         Ok(r) => Ok(r),
         Err(e) => {
             log::error!("Could not get reply from Fastboot device - trying again: {}", e);
-            socket.send(buf).await?;
-            wait_for_response(socket)
-                .await
-                .or_else(|e| bail!("Did not get reply from Fastboot device: {}", e))
+            socket.send(buf).await.map_err(crate::FastbootTransportError::SendError)?;
+            wait_for_response(socket).await
         }
     }
 }
 
-async fn wait_for_response(socket: &UdpSocket) -> Result<([u8; 1500], usize)> {
+async fn wait_for_response(
+    socket: &UdpSocket,
+) -> Result<([u8; 1500], usize), crate::FastbootTransportError> {
     let mut buf = [0u8; 1500]; // Responses should never get this big.
     timeout(REPLY_TIMEOUT, Box::pin(socket.recv(&mut buf[..])))
         .await
-        .map_err(|_| anyhow!("Timed out waiting for reply"))?
-        .map_err(|e| anyhow!("Recv error: {}", e))
+        .map_err(|_| crate::FastbootTransportError::Timeout)?
+        .map_err(crate::FastbootTransportError::RecvError)
         .map(|size| (buf, size))
 }
 
-async fn make_sender_socket(addr: SocketAddr) -> Result<UdpSocket> {
+async fn make_sender_socket(addr: SocketAddr) -> Result<UdpSocket, crate::FastbootTransportError> {
     let socket: std::net::UdpSocket = match addr {
         SocketAddr::V4(ref _saddr) => socket2::Socket::new(
             socket2::Domain::IPV4,
             socket2::Type::DGRAM,
             Some(socket2::Protocol::UDP),
         )
-        .context("construct datagram socket")?,
+        .map_err(|e| crate::FastbootTransportError::Io(e))?,
         SocketAddr::V6(ref _saddr) => socket2::Socket::new(
             socket2::Domain::IPV6,
             socket2::Type::DGRAM,
             Some(socket2::Protocol::UDP),
         )
-        .context("construct datagram socket")?,
+        .map_err(|e| crate::FastbootTransportError::Io(e))?,
     }
     .into();
-    let result = UdpSocket::from_std(socket)?;
-    result.connect(addr).await.context("connect to remote address")?;
+    let result = UdpSocket::from_std(socket).map_err(|e| crate::FastbootTransportError::Io(e))?;
+    result.connect(addr).await.map_err(|e| crate::FastbootTransportError::Io(e))?;
     Ok(result)
 }
 
