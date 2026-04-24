@@ -102,6 +102,8 @@ This codelab assumes you have completed [Getting Started](/docs/get-started/READ
 1. A checked out and built Fuchsia tree.
 2. A device or emulator (`ffx emu`) that runs Fuchsia.
 3. A workstation to serve components (`fx serve`) to your Fuchsia device or emulator.
+   - Refer to the [Components Developer Guides](/docs/development/components/README.md)
+     to learn about running components.
 
 To build and run the examples in this codelab, add the following arguments
 to your `fx set` invocation:
@@ -179,10 +181,11 @@ command line arguments as strings to Reverse:
       To see the command output take a look at the logs:
 
       ```posix-terminal
-      ffx log --tags inspect_cpp_codelab
+      ffx log --tag inspect_cpp_codelab
       ```
 
-      This command prints some output containing errors.
+      We see in the logs that the component got the "Hello" as input, but we
+      don't see the correct reversed output.
 
    * {Rust}
 
@@ -193,7 +196,7 @@ command line arguments as strings to Reverse:
       To see the command output take a look at the logs:
 
       ```posix-terminal
-      ffx log --tags inspect_rust_codelab
+      ffx log --tag inspect_rust_codelab
       ```
 
       We see in the logs that the component got the "Hello" as input, but we
@@ -259,7 +262,7 @@ Now that you can reproduce the problem, take a look at what the client is doing:
 
 In this code snippet, the client calls the `Reverse` method but never
 seems to get a response. There doesn't seem to be an error message
-or output.
+or output, the component just hangs.
 
 Take a look at the server code for this part of the
 codelab. There is a lot of standard component setup:
@@ -359,9 +362,9 @@ state without needing to dig through logs.
 
    * {C++}
 
-      In [BUILD.gn][cpp-part1-build]:
+      In [BUILD.gn][cpp-part1-build] in `public_deps` under `source_set("lib")`:
 
-      ```
+      ```cpp
       {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/diagnostics/inspect/codelab/cpp/part_2/BUILD.gn" region_tag="part_1_solution_build_dep" adjust_indentation="auto" %}
       ```
 
@@ -369,7 +372,7 @@ state without needing to dig through logs.
 
       In [BUILD.gn][rust-part1-build] in `deps` under `rustc_binary("bin")`:
 
-      ```
+      ```rust
       {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/diagnostics/inspect/codelab/rust/part_2/BUILD.gn" region_tag="part_1_solution_build_dep" adjust_indentation="auto" %}
       ```
 
@@ -411,19 +414,20 @@ state without needing to dig through logs.
          The Inspect hierarchy for your component consists of a tree of Nodes,
          each of which contains any number of properties.
 
-      2. Create a new property using `CreateString`.
+      2. Create a new property as part of `RecordString`.
 
          This adds a new `StringProperty` on the root. This `StringProperty`
          is called "version", and its value is "part2". We're going to set our
          property to "part1".
 
-      3. Emplace the new property in the inspector.
+      3. Record the new property in the root node.
 
-         The lifetime of a property is tied to an object returned by `Create`,
-         and destroying the object causes the property to disappear. The
-         optional third parameter emplaces the new property in `inspector`
-         rather than return it.  As a result, the new property lives as long
-         as the inspector itself (the entire execution of the component).
+         The usual way of creating properties is through `Create*` methods on nodes. The lifetime of
+         a property created with these methods is tied to the object returned and destroying the
+         object causes the property to disappear. The library provides convenience methods `Record*`
+         that perform creation of a property and tie the property lifetime to the node on which the
+         method was called. As a result, the new property lives as long as the node itself (in this
+         case, as long as the root node, so the entire execution of the component).
 
    * {Rust}
 
@@ -471,7 +475,7 @@ Now that you have added Inspect to your component, you can read what it says:
       ```posix-terminal
       ffx component run --recreate /core/ffx-laboratory:client_part_1 fuchsia-pkg://fuchsia.com/inspect_cpp_codelab#meta/client_part_1.cm
 
-      ffx log --tags inspect_cpp_codelab
+      ffx log --tag inspect_cpp_codelab
       ```
 
    * {Rust}
@@ -479,7 +483,7 @@ Now that you have added Inspect to your component, you can read what it says:
       ```posix-terminal
       ffx component run --recreate /core/ffx-laboratory:client_part_1 fuchsia-pkg://fuchsia.com/inspect_rust_codelab#meta/client_part_1.cm
 
-      ffx log --tags inspect_rust_codelab
+      ffx log --tag inspect_rust_codelab
       ```
 
 3. Use `ffx inspect` to view your output:
@@ -495,7 +499,7 @@ Now that you have added Inspect to your component, you can read what it says:
    * {C++}
 
       ```posix-terminal
-      ffx inspect show 'core/ffx-laboratory\:client_part_1/reverser'
+      ffx inspect show 'core/ffx-laboratory:client_part_1/reverser'
       # or `ffx inspect show inspect_cpp_codelab`
       metadata:
         filename = fuchsia.inspect.Tree
@@ -509,7 +513,7 @@ Now that you have added Inspect to your component, you can read what it says:
    * {Rust}
 
       ```posix-terminal
-      ffx inspect show 'core/ffx-laboratory\:client_part_1/reverser'
+      ffx inspect show 'core/ffx-laboratory:client_part_1/reverser'
       # or `ffx inspect show inspect_rust_codelab`
       metadata:
         filename = fuchsia.inspect.Tree
@@ -525,7 +529,7 @@ Now that you have added Inspect to your component, you can read what it says:
    * {C++}
 
       ```posix-terminal
-      ffx --machine json-pretty inspect show 'core/ffx-laboratory\:client_part_1/reverser'
+      ffx --machine json-pretty inspect show 'core/ffx-laboratory:client_part_1/reverser'
       ```
 
       You should see an output like:
@@ -553,7 +557,7 @@ Now that you have added Inspect to your component, you can read what it says:
    * {Rust}
 
       ```posix-terminal
-      ffx --machine json-pretty inspect show 'core/ffx-laboratory\:client_part_1/reverser'
+      ffx --machine json-pretty inspect show 'core/ffx-laboratory:client_part_1/reverser'
       ```
 
       You should see an output like:
@@ -796,7 +800,7 @@ The output above shows that the connection is still open and it received one req
       ```none {:.devsite-disable-click-to-copy}
       Creating component instance: client_part_1
 
-      ffx log --tags inspect_cpp_codelab
+      ffx log --tag inspect_cpp_codelab
       [00039.129068][39163][39165][inspect_cpp_codelab, client] INFO: Input: Hello
       [00039.194151][39163][39165][inspect_cpp_codelab, client] INFO: Output: olleH
       [00039.194170][39163][39165][inspect_cpp_codelab, client] INFO: Input: World
@@ -815,7 +819,7 @@ The output above shows that the connection is still open and it received one req
       ```none {:.devsite-disable-click-to-copy}
       Creating component instance: client_part_1
 
-      ffx log --tags inspect_rust_codelab
+      ffx log --tag inspect_rust_codelab
       [00039.129068][39163][39165][inspect_rust_codelab, client] INFO: Input: Hello
       [00039.194151][39163][39165][inspect_rust_codelab, client] INFO: Output: olleH
       [00039.194170][39163][39165][inspect_rust_codelab, client] INFO: Input: World
@@ -860,13 +864,13 @@ If you see the logs, you will see that this log is never printed.
 * {C++}
 
    ```posix-terminal
-   ffx log --tags inspect_cpp_codelab
+   ffx log --tag inspect_cpp_codelab
    ```
 
 * {Rust}
 
    ```posix-terminal
-   ffx log --tags inspect_rust_codelab
+   ffx log --tag inspect_rust_codelab
    ```
 
 You will need to diagnose and solve this problem.
@@ -1059,7 +1063,7 @@ and run again. You should now see FizzBuzz in the logs and an OK status:
 * {C++}
 
    ```posix-terminal
-   ffx log --tags inspect_cpp_codelab
+   ffx log --tag inspect_cpp_codelab
    ```
 
    You should see an output like:
@@ -1073,7 +1077,7 @@ and run again. You should now see FizzBuzz in the logs and an OK status:
 * {Rust}
 
    ```posix-terminal
-   ffx log --tags inspect_rust_codelab
+   ffx log --tag inspect_rust_codelab
    ```
 
    You should see an output like:
