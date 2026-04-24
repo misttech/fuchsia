@@ -182,6 +182,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.hardware.power.statecontrol/ShutdownReason.SUSPENSION_FAILURE",
+        "value": "18"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.hardware.power.statecontrol/ShutdownReason.SYSTEM_UPDATE",
         "value": "3"
     },

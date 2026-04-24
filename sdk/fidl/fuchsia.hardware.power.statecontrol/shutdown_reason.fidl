@@ -64,4 +64,8 @@ type ShutdownReason = flexible enum {
     /// The device battery is drained.
     @available(added=31)
     BATTERY_DRAINED = 17;
+
+    /// The system failed to suspend or resume within the expected time.
+    @available(added=NEXT)
+    SUSPENSION_FAILURE = 18;
 };

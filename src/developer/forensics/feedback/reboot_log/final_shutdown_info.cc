@@ -113,6 +113,7 @@ bool FinalShutdownInfo::IsCrash() const {
     case FinalShutdownReason::kAndroidRescueParty:
     case FinalShutdownReason::kAndroidCriticalProcessFailure:
     case FinalShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kSuspensionFailure:
       return true;
     case FinalShutdownReason::kCold:
     case FinalShutdownReason::kUserRequest:
@@ -159,6 +160,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyGraceful() const {
     case FinalShutdownReason::kAndroidCriticalProcessFailure:
     case FinalShutdownReason::kDeveloperRequest:
     case FinalShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kSuspensionFailure:
     case FinalShutdownReason::kBatteryDrained:
       return true;
   }
@@ -191,6 +193,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyPlanned() const {
     case FinalShutdownReason::kAndroidCriticalProcessFailure:
     case FinalShutdownReason::kDeveloperRequest:
     case FinalShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kSuspensionFailure:
     case FinalShutdownReason::kBatteryDrained:
       return false;
     case FinalShutdownReason::kNotParseable:
@@ -263,6 +266,8 @@ std::string FinalShutdownInfo::ToRebootReasonString() const {
       return "DEVELOPER REQUEST";
     case FinalShutdownReason::kUserRequestDeviceStuck:
       return "USER REQUEST DEVICE STUCK";
+    case FinalShutdownReason::kSuspensionFailure:
+      return "SUSPENSION FAILURE";
     case FinalShutdownReason::kBatteryDrained:
       return "BATTERY DRAINED";
   }
@@ -292,6 +297,8 @@ std::optional<fuchsia::feedback::RebootReason> FinalShutdownInfo::ToFidlRebootRe
     case FinalShutdownReason::kGenericGraceful:
     case FinalShutdownReason::kUnexpectedReasonGraceful:
       return std::nullopt;
+    case FinalShutdownReason::kSuspensionFailure:
+      return fuchsia::feedback::RebootReason::SUSPENSION_FAILURE;
     case FinalShutdownReason::kUserRequest:
       return fuchsia::feedback::RebootReason::USER_REQUEST;
     case FinalShutdownReason::kSystemUpdate:
@@ -387,6 +394,8 @@ cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
       return cobalt::LastRebootReason::kDeveloperRequest;
     case FinalShutdownReason::kUserRequestDeviceStuck:
       return cobalt::LastRebootReason::kUserRequestDeviceStuck;
+    case FinalShutdownReason::kSuspensionFailure:
+      return cobalt::LastRebootReason::kSuspensionFailure;
     case FinalShutdownReason::kBatteryDrained:
       return cobalt::LastRebootReason::kBatteryDrained;
   }
@@ -414,6 +423,7 @@ std::string FinalShutdownInfo::ToCrashProgramName() const {
     case FinalShutdownReason::kSysmgrFailure:
     case FinalShutdownReason::kCriticalComponentFailure:
     case FinalShutdownReason::kUserRequestDeviceStuck:
+    case FinalShutdownReason::kSuspensionFailure:
       return "system";
     case FinalShutdownReason::kAndroidUnexpectedReason:
     case FinalShutdownReason::kAndroidNoReason:
@@ -475,6 +485,8 @@ std::string FinalShutdownInfo::ToCrashSignature(
       return "fuchsia-shutdown-android-critical-process-failure";
     case FinalShutdownReason::kUserRequestDeviceStuck:
       return "fuchsia-shutdown-user-request-device-stuck";
+    case FinalShutdownReason::kSuspensionFailure:
+      return "fuchsia-shutdown-suspension-failure";
     case FinalShutdownReason::kGenericGraceful:
       return "fuchsia-shutdown-undetermined-userspace-reason";
     case FinalShutdownReason::kUnexpectedReasonGraceful:
@@ -541,6 +553,8 @@ FinalShutdownReason ConsolidateGracefulShutdownReasons(
         return FinalShutdownReason::kDeveloperRequest;
       case GracefulShutdownReason::kUserRequestDeviceStuck:
         return FinalShutdownReason::kUserRequestDeviceStuck;
+      case GracefulShutdownReason::kSuspensionFailure:
+        return FinalShutdownReason::kSuspensionFailure;
       case GracefulShutdownReason::kBatteryDrained:
         return FinalShutdownReason::kBatteryDrained;
       case GracefulShutdownReason::kNotSet:
@@ -665,6 +679,8 @@ std::string FinalShutdownInfo::ToSnapshotAnnotationReason(
       return "user request";
     case FinalShutdownReason::kUserRequestDeviceStuck:
       return "user request device stuck";
+    case FinalShutdownReason::kSuspensionFailure:
+      return "suspension failure";
     case FinalShutdownReason::kUserHardReset:
       return "user request hard reset";
     case FinalShutdownReason::kSystemUpdate:

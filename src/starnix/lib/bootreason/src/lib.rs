@@ -86,6 +86,7 @@ pub async fn update_android_bootreason(
         Some(RebootReason::SystemOutOfMemory) => "kernel_panic,oom",
         Some(RebootReason::HardwareWatchdogTimeout) => "watchdog",
         Some(RebootReason::SoftwareWatchdogTimeout) => "watchdog,sw",
+        Some(RebootReason::SuspensionFailure) => "kernel_panic",
         Some(RebootReason::RootJobTermination) => "kernel_panic",
         Some(RebootReason::UserRequest) => "reboot,userrequested",
         Some(RebootReason::UserRequestDeviceStuck) => "reboot,userrequested",

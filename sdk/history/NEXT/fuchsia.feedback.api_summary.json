@@ -735,6 +735,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.feedback/RebootReason.SUSPENSION_FAILURE",
+        "value": "29"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.feedback/RebootReason.SYSMGR_FAILURE",
         "value": "15"
     },

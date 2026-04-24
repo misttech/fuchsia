@@ -49,6 +49,7 @@ constexpr char kAndroidRescueParty[] = "ANDROID RESCUE PARTY";
 constexpr char kAndroidCriticalProcessFailure[] = "ANDROID CRITICAL PROCESS FAILURE";
 constexpr char kDeveloperRequest[] = "DEVELOPER REQUEST";
 constexpr char kReasonUserRequestDeviceStuck[] = "USER REQUEST DEVICE STUCK";
+constexpr char kReasonSuspensionFailure[] = "SUSPENSION FAILURE";
 constexpr char kReasonBatteryDrained[] = "BATTERY DRAINED";
 
 // Used to separate multiple `GracefulShutdownReasons` when written to file.
@@ -163,6 +164,8 @@ GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view r
     return GracefulShutdownReason::kDeveloperRequest;
   } else if (reason == kReasonUserRequestDeviceStuck) {
     return GracefulShutdownReason::kUserRequestDeviceStuck;
+  } else if (reason == kReasonSuspensionFailure) {
+    return GracefulShutdownReason::kSuspensionFailure;
   } else if (reason == kReasonBatteryDrained) {
     return GracefulShutdownReason::kBatteryDrained;
   } else if (reason == kNotSupported) {
@@ -211,6 +214,8 @@ GracefulShutdownReason FromReason(
       return GracefulShutdownReason::kDeveloperRequest;
     case ShutdownReason::USER_REQUEST_DEVICE_STUCK:
       return GracefulShutdownReason::kUserRequestDeviceStuck;
+    case ShutdownReason::SUSPENSION_FAILURE:
+      return GracefulShutdownReason::kSuspensionFailure;
     case ShutdownReason::BATTERY_DRAINED:
       return GracefulShutdownReason::kBatteryDrained;
     default:
@@ -279,6 +284,8 @@ std::string ToString(const GracefulShutdownReason reason) {
       return kDeveloperRequest;
     case GracefulShutdownReason::kUserRequestDeviceStuck:
       return kReasonUserRequestDeviceStuck;
+    case GracefulShutdownReason::kSuspensionFailure:
+      return kReasonSuspensionFailure;
     case GracefulShutdownReason::kBatteryDrained:
       return kReasonBatteryDrained;
     case GracefulShutdownReason::kNotSupported:
@@ -328,6 +335,7 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
       case GracefulShutdownReason::kAndroidCriticalProcessFailure:
       case GracefulShutdownReason::kDeveloperRequest:
       case GracefulShutdownReason::kUserRequestDeviceStuck:
+      case GracefulShutdownReason::kSuspensionFailure:
       case GracefulShutdownReason::kBatteryDrained:
       case GracefulShutdownReason::kNotSupported:
         reason_string = ToString(reason);

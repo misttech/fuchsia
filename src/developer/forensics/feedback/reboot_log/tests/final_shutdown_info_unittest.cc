@@ -383,6 +383,14 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulTest,
                                   fuchsia::feedback::RebootReason::USER_REQUEST_DEVICE_STUCK,
                                   "fuchsia-shutdown-user-request-device-stuck",
                                   /*expected_crash_program_name=*/"system",
+                              },
+                              {
+                                  "SuspensionFailure",
+                                  {GracefulShutdownReason::kSuspensionFailure},
+                                  cobalt::LastRebootReason::kSuspensionFailure,
+                                  fuchsia::feedback::RebootReason::SUSPENSION_FAILURE,
+                                  "fuchsia-shutdown-suspension-failure",
+                                  /*expected_crash_program_name=*/"system",
                               }})),
                          [](const testing::TestParamInfo<GracefulTestParams>& info) {
                            return info.param.test_name;

@@ -159,6 +159,10 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     @available(added=31)
     BATTERY_DRAINED = 27;
 
+    /// The system failed to suspend or resume within the expected time.
+    @available(added=NEXT)
+    SUSPENSION_FAILURE = 29;
+
     // ///////////////////////////////////////////////////////////////////////////////////////////
     // Planned reboot reasons
     // |planned| has a value of true in LastReboot above.

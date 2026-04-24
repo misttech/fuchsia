@@ -110,6 +110,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
       GracefulShutdownReason::kDeveloperRequest,
       GracefulShutdownReason::kUserRequestDeviceStuck,
       GracefulShutdownReason::kBatteryDrained,
+      GracefulShutdownReason::kSuspensionFailure,
   };
 
   for (const auto reason : reasons) {
@@ -140,6 +141,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversionWithMultipleReasons) {
       GracefulShutdownReason::kDeveloperRequest,
       GracefulShutdownReason::kUserRequestDeviceStuck,
       GracefulShutdownReason::kBatteryDrained,
+      GracefulShutdownReason::kSuspensionFailure,
   };
 
   // Verify all reasons at once.
@@ -411,6 +413,11 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownReason
                                  "BatteryDrained",
                                  GracefulShutdownReason::kBatteryDrained,
                                  "BATTERY DRAINED",
+                             },
+                             {
+                                 "SuspensionFailure",
+                                 GracefulShutdownReason::kSuspensionFailure,
+                                 "SUSPENSION FAILURE",
                              },
                          })),
                          [](const testing::TestParamInfo<ReasonTestParam>& info) {
