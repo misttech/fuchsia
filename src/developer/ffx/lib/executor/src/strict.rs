@@ -48,12 +48,17 @@ impl StrictContext {
 }
 
 impl FfxExecutor for StrictContext {
-    fn make_ffx_cmd(&self, args: &[&str]) -> anyhow::Result<std::process::Command> {
+    type Error = crate::CommandConstructionError;
+
+    fn make_ffx_cmd(
+        &self,
+        args: &[&str],
+    ) -> std::result::Result<std::process::Command, Self::Error> {
         if args.is_empty() {
-            return Err(anyhow::anyhow!("must pass at least one argument"));
+            return Err(crate::CommandConstructionError::EmptyArguments);
         }
         if args[0].starts_with("--") {
-            return Err(anyhow::anyhow!("cannot pass the first argument as a flag"));
+            return Err(crate::CommandConstructionError::FirstArgumentIsFlag);
         }
         let ffx_canonical_path = std::fs::canonicalize(&self.ffx_path)?;
         let mut ffx_root_path = ffx_canonical_path.clone();

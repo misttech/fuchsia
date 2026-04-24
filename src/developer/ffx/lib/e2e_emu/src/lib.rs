@@ -226,7 +226,7 @@ impl IsolatedEmulator {
     /// Run an ffx command, logging stdout & stderr as INFO messages.
     pub async fn ffx(&self, args: &[&str]) -> anyhow::Result<()> {
         let output =
-            self.ffx_isolate.exec_ffx(&self.make_args(args)).await.context("ffx() running ffx")?;
+            self.ffx_isolate.ffx(&self.make_args(args)).await.context("ffx() running ffx")?;
         if !output.stdout.is_empty() {
             info!("stdout:\n{}", output.stdout);
         }
@@ -245,7 +245,7 @@ impl IsolatedEmulator {
     pub fn ffx_sync(&self, args: &[&str]) -> anyhow::Result<()> {
         let output = self
             .ffx_isolate
-            .exec_ffx_sync(&self.make_args(args))
+            .ffx_sync(&self.make_args(args))
             .context("ffx() running ffx synchronously")?;
         if !output.stdout.is_empty() {
             info!("stdout:\n{}", output.stdout);
@@ -261,7 +261,7 @@ impl IsolatedEmulator {
     pub async fn ffx_output(&self, args: &[&str]) -> anyhow::Result<String> {
         let output = self
             .ffx_isolate
-            .exec_ffx(&self.make_args(args))
+            .ffx(&self.make_args(args))
             .await
             .context("ffx_output() running ffx")?;
         if !output.stderr.is_empty() {

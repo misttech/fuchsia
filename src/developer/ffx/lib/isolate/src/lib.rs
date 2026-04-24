@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::time::SystemTime;
 use tempfile::TempDir;
+use thiserror::Error;
 
 /// Where to search for ffx and subtools, based on either being part of an
 /// ffx command (like `ffx self-test`) or being part of the build (using the
@@ -117,9 +118,23 @@ pub struct Isolate {
     env_ctx: ffx_config::EnvironmentContext,
 }
 
+#[derive(Error, Debug)]
+pub enum IsolateError {
+    #[error("Failed to get rerun prefix: {0}")]
+    RerunPrefix(String),
+}
+
 impl FfxExecutor for Isolate {
-    fn make_ffx_cmd(&self, args: &[&str]) -> Result<std::process::Command> {
-        let mut cmd = self.env_context().rerun_prefix()?;
+    type Error = IsolateError;
+
+    fn make_ffx_cmd(
+        &self,
+        args: &[&str],
+    ) -> std::result::Result<std::process::Command, Self::Error> {
+        let mut cmd = self
+            .env_context()
+            .rerun_prefix()
+            .map_err(|e| IsolateError::RerunPrefix(e.to_string()))?;
         cmd.args(args);
         Ok(cmd)
     }
@@ -314,11 +329,17 @@ impl Isolate {
     // TODO(396006570): Remove these functions once migrations have been done in external
     // users.
     pub async fn ffx_cmd(&self, args: &[&str]) -> Result<std::process::Command> {
-        std::future::ready(FfxExecutor::make_ffx_cmd(self, args)).await
+        std::future::ready(FfxExecutor::make_ffx_cmd(self, args)).await.map_err(Into::into)
     }
 
     pub async fn ffx(&self, args: &[&str]) -> Result<CommandOutput> {
-        FfxExecutor::exec_ffx(self, args).await.map_err(Into::into)
+        let cmd = FfxExecutor::make_ffx_cmd(self, args)?;
+        FfxExecutor::exec_ffx(self, cmd).await.map_err(Into::into)
+    }
+
+    pub fn ffx_sync(&self, args: &[&str]) -> Result<CommandOutput> {
+        let cmd = FfxExecutor::make_ffx_cmd(self, args)?;
+        FfxExecutor::exec_ffx_sync(self, cmd).map_err(Into::into)
     }
 }
 

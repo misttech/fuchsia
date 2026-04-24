@@ -10,6 +10,8 @@ pub enum TestingError {
     UnexpectedExitCode(String, String, i32, i32),
     #[error("Error executing command: {0:?}")]
     ExecutionError(ExecutionError),
+    #[error("Error constructing command: {0:?}")]
+    CommandConstruction(#[from] crate::CommandConstructionError),
     #[error("IO error {0:?}")]
     IoError(std::io::Error),
     #[error("Output did not match expected: '{0}'")]
@@ -37,7 +39,7 @@ impl<'a> TestCommandLineInfo<'a> {
     }
 
     pub async fn run_command_lines(
-        executor: &dyn FfxExecutor,
+        executor: &dyn FfxExecutor<Error = crate::CommandConstructionError>,
         test_data: Vec<TestCommandLineInfo<'_>>,
     ) -> Result<(), TestingError> {
         for test in test_data {
@@ -48,10 +50,10 @@ impl<'a> TestCommandLineInfo<'a> {
 
     async fn run_command_with_checks(
         &self,
-        executor: &dyn FfxExecutor,
+        executor: &dyn FfxExecutor<Error = crate::CommandConstructionError>,
     ) -> Result<String, TestingError> {
-        let output =
-            executor.exec_ffx(&self.args).await.map_err(|e| TestingError::ExecutionError(e))?;
+        let cmd = executor.make_ffx_cmd(&self.args)?;
+        let output = executor.exec_ffx(cmd).await.map_err(|e| TestingError::ExecutionError(e))?;
         log::info!("Ran command {:?}, output: {}\n{}", self.args, output.stdout, output.stderr);
         (self.output_check)(output.clone())?;
         Ok(output.stdout)

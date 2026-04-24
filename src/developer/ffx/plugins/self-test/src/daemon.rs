@@ -6,7 +6,7 @@ use crate::assert_eq;
 use crate::test::new_isolate;
 use anyhow::*;
 use ffx_config::EnvironmentContext;
-use ffx_executor::FfxExecutor;
+
 use fuchsia_async::MonotonicDuration;
 use nix::sys::signal;
 use nix::unistd::Pid;
@@ -17,7 +17,7 @@ use std::time::Duration as StdDuration;
 pub(crate) async fn test_echo(context: EnvironmentContext) -> Result<()> {
     let isolate = new_isolate(&context, "daemon-echo").await?;
     isolate.start_daemon().await?;
-    let out = isolate.exec_ffx(&["daemon", "echo"]).await?;
+    let out = isolate.ffx(&["daemon", "echo"]).await?;
 
     let want = "SUCCESS: received \"Ffx\"\n";
     assert_eq!(out.stdout, want);
@@ -62,7 +62,7 @@ pub(crate) async fn test_config_flag(context: EnvironmentContext) -> Result<()> 
     let mut ascendd_path2 = isolate.ascendd_path().clone();
     ascendd_path2.set_extension("2");
     let _out = isolate
-        .exec_ffx(&[
+        .ffx(&[
             "--config",
             &format!("overnet.socket={}", ascendd_path2.to_string_lossy()),
             "daemon",
@@ -86,7 +86,7 @@ pub(crate) async fn test_config_flag(context: EnvironmentContext) -> Result<()> 
     // should be a non-issue on mac builders, at least for now.)
     if cfg!(target_os = "macos") {
         fuchsia_async::Timer::new(MonotonicDuration::from_millis(500)).await;
-        let _ = isolate.exec_ffx(&["daemon", "stop", "-t", "3000"]).await?;
+        let _ = isolate.ffx(&["daemon", "stop", "-t", "3000"]).await?;
     }
 
     // Because we created the daemon, it won't go away (i.e. in cleanup_isolate())
@@ -98,7 +98,7 @@ pub(crate) async fn test_config_flag(context: EnvironmentContext) -> Result<()> 
 
 pub(crate) async fn test_stop(context: EnvironmentContext) -> Result<()> {
     let isolate = new_isolate(&context, "daemon-stop").await?;
-    let out = isolate.exec_ffx(&["daemon", "stop", "-t", "3000"]).await?;
+    let out = isolate.ffx(&["daemon", "stop", "-t", "3000"]).await?;
     let want = "No daemon was running.\n";
     assert_eq!(out.stdout, want);
 
@@ -108,7 +108,7 @@ pub(crate) async fn test_stop(context: EnvironmentContext) -> Result<()> {
     // Otherwise the process will still exist but in a zombie state.
     let _ = std::thread::spawn(move || { daemon }.wait());
 
-    let out = isolate.exec_ffx(&["daemon", "stop", "-t", "3000"]).await?;
+    let out = isolate.ffx(&["daemon", "stop", "-t", "3000"]).await?;
     let want = "Stopped daemon.\n";
     assert_eq!(out.stdout, want);
 
@@ -117,7 +117,7 @@ pub(crate) async fn test_stop(context: EnvironmentContext) -> Result<()> {
 
 pub(crate) async fn test_no_autostart(context: EnvironmentContext) -> Result<()> {
     let isolate = new_isolate(&context, "daemon-no-autostart").await?;
-    let out = isolate.exec_ffx(&["daemon", "echo"]).await?;
+    let out = isolate.ffx(&["daemon", "echo"]).await?;
     assert!(!out.status.success());
     let want = "FFX Daemon was told not to autostart and no existing Daemon instance was found";
     assert!(
@@ -131,7 +131,7 @@ pub(crate) async fn test_no_autostart(context: EnvironmentContext) -> Result<()>
 
     assert_eq!(None, daemon.try_wait()?, "Daemon exited quickly after starting");
 
-    let out = isolate.exec_ffx(&["daemon", "echo"]).await?;
+    let out = isolate.ffx(&["daemon", "echo"]).await?;
     // Don't assert here -- it if fails, we still want to kill the daemon
     let echo_succeeded = out.status.success();
 
@@ -148,7 +148,7 @@ pub(crate) async fn test_no_autostart(context: EnvironmentContext) -> Result<()>
 pub(crate) async fn test_cleanup_on_signal(context: EnvironmentContext) -> Result<()> {
     let isolate = new_isolate(&context, "daemon-cleanup-on-signal").await?;
     let mut daemon = isolate.start_daemon().await?;
-    let socket_out = isolate.exec_ffx(&["--machine", "json", "daemon", "socket"]).await?.stdout;
+    let socket_out = isolate.ffx(&["--machine", "json", "daemon", "socket"]).await?.stdout;
     let socket_details: serde_json::Value = serde_json::from_str(&socket_out)?;
     let path: std::path::PathBuf = socket_details
         .get("socket")

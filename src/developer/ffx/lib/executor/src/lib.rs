@@ -40,11 +40,21 @@ impl CommandOutput {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ExecutionError {
-    #[error("Error constructing ffx command: {0}")]
-    CommandConstructionError(anyhow::Error),
+pub enum CommandConstructionError {
+    #[error("Must pass at least one argument")]
+    EmptyArguments,
+
+    #[error("Cannot pass the first argument as a flag")]
+    FirstArgumentIsFlag,
+
     #[error("IO error: {0}")]
-    IoError(std::io::Error),
+    Io(#[from] std::io::Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ExecutionError {
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 }
 
 fn run_ffx_command(mut cmd: Command) -> Result<CommandOutput, ExecutionError> {
@@ -57,23 +67,23 @@ fn run_ffx_command(mut cmd: Command) -> Result<CommandOutput, ExecutionError> {
 /// Represents an object that is capable of creating an ffx command. Used primarily for integration
 /// testing.
 pub trait FfxExecutor {
-    fn make_ffx_cmd(&self, args: &[&str]) -> Result<Command>;
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn make_ffx_cmd(&self, args: &[&str]) -> std::result::Result<Command, Self::Error>;
 
     fn exec_ffx<'a>(
         &'a self,
-        args: &'a [&'a str],
+        cmd: Command,
     ) -> LocalBoxFuture<'a, Result<CommandOutput, ExecutionError>> {
         Box::pin(async move {
-            let cmd = self.make_ffx_cmd(args).map_err(ExecutionError::CommandConstructionError)?;
-            log::info!("Executing ffx command: {args:?}");
+            log::info!("Executing ffx command: {cmd:?}");
             fuchsia_async::unblock(move || run_ffx_command(cmd)).await
         })
     }
 
     /// Like [`FfxExecutor::exec_ffx`], but runs synchronously.
-    fn exec_ffx_sync(&self, args: &[&str]) -> Result<CommandOutput, ExecutionError> {
-        let cmd = self.make_ffx_cmd(args).map_err(ExecutionError::CommandConstructionError)?;
-        log::info!("Executing ffx command: {args:?}");
+    fn exec_ffx_sync(&self, cmd: Command) -> Result<CommandOutput, ExecutionError> {
+        log::info!("Executing ffx command: {cmd:?}");
         run_ffx_command(cmd)
     }
 }
@@ -86,7 +96,9 @@ mod tests {
     struct Echoer;
 
     impl FfxExecutor for Echoer {
-        fn make_ffx_cmd(&self, args: &[&str]) -> Result<Command> {
+        type Error = CommandConstructionError;
+
+        fn make_ffx_cmd(&self, args: &[&str]) -> std::result::Result<Command, Self::Error> {
             let mut cmd = Command::new("echo");
             cmd.args(args);
             Ok(cmd)
@@ -96,7 +108,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_echoer() {
         let echoer = Echoer;
-        let output = echoer.exec_ffx(&["foo", "bar"]).await.expect("echoing some nonsense");
+        let cmd = echoer.make_ffx_cmd(&["foo", "bar"]).unwrap();
+        let output = echoer.exec_ffx(cmd).await.expect("echoing some nonsense");
         assert!(output.status.success(), "Got non-successful return value: {:?}", output.status);
         assert!(
             output.stdout.contains("foo") && output.stdout.contains("bar"),
@@ -105,21 +118,32 @@ mod tests {
         );
     }
 
+    #[derive(thiserror::Error, Debug)]
+    pub enum BadCommandConstructionError {
+        #[error("General error: {0}")]
+        General(String),
+    }
+
     struct BadCommandBuilder;
 
     impl FfxExecutor for BadCommandBuilder {
-        fn make_ffx_cmd(&self, _args: &[&str]) -> Result<Command> {
-            anyhow::bail!("Oh no we can't build the command for some reason. I just work here....");
+        type Error = BadCommandConstructionError;
+
+        fn make_ffx_cmd(&self, _args: &[&str]) -> std::result::Result<Command, Self::Error> {
+            return Err(BadCommandConstructionError::General(
+                "Oh no we can't build the command for some reason. I just work here...."
+                    .to_string(),
+            ));
         }
     }
 
     #[fuchsia::test]
     async fn test_bad_command_builder() {
         let bad_builder = BadCommandBuilder;
-        let result = bad_builder.exec_ffx(&["foo", "bar", "bazzlewazzle"]).await;
+        let result = bad_builder.make_ffx_cmd(&["foo", "bar", "bazzlewazzle"]);
         assert!(result.is_err(), "expected error. Received: {:?}", result);
         assert!(
-            matches!(result, Err(ExecutionError::CommandConstructionError(_))),
+            matches!(result, Err(BadCommandConstructionError::General(_))),
             "received wrong error: {:?}",
             result
         );
@@ -128,7 +152,9 @@ mod tests {
     struct NonExistentBinaryExecutor;
 
     impl FfxExecutor for NonExistentBinaryExecutor {
-        fn make_ffx_cmd(&self, args: &[&str]) -> Result<Command> {
+        type Error = CommandConstructionError;
+
+        fn make_ffx_cmd(&self, args: &[&str]) -> std::result::Result<Command, Self::Error> {
             // Run a non-existent binary.
             let mut cmd = Command::new("fffffffffx");
             cmd.args(args);
@@ -139,7 +165,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_nonexistent_binary() {
         let e = NonExistentBinaryExecutor;
-        let result = e.exec_ffx(&["foo", "bar"]).await;
+        let cmd = e.make_ffx_cmd(&["foo", "bar"]).unwrap();
+        let result = e.exec_ffx(cmd).await;
         assert!(result.is_err(), "expected error. Received: {:?}", result);
         assert!(
             matches!(result, Err(ExecutionError::IoError(_))),
@@ -159,13 +186,15 @@ mod tests {
     // This just doesn't run a command, but creates some command output. Might have been simpler to
     // use mockall crate, but this seemed straightforward enough.
     impl FfxExecutor for JsonExecutor {
-        fn make_ffx_cmd(&self, _args: &[&str]) -> Result<Command> {
-            unimplemented!();
+        type Error = CommandConstructionError;
+
+        fn make_ffx_cmd(&self, _args: &[&str]) -> std::result::Result<Command, Self::Error> {
+            Ok(Command::new("echo"))
         }
 
         fn exec_ffx<'a>(
             &'a self,
-            _args: &'a [&'a str],
+            _cmd: Command,
         ) -> LocalBoxFuture<'a, Result<CommandOutput, ExecutionError>> {
             Box::pin(std::future::ready(Ok(CommandOutput {
                 stdout: r#"{"success": {"message": "foobar"}}"#.to_owned(),
@@ -178,7 +207,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_json_result_success() {
         let e = JsonExecutor;
-        let output = e.exec_ffx(&["foo", "bar"]).await.unwrap();
+        let cmd = e.make_ffx_cmd(&["foo", "bar"]).unwrap();
+        let output = e.exec_ffx(cmd).await.unwrap();
         let json = output.machine_output::<JsonResultThing>().unwrap();
         let JsonResultThing::Success { message } = json;
         assert_eq!(message, "foobar");
@@ -187,13 +217,15 @@ mod tests {
     struct BadJsonExecutor;
 
     impl FfxExecutor for BadJsonExecutor {
-        fn make_ffx_cmd(&self, _args: &[&str]) -> Result<Command> {
-            unimplemented!();
+        type Error = CommandConstructionError;
+
+        fn make_ffx_cmd(&self, _args: &[&str]) -> std::result::Result<Command, Self::Error> {
+            Ok(Command::new("echo"))
         }
 
         fn exec_ffx<'a>(
             &'a self,
-            _args: &'a [&'a str],
+            _cmd: Command,
         ) -> LocalBoxFuture<'a, Result<CommandOutput, ExecutionError>> {
             Box::pin(std::future::ready(Ok(CommandOutput {
                 stdout: r#"{"blorp": {"message": "foobar"}}"#.to_owned(),
@@ -206,7 +238,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_json_result_failure() {
         let e = BadJsonExecutor;
-        let output = e.exec_ffx(&["foo", "bar"]).await.unwrap();
+        let cmd = e.make_ffx_cmd(&["foo", "bar"]).unwrap();
+        let output = e.exec_ffx(cmd).await.unwrap();
         let result = output.machine_output::<JsonResultThing>();
         assert!(result.is_err(), "expected error. Got: {result:?}");
     }

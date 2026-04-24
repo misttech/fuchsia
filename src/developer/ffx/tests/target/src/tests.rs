@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use ffx_executor::FfxExecutor;
 use ffx_isolate::Isolate;
 use ffx_testing::{Emu, TestContext, emulator_fixture};
 use fixture::fixture;
@@ -41,7 +40,7 @@ async fn test_target_flash_gigaboot(ctx: TestContext) {
 
     // Flash in fastboot, then verify that target boots to product.
     let output = isolate
-        .exec_ffx(&[
+        .ffx(&[
             "--target",
             emu.nodename(),
             "target",
@@ -91,7 +90,7 @@ async fn test_target_flash_from_product(ctx: TestContext) {
 
     // Flash in fastboot, then verify that target boots to product.
     let output = isolate
-        .exec_ffx(&[
+        .ffx(&[
             "--target",
             emu.nodename(),
             "target",
@@ -112,7 +111,7 @@ async fn test_target_flash_from_product(ctx: TestContext) {
     // At this point the target is in Product mode... flash again and verify
 
     let output = isolate
-        .exec_ffx(&[
+        .ffx(&[
             "--target",
             emu.nodename(),
             "target",
@@ -154,7 +153,7 @@ async fn test_target_reboot_to_bootloader_gigaboot(ctx: TestContext) {
     emu.check_is_running().expect("Emulator exited unexpectedly");
 
     let output = isolate
-        .exec_ffx(&["--target", emu.nodename(), "target", "reboot", "-b"])
+        .ffx(&["--target", emu.nodename(), "target", "reboot", "-b"])
         .await
         .expect("reboot to bootloader");
     assert!(output.status.success(), "Failed to run command: {}\n{}", output.stdout, output.stderr);
@@ -163,7 +162,7 @@ async fn test_target_reboot_to_bootloader_gigaboot(ctx: TestContext) {
     emu.check_is_running().expect("Emulator exited unexpectedly");
 
     let out = isolate
-        .exec_ffx(&["--target", emu.nodename(), "target", "list", emu.nodename()])
+        .ffx(&["--target", emu.nodename(), "target", "list", emu.nodename()])
         .await
         .expect("target show");
 
@@ -194,7 +193,7 @@ async fn test_target_bootloader_info(ctx: TestContext) {
     std::thread::sleep(Duration::from_secs(5));
 
     let out = isolate
-        .exec_ffx(&["--target", emu.nodename(), "target", "bootloader", "info"])
+        .ffx(&["--target", emu.nodename(), "target", "bootloader", "info"])
         .await
         .expect("get bootloader info");
 
@@ -231,7 +230,7 @@ async fn test_target_bootloader_info_from_product(ctx: TestContext) {
 
     // Flash in fastboot, then verify that target boots to product.
     let output = isolate
-        .exec_ffx(&[
+        .ffx(&[
             "--target",
             emu.nodename(),
             "target",
@@ -249,7 +248,7 @@ async fn test_target_bootloader_info_from_product(ctx: TestContext) {
 
     // ffx waits for the product to re-enter fastboot before returning.
     let out = isolate
-        .exec_ffx(&["--target", emu.nodename(), "target", "bootloader", "info"])
+        .ffx(&["--target", emu.nodename(), "target", "bootloader", "info"])
         .await
         .expect("target bootloader info");
 
@@ -284,14 +283,7 @@ async fn enter_fastboot(
 
 async fn wait_for_target(isolate: &Isolate, emu: &Emu, timeout: i32) -> anyhow::Result<()> {
     let out = isolate
-        .exec_ffx(&[
-            "--target",
-            emu.nodename(),
-            "target",
-            "wait",
-            "-t",
-            format!("{}", timeout).as_str(),
-        ])
+        .ffx(&["--target", emu.nodename(), "target", "wait", "-t", format!("{}", timeout).as_str()])
         .await
         .expect("target wait");
 
