@@ -9,16 +9,22 @@ using fuchsia.kernel;
 
 @discoverable
 open protocol MemoryMonitor {
-    // Returns a memory snapshot of the device. Computing this snapshot may be expensive.
+    /// Returns a memory snapshot of the device. Computing this snapshot may be expensive.
     GetSnapshot(resource struct {
-        // `snapshot` will have a single `Snapshot` written into it, before being closed.
+        /// `snapshot` will have a single `Snapshot` written into it, before being closed.
         snapshot zx.Handle:SOCKET;
     });
 
-    // Returns system-level memory statistics for the device. Computing these statistics is less
-    // expensive than computing a memory snapshot.
+    /// Returns system-level memory statistics for the device. Computing these statistics is less
+    /// expensive than computing a memory snapshot.
     GetSystemStatistics() -> (struct {
         statistics MemoryStatistics;
+    });
+
+    /// Returns a fast memory snapshot of the device that omits Starnix processes.
+    GetAbridgedSnapshot(resource struct {
+        /// `snapshot` will have a single `Snapshot` written into it, before being closed.
+        snapshot zx.Handle:SOCKET;
     });
 };
 

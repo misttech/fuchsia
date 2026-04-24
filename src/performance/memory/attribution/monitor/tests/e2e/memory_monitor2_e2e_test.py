@@ -326,6 +326,34 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
                     log_output=False,
                 )
 
+    def test_memory_monitor_abridged_snapshot(self) -> None:
+        # The fast path should produce an output similar to the normal path.
+        profile = self.dut.ffx.run(
+            [
+                "-c",
+                "ffx_profile_memory_components=true",
+                "profile",
+                "memory",
+                "components",
+                "--abridged",
+            ],
+            log_output=False,
+            machine=ffx_types.MachineFormat.RAW,
+        )
+
+        self.write_output(profile, "profile_memory_components_fast.txt")
+
+        # Verifies that some data is produced.
+        assertContainsRegex(r"(?m)^Total memory: \d+\.\d+ MiB$", profile)
+        assertContainsRegex(r"(?m)^Kernel: +\d+\.\d+ MiB$", profile)
+        assertContainsRegex(
+            r"(?m)^\s*Processes:\s*memory_monitor2\.cm \(\d+\)\s*$", profile
+        )
+        assertContainsRegex(
+            r"(?m)^\s*Memory stalls \(full\): \d+(\.\d+)? .?s\s*$", profile
+        )
+        assertContainsRegex(r"(?m)^\s*Page refaults: \d+(\.\d+)?\s*$", profile)
+
 
 if __name__ == "__main__":
     test_runner.main()

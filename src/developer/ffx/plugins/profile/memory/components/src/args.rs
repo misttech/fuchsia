@@ -51,4 +51,10 @@ pub struct ComponentsCommand {
         description = "path to the assembly manifest. Adds blob manifest and file path to the detailed json output. Locate manifest in the build output with: cat \"assembly_manifests.json\" | jq -r '.[] | select(.image_name==\"fuchsia\").assembly_manifest_path'"
     )]
     pub assembly_manifest: Option<Utf8PathBuf>,
+
+    #[argh(
+        switch,
+        description = "use the abridged memory collection that omits Starnix processes."
+    )]
+    pub abridged: bool,
 }

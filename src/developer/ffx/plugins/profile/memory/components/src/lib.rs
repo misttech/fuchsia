@@ -154,7 +154,7 @@ impl MemoryComponentsTool {
         };
 
         let snapshot = match self.cmd.stdin_input {
-            false => Self::load_snapshot_from_device(self.monitor_proxy).await?,
+            false => Self::load_snapshot_from_device(self.monitor_proxy, self.cmd.abridged).await?,
             true => {
                 fplugin::Snapshot::from_json(&serde_json::from_reader(std::io::stdin()).unwrap())
                     .unwrap()
@@ -195,14 +195,21 @@ impl MemoryComponentsTool {
 
     async fn load_snapshot_from_device(
         monitor_proxy: Deferred<fplugin::MemoryMonitorProxy>,
+        abridged: bool,
     ) -> fho::Result<fplugin::Snapshot> {
         let proxy = monitor_proxy.await?;
 
         let (mut client_socket, server_end) = proxy.domain().create_stream_socket();
 
-        proxy.get_snapshot(server_end).map_err(|err| {
-            ffx_error!("Failed to call MemoryMonitorProxy/GetSnapshot: {err:?} : {err}")
-        })?;
+        if abridged {
+            proxy.get_abridged_snapshot(server_end).map_err(|err| {
+                ffx_error!("Failed to call MemoryMonitorProxy/GetAbridgedSnapshot: {err:?} : {err}")
+            })?;
+        } else {
+            proxy.get_snapshot(server_end).map_err(|err| {
+                ffx_error!("Failed to call MemoryMonitorProxy/GetSnapshot: {err:?} : {err}")
+            })?;
+        }
         let mut compressed_data: Vec<u8> = Vec::new();
         client_socket
             .read_to_end(&mut compressed_data)

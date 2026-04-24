@@ -82,6 +82,14 @@
       "short": null,
       "description": "path to the assembly manifest. Adds blob manifest and file path to the detailed json output. Locate manifest in the build output with: cat \"assembly_manifests.json\" | jq -r '.[] | select(.image_name==\"fuchsia\").assembly_manifest_path'",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--abridged",
+      "short": null,
+      "description": "use the abridged memory collection that omits Starnix processes.",
+      "hidden": false
     }
   ],
   "notes": [],

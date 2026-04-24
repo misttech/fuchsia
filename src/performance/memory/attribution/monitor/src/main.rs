@@ -194,6 +194,7 @@ async fn main() -> Result<()> {
                         stream,
                         &bucket_definitions,
                         &*attribution_data_provider.clone(),
+                        &*fast_attribution_data_provider.clone(),
                         kernel_stats.clone(),
                         stall_provider.clone(),
                         page_refault_tracker.clone(),
@@ -247,6 +248,7 @@ async fn serve_client_stream(
     mut stream: fattribution_plugin::MemoryMonitorRequestStream,
     bucket_definitions: &[BucketDefinition],
     attribution_data_provider: &impl AttributionDataProvider,
+    fast_attribution_data_provider: &impl AttributionDataProvider,
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
     refault_tracker: impl RefaultProvider,
@@ -279,6 +281,25 @@ async fn serve_client_stream(
                 .await
                 {
                     error!(err:%; "");
+                }
+            }
+            fattribution_plugin::MemoryMonitorRequest::GetAbridgedSnapshot {
+                snapshot,
+                control_handle,
+            } => {
+                if let Err(err) = provide_snapshot(
+                    fast_attribution_data_provider,
+                    kernel_stats_proxy.clone(),
+                    stall_provider.clone(),
+                    refault_tracker.clone(),
+                    bucket_definitions,
+                    snapshot,
+                )
+                .await
+                {
+                    // Errors from `serve_snapshot` are all internal errors, not client-induced.
+                    error!(err:%; "");
+                    control_handle.shutdown_with_epitaph(zx::Status::INTERNAL);
                 }
             }
             fattribution_plugin::MemoryMonitorRequest::_UnknownMethod { .. } => {

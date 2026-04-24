@@ -116,6 +116,7 @@ impl FfxMain for MemoryTool {
                         detailed: false,
                         stats_only: None,
                         assembly_manifest: None,
+                        abridged: false,
                     },
                     monitor_proxy: fho::Deferred::from_output(Ok(mm2)),
                 };
