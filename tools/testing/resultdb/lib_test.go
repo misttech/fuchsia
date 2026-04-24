@@ -109,7 +109,6 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 		t.Errorf("Diff in output files (-got +want):\n%s", diff)
 	}
 	expectedMetadata := resultpb.TestMetadata{
-		Name: detail.Name,
 		BugComponent: &resultpb.BugComponent{
 			System: &resultpb.BugComponent_IssueTracker{
 				IssueTracker: &resultpb.IssueTrackerComponent{
@@ -294,7 +293,6 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 			t.Errorf("Diff in output files (-got +want):\n%s", diff)
 		}
 		expectedMetadata := resultpb.TestMetadata{
-			Name: detail.Name,
 			BugComponent: &resultpb.BugComponent{
 				System: &resultpb.BugComponent_IssueTracker{
 					IssueTracker: &resultpb.IssueTrackerComponent{

@@ -128,7 +128,8 @@ func artifactName(file string) string {
 func setTestMetadata(r *sinkpb.TestResult, testDetail runtests.TestDetails) {
 	if testDetail.Metadata.ComponentID > 0 {
 		r.TestMetadata = &resultpb.TestMetadata{
-			Name: testDetail.Name,
+			// Do not set the Name field or else that will override the title
+			// that gets displayed in the Test Results UI.
 			BugComponent: &resultpb.BugComponent{
 				System: &resultpb.BugComponent_IssueTracker{
 					IssueTracker: &resultpb.IssueTrackerComponent{
