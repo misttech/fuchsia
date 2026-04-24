@@ -7,20 +7,18 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/natural_messaging.h>
 #include <fuchsia/examples/gizmo/cpp/banjo.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace banjo_transport {
 
 // Child driver that binds to the ParentBanjoTransportDriver's child node. When the driver starts,
 // it connects to the Misc protocol through Banjo transport and queries the Hardware ID and Firmware
 // version.
-class ChildBanjoTransportDriver : public fdf::DriverBase {
+class ChildBanjoTransportDriver : public fdf::DriverBase2 {
  public:
-  ChildBanjoTransportDriver(fdf::DriverStartArgs start_args,
-                            fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("banjo-transport-child", std::move(start_args), std::move(driver_dispatcher)) {}
+  ChildBanjoTransportDriver() : DriverBase2("banjo-transport-child") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   zx_status_t QueryParent();
 

@@ -5,7 +5,7 @@
 #include "power_driver.h"
 
 #include <fidl/fuchsia.examples/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fidl/cpp/client.h>
@@ -16,27 +16,30 @@
 namespace power {
 namespace fex = fuchsia_examples;
 
-PowerDriver::PowerDriver(fdf::DriverStartArgs start_args,
-                         fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("power_driver", std::move(start_args), std::move(driver_dispatcher)),
-      config_(take_config<component_config::Config>()) {
-  fdf::info(
-      "PowerDriver constructor invoked. This constructor is only implemented to"
-      "demonstrate the driver lifecycle. Drivers are not expected to add implementation in the constructor");
+PowerDriver::PowerDriver() : DriverBase2("power_driver") {
+  // This constructor is only implemented to demonstrate the driver lifecycle.
+  // Drivers are not expected to add implementation in the constructor.
 }
 
 PowerDriver::~PowerDriver() {
   fdf::info(
-      "PowerDriver destructor invoked after PrepareStop() and Stop() are called. "
-      "This is only implemented to demonstrate the driver lifecycle. Drivers should avoid implementing the "
-      "destructor and perform clean up in PrepareStop() and Stop() functions");
+      "PowerDriver destructor invoked. This is called after Stop() is called and "
+      "all driver dispatchers are shutdown. Use the destructor to perform any remaining teardowns.");
 }
 
-zx::result<> PowerDriver::Start() {
+zx::result<> PowerDriver::Start(fdf::DriverContext context) {
   fdf::info(
       "PowerDriver::Start() invoked. In this function, perform the driver "
       "initialization, such as adding children.");
-  zx::result echo_protocol = incoming()->Connect<fex::Echo>();
+  config_ = context.take_config<component_config::Config>();
+
+  auto result = InitializeSuspend(dispatcher(), context.incoming(), name());
+  if (result.is_error()) {
+    fdf::error("Failed to initialize suspend: {}", result);
+    return result.take_error();
+  }
+
+  zx::result echo_protocol = context.incoming().Connect<fex::Echo>();
   if (echo_protocol.is_error()) {
     return echo_protocol.take_error();
   }
@@ -44,18 +47,12 @@ zx::result<> PowerDriver::Start() {
   return zx::ok();
 }
 
-void PowerDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void PowerDriver::Stop(fdf::StopCompleter completer) {
   fdf::info(
-      "PowerDriver::PrepareStop() invoked. This is called before "
+      "PowerDriver::Stop() invoked. This is called before "
       "the driver dispatchers are shutdown. Only implement this function "
-      "if you need to manually clearn up objects (ex/ unique_ptrs) in the driver dispatchers");
+      "if you need to manually clean up objects (ex/ unique_ptrs) in the driver dispatchers.");
   completer(zx::ok());
-}
-
-void PowerDriver::Stop() {
-  fdf::info(
-      "PowerDriver::Stop() invoked. This is called after all driver dispatchers are "
-      "shutdown. Use this function to perform any remaining teardowns");
 }
 
 void PowerDriver::Suspend(fdf_power::SuspendCompleter cb) {
@@ -72,8 +69,8 @@ void PowerDriver::Resume(fdf_power::ResumeCompleter cb) {
   cb();
 }
 
-bool PowerDriver::SuspendEnabled() { return config_.suspend_enabled(); }
+bool PowerDriver::SuspendEnabled() { return config_->suspend_enabled(); }
 
 }  // namespace power
 
-FUCHSIA_DRIVER_EXPORT(power::PowerDriver);
+FUCHSIA_DRIVER_EXPORT2(power::PowerDriver);

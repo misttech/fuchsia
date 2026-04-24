@@ -4,13 +4,13 @@
 
 #include "examples/drivers/transport/zircon/v2/child-driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace zircon_transport {
 
-zx::result<> ChildZirconTransportDriver::Start() {
-  zx::result connect_result = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>();
+zx::result<> ChildZirconTransportDriver::Start(fdf::DriverContext context) {
+  zx::result connect_result = context.incoming().Connect<fuchsia_hardware_i2c::Service::Device>();
   if (connect_result.is_error() || !connect_result->is_valid()) {
     fdf::error("Failed to connect to fuchsia.hardware.i2c service: {}", connect_result);
     return connect_result.take_error();
@@ -74,4 +74,4 @@ zx::result<> ChildZirconTransportDriver::QueryParent(
 
 }  // namespace zircon_transport
 
-FUCHSIA_DRIVER_EXPORT(zircon_transport::ChildZirconTransportDriver);
+FUCHSIA_DRIVER_EXPORT2(zircon_transport::ChildZirconTransportDriver);

@@ -4,13 +4,13 @@
 
 #include "examples/drivers/transport/zircon/v2/parent-driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace zircon_transport {
 
-zx::result<> ParentZirconTransportDriver::Start() {
+zx::result<> ParentZirconTransportDriver::Start(fdf::DriverContext context) {
   fuchsia_hardware_i2c::Service::InstanceHandler handler({
       .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                         fidl::kIgnoreBindingClosure),
@@ -48,4 +48,4 @@ void ParentZirconTransportDriver::GetName(GetNameCompleter::Sync& completer) {
 
 }  // namespace zircon_transport
 
-FUCHSIA_DRIVER_EXPORT(zircon_transport::ParentZirconTransportDriver);
+FUCHSIA_DRIVER_EXPORT2(zircon_transport::ParentZirconTransportDriver);

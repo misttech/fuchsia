@@ -6,19 +6,17 @@
 #define EXAMPLES_DRIVERS_TRANSPORT_ZIRCON_V2_PARENT_DRIVER_H_
 
 #include <fidl/fuchsia.hardware.i2c/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace zircon_transport {
 
 // A driver that implements and serves the fuchsia.hardware.i2c FIDL protocol.
-class ParentZirconTransportDriver : public fdf::DriverBase,
+class ParentZirconTransportDriver : public fdf::DriverBase2,
                                     public fidl::WireServer<fuchsia_hardware_i2c::Device> {
  public:
-  ParentZirconTransportDriver(fdf::DriverStartArgs start_args,
-                              fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("transport-parent", std::move(start_args), std::move(driver_dispatcher)) {}
+  ParentZirconTransportDriver() : DriverBase2("transport-parent") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   void Transfer(TransferRequestView request, TransferCompleter::Sync& completer) override;
   void GetName(GetNameCompleter::Sync& completer) override;

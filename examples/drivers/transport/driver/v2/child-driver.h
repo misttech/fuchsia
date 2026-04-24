@@ -6,19 +6,17 @@
 #define EXAMPLES_DRIVERS_TRANSPORT_DRIVER_V2_CHILD_DRIVER_H_
 
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace driver_transport {
 
 // A driver that binds to the child node added by ParentTransportDriver. This driver
 // connects to the fuchsia.hardware.i2cimpl and use it to interact with the parent.
-class ChildTransportDriver : public fdf::DriverBase {
+class ChildTransportDriver : public fdf::DriverBase2 {
  public:
-  ChildTransportDriver(fdf::DriverStartArgs start_args,
-                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("driver-transport-child", std::move(start_args), std::move(driver_dispatcher)) {}
+  ChildTransportDriver() : DriverBase2("driver-transport-child") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   void SetBitrate(uint32_t bitrate);
 

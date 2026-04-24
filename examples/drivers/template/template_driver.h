@@ -6,27 +6,22 @@
 #define EXAMPLES_DRIVERS_TEMPLATE_TEMPLATE_DRIVER_H_
 
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace template_driver {
 
 // Your copy-pasteable SDK-compatible template driver, with basic functionality, unit testing.
-class TemplateDriver : public fdf::DriverBase {
+class TemplateDriver : public fdf::DriverBase2 {
  public:
-  TemplateDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  TemplateDriver();
 
   // Called by the driver framework to initialize the driver instance.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  // Called by the Driver Framework before it shutdowns all of of the driver's fdf_dispatchers
-  // The driver should use this function initiate any teardowns on the fdf_dispatchers before
+  // Called by the Driver Framework before it shutdowns all of the driver's fdf_dispatchers.
+  // The driver should use this function to initiate any teardowns on the fdf_dispatchers before
   // they're stopped and deallocated by the Driver Framework.
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-
-  // Called by the Driver Framework after all the fdf_dispatchers belonging to this driver have
-  // been shutdown and before it deallocates the driver.
-  void Stop() override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   // Client for controller the child node.

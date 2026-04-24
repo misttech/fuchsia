@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.examples.metadata/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 
@@ -14,15 +15,13 @@ namespace examples::drivers::metadata {
 // This driver demonstrates how to send
 // `fuchsia.examples.metadata.Metadata` metadata to its children.
 // It implements `fuchsia_examples_metadata::Sender` protocol for testing.
-class SenderDriver final : public fdf::DriverBase,
+class SenderDriver final : public fdf::DriverBase2,
                            public fidl::Server<fuchsia_examples_metadata::Sender> {
  public:
-  SenderDriver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("sender", std::move(start_args), std::move(driver_dispatcher)) {}
+  SenderDriver() : DriverBase2("sender") {}
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override {
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override {
     zx::result result = outgoing()->AddService<fuchsia_examples_metadata::SenderService>(
         fuchsia_examples_metadata::SenderService::InstanceHandler(
             {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
@@ -82,4 +81,4 @@ class SenderDriver final : public fdf::DriverBase,
 
 }  // namespace examples::drivers::metadata
 
-FUCHSIA_DRIVER_EXPORT(examples::drivers::metadata::SenderDriver);
+FUCHSIA_DRIVER_EXPORT2(examples::drivers::metadata::SenderDriver);

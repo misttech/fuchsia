@@ -5,15 +5,16 @@
 #include "examples/drivers/transport/banjo/v2/child-driver.h"
 
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace banjo_transport {
 
-zx::result<> ChildBanjoTransportDriver::Start() {
+zx::result<> ChildBanjoTransportDriver::Start(fdf::DriverContext context) {
   // Connect to the `fuchsia.examples.gizmo.Misc` protocol provided by the parent.
+  auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result<ddk::MiscProtocolClient> client =
-      compat::ConnectBanjo<ddk::MiscProtocolClient>(incoming());
+      compat::ConnectBanjo<ddk::MiscProtocolClient>(incoming_ptr);
 
   // Since we set the dispatcher to "ALLOW_SYNC_CALLS" in the driver CML, we
   // need to seal the option after we finish all our sync calls.
@@ -63,4 +64,4 @@ zx_status_t ChildBanjoTransportDriver::QueryParent() {
 
 }  // namespace banjo_transport
 
-FUCHSIA_DRIVER_EXPORT(banjo_transport::ChildBanjoTransportDriver);
+FUCHSIA_DRIVER_EXPORT2(banjo_transport::ChildBanjoTransportDriver);

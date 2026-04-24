@@ -6,19 +6,17 @@
 #define EXAMPLES_DRIVERS_TRANSPORT_DRIVER_V2_PARENT_DRIVER_H_
 
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace driver_transport {
 
 // A driver that implements and serves the fuchsia.hardware.i2cimpl FIDL protocol.
-class ParentTransportDriver : public fdf::DriverBase,
+class ParentTransportDriver : public fdf::DriverBase2,
                               public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
  public:
-  ParentTransportDriver(fdf::DriverStartArgs start_args,
-                        fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("transport-parent", std::move(start_args), std::move(driver_dispatcher)) {}
+  ParentTransportDriver() : DriverBase2("transport-parent") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   void GetMaxTransferSize(fdf::Arena& arena, GetMaxTransferSizeCompleter::Sync& completer) override;
   void SetBitrate(SetBitrateRequestView request, fdf::Arena& arena,

@@ -5,13 +5,13 @@
 #include "examples/drivers/transport/driver/v2/parent-driver.h"
 
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace driver_transport {
 
-zx::result<> ParentTransportDriver::Start() {
+zx::result<> ParentTransportDriver::Start(fdf::DriverContext context) {
   // Publish `fuchsia.hardware.i2cimpl.Service` to the outgoing directory.
   fuchsia_hardware_i2cimpl::Service::InstanceHandler handler({
       .device = server_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->get(),
@@ -64,4 +64,4 @@ void ParentTransportDriver::handle_unknown_method(
 
 }  // namespace driver_transport
 
-FUCHSIA_DRIVER_EXPORT(driver_transport::ParentTransportDriver);
+FUCHSIA_DRIVER_EXPORT2(driver_transport::ParentTransportDriver);

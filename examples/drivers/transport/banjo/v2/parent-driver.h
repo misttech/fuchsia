@@ -7,21 +7,19 @@
 
 #include <fuchsia/examples/gizmo/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 #include <bind/fuchsia/platform/cpp/bind.h>
 
 namespace banjo_transport {
 
 // Parent driver that serves the Misc protocol over Banjo transport.
-class ParentBanjoTransportDriver : public fdf::DriverBase,
+class ParentBanjoTransportDriver : public fdf::DriverBase2,
                                    public ddk::MiscProtocol<ParentBanjoTransportDriver> {
  public:
-  ParentBanjoTransportDriver(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("banjo-transport-parent", std::move(start_args), std::move(driver_dispatcher)) {}
+  ParentBanjoTransportDriver() : DriverBase2("banjo-transport-parent") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // MiscProtocol implementation.
   zx_status_t MiscGetHardwareId(uint32_t* out_response);

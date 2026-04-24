@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.examples.metadata/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 
@@ -12,15 +13,14 @@ namespace examples::drivers::metadata {
 // This driver demonstrates how to retrieve the metadata from its parent driver,
 // Forwarder. It implements the `fuchsia_examples_metadata::Retriever` protocol
 // for testing purposes.
-class RetrieverDriver final : public fdf::DriverBase,
+class RetrieverDriver final : public fdf::DriverBase2,
                               public fidl::Server<fuchsia_examples_metadata::Retriever> {
  public:
-  RetrieverDriver(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("retriever", std::move(start_args), std::move(driver_dispatcher)) {}
+  RetrieverDriver() : DriverBase2("retriever") {}
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override {
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_ = context.take_incoming();
     zx::result result = outgoing()->AddService<fuchsia_examples_metadata::RetrieverService>(
         fuchsia_examples_metadata::RetrieverService::InstanceHandler(
             {.device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)}));
@@ -35,7 +35,7 @@ class RetrieverDriver final : public fdf::DriverBase,
   // fidl::Server<fuchsia_examples_metadata::Retriever> implementation.
   void GetMetadata(GetMetadataCompleter::Sync& completer) override {
     zx::result metadata =
-        fdf_metadata::GetMetadata<fuchsia_examples_metadata::Metadata>(incoming());
+        fdf_metadata::GetMetadata<fuchsia_examples_metadata::Metadata>(*incoming_);
     if (metadata.is_error()) {
       fdf::error("Failed to get metadata: {}", metadata);
       completer.Reply(fit::error(metadata.status_value()));
@@ -46,9 +46,10 @@ class RetrieverDriver final : public fdf::DriverBase,
   }
 
  private:
+  std::unique_ptr<fdf::Namespace> incoming_;
   fidl::ServerBindingGroup<fuchsia_examples_metadata::Retriever> bindings_;
 };
 
 }  // namespace examples::drivers::metadata
 
-FUCHSIA_DRIVER_EXPORT(examples::drivers::metadata::RetrieverDriver);
+FUCHSIA_DRIVER_EXPORT2(examples::drivers::metadata::RetrieverDriver);

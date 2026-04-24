@@ -4,20 +4,22 @@
 
 #include "examples/drivers/transport/banjo/v2/parent-driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
 #include <bind/gizmo/example/cpp/bind.h>
 
 namespace banjo_transport {
 
-zx::result<> ParentBanjoTransportDriver::Start() {
+zx::result<> ParentBanjoTransportDriver::Start(fdf::DriverContext context) {
   auto child_name = "transport-parent";
+  auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 
   // Initialize our compat server with a banjo config from |banjo_server_|.
   {
-    zx::result<> result = child_.Initialize(incoming(), outgoing(), node_name(), child_name,
-                                            compat::ForwardMetadata::None(), get_banjo_config());
+    zx::result<> result =
+        child_.Initialize(incoming_ptr, outgoing(), context.node_name(), child_name,
+                          compat::ForwardMetadata::None(), get_banjo_config());
     if (result.is_error()) {
       return result.take_error();
     }
@@ -52,4 +54,4 @@ zx_status_t ParentBanjoTransportDriver::MiscGetFirmwareVersion(uint32_t* out_maj
 
 }  // namespace banjo_transport
 
-FUCHSIA_DRIVER_EXPORT(banjo_transport::ParentBanjoTransportDriver);
+FUCHSIA_DRIVER_EXPORT2(banjo_transport::ParentBanjoTransportDriver);

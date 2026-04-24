@@ -6,19 +6,17 @@
 #define EXAMPLES_DRIVERS_TRANSPORT_ZIRCON_V2_CHILD_DRIVER_H_
 
 #include <fidl/fuchsia.hardware.i2c/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace zircon_transport {
 
 // A driver that binds to the child node added by ParentZirconTransportDriver. This driver
 // connects to the fuchsia.hardware.i2c and use it to interact with the parent
-class ChildZirconTransportDriver : public fdf::DriverBase {
+class ChildZirconTransportDriver : public fdf::DriverBase2 {
  public:
-  ChildZirconTransportDriver(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("zircon-transport-child", std::move(start_args), std::move(driver_dispatcher)) {}
+  ChildZirconTransportDriver() : DriverBase2("zircon-transport-child") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   std::string name() const { return name_; }
 

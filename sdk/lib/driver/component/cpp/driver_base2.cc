@@ -113,6 +113,10 @@ void DriverBase2::DriverBaseInternalInit(DriverContext& context,
   ZX_ASSERT(outgoing_->Serve(std::move(outgoing_request.value())).is_ok());
 }
 
+zx::result<OwnedChildNode> DriverBase2::AddOwnedChild(std::string_view node_name) {
+  return fdf::AddOwnedChild(node(), logger(), node_name);
+}
+
 zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> DriverBase2::AddChild(
     std::string_view node_name,
     cpp20::span<const fuchsia_driver_framework::NodeProperty> properties,

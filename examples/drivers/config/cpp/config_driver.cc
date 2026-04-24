@@ -2,22 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 // [START include]
 #include "examples/drivers/config/cpp/example_config_driver_config.h"
 // [END include]
 
 namespace {
-class Driver : public fdf::DriverBase {
+class Driver : public fdf::DriverBase2 {
  public:
-  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("config-driver", std::move(start_args), std::move(driver_dispatcher)) {}
+  Driver() : fdf::DriverBase2("config-driver") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     // [START use]
-    auto config = take_config<example_config_driver_config::Config>();
+    auto config = context.take_config<example_config_driver_config::Config>();
     fdf::info("My config value is: {}", config.suspend_enabled());
     // [END use]
     return zx::ok();
@@ -25,4 +24,4 @@ class Driver : public fdf::DriverBase {
 };
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(Driver);
+FUCHSIA_DRIVER_EXPORT2(Driver);

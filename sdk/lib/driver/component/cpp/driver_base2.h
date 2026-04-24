@@ -279,6 +279,13 @@ class DriverBase2 {
     return node_;
   }
 
+  // Creates an owned child node on the node that the driver is bound to. The driver framework will
+  // NOT try to match and bind a driver to this child as it is owned by the current driver.
+  //
+  // The |node()| must not have been moved out manually by the user. This is a synchronous call
+  // and requires that the dispatcher allow sync calls.
+  zx::result<OwnedChildNode> AddOwnedChild(std::string_view node_name);
+
   // Creates a child node with the given offers and properties on the node that the driver is
   // bound to. The driver framework will try to match and bind a driver to this child.
   //

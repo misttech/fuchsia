@@ -5,17 +5,16 @@
 #ifndef EXAMPLES_DRIVERS_SKELETON_SKELETON_DRIVER_H_
 #define EXAMPLES_DRIVERS_SKELETON_SKELETON_DRIVER_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace skeleton {
 
-class SkeletonDriver : public fdf::DriverBase {
+class SkeletonDriver : public fdf::DriverBase2 {
  public:
-  SkeletonDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  SkeletonDriver();
 
   // Called by the driver framework to initialize the driver instance.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 };
 
 }  // namespace skeleton

@@ -4,22 +4,21 @@
 
 #include "skeleton_driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace skeleton {
 
-SkeletonDriver::SkeletonDriver(fdf::DriverStartArgs start_args,
-                               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("skeleton_driver", std::move(start_args), std::move(driver_dispatcher)) {}
+SkeletonDriver::SkeletonDriver() : DriverBase2("skeleton_driver") {}
 
-zx::result<> SkeletonDriver::Start() {
+zx::result<> SkeletonDriver::Start(fdf::DriverContext context) {
   // Instructions: Put driver initialization logic in this function, such as adding children
   // and setting up client-server transport connections.
   // If the initialization logic is asynchronous, prefer to override
-  // DriverBase::Start(fdf::StartCompleter completer) over this function.
+  // DriverBase2::Start(fdf::DriverContext context, fdf::StartCompleter completer) over this
+  // function.
   return zx::ok();
 }
 
 }  // namespace skeleton
 
-FUCHSIA_DRIVER_EXPORT(skeleton::SkeletonDriver);
+FUCHSIA_DRIVER_EXPORT2(skeleton::SkeletonDriver);

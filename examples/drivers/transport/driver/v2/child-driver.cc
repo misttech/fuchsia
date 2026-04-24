@@ -4,13 +4,13 @@
 
 #include "examples/drivers/transport/driver/v2/child-driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace driver_transport {
 
-zx::result<> ChildTransportDriver::Start() {
-  auto connect_result = incoming()->Connect<fuchsia_hardware_i2cimpl::Service::Device>();
+zx::result<> ChildTransportDriver::Start(fdf::DriverContext context) {
+  auto connect_result = context.incoming().Connect<fuchsia_hardware_i2cimpl::Service::Device>();
   if (connect_result.is_error()) {
     fdf::error("Failed to connect fuchsia.hardware.i2cimpl device protocol: {}", connect_result);
     return connect_result.take_error();
@@ -80,4 +80,4 @@ zx::result<> ChildTransportDriver::QueryInfo() {
 
 }  // namespace driver_transport
 
-FUCHSIA_DRIVER_EXPORT(driver_transport::ChildTransportDriver);
+FUCHSIA_DRIVER_EXPORT2(driver_transport::ChildTransportDriver);

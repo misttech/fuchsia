@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.examples.metadata/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 
@@ -14,15 +15,13 @@ namespace examples::drivers::metadata {
 // This driver demonstrates how it can forward the
 // `fuchsia.examples.metadata.Metadata` metadata from its parent
 // driver, `Sender`, to its children.
-class ForwarderDriver final : public fdf::DriverBase {
+class ForwarderDriver final : public fdf::DriverBase2 {
  public:
-  ForwarderDriver(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("forwarder", std::move(start_args), std::move(driver_dispatcher)) {}
+  ForwarderDriver() : DriverBase2("forwarder") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     // Serve the metadata to the driver's child nodes.
-    zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+    zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), context.svc());
     if (result.is_error()) {
       fdf::error("Failed to serve metadata: {}", result);
       return result.take_error();
@@ -59,4 +58,4 @@ class ForwarderDriver final : public fdf::DriverBase {
 
 }  // namespace examples::drivers::metadata
 
-FUCHSIA_DRIVER_EXPORT(examples::drivers::metadata::ForwarderDriver);
+FUCHSIA_DRIVER_EXPORT2(examples::drivers::metadata::ForwarderDriver);
