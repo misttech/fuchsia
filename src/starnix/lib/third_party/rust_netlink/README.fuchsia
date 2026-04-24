@@ -8,3 +8,6 @@ README.fuchsia file.
 
 Each subdirectory is a fork of upstream. At this point, there is no intention of
 re-merging with upstream.
+
+---
+`Cargo.lock` in this directory is purely for vulnerability scanning purposes to be routed under rust dependencies. It is not used by the Fuchsia GN build system.
