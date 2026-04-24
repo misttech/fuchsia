@@ -723,7 +723,19 @@ TEST_F(BtHciBroadcomTest, SendsPowerCapWhenNeeded) {
   ASSERT_TRUE(StartDriver().is_ok());
 
   driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    ASSERT_TRUE(env.transport_device_.HasReceivedOpCode(kBcmSetPowerCapCmdOpCode));
+    auto packet = env.transport_device_.LastPacketByOpCode(
+        static_cast<uint16_t>(BroadcomOpCode::SET_POWER_CAP));
+    ASSERT_TRUE(packet.has_value());
+
+    const std::vector<uint8_t> kExpectedBytes = {
+        0x00, 0xFF, 0x0F,             // Header: opcode 0xFF00, param size 15
+        0x01,                         // sub_opcode
+        0x02, 0x00,                   // cmd_format_opcode (little-endian)
+        72,   60,   28,               // chain_0 limits
+        72,   60,   28,               // chain_1 limits
+        72,   60,   28,   72, 60, 28  // beamforming_cap
+    };
+    EXPECT_EQ(*packet, kExpectedBytes);
   });
 }
 

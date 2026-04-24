@@ -45,6 +45,34 @@
 namespace bt_hci_broadcom {
 namespace {
 
+constexpr uint8_t kDefaultBrPowerCap = 72;
+constexpr uint8_t kDefaultEdrPowerCap = 60;
+constexpr uint8_t kDefaultBlePowerCap = 28;
+
+template <typename Container>
+SetPowerCapCommandView MakeDefaultPowerCapCommand(Container* container) {
+  auto view = MakeSetPowerCapCommandView(container);
+  ZX_ASSERT(view.IsComplete());
+  view.header().opcode().Write(BroadcomOpCode::SET_POWER_CAP);
+  view.header().parameter_total_size().Write(SetPowerCapCommand::parameter_size());
+  view.sub_opcode().Write(SetPowerCapSubOpCode::SET);
+  view.cmd_format_opcode().Write(SetPowerCapCmdFormatOpCode::FORMAT_2);
+  view.chain_0_power_limit_br().Write(kDefaultBrPowerCap);
+  view.chain_0_power_limit_edr().Write(kDefaultEdrPowerCap);
+  view.chain_0_power_limit_ble().Write(kDefaultBlePowerCap);
+  view.chain_1_power_limit_br().Write(kDefaultBrPowerCap);
+  view.chain_1_power_limit_edr().Write(kDefaultEdrPowerCap);
+  view.chain_1_power_limit_ble().Write(kDefaultBlePowerCap);
+  view.beamforming_cap()[0].Write(kDefaultBrPowerCap);
+  view.beamforming_cap()[1].Write(kDefaultEdrPowerCap);
+  view.beamforming_cap()[2].Write(kDefaultBlePowerCap);
+  view.beamforming_cap()[3].Write(kDefaultBrPowerCap);
+  view.beamforming_cap()[4].Write(kDefaultEdrPowerCap);
+  view.beamforming_cap()[5].Write(kDefaultBlePowerCap);
+  ZX_ASSERT(view.Ok());
+  return view;
+}
+
 template <typename Container>
 WriteSleepModeCmdView DisableLowPowerModeCmd(Container* container) {
   auto view = MakeWriteSleepModeCmdView(container);
@@ -819,7 +847,8 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::SetDefaultPowerCaps() {
     return fpromise::make_promise(
         []() { return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok()); });
   }
-  return SendCommand(&kDefaultPowerCapCmd, sizeof(kDefaultPowerCapCmd))
+  std::array<std::byte, SetPowerCapCommand::MaxSizeInBytes()> storage;
+  return SendCommand(MakeDefaultPowerCapCommand(&storage))
       .and_then([](std::vector<uint8_t>& cmd_complete) {
         auto view = pw::bluetooth::emboss::MakeSimpleCommandCompleteEventView(cmd_complete.data(),
                                                                               cmd_complete.size());

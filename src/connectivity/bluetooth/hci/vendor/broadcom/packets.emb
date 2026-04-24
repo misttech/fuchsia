@@ -15,6 +15,7 @@ enum BroadcomOpCode:
   LAUNCH_RAM                       = 0xFC4E
   READ_VERBOSE_CONFIG_VERSION_INFO = 0xFC79
   SET_DOWNLOAD_CONFIG              = 0xFE72
+  SET_POWER_CAP                    = 0xFF00
 
 
 struct CommandHeader:
@@ -68,3 +69,28 @@ struct ReadVerboseConfigVersionInfoCommandCompleteEvent:
   0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
   $next [+1]         hci.StatusCode            status
   $next [+1]         UInt                      chip_id
+
+
+enum SetPowerCapSubOpCode:
+  [maximum_bits: 8]
+  SET = 0x01
+
+
+enum SetPowerCapCmdFormatOpCode:
+  [maximum_bits: 16]
+  FORMAT_2 = 0x0002
+
+
+struct SetPowerCapCommand:
+  let hdr_size = CommandHeader.$size_in_bytes
+  let parameter_size = $size_in_bytes-hdr_size
+  0     [+hdr_size]  CommandHeader              header
+  $next [+1]         SetPowerCapSubOpCode       sub_opcode
+  $next [+2]         SetPowerCapCmdFormatOpCode cmd_format_opcode
+  $next [+1]         UInt           chain_0_power_limit_br
+  $next [+1]         UInt           chain_0_power_limit_edr
+  $next [+1]         UInt           chain_0_power_limit_ble
+  $next [+1]         UInt           chain_1_power_limit_br
+  $next [+1]         UInt           chain_1_power_limit_edr
+  $next [+1]         UInt           chain_1_power_limit_ble
+  $next [+6]         UInt:8[6]      beamforming_cap
