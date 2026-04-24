@@ -7,10 +7,6 @@ use fidl::HandleBased;
 use fidl::{AsHandleRef, Peered, SocketOpts};
 use fidl_fuchsia_fdomain as proto;
 
-/// Amount of buffer space we allocate for reading from handles in order to
-/// serve read requests.
-const READ_BUFFER_SIZE: usize = 4096;
-
 /// This is implemented on the `fidl::*` objects for every type of handle FDomain
 /// supports. It essentially makes the handle object a responder to a stream of
 /// [`HandleOperation`]s.
@@ -113,14 +109,12 @@ impl HandleType for fidl::Socket {
     }
 
     fn read_socket(&self, max_bytes: u64) -> Result<Option<Vec<u8>>, proto::Error> {
-        let mut buf = [0u8; READ_BUFFER_SIZE];
-        let buf = if max_bytes < READ_BUFFER_SIZE as u64 {
-            &mut buf[..max_bytes as usize]
-        } else {
-            &mut buf
-        };
-        match self.read(buf) {
-            Ok(size) => Ok(Some(buf[..size].to_vec())),
+        let mut buf = vec![0u8; max_bytes as usize];
+        match self.read(&mut buf) {
+            Ok(size) => {
+                buf.truncate(size);
+                Ok(Some(buf))
+            }
             Err(fidl::Status::SHOULD_WAIT) => Ok(None),
             Err(other) => Err(proto::Error::TargetError(other.into_raw())),
         }
