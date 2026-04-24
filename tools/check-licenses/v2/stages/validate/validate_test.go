@@ -116,6 +116,24 @@ func TestValidator_Run(t *testing.T) {
 		Matches:       []pipeline.LicenseMatch{{SPDXID: "GPL-2.0", MatchType: "Restricted"}},
 	}
 
+	// 11. Empty __init__.py (Exempted)
+	inChan <- pipeline.ClassifiedFile{
+		Path:          filepath.Join(fuchsiaDir, "src", "__init__.py"),
+		ProjectRoot:   fuchsiaDir,
+		IsLicenseFile: false,
+		Matches:       []pipeline.LicenseMatch{},
+		AnalyzedText:  []byte{},
+	}
+
+	// 12. Non-empty __init__.py (Not exempted)
+	inChan <- pipeline.ClassifiedFile{
+		Path:          filepath.Join(fuchsiaDir, "src", "sub", "__init__.py"),
+		ProjectRoot:   fuchsiaDir,
+		IsLicenseFile: false,
+		Matches:       []pipeline.LicenseMatch{},
+		AnalyzedText:  []byte("print('hello')"),
+	}
+
 	close(inChan)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -131,12 +149,13 @@ func TestValidator_Run(t *testing.T) {
 		errors = append(errors, err)
 	}
 
-	if len(errors) != 3 {
-		t.Fatalf("Expected exactly 3 compliance errors, got %d: %v", len(errors), errors)
+	if len(errors) != 4 {
+		t.Fatalf("Expected exactly 4 compliance errors, got %d: %v", len(errors), errors)
 	}
 
 	hasUnrecognizedLicenseErr := false
 	hasMissingCopyrightErr := false
+	hasMissingInitCopyrightErr := false
 	hasUnapprovedPatternErr := false
 
 	for _, e := range errors {
@@ -147,10 +166,13 @@ func TestValidator_Run(t *testing.T) {
 			hasUnrecognizedLicenseErr = true
 		}
 		if strings.Contains(e.Issue, "Missing Fuchsia copyright header") {
-			if e.FilePath != filepath.Join(fuchsiaDir, "src", "bad.cc") {
+			if e.FilePath == filepath.Join(fuchsiaDir, "src", "bad.cc") {
+				hasMissingCopyrightErr = true
+			} else if e.FilePath == filepath.Join(fuchsiaDir, "src", "sub", "__init__.py") {
+				hasMissingInitCopyrightErr = true
+			} else {
 				t.Errorf("Unexpected missing copyright error for file: %s", e.FilePath)
 			}
-			hasMissingCopyrightErr = true
 		}
 		if strings.Contains(e.Issue, "was not approved to use license pattern") {
 			if e.FilePath != filepath.Join(fuchsiaDir, "third_party", "bad_gpl", "LICENSE") {
@@ -164,7 +186,10 @@ func TestValidator_Run(t *testing.T) {
 		t.Error("Expected unrecognized license error, but it was not emitted")
 	}
 	if !hasMissingCopyrightErr {
-		t.Error("Expected missing copyright error, but it was not emitted")
+		t.Error("Expected missing copyright error for bad.cc, but it was not emitted")
+	}
+	if !hasMissingInitCopyrightErr {
+		t.Error("Expected missing copyright error for non-empty __init__.py, but it was not emitted")
 	}
 	if !hasUnapprovedPatternErr {
 		t.Error("Expected unapproved pattern error, but it was not emitted")

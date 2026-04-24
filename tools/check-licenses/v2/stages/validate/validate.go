@@ -131,6 +131,11 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 					}
 
 					if !allowed {
+						// TODO(https://fxbug.dev/505430724): Skip empty __init__.py files
+						if filepath.Base(cf.Path) == "__init__.py" && len(cf.AnalyzedText) == 0 {
+							continue
+						}
+
 						// To avoid flagging every single JSON/XML/config file, we only enforce this on
 						// common source code files that support comments.
 						// The Crawler's TargetExtensions naturally handles this, but we do a sanity check.
