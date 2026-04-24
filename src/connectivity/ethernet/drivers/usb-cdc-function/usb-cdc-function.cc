@@ -878,6 +878,8 @@ void UsbCdcFunction::QueueTx(fnetdev::wire::NetworkDeviceImplQueueTxRequest *req
       (*tx_req)->data()->at(i).size(actual[i]);
       actual_total += actual[i];
     }
+    // CDC always needs a short packet to terminate the transfer.
+    (*tx_req)->short_(true);
     if (actual_total != region.length) {
       fdf::warn("failed to copy all data {} {}", actual_total, region.length);
       *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INTERNAL};

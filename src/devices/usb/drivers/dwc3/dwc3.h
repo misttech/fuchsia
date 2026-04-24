@@ -141,8 +141,14 @@ class Dwc3 : public fdf::DriverBase,
 
     void CancelAll(zx_status_t reason);
 
-    std::queue<usb::RequestVariant> queued_reqs;     // requests waiting to be processed
-    std::optional<usb::RequestVariant> current_req;  // request currently being processed (if any)
+    std::queue<usb::RequestVariant> queued_reqs;  // requests waiting to be processed
+    struct RequestState {
+      usb::RequestVariant request;
+      size_t total_trbs;
+      size_t completed_trbs;
+      size_t completed_bytes;
+    };
+    std::optional<RequestState> current_req;  // request currently being processed (if any)
 
    private:
     // EndpointServer overrides
@@ -377,8 +383,8 @@ class Dwc3 : public fdf::DriverBase,
   void EpEnable(Endpoint& ep, bool enable);
   void EpSetConfig(Endpoint& ep, bool enable);
   zx_status_t EpSetStall(Endpoint& ep, bool stall);
-  void EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer,
-                       size_t length);
+  void EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_t buffer, size_t length,
+                       bool zlp = false);
   // This method is safe to call with the core powered down.
   void EpReset(Endpoint& ep);
 
