@@ -6,6 +6,7 @@ package config
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io/fs"
 	"os"
@@ -33,6 +34,10 @@ func NewBuilder(fuchsiaDir string) *Builder {
 // Assemble starts the recursive configuration discovery from the root v2 config file,
 // merging all found JSON files into the internal MasterConfig.
 func (b *Builder) Assemble() error {
+	if err := b.LoadManifests(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to load manifests: %v\n", err)
+	}
+
 	seedFile := filepath.Join(b.FuchsiaDir, "tools", "check-licenses", "v2", "config.json")
 	if _, err := os.Stat(seedFile); os.IsNotExist(err) {
 		// Fallback for tests or environments where the seed file doesn't exist
@@ -187,6 +192,105 @@ func (b *Builder) parseConfigFile(path string) error {
 					Description: entry.Description,
 				}
 			}
+		}
+	}
+
+	return nil
+}
+
+// XML structures for Jiri manifests
+type Manifest struct {
+	XMLName         xml.Name  `xml:"manifest"`
+	Projects        []Project `xml:"project"`
+	ProjectsGrouped []Project `xml:"projects>project"`
+	Packages        []Package `xml:"packages>package"`
+}
+
+type Project struct {
+	Name string `xml:"name,attr"`
+	Path string `xml:"path,attr"`
+}
+
+type Package struct {
+	Name string `xml:"name,attr"`
+	Path string `xml:"path,attr"`
+}
+
+// LoadManifests scans the manifests and integration directories and populates the mapping.
+func (b *Builder) LoadManifests() error {
+	dirsToScan := []string{
+		filepath.Join(b.FuchsiaDir, "manifests"),
+		filepath.Join(b.FuchsiaDir, "integration", "internal"),
+	}
+
+	for _, dir := range dirsToScan {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			continue
+		}
+
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+
+			// Manifest files usually have no extension or .xml
+			ext := filepath.Ext(path)
+			if ext != "" && ext != ".xml" {
+				return nil
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil // Skip files we can't read
+			}
+
+			var m Manifest
+			if err := xml.Unmarshal(data, &m); err != nil {
+				return nil // Skip files that aren't valid XML manifests
+			}
+
+			isPrivate := strings.Contains(filepath.ToSlash(path), "/integration/internal")
+
+			// Map projects
+			for _, p := range m.Projects {
+				if p.Path != "" && p.Name != "" {
+					cleanPath := filepath.Clean(p.Path)
+					b.Config.ManifestProjectNames[cleanPath] = p.Name
+					if isPrivate {
+						b.Config.ManifestPrivateProjects[cleanPath] = true
+					}
+				}
+			}
+
+			// Map projects (grouped)
+			for _, p := range m.ProjectsGrouped {
+				if p.Path != "" && p.Name != "" {
+					cleanPath := filepath.Clean(p.Path)
+					b.Config.ManifestProjectNames[cleanPath] = p.Name
+					if isPrivate {
+						b.Config.ManifestPrivateProjects[cleanPath] = true
+					}
+				}
+			}
+
+			// Map packages (prebuilts)
+			for _, p := range m.Packages {
+				if p.Path != "" && p.Name != "" {
+					cleanPath := filepath.Clean(p.Path)
+					b.Config.ManifestProjectNames[cleanPath] = p.Name
+					if isPrivate {
+						b.Config.ManifestPrivateProjects[cleanPath] = true
+					}
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 

@@ -50,20 +50,33 @@ type MasterConfig struct {
 
 	// AllowedLicenses maps a highly restricted SPDX ID (e.g., "GPL-2.0", "FTL") to a set of allowed project paths.
 	AllowedLicenses map[string]map[string]RuleMetadata
+
+	// ManifestProjectNames maps a project's filesystem path to its name in the manifest.
+	// Key: Project path (e.g., "prebuilt/media/firmware/amlogic-decoder")
+	// Value: Package name (e.g., "fuchsia_internal/firmware/amlogic-video")
+	ManifestProjectNames map[string]string
+
+	// ManifestPrivateProjects tracks if a project path was found in a private manifest.
+	ManifestPrivateProjects map[string]bool
 }
 
 // IsPrivateProject returns true if the project path belongs to a proprietary/private
 // repository. It prevents open-source compliance configs from being contaminated.
 func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
 	projectPath = filepath.Clean(projectPath)
-	if strings.HasPrefix(projectPath, "vendor/") {
+
+	// 1. Check if marked private from integration folder
+	if c.ManifestPrivateProjects[projectPath] {
 		return true
 	}
-	if physicalPath, ok := c.OutOfTreeReadmes[projectPath]; ok {
-		if strings.Contains(filepath.ToSlash(physicalPath), "/vendor/") {
+
+	// 2. Check manifest name prefix
+	if name, ok := c.ManifestProjectNames[projectPath]; ok {
+		if strings.HasPrefix(name, "fuchsia_internal/") {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -75,13 +88,15 @@ type RuleMetadata struct {
 // NewMasterConfig initializes an empty configuration ready to be populated by the builder.
 func NewMasterConfig() *MasterConfig {
 	return &MasterConfig{
-		SkipPaths:        make([]string, 0),
-		SkipAnywhere:     make([]string, 0),
-		TargetExtensions: make(map[string]bool),
-		BarrierPaths:     make([]string, 0),
-		OutOfTreeReadmes: make(map[string]string),
-		PolicyExceptions: make(map[string]map[string]RuleMetadata),
-		AllowedLicenses:  make(map[string]map[string]RuleMetadata),
+		SkipPaths:               make([]string, 0),
+		SkipAnywhere:            make([]string, 0),
+		TargetExtensions:        make(map[string]bool),
+		BarrierPaths:            make([]string, 0),
+		OutOfTreeReadmes:        make(map[string]string),
+		PolicyExceptions:        make(map[string]map[string]RuleMetadata),
+		AllowedLicenses:         make(map[string]map[string]RuleMetadata),
+		ManifestProjectNames:    make(map[string]string),
+		ManifestPrivateProjects: make(map[string]bool),
 	}
 }
 

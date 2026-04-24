@@ -48,6 +48,18 @@ func TestPolicyCommand_Execute(t *testing.T) {
 		t.Errorf("Expected config file to be created at %s", publicConfigPath)
 	}
 
+	// Create mock private manifest for Test 3
+	integrationDir := filepath.Join(tempDir, "integration", "internal", "vendor", "google")
+	if err := os.MkdirAll(integrationDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	privateManifest := filepath.Join(integrationDir, "third_party")
+	privateContent := `<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <project name="my_private_proj" path="vendor/my_private_proj"/>
+</manifest>`
+	os.WriteFile(privateManifest, []byte(privateContent), 0644)
+
 	// Test 3: Private project (vendor/...)
 	f3 := flag.NewFlagSet("test3", flag.ContinueOnError)
 	f3.Parse([]string{"add", "AllProjectsMustHaveALicense", "vendor/my_private_proj"})
