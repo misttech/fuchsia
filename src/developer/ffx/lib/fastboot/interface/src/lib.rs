@@ -10,7 +10,6 @@ pub mod test {
     use super::fastboot_interface::{
         Fastboot, FastbootError, FastbootInterface, RebootEvent, UploadProgress, Variable,
     };
-    use anyhow::{Result, anyhow};
     use async_trait::async_trait;
     use chrono::Duration;
     use std::collections::HashMap;
@@ -96,12 +95,18 @@ pub mod test {
             listener: Sender<UploadProgress>,
             _timeout: Duration,
         ) -> Result<(), FastbootError> {
-            listener.send(UploadProgress::OnStarted { size: 1 }).await.map_err(|e| anyhow!(e))?;
+            listener
+                .send(UploadProgress::OnStarted { size: 1 })
+                .await
+                .map_err(|_| FastbootError::ProgressSendError)?;
             listener
                 .send(UploadProgress::OnProgress { bytes_written: 1 })
                 .await
-                .map_err(|e| anyhow!(e))?;
-            listener.send(UploadProgress::OnFinished).await.map_err(|e| anyhow!(e))?;
+                .map_err(|_| FastbootError::ProgressSendError)?;
+            listener
+                .send(UploadProgress::OnFinished)
+                .await
+                .map_err(|_| FastbootError::ProgressSendError)?;
             Ok(())
         }
 

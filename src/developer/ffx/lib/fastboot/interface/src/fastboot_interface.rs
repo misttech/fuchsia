@@ -71,8 +71,14 @@ pub struct Variable {
 
 #[derive(thiserror::Error, Debug)]
 pub enum FastbootError {
-    #[error("{}", .0)]
-    Error(#[from] anyhow::Error),
+    #[error("Fastboot error: {0}")]
+    Fastboot(#[from] fastboot::FastbootError),
+
+    #[error("Interface factory error: {0}")]
+    Factory(#[from] crate::interface_factory::InterfaceFactoryError),
+
+    #[error("Failed to send progress update")]
+    ProgressSendError,
 
     #[error("Unexpected reply from fastboot device for {}: {}", method, reply)]
     UnexpectedReply { method: String, reply: String },

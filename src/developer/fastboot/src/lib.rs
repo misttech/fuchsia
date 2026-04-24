@@ -151,9 +151,7 @@ async fn read_with_timeout<T: AsyncRead + Unpin>(
     let std_timeout = timeout.to_std().expect("converting chrono Duration to std");
     let end_time = std::time::Instant::now() + std_timeout;
     loop {
-        match read_from_interface(interface)
-            .on_timeout(end_time, || Err(ReadError::Timeout))
-            .await
+        match read_from_interface(interface).on_timeout(end_time, || Err(ReadError::Timeout)).await
         {
             Ok(Reply::Info(msg)) => listener.on_info(msg).await?,
             #[cfg(target_os = "linux")]
@@ -345,7 +343,11 @@ pub async fn download<T: AsyncRead + AsyncWrite + Unpin>(
                 .await?;
             while bytes_read < size {
                 match interface.read(&mut buffer[..]).await {
-                    Err(e) => return Err(FastbootError::Download(DownloadError::CouldNotReadToInterface(e))),
+                    Err(e) => {
+                        return Err(FastbootError::Download(
+                            DownloadError::CouldNotReadToInterface(e),
+                        ));
+                    }
                     Ok(len) => {
                         let len = if (bytes_read + len) > size { size - bytes_read } else { len };
                         bytes_read += len;
@@ -359,7 +361,9 @@ pub async fn download<T: AsyncRead + AsyncWrite + Unpin>(
                 .await
                 .map_err(|e| FastbootError::Download(DownloadError::CouldNotVerifyDownload(e)))?)
         }
-        rep @ _ => return Err(FastbootError::Download(DownloadError::UnexpectedReply { reply: rep })),
+        rep @ _ => {
+            return Err(FastbootError::Download(DownloadError::UnexpectedReply { reply: rep }));
+        }
     }
 }
 
