@@ -24,7 +24,6 @@ device-name-provider
 driver-index
 driver_host
 driver_manager
-?f2fs
 ?fshost
 ?ftdi
 ?fvm2

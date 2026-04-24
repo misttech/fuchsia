@@ -65,12 +65,6 @@ bringup_platform_aib_names = [
 
   # Storage
   "fshost_common",
-  "fshost_fxfs",
-  "fshost_fvm",
-  "fshost_fvm_f2fs",
-  "fshost_fvm_fxfs",
-  "fshost_fvm_minfs",
-  "fshost_fvm_minfs_migration",
   "fshost_non_eng",
   "fshost_non_recovery",
   "fshost_provision_fxfs",

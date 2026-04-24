@@ -2903,8 +2903,6 @@ assembly_input_bundle("fshost_storage_host_gpt_fvm_minfs") {
         {
           component_name = "fshost"
           shards = [
-            "//src/storage/fshost/meta/fvm_minfs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_minfs_fshost_base.shard.cml",
             "//src/storage/fshost/meta/storage_host_base.shard.cml",
             "//src/storage/fshost/meta/storage_host_fvm.cml",
             "//src/storage/fshost/meta/storage_host_fvm_base.shard.cml",
@@ -2937,8 +2935,6 @@ assembly_input_bundle("fshost_storage_host_gpt_fvm_f2fs") {
         {
           component_name = "fshost"
           shards = [
-            "//src/storage/fshost/meta/fvm_f2fs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_f2fs_fshost_base.shard.cml",
             "//src/storage/fshost/meta/storage_host_base.shard.cml",
             "//src/storage/fshost/meta/storage_host_fvm.cml",
             "//src/storage/fshost/meta/storage_host_fvm_base.shard.cml",
@@ -2967,8 +2963,6 @@ assembly_input_bundle("fshost_storage_host_fvm_minfs") {
         {
           component_name = "fshost"
           shards = [
-            "//src/storage/fshost/meta/fvm_minfs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_minfs_fshost_base.shard.cml",
             "//src/storage/fshost/meta/non_storage_host_gpt.shard.cml",
             "//src/storage/fshost/meta/storage_host_base.shard.cml",
             "//src/storage/fshost/meta/storage_host_fvm.cml",
@@ -2986,76 +2980,6 @@ assembly_input_bundle("fshost_storage_host_fvm_minfs") {
     "//src/storage/blobfs/bin:package",
     "//src/storage/minfs/bin:package",
     "//src/storage/fvm:package",
-  ]
-}
-
-# AIB containing the fshost with fxfs.
-assembly_input_bundle("fshost_fxfs") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "fshost"
-      components = [
-        {
-          component_name = "fshost"
-          shards = [
-            "//src/storage/fshost/meta/fxblob_fshost.cml",
-            "//src/storage/fshost/meta/fxblob_fshost_base.shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
-  memory_buckets = [ "//src/developer/memory/buckets/fxfs_buckets.json5" ]
-  bootfs_packages = [
-    "//src/storage/fxfs:package",
-    "//src/storage/crypt/fxfs:package",
-  ]
-}
-
-# AIB containing fshost with an fvm and blobfs only.
-assembly_input_bundle("fshost_fvm") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "fshost"
-      components = [
-        {
-          component_name = "fshost"
-          shards = [
-            "//src/storage/fshost/meta/fvm_blobfs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_blobfs_fshost_base.shard.cml",
-            "//src/storage/fshost/meta/fvm_fshost.shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
-  memory_buckets = [ "//src/developer/memory/buckets/blobfs_buckets.json5" ]
-  bootfs_packages = [ "//src/storage/blobfs/bin:package" ]
-}
-
-# AIB containing fshost with an fvm and fxfs to hold the data.
-assembly_input_bundle("fshost_fvm_fxfs") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "fshost"
-      components = [
-        {
-          component_name = "fshost"
-          shards = [
-            "//src/storage/fshost/meta/fvm_fxfs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_fxfs_fshost_base.shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
-  memory_buckets = [ "//src/developer/memory/buckets/fxfs_buckets.json5" ]
-  bootfs_packages = [
-    "//src/storage/fxfs:package",
-    "//src/storage/crypt/fxfs:package",
   ]
 }
 
@@ -3078,83 +3002,6 @@ assembly_input_bundle("fshost_provision_fxfs") {
       ]
     },
   ]
-}
-
-# AIB containing fshost support for minfs. Not compatible with fxfs.
-#
-assembly_input_bundle("fshost_fvm_minfs") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "fshost"
-      components = [
-        {
-          component_name = "fshost"
-          shards = [
-            "//src/storage/fshost/meta/fvm_minfs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_minfs_fshost_base.shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
-  memory_buckets = [ "//src/developer/memory/buckets/minfs_buckets.json5" ]
-  bootfs_packages = [ "//src/storage/minfs/bin:package" ]
-}
-
-# AIB containing fshost support for minfs-to-fxfs migration.
-# Should be included with fshost_fxfs_fxblob or fshost_fxfs when migration
-# is necessary.
-#
-# requires: one of fshost_fxfs*
-#
-assembly_input_bundle("fshost_fvm_minfs_migration") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "fshost"
-      components = [
-        {
-          component_name = "fshost"
-          shards = [
-            "//src/storage/fshost/meta/fvm_minfs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_minfs_fshost_base.shard.cml",
-            "//src/storage/fshost/meta/fvm_fxfs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_fxfs_fshost_base.shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
-  memory_buckets = [
-    "//src/developer/memory/buckets/fxfs_buckets.json5",
-    "//src/developer/memory/buckets/minfs_buckets.json5",
-  ]
-  bootfs_packages = [
-    "//src/storage/fxfs:package",
-    "//src/storage/crypt/fxfs:package",
-    "//src/storage/minfs/bin:package",
-  ]
-}
-
-# AIB containing fshost support for f2fs
-assembly_input_bundle("fshost_fvm_f2fs") {
-  compiled_packages = [
-    {
-      bootfs_package = true
-      name = "fshost"
-      components = [
-        {
-          component_name = "fshost"
-          shards = [
-            "//src/storage/fshost/meta/fvm_f2fs_fshost.cml",
-            "//src/storage/fshost/meta/fvm_f2fs_fshost_base.shard.cml",
-          ]
-        },
-      ]
-    },
-  ]
-  bootfs_packages = [ "//src/storage/f2fs/bin:package" ]
 }
 
 # Automatic garbage collection for mutable storage
