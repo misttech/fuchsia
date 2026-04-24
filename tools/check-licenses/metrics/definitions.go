@@ -13,6 +13,21 @@ var (
 		"spdx_id", "policy_category", "ecosystem",
 	)
 
+	LicenseFilesFound = RegisterCounter(
+		"license_files_found",
+		"Number of license files found",
+	)
+
+	SourceFilesWithLicenses = RegisterCounter(
+		"source_files_with_licenses",
+		"Number of source files found containing licenses",
+	)
+
+	TotalFilesProcessed = RegisterCounter(
+		"total_files_processed",
+		"Total number of files processed",
+	)
+
 	// --- OPERATIONAL METRICS ---
 
 	PhaseDuration = RegisterTimer(

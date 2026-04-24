@@ -70,6 +70,8 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 					return
 				}
 
+				metrics.TotalFilesProcessed.Inc()
+
 				if fileInfo.IsNonLicense {
 					metrics.FilesProcessed.Inc("skipped_non_license")
 					// Emit an unclassified file
@@ -106,6 +108,12 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 				}
 
 				metrics.FilesProcessed.Inc("classified")
+
+				if classified.IsLicenseFile {
+					metrics.LicenseFilesFound.Inc()
+				} else if len(classified.Matches) > 0 {
+					metrics.SourceFilesWithLicenses.Inc()
+				}
 
 				select {
 				case <-ctx.Done():

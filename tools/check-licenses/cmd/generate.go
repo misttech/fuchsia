@@ -492,7 +492,7 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 	endTrack()
 
 	log.Printf("v2 pipeline completed successfully in %v\n", time.Since(startTime))
-	return printMetricsSummary(nil, true, p.logLevel)
+	return printMetricsSummary(nil, true, p.logLevel, Config.OutDir)
 }
 
 // executePipeline kicks-off the check-licenses runthrough.
@@ -569,10 +569,10 @@ func (p *GenerateCommand) executePipeline() error {
 	for _, check := range Config.Result.Checks {
 		checkNames = append(checkNames, check.Name)
 	}
-	return printMetricsSummary(checkNames, false, p.logLevel)
+	return printMetricsSummary(checkNames, false, p.logLevel, Config.OutDir)
 }
 
-func printMetricsSummary(checkNames []string, isV2 bool, logLevel int) error {
+func printMetricsSummary(checkNames []string, isV2 bool, logLevel int, outDir string) error {
 	// Print standard terminal metrics summary
 	log.Println("\n[check-licenses] Execution Summary")
 	log.Println("----------------------------------")
@@ -580,6 +580,14 @@ func printMetricsSummary(checkNames []string, isV2 bool, logLevel int) error {
 	log.Printf("Time spent in GN Filter:          %v\n", metrics.FilterDuration.GetTotalDuration())
 	log.Printf("Wall time spent in Classifier:    %v\n", metrics.AnalyzeDuration.GetTotalDuration())
 	log.Printf("Thread time spent in Classifier:  %v\n", metrics.ClassifierDuration.GetTotalDuration())
+
+	totalFiles, _ := metrics.TotalFilesProcessed.GetCount()
+	licenseFiles, _ := metrics.LicenseFilesFound.GetCount()
+	sourceFilesWithLic, _ := metrics.SourceFilesWithLicenses.GetCount()
+
+	log.Printf("Total Files Processed:            %d\n", totalFiles)
+	log.Printf("License Files Found:              %d\n", licenseFiles)
+	log.Printf("Source Files with Licenses:       %d\n", sourceFilesWithLic)
 
 	var projectsAnalyzed int64
 	var err error
@@ -620,8 +628,8 @@ func printMetricsSummary(checkNames []string, isV2 bool, logLevel int) error {
 
 	log.Printf("Validation Errors:         %d (%d Hidden by Allowlist)\n", validationErrors, allowlistHits)
 
-	if Config.OutDir != "" {
-		metricsExportPath := filepath.Join(Config.OutDir, "metrics.json")
+	if outDir != "" {
+		metricsExportPath := filepath.Join(outDir, "metrics.json")
 		if err := metrics.Export(metricsExportPath); err != nil {
 			log.Printf("Failed to export metrics to JSON: %v\n", err)
 		} else {

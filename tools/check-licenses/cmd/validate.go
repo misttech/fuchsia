@@ -128,7 +128,7 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 
 	log.Printf("Validation completed successfully in %v\n", time.Since(startTime))
 
-	if err := printMetricsSummary(checkNames, true, p.logLevel); err != nil {
+	if err := printMetricsSummary(checkNames, true, p.logLevel, p.outDir); err != nil {
 		return subcommands.ExitFailure
 	}
 
