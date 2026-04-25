@@ -78,12 +78,6 @@ if (virtio_gpu_display_flavor == "cpp") {
 
   test("virtio-gpu-display-test") {
     output_name = "virtio-gpu-display-test"
-    if (is_fuchsia) {
-      fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-      if (configs + fdio_config - fdio_config != configs) {
-        configs -= fdio_config
-      }
-    }
     sources = [
       "cpp/display-engine-test.cc",
       "cpp/imported-image-test.cc",
@@ -116,7 +110,6 @@ if (virtio_gpu_display_flavor == "cpp") {
     deps = [
       ":common_srcs",
       ":virtio-gpu-display-bind",
-      "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
       "//sdk/lib/component/outgoing/cpp",
       "//sdk/lib/driver/component/cpp",
       "//sdk/lib/driver/incoming/cpp",

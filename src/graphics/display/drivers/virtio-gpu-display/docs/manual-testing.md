@@ -18,7 +18,7 @@
    the test.
 
    ```
-   Test: ffx target ssh display-tool -- squares
+   Test: ffx target ssh -- display-tool squares
    ```
 
 [change-validation-guide]: ./change-validation.md
