@@ -179,7 +179,9 @@ impl<'de> serde::Deserialize<'de> for ExtendedAttributes {
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(Self(Arc::new(SortedVecMap::deserialize(deserializer)?)))
+        let mut map = SortedVecMap::deserialize(deserializer)?;
+        map.shrink_to_fit();
+        Ok(Self(Arc::new(map)))
     }
 }
 
@@ -194,7 +196,9 @@ impl serde::Serialize for ExtendedAttributes {
 
 impl FromIterator<(FlyByteStr, FlyByteStr)> for ExtendedAttributes {
     fn from_iter<T: IntoIterator<Item = (FlyByteStr, FlyByteStr)>>(iter: T) -> Self {
-        ExtendedAttributes(Arc::new(SortedVecMap::from_iter(iter)))
+        let mut map = SortedVecMap::from_iter(iter);
+        map.shrink_to_fit();
+        ExtendedAttributes(Arc::new(map))
     }
 }
 
