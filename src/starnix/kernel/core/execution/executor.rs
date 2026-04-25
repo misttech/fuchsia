@@ -174,6 +174,9 @@ where
         }
     };
 
+    // The process thread spawned successfully. Mark the task as having spawned.
+    task_builder.task.write().set_spawned();
+
     // Update the thread and task information before sending the task_builder to the spawned thread.
     // This will make sure the mapping between linux tid and fuchsia koid is set before trace events
     // are emitted from the linux code.

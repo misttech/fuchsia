@@ -2012,6 +2012,7 @@ impl CurrentTask {
                 UserRef::default(),
             )
             .expect("failed to create task in test");
+        result.task.write().set_spawned();
 
         result.into()
     }

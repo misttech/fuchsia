@@ -113,6 +113,8 @@ atomic_bitflags! {
         /// Currently used to implement ExitStatus::CoreDump.
         const DUMP_ON_EXIT = 0x8;
         const KERNEL_SIGNALS_AVAILABLE = 0x10;
+        /// Whether the executor has successfully spawned a thread for this task.
+        const SPAWNED = 0x20;
     }
 }
 
@@ -597,6 +599,10 @@ impl TaskMutableState<Base = Task> {
         self.update_flags(clear, set);
     }
 
+    pub fn set_spawned(&mut self) {
+        self.set_flags(TaskFlags::SPAWNED, true);
+    }
+
     pub fn set_exit_status(&mut self, status: ExitStatus) {
         self.set_flags(TaskFlags::EXITED, true);
         self.exit_status = Some(status);
@@ -1012,6 +1018,10 @@ impl Task {
 
     pub fn flags(&self) -> TaskFlags {
         self.flags.load(Ordering::Relaxed)
+    }
+
+    pub fn is_spawned(&self) -> bool {
+        self.flags().contains(TaskFlags::SPAWNED)
     }
 
     /// When the task exits, if there is a notification that needs to propagate
@@ -1730,6 +1740,34 @@ mod test {
 
             current_task.set_creds(Credentials::with_ids(1, 1));
             assert!(!security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_is_spawned() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            // The init task should be marked as spawned, because it is executing.
+            assert!(current_task.is_spawned());
+
+            // A cloned task should not be marked as spawned, because it has not yet been executed.
+            let child = current_task
+                .clone_task(
+                    locked,
+                    0,
+                    Some(SIGCHLD),
+                    UserRef::default(),
+                    UserRef::default(),
+                    UserRef::default(),
+                )
+                .expect("failed to create task in test");
+            assert!(!child.is_spawned());
+            child.release(locked);
+
+            // A cloned task for a test should be marked as spawned, because we intentionally avoid
+            // spawning threads for test tasks but want them to behave as normal tasks.
+            let test_child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
+            assert!(test_child.is_spawned());
         })
         .await;
     }
