@@ -25,7 +25,10 @@ emulator, launch the emulator, and then store the configuration on disk for
 future reference. The configuration comes from the Product Bundle, which
 includes a virtual device specification and a start-up flag template. See
 https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0100_product_metadata
-for more information."
+for more information.
+
+Unless run in console mode, the emulator runs as a background daemon and must
+be terminated by `ffx emu stop`."
 )]
 pub struct StartCommand {
     /// virtualization acceleration. Valid choices are "none" to disable acceleration, "hyper" to

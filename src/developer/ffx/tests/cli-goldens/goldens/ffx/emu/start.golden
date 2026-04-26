@@ -295,7 +295,7 @@
     }
   ],
   "notes": [
-    "The `start` subcommand is the starting point for all emulator interactions.\nThe name provided here will be used for all later interactions to indicate\nwhich emulator to target. Emulator names must be unique.\n\nThe start command will compile all of the necessary configuration for an\nemulator, launch the emulator, and then store the configuration on disk for\nfuture reference. The configuration comes from the Product Bundle, which\nincludes a virtual device specification and a start-up flag template. See\nhttps://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0100_product_metadata\nfor more information."
+    "The `start` subcommand is the starting point for all emulator interactions.\nThe name provided here will be used for all later interactions to indicate\nwhich emulator to target. Emulator names must be unique.\n\nThe start command will compile all of the necessary configuration for an\nemulator, launch the emulator, and then store the configuration on disk for\nfuture reference. The configuration comes from the Product Bundle, which\nincludes a virtual device specification and a start-up flag template. See\nhttps://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0100_product_metadata\nfor more information.\n\nUnless run in console mode, the emulator runs as a background daemon and must\nbe terminated by `ffx emu stop`."
   ],
   "commands": [],
   "positionals": [

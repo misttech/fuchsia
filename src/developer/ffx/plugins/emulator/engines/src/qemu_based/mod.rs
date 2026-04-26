@@ -31,6 +31,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -608,7 +609,42 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             }
         }
 
+        // This is a critical section because if the tool is terminated before `save_to_disk`
+        // completes, the emulator will run in its own session (due to `setsid`) but `ffx`
+        // will not have recorded its PID. This would leave an orphaned process that cannot
+        // be managed by `ffx emu stop`.
+        //
+        // Block SIGHUP and SIGINT before spawning to prevent race conditions where the
+        // terminal closes or the user interrupts before we can save the PID.
+        let mut mask = nix::sys::signal::SigSet::empty();
+        mask.add(nix::sys::signal::Signal::SIGHUP);
+        mask.add(nix::sys::signal::Signal::SIGINT);
+        let mut old_mask = nix::sys::signal::SigSet::empty();
+
+        nix::sys::signal::sigprocmask(
+            nix::sys::signal::SigmaskHow::SIG_BLOCK,
+            Some(&mask),
+            Some(&mut old_mask),
+        )
+        .map_err(|e| bug!("Failed to block signals: {e}"))?;
+
         log::debug!("Spawning emulator with {emulator_cmd:?}");
+
+        // Configure `pre_exec` to call `setsid` in the child.
+        // SAFETY: `pre_exec` is unsafe because it runs in the child process after `fork`
+        // but before `exec`. According to its documentation, the closure must only use
+        // async-signal-safe operations. `setsid` is async-signal-safe (see
+        // https://man7.org/linux/man-pages/man7/signal-safety.7.html). We do not
+        // allocate memory or acquire any locks in this closure, which are considered
+        // unsafe operations in `pre_exec` documentation due to the risk of deadlocks
+        // if another thread held a lock at the time of forking.
+        unsafe {
+            emulator_cmd.pre_exec(move || {
+                nix::unistd::setsid().map_err(|e| std::io::Error::from_raw_os_error(e as i32))?;
+                Ok(())
+            });
+        }
+
         let shared_process = SharedChild::spawn(&mut emulator_cmd)
             .map_err(|e| bug!("Cannot spawn emulator: {e}"))?;
         let child_arc = Arc::new(shared_process);
@@ -639,6 +675,14 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         } else {
             self.save_to_disk().await?;
         }
+
+        // Restore the original signal mask after the critical section.
+        nix::sys::signal::sigprocmask(
+            nix::sys::signal::SigmaskHow::SIG_SETMASK,
+            Some(&old_mask),
+            None,
+        )
+        .map_err(|e| bug!("Failed to restore signal mask: {e}"))?;
 
         if self.emu_config().runtime.debugger {
             eprintln!("The emulator will wait for a debugger to attach before starting up.");
