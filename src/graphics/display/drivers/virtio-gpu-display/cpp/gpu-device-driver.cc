@@ -4,7 +4,7 @@
 
 #include "src/graphics/display/drivers/virtio-gpu-display/cpp/gpu-device-driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/component/cpp/start_completer.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -27,7 +27,7 @@
 
 namespace virtio_display {
 
-zx::result<> GpuDeviceDriver::InitResources() {
+zx::result<> GpuDeviceDriver::InitResources(const fdf::Namespace& incoming) {
   fbl::AllocChecker alloc_checker;
   engine_events_ = fbl::make_unique_checked<display::DisplayEngineEventsFidl>(&alloc_checker);
   if (!alloc_checker.check()) {
@@ -35,7 +35,7 @@ zx::result<> GpuDeviceDriver::InitResources() {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  zx::result sysmem_client_result = incoming()->Connect<fuchsia_sysmem2::Allocator>();
+  zx::result sysmem_client_result = incoming.Connect<fuchsia_sysmem2::Allocator>();
   if (sysmem_client_result.is_error()) {
     fdf::error("Failed to get sysmem protocol: {}", sysmem_client_result);
     return sysmem_client_result.take_error();
@@ -44,7 +44,7 @@ zx::result<> GpuDeviceDriver::InitResources() {
       std::move(sysmem_client_result).value();
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_client_result =
-      incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+      incoming.Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
     fdf::error("Failed to get pci client: {}", pci_client_result);
     return pci_client_result.take_error();
@@ -142,14 +142,12 @@ zx::result<> GpuDeviceDriver::InitGpuControlNode() {
   return zx::ok();
 }
 
-GpuDeviceDriver::GpuDeviceDriver(fdf::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("virtio-gpu-display", std::move(start_args), std::move(driver_dispatcher)) {}
+GpuDeviceDriver::GpuDeviceDriver() : fdf::DriverBase2("virtio-gpu-display") {}
 
 GpuDeviceDriver::~GpuDeviceDriver() {}
 
-void GpuDeviceDriver::Start(fdf::StartCompleter completer) {
-  zx::result<> init_resources_result = InitResources();
+void GpuDeviceDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  zx::result<> init_resources_result = InitResources(context.incoming());
   if (init_resources_result.is_error()) {
     fdf::error("Failed to initialize the resources: {}", init_resources_result);
     completer(init_resources_result.take_error());
@@ -176,10 +174,11 @@ void GpuDeviceDriver::Start(fdf::StartCompleter completer) {
   });
 }
 
-void GpuDeviceDriver::Stop() {
+void GpuDeviceDriver::Stop(fdf::StopCompleter completer) {
   if (start_thread_.joinable()) {
     start_thread_.join();
   }
+  completer(zx::ok());
 }
 
 void GpuDeviceDriver::SendHardwareCommand(std::span<uint8_t> request,
@@ -190,4 +189,4 @@ void GpuDeviceDriver::SendHardwareCommand(std::span<uint8_t> request,
 
 }  // namespace virtio_display
 
-FUCHSIA_DRIVER_EXPORT(virtio_display::GpuDeviceDriver);
+FUCHSIA_DRIVER_EXPORT2(virtio_display::GpuDeviceDriver);

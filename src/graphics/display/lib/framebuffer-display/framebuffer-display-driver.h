@@ -5,7 +5,7 @@
 #ifndef SRC_GRAPHICS_DISPLAY_LIB_FRAMEBUFFER_DISPLAY_FRAMEBUFFER_DISPLAY_DRIVER_H_
 #define SRC_GRAPHICS_DISPLAY_LIB_FRAMEBUFFER_DISPLAY_FRAMEBUFFER_DISPLAY_DRIVER_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/fdf/cpp/dispatcher.h>
 
@@ -18,10 +18,9 @@
 namespace framebuffer_display {
 
 // Integration between display drivers and the Driver Framework (v1).
-class FramebufferDisplayDriver : public fdf::DriverBase {
+class FramebufferDisplayDriver : public fdf::DriverBase2 {
  public:
-  explicit FramebufferDisplayDriver(std::string_view device_name, fdf::DriverStartArgs start_args,
-                                    fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit FramebufferDisplayDriver(std::string_view device_name);
 
   FramebufferDisplayDriver(const FramebufferDisplayDriver&) = delete;
   FramebufferDisplayDriver(FramebufferDisplayDriver&&) = delete;
@@ -31,8 +30,7 @@ class FramebufferDisplayDriver : public fdf::DriverBase {
   virtual ~FramebufferDisplayDriver();
 
   // fdf::DriverBase:
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // Called exactly once before the driver acquires any resource.
   virtual zx::result<> ConfigureHardware() = 0;
@@ -41,8 +39,14 @@ class FramebufferDisplayDriver : public fdf::DriverBase {
 
   virtual zx::result<DisplayProperties> GetDisplayProperties() = 0;
 
+ protected:
+  const fdf::Namespace& incoming() const { return *incoming_; }
+  fdf::Namespace& incoming() { return *incoming_; }
+
  private:
-  zx::result<std::unique_ptr<FramebufferDisplay>> CreateAndInitializeFramebufferDisplay();
+  std::unique_ptr<fdf::Namespace> incoming_;
+  zx::result<std::unique_ptr<FramebufferDisplay>> CreateAndInitializeFramebufferDisplay(
+      const fdf::Namespace& incoming);
 
   // Must be called after `framebuffer_display_` is initialized.
   zx::result<> InitializeFidlServiceNode();

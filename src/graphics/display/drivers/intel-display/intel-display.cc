@@ -1941,7 +1941,7 @@ void Controller::Start(fdf::StartCompleter completer) {
   completer(zx::ok());
 }
 
-void Controller::PrepareStopOnPowerOn(fdf::PrepareStopCompleter completer) {
+void Controller::PrepareStopOnPowerOn(fdf::StopCompleter completer) {
   {
     fbl::AutoLock lock(&display_lock_);
     display_devices_.reset();
@@ -1951,7 +1951,7 @@ void Controller::PrepareStopOnPowerOn(fdf::PrepareStopCompleter completer) {
 }
 
 void Controller::PrepareStopOnPowerStateTransition(
-    fuchsia_system_state::SystemPowerState power_state, fdf::PrepareStopCompleter completer) {
+    fuchsia_system_state::SystemPowerState power_state, fdf::StopCompleter completer) {
   // TODO(https://fxbug.dev/42119483): Implement the suspend hook based on suspendtxn
   if (power_state == fuchsia_system_state::SystemPowerState::kMexec) {
     zx::result<FramebufferInfo> fb_status = GetFramebufferInfo(framebuffer_info_);

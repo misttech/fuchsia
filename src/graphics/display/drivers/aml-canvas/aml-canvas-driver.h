@@ -7,7 +7,9 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/inspect/cpp/inspector.h>
 #include <lib/zx/result.h>
 
 #include <memory>
@@ -19,10 +21,9 @@ namespace aml_canvas {
 // Driver instance that binds to the canvas board device.
 //
 // This class is responsible for interfacing with the Fuchsia Driver Framework.
-class AmlCanvasDriver : public fdf::DriverBase {
+class AmlCanvasDriver : public fdf::DriverBase2 {
  public:
-  explicit AmlCanvasDriver(fdf::DriverStartArgs start_args,
-                           fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit AmlCanvasDriver();
   ~AmlCanvasDriver() override = default;
 
   AmlCanvasDriver(const AmlCanvasDriver&) = delete;
@@ -31,14 +32,15 @@ class AmlCanvasDriver : public fdf::DriverBase {
   AmlCanvasDriver& operator=(AmlCanvasDriver&&) = delete;
 
   // `fdf::DriverBase` methods.
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   // Creates an AmlCanvas using the resources provided by the driver component
   // and adds the [`fuchsia.hardware.amlogiccanvas/Service`] it serves to the
   // driver component's outgoing directory.
-  zx::result<std::unique_ptr<AmlCanvas>> CreateAndServeCanvas(inspect::Inspector inspector);
+  zx::result<std::unique_ptr<AmlCanvas>> CreateAndServeCanvas(const fdf::Namespace& incoming,
+                                                              inspect::Inspector inspector);
 
   // Sets up the service offering of the child node, and adds the child node to
   // the node topology.
@@ -57,6 +59,7 @@ class AmlCanvasDriver : public fdf::DriverBase {
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
 
   std::unique_ptr<AmlCanvas> canvas_;
+  inspect::Inspector inspector_;
 };
 
 }  // namespace aml_canvas

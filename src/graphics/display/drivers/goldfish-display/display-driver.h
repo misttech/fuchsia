@@ -6,7 +6,7 @@
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_GOLDFISH_DISPLAY_DISPLAY_DRIVER_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zx/result.h>
 
@@ -19,10 +19,9 @@
 
 namespace goldfish {
 
-class DisplayDriver : public fdf::DriverBase {
+class DisplayDriver : public fdf::DriverBase2 {
  public:
-  explicit DisplayDriver(fdf::DriverStartArgs start_args,
-                         fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit DisplayDriver();
 
   DisplayDriver(const DisplayDriver&) = delete;
   DisplayDriver(DisplayDriver&&) = delete;
@@ -32,7 +31,7 @@ class DisplayDriver : public fdf::DriverBase {
   ~DisplayDriver() override;
 
   // fdf::DriverBase:
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;

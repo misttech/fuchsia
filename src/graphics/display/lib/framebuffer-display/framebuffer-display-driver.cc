@@ -21,14 +21,13 @@
 
 namespace framebuffer_display {
 
-FramebufferDisplayDriver::FramebufferDisplayDriver(
-    std::string_view device_name, fdf::DriverStartArgs start_args,
-    fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase(device_name, std::move(start_args), std::move(driver_dispatcher)) {}
+FramebufferDisplayDriver::FramebufferDisplayDriver(std::string_view device_name)
+    : fdf::DriverBase2(device_name) {}
 
 FramebufferDisplayDriver::~FramebufferDisplayDriver() = default;
 
-zx::result<> FramebufferDisplayDriver::Start() {
+zx::result<> FramebufferDisplayDriver::Start(fdf::DriverContext context) {
+  incoming_ = context.take_incoming();
   zx::result<> configure_hardware_result = ConfigureHardware();
   if (configure_hardware_result.is_error()) {
     fdf::error("Failed to configure hardware: {}", configure_hardware_result);
@@ -36,7 +35,7 @@ zx::result<> FramebufferDisplayDriver::Start() {
   }
 
   zx::result<std::unique_ptr<FramebufferDisplay>> framebuffer_display_result =
-      CreateAndInitializeFramebufferDisplay();
+      CreateAndInitializeFramebufferDisplay(*incoming_);
   if (framebuffer_display_result.is_error()) {
     fdf::error("Failed to create and initialize FramebufferDisplay: {}",
                framebuffer_display_result);
@@ -53,10 +52,8 @@ zx::result<> FramebufferDisplayDriver::Start() {
   return zx::ok();
 }
 
-void FramebufferDisplayDriver::Stop() {}
-
 zx::result<std::unique_ptr<FramebufferDisplay>>
-FramebufferDisplayDriver::CreateAndInitializeFramebufferDisplay() {
+FramebufferDisplayDriver::CreateAndInitializeFramebufferDisplay(const fdf::Namespace& incoming) {
   fbl::AllocChecker alloc_checker;
   engine_events_ = fbl::make_unique_checked<display::DisplayEngineEventsFidl>(&alloc_checker);
   if (!alloc_checker.check()) {
@@ -79,7 +76,7 @@ FramebufferDisplayDriver::CreateAndInitializeFramebufferDisplay() {
   DisplayProperties display_properties = std::move(display_properties_result).value();
 
   zx::result<fidl::ClientEnd<fuchsia_sysmem2::Allocator>> sysmem_client_result =
-      incoming()->Connect<fuchsia_sysmem2::Allocator>();
+      incoming.Connect<fuchsia_sysmem2::Allocator>();
   if (sysmem_client_result.is_error()) {
     fdf::error("Failed to get fuchsia.sysmem2.Allocator protocol: {}", sysmem_client_result);
     return sysmem_client_result.take_error();

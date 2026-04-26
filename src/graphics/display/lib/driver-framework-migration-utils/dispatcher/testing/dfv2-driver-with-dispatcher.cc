@@ -6,22 +6,24 @@
 
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/task.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/zx/interrupt.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
 
+#include <memory>
+#include <string>
+#include <utility>
+
 namespace display::testing {
 
-Dfv2DriverWithDispatcher::Dfv2DriverWithDispatcher(
-    fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("dfv2-driver-with-dispatcher", std::move(start_args),
-                      std::move(driver_dispatcher)) {}
+Dfv2DriverWithDispatcher::Dfv2DriverWithDispatcher()
+    : fdf::DriverBase2("dfv2-driver-with-dispatcher") {}
 
 Dfv2DriverWithDispatcher::~Dfv2DriverWithDispatcher() = default;
 
-zx::result<> Dfv2DriverWithDispatcher::Start() {
+zx::result<> Dfv2DriverWithDispatcher::Start(fdf::DriverContext context) {
   auto create_dispatcher_result =
       dispatcher_factory_.Create(kTestDriverDispatcherName, kTestDriverSchedulerRole);
   if (create_dispatcher_result.is_error()) {
@@ -53,4 +55,4 @@ zx::result<> Dfv2DriverWithDispatcher::StartIrqHandler(zx::interrupt irq,
 
 }  // namespace display::testing
 
-FUCHSIA_DRIVER_EXPORT(::display::testing::Dfv2DriverWithDispatcher);
+FUCHSIA_DRIVER_EXPORT2(::display::testing::Dfv2DriverWithDispatcher);

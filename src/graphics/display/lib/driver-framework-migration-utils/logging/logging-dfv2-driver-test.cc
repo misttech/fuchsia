@@ -52,8 +52,8 @@ class DriverLoggingTest : public ::testing::TestWithParam<fuchsia_logging::RawLo
   }
 
   void TearDown() override {
-    zx::result prepare_stop_result = runtime_.RunToCompletion(driver_.PrepareStop());
-    EXPECT_OK(prepare_stop_result);
+    zx::result stop_result = driver_.Stop();
+    EXPECT_OK(stop_result);
 
     test_environment_.reset();
     node_server_.reset();

@@ -5,7 +5,7 @@
 #include "src/graphics/display/drivers/coordinator/coordinator-driver.h"
 
 #include <fidl/fuchsia.hardware.display/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/result.h>
 #include <zircon/types.h>
@@ -16,15 +16,15 @@
 
 namespace display_coordinator {
 
-CoordinatorDriver::CoordinatorDriver(fdf::DriverStartArgs start_args,
-                                     fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("display-coordinator", std::move(start_args), std::move(driver_dispatcher)),
+CoordinatorDriver::CoordinatorDriver()
+    : fdf::DriverBase2("display-coordinator"),
       devfs_connector_(fit::bind_member<&CoordinatorDriver::ConnectProvider>(this)) {}
 
 CoordinatorDriver::~CoordinatorDriver() = default;
 
-zx::result<> CoordinatorDriver::Start() {
-  auto create_engine_driver_client_result = EngineDriverClient::Create(incoming());
+zx::result<> CoordinatorDriver::Start(fdf::DriverContext context) {
+  std::shared_ptr<fdf::Namespace> incoming_ptr(context.take_incoming());
+  auto create_engine_driver_client_result = EngineDriverClient::Create(incoming_ptr);
   if (create_engine_driver_client_result.is_error()) {
     fdf::error("Failed to create EngineDriverClient: {}", create_engine_driver_client_result);
     return create_engine_driver_client_result.take_error();
@@ -38,7 +38,6 @@ zx::result<> CoordinatorDriver::Start() {
   }
 
   controller_ = std::move(create_controller_result).value();
-  InitInspectorExactlyOnce(controller_->inspector());
 
   // Create a node for devfs.
   zx::result<fidl::ClientEnd<fuchsia_device_fs::Connector>> bind_devfs_connector_result =
@@ -66,15 +65,9 @@ zx::result<> CoordinatorDriver::Start() {
   return zx::ok();
 }
 
-void CoordinatorDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void CoordinatorDriver::Stop(fdf::StopCompleter completer) {
   controller_->PrepareStop();
   completer(zx::ok());
-}
-
-void CoordinatorDriver::Stop() {
-  // Stop() should get called right before the destructor. Logging helps us
-  // verify this assumption when debugging controller hangs.
-  fdf::info("CoordinatorDriver::Stop");
 }
 
 void CoordinatorDriver::ConnectProvider(
@@ -85,4 +78,4 @@ void CoordinatorDriver::ConnectProvider(
 
 }  // namespace display_coordinator
 
-FUCHSIA_DRIVER_EXPORT(display_coordinator::CoordinatorDriver);
+FUCHSIA_DRIVER_EXPORT2(display_coordinator::CoordinatorDriver);

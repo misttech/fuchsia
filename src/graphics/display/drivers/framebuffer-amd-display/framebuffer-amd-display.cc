@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 #include <utility>
 
@@ -16,8 +16,7 @@ constexpr uint32_t kFramebufferPciBarIndex = 0;
 
 class FramebufferAmdDisplayDriver final : public FramebufferPciBootDisplayDriver {
  public:
-  explicit FramebufferAmdDisplayDriver(fdf::DriverStartArgs start_args,
-                                       fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  FramebufferAmdDisplayDriver();
 
   FramebufferAmdDisplayDriver(const FramebufferAmdDisplayDriver&) = delete;
   FramebufferAmdDisplayDriver(FramebufferAmdDisplayDriver&&) = delete;
@@ -27,10 +26,8 @@ class FramebufferAmdDisplayDriver final : public FramebufferPciBootDisplayDriver
   ~FramebufferAmdDisplayDriver() override;
 };
 
-FramebufferAmdDisplayDriver::FramebufferAmdDisplayDriver(
-    fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : FramebufferPciBootDisplayDriver("framebuffer-amd-display", kFramebufferPciBarIndex,
-                                      std::move(start_args), std::move(driver_dispatcher)) {}
+FramebufferAmdDisplayDriver::FramebufferAmdDisplayDriver()
+    : FramebufferPciBootDisplayDriver("framebuffer-amd-display", kFramebufferPciBarIndex) {}
 
 FramebufferAmdDisplayDriver::~FramebufferAmdDisplayDriver() = default;
 
@@ -38,4 +35,4 @@ FramebufferAmdDisplayDriver::~FramebufferAmdDisplayDriver() = default;
 
 }  // namespace framebuffer_display
 
-FUCHSIA_DRIVER_EXPORT(framebuffer_display::FramebufferAmdDisplayDriver);
+FUCHSIA_DRIVER_EXPORT2(framebuffer_display::FramebufferAmdDisplayDriver);

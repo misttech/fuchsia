@@ -6,8 +6,12 @@
 #define SRC_GRAPHICS_DISPLAY_LIB_DRIVER_FRAMEWORK_MIGRATION_UTILS_DISPATCHER_TESTING_DFV2_DRIVER_WITH_DISPATCHER_H_
 
 #include <lib/async/cpp/irq.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/zx/interrupt.h>
+
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "src/graphics/display/lib/driver-framework-migration-utils/dispatcher/driver-runtime-backed-dispatcher-factory.h"
 
@@ -18,15 +22,14 @@ static constexpr std::string_view kTestDriverDispatcherName = "test-dispatcher";
 
 // A DFv2 test driver with a background display::Dispatcher that tests can
 // dispatch async tasks or interrupt handlers.
-class Dfv2DriverWithDispatcher : public fdf::DriverBase {
+class Dfv2DriverWithDispatcher : public fdf::DriverBase2 {
  public:
-  Dfv2DriverWithDispatcher(fdf::DriverStartArgs start_args,
-                           fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  Dfv2DriverWithDispatcher();
 
   ~Dfv2DriverWithDispatcher() override;
 
-  // Implements `fdf::DriverBase`.
-  zx::result<> Start() override;
+  // Implements `fdf::DriverBase2`.
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // Posts a task on its background dispatcher.
   zx::result<> PostTask(fit::closure task);

@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <lib/driver/compat/cpp/logging.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
@@ -28,21 +28,20 @@
 
 namespace aml_canvas {
 
-AmlCanvasDriver::AmlCanvasDriver(fdf::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("aml-canvas", std::move(start_args), std::move(driver_dispatcher)) {}
+AmlCanvasDriver::AmlCanvasDriver() : fdf::DriverBase2("aml-canvas") {}
 
-void AmlCanvasDriver::Stop() {
+void AmlCanvasDriver::Stop(fdf::StopCompleter completer) {
   fidl::OneWayStatus result = controller_->Remove();
   if (!result.ok()) {
     fdf::error("Failed to remove the Node: {}", result.status_string());
   }
+  completer(zx::ok());
 }
 
 zx::result<std::unique_ptr<AmlCanvas>> AmlCanvasDriver::CreateAndServeCanvas(
-    inspect::Inspector inspector) {
+    const fdf::Namespace& incoming, inspect::Inspector inspector) {
   zx::result<fidl::ClientEnd<fuchsia_hardware_platform_device::Device>> pdev_result =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+      incoming.Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_result.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_result);
   }
@@ -119,14 +118,15 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AmlCanvasD
   return zx::ok(std::move(controller_client));
 }
 
-zx::result<> AmlCanvasDriver::Start() {
+zx::result<> AmlCanvasDriver::Start(fdf::DriverContext context) {
+  std::shared_ptr<fdf::Namespace> incoming_ptr(context.take_incoming());
   zx::result<> compat_server_init_result =
-      compat_server_.Initialize(incoming(), outgoing(), node_name(), name());
+      compat_server_.Initialize(incoming_ptr, outgoing(), context.node_name(), name());
   if (compat_server_init_result.is_error()) {
     return compat_server_init_result.take_error();
   }
 
-  auto canvas_result = CreateAndServeCanvas(inspector().inspector());
+  auto canvas_result = CreateAndServeCanvas(*incoming_ptr, inspector_);
   if (canvas_result.is_error()) {
     fdf::error("Failed to create AmlCanvas and set up service: {}", canvas_result);
     return canvas_result.take_error();
@@ -146,4 +146,4 @@ zx::result<> AmlCanvasDriver::Start() {
 
 }  // namespace aml_canvas
 
-FUCHSIA_DRIVER_EXPORT(aml_canvas::AmlCanvasDriver);
+FUCHSIA_DRIVER_EXPORT2(aml_canvas::AmlCanvasDriver);

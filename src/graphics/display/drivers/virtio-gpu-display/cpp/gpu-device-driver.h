@@ -5,7 +5,8 @@
 #ifndef SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_GPU_DEVICE_DRIVER_H_
 #define SRC_GRAPHICS_DISPLAY_DRIVERS_VIRTIO_GPU_DISPLAY_CPP_GPU_DEVICE_DRIVER_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zx/result.h>
 #include <zircon/types.h>
@@ -24,10 +25,9 @@
 namespace virtio_display {
 
 // Integration between this driver and the Driver Framework.
-class GpuDeviceDriver : public fdf::DriverBase, public GpuControlServer::Owner {
+class GpuDeviceDriver : public fdf::DriverBase2, public GpuControlServer::Owner {
  public:
-  explicit GpuDeviceDriver(fdf::DriverStartArgs start_args,
-                           fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit GpuDeviceDriver();
 
   GpuDeviceDriver(const GpuDeviceDriver&) = delete;
   GpuDeviceDriver& operator=(const GpuDeviceDriver&) = delete;
@@ -37,8 +37,8 @@ class GpuDeviceDriver : public fdf::DriverBase, public GpuControlServer::Owner {
   virtual ~GpuDeviceDriver();
 
   // fdf::DriverBase:
-  void Start(fdf::StartCompleter completer) override;
-  void Stop() override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // GpuControlServer::DeviceAccessor interface.
   void SendHardwareCommand(std::span<uint8_t> request,
@@ -46,7 +46,7 @@ class GpuDeviceDriver : public fdf::DriverBase, public GpuControlServer::Owner {
 
  private:
   // Resource initialization that is not suitable for the constructor.
-  zx::result<> InitResources();
+  zx::result<> InitResources(const fdf::Namespace& incoming);
 
   // Must be called after `InitResources()`.
   zx::result<> InitDisplayNode();

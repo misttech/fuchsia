@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 #include "src/graphics/display/lib/framebuffer-display/framebuffer-pci-boot-display-driver.h"
 
@@ -14,8 +14,7 @@ constexpr uint32_t kFramebufferPciBarIndex = 2;
 
 class FramebufferIntelDisplayDriver final : public FramebufferPciBootDisplayDriver {
  public:
-  explicit FramebufferIntelDisplayDriver(fdf::DriverStartArgs start_args,
-                                         fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  FramebufferIntelDisplayDriver();
 
   FramebufferIntelDisplayDriver(const FramebufferIntelDisplayDriver&) = delete;
   FramebufferIntelDisplayDriver(FramebufferIntelDisplayDriver&&) = delete;
@@ -25,10 +24,8 @@ class FramebufferIntelDisplayDriver final : public FramebufferPciBootDisplayDriv
   ~FramebufferIntelDisplayDriver() override;
 };
 
-FramebufferIntelDisplayDriver::FramebufferIntelDisplayDriver(
-    fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : FramebufferPciBootDisplayDriver("framebuffer-intel-display", kFramebufferPciBarIndex,
-                                      std::move(start_args), std::move(driver_dispatcher)) {}
+FramebufferIntelDisplayDriver::FramebufferIntelDisplayDriver()
+    : FramebufferPciBootDisplayDriver("framebuffer-intel-display", kFramebufferPciBarIndex) {}
 
 FramebufferIntelDisplayDriver::~FramebufferIntelDisplayDriver() = default;
 
@@ -36,4 +33,4 @@ FramebufferIntelDisplayDriver::~FramebufferIntelDisplayDriver() = default;
 
 }  // namespace framebuffer_display
 
-FUCHSIA_DRIVER_EXPORT(framebuffer_display::FramebufferIntelDisplayDriver);
+FUCHSIA_DRIVER_EXPORT2(framebuffer_display::FramebufferIntelDisplayDriver);

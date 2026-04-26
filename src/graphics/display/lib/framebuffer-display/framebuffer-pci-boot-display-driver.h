@@ -25,9 +25,7 @@ namespace framebuffer_display {
 // `pci_bar_index`.
 class FramebufferPciBootDisplayDriver : public FramebufferDisplayDriver {
  public:
-  FramebufferPciBootDisplayDriver(std::string_view device_name, uint32_t pci_bar_index,
-                                  fdf::DriverStartArgs start_args,
-                                  fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  FramebufferPciBootDisplayDriver(std::string_view device_name, uint32_t pci_bar_index);
 
   FramebufferPciBootDisplayDriver(const FramebufferPciBootDisplayDriver&) = delete;
   FramebufferPciBootDisplayDriver(FramebufferPciBootDisplayDriver&&) = delete;

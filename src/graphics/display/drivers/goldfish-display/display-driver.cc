@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.hardware.display.engine/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
@@ -101,16 +101,14 @@ zx::result<std::unique_ptr<RenderControl>> CreateAndInitializeRenderControl(
 
 }  // namespace
 
-DisplayDriver::DisplayDriver(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("goldfish-display", std::move(start_args), std::move(driver_dispatcher)) {}
+DisplayDriver::DisplayDriver() : fdf::DriverBase2("goldfish-display") {}
 
 DisplayDriver::~DisplayDriver() = default;
 
-zx::result<> DisplayDriver::Start() {
+zx::result<> DisplayDriver::Start(fdf::DriverContext context) {
   zx::result<fidl::ClientEnd<fuchsia_hardware_goldfish::ControlDevice>>
       connect_control_service_result =
-          incoming()->Connect<fuchsia_hardware_goldfish::ControlService::Device>();
+          context.incoming().Connect<fuchsia_hardware_goldfish::ControlService::Device>();
   if (connect_control_service_result.is_error()) {
     fdf::error("Failed to connect to the goldfish Control FIDL service: {}",
                connect_control_service_result);
@@ -120,7 +118,7 @@ zx::result<> DisplayDriver::Start() {
       std::move(connect_control_service_result).value();
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::Bus>> connect_pipe_service_result =
-      incoming()->Connect<fuchsia_hardware_goldfish_pipe::Service::Device>();
+      context.incoming().Connect<fuchsia_hardware_goldfish_pipe::Service::Device>();
   if (connect_pipe_service_result.is_error()) {
     fdf::error("Failed to connect to the goldfish pipe FIDL service: {}",
                connect_pipe_service_result);
@@ -130,7 +128,7 @@ zx::result<> DisplayDriver::Start() {
       std::move(connect_pipe_service_result).value();
 
   zx::result<fidl::ClientEnd<fuchsia_sysmem2::Allocator>> create_sysmem_allocator_result =
-      CreateAndInitializeSysmemAllocator(incoming().get());
+      CreateAndInitializeSysmemAllocator(&context.incoming());
   if (create_sysmem_allocator_result.is_error()) {
     fdf::error("Failed to create and initialize sysmem allocator: {}",
                create_sysmem_allocator_result);
@@ -140,7 +138,7 @@ zx::result<> DisplayDriver::Start() {
       std::move(create_sysmem_allocator_result).value();
 
   zx::result<std::unique_ptr<RenderControl>> create_render_control_result =
-      CreateAndInitializeRenderControl(incoming().get());
+      CreateAndInitializeRenderControl(&context.incoming());
   if (create_render_control_result.is_error()) {
     fdf::error("Failed to create and initialize RenderControl: {}", create_render_control_result);
     return create_render_control_result.take_error();
@@ -210,4 +208,4 @@ zx::result<> DisplayDriver::Start() {
 
 }  // namespace goldfish
 
-FUCHSIA_DRIVER_EXPORT(goldfish::DisplayDriver);
+FUCHSIA_DRIVER_EXPORT2(goldfish::DisplayDriver);

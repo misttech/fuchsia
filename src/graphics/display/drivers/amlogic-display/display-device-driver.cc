@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
@@ -30,35 +30,11 @@
 
 namespace amlogic_display {
 
-DisplayDeviceDriver::DisplayDeviceDriver(fdf::DriverStartArgs start_args,
-                                         fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("amlogic-display", std::move(start_args), std::move(driver_dispatcher)) {}
+DisplayDeviceDriver::DisplayDeviceDriver() : fdf::DriverBase2("amlogic-display") {}
 
-void DisplayDeviceDriver::Stop() {}
-
-zx::result<std::unique_ptr<inspect::ComponentInspector>>
-DisplayDeviceDriver::CreateComponentInspector(inspect::Inspector inspector) {
-  zx::result<fidl::ClientEnd<fuchsia_inspect::InspectSink>> inspect_sink_connect_result =
-      incoming()->Connect<fuchsia_inspect::InspectSink>();
-  if (inspect_sink_connect_result.is_error()) {
-    fdf::error("Failed to connect to InspectSink protocol: {}", inspect_sink_connect_result);
-    return inspect_sink_connect_result.take_error();
-  }
-
-  fbl::AllocChecker alloc_checker;
-  auto component_inspector = fbl::make_unique_checked<inspect::ComponentInspector>(
-      &alloc_checker, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-      inspect::PublishOptions{.inspector = std::move(inspector),
-                              .client_end = std::move(inspect_sink_connect_result).value()});
-  if (!alloc_checker.check()) {
-    fdf::error("Failed to allocate memory for ComponentInspector");
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-  return zx::ok(std::move(component_inspector));
-}
-
-zx::result<> DisplayDeviceDriver::Start() {
-  auto config = take_config<structured_config::Config>();
+zx::result<> DisplayDeviceDriver::Start(fdf::DriverContext context) {
+  auto config = context.take_config<structured_config::Config>();
+  std::shared_ptr<fdf::Namespace> incoming_ptr(context.take_incoming());
 
   fbl::AllocChecker alloc_checker;
   engine_events_ = fbl::make_unique_checked<display::DisplayEngineEventsFidl>(&alloc_checker);
@@ -68,7 +44,7 @@ zx::result<> DisplayDeviceDriver::Start() {
   }
 
   zx::result<std::unique_ptr<DisplayEngine>> create_display_engine_result =
-      DisplayEngine::Create(incoming(), engine_events_.get(), config);
+      DisplayEngine::Create(incoming_ptr, engine_events_.get(), config);
   if (create_display_engine_result.is_error()) {
     fdf::error("Failed to create DisplayEngine: {}", create_display_engine_result);
     return create_display_engine_result.take_error();
@@ -81,8 +57,6 @@ zx::result<> DisplayDeviceDriver::Start() {
     fdf::error("Failed to allocate memory for DisplayEngineFidlAdapter");
     return zx::error(ZX_ERR_NO_MEMORY);
   }
-
-  InitInspectorExactlyOnce(display_engine_->inspector());
 
   inspect::Node config_node = display_engine_->inspector().GetRoot().CreateChild("config");
   config.RecordInspect(&config_node);
@@ -112,4 +86,4 @@ zx::result<> DisplayDeviceDriver::Start() {
 
 }  // namespace amlogic_display
 
-FUCHSIA_DRIVER_EXPORT(amlogic_display::DisplayDeviceDriver);
+FUCHSIA_DRIVER_EXPORT2(amlogic_display::DisplayDeviceDriver);

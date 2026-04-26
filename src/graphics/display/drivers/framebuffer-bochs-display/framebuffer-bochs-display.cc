@@ -4,7 +4,7 @@
 
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <lib/device-protocol/pci.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/zx/result.h>
@@ -117,8 +117,7 @@ void LogBochsDisplayEngineRegisters(fdf::MmioView mmio_space) {
 // Driver for the QEMU Bochs-compatible display engine.
 class FramebufferBochsDisplayDriver final : public FramebufferDisplayDriver {
  public:
-  explicit FramebufferBochsDisplayDriver(fdf::DriverStartArgs start_args,
-                                         fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  FramebufferBochsDisplayDriver();
 
   FramebufferBochsDisplayDriver(const FramebufferBochsDisplayDriver&) = delete;
   FramebufferBochsDisplayDriver(FramebufferBochsDisplayDriver&&) = delete;
@@ -136,16 +135,14 @@ class FramebufferBochsDisplayDriver final : public FramebufferDisplayDriver {
   zx::result<ddk::Pci> GetPciClient();
 };
 
-FramebufferBochsDisplayDriver::FramebufferBochsDisplayDriver(
-    fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : FramebufferDisplayDriver("framebuffer-bochs-display", std::move(start_args),
-                               std::move(driver_dispatcher)) {}
+FramebufferBochsDisplayDriver::FramebufferBochsDisplayDriver()
+    : FramebufferDisplayDriver("framebuffer-bochs-display") {}
 
 FramebufferBochsDisplayDriver::~FramebufferBochsDisplayDriver() = default;
 
 zx::result<ddk::Pci> FramebufferBochsDisplayDriver::GetPciClient() {
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_result =
-      incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
+      incoming().Connect<fuchsia_hardware_pci::Service::Device>("pci");
   if (pci_result.is_error()) {
     fdf::error("Failed to connect to PCI protocol: {}", pci_result);
     return pci_result.take_error();
@@ -242,4 +239,4 @@ zx::result<DisplayProperties> FramebufferBochsDisplayDriver::GetDisplayPropertie
 
 }  // namespace framebuffer_display
 
-FUCHSIA_DRIVER_EXPORT(framebuffer_display::FramebufferBochsDisplayDriver);
+FUCHSIA_DRIVER_EXPORT2(framebuffer_display::FramebufferBochsDisplayDriver);

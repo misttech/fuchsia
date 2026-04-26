@@ -8,9 +8,9 @@
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/prepare_stop_completer.h>
-#include <lib/driver/component/cpp/start_completer.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/inspect/cpp/inspector.h>
 #include <lib/zx/result.h>
 
 #include <memory>
@@ -24,16 +24,14 @@ namespace intel_display {
 // Driver instance that binds to the intel-display PCI device.
 //
 // This class is responsible for interfacing with the Fuchsia Driver Framework.
-class IntelDisplayDriver : public fdf::DriverBase {
+class IntelDisplayDriver : public fdf::DriverBase2 {
  public:
-  IntelDisplayDriver(fdf::DriverStartArgs start_args,
-                     fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit IntelDisplayDriver();
   ~IntelDisplayDriver() override;
 
   // fdf::DriverBase:
-  void Start(fdf::StartCompleter completer) override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   zx::result<ddk::AnyProtocol> GetProtocol(uint32_t proto_id);
 
@@ -46,11 +44,11 @@ class IntelDisplayDriver : public fdf::DriverBase {
   zx::result<> InitDisplayNode();
 
   // Must be called after `InitController()`.
-  zx::result<> InitGpuCoreNode();
+  zx::result<> InitGpuCoreNode(const std::optional<std::string>& node_name);
 
-  void PrepareStopOnPowerOn(fdf::PrepareStopCompleter completer);
+  void PrepareStopOnPowerOn(fdf::StopCompleter completer);
   void PrepareStopOnPowerStateTransition(fuchsia_system_state::SystemPowerState power_state,
-                                         fdf::PrepareStopCompleter completer);
+                                         fdf::StopCompleter completer);
 
   // Must outlive `controller_` and `engine_fidl_adapter_`.
   display::DisplayEngineEventsFidl engine_events_;
@@ -69,6 +67,8 @@ class IntelDisplayDriver : public fdf::DriverBase {
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> display_node_controller_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> gpu_core_node_controller_;
+  std::shared_ptr<fdf::Namespace> incoming_;
+  inspect::Inspector inspector_;
 };
 
 }  // namespace intel_display

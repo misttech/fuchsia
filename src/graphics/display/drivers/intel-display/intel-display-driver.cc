@@ -10,7 +10,7 @@
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <fidl/fuchsia.system.state/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/prepare_stop_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -99,15 +99,13 @@ zx::result<zbi_swfb_t> GetFramebufferInfo(fdf::Namespace& incoming) {
 
 }  // namespace
 
-IntelDisplayDriver::IntelDisplayDriver(fdf::DriverStartArgs start_args,
-                                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("intel-display", std::move(start_args), std::move(driver_dispatcher)) {}
+IntelDisplayDriver::IntelDisplayDriver() : fdf::DriverBase2("intel-display") {}
 
 IntelDisplayDriver::~IntelDisplayDriver() = default;
 
 zx::result<> IntelDisplayDriver::InitController() {
   zx::result<fidl::ClientEnd<fuchsia_sysmem2::Allocator>> sysmem_result =
-      incoming()->Connect<fuchsia_sysmem2::Allocator>();
+      incoming_->Connect<fuchsia_sysmem2::Allocator>();
   if (sysmem_result.is_error()) {
     fdf::error("Failed to connect to sysmem protocol: {}", sysmem_result);
     return sysmem_result.take_error();
@@ -115,27 +113,27 @@ zx::result<> IntelDisplayDriver::InitController() {
   fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem = std::move(sysmem_result).value();
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_result =
-      incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
+      incoming_->Connect<fuchsia_hardware_pci::Service::Device>("pci");
   if (pci_result.is_error()) {
     fdf::error("Failed to connect to pci protocol: {}", pci_result);
     return pci_result.take_error();
   }
   fidl::ClientEnd<fuchsia_hardware_pci::Device> pci = std::move(pci_result).value();
 
-  zx::result<zbi_swfb_t> framebuffer_info = GetFramebufferInfo(*incoming());
+  zx::result<zbi_swfb_t> framebuffer_info = GetFramebufferInfo(*incoming_);
   if (framebuffer_info.is_ok()) {
     framebuffer_info_ = framebuffer_info.value();
   }
 
   zx::result<zx::resource> mmio_resource_result =
-      GetKernelResource<fuchsia_kernel::MmioResource>(*incoming(), "mmio");
+      GetKernelResource<fuchsia_kernel::MmioResource>(*incoming_, "mmio");
   if (mmio_resource_result.is_error()) {
     return mmio_resource_result.take_error();
   }
   mmio_resource_ = std::move(mmio_resource_result).value();
 
   zx::result<zx::resource> ioport_resource_result =
-      GetKernelResource<fuchsia_kernel::IoportResource>(*incoming(), "ioport");
+      GetKernelResource<fuchsia_kernel::IoportResource>(*incoming_, "ioport");
   if (ioport_resource_result.is_error()) {
     return ioport_resource_result.take_error();
   }
@@ -148,7 +146,7 @@ zx::result<> IntelDisplayDriver::InitController() {
 
   zx::result<std::unique_ptr<Controller>> controller_result =
       Controller::Create(std::move(sysmem), std::move(pci), std::move(resources), framebuffer_info_,
-                         &engine_events_, inspector().inspector());
+                         &engine_events_, inspector_);
   if (controller_result.is_error()) {
     return controller_result.take_error();
   }
@@ -165,7 +163,8 @@ zx::result<> IntelDisplayDriver::InitController() {
   return zx::ok();
 }
 
-void IntelDisplayDriver::Start(fdf::StartCompleter completer) {
+void IntelDisplayDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result<> init_controller_result = InitController();
   if (init_controller_result.is_error()) {
     completer(init_controller_result.take_error());
@@ -178,7 +177,7 @@ void IntelDisplayDriver::Start(fdf::StartCompleter completer) {
     return;
   }
 
-  zx::result<> init_gpu_core_node_result = InitGpuCoreNode();
+  zx::result<> init_gpu_core_node_result = InitGpuCoreNode(context.node_name());
   if (init_gpu_core_node_result.is_error()) {
     completer(init_gpu_core_node_result.take_error());
     return;
@@ -187,7 +186,7 @@ void IntelDisplayDriver::Start(fdf::StartCompleter completer) {
   controller_->Start(std::move(completer));
 }
 
-void IntelDisplayDriver::PrepareStopOnPowerOn(fdf::PrepareStopCompleter completer) {
+void IntelDisplayDriver::PrepareStopOnPowerOn(fdf::StopCompleter completer) {
   if (gpu_core_node_controller_.is_valid()) {
     fidl::OneWayStatus remove_gpu_result = gpu_core_node_controller_->Remove();
     if (!remove_gpu_result.ok()) {
@@ -210,7 +209,7 @@ void IntelDisplayDriver::PrepareStopOnPowerOn(fdf::PrepareStopCompleter complete
 }
 
 void IntelDisplayDriver::PrepareStopOnPowerStateTransition(
-    fuchsia_system_state::SystemPowerState power_state, fdf::PrepareStopCompleter completer) {
+    fuchsia_system_state::SystemPowerState power_state, fdf::StopCompleter completer) {
   if (controller_) {
     controller_->PrepareStopOnPowerStateTransition(power_state, std::move(completer));
   } else {
@@ -218,9 +217,9 @@ void IntelDisplayDriver::PrepareStopOnPowerStateTransition(
   }
 }
 
-void IntelDisplayDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void IntelDisplayDriver::Stop(fdf::StopCompleter completer) {
   zx::result<fuchsia_system_state::SystemPowerState> system_power_state_result =
-      GetSystemPowerState(*incoming());
+      GetSystemPowerState(*incoming_);
   if (system_power_state_result.is_error()) {
     fdf::warn("Failed to get system power state: {}, fallback to fully on",
               system_power_state_result);
@@ -235,8 +234,6 @@ void IntelDisplayDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
   }
   PrepareStopOnPowerStateTransition(system_power_state, std::move(completer));
 }
-
-void IntelDisplayDriver::Stop() {}
 
 zx::result<ddk::AnyProtocol> IntelDisplayDriver::GetProtocol(uint32_t proto_id) {
   return controller_->GetProtocol(proto_id);
@@ -274,7 +271,7 @@ zx::result<> IntelDisplayDriver::InitDisplayNode() {
   return zx::ok();
 }
 
-zx::result<> IntelDisplayDriver::InitGpuCoreNode() {
+zx::result<> IntelDisplayDriver::InitGpuCoreNode(const std::optional<std::string>& node_name) {
   ZX_DEBUG_ASSERT(!gpu_core_node_controller_.is_valid());
 
   // Serves the [`fuchsia.hardware.intelgpucore/IntelGpuCore`] protocol
@@ -290,7 +287,7 @@ zx::result<> IntelDisplayDriver::InitGpuCoreNode() {
 
   static constexpr std::string_view kGpuCoreChildNodeName = "intel-gpu-core";
   zx::result<> compat_server_init_result =
-      gpu_compat_server_.Initialize(incoming(), outgoing(), node_name(), kGpuCoreChildNodeName,
+      gpu_compat_server_.Initialize(incoming_, outgoing(), node_name, kGpuCoreChildNodeName,
                                     /*forward_metadata=*/compat::ForwardMetadata::None(),
                                     /*banjo_config=*/std::move(banjo_config));
   if (compat_server_init_result.is_error()) {
@@ -319,4 +316,4 @@ zx::result<> IntelDisplayDriver::InitGpuCoreNode() {
 
 }  // namespace intel_display
 
-FUCHSIA_DRIVER_EXPORT(intel_display::IntelDisplayDriver);
+FUCHSIA_DRIVER_EXPORT2(intel_display::IntelDisplayDriver);

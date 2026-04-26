@@ -17,11 +17,9 @@
 
 namespace framebuffer_display {
 
-FramebufferPciBootDisplayDriver::FramebufferPciBootDisplayDriver(
-    std::string_view device_name, uint32_t pci_bar_index, fdf::DriverStartArgs start_args,
-    fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : FramebufferDisplayDriver(device_name, std::move(start_args), std::move(driver_dispatcher)),
-      pci_bar_index_(pci_bar_index) {}
+FramebufferPciBootDisplayDriver::FramebufferPciBootDisplayDriver(std::string_view device_name,
+                                                                 uint32_t pci_bar_index)
+    : FramebufferDisplayDriver(device_name), pci_bar_index_(pci_bar_index) {}
 
 FramebufferPciBootDisplayDriver::~FramebufferPciBootDisplayDriver() = default;
 
@@ -29,7 +27,7 @@ zx::result<> FramebufferPciBootDisplayDriver::ConfigureHardware() { return zx::o
 
 zx::result<fdf::MmioBuffer> FramebufferPciBootDisplayDriver::GetFrameBufferMmioBuffer() {
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_result =
-      incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
+      incoming().Connect<fuchsia_hardware_pci::Service::Device>("pci");
   if (pci_result.is_error()) {
     fdf::error("Failed to connect to PCI protocol: {}", pci_result);
     return pci_result.take_error();
@@ -50,7 +48,7 @@ zx::result<fdf::MmioBuffer> FramebufferPciBootDisplayDriver::GetFrameBufferMmioB
 }
 
 zx::result<zbi_swfb_t> FramebufferPciBootDisplayDriver::GetFramebufferInfo() {
-  zx::result boot_items_client = incoming()->Connect<fuchsia_boot::Items>();
+  zx::result boot_items_client = incoming().Connect<fuchsia_boot::Items>();
   if (boot_items_client.is_error()) {
     fdf::error("Failed to connect to fuchsia.boot/Items: {}", boot_items_client);
     return boot_items_client.take_error();

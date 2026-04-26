@@ -10,8 +10,8 @@
 #include <fidl/fuchsia.system.state/cpp/fidl.h>
 #include <fuchsia/hardware/intelgpucore/cpp/banjo.h>
 #include <lib/device-protocol/pci.h>
-#include <lib/driver/component/cpp/prepare_stop_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>
+#include <lib/driver/component/cpp/stop_completer.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/inspector.h>
@@ -101,11 +101,11 @@ class Controller final : public display::DisplayEngineInterface,
   void Start(fdf::StartCompleter completer);
 
   // Corresponds to DFv2 `PrepareStop()`.
-  void PrepareStopOnPowerOn(fdf::PrepareStopCompleter completer);
+  void PrepareStopOnPowerOn(fdf::StopCompleter completer);
 
   // Corresponds to DFv2 `PrepareStop()`.
   void PrepareStopOnPowerStateTransition(fuchsia_system_state::SystemPowerState power_state,
-                                         fdf::PrepareStopCompleter completer);
+                                         fdf::StopCompleter completer);
 
   // `display::DisplayEngineInterface`:
   display::EngineInfo CompleteCoordinatorConnection() override;
