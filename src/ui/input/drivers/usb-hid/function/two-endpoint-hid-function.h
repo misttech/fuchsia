@@ -8,7 +8,8 @@
 #include <fidl/fuchsia.hardware.hidbus/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/result.h>
 
@@ -29,15 +30,14 @@ namespace two_endpoint_hid_function {
 // device and sends fake HID report descriptors and HID reports. The tests for
 // this driver and the USB-HID driver are with the other usb-virtual-bus tests.
 class FakeUsbHidFunction
-    : public fdf::DriverBase,
+    : public fdf::DriverBase2,
       public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   static constexpr std::string kDriverName = "FakeUsbHidFunction";
 
-  FakeUsbHidFunction(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  explicit FakeUsbHidFunction();
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   void UsbEndpointOutCallback(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 

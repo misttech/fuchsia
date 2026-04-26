@@ -6,7 +6,7 @@
 
 #include <assert.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/result.h>
@@ -60,6 +60,8 @@ static const uint8_t boot_mouse_r_desc[50] = {
     0xC0,        //   End Collection
     0xC0,        // End Collection
 };
+
+FakeUsbHidFunction::FakeUsbHidFunction() : fdf::DriverBase2(kDriverName) {}
 
 void FakeUsbHidFunction::Control(ControlRequest& request, ControlCompleter::Sync& completer) {
   const auto& setup = request.setup();
@@ -115,9 +117,9 @@ void FakeUsbHidFunction::handle_unknown_method(
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
-zx::result<> FakeUsbHidFunction::Start() {
+zx::result<> FakeUsbHidFunction::Start(fdf::DriverContext context) {
   zx::result client_end =
-      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (client_end.is_error()) {
     fdf::error("could not connect to UsbFunctionService: {}", client_end);
     return client_end.take_error();
@@ -225,4 +227,4 @@ zx::result<> FakeUsbHidFunction::Start() {
 
 }  // namespace one_endpoint_hid_function
 
-FUCHSIA_DRIVER_EXPORT(one_endpoint_hid_function::FakeUsbHidFunction);
+FUCHSIA_DRIVER_EXPORT2(one_endpoint_hid_function::FakeUsbHidFunction);

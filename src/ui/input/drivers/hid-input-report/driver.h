@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include "src/ui/input/drivers/hid-input-report/input-report.h"
@@ -16,14 +17,14 @@ namespace hid_input_report_dev {
 
 const std::string kDeviceName = "InputReport";
 
-class InputReportDriver : public fdf::DriverBase {
+class InputReportDriver : public fdf::DriverBase2 {
  public:
-  InputReportDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : DriverBase(kDeviceName, std::move(start_args), std::move(dispatcher)),
+  explicit InputReportDriver()
+      : fdf::DriverBase2(kDeviceName),
         devfs_connector_(fit::bind_member<&InputReportDriver::Serve>(this)) {}
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Public for testing
   hid_input_report_dev::InputReport& input_report_for_testing() { return *input_report_; }
@@ -39,8 +40,7 @@ class InputReportDriver : public fdf::DriverBase {
   std::unique_ptr<hid_input_report_dev::InputReport> input_report_;
   fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> input_report_bindings_;
 
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
-  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
+  fdf::OwnedChildNode child_;
   driver_devfs::Connector<fuchsia_input_report::InputDevice> devfs_connector_;
 };
 

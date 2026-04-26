@@ -4,7 +4,7 @@
 
 #include "hid.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/hid/boot.h>
@@ -379,8 +379,9 @@ zx::result<std::vector<fuchsia_driver_framework::NodeProperty2>> HidDevice::Init
   return zx::ok(std::move(properties));
 }
 
-zx::result<> HidDriver::Start() {
-  auto hidbus = incoming()->Connect<fhidbus::Service::Device>();
+zx::result<> HidDriver::Start(fdf::DriverContext context) {
+  auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  auto hidbus = incoming_ptr->Connect<fhidbus::Service::Device>();
   if (hidbus.is_error()) {
     fdf::error("Failed to open hidbus service: {}", hidbus);
     return hidbus.take_error();
@@ -395,7 +396,8 @@ zx::result<> HidDriver::Start() {
 
   // Initialize our compat server.
   {
-    zx::result result = compat_server_.Initialize(incoming(), outgoing(), node_name(), kDeviceName);
+    zx::result result =
+        compat_server_.Initialize(incoming_ptr, outgoing(), context.node_name(), kDeviceName);
     if (result.is_error()) {
       return result.take_error();
     }
@@ -438,4 +440,4 @@ zx::result<> HidDriver::Start() {
 
 }  // namespace hid_driver
 
-FUCHSIA_DRIVER_EXPORT(hid_driver::HidDriver);
+FUCHSIA_DRIVER_EXPORT2(hid_driver::HidDriver);

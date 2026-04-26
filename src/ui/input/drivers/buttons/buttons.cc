@@ -9,7 +9,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/compat/cpp/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
@@ -19,9 +19,10 @@
 
 namespace buttons {
 
-zx::result<> Buttons::Start() {
+zx::result<> Buttons::Start(fdf::DriverContext context) {
+  config_ = context.take_config<buttons_config::Config>();
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -93,7 +94,8 @@ zx::result<> Buttons::Start() {
         fdf::error("Button {} has unknown id: {}", i, static_cast<uint32_t>(button_id));
         return zx::error(ZX_ERR_NOT_SUPPORTED);
     };
-    zx::result gpio_client = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(name);
+    zx::result gpio_client =
+        context.incoming().Connect<fuchsia_hardware_gpio::Service::Device>(name);
     if (gpio_client.is_error() || !gpio_client->is_valid()) {
       fdf::error("Connect to GPIO {} failed: {}", name, gpio_client);
       return gpio_client.take_error();
@@ -104,7 +106,7 @@ zx::result<> Buttons::Start() {
 
   fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag_client;
   if (config_.suspend_enabled()) {
-    auto sag_result = incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
+    auto sag_result = context.incoming().Connect<fuchsia_power_system::ActivityGovernor>();
     if (sag_result.is_ok() && sag_result->is_valid()) {
       sag_client = std::move(sag_result.value());
     } else {
@@ -134,44 +136,30 @@ zx::result<> Buttons::Start() {
   return zx::ok();
 }
 
-void Buttons::PrepareStop(fdf::PrepareStopCompleter completer) {
+void Buttons::Stop(fdf::StopCompleter completer) {
   device_->ShutDown();
   completer(zx::ok());
 }
 
 zx::result<> Buttons::CreateDevfsNode() {
-  fidl::Arena arena;
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
     return connector.take_error();
   }
 
-  auto devfs = fuchsia_driver_framework::wire::DevfsAddArgs::Builder(arena)
-                   .connector(std::move(connector.value()))
-                   .class_name("input-report");
+  fuchsia_driver_framework::DevfsAddArgs devfs_args{
+      {.connector = std::move(connector.value()), .class_name = "input-report"}};
 
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                  .name(arena, kDeviceName)
-                  .devfs_args(devfs.Build())
-                  .Build();
-
-  auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-
-  zx::result node_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
-  ZX_ASSERT_MSG(node_endpoints.is_ok(), "Failed to create node endpoints: %s",
-                node_endpoints.status_string());
-
-  fidl::WireResult result = fidl::WireCall(node())->AddChild(
-      args, std::move(controller_endpoints.server), std::move(node_endpoints->server));
-  if (!result.ok()) {
-    fdf::error("Failed to add child {}", result.status_string());
-    return zx::error(result.status());
+  zx::result child = AddOwnedChild(kDeviceName, devfs_args);
+  if (child.is_error()) {
+    fdf::error("Failed to add child: {}", child);
+    return child.take_error();
   }
-  controller_.Bind(std::move(controller_endpoints.client));
-  node_.Bind(std::move(node_endpoints->client));
+  child_ = std::move(child.value());
+
   return zx::ok();
 }
 
 }  // namespace buttons
 
-FUCHSIA_DRIVER_EXPORT(buttons::Buttons);
+FUCHSIA_DRIVER_EXPORT2(buttons::Buttons);

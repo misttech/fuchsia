@@ -9,7 +9,7 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/compat/cpp/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -35,6 +35,8 @@ enum class BootloaderPanelType : uint32_t {
   kBoeFiti9365 = 5,
   // 6 was for kSit7703.
 };
+
+TiLp8556::TiLp8556() : fdf::DriverBase2(kDriverName) {}
 
 display::PanelType ToDisplayPanelType(BootloaderPanelType bootloader_panel_type) {
   switch (bootloader_panel_type) {
@@ -280,9 +282,10 @@ void TiLp8556::GetSensorName(GetSensorNameCompleter::Sync& completer) {
   completer.Reply(fidl::StringView::FromExternal(kPowerSensorName));
 }
 
-zx::result<display::PanelType> TiLp8556::GetDisplayPanelInfo() {
-  zx::result panel_type_result = compat::GetMetadata<display::PanelType>(
-      incoming(), DEVICE_METADATA_DISPLAY_PANEL_TYPE, "pdev");
+zx::result<display::PanelType> TiLp8556::GetDisplayPanelInfo(
+    const std::shared_ptr<fdf::Namespace>& incoming) {
+  zx::result panel_type_result =
+      compat::GetMetadata<display::PanelType>(incoming, DEVICE_METADATA_DISPLAY_PANEL_TYPE, "pdev");
   if (panel_type_result.is_ok()) {
     return zx::ok(*panel_type_result.value());
   }
@@ -294,7 +297,7 @@ zx::result<display::PanelType> TiLp8556::GetDisplayPanelInfo() {
       panel_type_result);
 
   zx::result bootloader_metadata_result =
-      compat::GetMetadata<display::PanelType>(incoming(), DEVICE_METADATA_BOARD_PRIVATE, "pdev");
+      compat::GetMetadata<display::PanelType>(incoming, DEVICE_METADATA_BOARD_PRIVATE, "pdev");
   if (bootloader_metadata_result.is_ok()) {
     return zx::ok(*bootloader_metadata_result.value());
   }
@@ -312,11 +315,12 @@ zx::result<display::PanelType> TiLp8556::GetDisplayPanelInfo() {
   return zx::ok(display::PanelType::kUnknown);
 }
 
-zx::result<> TiLp8556::Start() {
-  root_ = inspector().root().CreateChild("ti-lp8556");
+zx::result<> TiLp8556::Start(fdf::DriverContext context) {
+  auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  root_ = inspector_.GetRoot().CreateChild("ti-lp8556");
 
   // Obtain I2C protocol needed to control backlight
-  zx::result i2c = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
+  zx::result i2c = incoming_ptr->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
   if (i2c.is_error()) {
     fdf::error("Failed to connect to i2c: {}", i2c);
     return i2c.take_error();
@@ -324,7 +328,7 @@ zx::result<> TiLp8556::Start() {
   i2c_ = i2c::I2cChannel{std::move(i2c.value())};
 
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming_ptr->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -355,7 +359,7 @@ zx::result<> TiLp8556::Start() {
     }
   }
 
-  zx::result<display::PanelType> panel_type_result = GetDisplayPanelInfo();
+  zx::result<display::PanelType> panel_type_result = GetDisplayPanelInfo(incoming_ptr);
   if (panel_type_result.is_error()) {
     fdf::error("Failed to get display panel info: {}", panel_type_result);
     return panel_type_result.take_error();
@@ -605,4 +609,4 @@ zx::result<uint8_t> TiLp8556::ReadI2cByteSync(uint8_t addr) {
 
 }  // namespace ti
 
-FUCHSIA_DRIVER_EXPORT(ti::TiLp8556);
+FUCHSIA_DRIVER_EXPORT2(ti::TiLp8556);

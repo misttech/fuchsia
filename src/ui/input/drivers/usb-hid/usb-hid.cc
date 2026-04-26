@@ -34,6 +34,14 @@ namespace fhidbus = fuchsia_hardware_hidbus;
 // This driver binds on any USB device that exposes HID reports. It passes the
 // reports to the HID driver by implementing the HidBus protocol.
 
+UsbHidbus::UsbHidbus() : fdf::DriverBase2(kDriverName) {}
+
+UsbHidbus::~UsbHidbus() {
+  if (unbind_thread_.joinable()) {
+    unbind_thread_.join();
+  }
+}
+
 void UsbHidbus::HandleBatchInterrupt(
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions) {
   for (auto& completion : completions) {
@@ -316,7 +324,8 @@ void UsbHidbus::SetProtocol(fhidbus::wire::HidbusSetProtocolRequest* request,
   completer.ReplySuccess();
 }
 
-void UsbHidbus::PrepareStop(fdf::PrepareStopCompleter completer) {
+void UsbHidbus::Stop(fdf::StopCompleter completer) {
+  usb_desc_iter_release(&desc_iter_);
   unbind_thread_ = std::thread([this, completer = std::move(completer)]() mutable {
     ep_in_->CancelAll().Then([](fidl::Result<fendpoint::Endpoint::CancelAll>& result) {
       if (result.is_error()) {
@@ -334,11 +343,6 @@ void UsbHidbus::PrepareStop(fdf::PrepareStopCompleter completer) {
     }
     completer(zx::ok());
   });
-}
-
-void UsbHidbus::Stop() {
-  usb_desc_iter_release(&desc_iter_);
-  unbind_thread_.join();
 }
 
 void UsbHidbus::FindDescriptors(usb::Interface interface, const usb_hid_descriptor_t** hid_desc,
@@ -365,15 +369,16 @@ void UsbHidbus::FindDescriptors(usb::Interface interface, const usb_hid_descript
   }
 }
 
-zx::result<> UsbHidbus::Start() {
-  zx::result usb_banjo = compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming());
+zx::result<> UsbHidbus::Start(fdf::DriverContext context) {
+  auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result usb_banjo = compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming_ptr);
   if (usb_banjo.is_error()) {
     fdf::error("Failed to connect to usb banjo: {}", usb_banjo);
     return usb_banjo.take_error();
   }
   usb_ = usb_banjo.value();
 
-  zx::result usb_fidl = incoming()->Connect<fuchsia_hardware_usb::UsbService::Device>();
+  zx::result usb_fidl = incoming_ptr->Connect<fuchsia_hardware_usb::UsbService::Device>();
   if (usb_fidl.is_error()) {
     fdf::error("Failed to connect to usb fidl: {}", usb_fidl.is_error());
     return usb_fidl.take_error();
@@ -516,4 +521,4 @@ zx::result<> UsbHidbus::Start() {
 
 }  // namespace usb_hid
 
-FUCHSIA_DRIVER_EXPORT(usb_hid::UsbHidbus);
+FUCHSIA_DRIVER_EXPORT2(usb_hid::UsbHidbus);

@@ -10,7 +10,8 @@
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/device-protocol/display-panel.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/input_report_reader/reader.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -64,17 +65,16 @@
 
 namespace ft {
 
-class FtDevice : public fdf::DriverBase,
+class FtDevice : public fdf::DriverBase2,
                  public fidl::WireServer<fuchsia_input_report::InputDevice> {
  public:
   static constexpr std::string_view kDriverName = "focaltech_touch";
   static constexpr std::string_view kChildNodeName = "focaltouch-HidDevice";
 
-  FtDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit FtDevice();
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // fidl::WireServer<fuchsia_input_report::InputDevice> implementation.
   void GetInputReportsReader(GetInputReportsReaderRequestView request,

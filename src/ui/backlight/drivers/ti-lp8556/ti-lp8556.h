@@ -10,8 +10,10 @@
 #include <fidl/fuchsia.hardware.power.sensor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.ti.metadata/cpp/fidl.h>
 #include <lib/device-protocol/display-panel.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/inspect/cpp/inspector.h>
 
 #include <optional>
 
@@ -65,17 +67,16 @@ class BrightnessStickyReg : public hwreg::RegisterBase<BrightnessStickyReg, uint
   static auto Get() { return hwreg::RegisterAddr<BrightnessStickyReg>(kAOBrightnessStickyReg); }
 };
 
-class TiLp8556 : public fdf::DriverBase,
+class TiLp8556 : public fdf::DriverBase2,
                  public fidl::WireServer<fuchsia_hardware_backlight::Device>,
                  public fidl::WireServer<fuchsia_hardware_power_sensor::Device> {
  public:
   static constexpr std::string_view kDriverName = "ti_lp8556";
 
-  TiLp8556(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit TiLp8556();
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   zx::result<> GetBacklightState(bool* power, double* brightness) const;
   zx::result<> SetBacklightState(bool power, double brightness);
@@ -126,10 +127,14 @@ class TiLp8556 : public fdf::DriverBase,
   void GetVoltageVolts(GetVoltageVoltsCompleter::Sync& completer) override;
   void GetSensorName(GetSensorNameCompleter::Sync& completer) override;
 
+ protected:
+  inspect::Inspector& inspector() { return inspector_; }
+
  private:
   static constexpr char kPowerSensorName[] = "backlight";
 
-  zx::result<display::PanelType> GetDisplayPanelInfo();
+  zx::result<display::PanelType> GetDisplayPanelInfo(
+      const std::shared_ptr<fdf::Namespace>& incoming);
 
   // Calls ReadSync() with a read size of 1 and returns the byte that was read.
   zx::result<uint8_t> ReadI2cByteSync(uint8_t addr);
@@ -164,6 +169,7 @@ class TiLp8556 : public fdf::DriverBase,
   inspect::UintProperty panel_id_property_;
   inspect::UintProperty panel_type_property_;
   std::vector<fuchsia_hardware_ti_metadata::Register> registers_;
+  inspect::Inspector inspector_;
 
   display::PanelType panel_type_ = display::PanelType::kUnknown;
   uint32_t board_pid_ = 0;

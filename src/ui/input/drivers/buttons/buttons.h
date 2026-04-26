@@ -5,7 +5,8 @@
 #ifndef SRC_UI_INPUT_DRIVERS_BUTTONS_BUTTONS_H_
 #define SRC_UI_INPUT_DRIVERS_BUTTONS_BUTTONS_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include "src/ui/input/drivers/buttons/buttons-device.h"
@@ -15,15 +16,13 @@ namespace buttons {
 
 static constexpr char kDeviceName[] = "buttons";
 
-class Buttons : public fdf::DriverBase {
+class Buttons : public fdf::DriverBase2 {
  public:
-  Buttons(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)),
-        devfs_connector_(fit::bind_member<&Buttons::Serve>(this)),
-        config_(take_config<buttons_config::Config>()) {}
+  explicit Buttons()
+      : fdf::DriverBase2(kDeviceName), devfs_connector_(fit::bind_member<&Buttons::Serve>(this)) {}
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   zx::result<> CreateDevfsNode();
@@ -34,8 +33,7 @@ class Buttons : public fdf::DriverBase {
 
   std::unique_ptr<ButtonsDevice> device_;
   fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> input_report_bindings_;
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
-  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
+  fdf::OwnedChildNode child_;
   driver_devfs::Connector<fuchsia_input_report::InputDevice> devfs_connector_;
   buttons_config::Config config_;
 };

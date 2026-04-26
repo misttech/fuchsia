@@ -5,7 +5,7 @@
 #include "adc-buttons.h"
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/driver/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -62,9 +62,9 @@ zx::result<MetadataValues> ParseMetadata(const fuchsia_buttons::AdcButtonsMetada
 
 }  // namespace
 
-zx::result<> AdcButtons::Start() {
+zx::result<> AdcButtons::Start(fdf::DriverContext context) {
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -88,7 +88,7 @@ zx::result<> AdcButtons::Start() {
   for (auto& [idx, buttons] : values.value().configs) {
     char adc_name[32];
     sprintf(adc_name, "adc-%u", idx);
-    zx::result result = incoming()->Connect<fuchsia_hardware_adc::Service::Device>(adc_name);
+    zx::result result = context.incoming().Connect<fuchsia_hardware_adc::Service::Device>(adc_name);
     if (result.is_error()) {
       fdf::error("Failed to open adc service: {}", result);
       return result.take_error();
@@ -117,7 +117,10 @@ zx::result<> AdcButtons::Start() {
   return zx::ok();
 }
 
-void AdcButtons::Stop() { device_->Shutdown(); }
+void AdcButtons::Stop(fdf::StopCompleter completer) {
+  device_->Shutdown();
+  completer(zx::ok());
+}
 
 zx::result<> AdcButtons::CreateDevfsNode() {
   zx::result connector = devfs_connector_.Bind(dispatcher());
@@ -140,4 +143,4 @@ zx::result<> AdcButtons::CreateDevfsNode() {
 
 }  // namespace adc_buttons
 
-FUCHSIA_DRIVER_EXPORT(adc_buttons::AdcButtons);
+FUCHSIA_DRIVER_EXPORT2(adc_buttons::AdcButtons);

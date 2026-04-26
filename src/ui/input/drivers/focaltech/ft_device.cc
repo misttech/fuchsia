@@ -6,7 +6,7 @@
 
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/clock.h>
@@ -143,8 +143,11 @@ void FtDevice::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx
   irq_.ack();
 }
 
-zx::result<> FtDevice::Start() {
-  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming(), "i2c");
+FtDevice::FtDevice() : fdf::DriverBase2(kDriverName) {}
+
+zx::result<> FtDevice::Start(fdf::DriverContext context) {
+  auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming_ptr, "i2c");
   if (i2c.is_error()) {
     fdf::error("Failed to connect to i2c: {}", i2c);
     return i2c.take_error();
@@ -152,7 +155,7 @@ zx::result<> FtDevice::Start() {
   i2c_ = std::move(i2c.value());
 
   zx::result int_gpio_client =
-      incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-int");
+      incoming_ptr->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-int");
   if (int_gpio_client.is_error()) {
     fdf::error("Failed to connect to interrupt gpio: {}", int_gpio_client);
     return zx::error(ZX_ERR_NO_RESOURCES);
@@ -160,7 +163,7 @@ zx::result<> FtDevice::Start() {
   int_gpio_.Bind(std::move(int_gpio_client.value()));
 
   zx::result reset_gpio_client =
-      incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-reset");
+      incoming_ptr->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-reset");
   if (reset_gpio_client.is_error()) {
     fdf::error("Failed to connect to reset gpio: {}", reset_gpio_client);
     return zx::error(ZX_ERR_NO_RESOURCES);
@@ -212,7 +215,7 @@ zx::result<> FtDevice::Start() {
   irq_handler_.Begin(dispatcher());
 
   zx::result pdev_client =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming_ptr->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
@@ -236,7 +239,7 @@ zx::result<> FtDevice::Start() {
 
   display::PanelType panel_type = display::PanelType::kUnknown;
   zx::result panel_type_result = compat::GetMetadata<display::PanelType>(
-      incoming(), DEVICE_METADATA_DISPLAY_PANEL_TYPE, "pdev");
+      incoming_ptr, DEVICE_METADATA_DISPLAY_PANEL_TYPE, "pdev");
   if (panel_type_result.is_ok()) {
     panel_type = *panel_type_result.value();
   } else if (panel_type_result.status_value() == ZX_ERR_NOT_FOUND) {
@@ -443,4 +446,4 @@ void FtDevice::DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> s
 
 }  // namespace ft
 
-FUCHSIA_DRIVER_EXPORT(ft::FtDevice);
+FUCHSIA_DRIVER_EXPORT2(ft::FtDevice);

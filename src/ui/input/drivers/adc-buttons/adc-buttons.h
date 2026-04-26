@@ -5,7 +5,8 @@
 #ifndef SRC_UI_INPUT_DRIVERS_ADC_BUTTONS_ADC_BUTTONS_H_
 #define SRC_UI_INPUT_DRIVERS_ADC_BUTTONS_ADC_BUTTONS_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include "src/ui/input/drivers/adc-buttons/adc-buttons-device.h"
@@ -14,14 +15,14 @@ namespace adc_buttons {
 
 static const std::string kDeviceName = "adc-buttons";
 
-class AdcButtons : public fdf::DriverBase {
+class AdcButtons : public fdf::DriverBase2 {
  public:
-  AdcButtons(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)),
+  explicit AdcButtons()
+      : fdf::DriverBase2(kDeviceName),
         devfs_connector_(fit::bind_member<&AdcButtons::Serve>(this)) {}
 
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   zx::result<> CreateDevfsNode();

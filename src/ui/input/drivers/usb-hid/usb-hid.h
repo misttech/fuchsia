@@ -9,7 +9,8 @@
 #include <fidl/fuchsia.hardware.usb/cpp/fidl.h>
 #include <fuchsia/hardware/usb/cpp/banjo.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/sync/completion.h>
 
 #include <thread>
@@ -22,19 +23,20 @@
 
 namespace usb_hid {
 
-class UsbHidbus : public fdf::DriverBase, public fidl::WireServer<fuchsia_hardware_hidbus::Hidbus> {
+class UsbHidbus : public fdf::DriverBase2,
+                  public fidl::WireServer<fuchsia_hardware_hidbus::Hidbus> {
  public:
   static constexpr std::string_view kDriverName = "usb_hid";
   static constexpr std::string_view kChildNodeName = "usb-hid";
 
-  UsbHidbus(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit UsbHidbus();
+  ~UsbHidbus() override;
 
   // fdf::DriverBase implementation.
-  void Start(fdf::StartCompleter completer) override { completer(Start()); }
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
+
+  using fdf::DriverBase2::Start;
 
   // fidl::WireServer<fuchsia_hardware_hidbus::Hidbus> implementation.
   void Query(QueryCompleter::Sync& completer) override;

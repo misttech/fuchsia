@@ -35,16 +35,7 @@ class TestTiLp8556 : public TiLp8556 {
  public:
   using TiLp8556::inspector;
 
-  TestTiLp8556(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : TiLp8556(std::move(start_args), std::move(driver_dispatcher)) {}
-
-  static DriverRegistration GetDriverRegistration() {
-    // Use a custom DriverRegistration to create the DUT. Without this, the non-test implementation
-    // will be used by default.
-    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestTiLp8556>::initialize,
-                                          fdf_internal::DriverServer<TestTiLp8556>::destroy);
-  }
+  explicit TestTiLp8556() : TiLp8556() {}
 };
 
 class TiLp8556TestEnvironment : public fdf_testing::Environment {
@@ -419,8 +410,7 @@ TEST_F(TiLp8556Test, Inspect) {
   });
   StartDriver(std::nullopt, std::nullopt, std::nullopt, std::nullopt);
 
-  fpromise::result hierarchy_result =
-      inspect::ReadFromVmo(driver().inspector().inspector().DuplicateVmo());
+  fpromise::result hierarchy_result = inspect::ReadFromVmo(driver().inspector().DuplicateVmo());
   ASSERT_TRUE(hierarchy_result.is_ok());
 
   inspect::Hierarchy hierarchy = std::move(hierarchy_result.value());

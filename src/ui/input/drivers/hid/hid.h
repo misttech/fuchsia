@@ -9,7 +9,8 @@
 #include <fidl/fuchsia.hardware.hidbus/cpp/wire.h>
 #include <fidl/fuchsia.hardware.input/cpp/wire.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/hid-parser/item.h>
 #include <lib/hid-parser/parser.h>
@@ -91,16 +92,16 @@ class HidDevice : public fidl::WireServer<fuchsia_hardware_input::Controller>,
   fbl::DoublyLinkedList<fbl::RefPtr<HidInstance>> instance_list_;
 };
 
-class HidDriver : public fdf::DriverBase {
+class HidDriver : public fdf::DriverBase2 {
  private:
   static constexpr char kDeviceName[] = "hid-device";
 
  public:
-  HidDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)),
+  explicit HidDriver()
+      : fdf::DriverBase2(kDeviceName),
         devfs_connector_(fit::bind_member<&HidDriver::Serve>(this)) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   HidDevice& hiddev() { return *hiddev_; }
 
