@@ -80,6 +80,8 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_idk",
     "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_idk",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_idk",
+    "//sdk/fidl/fuchsia.net.stackmigrationdeprecated:fuchsia.net.stackmigrationdeprecated_idk",
+    "//sdk/fidl/fuchsia.pkg.resolution:fuchsia.pkg.resolution_idk",
     "//sdk/fidl/fuchsia.process:fuchsia.process_idk",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_idk",
     "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_idk",
@@ -180,6 +182,8 @@ HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_idk",
     "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_idk",
+    "//sdk/fidl/fuchsia.overnet.protocol:fuchsia.overnet.protocol_idk",
+    "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_idk",
     "//sdk/fidl/fuchsia.starnix.container:fuchsia.starnix.container_idk",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_idk",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_idk",
