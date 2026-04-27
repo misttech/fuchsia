@@ -458,6 +458,15 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			// LINT.ThenChange(//src/starnix/kernel/main.rs:starnix_panic_tefmo)
 			Type: syslogType,
 		},
+		// For https://fxbug.dev/506229076.
+		&stringInLogCheck{
+			// LINT.IfChange(restricted_mode_core_dump_tefmo)
+			String: "Restricted mode exception caused core dump",
+			// LINT.ThenChange(//src/starnix/kernel/core/signals/signal_handling.rs:restricted_mode_core_dump_tefmo)
+			Type:                  syslogType,
+			SkipAllPassedTests:    true,
+			emitSyntheticTestCase: true,
+		},
 		&stringInLogCheck{
 			// LINT.IfChange
 			String: "honeydew.errors.HealthCheckError: health check failed on",

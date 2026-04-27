@@ -382,7 +382,9 @@ pub fn deliver_signal(
                     log_info!(
                         registers:?=registers,
                         exception:?=exception;
+                        // LINT.IfChange(restricted_mode_core_dump_tefmo)
                         "Restricted mode exception caused core dump",
+                        // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:restricted_mode_core_dump_tefmo)
                     );
                     if let SignalDetail::SigFault { addr } = siginfo.detail {
                         if let Ok(mm) = task.mm() {
