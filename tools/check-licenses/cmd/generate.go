@@ -343,7 +343,7 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 	}
 
 	// Reporter generates artifacts but skips virtual diff (verifyReadmes=false) since this is the fast path
-	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, p.overwriteReadmeFiles, true, config.OutOfTreeReadmes)
+	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, p.overwriteReadmeFiles, true, config.OutOfTreeReadmes, config.PolicyExceptions["AllProjectsMustHaveALicense"])
 
 	patternsDir := filepath.Join(p.fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
 	classifier, err := v2classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)

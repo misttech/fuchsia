@@ -98,6 +98,7 @@ func (c *FixCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 
 	fixer := &FixerRenderer{
 		FuchsiaDir: c.fuchsiaDir,
+		Config:     config,
 		FixedCount: make(map[string][]string),
 	}
 
@@ -116,6 +117,7 @@ func (c *FixCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 
 type FixerRenderer struct {
 	FuchsiaDir string
+	Config     *v2config.MasterConfig
 	FixedCount map[string][]string
 	mu         sync.Mutex
 }
@@ -123,7 +125,7 @@ type FixerRenderer struct {
 func (r *FixerRenderer) Run(ctx context.Context, files <-chan v2pipeline.ClassifiedFile, errors <-chan v2pipeline.ComplianceError) error {
 	// We need to run the standard Reporter logic to update READMEs
 	// but we'll wrap it so we can capture what it does.
-	reporter := v2report.NewReporter(r.FuchsiaDir, "", true, true, false, nil)
+	reporter := v2report.NewReporter(r.FuchsiaDir, "", true, true, false, r.Config.OutOfTreeReadmes, r.Config.PolicyExceptions["AllProjectsMustHaveALicense"])
 
 	// We'll collect all errors first
 	var errs []v2pipeline.ComplianceError

@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,23 +26,25 @@ import (
 // errors are encountered, otherwise it deduplicates licenses and generates the final
 // artifacts (NOTICE.txt, SPDX.json).
 type Reporter struct {
-	FuchsiaDir        string
-	OutDir            string
-	VerifyReadmes     bool
-	WriteReadmes      bool
-	GenerateArtifacts bool
-	OutOfTreeReadmes  map[string]string
+	FuchsiaDir               string
+	OutDir                   string
+	VerifyReadmes            bool
+	WriteReadmes             bool
+	GenerateArtifacts        bool
+	OutOfTreeReadmes         map[string]string
+	MissingLicenseExceptions map[string]v2config.RuleMetadata
 }
 
 // NewReporter creates a new stateful Reporter that writes to the given outDir.
-func NewReporter(fuchsiaDir, outDir string, verifyReadmes, writeReadmes, generateArtifacts bool, outOfTreeReadmes map[string]string) *Reporter {
+func NewReporter(fuchsiaDir, outDir string, verifyReadmes, writeReadmes, generateArtifacts bool, outOfTreeReadmes map[string]string, missingLicenseExceptions map[string]v2config.RuleMetadata) *Reporter {
 	return &Reporter{
-		FuchsiaDir:        fuchsiaDir,
-		OutDir:            outDir,
-		VerifyReadmes:     verifyReadmes,
-		WriteReadmes:      writeReadmes,
-		GenerateArtifacts: generateArtifacts,
-		OutOfTreeReadmes:  outOfTreeReadmes,
+		FuchsiaDir:               fuchsiaDir,
+		OutDir:                   outDir,
+		VerifyReadmes:            verifyReadmes,
+		WriteReadmes:             writeReadmes,
+		GenerateArtifacts:        generateArtifacts,
+		OutOfTreeReadmes:         outOfTreeReadmes,
+		MissingLicenseExceptions: missingLicenseExceptions,
 	}
 }
 
@@ -95,6 +98,14 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 
 	for proj, hasLicense := range projectHasLicense {
 		if !hasLicense {
+			// Check if allowed
+			relProjRoot, _ := filepath.Rel(r.FuchsiaDir, proj)
+			_, allowed := r.MissingLicenseExceptions[relProjRoot]
+			if allowed {
+				metrics.AllowlistHits.Inc("AllProjectsMustHaveALicense")
+				continue
+			}
+
 			// We emit this directly into the error slice so it fails the build
 			errs = append(errs, pipeline.ComplianceError{
 				CheckName: "AllProjectsMustHaveALicense",
@@ -130,8 +141,6 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 			continue // Skip if no physical README.fuchsia is present
 		}
 
-		oldFormatted := readme.Format(readmes)
-
 		// We only pass found licenses (non-Copyright) to the updater
 		var foundLicenses []pipeline.ClassifiedFile
 		for _, cf := range projFiles {
@@ -150,7 +159,12 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 		readme.UpdateWithClassifiedFiles(r.FuchsiaDir, projRoot, readmes, foundLicenses)
 		newFormatted := readme.Format(readmes)
 
-		if oldFormatted != newFormatted {
+		rawBytes, err := os.ReadFile(readmePath)
+		if err != nil {
+			continue
+		}
+
+		if string(rawBytes) != newFormatted {
 			if r.WriteReadmes {
 				if err := os.WriteFile(readmePath, []byte(newFormatted), 0644); err != nil {
 					errs = append(errs, pipeline.ComplianceError{

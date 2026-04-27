@@ -109,7 +109,7 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 
 	validator := v2validate.NewValidator(p.fuchsiaDir, config.PolicyExceptions, config.AllowedLicenses)
 	// Validate checks readmes but does not overwrite them, nor does it generate SPDX/NOTICE.
-	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, true, false, false, config.OutOfTreeReadmes)
+	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, true, false, false, config.OutOfTreeReadmes, config.PolicyExceptions["AllProjectsMustHaveALicense"])
 
 	orchestrator := v2pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, reporter)
 
