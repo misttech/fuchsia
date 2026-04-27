@@ -4,7 +4,7 @@
 
 #include "network_device.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/env.h>
@@ -21,9 +21,7 @@ constexpr char kDevFsChildNodeName[] = "network-device";
 
 }  // namespace
 
-NetworkDevice::NetworkDevice(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+NetworkDevice::NetworkDevice() : fdf::DriverBase2(kDriverName) {}
 
 NetworkDevice::~NetworkDevice() {
   if (dispatchers_) {
@@ -31,7 +29,9 @@ NetworkDevice::~NetworkDevice() {
   }
 }
 
-void NetworkDevice::Start(fdf::StartCompleter completer) {
+void NetworkDevice::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
   zx::result<> result = [&]() -> zx::result<> {
     zx::result dispatchers = OwnedDeviceInterfaceDispatchers::Create();
     if (dispatchers.is_error()) {
@@ -40,7 +40,7 @@ void NetworkDevice::Start(fdf::StartCompleter completer) {
     }
     dispatchers_ = std::move(dispatchers.value());
 
-    zx::result<std::unique_ptr<NetworkDeviceImplBinder>> binder = CreateImplBinder();
+    zx::result<std::unique_ptr<NetworkDeviceImplBinder>> binder = CreateImplBinder(incoming);
     if (binder.is_error()) {
       fdf::error("failed to create network device binder: {}", binder);
       return binder.take_error();
@@ -87,10 +87,10 @@ void NetworkDevice::Start(fdf::StartCompleter completer) {
   }
 }
 
-void NetworkDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
-  fdf::info("{:p} PrepareStop", static_cast<const void*>(this));
+void NetworkDevice::Stop(fdf::StopCompleter completer) {
+  fdf::info("{:p} Stop", static_cast<const void*>(this));
   device_->Teardown([completer = std::move(completer), this]() mutable {
-    fdf::info("{:p} PrepareStop Done", static_cast<const void*>(this));
+    fdf::info("{:p} Stop Done", static_cast<const void*>(this));
     completer(zx::ok());
   });
 }
@@ -100,10 +100,11 @@ void NetworkDevice::Connect(fidl::ServerEnd<fuchsia_hardware_network::Device> re
   device_->Bind(std::move(request));
 }
 
-zx::result<std::unique_ptr<NetworkDeviceImplBinder>> NetworkDevice::CreateImplBinder() {
+zx::result<std::unique_ptr<NetworkDeviceImplBinder>> NetworkDevice::CreateImplBinder(
+    const std::shared_ptr<fdf::Namespace>& incoming) {
   fbl::AllocChecker ac;
 
-  std::unique_ptr fidl = fbl::make_unique_checked<FidlNetworkDeviceImplBinder>(&ac, incoming());
+  std::unique_ptr fidl = fbl::make_unique_checked<FidlNetworkDeviceImplBinder>(&ac, incoming);
   if (!ac.check()) {
     fdf::error("no memory");
     return zx::error(ZX_ERR_NO_MEMORY);
@@ -114,12 +115,11 @@ zx::result<std::unique_ptr<NetworkDeviceImplBinder>> NetworkDevice::CreateImplBi
 
 zx::result<fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl>>
 FidlNetworkDeviceImplBinder::Bind() {
-  std::shared_ptr incoming = incoming_.lock();
-  if (!incoming) {
+  if (!incoming_) {
     return zx::error(ZX_ERR_UNAVAILABLE);
   }
   zx::result client_end =
-      incoming->Connect<fuchsia_hardware_network_driver::Service::NetworkDeviceImpl>();
+      incoming_->Connect<fuchsia_hardware_network_driver::Service::NetworkDeviceImpl>();
   if (client_end.is_error()) {
     fdf::error("failed to connect to parent device: {}", client_end);
     return client_end;
@@ -129,4 +129,4 @@ FidlNetworkDeviceImplBinder::Bind() {
 
 }  // namespace network
 
-FUCHSIA_DRIVER_EXPORT(::network::NetworkDevice);
+FUCHSIA_DRIVER_EXPORT2(::network::NetworkDevice);

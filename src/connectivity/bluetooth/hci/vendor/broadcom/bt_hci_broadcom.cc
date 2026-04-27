@@ -17,7 +17,7 @@
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/driver.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/driver/power/cpp/wake-lease.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -267,17 +267,17 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_bluetooth::HciTransport>> binding_ref_;
 };
 
-BtHciBroadcom::BtHciBroadcom(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("bt-hci-broadcom", std::move(start_args), std::move(driver_dispatcher)),
+BtHciBroadcom::BtHciBroadcom()
+    : DriverBase2("bt-hci-broadcom"),
       hci_event_handler_([this](std::vector<uint8_t>& packet) { OnReceivePacket(packet); }),
-      dispatcher_(dispatcher()),
-      node_(fidl::WireClient(std::move(node()), dispatcher())),
       devfs_connector_(fit::bind_member<&BtHciBroadcom::Connect>(this)) {}
 
-void BtHciBroadcom::Start(fdf::StartCompleter completer) {
+void BtHciBroadcom::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
   // BT_HOST_WAKE and BT_DEV_WAKE, when they are available, are used to
 
+  dispatcher_ = dispatcher();
+  component_inspector_ = context.CreateInspector(this);
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx_status_t status = ConnectToHciTransportFidlProtocol();
   if (status != ZX_OK) {
     completer(zx::error(status));
@@ -325,7 +325,7 @@ void BtHciBroadcom::Start(fdf::StartCompleter completer) {
     }
   }
 
-  const auto config = take_config<bt_hci_broadcom_config::Config>();
+  const auto config = context.take_config<bt_hci_broadcom_config::Config>();
 
   if (config.enable_suspend()) {
     zx::result<> power_init_result = InitPowerManagement();
@@ -338,7 +338,7 @@ void BtHciBroadcom::Start(fdf::StartCompleter completer) {
     }
   }
 
-  core_dump_count_ = inspector().root().CreateUint(kCoreDumpCountInspectPropertyName, 0);
+  core_dump_count_ = component_inspector_->root().CreateUint(kCoreDumpCountInspectPropertyName, 0);
 
   // Continue initialization through the fpromise executor.
   start_completer_.emplace(std::move(completer));
@@ -352,7 +352,7 @@ void BtHciBroadcom::Start(fdf::StartCompleter completer) {
   }));
 }
 
-void BtHciBroadcom::PrepareStop(fdf::PrepareStopCompleter completer) { completer(zx::ok()); }
+void BtHciBroadcom::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
 void BtHciBroadcom::GetFeatures(GetFeaturesCompleter::Sync& completer) {
   fidl::Arena arena;
@@ -403,7 +403,7 @@ void BtHciBroadcom::OpenHciTransport(OpenHciTransportCompleter::Sync& completer)
   } else {
     // We need a new client end, because we already gave away the initialization one.
     zx::result<fidl::ClientEnd<fhbt::HciTransport>> client_end_result =
-        incoming()->Connect<fhbt::HciService::HciTransport>();
+        incoming_->Connect<fhbt::HciService::HciTransport>();
     if (client_end_result.is_error()) {
       fdf::error("Connect to fhbt::HciTransport protocol failed: {}", client_end_result);
       completer.ReplyError(client_end_result.status_value());
@@ -418,7 +418,7 @@ void BtHciBroadcom::OpenHciTransport(OpenHciTransportCompleter::Sync& completer)
 
 void BtHciBroadcom::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
   zx::result<fidl::ClientEnd<fhbt::Snoop>> client_end =
-      incoming()->Connect<fhbt::HciService::Snoop>();
+      incoming_->Connect<fhbt::HciService::Snoop>();
   if (client_end.is_error()) {
     fdf::error("Connect to Snoop protocol failed: {}", client_end);
     completer.ReplyError(client_end.status_value());
@@ -456,7 +456,7 @@ void BtHciBroadcom::Connect(fidl::ServerEnd<fhbt::Vendor> request) {
 
 zx_status_t BtHciBroadcom::ConnectToHciTransportFidlProtocol() {
   zx::result<fidl::ClientEnd<fhbt::HciTransport>> client_end =
-      incoming()->Connect<fhbt::HciService::HciTransport>();
+      incoming_->Connect<fhbt::HciService::HciTransport>();
   if (client_end.is_error()) {
     fdf::error("Connect to fhbt::HciTransport protocol failed: {}", client_end);
     return client_end.status_value();
@@ -469,7 +469,7 @@ zx_status_t BtHciBroadcom::ConnectToHciTransportFidlProtocol() {
 
 zx_status_t BtHciBroadcom::ConnectToSerialFidlProtocol() {
   zx::result<fdf::ClientEnd<fuchsia_hardware_serialimpl::Device>> client_end =
-      incoming()->Connect<fuchsia_hardware_serialimpl::Service::Device>();
+      incoming_->Connect<fuchsia_hardware_serialimpl::Service::Device>();
   if (client_end.is_error()) {
     fdf::error("Connect to fuchsia_hardware_serialimpl::Device protocol failed: {}", client_end);
     return client_end.status_value();
@@ -622,8 +622,8 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::DisableLowPowerMode() {
 }
 
 zx::result<> BtHciBroadcom::InitPowerManagement() {
-  zx::result open_result = incoming()->Open<fuchsia_io::File>("/pkg/data/broadcom_power.fidl",
-                                                              fuchsia_io::Flags::kPermReadBytes);
+  zx::result open_result = incoming_->Open<fuchsia_io::File>("/pkg/data/broadcom_power.fidl",
+                                                             fuchsia_io::Flags::kPermReadBytes);
   if (!open_result.is_ok() || !open_result->is_valid()) {
     return zx::error(ZX_ERR_INTERNAL);
   }
@@ -683,7 +683,7 @@ zx::result<fdf_power::ElementDesc> BtHciBroadcom::ApplyPowerConfiguration(
   }
 
   fit::result<fdf_power::Error, std::vector<fdf_power::ElementDesc>> result =
-      fdf_power::ApplyPowerConfiguration(*incoming(), element_configs,
+      fdf_power::ApplyPowerConfiguration(*incoming_, element_configs,
                                          /*use_element_runner=*/true);
   if (result.is_error()) {
     fdf::info("Failed to apply power config: {}", fdf_power::ErrorToString(result.error_value()));
@@ -892,7 +892,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware(bool fast_downl
   std::string full_filename = "/pkg/lib/firmware/";
   full_filename.append(kFirmwareMap.at(serial_pid_));
 
-  auto client = incoming()->Open<fuchsia_io::File>(full_filename.c_str(), kOpenFlags);
+  auto client = incoming_->Open<fuchsia_io::File>(full_filename.c_str(), kOpenFlags);
   if (client.is_error()) {
     fdf::warn("Open firmware file failed: {}", zx_status_get_string(client.error_value()));
     return fpromise::make_error_promise(client.error_value());
@@ -1163,7 +1163,7 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
       .and_then([this](std::vector<uint8_t>&) -> fpromise::promise<void, zx_status_t> {
         fdf::debug("Getting mac address");
         zx::result metadata =
-            fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
+            fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(incoming_);
         if (metadata.is_error()) {
           fdf::error("Error reading metadata: {}", metadata.status_string());
           return fpromise::make_error_promise(ZX_ERR_INTERNAL);
@@ -1214,63 +1214,19 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::AddNode() {
     return fpromise::make_error_promise(connector.error_value());
   }
 
-  fidl::Arena args_arena;
-  auto devfs = fuchsia_driver_framework::wire::DevfsAddArgs::Builder(args_arena)
-                   .connector(std::move(connector.value()))
-                   .class_name("bt-hci")
-                   .Build();
+  auto devfs_args = fuchsia_driver_framework::DevfsAddArgs{{
+      .connector = std::move(connector.value()),
+      .class_name = "bt-hci",
+  }};
 
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
-                  .name("bt-hci-broadcom")
-                  .devfs_args(devfs)
-                  .Build();
-
-  auto controller_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
-  if (controller_endpoints.is_error()) {
-    fdf::error("Create node controller end points failed: {}",
-               zx_status_get_string(controller_endpoints.error_value()));
-    return fpromise::make_error_promise(controller_endpoints.error_value());
+  zx::result child = AddOwnedChild("bt-hci-broadcom", devfs_args);
+  if (child.is_error()) {
+    fdf::error("Failed to add child: {}", child);
+    return fpromise::make_error_promise(child.status_value());
   }
 
-  // Create the endpoints of fuchsia_driver_framework::Node protocol for the child node, and hold
-  // the client end of it, because no driver will bind to the child node.
-  auto child_node_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
-  if (child_node_endpoints.is_error()) {
-    fdf::error("Create child node end points failed: {}",
-               zx_status_get_string(child_node_endpoints.error_value()));
-    return fpromise::make_error_promise(child_node_endpoints.error_value());
-  }
-
-  // Add bt-hci-broadcom child node.
-  fpromise::bridge<void, zx_status_t> bridge;
-  node_
-      ->AddChild(args, std::move(controller_endpoints->server),
-                 std::move(child_node_endpoints->server))
-      .Then([this, completer = std::move(bridge.completer),
-             child_node_client = std::move(child_node_endpoints->client),
-             child_controller_client = std::move(controller_endpoints->client)](
-                fidl::WireUnownedResult<fuchsia_driver_framework::Node::AddChild>&
-                    child_result) mutable {
-        if (!child_result.ok()) {
-          fdf::error("Failed to add bt-hci-broadcom node, FIDL error: {}",
-                     child_result.status_string());
-          completer.complete_error(child_result.status());
-          return;
-        }
-
-        if (child_result->is_error()) {
-          fdf::error("Failed to add bt-hci-broadcom node: {}",
-                     static_cast<uint32_t>(child_result->error_value()));
-          completer.complete_error(ZX_ERR_INTERNAL);
-          return;
-        }
-
-        child_node_.Bind(std::move(child_node_client), dispatcher(), this);
-        node_controller_.Bind(std::move(child_controller_client), dispatcher(), this);
-        completer.complete_ok();
-      });
-
-  return bridge.consumer.promise();
+  child_node_ = std::move(child.value());
+  return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
 }
 
 void BtHciBroadcom::CompleteStart(zx_status_t status) {
@@ -1284,4 +1240,4 @@ void BtHciBroadcom::CompleteStart(zx_status_t status) {
 
 }  // namespace bt_hci_broadcom
 
-FUCHSIA_DRIVER_EXPORT(bt_hci_broadcom::BtHciBroadcom);
+FUCHSIA_DRIVER_EXPORT2(bt_hci_broadcom::BtHciBroadcom);

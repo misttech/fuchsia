@@ -6,7 +6,7 @@
 #define SRC_CONNECTIVITY_NETWORK_DRIVERS_NETWORK_DEVICE_NETWORK_DEVICE_H_
 
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include <memory>
@@ -21,29 +21,29 @@ class NetworkDevice;
 // parent device that is backed by the FIDL based driver runtime.
 class FidlNetworkDeviceImplBinder : public NetworkDeviceImplBinder {
  public:
-  explicit FidlNetworkDeviceImplBinder(std::weak_ptr<fdf::Namespace> incoming)
+  explicit FidlNetworkDeviceImplBinder(std::shared_ptr<fdf::Namespace> incoming)
       : incoming_(std::move(incoming)) {}
 
   zx::result<fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl>> Bind() override;
 
  private:
-  std::weak_ptr<fdf::Namespace> incoming_;
+  std::shared_ptr<fdf::Namespace> incoming_;
 };
 
-class NetworkDevice : public fdf::DriverBase {
+class NetworkDevice : public fdf::DriverBase2 {
  public:
-  NetworkDevice(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  NetworkDevice();
   ~NetworkDevice() override;
 
-  void Start(fdf::StartCompleter completer) override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   NetworkDeviceInterface* GetInterface() { return device_.get(); }
 
  private:
   void Connect(fidl::ServerEnd<fuchsia_hardware_network::Device> request);
-  zx::result<std::unique_ptr<NetworkDeviceImplBinder>> CreateImplBinder();
+  zx::result<std::unique_ptr<NetworkDeviceImplBinder>> CreateImplBinder(
+      const std::shared_ptr<fdf::Namespace>& incoming);
 
   std::unique_ptr<OwnedDeviceInterfaceDispatchers> dispatchers_;
 

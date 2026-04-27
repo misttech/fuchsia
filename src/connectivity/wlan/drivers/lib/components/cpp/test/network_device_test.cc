@@ -66,7 +66,7 @@ struct TestNetworkDevice : public TestDriver::StopHandler, public NetworkDevice:
     ASSERT_OK(network_device_->Initialize(parent, netdev_dispatcher_.get(), outgoing, kDriverName));
   }
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override {
+  void Stop(fdf::StopCompleter completer) override {
     if (network_device_ && network_device_->Remove()) {
       // Asynchronous removal of net device will happen. Let it call the prepare stop completer.
       prepare_stop_completer_.emplace(std::move(completer));
@@ -141,7 +141,7 @@ struct BasicNetworkDeviceTest : public ::testing::Test {
     zx::result<> result = driver_test().StartDriver();
     ASSERT_EQ(ZX_OK, result.status_value());
     driver_test().RunInDriverContext([&](TestDriver& driver) {
-      parent_.Bind(std::move(driver.node()), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+      parent_.Bind(driver.take_node(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
       ASSERT_TRUE(parent_.is_valid());
 
       // Keep track of the dispatcher used to initialize the network device.

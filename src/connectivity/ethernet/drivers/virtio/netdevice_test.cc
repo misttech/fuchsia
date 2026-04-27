@@ -6,7 +6,7 @@
 
 #include <lib/driver/compat/cpp/banjo_client.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
 #include <lib/fake-bti/bti.h>
@@ -141,9 +141,7 @@ class FakeBackendForNetdeviceTest : public FakeBackend {
 // NetworkDevice gives us enough confidence.
 class TestVirtioNetDriver : public VirtioNetDriver {
  public:
-  TestVirtioNetDriver(fdf::DriverStartArgs start_args,
-                      fdf::UnownedSynchronizedDispatcher dispatcher)
-      : VirtioNetDriver(std::move(start_args), std::move(dispatcher)) {}
+  TestVirtioNetDriver() = default;
 
   // Allow tests to configure the backend before the driver starts. If these values are set they
   // will be applied to the backend at creation.
@@ -153,7 +151,9 @@ class TestVirtioNetDriver : public VirtioNetDriver {
   FakeBackendForNetdeviceTest* backend() { return backend_; }
 
  private:
-  zx::result<std::unique_ptr<NetworkDevice>> CreateNetworkDevice() override {
+  zx::result<std::unique_ptr<NetworkDevice>> CreateNetworkDevice(
+      const std::shared_ptr<fdf::Namespace>& incoming,
+      const std::optional<std::string>& node_name) override {
     auto backend = std::make_unique<FakeBackendForNetdeviceTest>();
     if (with_status_features_.has_value()) {
       backend->SetWithStatusFeature(with_status_features_.value());
@@ -166,7 +166,8 @@ class TestVirtioNetDriver : public VirtioNetDriver {
     if (zx_status_t status = fake_bti_create(bti.reset_and_get_address()); status != ZX_OK) {
       return zx::error(status);
     }
-    return zx::ok(std::make_unique<NetworkDevice>(this, std::move(bti), std::move(backend)));
+    return zx::ok(std::make_unique<NetworkDevice>(this, std::move(bti), std::move(backend),
+                                                  incoming, node_name));
   }
 
   FakeBackendForNetdeviceTest* backend_ = nullptr;
@@ -926,4 +927,4 @@ INSTANTIATE_TEST_SUITE_P(NetworkDeviceTests, VirtioVersionTests, testing::Values
 
 }  // namespace virtio
 
-FUCHSIA_DRIVER_EXPORT(virtio::TestVirtioNetDriver);
+FUCHSIA_DRIVER_EXPORT2(virtio::TestVirtioNetDriver);

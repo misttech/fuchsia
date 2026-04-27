@@ -10,7 +10,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/fdf/cpp/channel_read.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -33,11 +33,10 @@
 
 namespace wlan::drivers::wlansoftmac {
 
-class SoftmacDriver : public fdf::DriverBase, public ddk::EthernetImplProtocol<SoftmacDriver> {
+class SoftmacDriver : public fdf::DriverBase2, public ddk::EthernetImplProtocol<SoftmacDriver> {
  public:
-  SoftmacDriver(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher);
-  ~SoftmacDriver() = default;
+  SoftmacDriver();
+  ~SoftmacDriver() override = default;
 
   static constexpr inline SoftmacDriver* from(void* ctx) {
     return static_cast<SoftmacDriver*>(ctx);
@@ -59,9 +58,8 @@ class SoftmacDriver : public fdf::DriverBase, public ddk::EthernetImplProtocol<S
 
   fidl::SharedClient<fuchsia_driver_framework::Node> node_client_;
 
-  void Start(fdf::StartCompleter completer) override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Mark `ethernet_proxy_lock_` as a mutable member of this class to allow const functions
   // to acquire it.

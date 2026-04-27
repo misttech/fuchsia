@@ -8,7 +8,8 @@
 #include <fidl/fuchsia.driver.framework/cpp/wire_messaging.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/sync/cpp/completion.h>
@@ -22,9 +23,12 @@
 
 namespace bt_hci_intel {
 
-class Device : public fdf::DriverBase, public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
+class Device : public fdf::DriverBase2,
+               public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
  public:
-  Device(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit Device()
+      : fdf::DriverBase2("bt-hci-intel"),
+        devfs_connector_(fit::bind_member<&Device::Connect>(this)) {}
 
   // Load the firmware and complete device initialization.
   // If |secure| is true, use the "secure" firmware method.
@@ -32,9 +36,12 @@ class Device : public fdf::DriverBase, public fidl::WireServer<fuchsia_hardware_
 
   zx_status_t AddNode();
 
-  // fdf::DriverBase overrides
-  void Start(fdf::StartCompleter completer) override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  // fdf::DriverBase2 overrides
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
+
+ protected:
+  const std::shared_ptr<fdf::Namespace> &incoming() const { return incoming_; }
 
  private:
   // fuchsia_hardware_bluetooth::Vendor protocol interface implementations
@@ -67,6 +74,8 @@ class Device : public fdf::DriverBase, public fidl::WireServer<fuchsia_hardware_
   // receives a pointer to the memory.
   // |fw_size| receives the size of the firmware if valid.
   zx_handle_t MapFirmware(const char *name, uintptr_t *fw_addr, size_t *fw_size);
+
+  std::shared_ptr<fdf::Namespace> incoming_;
 
   driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor> devfs_connector_;
 

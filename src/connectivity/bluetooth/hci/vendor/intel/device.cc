@@ -38,20 +38,15 @@ static constexpr uint16_t legacy_firmware_loading_ids[] = {
     0x0026,  // Harrison Peak (AX201)
 };
 
-Device::Device(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("bt-hci-intel", std::move(start_args), std::move(driver_dispatcher)),
-      devfs_connector_(fit::bind_member<&Device::Connect>(this)),
-      firmware_loaded_(false) {}
+zx::result<> Device::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 
-void Device::Start(fdf::StartCompleter completer) {
   zx::result<ddk::UsbProtocolClient> usb_client =
       compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming());
 
   if (usb_client.is_error()) {
     errorf("Failed to connect usb client: {}", usb_client);
-    completer(zx::error(usb_client.status_value()));
-    return;
+    return zx::error(usb_client.status_value());
   }
   ddk::UsbProtocolClient usb = *usb_client;
 
@@ -78,8 +73,7 @@ void Device::Start(fdf::StartCompleter completer) {
       fdf::SynchronizedDispatcher::Create({}, "", [](fdf_dispatcher_t* dispatcher) {});
   if (dispatcher.is_error()) {
     errorf("Failed to create dispatcher: {}", dispatcher);
-    completer(zx::error(dispatcher.status_value()));
-    return;
+    return zx::error(dispatcher.status_value());
   }
   hci_client_dispatcher_ = std::move(*dispatcher);
 
@@ -87,8 +81,7 @@ void Device::Start(fdf::StartCompleter completer) {
       incoming()->Connect<fhbt::HciService::HciTransport>();
   if (client_end.is_error()) {
     errorf("Connect to fhbt::HciTransport protocol failed: {}", client_end);
-    completer(zx::error(client_end.status_value()));
-    return;
+    return zx::error(client_end.status_value());
   }
 
   hci_transport_client_ = fidl::SharedClient(
@@ -96,16 +89,15 @@ void Device::Start(fdf::StartCompleter completer) {
 
   if (zx_status_t status = Init(secure_); status != ZX_OK) {
     errorf("Initialization failed: {}", zx_status_get_string(status));
-    completer(zx::error(status));
-    return;
+    return zx::error(status);
   }
 
   hci_transport_client_.AsyncTeardown();
 
-  completer(zx::ok());
+  return zx::ok();
 }
 
-void Device::PrepareStop(fdf::PrepareStopCompleter completer) { completer(zx::ok()); }
+void Device::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
 zx_status_t Device::AddNode() {
   zx::result connector = devfs_connector_.Bind(dispatcher());
@@ -432,4 +424,4 @@ zx_status_t Device::LoadLegacyFirmware() {
 
 }  // namespace bt_hci_intel
 
-FUCHSIA_DRIVER_EXPORT(bt_hci_intel::Device);
+FUCHSIA_DRIVER_EXPORT2(bt_hci_intel::Device);

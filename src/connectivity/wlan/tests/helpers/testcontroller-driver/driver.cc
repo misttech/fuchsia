@@ -4,8 +4,9 @@
 
 #include <fidl/fuchsia.wlan.fullmac/cpp/driver/fidl.h>
 #include <fidl/test.wlan.testcontroller/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -282,7 +283,7 @@ class WlanFullmacImplBridgeServer : public fidl::Server<fuchsia_wlan_fullmac::Wl
     bridge_client_->StartBss(request).Then(
         ForwardResult<WlanFullmacImpl::StartBss>(completer.ToAsync()));
   }
-  void StopBss(StopBssRequest& request, StopBssCompleter ::Sync& completer) override {
+  void StopBss(StopBssRequest& request, StopBssCompleter::Sync& completer) override {
     WLAN_TRACE_DURATION();
     bridge_client_->StopBss(request).Then(
         ForwardResult<WlanFullmacImpl::StopBss>(completer.ToAsync()));
@@ -409,20 +410,19 @@ class WlanFullmacImplBridgeServer : public fidl::Server<fuchsia_wlan_fullmac::Wl
   std::optional<fit::closure> unbind_callback_;
 };
 
-class TestController : public fdf::DriverBase,
+class TestController : public fdf::DriverBase2,
                        public fidl::Server<test_wlan_testcontroller::TestController> {
   static constexpr std::string_view kDriverName = "wlan_testcontroller";
 
  public:
-  TestController(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)),
-        devfs_connector_(bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure)) {
-  }
+  explicit TestController()
+      : fdf::DriverBase2(kDriverName),
+        devfs_connector_(fit::bind_member<&TestController::Serve>(this)) {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     WLAN_TRACE_DURATION();
-    node_.Bind(std::move(node()));
+
+    node_.Bind(take_node());
     fidl::Arena arena;
 
     zx::result connector = devfs_connector_.Bind(dispatcher());
@@ -587,6 +587,10 @@ class TestController : public fdf::DriverBase,
   // Holds bindings to TestController, which all bind to this class
   fidl::ServerBindingGroup<test_wlan_testcontroller::TestController> bindings_;
 
+  void Serve(fidl::ServerEnd<test_wlan_testcontroller::TestController> server) {
+    bindings_.AddBinding(dispatcher(), std::move(server), this, fidl::kIgnoreBindingClosure);
+  }
+
   // devfs_connector_ lets the class serve the TestController protocol over devfs.
   driver_devfs::Connector<test_wlan_testcontroller::TestController> devfs_connector_;
 
@@ -601,4 +605,4 @@ class TestController : public fdf::DriverBase,
 
 }  // namespace wlan_testcontroller
 
-FUCHSIA_DRIVER_EXPORT(wlan_testcontroller::TestController);
+FUCHSIA_DRIVER_EXPORT2(wlan_testcontroller::TestController);

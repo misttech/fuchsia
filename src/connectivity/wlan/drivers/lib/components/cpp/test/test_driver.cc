@@ -3,30 +3,24 @@
 
 #include "src/connectivity/wlan/drivers/lib/components/cpp/test/test_driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace wlan::drivers::components::test {
 
-TestDriver::TestDriver(fdf::DriverStartArgs start_args,
-                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("netdev-test-driver", std::move(start_args), std::move(driver_dispatcher)) {}
+TestDriver::TestDriver() : fdf::DriverBase2("netdev-test-driver") {}
 
-void TestDriver::Start(fdf::StartCompleter completer) { completer(zx::ok()); }
+void TestDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  completer(zx::ok());
+}
 
-void TestDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void TestDriver::Stop(fdf::StopCompleter completer) {
   if (stop_handler_) {
-    stop_handler_->PrepareStop(std::move(completer));
+    stop_handler_->Stop(std::move(completer));
     return;
   }
   completer(zx::ok());
 }
 
-void TestDriver::Stop() {
-  if (stop_handler_) {
-    stop_handler_->Stop();
-  }
-}
-
 }  // namespace wlan::drivers::components::test
 
-FUCHSIA_DRIVER_EXPORT(wlan::drivers::components::test::TestDriver);
+FUCHSIA_DRIVER_EXPORT2(wlan::drivers::components::test::TestDriver);

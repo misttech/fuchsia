@@ -61,7 +61,9 @@ class NetworkDevice : public Device,
 
   static constexpr char kChildNodeName[] = "virtio-net-compat";
 
-  NetworkDevice(VirtioNetDriver* driver, zx::bti bti_handle, std::unique_ptr<Backend> backend);
+  NetworkDevice(VirtioNetDriver* driver, zx::bti bti_handle, std::unique_ptr<Backend> backend,
+                const std::shared_ptr<fdf::Namespace>& incoming,
+                const std::optional<std::string>& node_name);
   virtual ~NetworkDevice();
 
   zx_status_t Init() override __TA_EXCLUDES(state_lock_);
@@ -190,6 +192,9 @@ class NetworkDevice : public Device,
   uint16_t virtio_hdr_len_;
 
   fdf::WireSharedClient<netdev::NetworkDeviceIfc> ifc_ __TA_GUARDED(state_lock_);
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<std::string> node_name_;
   VmoStore vmo_store_ __TA_GUARDED(state_lock_);
 };
 

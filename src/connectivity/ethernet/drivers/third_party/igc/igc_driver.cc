@@ -15,7 +15,7 @@
 
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pci/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/status.h>
@@ -55,9 +55,7 @@ constexpr static uint8_t kIgcRxPthresh = 8;
 constexpr static uint8_t kIgcRxHthresh = 8;
 constexpr static uint8_t kIgcRxWthresh = 4;
 
-IgcDriver::IgcDriver(fdf::DriverStartArgs start_args,
-                     fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("igc", std::move(start_args), std::move(driver_dispatcher)) {
+IgcDriver::IgcDriver() : fdf::DriverBase2("igc") {
   for (auto& buffer : adapter_->buffers) {
     buffer = {
         .meta{
@@ -93,8 +91,8 @@ void IgcDriver::Shutdown() {
   state_ = State::ShutDown;
 }
 
-zx_status_t IgcDriver::ConfigurePci() {
-  zx::result pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+zx_status_t IgcDriver::ConfigurePci(fdf::Namespace& incoming) {
+  zx::result pci_client_end = incoming.Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_end.is_error()) {
     fdf::error("Failed to connect to PCI device: {}", pci_client_end);
     return pci_client_end.status_value();
@@ -136,7 +134,9 @@ zx_status_t IgcDriver::ConfigurePci() {
   return ZX_OK;
 }
 
-zx::result<> IgcDriver::Start() {
+zx::result<> IgcDriver::Start(fdf::DriverContext context) {
+  dispatcher_ = driver_dispatcher();
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   auto netdev_dispatcher =
       fdf::UnsynchronizedDispatcher::Create({}, "igc-netdev", [](fdf_dispatcher_t*) {});
   if (netdev_dispatcher.is_error()) {
@@ -145,19 +145,20 @@ zx::result<> IgcDriver::Start() {
   }
   netdev_dispatcher_ = std::move(netdev_dispatcher.value());
 
-  return zx::make_result(Initialize());
+  return zx::make_result(Initialize(context, incoming));
 }
 
-void IgcDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void IgcDriver::Stop(fdf::StopCompleter completer) {
   Shutdown();
   completer(zx::ok());
 }
 
-zx_status_t IgcDriver::Initialize() {
+zx_status_t IgcDriver::Initialize(fdf::DriverContext& context,
+                                  std::shared_ptr<fdf::Namespace> incoming) {
   zx_status_t status = ZX_OK;
 
   // Set up PCI.
-  if (status = ConfigurePci(); status != ZX_OK) {
+  if (status = ConfigurePci(*incoming); status != ZX_OK) {
     fdf::error("failed to configure PCI: {}", zx_status_get_string(status));
     return status;
   }
@@ -188,7 +189,8 @@ zx_status_t IgcDriver::Initialize() {
     }
   }
 
-  if (zx::result result = compat_server_.Initialize(incoming(), outgoing(), node_name(), name());
+  if (zx::result result =
+          compat_server_.Initialize(incoming, outgoing(), context.node_name().value_or(""), name());
       result.is_error()) {
     fdf::error("Failed to initialize compatibility server: {}", result);
     return result.error_value();
@@ -316,29 +318,18 @@ zx_status_t IgcDriver::AddNetworkDevice() {
     return result.error_value();
   }
 
-  fidl::Arena arena;
-  std::vector<fuchsia_driver_framework::wire::Offer> offers = compat_server_.CreateOffers2(arena);
-  offers.push_back(fdf::MakeOffer2<netdriver::Service>(arena, component::kDefaultInstance));
+  std::vector<fuchsia_driver_framework::Offer> offers = compat_server_.CreateOffers2();
+  offers.push_back(fdf::MakeOffer2<netdriver::Service>(component::kDefaultInstance));
 
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                  .name(kNetDevDriverName)
-                  .offers2(arena, std::move(offers))
-                  .Build();
-
-  auto endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
-  if (endpoints.is_error()) {
-    fdf::error("Failed to create node controller endpoints: {}", endpoints);
-    return endpoints.error_value();
+  auto child_result = AddChild(kNetDevDriverName,
+                               std::span<const fuchsia_driver_framework::NodeProperty2>(), offers);
+  if (child_result.is_error()) {
+    fdf::error("Failed to add network device child: {}",
+               zx_status_get_string(child_result.status_value()));
+    return child_result.status_value();
   }
 
-  if (fidl::WireResult result =
-          fidl::WireCall(node())->AddChild(args, std::move(endpoints->server), {});
-      !result.ok()) {
-    fdf::error("Failed to add network device child: {}", result.FormatDescription());
-    return result.status();
-  }
-
-  controller_.Bind(std::move(endpoints->client), dispatcher());
+  controller_.Bind(std::move(child_result.value()), dispatcher());
 
   return ZX_OK;
 }
@@ -1020,4 +1011,4 @@ void IgcDriver::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq_ba
 }  // namespace igc
 }  // namespace ethernet
 
-FUCHSIA_DRIVER_EXPORT(::ethernet::igc::IgcDriver);
+FUCHSIA_DRIVER_EXPORT2(::ethernet::igc::IgcDriver);

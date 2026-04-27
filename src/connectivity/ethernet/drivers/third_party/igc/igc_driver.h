@@ -17,7 +17,8 @@
 #include <fidl/fuchsia.hardware.network.driver/cpp/driver/fidl.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <zircon/types.h>
 
 #include <mutex>
@@ -56,7 +57,7 @@ constexpr static size_t kEtherAddrLen = 6;
 
 #define USE_NETDEV_DISPATCHER
 
-class IgcDriver final : public fdf::DriverBase,
+class IgcDriver final : public fdf::DriverBase2,
                         public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl>,
                         public fdf::WireServer<fuchsia_hardware_network_driver::NetworkPort>,
                         public fdf::WireServer<fuchsia_hardware_network_driver::MacAddr> {
@@ -64,19 +65,14 @@ class IgcDriver final : public fdf::DriverBase,
   struct buffer_info;
   struct adapter;
 
-  explicit IgcDriver(fdf::DriverStartArgs start_args,
-                     fdf::UnownedSynchronizedDispatcher driver_dispatcher);
-  ~IgcDriver();
+  IgcDriver();
+  ~IgcDriver() override;
 
-  // DriverBase implementation.
-  // Because there are Start methods in both NetworkDeviceImpl and DriverBase we need to override
-  // all of them to prevent error messages about hiding overloads. Make the asynchronous Start
-  // method behave just like the DriverBase implementation.
-  zx::result<> Start() override;
-  void Start(fdf::StartCompleter completer) override { DriverBase::Start(std::move(completer)); }
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  // Stop also exists in NetworkDeviceImpl and DriverBase, override it to avoid errors.
-  void Stop() override { DriverBase::Stop(); }
+  // DriverBase2 implementation.
+  using DriverBase2::Start;
+  zx::result<> Start(fdf::DriverContext context) override;
+  using DriverBase2::Stop;
+  void Stop(fdf::StopCompleter completer) override;
 
   // NetworkDeviceImpl implementation
   void Init(fuchsia_hardware_network_driver::wire::NetworkDeviceImplInitRequest* request,
@@ -181,8 +177,8 @@ class IgcDriver final : public fdf::DriverBase,
 
  private:
   void Shutdown();
-  zx_status_t ConfigurePci();
-  zx_status_t Initialize();
+  zx_status_t ConfigurePci(fdf::Namespace& incoming);
+  zx_status_t Initialize(fdf::DriverContext& context, std::shared_ptr<fdf::Namespace> incoming);
   zx_status_t AddNetworkDevice();
   bool IsValidEthernetAddr(uint8_t* addr);
   void IdentifyHardware();
@@ -220,6 +216,8 @@ class IgcDriver final : public fdf::DriverBase,
 
   // An extension for tx decriptor.
   buffer_info tx_buffers_[kEthTxDescRingCount]{};
+
+  fdf::UnownedSynchronizedDispatcher dispatcher_;
 
   fdf::UnsynchronizedDispatcher netdev_dispatcher_;
 

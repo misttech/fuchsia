@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.hardware.network.driver/cpp/driver/fidl.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <zircon/types.h>
 
 #include "adapter.h"
@@ -23,21 +23,24 @@ constexpr uint32_t kMaxMulticastFilters = 128;
 class DeviceBase;
 struct adapter;
 
-class Driver : public fdf::DriverBase {
+class Driver : public fdf::DriverBase2 {
  public:
-  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  Driver();
 
   const adapter* Adapter() const;
   adapter* Adapter();
 
-  // DriverBase implementation.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  // DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   friend class DeviceBase;
 
   std::unique_ptr<DeviceBase> device_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::string node_name_;
 };
 
 // Provide access to DriverBase base class and allow storing the Device in a unique_ptr without
@@ -48,16 +51,17 @@ class DeviceBase {
   virtual ~DeviceBase() = default;
 
   virtual zx::result<> Start() = 0;
-  virtual void PrepareStop(fdf::PrepareStopCompleter completer) = 0;
+  virtual void Stop(fdf::StopCompleter completer) = 0;
 
   virtual const adapter* Adapter() const = 0;
   virtual adapter* Adapter() = 0;
 
  protected:
-  // Forward some calls to allow implementations access to fdf::DriverBase
-  fidl::ClientEnd<fuchsia_driver_framework::Node>& node() { return driver_.node(); }
+  // Forward some calls to allow implementations access to fdf::DriverBase2
   const fidl::ClientEnd<fuchsia_driver_framework::Node>& node() const { return driver_.node(); }
-  const std::shared_ptr<fdf::Namespace>& incoming() const { return driver_.incoming(); }
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return driver_.incoming_; }
+  const std::string& node_name() const { return driver_.node_name_; }
+  std::string_view name() const { return driver_.name(); }
   std::shared_ptr<fdf::OutgoingDirectory>& outgoing() { return driver_.outgoing(); }
   const fdf::UnownedSynchronizedDispatcher& driver_dispatcher() const {
     return driver_.driver_dispatcher();
@@ -86,7 +90,7 @@ class Device : public DeviceBase,
          std::unique_ptr<compat::SyncInitializedDeviceServer>&& compat_server);
 
   zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   const adapter* Adapter() const override { return adapter_.get(); }
   adapter* Adapter() override { return adapter_.get(); }

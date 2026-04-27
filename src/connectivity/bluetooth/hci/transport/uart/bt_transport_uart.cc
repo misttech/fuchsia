@@ -7,7 +7,7 @@
 #include <assert.h>
 #include <lib/async/default.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/sync/cpp/completion.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,11 +57,8 @@ void ScoConnectionServer::handle_unknown_method(
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
-BtTransportUart::BtTransportUart(fuchsia_driver_framework::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("bt-transport-uart", std::move(start_args), std::move(driver_dispatcher)),
-      dispatcher_(dispatcher()),
-      sco_connection_server_(fit::bind_member(this, &BtTransportUart::OnScoData),
+BtTransportUart::BtTransportUart()
+    : DriverBase2("bt-transport-uart"), sco_connection_server_(fit::bind_member(this, &BtTransportUart::OnScoData),
                              fit::bind_member(this, &BtTransportUart::OnScoStop),
                              fit::bind_member(this, &BtTransportUart::OnAckReceive)) {
   // Pre-allocate the vector size to avoid resizing. Reserve the space for packet indicator by +1 on
@@ -73,12 +70,14 @@ BtTransportUart::BtTransportUart(fuchsia_driver_framework::DriverStartArgs start
   }
 }
 
-zx::result<> BtTransportUart::Start() {
+zx::result<> BtTransportUart::Start(fdf::DriverContext context) {
   fdf::debug("Start");
-  const auto config = take_config<bt_transport_uart_config::Config>();
+  dispatcher_ = dispatcher();
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  const auto config = context.take_config<bt_transport_uart_config::Config>();
 
   zx::result<fdf::ClientEnd<fuchsia_hardware_serialimpl::Device>> client_end =
-      incoming()->Connect<fuchsia_hardware_serialimpl::Service::Device>();
+      incoming_->Connect<fuchsia_hardware_serialimpl::Service::Device>();
   if (client_end.is_error()) {
     fdf::error("Connect to fuchsia_hardware_serialimpl::Device protocol failed: {}", client_end);
     return zx::error(client_end.status_value());
@@ -138,7 +137,7 @@ zx::result<> BtTransportUart::Start() {
     return zx::error(status);
   }
 
-  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming());
+  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming_);
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
     return result.take_error();
@@ -161,7 +160,7 @@ zx::result<> BtTransportUart::Start() {
         .token_provider =
             [this](fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
               zx::result<> result =
-                  incoming()->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
+                  incoming_->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
                       std::move(server));
               if (result.is_error()) {
                 fdf::warn("Failed to connect to power token service: {}", result);
@@ -197,7 +196,7 @@ zx::result<> BtTransportUart::Start() {
   return zx::ok();
 }
 
-void BtTransportUart::PrepareStop(fdf::PrepareStopCompleter completer) {
+void BtTransportUart::Stop(fdf::StopCompleter completer) {
   fdf::trace("Unbind");
 
   // We are now shutting down.  Make sure that any pending callbacks in
@@ -214,7 +213,7 @@ void BtTransportUart::PrepareStop(fdf::PrepareStopCompleter completer) {
     return;
   }
 
-  fdf::trace("PrepareStop complete");
+  fdf::trace("Stop complete");
 
   completer(zx::ok());
 }
@@ -300,7 +299,7 @@ void BtTransportUart::SendSnoop(fidl::VectorView<uint8_t>& packet,
 void BtTransportUart::HciBeginShutdown() {
   bool was_shutting_down = shutting_down_.exchange(true, std::memory_order_relaxed);
   if (!was_shutting_down) {
-    node().reset();
+    (void)take_node();
   }
 }
 
@@ -847,4 +846,4 @@ zx_status_t BtTransportUart::ServeProtocols() {
 
 }  // namespace bt_transport_uart
 
-FUCHSIA_DRIVER_EXPORT(bt_transport_uart::BtTransportUart);
+FUCHSIA_DRIVER_EXPORT2(bt_transport_uart::BtTransportUart);

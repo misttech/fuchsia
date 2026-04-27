@@ -33,8 +33,8 @@
 #include <lib/async/cpp/task.h>
 #include <lib/device-protocol/pci.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
@@ -207,32 +207,34 @@ zx::result<> IdentifyHardware(struct e1000_pci* pci, struct e1000_hw& hw) {
   return zx::ok();
 }
 
-Driver::Driver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("e1000", std::move(start_args), std::move(driver_dispatcher)) {}
+Driver::Driver() : fdf::DriverBase2("e1000") {}
 
 const adapter* Driver::Adapter() const { return device_->Adapter(); }
 
 adapter* Driver::Adapter() { return device_->Adapter(); }
 
-zx::result<> Driver::Start() {
+zx::result<> Driver::Start(fdf::DriverContext context) {
   if (device_) {
     fdf::error("Driver already started");
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
+
+  incoming_ = context.take_incoming();
+  node_name_ = context.node_name().value_or("");
+
   std::unique_ptr<adapter> adapter = std::make_unique<struct adapter>();
   adapter->hw.back = &adapter->osdep;
   adapter->hw.mac.max_frame_size = kMaxFrameSize;
 
   auto compat_server = std::make_unique<compat::SyncInitializedDeviceServer>();
 
-  if (zx::result result = compat_server->Initialize(incoming(), outgoing(), node_name(), name());
+  if (zx::result result = compat_server->Initialize(incoming_, outgoing(), node_name_, name());
       result.is_error()) {
     fdf::error("Failed to initialize compatibility server: {}", result);
     return result.take_error();
   }
 
-  zx::result pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+  zx::result pci_client_end = incoming_->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_end.is_error()) {
     fdf::error("Failed to connect to PCI device: {}", pci_client_end);
     return pci_client_end.take_error();
@@ -320,9 +322,7 @@ zx::result<> Driver::Start() {
   return device_->Start();
 }
 
-void Driver::PrepareStop(fdf::PrepareStopCompleter completer) {
-  device_->PrepareStop(std::move(completer));
-}
+void Driver::Stop(fdf::StopCompleter completer) { device_->Stop(std::move(completer)); }
 
 template <typename RxDescriptor>
 Device<RxDescriptor>::Device(Driver& driver, std::unique_ptr<adapter>&& adapter,
@@ -807,7 +807,7 @@ zx::result<> Device<RxDescriptor>::Start() {
 }
 
 template <typename RxDescriptor>
-void Device<RxDescriptor>::PrepareStop(fdf::PrepareStopCompleter completer) {
+void Device<RxDescriptor>::Stop(fdf::StopCompleter completer) {
   irq_handler_.Cancel();
   on_link_state_change_task_.Cancel();
 
@@ -1475,4 +1475,4 @@ zx_paddr_t Device<RxDescriptor>::GetPhysicalAddress(
 }  // namespace e1000
 
 // clang-format off
-FUCHSIA_DRIVER_EXPORT(::e1000::Driver);
+FUCHSIA_DRIVER_EXPORT2(::e1000::Driver);

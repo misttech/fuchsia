@@ -16,7 +16,8 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
@@ -66,19 +67,17 @@ class ScoConnectionServer : public fidl::Server<fuchsia_hardware_bluetooth::ScoC
   std::vector<uint8_t> write_buffer_;
 };
 
-class BtTransportUart : public fdf::DriverBase,
+class BtTransportUart : public fdf::DriverBase2,
                         public fidl::Server<fuchsia_hardware_bluetooth::HciTransport>,
                         public fdf::WireServer<fuchsia_hardware_serialimpl::Device>,
                         public fidl::Server<fuchsia_hardware_bluetooth::Snoop> {
  public:
   // If |dispatcher| is non-null, it will be used instead of a new work thread.
   // tests.
-  explicit BtTransportUart(fdf::DriverStartArgs start_args,
-                           fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  BtTransportUart();
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override { fdf::DriverBase::Stop(); }
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // fuchsia_hardware_bluetooth::HciTransport protocol overrides.
   void Send(SendRequest& request, SendCompleter::Sync& completer) override;
@@ -277,6 +276,8 @@ class BtTransportUart : public fdf::DriverBase,
 
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>
       mac_address_metadata_server_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
 };
 
 }  // namespace bt_transport_uart

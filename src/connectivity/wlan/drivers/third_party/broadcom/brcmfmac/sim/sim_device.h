@@ -14,7 +14,7 @@
 #ifndef SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_SIM_SIM_DEVICE_H_
 #define SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_SIM_SIM_DEVICE_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 #include <memory>
 
@@ -28,18 +28,16 @@ struct brcmf_bus;
 
 namespace wlan::brcmfmac {
 
-class SimDevice final : public fdf::DriverBase, public Device {
+class SimDevice final : public fdf::DriverBase2, public Device {
  public:
-  SimDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("sim-brcmfmac", std::move(start_args), std::move(driver_dispatcher)),
-        data_path_(*this) {}
+  SimDevice() : DriverBase2("sim-brcmfmac"), data_path_(*this) {}
 
   SimDevice(const SimDevice& device) = delete;
   SimDevice& operator=(const SimDevice& other) = delete;
   ~SimDevice() override;
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
@@ -61,7 +59,7 @@ class SimDevice final : public fdf::DriverBase, public Device {
   DeviceInspect* GetInspect() override { return inspect_.get(); }
   fidl::WireClient<fdf::Node>& GetParentNode() override { return parent_node_; }
   std::shared_ptr<fdf::OutgoingDirectory>& Outgoing() override { return outgoing(); }
-  const std::shared_ptr<fdf::Namespace>& Incoming() const override { return incoming(); }
+  const std::shared_ptr<fdf::Namespace>& Incoming() const override { return incoming_; }
 
   // Trampolines for DDK functions, for platforms that support them.
   zx_status_t LoadFirmware(const char* path, zx_handle_t* fw, size_t* size) override;
@@ -77,7 +75,7 @@ class SimDevice final : public fdf::DriverBase, public Device {
 
   SimDataPath& DataPath() { return data_path_; }
 
-  inspect::Inspector& GetInspector() { return inspector().inspector(); }
+  inspect::Inspector& GetInspector() { return component_inspector_->inspector(); }
 
  private:
   void ShutdownImpl();
@@ -92,6 +90,9 @@ class SimDevice final : public fdf::DriverBase, public Device {
   SimDataPath data_path_;
   fidl::WireClient<fdf::Node> parent_node_;
   libsync::Completion recovery_complete_;
+  std::shared_ptr<fdf::Namespace> incoming_;
+
+  std::optional<inspect::ComponentInspector> component_inspector_;
 };
 
 }  // namespace wlan::brcmfmac

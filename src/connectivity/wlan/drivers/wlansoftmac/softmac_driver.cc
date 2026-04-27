@@ -10,7 +10,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fdf/dispatcher.h>
@@ -46,13 +46,11 @@ namespace wlan::drivers::wlansoftmac {
 
 using ::wlan::drivers::fidl_bridge::FidlErrorToStatus;
 
-SoftmacDriver::SoftmacDriver(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("wlansoftmac", std::move(start_args), std::move(driver_dispatcher)),
+SoftmacDriver::SoftmacDriver()
+    : fdf::DriverBase2("wlansoftmac"),
       banjo_server_({ZX_PROTOCOL_ETHERNET_IMPL, this, &ethernet_impl_protocol_ops_}),
       ethernet_proxy_lock_(std::make_shared<std::mutex>()) {
   WLAN_TRACE_DURATION();
-  fdf::info("Creating a new WLAN device.");
 
   ethernet_impl_protocol_ops_ = {
       .query = [](void* ctx, uint32_t options, ethernet_info_t* info) -> zx_status_t {
@@ -87,13 +85,15 @@ SoftmacDriver::SoftmacDriver(fdf::DriverStartArgs start_args,
   };
 }
 
-void SoftmacDriver::Start(fdf::StartCompleter completer) {
+void SoftmacDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
   WLAN_TRACE_DURATION();
   fdf::info("Starting wlansoftmac driver.");
 
-  node_client_.Bind(std::move(node()), dispatcher());
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 
-  auto softmac_client = incoming()->Connect<fuchsia_wlan_softmac::Service::WlanSoftmac>();
+  node_client_.Bind(take_node(), dispatcher());
+
+  auto softmac_client = incoming->Connect<fuchsia_wlan_softmac::Service::WlanSoftmac>();
   if (softmac_client.is_error()) {
     fdf::error("Failed to create FDF endpoints: {}", softmac_client.status_string());
     completer(softmac_client.take_error());
@@ -107,7 +107,7 @@ void SoftmacDriver::Start(fdf::StartCompleter completer) {
   banjo_config.callbacks[ZX_PROTOCOL_ETHERNET_IMPL] = banjo_server_.callback();
 
   compat_server_.Begin(
-      incoming(), outgoing(), node_name(), "compat-server",
+      incoming, outgoing(), context.node_name(), "compat-server",
       [&, completer = std::move(completer)](zx::result<> compat_server_init_result) mutable {
         if (compat_server_init_result.is_error()) {
           fdf::error("Compat Server initialization failed: {}",
@@ -179,7 +179,7 @@ void SoftmacDriver::Start(fdf::StartCompleter completer) {
       compat::ForwardMetadata::None(), std::move(banjo_config));
 }
 
-void SoftmacDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void SoftmacDriver::Stop(fdf::StopCompleter completer) {
   WLAN_TRACE_DURATION();
   auto softmac_bridge = softmac_bridge_.release();
 
@@ -195,8 +195,6 @@ void SoftmacDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
     completer(zx::ok());
   });
 }
-
-void SoftmacDriver::Stop() { WLAN_TRACE_DURATION(); }
 
 zx_status_t SoftmacDriver::EthernetImplQuery(uint32_t options, ethernet_info_t* out_info) {
   WLAN_TRACE_DURATION();
@@ -357,4 +355,4 @@ void SoftmacDriver::EthernetImplGetBti(zx::bti* out_bti2) {
 
 }  // namespace wlan::drivers::wlansoftmac
 
-FUCHSIA_DRIVER_EXPORT(wlan::drivers::wlansoftmac::SoftmacDriver);
+FUCHSIA_DRIVER_EXPORT2(wlan::drivers::wlansoftmac::SoftmacDriver);

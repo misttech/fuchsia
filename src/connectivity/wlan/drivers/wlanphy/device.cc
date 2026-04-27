@@ -10,7 +10,7 @@
 #include <fuchsia/wlan/internal/cpp/fidl.h>
 #include <inttypes.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fidl/cpp/wire/arena.h>
 #include <net/ethernet.h>
 #include <zircon/status.h>
@@ -92,10 +92,10 @@ fuchsia_wlan_phyimpl::WlanPhyImplNotifyError ConvertToPhyImplNotifyError(zx_stat
 namespace wlanphy {
 using fuchsia_wlan_phyimpl::WlanPhyImplNotifyError;
 
-Device::Device(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("wlanphy", std::move(start_args), std::move(driver_dispatcher)),
-      devfs_connector_(fit::bind_member<&Device::Serve>(this)) {
+Device::Device()
+    : fdf::DriverBase2("wlanphy"), devfs_connector_(fit::bind_member<&Device::Serve>(this)) {}
+
+zx::result<> Device::Start(fdf::DriverContext context) {
   wlan::drivers::log::Instance::Init(0);
 
   auto client_dispatcher =
@@ -114,11 +114,9 @@ Device::Device(fdf::DriverStartArgs start_args,
   ZX_ASSERT_MSG(!phyimplnotify_disp.is_error(), "Creating phyimplnotify dispatcher error: %s",
                 zx_status_get_string(phyimplnotify_disp.status_value()));
   phyimplnotify_dispatcher_ = std::move(*phyimplnotify_disp);
-}
 
-zx::result<> Device::Start() {
   zx_status_t status;
-  if ((status = ConnectToWlanPhyImpl()) != ZX_OK) {
+  if ((status = ConnectToWlanPhyImpl(context.incoming())) != ZX_OK) {
     lerror("Connect to WlanPhyImpl failed: %s", zx_status_get_string(status));
     return zx::error(status);
   }
@@ -129,7 +127,7 @@ zx::result<> Device::Start() {
   return zx::ok();
 }
 
-void Device::PrepareStop(fdf::PrepareStopCompleter completer) {
+void Device::Stop(fdf::StopCompleter completer) {
   client_.AsyncTeardown();
   if (phyimplnotify_dispatcher_.get()) {
     ldebug_device("shutting down phyimplnotify dispatcher");
@@ -148,8 +146,8 @@ void Device::ConnectPhyServerEnd(fidl::ServerEnd<fuchsia_wlan_device::Phy> serve
   phy_servers_.AddBinding(dispatcher(), std::move(server_end), this, fidl::kIgnoreBindingClosure);
 }
 
-zx_status_t Device::ConnectToWlanPhyImpl() {
-  auto client_end = incoming()->Connect<fuchsia_wlan_phyimpl::Service::WlanPhyImpl>();
+zx_status_t Device::ConnectToWlanPhyImpl(fdf::Namespace& incoming) {
+  auto client_end = incoming.Connect<fuchsia_wlan_phyimpl::Service::WlanPhyImpl>();
   if (client_end.is_error()) {
     lerror("Connect to wlanphyimpl service Failed = %s", client_end.status_string());
     return client_end.status_value();
@@ -202,42 +200,21 @@ zx_status_t Device::SetupWlanPhyImplNotifyServer() {
 }
 
 zx_status_t Device::AddWlanDeviceConnector() {
-  fidl::Arena arena;
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
     return connector.status_value();
   }
 
-  auto devfs = fuchsia_driver_framework::wire::DevfsAddArgs::Builder(arena)
-                   .connector(std::move(connector.value()))
-                   .class_name("wlanphy");
+  fuchsia_driver_framework::DevfsAddArgs devfs_args{
+      {.connector = std::move(connector.value()), .class_name = "wlanphy"}};
 
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                  .name(arena, "wlanphy")
-                  .devfs_args(devfs.Build())
-                  .Build();
-  // Create endpoints of the `NodeController` for the node.
-  zx::result controller_endpoints =
-      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
-  if (!controller_endpoints.is_ok()) {
-    lerror("Failed to create endpoints: %s", controller_endpoints.status_string());
-    return controller_endpoints.status_value();
+  zx::result child = AddOwnedChild("wlanphy", devfs_args);
+  if (child.is_error()) {
+    lerror("Failed to add child: %s", child.status_string());
+    return child.status_value();
   }
+  child_ = std::move(child.value());
 
-  zx::result node_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
-  if (!node_endpoints.is_ok()) {
-    lerror("Failed to create endpoints: %s", node_endpoints.status_string());
-    return node_endpoints.status_value();
-  }
-
-  fidl::WireResult result = fidl::WireCall(node())->AddChild(
-      args, std::move(controller_endpoints->server), std::move(node_endpoints->server));
-  if (!result.ok()) {
-    lerror("Failed to add child, status: %s", result.status_string());
-    return result.status();
-  }
-  controller_node_.Bind(std::move(controller_endpoints->client));
-  node_.Bind(std::move(node_endpoints->client));
   return ZX_OK;
 }
 
@@ -803,4 +780,4 @@ void Device::GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) {
 }
 
 }  // namespace wlanphy
-FUCHSIA_DRIVER_EXPORT(::wlanphy::Device);
+FUCHSIA_DRIVER_EXPORT2(::wlanphy::Device);

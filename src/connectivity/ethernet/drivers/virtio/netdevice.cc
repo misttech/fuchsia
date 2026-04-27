@@ -60,11 +60,15 @@ uint16_t MaxVirtqueuePairs(const virtio_net_config& config, bool is_mq_supported
 }  // namespace
 
 NetworkDevice::NetworkDevice(VirtioNetDriver* driver, zx::bti bti_handle,
-                             std::unique_ptr<Backend> backend)
+                             std::unique_ptr<Backend> backend,
+                             const std::shared_ptr<fdf::Namespace>& incoming,
+                             const std::optional<std::string>& node_name)
     : virtio::Device(std::move(bti_handle), std::move(backend)),
       driver_(driver),
       rx_(this),
       tx_(this),
+      incoming_(incoming),
+      node_name_(node_name),
       vmo_store_({
           .map =
               vmo_store::MapOptions{
@@ -143,8 +147,8 @@ zx_status_t NetworkDevice::Init() {
 }
 
 zx_status_t NetworkDevice::AddDevice() {
-  if (zx::result result = compat_server_.Initialize(driver_->incoming(), driver_->outgoing(),
-                                                    driver_->node_name(), kChildNodeName);
+  if (zx::result result =
+          compat_server_.Initialize(incoming_, driver_->outgoing(), node_name_, kChildNodeName);
       result.is_error()) {
     fdf::error("Failed to initialize compat server: {}", result.status_string());
     return result.status_value();
@@ -195,7 +199,7 @@ zx_status_t NetworkDevice::AddDevice() {
 
 void NetworkDevice::RemoveDevice() {
   // Remove the driver by destroying the node channel.
-  driver_->node().TakeChannel().reset();
+  driver_->take_node().reset();
 }
 
 zx_status_t NetworkDevice::AckFeatures(bool* is_status_supported, bool* is_multiqueue_supported,

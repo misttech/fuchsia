@@ -9,7 +9,8 @@
 #include <fidl/fuchsia.wlan.device/cpp/wire.h>
 #include <fidl/fuchsia.wlan.phyimpl/cpp/driver/wire.h>
 #include <fidl/fuchsia.wlan.phyimpl/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
@@ -26,18 +27,17 @@ namespace wlanphy {
 
 class DeviceConnector;
 
-class Device final : public fdf::DriverBase,
+class Device final : public fdf::DriverBase2,
                      public fidl::WireServer<fuchsia_wlan_device::Phy>,
                      public fidl::WireServer<fuchsia_wlan_phyimpl::WlanPhyImplNotify>,
                      public fidl::WireServer<fuchsia_wlan_device::Connector>,
                      public fidl::WireAsyncEventHandler<fdf::NodeController> {
  public:
-  explicit Device(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit Device();
 
   static constexpr const char* Name() { return "wlanphy"; }
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Function implementations in protocol fuchsia_wlan_device::Phy.
   void GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) override;
@@ -67,7 +67,7 @@ class Device final : public fdf::DriverBase,
   void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
   void ConnectPhyServerEnd(fidl::ServerEnd<fuchsia_wlan_device::Phy> server_end);
 
-  zx_status_t ConnectToWlanPhyImpl();
+  zx_status_t ConnectToWlanPhyImpl(fdf::Namespace& incoming);
 
   void OnCriticalError(OnCriticalErrorRequestView request,
                        OnCriticalErrorCompleter::Sync& completer) override;
@@ -91,8 +91,7 @@ class Device final : public fdf::DriverBase,
   // Dispatcher for being a FIDL client firing requests to WlanPhyImpl device.
   fdf::Dispatcher client_dispatcher_;
   fdf::Dispatcher phyimplnotify_dispatcher_;
-  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_node_;
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
+  fdf::OwnedChildNode child_;
   driver_devfs::Connector<fuchsia_wlan_device::Connector> devfs_connector_;
   fidl::ServerBindingGroup<fuchsia_wlan_device::Connector> bindings_;
   fidl::ServerBindingGroup<fuchsia_wlan_phyimpl::WlanPhyImplNotify> phyimplnotify_bindings_;

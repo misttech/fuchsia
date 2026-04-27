@@ -15,7 +15,8 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
@@ -50,21 +51,20 @@ enum class ActivityType : uint8_t {
 };
 
 class BtHciBroadcom final
-    : public fdf::DriverBase,
+    : public fdf::DriverBase2,
       public fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController>,
       public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>,
       public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
  public:
-  using fdf::DriverBase::inspector;
+  inspect::ComponentInspector& inspector() { return *component_inspector_; }
 
-  explicit BtHciBroadcom(fdf::DriverStartArgs start_args,
-                         fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  BtHciBroadcom();
 
   void set_test_dispatcher(async_dispatcher_t* dispatcher) { dispatcher_ = dispatcher; }
 
-  void Start(fdf::StartCompleter completer) override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
@@ -195,9 +195,8 @@ class BtHciBroadcom final
 
   fdf::WireSyncClient<fuchsia_hardware_serialimpl::Device> serial_client_;
 
-  fidl::WireClient<fuchsia_driver_framework::Node> node_;
-  fidl::WireClient<fuchsia_driver_framework::NodeController> node_controller_;
-  fidl::WireClient<fuchsia_driver_framework::Node> child_node_;
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<fdf::OwnedChildNode> child_node_;
 
   PowerLevel power_level_ = PowerLevel::kBoot;
   async::TaskClosureMethod<BtHciBroadcom, &BtHciBroadcom::HandleWakeLeaseTimeout> drop_level_task_{
@@ -214,6 +213,7 @@ class BtHciBroadcom final
   // asserted at On when we are transmitting or expecting to receive.
   std::optional<fidl::WireClient<fuchsia_power_broker::LeaseControl>> level_lease_client_;
 
+  std::optional<inspect::ComponentInspector> component_inspector_;
   inspect::UintProperty core_dump_count_;
   std::optional<zx::time> last_core_dump_time_;
 

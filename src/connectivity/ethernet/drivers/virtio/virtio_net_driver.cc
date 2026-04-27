@@ -15,12 +15,11 @@ constexpr char kDriverName[] = "virtio-net";
 
 namespace virtio {
 
-VirtioNetDriver::VirtioNetDriver(fdf::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher dispatcher)
-    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+VirtioNetDriver::VirtioNetDriver() : fdf::DriverBase2(kDriverName) {}
 
-zx::result<> VirtioNetDriver::Start() {
-  zx::result netdevice = CreateNetworkDevice();
+zx::result<> VirtioNetDriver::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result netdevice = CreateNetworkDevice(incoming, context.node_name());
   if (netdevice.is_error()) {
     fdf::error("Failed to create net device: {}", netdevice);
     return netdevice.take_error();
@@ -38,16 +37,17 @@ zx::result<> VirtioNetDriver::Start() {
   return zx::ok();
 }
 
-void VirtioNetDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void VirtioNetDriver::Stop(fdf::StopCompleter completer) {
   if (netdevice_) {
     netdevice_->Shutdown();
   }
   completer(zx::ok());
 }
 
-zx::result<std::unique_ptr<NetworkDevice>> VirtioNetDriver::CreateNetworkDevice() {
+zx::result<std::unique_ptr<NetworkDevice>> VirtioNetDriver::CreateNetworkDevice(
+    const std::shared_ptr<fdf::Namespace>& incoming, const std::optional<std::string>& node_name) {
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci =
-      incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+      incoming->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci.is_error()) {
     fdf::error("Failed to get pci client: {}", pci);
     return pci.take_error();
@@ -61,7 +61,8 @@ zx::result<std::unique_ptr<NetworkDevice>> VirtioNetDriver::CreateNetworkDevice(
   }
   auto [bti, backend] = std::move(bti_and_backend).value();
 
-  return zx::ok(std::make_unique<NetworkDevice>(this, std::move(bti), std::move(backend)));
+  return zx::ok(std::make_unique<NetworkDevice>(this, std::move(bti), std::move(backend), incoming,
+                                                node_name));
 }
 
 }  // namespace virtio

@@ -4,7 +4,7 @@
 #ifndef SRC_CONNECTIVITY_ETHERNET_DRIVERS_VIRTIO_VIRTIO_NET_DRIVER_H_
 #define SRC_CONNECTIVITY_ETHERNET_DRIVERS_VIRTIO_VIRTIO_NET_DRIVER_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 #include <memory>
 
@@ -15,12 +15,12 @@ namespace virtio {
 // The driver base implementation must be kept separate from the virtio Device implementation. The
 // virtio Device base class can only be constructed with a specific set of parameters that we cannot
 // provide in the fdf::DriverBase constructor.
-class VirtioNetDriver : public fdf::DriverBase {
+class VirtioNetDriver : public fdf::DriverBase2 {
  public:
-  VirtioNetDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher);
+  VirtioNetDriver();
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   NetworkDevice* GetNetworkDevice() { return netdevice_.get(); }
 
@@ -28,7 +28,8 @@ class VirtioNetDriver : public fdf::DriverBase {
   friend class NetworkDevice;
 
   // This is a virtual method so that it can be overridden in tests.
-  virtual zx::result<std::unique_ptr<NetworkDevice>> CreateNetworkDevice();
+  virtual zx::result<std::unique_ptr<NetworkDevice>> CreateNetworkDevice(
+      const std::shared_ptr<fdf::Namespace>& incoming, const std::optional<std::string>& node_name);
 
   std::unique_ptr<NetworkDevice> netdevice_;
 };

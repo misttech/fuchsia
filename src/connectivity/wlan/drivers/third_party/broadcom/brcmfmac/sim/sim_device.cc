@@ -13,7 +13,7 @@
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/sim/sim_device.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/status.h>
 
@@ -37,11 +37,15 @@ void SimDevice::ShutdownImpl() {
   }
 }
 
-zx::result<> SimDevice::Start() {
-  parent_node_.Bind(std::move(node()), dispatcher());
+zx::result<> SimDevice::Start(fdf::DriverContext context) {
+  component_inspector_.emplace(context.CreateInspector(this));
+
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
+  parent_node_.Bind(take_node(), dispatcher());
 
   zx::result<std::unique_ptr<DeviceInspect>> result =
-      DeviceInspect::Create(dispatcher(), inspector().root());
+      DeviceInspect::Create(dispatcher(), component_inspector_->root());
   if (result.is_error()) {
     fdf::error("ERROR calling DeviceInspect::Create(): {}", result);
     return result.take_error();
@@ -52,7 +56,7 @@ zx::result<> SimDevice::Start() {
   return zx::ok();
 }
 
-void SimDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+void SimDevice::Stop(fdf::StopCompleter completer) {
   ShutdownImpl();
   Shutdown([completer = std::move(completer)]() mutable { completer(zx::ok()); });
 }
@@ -103,4 +107,4 @@ zx::result<fuchsia_wlan_broadcom::WifiConfig> SimDevice::GetWifiConfig() {
 brcmf_simdev* SimDevice::GetSim() { return brcmf_bus_->bus_priv.sim; }
 
 }  // namespace wlan::brcmfmac
-FUCHSIA_DRIVER_EXPORT(::wlan::brcmfmac::SimDevice);
+FUCHSIA_DRIVER_EXPORT2(::wlan::brcmfmac::SimDevice);

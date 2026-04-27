@@ -1,8 +1,9 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
 
@@ -17,18 +18,17 @@ namespace wlan {
 // protocol over devfs so that it's discoverable by wlandevicemonitor. It also passes on a
 // WlantapDriverContext to the spawned WlantapCtl instance so that WlantapCtl can add child nodes
 // and serve new protocols.
-class WlantapDriver : public fdf::DriverBase {
+class WlantapDriver : public fdf::DriverBase2 {
   static constexpr std::string_view kDriverName = "wlantapctl";
 
  public:
-  WlantapDriver(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)),
+  explicit WlantapDriver()
+      : fdf::DriverBase2(kDriverName),
         devfs_connector_(fit::bind_member<&WlantapDriver::Serve>(this)) {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     WLAN_TRACE_DURATION();
-    node_.Bind(std::move(node()));
+    node_.Bind(take_node());
     fidl::Arena arena;
 
     zx::result connector = devfs_connector_.Bind(dispatcher());
@@ -76,4 +76,4 @@ class WlantapDriver : public fdf::DriverBase {
 };
 
 }  // namespace wlan
-FUCHSIA_DRIVER_EXPORT(wlan::WlantapDriver);
+FUCHSIA_DRIVER_EXPORT2(wlan::WlantapDriver);
