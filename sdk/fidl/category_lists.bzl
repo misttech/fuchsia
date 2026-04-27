@@ -80,6 +80,9 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.net:fuchsia.net_idk",
     "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_idk",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_idk",
+    "//sdk/fidl/fuchsia.net.mdns:fuchsia.net.mdns_idk",
+    "//sdk/fidl/fuchsia.net.reachability:fuchsia.net.reachability_idk",
+    "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_idk",
     "//sdk/fidl/fuchsia.net.stackmigrationdeprecated:fuchsia.net.stackmigrationdeprecated_idk",
     "//sdk/fidl/fuchsia.pkg.resolution:fuchsia.pkg.resolution_idk",
     "//sdk/fidl/fuchsia.process:fuchsia.process_idk",
@@ -172,7 +175,9 @@ PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_idk",
     "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_idk",
     "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_idk",
+    "//sdk/fidl/fuchsia.net.tcp:fuchsia.net.tcp_idk",
     "//sdk/fidl/fuchsia.posix:fuchsia.posix_idk",
+    "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_idk",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_idk",
 ]
 
