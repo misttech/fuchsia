@@ -601,6 +601,13 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			Type:        serialLogType,
 			AlwaysFlake: true,
 		},
+		// For https://fxbug.dev/507033785
+		&stringInLogCheck{
+			String:                "BACKTRACE REQUEST: process android.hardware.contexthub-ser",
+			Type:                  syslogType,
+			SkipAllPassedTests:    true,
+			emitSyntheticTestCase: true,
+		},
 	}
 
 	oopsExceptBlocks := []*logBlock{
