@@ -36,127 +36,205 @@ macro_rules! selector_to_peer_id {
     };
 }
 
+async fn handle_single_peer_request(
+    worker: Arc<WorkThread>,
+    request: PeerControllerRequest,
+) -> Result<(), Error> {
+    match request {
+        PeerControllerRequest::GetKnownPeers { responder } => {
+            match worker.get_known_peers().await {
+                Ok(peers) => {
+                    responder.send(Ok(peers.as_slice()))?;
+                }
+                Err(err) => {
+                    error!("GetKnownPeers encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        PeerControllerRequest::ConnectPeer { payload, responder } => {
+            let id = selector_to_peer_id!("ConnectPeer", payload, responder);
+            match worker.connect_peer(id).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("ConnectPeer encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        PeerControllerRequest::DisconnectPeer { payload, responder } => {
+            let id = selector_to_peer_id!("DisconnectPeer", payload, responder);
+            match worker.disconnect_peer(id).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("DisconnectPeer encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        PeerControllerRequest::Pair { payload, responder } => {
+            let PeerControllerPairRequest {
+                selector: Some(selector), options: Some(options), ..
+            } = payload
+            else {
+                error!("Pair encountered error: payload missing required fields");
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                return Ok(());
+            };
+            let id = selector_to_peer_id!("Pair", selector, responder);
+            match worker.pair(id, options).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("Pair encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        PeerControllerRequest::ForgetPeer { payload, responder } => {
+            let id = selector_to_peer_id!("ForgetPeer", payload, responder);
+            match worker.forget_peer(id).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("ForgetPeer encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        PeerControllerRequest::SetDiscovery { payload, responder } => {
+            let PeerControllerSetDiscoveryRequest { discovery: Some(discovery), .. } = payload
+            else {
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                return Ok(());
+            };
+            match worker.set_discovery(discovery).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("SetDiscovery encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        PeerControllerRequest::_UnknownMethod { ordinal, .. } => {
+            error!("PeerControllerRequest: unknown method received with ordinal {ordinal}");
+        }
+    }
+    Ok(())
+}
+
 async fn handle_peer_request(
     stream: PeerControllerRequestStream,
     worker: Arc<WorkThread>,
 ) -> Result<(), Error> {
     stream
         .map(|result| result.context("failed request"))
-        .try_for_each(|request| {
-            let worker = worker.clone();
-            async move {
-                match request {
-                    PeerControllerRequest::GetKnownPeers { responder } => {
-                        match worker.get_known_peers().await {
-                            Ok(peers) => {
-                                responder.send(Ok(peers.as_slice()))?;
-                            }
-                            Err(err) => {
-                                error!("GetKnownPeers encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    PeerControllerRequest::ConnectPeer { payload, responder } => {
-                        let id = selector_to_peer_id!("ConnectPeer", payload, responder);
-                        match worker.connect_peer(id).await {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("ConnectPeer encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    PeerControllerRequest::DisconnectPeer { payload, responder } => {
-                        let id = selector_to_peer_id!("DisconnectPeer", payload, responder);
-                        match worker.disconnect_peer(id).await {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("DisconnectPeer encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    PeerControllerRequest::Pair { payload, responder } => {
-                        let PeerControllerPairRequest {
-                            selector: Some(selector),
-                            options: Some(options),
-                            ..
-                        } = payload
-                        else {
-                            error!("Pair encountered error: payload missing required fields");
-                            responder
-                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                            return Ok(());
-                        };
-                        let id = selector_to_peer_id!("Pair", selector, responder);
-                        match worker.pair(id, options).await {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("Pair encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    PeerControllerRequest::ForgetPeer { payload, responder } => {
-                        let id = selector_to_peer_id!("ForgetPeer", payload, responder);
-                        match worker.forget_peer(id).await {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("ForgetPeer encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    PeerControllerRequest::SetDiscovery { payload, responder } => {
-                        let PeerControllerSetDiscoveryRequest {
-                            discovery: Some(discovery), ..
-                        } = payload
-                        else {
-                            responder
-                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                            return Ok(());
-                        };
-                        match worker.set_discovery(discovery).await {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("SetDiscovery encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    PeerControllerRequest::_UnknownMethod { ordinal, .. } => {
-                        error!(
-                            "PeerControllerRequest: unknown method received with ordinal {ordinal}"
-                        );
-                    }
-                }
-                Ok(())
-            }
-        })
+        .try_for_each(|request| handle_single_peer_request(worker.clone(), request))
         .await
+}
+
+async fn handle_single_host_request(
+    worker: Arc<WorkThread>,
+    request: HostControllerRequest,
+) -> Result<(), Error> {
+    match request {
+        HostControllerRequest::GetHosts { responder } => match worker.get_hosts().await {
+            Ok(hosts) => {
+                responder.send(Ok(&hosts))?;
+            }
+            Err(err) => {
+                error!("GetHosts encountered error: {err}");
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+            }
+        },
+        HostControllerRequest::SetDiscoverability { payload, responder } => {
+            let HostControllerSetDiscoverabilityRequest {
+                discoverable: Some(discoverable), ..
+            } = payload
+            else {
+                error!("SetDiscoverability encountered error: discoverable not set");
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                return Ok(());
+            };
+            match worker.set_discoverability(discoverable).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("SetDiscoverability encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        HostControllerRequest::SetLocalName { name, responder } => {
+            match worker.set_local_name(name).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("SetLocalName encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        HostControllerRequest::StartPairingDelegate { payload, responder } => {
+            let HostControllerStartPairingDelegateRequest {
+                input_capability: Some(input_capability),
+                output_capability: Some(output_capability),
+                ..
+            } = payload
+            else {
+                error!(
+                    "StartPairingDelegate encountered error: input_capability or output_capability not set"
+                );
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                return Ok(());
+            };
+            match worker.start_pairing_delegate(input_capability, output_capability).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("StartPairingDelegate encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        HostControllerRequest::StopPairingDelegate { responder } => {
+            let _ = worker.stop_pairing_delegate().await;
+            responder.send(Ok(()))?;
+        }
+        HostControllerRequest::SetDeviceClass { payload, responder } => {
+            let HostControllerSetDeviceClassRequest { device_class: Some(device_class), .. } =
+                payload
+            else {
+                error!("SetDeviceClass encountered error: device_class not set");
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                return Ok(());
+            };
+            match worker.set_device_class(device_class).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("SetDeviceClass encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
+        HostControllerRequest::_UnknownMethod { ordinal, .. } => {
+            error!("HostControllerRequest: unknown method received with ordinal {ordinal}");
+        }
+    }
+    Ok(())
 }
 
 async fn handle_host_request(
@@ -165,120 +243,7 @@ async fn handle_host_request(
 ) -> Result<(), Error> {
     stream
         .map(|result| result.context("failed request"))
-        .try_for_each(|request| {
-            let worker = worker.clone();
-            async move {
-                match request {
-                    HostControllerRequest::GetHosts { responder } => match worker.get_hosts().await
-                    {
-                        Ok(hosts) => {
-                            responder.send(Ok(&hosts))?;
-                        }
-                        Err(err) => {
-                            error!("GetHosts encountered error: {err}");
-                            responder
-                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                        }
-                    },
-                    HostControllerRequest::SetDiscoverability { payload, responder } => {
-                        let HostControllerSetDiscoverabilityRequest {
-                            discoverable: Some(discoverable),
-                            ..
-                        } = payload
-                        else {
-                            error!("SetDiscoverability encountered error: discoverable not set");
-                            responder
-                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                            return Ok(());
-                        };
-                        match worker.set_discoverability(discoverable).await {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("SetDiscoverability encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    HostControllerRequest::SetLocalName { name, responder } => {
-                        match worker.set_local_name(name).await {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("SetLocalName encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    HostControllerRequest::StartPairingDelegate { payload, responder } => {
-                        let HostControllerStartPairingDelegateRequest {
-                            input_capability: Some(input_capability),
-                            output_capability: Some(output_capability),
-                            ..
-                        } = payload
-                        else {
-                            error!("StartPairingDelegate encountered error: input_capability or output_capability not set");
-                            responder
-                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                            return Ok(());
-                        };
-                        match worker
-                            .start_pairing_delegate(input_capability, output_capability)
-                            .await
-                        {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("StartPairingDelegate encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    HostControllerRequest::StopPairingDelegate { responder } => {
-                        let _ = worker.stop_pairing_delegate().await;
-                        responder.send(Ok(()))?;
-                    }
-                    HostControllerRequest::SetDeviceClass { payload, responder } => {
-                        let HostControllerSetDeviceClassRequest {
-                            device_class: Some(device_class),
-                            ..
-                        } = payload
-                        else {
-                            error!("SetDeviceClass encountered error: device_class not set");
-                            responder
-                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
-                            return Ok(());
-                        };
-                        match worker.set_device_class(device_class).await {
-                            Ok(_) => {
-                                responder.send(Ok(()))?;
-                            }
-                            Err(err) => {
-                                error!("SetDeviceClass encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
-                        }
-                    }
-                    HostControllerRequest::_UnknownMethod { ordinal, .. } => {
-                        error!(
-                            "HostControllerRequest: unknown method received with ordinal {ordinal}"
-                        );
-                    }
-                }
-                Ok(())
-            }
-        })
+        .try_for_each(|request| handle_single_host_request(worker.clone(), request))
         .await
 }
 
