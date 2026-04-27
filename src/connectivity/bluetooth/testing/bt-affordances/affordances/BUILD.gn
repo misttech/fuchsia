@@ -31,7 +31,10 @@ rustc_library("affordances") {
 
   test_deps = [ "//src/lib/fuchsia" ]
 
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/lib.rs",
+    "src/proxies.rs",
+  ]
 }
 
 # run: fx test fuchsia_bt_test_affordances_tests
