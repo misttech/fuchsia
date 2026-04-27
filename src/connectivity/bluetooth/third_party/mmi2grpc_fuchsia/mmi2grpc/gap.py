@@ -345,7 +345,7 @@ class GAPProxy(ProfileProxy):
     ):
         r"""
         Please send an ATT service request - read or write request with handle
-        (?P<handle>[0-9a-e]+) \(octet\).Discover services if needed.
+        (?P<handle>0x[0-9a-fA-F]{4}) \(octet\).Discover services if needed.
         """
         self.services = self.gatt.DiscoverServices(
             connection=self.connection
