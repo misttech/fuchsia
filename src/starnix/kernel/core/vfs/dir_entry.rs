@@ -42,7 +42,7 @@ bitflags! {
 
         // Allow replacing any file with a directory. This is an internal flag used only
         // internally inside Starnix for OverlayFS.
-        const REPLACE_ANY = 0x80000000;
+        const REPLACE_ANY = 1 << 31;
 
         // Internal flags that cannot be passed to `sys_rename()`
         const INTERNAL = Self::REPLACE_ANY.bits();

@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub use {bitflags as __bitflags, paste};
+pub use bitflags as __bitflags;
+pub use paste;
 
 #[macro_export]
 macro_rules! atomic_bitflags {
@@ -95,9 +96,9 @@ mod tests {
     atomic_bitflags! {
         #[derive(PartialEq, Eq, Debug, Clone, Copy)]
         pub struct TestFlags: u32 {
-            const A = 0x1;
-            const B = 0x2;
-            const C = 0x4;
+            const A = 1 << 0;
+            const B = 1 << 1;
+            const C = 1 << 2;
         }
     }
 

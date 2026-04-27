@@ -106,15 +106,15 @@ impl ExitStatus {
 atomic_bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TaskFlags: u8 {
-        const EXITED = 0x1;
-        const SIGNALS_AVAILABLE = 0x2;
-        const TEMPORARY_SIGNAL_MASK = 0x4;
+        const EXITED                   = 1 << 0;
+        const SIGNALS_AVAILABLE        = 1 << 1;
+        const TEMPORARY_SIGNAL_MASK    = 1 << 2;
         /// Whether the executor should dump the stack of this task when it exits.
         /// Currently used to implement ExitStatus::CoreDump.
-        const DUMP_ON_EXIT = 0x8;
-        const KERNEL_SIGNALS_AVAILABLE = 0x10;
+        const DUMP_ON_EXIT             = 1 << 3;
+        const KERNEL_SIGNALS_AVAILABLE = 1 << 4;
         /// Whether the executor has successfully spawned a thread for this task.
-        const SPAWNED = 0x20;
+        const SPAWNED                  = 1 << 5;
     }
 }
 

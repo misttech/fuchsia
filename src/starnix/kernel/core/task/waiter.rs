@@ -351,13 +351,13 @@ bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct WaiterOptions: u8 {
         /// The wait cannot be interrupted by signals.
-        const IGNORE_SIGNALS = 1;
+        const IGNORE_SIGNALS   = 1 << 0;
 
         /// The wait is not taking place at a safe point.
         ///
         /// For example, the caller might be holding a lock, which could cause a deadlock if the
         /// waiter triggers delayed releasers.
-        const UNSAFE_CALLSTACK = 2;
+        const UNSAFE_CALLSTACK = 1 << 1;
     }
 }
 

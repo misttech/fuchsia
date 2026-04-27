@@ -178,14 +178,14 @@ mod inner_access {
     bitflags::bitflags! {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct Access: u8 {
-            const EXIST = 0;
-            const EXEC = 1;
-            const WRITE = 2;
-            const READ = 4;
+            const EXIST       = 0;
+            const EXEC        = 1 << 0;
+            const WRITE       = 1 << 1;
+            const READ        = 1 << 2;
 
             // Access mask is the part of access related to the file access mode. It is
             // exec/write/read.
-            const ACCESS_MASK = 1 | 2 | 4;
+            const ACCESS_MASK = Self::EXEC.bits() | Self::WRITE.bits() | Self::READ.bits();
         }
     }
 
