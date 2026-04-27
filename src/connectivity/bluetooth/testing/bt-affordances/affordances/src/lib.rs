@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
-use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth::{ChannelMode, ChannelParameters, DeviceClass, PeerId, Uuid};
 use fidl_fuchsia_bluetooth_bredr::{
@@ -14,24 +13,21 @@ use fidl_fuchsia_bluetooth_bredr::{
 use fidl_fuchsia_bluetooth_gatt2::{
     Characteristic, LocalServiceMarker, LocalServiceRequestStream, ServiceHandle, ServiceInfo,
 };
-use fidl_fuchsia_bluetooth_le::{
-    AdvertisedPeripheralMarker, AdvertisedPeripheralRequest, AdvertisingParameters,
-    ConnectionMarker, ConnectionOptions, Filter, ScanOptions, ScanResultWatcherMarker,
-    ScanResultWatcherProxy,
-};
+use fidl_fuchsia_bluetooth_le::{AdvertisingParameters, ConnectionMarker};
 use fidl_fuchsia_bluetooth_sys::{
-    AccessMarker, AccessProxy, HostInfo, InputCapability, OutputCapability, PairingOptions, Peer,
+    HostInfo, InputCapability, OutputCapability, PairingOptions, Peer,
 };
-use fuchsia_async::{LocalExecutor, Task, TimeoutExt};
+use fuchsia_async::{LocalExecutor, TimeoutExt};
 use fuchsia_bluetooth::types::{Channel, Uuid as BtUuid};
-use fuchsia_component::client::connect_to_protocol;
+
 use fuchsia_sync::Mutex;
+use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
-use futures::{FutureExt, StreamExt, select};
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 use std::thread;
 
+mod le;
 mod proxies;
 mod sys;
 
@@ -262,16 +258,18 @@ impl WorkThread {
                     result_sender.send(sys::set_device_class(&proxies, device_class)).unwrap();
                 }
                 Request::StartLeScan(result_sender) => {
-                    result_sender.send(proxies.start_le_scan(peer_cache.clone()).await).unwrap();
+                    result_sender
+                        .send(le::start_le_scan(&mut proxies, peer_cache.clone()).await)
+                        .unwrap();
                 }
                 Request::StopLeScan(result_sender) => {
-                    result_sender.send(proxies.stop_le_scan()).unwrap();
+                    result_sender.send(le::stop_le_scan(&proxies)).unwrap();
                 }
                 Request::ConnectLe(peer_id, result_sender) => {
-                    result_sender.send(proxies.connect_le(&peer_id).await).unwrap();
+                    result_sender.send(le::connect_le(&mut proxies, &peer_id).await).unwrap();
                 }
                 Request::AdvertisePeripheral(parameters, timeout, result_sender) => {
-                    match proxies.advertise_peripheral(*parameters, timeout).await {
+                    match le::advertise_peripheral(&proxies, *parameters, timeout).await {
                         Ok(Some((peer_id, connection))) => {
                             _peripheral_connection = connection;
                             result_sender.send(Ok(Some(peer_id))).unwrap();
@@ -683,177 +681,6 @@ impl Proxies {
             }
             Err(fidl_err) => {
                 Err(anyhow!("fuchsia.bluetooth.bredr.Profile/Connect error: {fidl_err}"))
-            }
-        }
-    }
-
-    // Send peer update of those for which the address is known and return the list of those for
-    // which the address is not known.
-    fn send_peer_update(
-        peer_cache: Arc<Mutex<Vec<Peer>>>,
-        sender: &mpsc::UnboundedSender<
-            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
-        >,
-        updated: Vec<fidl_fuchsia_bluetooth_le::Peer>,
-    ) -> Result<Vec<fidl_fuchsia_bluetooth_le::Peer>, anyhow::Error> {
-        let mut send_list = vec![];
-        let mut missing_addr = vec![];
-
-        for peer in updated {
-            match peer_cache
-                .lock()
-                .iter()
-                .find(|&cached_peer| cached_peer.id.unwrap() == peer.id.unwrap())
-            {
-                Some(cached_peer) => send_list.push((peer, Some(cached_peer.address.unwrap()))),
-                None => missing_addr.push(peer),
-            };
-        }
-
-        if let Err(err) = sender.unbounded_send(send_list) {
-            sender.close_channel();
-            return Err(anyhow!("LE scan stream closed with status: {err}"));
-        }
-
-        Ok(missing_addr)
-    }
-
-    async fn start_le_scan(
-        &mut self,
-        peer_cache: Arc<Mutex<Vec<Peer>>>,
-    ) -> Result<
-        mpsc::UnboundedReceiver<
-            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
-        >,
-        anyhow::Error,
-    > {
-        // Enable Discovery as well to ascertain dual mode peers.
-        let (_token, discovery_session_server) = fidl::endpoints::create_proxy();
-        if let Err(err) = self.access_proxy.start_discovery(discovery_session_server).await? {
-            return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
-        }
-
-        let (sender, receiver) = mpsc::unbounded::<
-            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
-        >();
-
-        let (scan_client, scan_server) = fidl::endpoints::create_proxy::<ScanResultWatcherMarker>();
-        let options = ScanOptions {
-            // Empty filter matches all LE peripherals and broadcasters.
-            filters: Some(vec![Filter { ..Default::default() }]),
-            ..Default::default()
-        };
-        let _scan_fut = self.central_proxy.scan(&options, scan_server).check()?;
-        let mut scan_result_stream =
-            HangingGetStream::new(scan_client, ScanResultWatcherProxy::watch);
-
-        *self.le_scan_task.lock() = Some(Task::spawn(async move {
-            // Connect new Access proxy to avoid MultipleObservers error.
-            let access_proxy = connect_to_protocol::<AccessMarker>()
-                .expect("Failed to connect fuchsia.bluetooth.sys/Access");
-            let mut peer_watcher_stream =
-                HangingGetStream::new_with_fn_ptr(access_proxy, AccessProxy::watch_peers);
-
-            let mut peers_waiting_for_addr = vec![];
-            loop {
-                select! {
-                    scan_result = scan_result_stream.select_next_some() => {
-                        match scan_result {
-                            Ok(updated) => {
-                                match Self::send_peer_update(peer_cache.clone(), &sender, updated) {
-                                    Ok(waiting) => peers_waiting_for_addr = waiting,
-                                    Err(err) => {
-                                        eprintln!("{err}");
-                                        return;
-                                    }
-                                }
-                            }
-
-                            Err(err) => {
-                                eprintln!("LE scan encountered error: {err}");
-                                sender.close_channel();
-                                return;
-                            }
-                        }
-                    }
-
-                    peer_result = peer_watcher_stream.select_next_some() => {
-                        match peer_result {
-                            Ok((updated, removed)) => {
-                                sys::update_peer_cache(peer_cache.clone(), updated, removed);
-
-                                match Self::send_peer_update(
-                                    peer_cache.clone(),
-                                    &sender,
-                                    peers_waiting_for_addr,
-                                ) {
-                                    Ok(still_waiting) => peers_waiting_for_addr = still_waiting,
-                                    Err(err) => {
-                                        eprintln!("{err}");
-                                        return;
-                                    }
-                                }
-                            }
-
-                            Err(err) => {
-                                eprintln!("PeerWatcher stream returned error: {err}");
-                                sender.close_channel();
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-        }));
-
-        Ok(receiver)
-    }
-
-    fn stop_le_scan(&self) -> bool {
-        self.le_scan_task.lock().take().is_some()
-    }
-
-    async fn connect_le(&mut self, peer_id: &PeerId) -> Result<(), anyhow::Error> {
-        let (le_client, le_server) = fidl::endpoints::create_proxy::<ConnectionMarker>();
-        self.central_proxy.connect(peer_id, &ConnectionOptions::default(), le_server)?;
-        let (client_proxy, client_server_end) =
-            fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_gatt2::ClientMarker>();
-        le_client.request_gatt_client(client_server_end)?;
-        *self.central_connection.lock() = Some(le_client);
-        self.gatt_client = Some(client_proxy);
-        Ok(())
-    }
-
-    async fn advertise_peripheral(
-        &self,
-        parameters: AdvertisingParameters,
-        timeout: std::time::Duration,
-    ) -> Result<Option<(PeerId, ClientEnd<ConnectionMarker>)>, anyhow::Error> {
-        let (client, mut request_stream) =
-            fidl::endpoints::create_request_stream::<AdvertisedPeripheralMarker>();
-
-        select! {
-            result = self.peripheral_proxy.advertise(&parameters, client) => {
-                return Err(anyhow!("LE advertisement finished with result: {result:?}"));
-            }
-            request = request_stream.next().on_timeout(timeout, || None).fuse() => {
-                match request {
-                    Some(Ok(AdvertisedPeripheralRequest::OnConnected {
-                        peer,
-                        connection,
-                        responder,
-                    })) => {
-                        let _ = responder.send();
-                        return Ok(Some((peer.id.unwrap(), connection)));
-                    }
-                    Some(Err(e)) => {
-                        return Err(anyhow!("Error in AdvertisedPeripheral stream: {e:?}"));
-                    }
-                    None => {
-                        println!("Peripheral advertisement ended without connection");
-                        return Ok(None);
-                    }
-                }
             }
         }
     }

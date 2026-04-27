@@ -32,6 +32,7 @@ rustc_library("affordances") {
   test_deps = [ "//src/lib/fuchsia" ]
 
   sources = [
+    "src/le.rs",
     "src/lib.rs",
     "src/proxies.rs",
     "src/sys.rs",
