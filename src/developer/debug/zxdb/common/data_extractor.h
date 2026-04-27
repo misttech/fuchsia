@@ -5,7 +5,7 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_COMMON_DATA_EXTRACTOR_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_COMMON_DATA_EXTRACTOR_H_
 
-#include <lib/stdcompat/span.h>
+#include <span>
 #include <string.h>
 
 #include <algorithm>
@@ -16,7 +16,7 @@ namespace zxdb {
 class DataExtractor {
  public:
   DataExtractor() = default;
-  explicit DataExtractor(cpp20::span<const uint8_t> data) : data_(data) {}
+  explicit DataExtractor(std::span<const uint8_t> data) : data_(data) {}
 
   // Returns the current position in the buffer.
   size_t cur() const { return cur_; }
@@ -75,7 +75,7 @@ class DataExtractor {
   std::optional<uint64_t> ReadUleb128();
 
  private:
-  cpp20::span<const uint8_t> data_;
+  std::span<const uint8_t> data_;
   size_t cur_ = 0;  // Current index in data_.
 };
 

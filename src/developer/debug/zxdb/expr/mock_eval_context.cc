@@ -94,7 +94,7 @@ void MockEvalContext::GetNamedValue(const ParsedIdentifier& ident, EvalCallback 
     return cb(Err("MockEvalContext::GetNamedValue '%s' not found.", ident.GetFullName().c_str()));
 
   // Do not perform any implicit asynchronous memory fetches in the mock.
-  if (std::optional<cpp20::span<const uint8_t>> opt_reg_data = data_provider_->GetRegister(reg)) {
+  if (std::optional<std::span<const uint8_t>> opt_reg_data = data_provider_->GetRegister(reg)) {
     if (opt_reg_data->empty())
       return cb(GetUnavailableRegisterErr(reg));
     else

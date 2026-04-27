@@ -6,7 +6,7 @@
 #define SRC_DEVELOPER_DEBUG_ZXDB_SYMBOLS_DWARF_LOCATION_H_
 
 #include <lib/fit/function.h>
-#include <lib/stdcompat/span.h>
+#include <span>
 
 #include "src/developer/debug/zxdb/symbols/arch.h"
 #include "src/developer/debug/zxdb/symbols/variable_location.h"
@@ -37,7 +37,7 @@ VariableLocation DecodeVariableLocation(llvm::DWARFUnit* unit, const llvm::DWARF
 //
 // On error this will return an empty VariableLocation.
 VariableLocation DecodeDwarf4LocationList(TargetPointer unit_base_addr,
-                                          cpp20::span<const uint8_t> data,
+                                          std::span<const uint8_t> data,
                                           const UncachedLazySymbol& source);
 
 // Low-level decode for a DWARF 5 variable location description. The data should start at the
@@ -52,7 +52,7 @@ VariableLocation DecodeDwarf4LocationList(TargetPointer unit_base_addr,
 //
 // On error this will return an empty VariableLocation.
 VariableLocation DecodeDwarf5LocationList(
-    TargetPointer unit_base_addr, cpp20::span<const uint8_t> data,
+    TargetPointer unit_base_addr, std::span<const uint8_t> data,
     fit::function<std::optional<TargetPointer>(uint64_t)>& index_to_addr,
     const UncachedLazySymbol& source);
 

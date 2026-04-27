@@ -5,7 +5,7 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_SYMBOLS_MOCK_SYMBOL_DATA_PROVIDER_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_SYMBOLS_MOCK_SYMBOL_DATA_PROVIDER_H_
 
-#include <lib/stdcompat/span.h>
+#include <span>
 
 #include <map>
 
@@ -52,7 +52,7 @@ class MockSymbolDataProvider : public SymbolDataProvider {
   // SymbolDataProvider implementation.
   debug::Arch GetArch() override { return arch_; }
   fxl::RefPtr<SymbolDataProvider> GetEntryDataProvider() const override;
-  std::optional<cpp20::span<const uint8_t>> GetRegister(debug::RegisterID id) override;
+  std::optional<std::span<const uint8_t>> GetRegister(debug::RegisterID id) override;
   void GetRegisterAsync(debug::RegisterID id, GetRegisterCallback callback) override;
   void WriteRegister(debug::RegisterID id, std::vector<uint8_t> data, WriteCallback cb) override;
   std::optional<uint64_t> GetFrameBase() override;

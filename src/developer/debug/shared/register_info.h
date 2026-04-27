@@ -5,7 +5,7 @@
 #ifndef SRC_DEVELOPER_DEBUG_SHARED_REGISTER_INFO_H_
 #define SRC_DEVELOPER_DEBUG_SHARED_REGISTER_INFO_H_
 
-#include <lib/stdcompat/span.h>
+#include <span>
 #include <stdint.h>
 
 #include <optional>
@@ -99,7 +99,7 @@ bool IsGeneralRegister(RegisterID);
 // truncated also so it may have less data than expected.
 //
 // If the register is not found, the returned view will be empty.
-cpp20::span<const uint8_t> GetRegisterData(const std::vector<RegisterValue>& regs, RegisterID id);
+std::span<const uint8_t> GetRegisterData(const std::vector<RegisterValue>& regs, RegisterID id);
 
 // These ranges permit to make transformation from registerID to category and
 // make some formal verifications.

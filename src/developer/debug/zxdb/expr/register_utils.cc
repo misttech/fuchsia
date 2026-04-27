@@ -30,7 +30,7 @@ Err GetUnavailableRegisterErr(debug::RegisterID id) {
 }
 
 ErrOrValue RegisterDataToValue(ExprLanguage lang, debug::RegisterID id,
-                               VectorRegisterFormat vector_fmt, cpp20::span<const uint8_t> data) {
+                               VectorRegisterFormat vector_fmt, std::span<const uint8_t> data) {
   const debug::RegisterInfo* info = debug::InfoForRegister(id);
   if (!info)
     return Err("Unknown register");

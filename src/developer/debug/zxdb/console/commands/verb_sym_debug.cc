@@ -4,7 +4,7 @@
 
 #include "src/developer/debug/zxdb/console/commands/verb_sym_debug.h"
 
-#include <lib/stdcompat/span.h>
+#include <span>
 
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/process.h"
@@ -241,7 +241,7 @@ OutputBuffer DumpLineTable(ProcessSymbols* process_symbols, uint64_t address,
   }
 
   const LineTable& line_table = found_unit.main_binary_unit->GetLineTable();
-  cpp20::span<const LineTable::Row> sequence =
+  std::span<const LineTable::Row> sequence =
       line_table.GetRowSequenceForAddress(symbol_context, address);
   if (sequence.empty())
     return OutputBuffer("No row sequence covers " + to_hex_string(address) + ".\n");

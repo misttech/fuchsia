@@ -5,7 +5,7 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_EXPR_REGISTER_UTILS_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_EXPR_REGISTER_UTILS_H_
 
-#include <lib/stdcompat/span.h>
+#include <span>
 
 #include "src/developer/debug/shared/arch.h"
 #include "src/developer/debug/zxdb/expr/expr_language.h"
@@ -26,7 +26,7 @@ Err GetUnavailableRegisterErr(debug::RegisterID id);
 // non-vector registers will be looked up based on |id|. |lang| will determine
 // the builtin Type symbol that will represent the register data.
 ErrOrValue RegisterDataToValue(ExprLanguage lang, debug::RegisterID id,
-                               VectorRegisterFormat vector_fmt, cpp20::span<const uint8_t> data);
+                               VectorRegisterFormat vector_fmt, std::span<const uint8_t> data);
 }  // namespace zxdb
 
 #endif  // SRC_DEVELOPER_DEBUG_ZXDB_EXPR_REGISTER_UTILS_H_

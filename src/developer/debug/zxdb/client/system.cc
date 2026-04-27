@@ -4,7 +4,7 @@
 
 #include "src/developer/debug/zxdb/client/system.h"
 
-#include <lib/stdcompat/functional.h>
+#include <functional>
 #include <lib/syslog/cpp/log_settings.h>
 
 #include <algorithm>
@@ -272,7 +272,7 @@ fxl::RefPtr<SettingSchema> CreateSchema() {
 System::System(Session* session)
     : ClientObject(session),
       download_manager_(this),
-      symbols_(cpp20::bind_front(&DownloadManager::RequestDownload, &download_manager_)),
+      symbols_(std::bind_front(&DownloadManager::RequestDownload, &download_manager_)),
       settings_(GetSchema(), nullptr),
       weak_factory_(this) {
   // Create the default target.

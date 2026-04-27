@@ -5,7 +5,7 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_SYMBOLS_LINE_TABLE_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_SYMBOLS_LINE_TABLE_H_
 
-#include <lib/stdcompat/span.h>
+#include <span>
 
 #include <optional>
 #include <string>
@@ -56,7 +56,7 @@ class LineTable {
   // anyway.
   struct FoundRow {
     FoundRow() = default;
-    FoundRow(cpp20::span<const Row> seq, size_t symbolizable_index, size_t statement_index)
+    FoundRow(std::span<const Row> seq, size_t symbolizable_index, size_t statement_index)
         : sequence(seq), symbolizable_index(symbolizable_index), statement_index(statement_index) {}
 
     bool empty() const { return sequence.empty(); }
@@ -70,7 +70,7 @@ class LineTable {
     // The sequence of rows associated with the address. These will be contiguous addresses. This
     // will be empty if nothing was matched. If nonempty, the last row will always be marked with an
     // EndSequence bit.
-    cpp20::span<const Row> sequence;
+    std::span<const Row> sequence;
 
     // Index within the sequence of the found row to use for symbolization of this address. Valid
     // when !empty().
@@ -105,14 +105,14 @@ class LineTable {
   //
   // Sequences consist of a contiguous range of addresses and will be in sorted order.
   size_t GetNumSequences() const;
-  cpp20::span<const Row> GetSequenceAt(size_t index) const;
+  std::span<const Row> GetSequenceAt(size_t index) const;
 
   // Returns the sequence of rows (contiguous addresses ending in an EndSequence tag) containing the
   // address. The returned array will be empty if the address was not found. See GetRowForAddress().
   //
   // Watch out: the addresses in the returned rows will all be module-relative.
-  cpp20::span<const Row> GetRowSequenceForAddress(const SymbolContext& address_context,
-                                                  TargetPointer absolute_address) const;
+  std::span<const Row> GetRowSequenceForAddress(const SymbolContext& address_context,
+                                                TargetPointer absolute_address) const;
 
   // Finds the row in the line table that covers the given address. If there is no match, the
   // returned sequence will be empty.

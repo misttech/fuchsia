@@ -5,7 +5,7 @@
 #include "src/developer/debug/zxdb/console/format_register_x64.h"
 
 #include <inttypes.h>
-#include <lib/stdcompat/span.h>
+#include <span>
 #include <lib/syslog/cpp/macros.h>
 
 #include <set>
@@ -35,7 +35,7 @@ void PushName(const debug::RegisterValue& reg, TextForegroundColor color,
 // A nonzero length will case that number of bytes to be printed.
 void PushHex(const debug::RegisterValue& reg, TextForegroundColor color, int length,
              std::vector<OutputBuffer>* row) {
-  cpp20::span<const uint8_t> view = reg.data;
+  std::span<const uint8_t> view = reg.data;
   if (length > 0)
     view = view.subspan(0, length);
   row->emplace_back(GetLittleEndianHexOutput(view), color);

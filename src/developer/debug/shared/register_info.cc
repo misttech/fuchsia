@@ -814,10 +814,10 @@ RegisterCategory RegisterIDToCategory(RegisterID id) {
   return RegisterCategory::kNone;
 }
 
-cpp20::span<const uint8_t> GetRegisterData(const std::vector<RegisterValue>& regs, RegisterID id) {
+std::span<const uint8_t> GetRegisterData(const std::vector<RegisterValue>& regs, RegisterID id) {
   const RegisterInfo* info = InfoForRegister(id);
   if (!info)
-    return cpp20::span<uint8_t>();
+    return std::span<uint8_t>();
 
   const RegisterValue* found_canonical = nullptr;
   for (const auto& reg : regs) {
@@ -830,7 +830,7 @@ cpp20::span<const uint8_t> GetRegisterData(const std::vector<RegisterValue>& reg
   }
 
   if (!found_canonical)
-    return cpp20::span<uint8_t>();
+    return std::span<uint8_t>();
 
   // Here we found a canonical register match that's not the exact register being requested. Extract
   // the correct number of bits.
@@ -841,7 +841,7 @@ cpp20::span<const uint8_t> GetRegisterData(const std::vector<RegisterValue>& reg
   FX_DCHECK(info->bits % 8 == 0);
   FX_DCHECK(info->shift % 8 == 0);
 
-  cpp20::span<const uint8_t> result = found_canonical->data;
+  std::span<const uint8_t> result = found_canonical->data;
 
   // The shift is a trim from the left because we assume little-endian.
   return result.subspan(info->shift / 8, info->bits / 8);

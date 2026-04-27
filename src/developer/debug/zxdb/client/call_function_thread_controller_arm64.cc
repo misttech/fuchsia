@@ -4,7 +4,7 @@
 
 #include "src/developer/debug/zxdb/client/call_function_thread_controller_arm64.h"
 
-#include <lib/stdcompat/vector.h>
+#include <vector>
 
 #include <memory>
 #include <utility>
@@ -107,7 +107,7 @@ void CallFunctionThreadControllerArm64::CollectAllRegisterCategories(
       }
 
       // Remove non-writeable registers from the register set.
-      cpp20::erase_if(result.registers, [](const debug::RegisterValue& rv) {
+      std::erase_if(result.registers, [](const debug::RegisterValue& rv) {
         return rv.id == debug::RegisterID::kARMv8_tpidr;
       });
 

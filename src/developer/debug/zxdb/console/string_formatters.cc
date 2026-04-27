@@ -13,7 +13,7 @@
 
 namespace zxdb {
 
-std::string GetLittleEndianHexOutput(cpp20::span<const uint8_t> data) {
+std::string GetLittleEndianHexOutput(std::span<const uint8_t> data) {
   if (data.empty())
     return std::string();
 
@@ -50,7 +50,7 @@ std::string GetLittleEndianHexOutput(cpp20::span<const uint8_t> data) {
   return result;
 }
 
-std::string GetFPString(cpp20::span<const uint8_t> value, int precision) {
+std::string GetFPString(std::span<const uint8_t> value, int precision) {
   switch (value.size()) {
     case 4:
       precision = precision != 0 ? precision : FLT_DIG;

@@ -6,7 +6,7 @@
 #define SRC_DEVELOPER_DEBUG_ZXDB_SYMBOLS_SYMBOL_DATA_PROVIDER_H_
 
 #include <lib/fit/function.h>
-#include <lib/stdcompat/span.h>
+#include <span>
 #include <stdint.h>
 
 #include <map>
@@ -86,7 +86,7 @@ class SymbolDataProvider : public fxl::RefCountedThreadSafe<SymbolDataProvider> 
   // know the value. An example is an unsaved register in a non-topmost stack frame.
   //
   // On successful data return, the data is owned by the implementor and should not be saved.
-  virtual std::optional<cpp20::span<const uint8_t>> GetRegister(debug::RegisterID id);
+  virtual std::optional<std::span<const uint8_t>> GetRegister(debug::RegisterID id);
 
   // Request for register data with an asynchronous callback. The callback will be issued when the
   // register data is available.

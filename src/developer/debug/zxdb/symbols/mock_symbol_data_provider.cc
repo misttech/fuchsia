@@ -37,16 +37,16 @@ fxl::RefPtr<SymbolDataProvider> MockSymbolDataProvider::GetEntryDataProvider() c
   return entry_data_provider_;
 }
 
-std::optional<cpp20::span<const uint8_t>> MockSymbolDataProvider::GetRegister(
+std::optional<std::span<const uint8_t>> MockSymbolDataProvider::GetRegister(
     debug::RegisterID id) {
   if (debug::GetSpecialRegisterType(id) == debug::SpecialRegisterType::kIP) {
     const uint8_t* ip_as_char = reinterpret_cast<const uint8_t*>(&ip_);
-    return cpp20::span(ip_as_char, ip_as_char + sizeof(ip_));
+    return std::span(ip_as_char, ip_as_char + sizeof(ip_));
   }
 
   const auto& found = regs_.find(id);
   if (found == regs_.end())
-    return cpp20::span<const uint8_t>();  // Known to be unknown.
+    return std::span<const uint8_t>();  // Known to be unknown.
 
   if (!found->second.synchronous)
     return std::nullopt;

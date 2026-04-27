@@ -4,7 +4,7 @@
 
 #include "src/developer/debug/zxdb/symbols/line_table.h"
 
-#include <lib/stdcompat/span.h>
+#include <span>
 #include <lib/syslog/cpp/macros.h>
 #include <unistd.h>
 
@@ -24,25 +24,25 @@ size_t LineTable::GetNumSequences() const {
   return sequences_.size();
 }
 
-cpp20::span<const LineTable::Row> LineTable::GetSequenceAt(size_t index) const {
+std::span<const LineTable::Row> LineTable::GetSequenceAt(size_t index) const {
   // Callers will have to call GetNumSequences() above before querying for a specific one, so we
   // don't have to call EnsureSequence().
   FX_DCHECK(index < sequences_.size());
 
-  cpp20::span<const Row> rows = GetRows();
+  std::span<const Row> rows = GetRows();
   size_t row_begin = sequences_[index].row_begin;
   return rows.subspan(row_begin, sequences_[index].row_end - row_begin);
 }
 
-cpp20::span<const LineTable::Row> LineTable::GetRowSequenceForAddress(
+std::span<const LineTable::Row> LineTable::GetRowSequenceForAddress(
     const SymbolContext& address_context, TargetPointer absolute_address) const {
   TargetPointer rel_address = address_context.AbsoluteToRelative(absolute_address);
 
   const Sequence* sequence = GetSequenceForRelativeAddress(rel_address);
   if (!sequence)
-    return cpp20::span<const Row>();
+    return std::span<const Row>();
 
-  cpp20::span<const Row> rows = GetRows();
+  std::span<const Row> rows = GetRows();
   // Include the last row (marked with EndSequence) in the result.
   return rows.subspan(sequence->row_begin, sequence->row_end - sequence->row_begin + 1);
 }
