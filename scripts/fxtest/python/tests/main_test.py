@@ -22,10 +22,14 @@ from parameterized import parameterized
 import args
 import environment
 import event
+import execution
 import find_affected
 import log
 import main
+import selection
+import selection_types
 import test_list_file
+import tests_json_file
 
 WARNING_LEVEL = event.MessageLevel.WARNING
 
@@ -223,9 +227,14 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             )
 
         m = mock.AsyncMock(side_effect=handler)
-        patch = mock.patch("main.execution.run_command", m)
+        patch = mock.patch.object(execution, "run_command", m)
         patch.start()
         self.addCleanup(patch.stop)
+
+        patch2 = mock.patch.object(selection.execution, "run_command", m)
+        patch2.start()
+        self.addCleanup(patch2.stop)
+
         return m
 
     def _mock_generate_test_list(self) -> mock.MagicMock:
@@ -1611,6 +1620,78 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 "test_case_2",
                 "test_case_3",
             ],
+        )
+
+    async def test_run_mobly_test_with_filter(self) -> None:
+        """Test that we can filter Mobly test cases using --test-filter"""
+
+        mock_enumerate = self._mock_enumerate_test_cases(
+            command.CommandOutput(
+                stdout="test_case_1\ntest_case_2\ntest_case_3",
+                stderr="",
+                return_code=0,
+                runtime=10,
+                wrapper_return_code=None,
+            )
+        )
+
+        command_mock = self._mock_run_command(0)
+
+        # Create a mock test object
+        bar_test = test_list_file.Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(
+                    name="host_x64/bar_test",
+                    label="//src/sys:bar_test(//build/toolchain/host:x64)",
+                    path="host_x64/bar_test",
+                    os="linux",
+                    list_cases_argument="list_mobly_tests",
+                )
+            )
+        )
+
+        # Mock selection to avoid calling dldist
+        mock_select = mock.AsyncMock(
+            return_value=selection_types.TestSelections(
+                selected=[bar_test],
+                selected_but_not_run=[],
+                best_score={bar_test.name(): 0},
+                group_matches=[],
+                fuzzy_distance_threshold=3,
+            )
+        )
+
+        patch = mock.patch("selection.select_tests", mock_select)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+        recorder = event.EventRecorder()
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(
+                [
+                    "--simple",
+                    "--no-build",
+                    "--test-filter",
+                    "case_2",
+                    "host_x64/bar_test",
+                ]
+            ),
+            recorder=recorder,
+        )
+        self.assertEqual(ret, 0)
+        self.assertEqual(mock_enumerate.call_count, 1)
+
+        call_args = command_mock.call_args_list
+        found = False
+        for call in call_args:
+            args_list = list(call[0])
+            if "--test_cases" in args_list and "test_case_2" in args_list:
+                found = True
+                break
+        self.assertTrue(
+            found,
+            f"Did not find --test_cases test_case_2 in calls: {call_args}",
         )
 
     async def test_list_python_host_tests(self) -> None:

@@ -118,7 +118,7 @@ class TestExecution:
         """
         return self._test.info.is_hermetic()
 
-    def command_line(self) -> list[str]:
+    def command_line(self, test_cases: list[str] | None = None) -> list[str]:
         """Format the command line required to execute this test.
 
         Raises:
@@ -274,7 +274,10 @@ class TestExecution:
                 + suffix_args
             )
         elif self._test.build.test.path:
-            return [self._test.build.test.path] + self._flags.extra_args
+            cmd = [self._test.build.test.path]
+            if test_cases:
+                cmd += ["--test_cases"] + test_cases
+            return cmd + self._flags.extra_args
         else:
             raise TestCouldNotRun(
                 f"We do not know how to run this test: {str(self._test)}"
@@ -534,7 +537,33 @@ class TestExecution:
         symbolizer_args = None
         if self.should_symbolize():
             symbolizer_args = exec_env.fx_cmd_line("ffx", "debug", "symbolize")
-        command = self.command_line()
+
+        resolved_test_cases = None
+        if (
+            self._test.build.test.list_cases_argument == "list_mobly_tests"
+            and flags.test_filter
+        ):
+            enumeration_output = await self.enumerate_test_cases(
+                recorder, parent
+            )
+            if enumeration_output and enumeration_output.return_code == 0:
+                all_cases = enumeration_output.stdout.splitlines()
+                resolved_test_cases = []
+                for case in all_cases:
+                    for filter_str in flags.test_filter:
+                        if filter_str in case:
+                            resolved_test_cases.append(case)
+                            break
+                if not resolved_test_cases:
+                    raise TestSkipped(
+                        f"No test cases matched filters: {flags.test_filter}"
+                    )
+            else:
+                raise TestCouldNotRun(
+                    f"Failed to enumerate test cases for filtering. Output: {enumeration_output.stderr if enumeration_output else 'None'}"
+                )
+
+        command = self.command_line(test_cases=resolved_test_cases)
         env = self.environment() or {}
 
         outdir = self._outdir
