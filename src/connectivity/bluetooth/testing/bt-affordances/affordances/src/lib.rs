@@ -10,9 +10,7 @@ use fidl_fuchsia_bluetooth_bredr::{
     ConnectionReceiverRequestStream, DataElement, L2capParameters, ProtocolDescriptor,
     ProtocolIdentifier, ServiceDefinition,
 };
-use fidl_fuchsia_bluetooth_gatt2::{
-    Characteristic, LocalServiceMarker, LocalServiceRequestStream, ServiceHandle, ServiceInfo,
-};
+use fidl_fuchsia_bluetooth_gatt2::{Characteristic, ServiceHandle, ServiceInfo};
 use fidl_fuchsia_bluetooth_le::{AdvertisingParameters, ConnectionMarker};
 use fidl_fuchsia_bluetooth_sys::{
     HostInfo, InputCapability, OutputCapability, PairingOptions, Peer,
@@ -27,6 +25,7 @@ use std::ffi::{CStr, CString};
 use std::sync::Arc;
 use std::thread;
 
+mod gatt;
 mod le;
 mod proxies;
 mod sys;
@@ -280,7 +279,9 @@ impl WorkThread {
                     }
                 }
                 Request::PublishService(uuid, service_handle, characteristics, result_sender) => {
-                    match proxies.publish_service(uuid, service_handle, characteristics).await {
+                    match gatt::publish_service(&proxies, uuid, service_handle, characteristics)
+                        .await
+                    {
                         Ok(mut local_service_request_stream) => {
                             fuchsia_async::Task::spawn(async move {
                                 while let Some(Ok(request)) =
@@ -299,7 +300,7 @@ impl WorkThread {
                     }
                 }
                 Request::DiscoverServices(result_sender) => {
-                    result_sender.send(proxies.discover_services().await).unwrap();
+                    result_sender.send(gatt::discover_services(&mut proxies).await).unwrap();
                 }
                 Request::ReadCharacteristic(
                     service_handle,
@@ -308,9 +309,12 @@ impl WorkThread {
                 ) => {
                     result_sender
                         .send(
-                            proxies
-                                .read_characteristic(service_handle, characteristic_handle)
-                                .await,
+                            gatt::read_characteristic(
+                                &proxies,
+                                service_handle,
+                                characteristic_handle,
+                            )
+                            .await,
                         )
                         .unwrap();
                 }
@@ -321,12 +325,12 @@ impl WorkThread {
                 ) => {
                     result_sender
                         .send(
-                            proxies
-                                .register_characteristic_notifier(
-                                    service_handle,
-                                    characteristic_handle,
-                                )
-                                .await,
+                            gatt::register_characteristic_notifier(
+                                &proxies,
+                                service_handle,
+                                characteristic_handle,
+                            )
+                            .await,
                         )
                         .unwrap();
                 }
@@ -685,87 +689,6 @@ impl Proxies {
         }
     }
 
-    async fn publish_service(
-        &self,
-        uuid: Uuid,
-        service_handle: ServiceHandle,
-        characteristics: Vec<Characteristic>,
-    ) -> Result<LocalServiceRequestStream, anyhow::Error> {
-        let service_info = ServiceInfo {
-            handle: Some(service_handle),
-            kind: None, // default: ServiceKind::PRIMARY
-            type_: Some(uuid),
-            characteristics: Some(characteristics),
-            ..Default::default()
-        };
-        let (service_client, service_stream) =
-            fidl::endpoints::create_request_stream::<LocalServiceMarker>();
-
-        if let Err(err) =
-            self.gatt_server_proxy.publish_service(&service_info, service_client).await?
-        {
-            return Err(anyhow!("fuchsia.bluetooth.gatt2.Server/PublishService error: {err:?}"));
-        }
-
-        Ok(service_stream)
-    }
-
-    async fn discover_services(&mut self) -> Result<Vec<ServiceInfo>, anyhow::Error> {
-        // To ensure we receive a full snapshot of the peer's services, re-init the gatt client.
-        let _ = self.gatt_client.take();
-        let connection = self
-            .central_connection
-            .lock()
-            .clone()
-            .ok_or_else(|| anyhow!("GATT connection not established"))?;
-        let (gatt_client, gatt_client_server_end) =
-            fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_gatt2::ClientMarker>();
-        connection.request_gatt_client(gatt_client_server_end)?;
-        let (mut updated, _removed) = gatt_client.watch_services(&[]).await?;
-        self.gatt_client = Some(gatt_client);
-
-        for service in updated.iter_mut() {
-            let (service_proxy, service_server_end) = fidl::endpoints::create_proxy::<
-                fidl_fuchsia_bluetooth_gatt2::RemoteServiceMarker,
-            >();
-            self.gatt_client
-                .clone()
-                .unwrap()
-                .connect_to_service(&service.handle.as_ref().unwrap(), service_server_end)?;
-            service.characteristics = Some(service_proxy.discover_characteristics().await?);
-        }
-
-        Ok(updated)
-    }
-
-    async fn read_characteristic(
-        &self,
-        service_handle: ServiceHandle,
-        characteristic_handle: fidl_fuchsia_bluetooth_gatt2::Handle,
-    ) -> Result<fidl_fuchsia_bluetooth_gatt2::ReadValue, anyhow::Error> {
-        let Some(gatt_client) = self.gatt_client.clone() else {
-            return Err(anyhow!("GATT client is not connected"));
-        };
-
-        let (service_proxy, service_server_end) =
-            fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_gatt2::RemoteServiceMarker>();
-        gatt_client.connect_to_service(&service_handle, service_server_end)?;
-
-        let value = service_proxy
-            .read_characteristic(
-                &characteristic_handle,
-                &fidl_fuchsia_bluetooth_gatt2::ReadOptions::ShortRead(
-                    fidl_fuchsia_bluetooth_gatt2::ShortReadOptions {},
-                ),
-            )
-            .await?
-            .map_err(|e| {
-                anyhow!("fuchsia.bluetooth.gatt2.RemoteService/ReadCharacteristic error: {:?}", e)
-            })?;
-
-        Ok(value)
-    }
-
     async fn advertise_service(
         &self,
         psm: u16,
@@ -798,46 +721,6 @@ impl Proxies {
             .map_err(|e| anyhow!("fuchsia.bluetooth.bredr.Profile/Advertise error: {:?}", e))?;
 
         Ok(connect_server)
-    }
-
-    async fn register_characteristic_notifier(
-        &self,
-        service_handle: ServiceHandle,
-        characteristic_handle: fidl_fuchsia_bluetooth_gatt2::Handle,
-    ) -> Result<(), anyhow::Error> {
-        let Some(gatt_client) = self.gatt_client.clone() else {
-            return Err(anyhow!("GATT client is not connected"));
-        };
-        if let Some(_) = self.remote_service_proxy.lock().take() {
-            println!("Clearing RemoteServiceProxy; any pending operations are cancelled.");
-        }
-
-        let (service_proxy, service_server_end) =
-            fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_gatt2::RemoteServiceMarker>();
-        gatt_client.connect_to_service(&service_handle, service_server_end)?;
-
-        let (listener_client, mut listener_stream) = fidl::endpoints::create_request_stream::<
-            fidl_fuchsia_bluetooth_gatt2::CharacteristicNotifierMarker,
-        >();
-
-        service_proxy
-            .register_characteristic_notifier(&characteristic_handle, listener_client)
-            .await?
-            .map_err(|e| {
-                anyhow!(
-                    "fuchsia.bluetooth.gatt2.RemoteService/RegisterCharacteristicNotifier error: {:?}",
-                    e
-                )
-            })?;
-        *self.remote_service_proxy.lock() = Some(service_proxy);
-        *self.characteristic_notifier_task.lock() = Some(fuchsia_async::Task::spawn(async move {
-            while let Some(Ok(request)) = listener_stream.next().await {
-                // Just log the request for now.
-                println!("Received CharacteristicNotifier request: {:?}", request);
-            }
-        }));
-
-        Ok(())
     }
 }
 
