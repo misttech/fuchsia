@@ -31,7 +31,7 @@ class TestLogger(unittest.TestCase):
     def test_set_level(self) -> None:
         import logging
 
-        logger.init_logger(level=logging.WARNING)
+        logger.init_logger(log_level=logging.WARNING)
         self.assertEqual(logger.get_log_level(), logging.WARNING)
 
         with logger.set_level(logging.DEBUG):
@@ -43,9 +43,105 @@ class TestLogger(unittest.TestCase):
         with logger.set_level(min(logger.get_log_level(), logging.INFO)):
             self.assertEqual(logger.get_log_level(), logging.INFO)
 
-        logger.init_logger(level=logging.DEBUG)
+        logger.init_logger(log_level=logging.DEBUG)
         with logger.set_level(min(logger.get_log_level(), logging.INFO)):
             self.assertEqual(logger.get_log_level(), logging.DEBUG)
+
+    def test_log_exception_normal(self) -> None:
+        import logging
+
+        logger.init_logger(log_level=logging.WARNING)
+
+        with self.assertLogs("cog", level="ERROR") as cm:
+            try:
+                raise ValueError("test error")
+            except ValueError:
+                logger.log_exception("An error occurred")
+
+        self.assertEqual(len(cm.records), 2)
+        for record in cm.records:
+            self.assertEqual(record.funcName, "test_log_exception_normal")
+            self.assertEqual(record.filename, "test_logger.py")
+
+        self.assertEqual(cm.records[0].getMessage(), "An error occurred")
+        self.assertEqual(cm.records[1].getMessage(), "test error")
+
+    def test_log_exception_normal_debug(self) -> None:
+        import logging
+
+        logger.init_logger(log_level=logging.DEBUG)
+
+        with self.assertLogs("cog", level="DEBUG") as cm:
+            try:
+                raise ValueError("test error")
+            except ValueError:
+                logger.log_exception("An error occurred")
+
+        self.assertEqual(len(cm.records), 1)
+        record = cm.records[0]
+        self.assertEqual(record.funcName, "test_log_exception_normal_debug")
+        self.assertEqual(record.filename, "test_logger.py")
+        self.assertEqual(record.getMessage(), "An error occurred")
+        self.assertEqual(record.levelno, logging.ERROR)
+
+    def test_log_exception_called_process_error(self) -> None:
+        import logging
+        import subprocess
+
+        logger.init_logger(log_level=logging.WARNING)
+
+        e = subprocess.CalledProcessError(
+            1, ["ls", "dir"], output=b"out", stderr=b"err"
+        )
+        with self.assertLogs("cog", level="ERROR") as cm:
+            try:
+                raise e
+            except subprocess.CalledProcessError:
+                logger.log_exception("Command failed")
+
+        self.assertEqual(len(cm.records), 4)
+        for record in cm.records:
+            self.assertEqual(
+                record.funcName, "test_log_exception_called_process_error"
+            )
+            self.assertEqual(record.filename, "test_logger.py")
+
+        self.assertEqual(cm.records[0].getMessage(), "Command failed")
+        self.assertEqual(
+            cm.records[1].getMessage(), "Command `ls dir` exited with status 1"
+        )
+        self.assertEqual(cm.records[2].getMessage(), "stdout: out")
+        self.assertEqual(cm.records[3].getMessage(), "stderr: err")
+
+    def test_log_exception_called_process_error_debug(self) -> None:
+        import logging
+        import subprocess
+
+        logger.init_logger(log_level=logging.DEBUG)
+
+        e = subprocess.CalledProcessError(
+            1, ["ls", "dir"], output=b"out", stderr=b"err"
+        )
+        with self.assertLogs("cog", level="DEBUG") as cm:
+            try:
+                raise e
+            except subprocess.CalledProcessError:
+                logger.log_exception("Command failed")
+
+        self.assertEqual(len(cm.records), 4)
+        for record in cm.records:
+            self.assertEqual(
+                record.funcName, "test_log_exception_called_process_error_debug"
+            )
+            self.assertEqual(record.filename, "test_logger.py")
+
+        self.assertEqual(cm.records[0].getMessage(), "Command failed")
+        self.assertEqual(cm.records[0].levelno, logging.ERROR)
+        self.assertEqual(
+            cm.records[1].getMessage(), "Command `ls dir` exited with status 1"
+        )
+        self.assertEqual(cm.records[2].getMessage(), "stdout: out")
+        self.assertEqual(cm.records[3].getMessage(), "stderr: err")
 
 
 if __name__ == "__main__":

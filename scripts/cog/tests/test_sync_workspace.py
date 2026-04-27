@@ -675,7 +675,21 @@ else:
             result = sync_workspace.main()
             self.assertEqual(result, 1)
             mock_check_all.assert_called_once()
-            mock_log_exception.assert_called_once()
+            mock_log_exception.assert_called_once_with(
+                "An unexpected error occurred:"
+            )
+
+    def test_main_keyboard_interrupt(self) -> None:
+        """Test that main returns 130 on KeyboardInterrupt."""
+        with patch.object(sync_workspace, "_main") as mock_main, patch(
+            "sync_workspace.logger.log_error"
+        ) as mock_log_error:
+            mock_main.side_effect = KeyboardInterrupt()
+            result = sync_workspace.main()
+            self.assertEqual(result, 130)
+            mock_log_error.assert_called_once_with(
+                "Sync cancelled by user (KeyboardInterrupt)."
+            )
 
 
 class TestSyncBatch(TestWorkspaceSyncService):

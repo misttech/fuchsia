@@ -49,49 +49,43 @@ def snapshot_workspace(
     cartfs_endpoint = "127.0.0.1:65001"
     cartfs_rpc_copy_directory = "cartfs.Cartfs.CopyDirectory"
 
-    try:
-        # We need to make the directory first because cartfs.CopyDirectory
-        # does not update the directory immediately and a subsequent write
-        # will fail. If we create the directory first, we can avoid this issue
-        # and still correctly snapshot the workspace.
-        to_path.mkdir(parents=True, exist_ok=True)
+    # We need to make the directory first because cartfs.CopyDirectory
+    # does not update the directory immediately and a subsequent write
+    # will fail. If we create the directory first, we can avoid this issue
+    # and still correctly snapshot the workspace.
+    to_path.mkdir(parents=True, exist_ok=True)
 
-        for subdir in copy_subdirs:
-            from_path_rel = workspace_to_snapshot_from / subdir
-            to_path_rel = workspace_to_snapshot_to / subdir
-            from_path_abs = cartfs_mount_point / from_path_rel
-            to_path_abs = cartfs_mount_point / to_path_rel
+    for subdir in copy_subdirs:
+        from_path_rel = workspace_to_snapshot_from / subdir
+        to_path_rel = workspace_to_snapshot_to / subdir
+        from_path_abs = cartfs_mount_point / from_path_rel
+        to_path_abs = cartfs_mount_point / to_path_rel
 
-            if not from_path_abs.exists():
-                logger.log_info(
-                    f"Skipping {from_path_rel} because it does not exist."
-                )
-                continue
-
-            if not from_path_abs.is_dir():
-                shutil.copyfile(from_path_abs, to_path_abs)
-                continue
-
-            logger.log_info(f"Copying from {from_path_rel} to {to_path_rel}")
-            # We need to provide relative paths for the RPC calls.
-            subprocess.run(
-                [
-                    "grpc_cli",
-                    "call",
-                    cartfs_endpoint,
-                    cartfs_rpc_copy_directory,
-                    f'from_path: "{from_path_rel}"\nto_path: "{to_path_rel}"',
-                    "--channel_creds_type=insecure",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
+        if not from_path_abs.exists():
+            logger.log_info(
+                f"Skipping {from_path_rel} because it does not exist."
             )
-    except subprocess.CalledProcessError as e:
-        logger.log_error(f"Error during snapshotting via grpc_cli: {e}")
-        logger.log_error(f"stdout: {e.stdout}")
-        logger.log_error(f"stderr: {e.stderr}")
-        raise
+            continue
+
+        if not from_path_abs.is_dir():
+            shutil.copyfile(from_path_abs, to_path_abs)
+            continue
+
+        logger.log_info(f"Copying from {from_path_rel} to {to_path_rel}")
+        # We need to provide relative paths for the RPC calls.
+        subprocess.run(
+            [
+                "grpc_cli",
+                "call",
+                cartfs_endpoint,
+                cartfs_rpc_copy_directory,
+                f'from_path: "{from_path_rel}"\nto_path: "{to_path_rel}"',
+                "--channel_creds_type=insecure",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
     # Delete the .fx/config/metrics file from the snapshot.
     metrics_file = to_path / "fuchsia" / ".fx" / "config" / "metrics"
@@ -111,22 +105,16 @@ def copy_cartfs_directory(from_path_rel: Path, to_path_rel: Path) -> None:
     logger.log_info(
         f"Copying from {from_path_rel} to {to_path_rel} via CartFS RPC"
     )
-    try:
-        subprocess.run(
-            [
-                "grpc_cli",
-                "call",
-                cartfs_endpoint,
-                cartfs_rpc_copy_directory,
-                f'from_path: "{from_path_rel}"\nto_path: "{to_path_rel}"',
-                "--channel_creds_type=insecure",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        logger.log_error(f"Error during CartFS directory copy: {e}")
-        logger.log_error(f"stdout: {e.stdout}")
-        logger.log_error(f"stderr: {e.stderr}")
-        raise
+    subprocess.run(
+        [
+            "grpc_cli",
+            "call",
+            cartfs_endpoint,
+            cartfs_rpc_copy_directory,
+            f'from_path: "{from_path_rel}"\nto_path: "{to_path_rel}"',
+            "--channel_creds_type=insecure",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )

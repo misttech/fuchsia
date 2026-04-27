@@ -4,6 +4,7 @@
 
 """Tests for setup_cog_workspace."""
 
+import logging
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -20,7 +21,7 @@ class TestSetupCogWorkspace(unittest.TestCase):
             setup_cog_workspace,
             "_parse_args",
             return_value=MagicMock(
-                verbose=0,
+                log_level=logging.INFO,
                 snapshot=False,
                 use_local_mock_cartfs=False,
                 enable_status_updates=False,
@@ -46,7 +47,7 @@ class TestSetupCogWorkspace(unittest.TestCase):
             setup_cog_workspace,
             "_parse_args",
             return_value=MagicMock(
-                verbose=0,
+                log_level=logging.INFO,
                 snapshot=False,
                 use_local_mock_cartfs=False,
                 enable_status_updates=False,
@@ -59,6 +60,29 @@ class TestSetupCogWorkspace(unittest.TestCase):
             self.assertEqual(result, 0)
             mock_ws.init_cartfs_workspace.assert_called_once_with(False)
             mock_ws.checkout_cartfs_to_cog_revisions.assert_called_once()
+
+    def test_main_keyboard_interrupt(self) -> None:
+        """Test that main returns 130 on KeyboardInterrupt."""
+        with patch.object(
+            setup_cog_workspace,
+            "_parse_args",
+            return_value=MagicMock(
+                log_level=logging.INFO,
+                snapshot=False,
+                use_local_mock_cartfs=False,
+                enable_status_updates=False,
+                color=True,
+            ),
+        ), patch.object(
+            preflight, "check_all", side_effect=KeyboardInterrupt
+        ), patch(
+            "setup_cog_workspace.logger.log_error"
+        ) as mock_log_error:
+            result = setup_cog_workspace.main()
+            self.assertEqual(result, 130)
+            mock_log_error.assert_called_once_with(
+                "Workspace setup cancelled by user (KeyboardInterrupt)."
+            )
 
 
 if __name__ == "__main__":

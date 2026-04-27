@@ -71,7 +71,6 @@ class WorkspaceSyncService:
             ["git-citc"] + list(command),
             cwd=cwd or self.cog_root,
             capture_output=True,
-            exit_on_error=False,
         )
 
     @property
@@ -427,25 +426,7 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         help="Path to write a bash sourceable report of the sync operation results.",
     )
-    base_verbosity = os.environ.get("COG_SYNC_VERBOSITY", "")
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="count",
-        default=int(base_verbosity) if base_verbosity.isdigit() else 0,
-        help="Increase verbosity level (-v for INFO, -vv for DEBUG).",
-    )
-    parser.add_argument(
-        "--enable-status-updates",
-        action="store_true",
-        help="Enable status updates.",
-    )
-    parser.add_argument(
-        "--color",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Enable or disable color output.",
-    )
+    logger.add_args(parser, default_log_level=logging.WARNING)
     args = parser.parse_args()
     if (
         args.unsafe_overwrite_cog_changes_since_last_sync
@@ -464,15 +445,8 @@ def _main() -> None:
     if not args.color:
         os.environ["NO_COLOR"] = "1"
 
-    if args.verbose == 0:
-        log_level = logging.WARNING
-    elif args.verbose == 1:
-        log_level = logging.INFO
-    else:
-        log_level = logging.DEBUG
-
     logger.init_logger(
-        level=log_level,
+        log_level=args.log_level,
         colors=args.color,
         enable_status_updates=args.enable_status_updates,
     )
@@ -526,9 +500,11 @@ def main() -> int:
     except (workspace.NotInCogWorkspaceError, cartfs.CartfsNotRunningError):
         # Let `preflight.check_all()` surface a better error message.
         pass
-    except Exception as err:
-        logger.log_error("An unexpected error occurred:")
-        logger.log_exception(err)
+    except Exception:
+        logger.log_exception("An unexpected error occurred:")
+    except KeyboardInterrupt:
+        logger.log_error("Sync cancelled by user (KeyboardInterrupt).")
+        return 130
 
     # Run preflight checks to diagnose errors and provide helpful error messages.
     #
@@ -536,8 +512,18 @@ def main() -> int:
     # user has a working environment and run preflight checks otherwise to reduce this script's
     # overhead.
     with logger.set_level(min(logger.get_log_level(), logging.INFO)):
-        logger.log_info("\nRunning environment diagnostics...")
-        preflight.check_all()
+        logger.log_info("Running environment diagnostics...")
+        if preflight.check_all():
+            logger.log_warn("No obvious environmental issues found.")
+            maybe_add_env_var = (
+                "rerun the command with FUCHSIA_COG_DEBUG=1 and "
+                if logger.get_log_level() > logging.DEBUG
+                else ""
+            )
+            logger.log_warn(
+                f"To file a bug, please {maybe_add_env_var}upload command output to "
+                "http://go/fuchsia-cog-bug"
+            )
     return 1
 
 

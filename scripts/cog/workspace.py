@@ -9,7 +9,6 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -370,9 +369,8 @@ class Workspace:
                 suggested_directory_name,
                 self.cartfs_instance.mount_point,
             )
-        except Exception as e:
-            logger.log_error("An error occurred while snapshotting.")
-            logger.log_exception(e)
+        except Exception:
+            logger.log_exception("An error occurred while snapshotting.")
             return
 
         self._link_to_cartfs(
@@ -665,7 +663,7 @@ class Workspace:
                 )
         except (urllib.error.URLError, subprocess.CalledProcessError) as e:
             logger.log_error(f"Failed to bootstrap jiri: {e}")
-            sys.exit(1)
+            raise
 
     def _fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
@@ -896,9 +894,9 @@ class Workspace:
                 if backup_path.exists():
                     try:
                         snapshotter.copy_cartfs_directory(from_rel, to_rel)
-                    except Exception as e:
-                        logger.log_error(
-                            f"Failed to restore {dir_name} via snapshot: {e}"
+                    except Exception:
+                        logger.log_exception(
+                            f"Failed to restore {dir_name} via snapshot"
                         )
                         # Fallback to individual copy if it failed (e.g. ALREADY_EXISTS)
                         if backup_path.is_dir():
@@ -1040,7 +1038,6 @@ class Workspace:
         cmd: list[str],
         cwd: Path,
         capture_output: bool = False,
-        exit_on_error: bool = True,
     ) -> str:
         """Runs a command."""
         logger.log_debug(f"Running command: '{' '.join(cmd)}' in {cwd}")
@@ -1050,33 +1047,21 @@ class Workspace:
         env = os.environ.copy()
         env["FUCHSIA_DIR"] = str(self.cartfs_fuchsia_dir)
 
-        try:
-            # If we are not debugging, we want to capture the output so we can print it on error.
-            # If we are debugging, stdout/stderr are None, so output goes to stdout/stderr.
-            run_capture_output = (
-                capture_output or logger.get_log_level() > logging.DEBUG
-            )
+        # If we are not debugging, we want to capture the output so we can print it on error.
+        # If we are debugging, stdout/stderr are None, so output goes to stdout/stderr.
+        run_capture_output = (
+            capture_output or logger.get_log_level() > logging.DEBUG
+        )
 
-            process = subprocess.run(
-                cmd,
-                cwd=cwd,
-                check=True,
-                capture_output=run_capture_output,
-                env=env,
-            )
-            return (
-                process.stdout.decode("utf-8", errors="ignore")
-                if capture_output
-                else ""
-            )
-        except subprocess.CalledProcessError as e:
-            if logger.get_log_level() <= logging.DEBUG:
-                logger.log_exception(e)
-            logger.log_error(f"Error running command: {' '.join(cmd)}")
-            if e.stdout:
-                logger.log_error(f"stdout: {e.stdout.decode('utf-8')}")
-            if e.stderr:
-                logger.log_error(f"stderr: {e.stderr.decode('utf-8')}")
-            if exit_on_error:
-                sys.exit(e.returncode)
-            raise e
+        process = subprocess.run(
+            cmd,
+            cwd=cwd,
+            check=True,
+            capture_output=run_capture_output,
+            env=env,
+        )
+        return (
+            process.stdout.decode("utf-8", errors="ignore")
+            if capture_output
+            else ""
+        )
