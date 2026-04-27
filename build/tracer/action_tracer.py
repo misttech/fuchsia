@@ -1,13 +1,14 @@
 #!/usr/bin/env fuchsia-vendored-python
+# Copyright 2020 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
 """Validates file system accesses of a subprocess command.
 
 This uses a traced exection wrapper (fsatrace) to invoke a command,
 captures a trace of file system {read,write} operations, and validates
 those access against constraints such as declared inputs and outputs.
 """
-# Copyright 2020 The Fuchsia Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
 
 import argparse
 import dataclasses
