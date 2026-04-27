@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use super::gesture_arena::TouchpadEvent;
-use crate::utils::{euclidean_distance, Position};
-use std::collections::HashMap;
+use crate::utils::{Position, euclidean_distance};
+use sorted_vec_map_rs::SortedVecMap;
 
 /// Result of movement_from_events.
 #[derive(Debug, PartialEq)]
@@ -19,10 +19,8 @@ pub(super) fn movement_from_events(
     previous_event: &TouchpadEvent,
     new_event: &TouchpadEvent,
 ) -> MovementDetail {
-    let mut previous_contacts: HashMap<u32, Position> = HashMap::new();
-    for c in &previous_event.contacts {
-        previous_contacts.insert(c.id, c.position.clone());
-    }
+    let previous_contacts: SortedVecMap<u32, Position> =
+        previous_event.contacts.iter().map(|c| (c.id, c.position)).collect();
 
     let mut movement = Position { x: 0.0, y: 0.0 };
     let mut max_distance = 0.0;
@@ -31,7 +29,7 @@ pub(super) fn movement_from_events(
         match previous {
             None => {}
             Some(&previous) => {
-                let dis = euclidean_distance(new_contact.position, previous.clone());
+                let dis = euclidean_distance(new_contact.position, previous);
                 if dis > max_distance {
                     max_distance = dis;
                     movement = new_contact.position - previous;
