@@ -1,0 +1,13 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Unused stub target to satisfy Bazel genquery for correct incremental builds.
+# See details in https://fxbug.dev/500609897
+
+# TODO(https://fxbug.dev/506781894): Replace with real targets when available.
+filegroup(
+    name = "fdio",
+    srcs = [],
+    visibility = ["//visibility:public"],
+)
