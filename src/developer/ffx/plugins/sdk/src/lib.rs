@@ -119,7 +119,7 @@ fn exec_populate_path(
         "Installing host tool stubs to {bin_path:?} (and `fuchsia-sdk-run` to {inner_bin_path:?}) from SDK {sdk_root:?}"
     );
 
-    let sdk = sdk_root.get_sdk()?;
+    let sdk = sdk_root.get_sdk().map_err(anyhow::Error::from)?;
     let sdk_run_tool = sdk.get_host_tool("fuchsia-sdk-run").user_message("SDK does not contain `fuchsia-sdk-run` host tool. You may need to update your SDK to use this command.")?;
     log::debug!("Found `fuchsia-sdk-run` in the SDK at {sdk_run_tool:?}");
 

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, anyhow, bail};
-use errors::ffx_error;
+use errors as _;
+
 use log::warn;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,53 @@ use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[derive(Debug, thiserror::Error)]
+pub enum SdkError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("SDK directory could not be found.")]
+    NotFound,
+
+    #[error("Could not resolve working directory while searching for the Fuchsia SDK: {0}")]
+    ResolveCwd(#[source] std::io::Error),
+
+    #[error("FFX was run from an invalid working directory: {0}")]
+    InvalidCwd(#[source] std::io::Error),
+
+    #[error("FFX Binary doesn't exist in the file system: {0}")]
+    NoBinary(#[source] std::io::Error),
+
+    #[error("SDK path `{0}` was invalid and couldn't be canonicalized: {1}")]
+    InvalidPath(PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to open SDK manifest path at `{0}`: {1}")]
+    OpenManifest(PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to parse SDK manifest file at `{0}`: {1}")]
+    ParseManifest(PathBuf, #[source] serde_json::Error),
+
+    #[error("No path found for {0}")]
+    NoPathFound(String),
+
+    #[error("No executable provided for tool '{0}'")]
+    NoExecutable(String),
+
+    #[error("SDK File '{0}' has no source in the build directory")]
+    NoSource(String),
+
+    #[error("SDK not found. {help}\nOriginal error: {source}")]
+    NotFoundWithHelp { help: String, source: Box<SdkError> },
+
+    #[error("Failed to load SDK manifest at `{path}`: {source}")]
+    ManifestLoad { path: PathBuf, source: Box<SdkError> },
+
+    #[error("SDK root `{0}` does not contain an SDK manifest.")]
+    MissingManifest(PathBuf),
+
+    #[error("Failed to load host tools from `{path}`: {source}")]
+    HostToolsLoad { path: PathBuf, source: Box<SdkError> },
+}
 
 use metadata::{CpuArchitecture, ElementType, FfxTool, HostTool, Manifest, Part};
 pub use sdk_metadata as metadata;
@@ -107,7 +154,7 @@ pub struct FfxSdkConfig {
 
 impl SdkRoot {
     /// Gets the basic information about the sdk as configured, without diving deeper into the sdk's own configuration.
-    pub fn from_paths(start_path: Option<&Path>) -> Result<Self> {
+    pub fn from_paths(start_path: Option<&Path>) -> Result<Self, SdkError> {
         // All gets in this function should declare that they don't want the build directory searched, because
         // if there is a build directory it *is* generally the sdk.
         let sdk_root = match start_path {
@@ -128,7 +175,10 @@ impl SdkRoot {
                         });
                     }
                     Err(e) => {
-                        errors::ffx_bail!("{}Error was: {:?}", SDK_NOT_FOUND_HELP, e);
+                        return Err(SdkError::NotFoundWithHelp {
+                            help: SDK_NOT_FOUND_HELP.to_string(),
+                            source: Box::new(e),
+                        });
                     }
                 }
             }
@@ -138,9 +188,8 @@ impl SdkRoot {
         Ok(SdkRoot::Full { root: sdk_root, manifest: None })
     }
 
-    fn find_sdk_root(start_path: &Path) -> Result<Option<PathBuf>> {
-        let cwd = std::env::current_dir()
-            .context("Could not resolve working directory while searching for the Fuchsia SDK")?;
+    fn find_sdk_root(start_path: &Path) -> Result<Option<PathBuf>, SdkError> {
+        let cwd = std::env::current_dir().map_err(SdkError::ResolveCwd)?;
         let mut path = cwd.join(start_path);
         log::debug!("Attempting to find the sdk root from {path:?}");
 
@@ -178,30 +227,31 @@ impl SdkRoot {
     }
 
     /// Does a full load of the sdk configuration.
-    pub fn get_sdk(self) -> Result<Sdk> {
+    pub fn get_sdk(self) -> Result<Sdk, SdkError> {
         log::debug!("get_sdk from {self:?}");
         match self {
             Self::Full { root, manifest: Some(manifest_file) } => {
                 // If manifest file is specified, use it as an IDK manifest.
-                Sdk::from_sdk_dir(&root, &manifest_file).with_context(|| {
-                    anyhow!("Loading sdk manifest at `{}/{manifest_file}`", root.display())
+                Sdk::from_sdk_dir(&root, &manifest_file).map_err(|e| SdkError::ManifestLoad {
+                    path: root.join(manifest_file),
+                    source: Box::new(e),
                 })
             }
             Self::Full { root, manifest: None } if root.join(SDK_MANIFEST_PATH).exists() => {
                 // If the manifest is not specified, but the SDK_MANIFEST exists, read it as the
                 // IDK manifest.
-                Sdk::from_sdk_dir(&root, SDK_MANIFEST_PATH)
-                    .with_context(|| anyhow!("Loading sdk manifest at `{}`", root.display()))
+                Sdk::from_sdk_dir(&root, SDK_MANIFEST_PATH).map_err(|e| SdkError::ManifestLoad {
+                    path: root.join(SDK_MANIFEST_PATH),
+                    source: Box::new(e),
+                })
             }
-            Self::Full { root: _, manifest: _ } => {
-                bail!(
-                    "SdkRoot: {self:?} root does not contain an SDK MANIFEST. \
-                 Perhaps this should be kind: SdkRoot::HostTools?"
-                );
+            Self::Full { root, manifest: _ } => {
+                return Err(SdkError::MissingManifest(root));
             }
             Self::HostTools { root } => {
                 // This is not really a SDK, but a collection of host tools.
-                Sdk::from_host_tools(root)
+                Sdk::from_host_tools(root.clone())
+                    .map_err(|e| SdkError::HostToolsLoad { path: root, source: Box::new(e) })
             }
         }
     }
@@ -221,15 +271,15 @@ impl SdkRoot {
 /// We do this because sometimes ffx is invoked through an SDK that is symlinked
 /// into place from a content addressable store, and we want to make a best
 /// effort to search for the sdk in the right place.
-fn find_exe_path() -> Result<PathBuf> {
+fn find_exe_path() -> Result<PathBuf, SdkError> {
     // get the 'real' binary path, which may have symlinks resolved, as well
     // as the command this was run as and the cwd
-    let cwd = std::env::current_dir().context("FFX was run from an invalid working directory")?;
+    let cwd = std::env::current_dir().map_err(SdkError::InvalidCwd)?;
     let binary_path = std::env::var("FFX_BIN")
         .map(PathBuf::from)
         .or_else(|_| std::env::current_exe())
         .and_then(|p| p.canonicalize())
-        .context("FFX Binary doesn't exist in the file system")?;
+        .map_err(SdkError::NoBinary)?;
     let args_path = match std::env::args_os().next() {
         Some(arg) => PathBuf::from(&arg),
         None => {
@@ -270,13 +320,9 @@ fn find_exe_path() -> Result<PathBuf> {
 }
 
 impl Sdk {
-    pub fn from_sdk_dir(path_prefix: &Path, manifest_file: &str) -> Result<Self> {
-        let path_prefix = std::fs::canonicalize(path_prefix).with_context(|| {
-            ffx_error!(
-                "SDK path `{}` was invalid and couldn't be canonicalized",
-                path_prefix.display()
-            )
-        })?;
+    pub fn from_sdk_dir(path_prefix: &Path, manifest_file: &str) -> Result<Self, SdkError> {
+        let path_prefix = std::fs::canonicalize(path_prefix)
+            .map_err(|e| SdkError::InvalidPath(path_prefix.to_owned(), e))?;
         let manifest_path = path_prefix.join(manifest_file);
 
         let manifest_file = Self::open_manifest(&manifest_path)?;
@@ -291,7 +337,7 @@ impl Sdk {
         })
     }
 
-    pub(crate) fn from_host_tools(host_tools_dir: PathBuf) -> Result<Self> {
+    pub(crate) fn from_host_tools(host_tools_dir: PathBuf) -> Result<Self, SdkError> {
         Ok(Sdk {
             path_prefix: host_tools_dir,
             module: None,
@@ -318,18 +364,16 @@ impl Sdk {
             && self.version == SdkVersion::InTree;
     }
 
-    fn open_manifest(path: &Path) -> Result<fs::File> {
-        fs::File::open(path)
-            .with_context(|| ffx_error!("Failed to open SDK manifest path at `{}`", path.display()))
+    fn open_manifest(path: &Path) -> Result<fs::File, SdkError> {
+        fs::File::open(path).map_err(|e| SdkError::OpenManifest(path.to_owned(), e))
     }
 
     fn parse_manifest<T: DeserializeOwned>(
         manifest_path: &Path,
         manifest_file: fs::File,
-    ) -> Result<T> {
-        serde_json::from_reader(BufReader::new(manifest_file)).with_context(|| {
-            ffx_error!("Failed to parse SDK manifest file at `{}`", manifest_path.display())
-        })
+    ) -> Result<T, SdkError> {
+        serde_json::from_reader(BufReader::new(manifest_file))
+            .map_err(|e| SdkError::ParseManifest(manifest_path.to_owned(), e))
     }
 
     fn metadata_for<'a, M: DeserializeOwned>(
@@ -383,7 +427,7 @@ impl Sdk {
     /// Returns the path to the tool with the given name based on the SDK contents.
     /// A preferred alternative to this method is ffx_config::get_host_tool() which
     /// also considers configured overrides for the tools.
-    pub fn get_host_tool(&self, name: &str) -> Result<PathBuf> {
+    pub fn get_host_tool(&self, name: &str) -> Result<PathBuf, SdkError> {
         let relative_path = self.get_host_tool_relative_path(name)?;
 
         let full_path = self.path_prefix.join(relative_path);
@@ -393,7 +437,7 @@ impl Sdk {
             Ok(full_path)
         } else {
             log::info!("No path found for {name}");
-            Err(anyhow!("No path found for {name}"))
+            Err(SdkError::NoPathFound(name.to_string()))
         }
     }
 
@@ -402,7 +446,7 @@ impl Sdk {
         self.metadata_for(&[ElementType::HostTool, ElementType::CompanionHostTool])
     }
 
-    fn get_host_tool_relative_path(&self, name: &str) -> Result<PathBuf> {
+    fn get_host_tool_relative_path(&self, name: &str) -> Result<PathBuf, SdkError> {
         let found_tool = self
             .get_all_host_tools_metadata()
             .filter(|tool| tool.name == name)
@@ -417,14 +461,11 @@ impl Sdk {
                     if self.is_host_tools_only() {
                         Ok(name.to_string())
                     } else {
-                        Err(anyhow!(
-                            "No executable provided for tool '{}' (file list was empty)",
-                            name
-                        ))
+                        Err(SdkError::NoExecutable(name.to_string()))
                     }
                 }
             })
-            .collect::<Result<Vec<_>>>()?
+            .collect::<Result<Vec<_>, SdkError>>()?
             .into_iter()
             // Shortest path is the one with no arch specifier, i.e. the default arch, i.e. the current arch (we hope.)
             .min_by_key(|x| x.len());
@@ -435,25 +476,24 @@ impl Sdk {
             if self.is_host_tools_only() {
                 Ok(PathBuf::from(name))
             } else {
-                Err(anyhow!(
-                    "No executable provided for tool '{name}' (not found in SDK manifest files)"
-                ))
+                Err(SdkError::NoExecutable(name.to_string()))
             }
         }
     }
 
-    fn get_real_path(&self, path: impl AsRef<str>) -> Result<PathBuf> {
+    fn get_real_path(&self, path: impl AsRef<str>) -> Result<PathBuf, SdkError> {
         match &self.real_paths {
-            Some(map) => map.get(path.as_ref()).map(PathBuf::from).ok_or_else(|| {
-                anyhow!("SDK File '{}' has no source in the build directory", path.as_ref())
-            }),
+            Some(map) => map
+                .get(path.as_ref())
+                .map(PathBuf::from)
+                .ok_or_else(|| SdkError::NoSource(path.as_ref().to_string())),
             _ => Ok(PathBuf::from(path.as_ref())),
         }
     }
 
     /// Returns a command invocation builder for the given host tool, if it
     /// exists in the sdk.
-    pub fn get_host_tool_command(&self, name: &str) -> Result<Command> {
+    pub fn get_host_tool_command(&self, name: &str) -> Result<Command, SdkError> {
         let host_tool = self.get_host_tool(name)?;
         let mut command = Command::new(host_tool);
         command.env("FUCHSIA_SDK_ROOT", &self.path_prefix);
@@ -508,7 +548,11 @@ pub fn in_tree_sdk_version() -> String {
 }
 
 impl FfxToolFiles {
-    fn from_metadata(sdk: &Sdk, tool: FfxTool, arch: CpuArchitecture) -> Result<Option<Self>> {
+    fn from_metadata(
+        sdk: &Sdk,
+        tool: FfxTool,
+        arch: CpuArchitecture,
+    ) -> Result<Option<Self>, SdkError> {
         let Some(executable) = tool.executable(arch) else {
             return Ok(None);
         };

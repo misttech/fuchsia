@@ -442,13 +442,13 @@ impl EnvironmentContext {
         let runtime_root: Option<PathBuf> = self.query("sdk.root").build().get(self).ok();
         match (&self.kind, runtime_root) {
             (EnvironmentKind::InTree { .. }, None) => Ok(SdkRoot::from_paths(None)?),
-            (_, runtime_root) => SdkRoot::from_paths(runtime_root.as_deref()),
+            (_, runtime_root) => Ok(SdkRoot::from_paths(runtime_root.as_deref())?),
         }
     }
 
     /// Load the sdk configured for this environment context
     pub fn get_sdk(&self) -> Result<Sdk> {
-        self.get_sdk_root()?.get_sdk()
+        Ok(self.get_sdk_root()?.get_sdk()?)
     }
 
     /// The environment variable we search for

@@ -41,7 +41,8 @@ pub use storage::{AssertNoEnv, AssertNoEnvError, ConfigMap};
 
 #[doc(hidden)]
 pub mod macro_deps {
-    pub use {anyhow, serde_json};
+    pub use anyhow;
+    pub use serde_json;
 }
 
 pub trait TryFromEnvContext: Sized + Debug {
@@ -143,7 +144,7 @@ pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf> {
             Ok(tool_path)
         }
         Ok(tool_path) => Err(anyhow!("SDK returned {tool_path:?} for {name}, but does not exist")),
-        Err(e) => Err(e),
+        Err(e) => Err(e.into()),
     }
 }
 
