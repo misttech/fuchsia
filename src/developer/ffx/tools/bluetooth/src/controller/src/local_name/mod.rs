@@ -40,7 +40,12 @@ impl ControllerTool {
     async fn set_local_name(&self, name: String) -> Result<()> {
         Ok(self
             .host_controller
-            .set_local_name(&name)
+            .set_local_name(
+                &fdomain_fuchsia_bluetooth_affordances::HostControllerSetLocalNameRequest {
+                    name: Some(name),
+                    ..Default::default()
+                },
+            )
             .await
             .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
             .map_err(|err| {

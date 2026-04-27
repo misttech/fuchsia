@@ -157,7 +157,7 @@ the 'classic' transport"
 
 impl PeerTool {
     async fn get_peers(&self) -> Result<Vec<Peer>> {
-        Ok(self
+        let response = self
             .peer_controller
             .get_known_peers()
             .await
@@ -166,9 +166,13 @@ impl PeerTool {
                 fho::Error::Unexpected(anyhow::anyhow!(
                     "fuchsia.bluetooth.affordances.PeerController error: {err:?}"
                 ))
-            })?
-            .iter()
-            .map(|peer| Peer::try_from(peer.clone()).expect("Failed to convert between Peer types"))
+            })?;
+
+        let peers = response.peers.unwrap_or_default();
+
+        Ok(peers
+            .into_iter()
+            .map(|peer| Peer::try_from(peer).expect("Failed to convert between Peer types"))
             .collect())
     }
 

@@ -60,7 +60,7 @@ impl FfxMain for ControllerTool {
 
 impl ControllerTool {
     async fn get_hosts(&self) -> Result<Vec<HostInfo>> {
-        Ok(self
+        let response = self
             .host_controller
             .get_hosts()
             .await
@@ -69,11 +69,12 @@ impl ControllerTool {
                 fho::Error::Unexpected(anyhow::anyhow!(
                     "fuchsia.bluetooth.affordances.HostController error: {err:?}"
                 ))
-            })?
-            .iter()
-            .map(|host| {
-                HostInfo::try_from(host.clone()).expect("Failed to convert between Host types")
-            })
+            })?;
+        let hosts = response.hosts.unwrap_or_default();
+
+        Ok(hosts
+            .into_iter()
+            .map(|host| HostInfo::try_from(host).expect("Failed to convert between Host types"))
             .collect())
     }
 }

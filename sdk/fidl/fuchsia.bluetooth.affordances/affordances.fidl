@@ -30,8 +30,8 @@ open protocol PeerController {
     /// Get a list of discovered peers.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
-    flexible GetKnownPeers() -> (struct {
-        peers vector<sys.Peer>:MAX;
+    flexible GetKnownPeers() -> (table {
+        1: peers vector<sys.Peer>:MAX;
     }) error Error;
 
     /// Connect to a peer.
@@ -74,8 +74,8 @@ open protocol HostController {
     /// Get all known hosts.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
-    flexible GetHosts() -> (struct {
-        hosts vector<sys.HostInfo>:MAX;
+    flexible GetHosts() -> (table {
+        1: hosts vector<sys.HostInfo>:MAX;
     }) error Error;
 
     /// Set discoverability state.
@@ -90,8 +90,8 @@ open protocol HostController {
     ///
     /// + request `name` Name to assign to the host.
     /// * error Returns `INTERNAL` if the operation failed (check logs).
-    flexible SetLocalName(struct {
-        name bt.DeviceName;
+    flexible SetLocalName(table {
+        1: name bt.DeviceName;
     }) -> () error Error;
 
     /// Start a pairing delegate to respond to pairing procedures. Only one pairing delegate can be

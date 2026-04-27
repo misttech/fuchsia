@@ -44,7 +44,12 @@ async fn handle_single_peer_request(
         PeerControllerRequest::GetKnownPeers { responder } => {
             match worker.get_known_peers().await {
                 Ok(peers) => {
-                    responder.send(Ok(peers.as_slice()))?;
+                    responder.send(Ok(
+                        &fidl_fuchsia_bluetooth_affordances::PeerControllerGetKnownPeersResponse {
+                            peers: Some(peers),
+                            ..Default::default()
+                        },
+                    ))?;
                 }
                 Err(err) => {
                     error!("GetKnownPeers encountered error: {err}");
@@ -149,7 +154,12 @@ async fn handle_single_host_request(
     match request {
         HostControllerRequest::GetHosts { responder } => match worker.get_hosts().await {
             Ok(hosts) => {
-                responder.send(Ok(&hosts))?;
+                responder.send(Ok(
+                    &fidl_fuchsia_bluetooth_affordances::HostControllerGetHostsResponse {
+                        hosts: Some(hosts),
+                        ..Default::default()
+                    },
+                ))?;
             }
             Err(err) => {
                 error!("GetHosts encountered error: {err}");
@@ -175,7 +185,16 @@ async fn handle_single_host_request(
                 }
             }
         }
-        HostControllerRequest::SetLocalName { name, responder } => {
+        HostControllerRequest::SetLocalName { payload, responder } => {
+            let fidl_fuchsia_bluetooth_affordances::HostControllerSetLocalNameRequest {
+                name: Some(name),
+                ..
+            } = payload
+            else {
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                return Ok(());
+            };
             match worker.set_local_name(name).await {
                 Ok(_) => {
                     responder.send(Ok(()))?;
