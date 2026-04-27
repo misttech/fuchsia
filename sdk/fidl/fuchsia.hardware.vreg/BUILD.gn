@@ -12,5 +12,6 @@ fidl("fuchsia.hardware.vreg") {
   ]
   sdk_area = "Drivers"
   stable = false
+  enable_rust_next = true
   public_deps = [ "//zircon/vdso/zx" ]
 }

@@ -12,5 +12,6 @@ fidl("fuchsia.hardware.mailbox") {
   ]
   public_deps = [ "//zircon/vdso/zx" ]
   stable = false
+  enable_rust_next = true
   sdk_category = "partner"
 }
