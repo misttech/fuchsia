@@ -998,9 +998,10 @@ class GAPProxy(ProfileProxy):
     @assert_description
     def TSC_MMI_iut_send_le_connection_update_request_timeout(self, **kwargs):
         """
-        Please send an L2CAP Connection Parameter Update request using valid
-        parameters and wait for TSPX_iut_connection_parameter_timeout 30000ms
-        timeout...
+        Please start a Connection Update procedure using valid parameters and
+        wait for TSPX_iut_connection_parameter_timeout.
+
+        Timeout: 30000ms
         """
 
         return "OK"
