@@ -172,13 +172,13 @@ static bool vmpl_basic_reference_test() {
   EXPECT_EQ(removed.ReleaseReference().value(), ref0.value());
 
   EXPECT_FALSE(pl.IsEmpty());
-  EXPECT_FALSE(pl.HasNoPageOrRef());
+  EXPECT_FALSE(pl.HasNoPageRefOrMarker());
 
   removed = pl.RemoveContent(kPageSize);
   EXPECT_EQ(removed.ReleaseReference().value(), ref1.value());
 
   EXPECT_TRUE(pl.IsEmpty());
-  EXPECT_TRUE(pl.HasNoPageOrRef());
+  EXPECT_TRUE(pl.HasNoPageRefOrMarker());
 
   END_TEST;
 }
@@ -1127,6 +1127,8 @@ static bool vmpl_cursor_test() {
   EXPECT_FALSE(cursor.current());
   // Should have iterated the remaining items in a node after off4
   EXPECT_EQ(VmPageListNode::kPageFanOut - (off4 % VmPageListNode::kPageFanOut) - 1, items);
+
+  list.RemoveAllContent([](VmPageOrMarker&&) {});
 
   END_TEST;
 }

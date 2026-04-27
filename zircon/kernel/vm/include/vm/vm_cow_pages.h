@@ -801,6 +801,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   uint64_t DebugGetPageCountLocked() const TA_REQ(lock());
   bool DebugIsPage(uint64_t offset) const;
   bool DebugIsMarker(uint64_t offset) const;
+  uint32_t DebugGetMarkerShareCount(uint64_t offset) const;
   bool DebugIsParentContent(uint64_t offset) const;
   bool DebugIsEmpty(uint64_t offset) const;
   vm_page_t* DebugGetPage(uint64_t offset) const TA_EXCL(lock());
@@ -1342,6 +1343,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
                                  vm_page_t* page, uint64_t owner_offset, DeferredOps& deferred,
                                  AnonymousPageRequest* page_request, vm_page_t** out_page)
       TA_REQ(lock()) TA_REQ(page_owner->lock());
+
+  zx_status_t ForkMarkerLocked(uint64_t offset, list_node_t* alloc_list, VmCowPages* marker_owner,
+                               VmPageOrMarkerRef marker, uint64_t owner_offset,
+                               DeferredOps& deferred, AnonymousPageRequest* page_request,
+                               vm_page_t** out_page) TA_REQ(lock()) TA_REQ(marker_owner->lock());
 
   // Helper function for reducing the share count of content in a hidden node, and freeing it if it
   // is no longer referenced.

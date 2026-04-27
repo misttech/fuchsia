@@ -66,7 +66,7 @@ VmPageList::VmPageList(VmPageList&& other) : list_(ktl::move(other.list_)) {
 
 VmPageList::~VmPageList() {
   LTRACEF("%p\n", this);
-  DEBUG_ASSERT(HasNoPageOrRef());
+  DEBUG_ASSERT(HasNoPageRefOrMarker());
 }
 
 VmPageList& VmPageList::operator=(VmPageList&& other) {
@@ -213,6 +213,18 @@ bool VmPageList::HasNoPageOrRef() const {
   bool no_pages = true;
   ForEveryPage([&no_pages](auto* p, uint64_t) {
     if (p->IsPageOrRef()) {
+      no_pages = false;
+      return ZX_ERR_STOP;
+    }
+    return ZX_ERR_NEXT;
+  });
+  return no_pages;
+}
+
+bool VmPageList::HasNoPageRefOrMarker() const {
+  bool no_pages = true;
+  ForEveryPage([&no_pages](auto* p, uint64_t) {
+    if (p->IsPageOrRef() || p->IsMarker()) {
       no_pages = false;
       return ZX_ERR_STOP;
     }

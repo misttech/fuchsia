@@ -4824,6 +4824,156 @@ static bool vmo_dedup_hidden_zero_page_test() {
   END_TEST;
 }
 
+static bool vmo_compress_to_marker_pager_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t kNumPages = 2;
+  constexpr size_t kVmoSize = kPageSize * kNumPages;
+
+  fbl::AllocChecker ac;
+  fbl::Vector<uint8_t> zero_buff;
+  zero_buff.reserve(kVmoSize, &ac);
+  ASSERT_TRUE(ac.check());
+  memset(zero_buff.data(), 0, kVmoSize);
+
+  uint32_t val = 42;
+
+  VmCompression* compression = Pmm::Node().GetPageCompression();
+  if (!compression) {
+    printf("No compression, skipping\n");
+    END_TEST;
+  }
+
+  // Pager VMO
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_committed_pager_vmo(kNumPages, /*trap_dirty=*/false, /*resizable=*/false, nullptr,
+                                     &vmo));
+
+  // Clone with pages of zeros
+  fbl::RefPtr<VmObject> clone1;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Modified, 0, kVmoSize, true,
+                             &clone1));
+
+  clone1->Write(zero_buff.data(), 0, kVmoSize);
+
+  // Clone again to move zero pages into hidden node.
+  fbl::RefPtr<VmObject> clone2;
+  clone1->CreateClone(Resizability::NonResizable, SnapshotType::Modified, 0, kVmoSize, true,
+                      &clone2);
+
+  VmObjectPaged* clone1ptr = reinterpret_cast<VmObjectPaged*>(clone1.get());
+  fbl::RefPtr<VmCowPages> cow_pages_hidden = clone1ptr->DebugGetCowPages()->DebugGetParent();
+  ASSERT_NONNULL(cow_pages_hidden);
+  ASSERT_FALSE(cow_pages_hidden->tree_has_parent_content_markers());
+  ASSERT_EQ(1u, cow_pages_hidden->DebugGetPage(0)->object.share_count);
+  ASSERT(cow_pages_hidden->DebugIsPage(0));
+
+  // Compress pages into marker.
+  vm_page_t* page = cow_pages_hidden->DebugGetPage(0);
+  ASSERT_NONNULL(page);
+
+  {
+    auto compressor = compression->AcquireCompressor();
+    ASSERT_OK(compressor.get().Arm());
+
+    uint64_t reclaimed = reclaim_page(cow_pages_hidden, page, 0,
+                                      VmCowPages::EvictionAction::FollowHint, &compressor.get());
+    EXPECT_EQ(reclaimed, 1u);
+  }
+
+  ASSERT_TRUE(cow_pages_hidden->DebugIsMarker(0));
+  ASSERT_EQ(1u, cow_pages_hidden->DebugGetMarkerShareCount(0));
+
+  clone1->Write(&val, 0, sizeof(val));
+  ASSERT_EQ(0u, cow_pages_hidden->DebugGetMarkerShareCount(0));
+
+  clone2.reset();
+  clone1.reset();
+  vmo.reset();
+
+  END_TEST;
+}
+
+static bool vmo_compress_to_marker_anon_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t kNumPages = 2;
+  constexpr size_t kVmoSize = kPageSize * kNumPages;
+
+  fbl::AllocChecker ac;
+  fbl::Vector<uint8_t> zero_buff;
+  zero_buff.reserve(kVmoSize, &ac);
+  ASSERT_TRUE(ac.check());
+  memset(zero_buff.data(), 0, kVmoSize);
+
+  uint32_t val = 42;
+
+  VmCompression* compression = Pmm::Node().GetPageCompression();
+  if (!compression) {
+    printf("No compression, skipping\n");
+    END_TEST;
+  }
+
+  // Write to pages.
+  fbl::RefPtr<VmObjectPaged> anon_vmo;
+  ASSERT_OK(VmObjectPaged::Create(0, 0, kVmoSize, &anon_vmo));
+  EXPECT_OK(anon_vmo->Write(&val, 0, sizeof(val)));
+  EXPECT_OK(anon_vmo->Write(&val, kPageSize, sizeof(val)));
+
+  fbl::RefPtr<VmObject> anon_clone1;
+  ASSERT_OK(anon_vmo->CreateClone(Resizability::NonResizable, SnapshotType::Modified, 0, kVmoSize,
+                                  true, &anon_clone1));
+
+  // Write zeros into clone.
+  anon_clone1->Write(zero_buff.data(), 0, kVmoSize);
+
+  fbl::RefPtr<VmObject> anon_clone2;
+  ASSERT_OK(anon_clone1->CreateClone(Resizability::NonResizable, SnapshotType::Modified, 0,
+                                     kVmoSize, true, &anon_clone2));
+
+  VmObjectPaged* anon_clone1ptr = reinterpret_cast<VmObjectPaged*>(anon_clone1.get());
+  fbl::RefPtr<VmCowPages> cow_pages_hidden = anon_clone1ptr->DebugGetCowPages()->DebugGetParent();
+  ASSERT_NONNULL(cow_pages_hidden);
+  ASSERT_TRUE(cow_pages_hidden->tree_has_parent_content_markers());
+  ASSERT_EQ(1u, cow_pages_hidden->DebugGetPage(0)->object.share_count);
+  ASSERT(cow_pages_hidden->DebugIsPage(0));
+
+  // Compress pages into marker.
+  vm_page_t* page = cow_pages_hidden->DebugGetPage(0);
+  ASSERT_NONNULL(page);
+
+  {
+    auto compressor = compression->AcquireCompressor();
+    ASSERT_OK(compressor.get().Arm());
+
+    uint64_t reclaimed = reclaim_page(cow_pages_hidden, page, 0,
+                                      VmCowPages::EvictionAction::FollowHint, &compressor.get());
+    EXPECT_EQ(reclaimed, 1u);
+  }
+
+  ASSERT_TRUE(cow_pages_hidden->DebugIsMarker(0));
+  ASSERT_EQ(1u, cow_pages_hidden->DebugGetMarkerShareCount(0));
+
+  // Writing to the clone should decrement marker share count.
+  anon_clone1->Write(&val, 0, sizeof(val));
+  ASSERT_EQ(0u, cow_pages_hidden->DebugGetMarkerShareCount(0));
+
+  // Writing to the second clone should clear the marker from the hidden node
+  anon_clone2->Write(&val, 0, sizeof(val));
+  ASSERT_TRUE(cow_pages_hidden->DebugIsEmpty(0));
+
+  anon_clone1.reset();
+  anon_clone2.reset();
+  anon_vmo.reset();
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -4896,6 +5046,8 @@ VM_UNITTEST(vmo_loaned_page_in_high_priority_test)
 VM_UNITTEST(vmo_zero_marker_transfer_test)
 VM_UNITTEST(vmo_pager_supply_test)
 VM_UNITTEST(vmo_dedup_hidden_zero_page_test)
+VM_UNITTEST(vmo_compress_to_marker_pager_test)
+VM_UNITTEST(vmo_compress_to_marker_anon_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace

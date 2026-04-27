@@ -150,6 +150,29 @@ class VmPageOrMarker {
     return old;
   }
 
+  uint32_t GetMarkerShareCount() const {
+    DEBUG_ASSERT(IsMarker());
+    return raw_ >> kMarkerShareCountShift;
+  }
+
+  void SetMarkerShareCount(uint32_t share_count) {
+    DEBUG_ASSERT(IsMarker());
+    raw_ = kZeroMarkerType | (share_count << (kMarkerShareCountShift));
+  }
+
+  void IncrementMarkerShareCount() {
+    DEBUG_ASSERT(IsMarker());
+    raw_ += (1 << (kMarkerShareCountShift));
+  }
+
+  void DecrementMarkerShareCount() {
+    DEBUG_ASSERT(IsMarker());
+    // It is invalid to decrement marker share count from zero.
+    DEBUG_ASSERT(GetMarkerShareCount() > 0);
+
+    raw_ -= (1 << (kMarkerShareCountShift));
+  }
+
   [[nodiscard]] VmPageOrMarker Swap(VmPageOrMarker&& other) {
     uint32_t ret = raw_;
     raw_ = other.Release();
@@ -181,6 +204,9 @@ class VmPageOrMarker {
   // A PageType that otherwise holds a null pointer is considered to be Empty.
   static VmPageOrMarker Empty() { return VmPageOrMarker{kPageType}; }
   static VmPageOrMarker Marker() { return VmPageOrMarker{kZeroMarkerType}; }
+  static VmPageOrMarker Marker(uint32_t share_count) {
+    return VmPageOrMarker{kZeroMarkerType | (share_count << (kMarkerShareCountShift))};
+  }
   static VmPageOrMarker ParentContent() { return VmPageOrMarker{kParentContentType}; }
 
   [[nodiscard]] static VmPageOrMarker Page(vm_page* p) {
@@ -355,6 +381,8 @@ class VmPageOrMarker {
   static constexpr uint32_t kIntervalType = 0b011;
   static constexpr uint32_t kParentContentType = 0b100;
 
+  static constexpr uint32_t kMarkerShareCountShift = kTypeBits;
+
   // Ensure the reference values have alignment such the type bits can be set without overlapping
   // actual ref being stored. Unlike the page type, which does not allow the 0 value to be stored, a
   // ref value of 0 is valid and may be stored.
@@ -492,6 +520,21 @@ class VmPageOrMarkerRef {
     page_or_marker_->SetZeroIntervalAwaitingCleanLength(len);
   }
 
+  uint32_t GetMarkerShareCount() {
+    DEBUG_ASSERT(page_or_marker_);
+    return page_or_marker_->GetMarkerShareCount();
+  }
+
+  void IncrementMarkerShareCount() {
+    DEBUG_ASSERT(page_or_marker_);
+    page_or_marker_->IncrementMarkerShareCount();
+  }
+
+  void DecrementMarkerShareCount() {
+    DEBUG_ASSERT(page_or_marker_);
+    page_or_marker_->DecrementMarkerShareCount();
+  }
+
  private:
   VmPageOrMarker* page_or_marker_ = nullptr;
 };
@@ -625,6 +668,17 @@ class VmPageListNode final {
   bool HasNoPageOrRef() const {
     for (const auto& p : pages_) {
       if (p.IsPageOrRef()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Returns true if there are no pages, references or markers owned by this node. Meant to check
+  // whether the node has any resource that needs to be returned.
+  bool HasNoPageRefOrMarker() const {
+    for (const auto& p : pages_) {
+      if (p.IsPageOrRef() || p.IsMarker()) {
         return false;
       }
     }
@@ -1116,6 +1170,9 @@ class VmPageList final {
   // Returns true if the page list does not own any pages or references. Meant to check whether the
   // page list has any resource that needs to be returned.
   bool HasNoPageOrRef() const;
+
+  // Similar to `HasNoPageOrRef` but returns false if there is a marker.
+  bool HasNoPageRefOrMarker() const;
 
   // Merges the pages in the specified range in |this| onto the |other| with |offset| in this
   // mapping to the offset of 0 in |other|.

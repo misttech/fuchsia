@@ -96,18 +96,19 @@ KCOUNTER(vm_reclaim_compress_fail_uncached, "vm.reclaim.compress.fail.uncached")
 
 template <typename T>
 uint32_t GetShareCount(T p) {
-  DEBUG_ASSERT(p->IsPageOrRef());
+  DEBUG_ASSERT(p->IsPageOrRef() || p->IsMarker());
 
   uint32_t share_count = 0;
   if (p->IsPage()) {
     share_count = p->Page()->object.share_count;
   } else if (p->IsReference()) {
     share_count = Pmm::Node().GetPageCompression()->GetMetadata(p->Reference());
+  } else if (p->IsMarker()) {
+    share_count = p->GetMarkerShareCount();
   }
 
   return share_count;
 }
-
 void ZeroPage(paddr_t pa) {
   void* ptr = paddr_to_physmap(pa);
   DEBUG_ASSERT(ptr);
@@ -1180,7 +1181,7 @@ VmCowPages::~VmCowPages() {
   // Most of the explicit cleanup happens in DeadTransition() with asserts and some remaining
   // cleanup happening here in the destructor.
   canary_.Assert();
-  DEBUG_ASSERT(page_list_.HasNoPageOrRef());
+  DEBUG_ASSERT(page_list_.HasNoPageRefOrMarker());
 
   if constexpr (EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED) {
     const uint32_t tracked_slots = continuous_attribution_tracker_.FetchCurrent();
@@ -1419,7 +1420,8 @@ bool VmCowPages::DedupZeroPage(vm_page_t* page, uint64_t offset) {
       __UNINITIALIZED auto result =
           BeginAddPageWithSlotLocked(offset, page_or_marker, CanOverwriteSlot::PageOrRef);
       DEBUG_ASSERT(result.is_ok());
-      old_page = CompleteAddPageLocked(*result, VmPageOrMarker::Marker(), &deferred);
+      uint32_t share_count = page_or_marker->Page()->object.share_count;
+      old_page = CompleteAddPageLocked(*result, VmPageOrMarker::Marker(share_count), &deferred);
     }
     DEBUG_ASSERT(old_page.IsPage());
 
@@ -1936,8 +1938,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
 
     // Decrement the share count on all pages. As every page we can see is also owned by this, and
     // we have continuously held our lock, no page should need to be freed as a result.
-    zx_status_t status = ForEveryOwnedHierarchyPageInRangeLocked(
-        [&](const VmPageOrMarker* p, const VmCowPages* owner, uint64_t this_offset,
+    zx_status_t status = RemoveOwnedHierarchyPagesInRangeLocked(
+        [&](VmPageOrMarker* p, const VmCowPages* owner, uint64_t this_offset,
             uint64_t owner_offset) {
           if (p->IsPage()) {
             vm_page_t* page = p->Page();
@@ -1947,6 +1949,9 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
             const uint32_t share_count = compression->GetMetadata(p->Reference());
             DEBUG_ASSERT(share_count > 0);
             compression->SetMetadata(p->Reference(), share_count - 1);
+          } else if (p->IsMarker()) {
+            DEBUG_ASSERT(p->GetMarkerShareCount() > 0);
+            p->DecrementMarkerShareCount();
           }
           return ZX_ERR_NEXT;
         },
@@ -1961,8 +1966,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
     // Update any share counts for content the clone will be able to see, and populate a temporary
     // page list with any parent content markers if needed.
     VmPageList::BatchInserter inserter(page_list);
-    zx_status_t status = ForEveryOwnedHierarchyPageInRangeLocked(
-        [&](const VmPageOrMarker* p, VmCowPages* owner, uint64_t cow_clone_offset,
+    zx_status_t status = ForEveryOwnedMutableHierarchyPageInRangeLocked(
+        [&](VmPageOrMarkerRef p, VmCowPages* owner, uint64_t cow_clone_offset,
             uint64_t owner_offset) {
           if (tree_has_parent_content_markers() && p->IsPageOrRef()) {
             const uint64_t off = cow_clone_offset - range.offset;
@@ -1978,6 +1983,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
           } else if (p->IsReference()) {
             VmPageOrMarker::ReferenceValue ref = p->Reference();
             compression->SetMetadata(ref, compression->GetMetadata(ref) + 1);
+          } else if (p->IsMarker()) {
+            p.IncrementMarkerShareCount();
           }
           shared_end = owner_offset + kPageSize;
 
@@ -2293,7 +2300,8 @@ void VmCowPages::DumpLocked(uint depth, bool verbose) const {
         printf("  ");
       }
       if (p->IsMarker()) {
-        printf("offset %#" PRIx64 " zero page marker\n", offset);
+        printf("offset %#" PRIx64 " share %" PRIu32 " zero page marker\n", offset,
+               p->GetMarkerShareCount());
       } else if (p->IsPage()) {
         vm_page_t* page = p->Page();
         printf("offset %#" PRIx64 " page %p paddr %#" PRIxPTR " share %" PRIu32 "(%c)\n", offset,
@@ -2748,6 +2756,57 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, list_node_t* alloc_l
   return ZX_OK;
 }
 
+zx_status_t VmCowPages::ForkMarkerLocked(uint64_t offset, list_node_t* alloc_list,
+                                         VmCowPages* marker_owner, VmPageOrMarkerRef marker,
+                                         uint64_t owner_offset, DeferredOps& deferred,
+                                         AnonymousPageRequest* page_request, vm_page_t** out_page) {
+  DEBUG_ASSERT(marker->IsMarker());
+
+  DEBUG_ASSERT(parent_);
+  DEBUG_ASSERT(page_request);
+  // We only clone pages from hidden to visible nodes.
+  DEBUG_ASSERT(marker_owner->is_hidden());
+  DEBUG_ASSERT(!is_hidden());
+  // We don't want to handle intervals here. They should only be present when this node is backed by
+  // a user pager, and such nodes don't have parents so cannot be the target of a forked page.
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous);
+
+  // Fork the zero page.
+  zx_status_t status =
+      AllocateCopyPage(vm_get_zero_page()->paddr(), alloc_list, page_request, out_page);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  // Insert zero-page into our page list.
+  __UNINITIALIZED auto page_transaction =
+      BeginAddPageLocked(offset, CanOverwriteSlot::ZeroMarkerOrInterval);
+  if (page_transaction.is_error()) {
+    FreePage(*out_page);
+    return page_transaction.error_value();
+  }
+
+  [[maybe_unused]] VmPageOrMarker old =
+      CompleteAddPageLocked(*page_transaction, VmPageOrMarker::Page(*out_page), nullptr);
+
+  RangeChangeUpdateLocked(VmCowRange(offset, kPageSize), RangeChangeOp::UnmapZeroPage, &deferred);
+
+  // Move to the correct queue.
+  if (is_discardable()) {
+    pmm_page_queues()->MoveAnonymousToAnonymousZeroFork(*out_page);
+  }
+
+  // Marker is now shared one less time.
+  if (marker.GetMarkerShareCount() == 0) {
+    // Remove marker from owber
+    marker_owner->page_list_.RemoveContent(owner_offset);
+  } else {
+    marker.DecrementMarkerShareCount();
+  }
+
+  return ZX_OK;
+}
+
 void VmCowPages::DecrementCowContentShareCount(const VmPageOrMarker& content, uint64_t offset,
                                                ScopedPageFreedList& list,
                                                VmCompression* compression) {
@@ -2865,6 +2924,12 @@ void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
             page_remover.PushContent(p);
           } else {
             compression->SetMetadata(p->Reference(), share_count - 1);
+          }
+        } else if (p->IsMarker()) {
+          if (p->GetMarkerShareCount() == 0) {
+            page_remover.PushContent(p);
+          } else {
+            p->DecrementMarkerShareCount();
           }
         }
         return ZX_ERR_NEXT;
@@ -3796,6 +3861,25 @@ zx::result<VmCowPages::LookupCursor::RequireResult> VmCowPages::LookupCursor::Re
       }
       return zx::error(status);
     }
+
+    // If there is a marker in a hidden node not owned by the target and we will write, fork the
+    // marker.
+    if (CursorIsMarker() && !TargetIsOwner() && will_write &&
+        owner_info_.owner.locked_or(target_).is_hidden()) {
+      vm_page_t* res_page = nullptr;
+
+      zx_status_t result = target_->ForkMarkerLocked(
+          offset_, alloc_list_, &owner_info_.owner.locked_or(target_), owner_cursor_,
+          owner_info_.owner_offset, deferred, page_request->GetAnonymous(), &res_page);
+      if (result != ZX_OK) {
+        return zx::error(result);
+      }
+
+      IncrementOffsetAndInvalidateCursor(kPageSize);
+      // This page as just allocated so no need to worry about update access times, can just return.
+      return zx::ok(RequireResult{res_page, true});
+    }
+
     // Allocate the page and mark it dirty or clean as previously determined.
     return TargetAllocateCopyPageAsResult(vm_get_zero_page(),
                                           target_page_dirty ? DirtyState::Dirty : DirtyState::Clean,
@@ -7331,7 +7415,8 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
           page_list_.ReturnEmptySlot(offset);
           vm_vmo_compress_zero_slot.Add(1);
         } else {
-          *slot = VmPageOrMarker::Marker();
+          auto share_count = Pmm::Node().GetPageCompression()->GetMetadata(old_ref);
+          *slot = VmPageOrMarker::Marker(share_count);
           vm_vmo_compress_marker.Add(1);
         }
         reclamation_event_count_++;
@@ -8069,6 +8154,15 @@ bool VmCowPages::DebugIsMarker(uint64_t offset) const {
   Guard<CriticalMutex> guard{lock()};
   const VmPageOrMarker* p = page_list_.Lookup(offset);
   return p && p->IsMarker();
+}
+
+uint32_t VmCowPages::DebugGetMarkerShareCount(uint64_t offset) const {
+  canary_.Assert();
+  DEBUG_ASSERT(IsPageRounded(offset));
+  Guard<CriticalMutex> guard{lock()};
+  const VmPageOrMarker* p = page_list_.Lookup(offset);
+  DEBUG_ASSERT(p && p->IsMarker());
+  return p->GetMarkerShareCount();
 }
 
 bool VmCowPages::DebugIsParentContent(uint64_t offset) const {
