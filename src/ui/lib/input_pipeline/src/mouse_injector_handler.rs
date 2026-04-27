@@ -20,7 +20,7 @@ use futures::SinkExt;
 use futures::channel::mpsc::Sender;
 use futures::stream::StreamExt;
 use metrics_registry::*;
-use sorted_vec_map_rs::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
@@ -639,7 +639,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::channel::mpsc;
     use pretty_assertions::assert_eq;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map::SortedVecSet;
     use std::ops::Add;
     use test_case::test_case;
 

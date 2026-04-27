@@ -42,7 +42,7 @@ use fuchsia_inspect as inspect;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
-use sorted_vec_map_rs::SortedVecSet;
+use sorted_vec_map::SortedVecSet;
 use std::rc::Rc;
 use std::sync::Arc;
 

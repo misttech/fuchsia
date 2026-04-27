@@ -6,7 +6,7 @@ use crate::light_sensor::calibrator::{Calibrate, Calibrator, LedType, calculate_
 use crate::light_sensor::led_watcher::{LedState, LightGroup};
 use crate::light_sensor::test_utils::{LED1_NAME, LED2_NAME, close_enough};
 use crate::light_sensor::types::{Calibration, Parameters, Rgbc};
-use sorted_vec_map_rs::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 use std::cell::RefCell;
 use std::mem::size_of;
 use std::rc::Rc;

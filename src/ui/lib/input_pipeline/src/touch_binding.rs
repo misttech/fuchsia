@@ -19,7 +19,7 @@ use fidl_fuchsia_ui_input as fidl_ui_input;
 use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;
 
 use metrics_registry::*;
-use sorted_vec_map_rs::{SortedVecMap, SortedVecSet};
+use sorted_vec_map::{SortedVecMap, SortedVecSet};
 
 /// A [`TouchScreenEvent`] represents a set of contacts and the phase those contacts are in.
 ///

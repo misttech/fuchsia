@@ -22,7 +22,7 @@ use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
 use metrics_registry::*;
-use sorted_vec_map_rs::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -828,7 +828,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::{FutureExt, TryStreamExt};
     use pretty_assertions::assert_eq;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map::SortedVecSet;
     use std::convert::TryFrom as _;
     use std::ops::Add;
 

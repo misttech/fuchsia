@@ -9,7 +9,7 @@ mod test {
     use assert_matches::assert_matches;
 
     use pretty_assertions::assert_eq;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map::SortedVecSet;
 
     fn touchpad_event(
         positions: Vec<Position>,

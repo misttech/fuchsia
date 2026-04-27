@@ -18,7 +18,7 @@ use fidl_fuchsia_ui_pointerinjector as pointerinjector;
 use fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next;
 use futures::{FutureExt as _, TryFutureExt, TryStreamExt};
 use log::error;
-use sorted_vec_map_rs::{SortedVecMap, SortedVecSet};
+use sorted_vec_map::{SortedVecMap, SortedVecSet};
 use zx;
 
 pub use diagnostics_assertions;

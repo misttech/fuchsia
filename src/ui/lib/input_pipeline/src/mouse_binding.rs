@@ -15,7 +15,7 @@ use fuchsia_inspect::health::Reporter;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
-use sorted_vec_map_rs::SortedVecSet;
+use sorted_vec_map::SortedVecSet;
 use zx;
 
 pub type MouseButton = u8;
@@ -741,7 +741,7 @@ mod tests {
     use crate::testing_utilities;
     use fuchsia_async as fasync;
     use futures::StreamExt;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map::SortedVecSet;
 
     const DEVICE_ID: u32 = 1;
     const COUNTS_PER_MM: u32 = 12;

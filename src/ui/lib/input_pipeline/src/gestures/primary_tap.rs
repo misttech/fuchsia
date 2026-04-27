@@ -11,7 +11,7 @@ use crate::mouse_binding::{MouseEvent, MouseLocation, MousePhase, RelativeLocati
 use crate::utils::{Position, euclidean_distance};
 use fuchsia_sync::Mutex;
 
-use sorted_vec_map_rs::SortedVecSet;
+use sorted_vec_map::SortedVecSet;
 
 /// The initial state of this recognizer, before a tap has been detected.
 #[derive(Debug)]

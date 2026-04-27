@@ -11,7 +11,7 @@ use super::utils::{MovementDetail, movement_from_events};
 use crate::mouse_binding::{MouseButton, MouseEvent, MouseLocation, MousePhase, RelativeLocation};
 use crate::utils::{Position, euclidean_distance};
 
-use sorted_vec_map_rs::SortedVecSet;
+use sorted_vec_map::SortedVecSet;
 
 /// The initial state of this recognizer, before a secondary tap has been
 /// detected.

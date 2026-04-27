@@ -1317,7 +1317,7 @@ mod tests {
         use crate::{Position, input_device, keyboard_binding, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report as fidl_input_report;
-        use sorted_vec_map_rs::SortedVecSet;
+        use sorted_vec_map::SortedVecSet;
         use std::cell::{Cell, RefCell};
         use std::rc::Rc;
 
@@ -1773,7 +1773,7 @@ mod tests {
         use crate::{Position, input_device, metrics, touch_binding};
         use assert_matches::assert_matches;
 
-        use sorted_vec_map_rs::SortedVecSet;
+        use sorted_vec_map::SortedVecSet;
         use std::cell::RefCell;
         use std::rc::Rc;
         use test_case::test_case;
@@ -2195,7 +2195,7 @@ mod tests {
         use assert_matches::assert_matches;
 
         use pretty_assertions::assert_eq;
-        use sorted_vec_map_rs::SortedVecSet;
+        use sorted_vec_map::SortedVecSet;
         use std::cell::RefCell;
         use std::rc::Rc;
         use test_case::test_case;
@@ -2768,7 +2768,7 @@ mod tests {
         use assert_matches::assert_matches;
 
         use pretty_assertions::assert_eq;
-        use sorted_vec_map_rs::SortedVecSet;
+        use sorted_vec_map::SortedVecSet;
         use std::cell::RefCell;
         use std::rc::Rc;
         use test_case::test_case;
@@ -3216,7 +3216,7 @@ mod tests {
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report::{self as fidl_input_report, UnitType};
 
-        use sorted_vec_map_rs::SortedVecSet;
+        use sorted_vec_map::SortedVecSet;
         use std::rc::Rc;
         use test_case::test_case;
         use test_util::assert_near;
@@ -3587,7 +3587,7 @@ mod tests {
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report as fidl_input_report;
         use fuchsia_async as fasync;
-        use sorted_vec_map_rs::SortedVecSet;
+        use sorted_vec_map::SortedVecSet;
         use std::rc::Rc;
         use test_case::test_case;
 

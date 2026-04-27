@@ -9,7 +9,7 @@ use super::gesture_arena::{
 };
 use crate::mouse_binding;
 use crate::utils::{Position, euclidean_distance};
-use sorted_vec_map_rs::SortedVecSet;
+use sorted_vec_map::SortedVecSet;
 
 /// The initial state of this recognizer, before 2 finger contact has been detected.
 #[derive(Debug)]

@@ -4,7 +4,7 @@
 
 use flyweights::{FlyByteStr, FlyStr};
 use serde::{Deserialize, Serialize};
-use sorted_vec_map_rs::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;

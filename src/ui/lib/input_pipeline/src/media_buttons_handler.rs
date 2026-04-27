@@ -15,7 +15,7 @@ use fuchsia_inspect::health::Reporter;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use metrics_registry::*;
-use sorted_vec_map_rs::sorted_vec_map::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 use std::cell::RefCell;
 use std::rc::Rc;
 use zx::AsHandleRef;

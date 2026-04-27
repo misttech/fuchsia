@@ -14,7 +14,7 @@ use fuchsia_inspect::{
 use futures::FutureExt;
 use futures::lock::Mutex;
 use inspect::Node;
-use sorted_vec_map_rs::SortedVecSet;
+use sorted_vec_map::SortedVecSet;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fmt::Debug;
@@ -382,7 +382,7 @@ mod tests {
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_input_report::InputDeviceMarker;
     use fuchsia_async as fasync;
-    use sorted_vec_map_rs::{SortedVecMap, SortedVecSet};
+    use sorted_vec_map::SortedVecMap;
     use test_case::test_case;
 
     fn fixed_now() -> zx::MonotonicInstant {

@@ -6,7 +6,7 @@ use super::{Calibration, LedConfig, LedMap, Parameters, Rgbc};
 use crate::light_sensor::types::{CalibrationConfiguration, FileLoader};
 use anyhow::format_err;
 use async_trait::async_trait;
-use sorted_vec_map_rs::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 use test_case::test_case;
 
 #[test_case(

@@ -7,7 +7,7 @@ mod tests {
     use crate::{Position, input_device, mouse_binding, touch_binding};
     use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map::SortedVecSet;
 
     fn touchpad_event(
         positions: Vec<Position>,
@@ -91,7 +91,7 @@ mod tests {
         use crate::{Position, input_device, mouse_binding};
         use assert_matches::assert_matches;
         use pretty_assertions::assert_eq;
-        use sorted_vec_map_rs::SortedVecSet;
+        use sorted_vec_map::SortedVecSet;
         use test_util::{assert_gt, assert_near};
 
         #[fuchsia::test(allow_stalls = false)]

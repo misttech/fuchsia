@@ -478,7 +478,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use fuchsia_inspect;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map::SortedVecSet;
     use std::cell::Cell;
     use std::ops::Add;
     use test_util::{assert_gt, assert_lt, assert_near};

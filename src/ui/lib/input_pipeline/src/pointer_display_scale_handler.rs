@@ -240,7 +240,7 @@ mod tests {
     use crate::testing_utilities;
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map::SortedVecSet;
     use std::cell::Cell;
     use std::ops::Add;
     use test_case::test_case;

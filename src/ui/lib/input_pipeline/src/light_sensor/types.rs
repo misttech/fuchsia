@@ -6,7 +6,7 @@ use anyhow::{Context, Error, bail, format_err};
 use async_trait::async_trait;
 use futures::{Future, FutureExt as _, TryFutureExt as _};
 use serde::{Deserialize, Serialize};
-use sorted_vec_map_rs::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 use std::ops::{Add, Div, Mul, Sub};
 
 /// Abstracts over grouping of red, green, blue and clear color channel data.

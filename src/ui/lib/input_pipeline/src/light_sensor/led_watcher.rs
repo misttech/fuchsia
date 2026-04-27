@@ -11,7 +11,7 @@ use futures::StreamExt;
 #[cfg(test)]
 use futures::channel::mpsc;
 use futures::channel::oneshot;
-use sorted_vec_map_rs::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 use std::cell::RefCell;
 use std::rc::Rc;
 

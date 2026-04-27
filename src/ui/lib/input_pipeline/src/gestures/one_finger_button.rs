@@ -11,7 +11,7 @@ use super::utils::{MovementDetail, movement_from_events};
 use crate::mouse_binding::{self, MouseButton};
 use crate::utils::{Position, euclidean_distance};
 
-use sorted_vec_map_rs::SortedVecSet;
+use sorted_vec_map::SortedVecSet;
 
 /// The initial state of this recognizer, before a click has been detected.
 #[derive(Debug)]

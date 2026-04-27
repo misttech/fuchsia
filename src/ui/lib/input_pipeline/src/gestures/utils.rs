@@ -4,7 +4,7 @@
 
 use super::gesture_arena::TouchpadEvent;
 use crate::utils::{Position, euclidean_distance};
-use sorted_vec_map_rs::SortedVecMap;
+use sorted_vec_map::SortedVecMap;
 
 /// Result of movement_from_events.
 #[derive(Debug, PartialEq)]

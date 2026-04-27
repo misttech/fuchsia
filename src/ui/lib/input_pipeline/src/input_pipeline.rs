@@ -829,7 +829,7 @@ mod tests {
     use futures::FutureExt;
     use pretty_assertions::assert_eq;
     use rand::Rng;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map::SortedVecSet;
     use vfs::{pseudo_directory, service as pseudo_fs_service};
 
     const COUNTS_PER_MM: u32 = 12;
