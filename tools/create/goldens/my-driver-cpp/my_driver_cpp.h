@@ -5,18 +5,17 @@
 #ifndef TOOLS_CREATE_GOLDENS_MY_DRIVER_CPP_MY_DRIVER_CPP_H_
 #define TOOLS_CREATE_GOLDENS_MY_DRIVER_CPP_MY_DRIVER_CPP_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace my_driver_cpp {
 
-class MyDriverCpp : public fdf::DriverBase {
+class MyDriverCpp : public fdf::DriverBase2 {
  public:
-  MyDriverCpp(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  MyDriverCpp() : fdf::DriverBase2("my_driver_cpp") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 };
 
 }  // namespace my_driver_cpp

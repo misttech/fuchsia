@@ -2,23 +2,19 @@
 
 #include "{{PROJECT_PATH}}/{{snake_case PROJECT_NAME}}.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace {{snake_case PROJECT_NAME}} {
 
-{{pascal_case PROJECT_NAME}}::{{pascal_case PROJECT_NAME}}(fdf::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("{{snake_case PROJECT_NAME}}", std::move(start_args), std::move(driver_dispatcher)) {}
-
-zx::result<> {{pascal_case PROJECT_NAME}}::Start() {
+zx::result<> {{pascal_case PROJECT_NAME}}::Start(fdf::DriverContext context) {
   return zx::ok();
 }
 
-void {{pascal_case PROJECT_NAME}}::PrepareStop(fdf::PrepareStopCompleter completer) {
+void {{pascal_case PROJECT_NAME}}::Stop(fdf::StopCompleter completer) {
   completer(zx::ok());
 }
 
 }  // namespace {{snake_case PROJECT_NAME}}
 
-FUCHSIA_DRIVER_EXPORT({{snake_case PROJECT_NAME}}::{{pascal_case PROJECT_NAME}});
+FUCHSIA_DRIVER_EXPORT2({{snake_case PROJECT_NAME}}::{{pascal_case PROJECT_NAME}});

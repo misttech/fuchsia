@@ -3,18 +3,17 @@
 #ifndef {{screaming_snake_case PROJECT_PATH}}_{{screaming_snake_case PROJECT_NAME}}_H_
 #define {{screaming_snake_case PROJECT_PATH}}_{{screaming_snake_case PROJECT_NAME}}_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace {{snake_case PROJECT_NAME}} {
 
-class {{pascal_case PROJECT_NAME}} : public fdf::DriverBase {
+class {{pascal_case PROJECT_NAME}} : public fdf::DriverBase2 {
  public:
-  {{pascal_case PROJECT_NAME}}(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  {{pascal_case PROJECT_NAME}}() : fdf::DriverBase2("{{snake_case PROJECT_NAME}}") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 };
 
 }  // namespace {{snake_case PROJECT_NAME}}

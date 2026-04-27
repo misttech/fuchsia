@@ -4,23 +4,19 @@
 
 #include "tools/create/goldens/my-driver-cpp/my_driver_cpp.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace my_driver_cpp {
 
-MyDriverCpp::MyDriverCpp(fdf::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("my_driver_cpp", std::move(start_args), std::move(driver_dispatcher)) {}
-
-zx::result<> MyDriverCpp::Start() {
+zx::result<> MyDriverCpp::Start(fdf::DriverContext context) {
   return zx::ok();
 }
 
-void MyDriverCpp::PrepareStop(fdf::PrepareStopCompleter completer) {
+void MyDriverCpp::Stop(fdf::StopCompleter completer) {
   completer(zx::ok());
 }
 
 }  // namespace my_driver_cpp
 
-FUCHSIA_DRIVER_EXPORT(my_driver_cpp::MyDriverCpp);
+FUCHSIA_DRIVER_EXPORT2(my_driver_cpp::MyDriverCpp);
