@@ -34,15 +34,13 @@ using fuchsia_system_state::SystemPowerState;
 
 zx::result<std::unique_ptr<DevicePartitioner>> AndroidDevicePartitioner::Initialize(
     const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_device,
-    std::shared_ptr<Context> context) {
+    const PaverConfig& config, std::shared_ptr<Context> context) {
   Arch arch = config.arch;
   if (arch != Arch::kX64 && arch != Arch::kArm64) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
-  auto status =
-      GptDevicePartitioner::InitializeGpt(devices, svc_root, config, std::move(block_device));
+  auto status = GptDevicePartitioner::InitializeGpt(devices, svc_root, config);
   if (status.is_error()) {
     return status.take_error();
   }
@@ -185,10 +183,8 @@ zx::result<> AndroidDevicePartitioner::OnStop() const {
 
 zx::result<std::unique_ptr<DevicePartitioner>> AndroidPartitionerFactory::New(
     const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, std::shared_ptr<Context> context,
-    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  return AndroidDevicePartitioner::Initialize(devices, svc_root, config, std::move(block_device),
-                                              std::move(context));
+    const PaverConfig& config, std::shared_ptr<Context> context) {
+  return AndroidDevicePartitioner::Initialize(devices, svc_root, config, std::move(context));
 }
 
 class AndroidAbrClient : public abr::Client, android::IoOps {

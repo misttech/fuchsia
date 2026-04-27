@@ -37,46 +37,7 @@ zx::result<fbl::unique_fd> open_in_dir(int dir_fd, const std::string& filename) 
   return zx::ok(std::move(fd));
 }
 
-zx::result<std::unique_ptr<VolumeConnector>> CreateDevfsVolumeConnector(int dir_fd,
-                                                                        std::string filename) {
-  fidl::ClientEnd<fuchsia_device::Controller> controller;
-  zx::result controller_server = fidl::CreateEndpoints(&controller);
-  if (controller_server.is_error()) {
-    return controller_server.take_error();
-  }
-  filename.append("/device_controller");
-  fdio_cpp::UnownedFdioCaller caller(dir_fd);
-  if (zx_status_t status = fdio_service_connect_at(caller.borrow_channel(), filename.c_str(),
-                                                   controller_server->TakeChannel().release());
-      status != ZX_OK) {
-    ERROR("Failed to connect to device_controller: %s", zx_status_get_string(status));
-    return zx::error(status);
-  }
-  return zx::ok(std::make_unique<DevfsVolumeConnector>(std::move(controller)));
-}
-
 }  // namespace
-
-DevfsVolumeConnector::DevfsVolumeConnector(fidl::ClientEnd<fuchsia_device::Controller> controller)
-    : controller_(std::move(controller)) {}
-
-zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> DevfsVolumeConnector::Connect() const {
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_storage_block::Block>();
-  if (endpoints.is_error()) {
-    return endpoints.take_error();
-  }
-  auto [client, server] = std::move(*endpoints);
-  if (fidl::OneWayStatus result = controller_->ConnectToDeviceFidl(server.TakeChannel());
-      !result.ok()) {
-    return zx::error(result.status());
-  }
-  return zx::ok(std::move(client));
-}
-
-zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>>
-DevfsVolumeConnector::PartitionManagement() const {
-  ZX_ASSERT_MSG(false, "Called PartitionManagement on a DevfsVolumeConnector");
-}
 
 DirBasedVolumeConnector::DirBasedVolumeConnector(fbl::unique_fd dir,
                                                  std::string volume_connector_path)
@@ -126,18 +87,6 @@ PartitionServiceBasedVolumeConnector::PartitionManagement() const {
 
 BlockDevices::BlockDevices(fbl::unique_fd root, Variant variant)
     : root_(std::move(root)), variant_(variant) {}
-
-zx::result<BlockDevices> BlockDevices::CreateDevfs(fbl::unique_fd devfs_root) {
-  if (!devfs_root) {
-    if (zx_status_t status = fdio_open3_fd("/dev", static_cast<uint64_t>(fuchsia_io::kPermReadable),
-                                           devfs_root.reset_and_get_address());
-        status != ZX_OK) {
-      ERROR("Failed to open /dev: %s\n", zx_status_get_string(status));
-      return zx::error(status);
-    }
-  }
-  return zx::ok(BlockDevices(std::move(devfs_root), Variant::kDevfs));
-}
 
 zx::result<BlockDevices> BlockDevices::CreateFromFshostBlockDir(fbl::unique_fd block_dir) {
   if (!block_dir) {
@@ -202,8 +151,6 @@ BlockDevices BlockDevices::CreateEmpty() { return BlockDevices({}, {}); }
 
 BlockDevices BlockDevices::Duplicate() const { return BlockDevices(root_.duplicate(), variant_); }
 
-bool BlockDevices::IsStorageHost() const { return variant_ != Variant::kDevfs; }
-
 zx::result<std::vector<std::unique_ptr<VolumeConnector>>> BlockDevices::OpenAllPartitions(
     fit::function<bool(const zx::channel&)> filter) const {
   return OpenAllPartitionsInner(std::move(filter), /*limit=*/std::numeric_limits<size_t>::max());
@@ -228,9 +175,6 @@ zx::result<std::vector<std::unique_ptr<VolumeConnector>>> BlockDevices::OpenAllP
   }
   const char* path = ".";
   int parent_fd = root_.get();
-  if (variant_ == Variant::kDevfs) {
-    path = "class/block";
-  }
   fbl::unique_fd dir_fd;
   if (zx_status_t status =
           fdio_open3_fd_at(parent_fd, path, static_cast<uint64_t>(fuchsia_io::kPermReadable),
@@ -255,14 +199,6 @@ zx::result<std::vector<std::unique_ptr<VolumeConnector>>> BlockDevices::OpenAllP
     std::string filename(de->d_name, strnlen(de->d_name, sizeof(de->d_name)));
     std::unique_ptr<VolumeConnector> connector;
     switch (variant_) {
-      case Variant::kDevfs: {
-        zx::result result = CreateDevfsVolumeConnector(dir_fd.get(), filename);
-        if (result.is_error()) {
-          return result.take_error();
-        }
-        connector = *std::move(result);
-        break;
-      }
       case Variant::kFshostBlockDir: {
         zx::result fd = open_in_dir(dir_fd.get(), filename);
         if (fd.is_error()) {
@@ -302,8 +238,7 @@ zx::result<std::vector<std::unique_ptr<VolumeConnector>>> BlockDevices::OpenAllP
 }
 
 zx::result<std::unique_ptr<VolumeConnector>> BlockDevices::WaitForPartition(
-    fit::function<bool(const zx::channel&)> filter, zx_duration_t timeout,
-    const char* devfs_suffix) const {
+    fit::function<bool(const zx::channel&)> filter, zx_duration_t timeout) const {
   if (!root_) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
@@ -329,14 +264,6 @@ zx::result<std::unique_ptr<VolumeConnector>> BlockDevices::WaitForPartition(
     auto info = static_cast<CallbackInfo*>(cookie);
     std::unique_ptr<VolumeConnector> connector;
     switch (info->variant) {
-      case Variant::kDevfs: {
-        zx::result result = CreateDevfsVolumeConnector(dirfd, filename);
-        if (result.is_error()) {
-          return result.status_value();
-        }
-        connector = *std::move(result);
-        break;
-      }
       case Variant::kFshostBlockDir: {
         zx::result fd = open_in_dir(dirfd, filename);
         if (fd.is_error()) {
@@ -377,21 +304,8 @@ zx::result<std::unique_ptr<VolumeConnector>> BlockDevices::WaitForPartition(
     return ZX_ERR_STOP;
   };
 
-  fbl::unique_fd dir_fd;
-  if (variant_ == Variant::kDevfs) {
-    if (zx_status_t status = fdio_open3_fd_at(root_.get(), devfs_suffix,
-                                              static_cast<uint64_t>(fuchsia_io::kPermReadable),
-                                              dir_fd.reset_and_get_address());
-        status != ZX_OK) {
-      ERROR("Failed to open /dev/%s: %s\n", devfs_suffix, zx_status_get_string(status));
-      return zx::error(status);
-    }
-  } else {
-    dir_fd = root_.duplicate();
-  }
-
   zx_time_t deadline = zx_deadline_after(timeout);
-  if (zx_status_t status = fdio_watch_directory(dir_fd.get(), cb, deadline, &info);
+  if (zx_status_t status = fdio_watch_directory(root_.get(), cb, deadline, &info);
       status != ZX_ERR_STOP) {
     return zx::error(status);
   }

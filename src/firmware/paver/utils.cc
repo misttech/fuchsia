@@ -18,7 +18,6 @@
 #include <fbl/algorithm.h>
 #include <gpt/gpt.h>
 
-#include "src/firmware/paver/partition-client.h"
 #include "src/firmware/paver/pave-logging.h"
 #include "src/lib/uuid/uuid.h"
 
@@ -79,8 +78,6 @@ zx::result<std::unique_ptr<VolumeConnector>> OpenBlockPartition(const paver::Blo
   return devices.WaitForPartition(cb, timeout);
 }
 
-constexpr char kSkipBlockDevPath[] = "class/skip-block";
-
 zx::result<std::unique_ptr<VolumeConnector>> OpenSkipBlockPartition(
     const paver::BlockDevices& devices, const Uuid& type_guid, zx_duration_t timeout) {
   auto cb = [&](const zx::channel& chan) {
@@ -94,7 +91,7 @@ zx::result<std::unique_ptr<VolumeConnector>> OpenSkipBlockPartition(
            type_guid == Uuid(response.partition_info.partition_guid.data());
   };
 
-  return devices.WaitForPartition(cb, timeout, kSkipBlockDevPath);
+  return devices.WaitForPartition(cb, timeout);
 }
 
 zx::result<std::string> GetBoardName(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {

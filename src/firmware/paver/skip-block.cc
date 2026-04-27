@@ -5,7 +5,6 @@
 #include "src/firmware/paver/skip-block.h"
 
 #include <fidl/fuchsia.device/cpp/wire.h>
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -26,8 +25,6 @@ namespace {
 
 using uuid::Uuid;
 
-namespace block = fuchsia_storage_block;
-namespace device = fuchsia_device;
 namespace skipblock = fuchsia_hardware_skipblock;
 
 }  // namespace

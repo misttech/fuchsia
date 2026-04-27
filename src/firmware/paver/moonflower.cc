@@ -36,8 +36,7 @@ const std::set<std::string> kSupportedBoards{
 
 zx::result<std::unique_ptr<DevicePartitioner>> MoonflowerPartitioner::Initialize(
     const PaverConfig& config, const BlockDevices& devices,
-    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
+    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {
   zx::result<std::string> board_name = GetBoardName(svc_root);
   if (board_name.is_error()) {
     return board_name.take_error();
@@ -47,8 +46,7 @@ zx::result<std::unique_ptr<DevicePartitioner>> MoonflowerPartitioner::Initialize
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  auto gpt =
-      GptDevicePartitioner::InitializeGpt(devices, svc_root, config, std::move(block_device));
+  auto gpt = GptDevicePartitioner::InitializeGpt(devices, svc_root, config);
   if (gpt.is_error()) {
     return gpt.take_error();
   }
@@ -178,22 +176,6 @@ MoonflowerPartitioner::FindAllPartitions(FilterCallback filter) const {
   return gpt_->FindAllPartitions(std::move(filter));
 }
 
-zx::result<FindPartitionDetailsResult> MoonflowerPartitioner::FindPartitionDetails(
-    const PartitionSpec& spec) const {
-  zx::result names = PartitionNamesForSpec(spec);
-  if (names.is_error()) {
-    return names.take_error();
-  }
-  return gpt_->FindPartitionDetails([&](const GptPartitionMetadata& part) {
-    for (const auto& name : *names) {
-      if (FilterByName(part, name)) {
-        return true;
-      }
-    }
-    return false;
-  });
-}
-
 zx::result<> MoonflowerPartitioner::ResetPartitionTables() const {
   ERROR("Initialising partition tables is not supported for a Moonflower device\n");
   return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -217,9 +199,8 @@ zx::result<> MoonflowerPartitioner::ValidatePayload(const PartitionSpec& spec,
 
 zx::result<std::unique_ptr<DevicePartitioner>> MoonflowerPartitionerFactory::New(
     const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, std::shared_ptr<Context> context,
-    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  return MoonflowerPartitioner::Initialize(config, devices, svc_root, std::move(block_device));
+    const PaverConfig& config, std::shared_ptr<Context> context) {
+  return MoonflowerPartitioner::Initialize(config, devices, svc_root);
 }
 
 class MoonflowerAbrClient : public abr::Client {
@@ -646,16 +627,6 @@ class MoonflowerAbrClient : public abr::Client {
 };
 
 zx::result<std::unique_ptr<abr::Client>> MoonflowerPartitioner::CreateAbrClient() const {
-  // A/B management on moonflower requires storage host APIs for GPT manipulation.
-  if (!gpt_->devices().IsStorageHost()) {
-    ERROR(
-        "Moonflower A/B slots requires the product assembly to be configured with"
-        " `storage_host_enabled` set to true in the `storage` configuration");
-    ERROR("This is the default for moonflower, it is likely you have locally disabled it");
-    ERROR("This device will need to be updated via fastboot instead");
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
-
   zx::result result = MoonflowerAbrClient::Create(this);
   if (result.is_error()) {
     ERROR("Failed to create MoonflowerAbrClient: %s\n", result.status_string());

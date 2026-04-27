@@ -40,8 +40,6 @@ source_set("paver-core") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp",
-    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
@@ -51,7 +49,6 @@ source_set("paver-core") {
     "//src/storage/lib/sparse/c:sparse",
     "//zircon/system/ulib/fdio-caller",
     "//zircon/third_party/ulib/cksum",
-    "//zircon/third_party/ulib/safemath",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
@@ -65,7 +62,6 @@ source_set("paver-core") {
     "//src/firmware/lib/abr",
     "//src/lib/uuid",
     "//src/storage/lib/block_client/cpp",
-    "//src/storage/lib/block_client/cpp:remote_rebindable_block_device",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
@@ -90,7 +86,6 @@ source_set("skip-block") {
   deps = [ "//src/lib/uuid" ]
   public_deps = [
     ":paver-core",
-    "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.skipblock:fuchsia.hardware.skipblock_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/storage/gpt",

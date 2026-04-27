@@ -76,7 +76,7 @@ class CurrentSlotUuidTest : public PaverTest {
     zx::result devices = CreateBlockDevices();
     ASSERT_OK(devices);
     zx::result gpt = paver::GptDevicePartitioner::InitializeGpt(
-        *devices, devmgr_.RealmExposedDir(), paver::PaverConfig{.zvb_current_slot = "_a"}, {});
+        *devices, devmgr_.RealmExposedDir(), paver::PaverConfig{.zvb_current_slot = "_a"});
     ASSERT_OK(gpt);
     out = std::move(gpt->gpt);
   }
@@ -229,7 +229,7 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
     std::shared_ptr<paver::Context> context;
     zx::result partitioner = paver::MoonflowerPartitionerFactory().New(
         *devices, devmgr_.RealmExposedDir(),
-        paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
+        paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context);
     ASSERT_OK(partitioner);
     zx::result abr_client = partitioner->CreateAbrClient();
     ASSERT_OK(abr_client);

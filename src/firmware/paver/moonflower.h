@@ -14,7 +14,6 @@
 
 namespace paver {
 
-using FindPartitionDetailsResult = GptDevicePartitioner::FindPartitionDetailsResult;
 using FilterCallback = GptDevicePartitioner::FilterCallback;
 
 struct MoonflowerGptEntryAttributes {
@@ -39,8 +38,7 @@ class MoonflowerPartitioner : public DevicePartitioner {
 
   static zx::result<std::unique_ptr<DevicePartitioner>> Initialize(
       const PaverConfig& config, const BlockDevices& devices,
-      fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      fidl::ClientEnd<fuchsia_device::Controller> block_device);
+      fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root);
 
   zx::result<std::unique_ptr<abr::Client>> CreateAbrClient() const override;
 
@@ -71,9 +69,6 @@ class MoonflowerPartitioner : public DevicePartitioner {
   zx::result<std::unique_ptr<BlockPartitionClient>> FindGptPartition(
       const PartitionSpec& spec) const;
 
-  // Like FindPartition() above, but also returns the GPT partition entry.
-  zx::result<FindPartitionDetailsResult> FindPartitionDetails(const PartitionSpec& spec) const;
-
  private:
   MoonflowerPartitioner(const PaverConfig& config, std::unique_ptr<GptDevicePartitioner> gpt)
       : config_(config), gpt_(std::move(gpt)) {}
@@ -88,8 +83,7 @@ class MoonflowerPartitionerFactory : public DevicePartitionerFactory {
  public:
   zx::result<std::unique_ptr<DevicePartitioner>> New(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      const PaverConfig& config, std::shared_ptr<Context> context,
-      fidl::ClientEnd<fuchsia_device::Controller> block_device) final;
+      const PaverConfig& config, std::shared_ptr<Context> context) final;
 };
 
 }  // namespace paver

@@ -28,19 +28,6 @@ class VolumeConnector {
   virtual ~VolumeConnector() = default;
 };
 
-// A VolumeConnector backed by devfs.
-class DevfsVolumeConnector : public VolumeConnector {
- public:
-  explicit DevfsVolumeConnector(fidl::ClientEnd<fuchsia_device::Controller>);
-
-  zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> Connect() const override;
-  zx::result<fidl::ClientEnd<fuchsia_storage_partitions::Partition>> PartitionManagement()
-      const override;
-
- private:
-  fidl::WireSyncClient<fuchsia_device::Controller> controller_;
-};
-
 // A VolumeConnector backed by a directory which contains a node to vend connections to
 // fuchsia.storage.block.Block.
 class DirBasedVolumeConnector : public VolumeConnector {
@@ -72,11 +59,6 @@ class PartitionServiceBasedVolumeConnector : public DirBasedVolumeConnector {
 // fuchsia.storage.partitions.PartitionService.
 class BlockDevices {
  public:
-  // Creates an instance that searches for devices in Devfs.
-  // `devfs_root` can be injected for testing.  If unspecified, the devfs root will be connected to
-  // /dev.
-  static zx::result<BlockDevices> CreateDevfs(fbl::unique_fd devfs_root = {});
-
   // Creates an instance that searches for devices from fshost's /block.
   // Note that fshost will forward GPT-managed partitions as instances of the PartitionService
   // instead; see CreateFromPartitionService.  Only non-GPT devices will be published here.
@@ -108,13 +90,6 @@ class BlockDevices {
   // operations.
   BlockDevices Duplicate() const;
 
-  const fbl::unique_fd& devfs_root() const {
-    ZX_ASSERT(variant_ == Variant::kDevfs);
-    return root_;
-  }
-
-  bool IsStorageHost() const;
-
   // Returns a connector for every partition that matches the filter.  A channel connected to the
   // fuchsia.hardware.block.partition.Partition service of the block device is provided to `filter`.
   zx::result<std::vector<std::unique_ptr<VolumeConnector>>> OpenAllPartitions(
@@ -128,13 +103,10 @@ class BlockDevices {
 
   // Like `OpenPartition`, but will wait for newly added partitions (at least until `timeout`).
   zx::result<std::unique_ptr<VolumeConnector>> WaitForPartition(
-      fit::function<bool(const zx::channel&)> filter, zx_duration_t timeout,
-      // TODO(https://fxbug.dev/339491886): Support skip-block and remove `devfs_suffix`
-      const char* devfs_suffix = "class/block") const;
+      fit::function<bool(const zx::channel&)> filter, zx_duration_t timeout) const;
 
  private:
   enum Variant : uint8_t {
-    kDevfs,
     kFshostBlockDir,
     kPartitionService,
     kSkipBlockService,

@@ -139,21 +139,13 @@ class DevicePartitioner {
   virtual zx::result<> OnStop() const = 0;
 };
 
-struct BlockAndController {
-  fidl::ClientEnd<fuchsia_storage_block::Block> device;
-  fidl::ClientEnd<fuchsia_device::Controller> controller;
-};
-
 class DevicePartitionerFactory {
  public:
   // Factory method which automatically returns the correct DevicePartitioner implementation based
   // factories registered with it.
-  // |block_device| is root block device which contains the logical partitions we wish to operate
-  // against. It's only meaningful for EFI and CROS devices which may have multiple storage devices.
   static zx::result<std::unique_ptr<DevicePartitioner>> Create(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      const PaverConfig& config, std::shared_ptr<Context> context,
-      BlockAndController block_device = {});
+      const PaverConfig& config, std::shared_ptr<Context> context);
 
   static void Register(std::unique_ptr<DevicePartitionerFactory> factory);
 
@@ -164,8 +156,7 @@ class DevicePartitionerFactory {
   // of DevicePartitioners.
   virtual zx::result<std::unique_ptr<DevicePartitioner>> New(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      const PaverConfig& config, std::shared_ptr<Context> context,
-      fidl::ClientEnd<fuchsia_device::Controller> block_device) = 0;
+      const PaverConfig& config, std::shared_ptr<Context> context) = 0;
 
   static std::vector<std::unique_ptr<DevicePartitionerFactory>>* registered_factory_list();
 };
@@ -215,8 +206,7 @@ class DefaultPartitionerFactory : public DevicePartitionerFactory {
  public:
   zx::result<std::unique_ptr<DevicePartitioner>> New(
       const BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      const PaverConfig& config, std::shared_ptr<Context> context,
-      fidl::ClientEnd<fuchsia_device::Controller> block_device) final;
+      const PaverConfig& config, std::shared_ptr<Context> context) final;
 };
 
 }  // namespace paver

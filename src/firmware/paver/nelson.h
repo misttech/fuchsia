@@ -18,7 +18,7 @@ class NelsonPartitioner : public DevicePartitioner {
  public:
   static zx::result<std::unique_ptr<DevicePartitioner>> Initialize(
       const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_device);
+      const PaverConfig& config);
 
   zx::result<std::unique_ptr<abr::Client>> CreateAbrClient() const override;
 
@@ -56,8 +56,7 @@ class NelsonPartitionerFactory : public DevicePartitionerFactory {
  public:
   zx::result<std::unique_ptr<DevicePartitioner>> New(
       const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      const PaverConfig& config, std::shared_ptr<Context> context,
-      fidl::ClientEnd<fuchsia_device::Controller> block_device) final;
+      const PaverConfig& config, std::shared_ptr<Context> context) final;
 };
 
 class NelsonBootloaderPartitionClient final : public PartitionClient {

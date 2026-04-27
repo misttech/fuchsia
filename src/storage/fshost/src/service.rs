@@ -442,11 +442,6 @@ pub fn fshost_admin(
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
-                    Ok(fshost::AdminRequest::StorageHostEnabled { responder }) => {
-                        responder.send(true).unwrap_or_else(|error| {
-                            log::error!(error:?; "failed to send fidl response");
-                        });
-                    }
                     Err(e) => {
                         log::error!("admin service failed: {:?}", e);
                         return;

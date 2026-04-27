@@ -25,22 +25,20 @@ using uuid::Uuid;
 
 zx::result<std::unique_ptr<DevicePartitioner>> NelsonPartitioner::Initialize(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_device) {
+    const PaverConfig& config) {
   auto status = IsBoard(svc_root, "nelson");
   if (status.is_error()) {
     return status.take_error();
   }
 
-  auto status_or_gpt =
-      GptDevicePartitioner::InitializeGpt(devices, svc_root, config, std::move(block_device));
+  auto status_or_gpt = GptDevicePartitioner::InitializeGpt(devices, svc_root, config);
   if (status_or_gpt.is_error()) {
     return status_or_gpt.take_error();
   }
-  // NOTE: We explicitly ignore status_or_gpt->initialize_partition_tables here.  In legacy mode, it
-  // tells us that we failed to find the FVM.  In storage-host mode, the GPT component might start
-  // successfully but in a state that requires reformatting if the partition table is missing or
-  // malformed.  In this case, there is no error at this point, but subsequent attempts to modify
-  // the partition table will fail with ZX_ERR_BAD_STATE.
+  // NOTE: We explicitly ignore status_or_gpt->initialize_partition_tables here. The GPT component
+  // might start successfully but in a state that requires reformatting if the partition table is
+  // missing or malformed. In this case, there is no error at this point, but subsequent attempts
+  // to modify the partition table will fail with ZX_ERR_BAD_STATE.
 
   auto partitioner =
       WrapUnique(new NelsonPartitioner(std::move(status_or_gpt->gpt), devices.Duplicate()));
@@ -254,9 +252,8 @@ zx::result<> NelsonPartitioner::ValidatePayload(const PartitionSpec& spec,
 
 zx::result<std::unique_ptr<DevicePartitioner>> NelsonPartitionerFactory::New(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, std::shared_ptr<Context> context,
-    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  return NelsonPartitioner::Initialize(devices, svc_root, config, std::move(block_device));
+    const PaverConfig& config, std::shared_ptr<Context> context) {
+  return NelsonPartitioner::Initialize(devices, svc_root, config);
 }
 
 zx::result<std::unique_ptr<abr::Client>> NelsonPartitioner::CreateAbrClient() const {

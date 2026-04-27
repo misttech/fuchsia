@@ -329,11 +329,6 @@ class GptDevicePartitionerTests : public PaverTest {
   }
 
   void FindAllBlockDevices(std::vector<fidl::ClientEnd<fuchsia_storage_block::Block>>* out) {
-    ASSERT_NO_FATAL_FAILURE(FindAllBlockDevicesStorageHost(out));
-  }
-
-  void FindAllBlockDevicesStorageHost(
-      std::vector<fidl::ClientEnd<fuchsia_storage_block::Block>>* out) {
     fidl::ClientEnd svc_root = RealmExposedDir();
     fbl::unique_fd fd;
     ASSERT_OK(fdio_fd_create(svc_root.TakeHandle().release(), fd.reset_and_get_address()));
@@ -446,8 +441,7 @@ class EfiDevicePartitionerTests : public GptDevicePartitionerTests {
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
 
-    return paver::EfiDevicePartitioner::Initialize(*devices, RealmExposedDir(), paver_config, {},
-                                                   {});
+    return paver::EfiDevicePartitioner::Initialize(*devices, RealmExposedDir(), paver_config, {});
   }
 
   void ResetPartitionTablesTest();
@@ -759,7 +753,7 @@ class SherlockPartitionerTests : public GptDevicePartitionerTests {
         .arch = paver::Arch::kX64,
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
-    return paver::SherlockPartitioner::Initialize(*devices, svc_root, paver_config, {});
+    return paver::SherlockPartitioner::Initialize(*devices, svc_root, paver_config);
   }
 
   void FindPartitionNewGuidsTest() {
@@ -973,7 +967,7 @@ class MoonflowerPartitionerTests : public GptDevicePartitionerTests {
         .system_partition_names = {"super_and_userdata"},
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
-    return paver::MoonflowerPartitioner::Initialize(paver_config, *devices, svc_root, {});
+    return paver::MoonflowerPartitioner::Initialize(paver_config, *devices, svc_root);
   }
 };
 
@@ -1111,7 +1105,7 @@ class LuisPartitionerTests : public GptDevicePartitionerTests {
         .arch = paver::Arch::kArm64,
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
-    return paver::LuisPartitioner::Initialize(*devices, RealmExposedDir(), paver_config, {});
+    return paver::LuisPartitioner::Initialize(*devices, RealmExposedDir(), paver_config);
   }
 };
 
@@ -1195,7 +1189,7 @@ TEST_F(LuisPartitionerTests, CreateAbrClient) {
       .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
   };
   zx::result partitioner =
-      paver::LuisPartitionerFactory().New(*devices, svc_root, paver_config, context, {});
+      paver::LuisPartitionerFactory().New(*devices, svc_root, paver_config, context);
   ASSERT_OK(partitioner);
   EXPECT_OK(partitioner->CreateAbrClient());
 }
@@ -1258,7 +1252,7 @@ class NelsonPartitionerTests : public GptDevicePartitionerTests {
         .arch = paver::Arch::kArm64,
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
-    return paver::NelsonPartitioner::Initialize(*devices, svc_root, paver_config, {});
+    return paver::NelsonPartitioner::Initialize(*devices, svc_root, paver_config);
   }
 
   static void CreateBootloaderPayload(zx::vmo* out) {
@@ -1452,7 +1446,7 @@ class NelsonPartitionerTests : public GptDevicePartitionerTests {
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
     zx::result partitioner =
-        paver::NelsonPartitionerFactory().New(*devices, svc_root, paver_config, context, {});
+        paver::NelsonPartitionerFactory().New(*devices, svc_root, paver_config, context);
     ASSERT_OK(partitioner);
     EXPECT_OK(partitioner->CreateAbrClient());
   }
@@ -1625,7 +1619,7 @@ class Vim3PartitionerTests : public GptDevicePartitionerTests {
         .arch = paver::Arch::kArm64,
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
-    return paver::Vim3Partitioner::Initialize(*devices, svc_root, paver_config, {});
+    return paver::Vim3Partitioner::Initialize(*devices, svc_root, paver_config);
   }
 
   void CreateBootloaderDevices(std::unique_ptr<BlockDevice>* boot0,
@@ -1738,7 +1732,7 @@ class AndroidPartitionerTests : public GptDevicePartitionerTests {
         .system_partition_names = {"super"},
         .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
     };
-    return paver::AndroidDevicePartitioner::Initialize(*devices, svc_root, paver_config, {}, {});
+    return paver::AndroidDevicePartitioner::Initialize(*devices, svc_root, paver_config, {});
   }
 
   void InitializeTest() {

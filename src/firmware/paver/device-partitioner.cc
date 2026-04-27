@@ -166,23 +166,9 @@ DevicePartitionerFactory::registered_factory_list() {
 
 zx::result<std::unique_ptr<DevicePartitioner>> DevicePartitionerFactory::Create(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, std::shared_ptr<Context> context, BlockAndController block_device) {
+    const PaverConfig& config, std::shared_ptr<Context> context) {
   for (auto& factory : *registered_factory_list()) {
-    fidl::ClientEnd<fuchsia_device::Controller> controller;
-    if (block_device.controller) {
-      auto [controller_client, controller_server] =
-          fidl::Endpoints<fuchsia_device::Controller>::Create();
-      if (zx_status_t status = fidl::WireCall(block_device.controller)
-                                   ->ConnectToController(std::move(controller_server))
-                                   .status();
-          status != ZX_OK) {
-        return zx::error(status);
-      }
-      controller = std::move(controller_client);
-    }
-    if (auto status =
-            factory->New(devices, svc_root, config, std::move(context), std::move(controller));
-        status.is_ok()) {
+    if (auto status = factory->New(devices, svc_root, config, std::move(context)); status.is_ok()) {
       return zx::ok(std::move(status.value()));
     }
   }
@@ -254,8 +240,7 @@ zx::result<> FixedDevicePartitioner::ValidatePayload(const PartitionSpec& spec,
 
 zx::result<std::unique_ptr<DevicePartitioner>> DefaultPartitionerFactory::New(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, std::shared_ptr<Context> context,
-    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
+    const PaverConfig& config, std::shared_ptr<Context> context) {
   return FixedDevicePartitioner::Initialize(devices, component::MaybeClone(svc_root));
 }
 

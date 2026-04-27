@@ -46,9 +46,6 @@ class Paver : public fidl::WireServer<fuchsia_paver::Paver> {
   void FindSysconfig(fidl::ServerEnd<fuchsia_paver::Sysconfig> sysconfig);
 
   void set_dispatcher(async_dispatcher_t* dispatcher) { dispatcher_ = dispatcher; }
-  void set_devfs_root(fbl::unique_fd devfs_root) {
-    devices_ = *BlockDevices::CreateDevfs(std::move(devfs_root));
-  }
   void set_svc_root(fidl::ClientEnd<fuchsia_io::Directory> svc_root) {
     svc_root_ = std::move(svc_root);
   }
@@ -183,7 +180,7 @@ class DynamicDataSink : public fidl::WireServer<fuchsia_paver::DynamicDataSink> 
                    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
                    const PaverConfig& config,
                    fidl::ServerEnd<fuchsia_paver::DynamicDataSink> server,
-                   std::shared_ptr<Context> context, BlockAndController block = {});
+                   std::shared_ptr<Context> context);
 
   void InitializePartitionTables(InitializePartitionTablesCompleter::Sync& completer) override;
 

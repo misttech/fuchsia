@@ -399,23 +399,7 @@ zx::result<std::unique_ptr<Paver>> Paver::Create(PaverConfig config, fbl::unique
       status != ZX_OK) {
     return zx::error(status);
   }
-  zx::result admin = component::ConnectAt<fuchsia_fshost::Admin>(svc);
-  if (admin.is_error()) {
-    ERROR("Failed to connect to fshost admin service: %s\n", admin.status_string());
-    return admin.take_error();
-  }
-  bool storage_host_enabled = false;
-  {
-    fidl::WireResult storage_host = fidl::WireCall(*admin)->StorageHostEnabled();
-    if (!storage_host.ok()) {
-      ERROR("Failed to query fshost for storage-host config: %s\n",
-            storage_host.FormatDescription().c_str());
-    } else {
-      storage_host_enabled = storage_host->enabled;
-    }
-  }
-  zx::result devices = storage_host_enabled ? BlockDevices::CreateFromFshostBlockDir()
-                                            : BlockDevices::CreateDevfs(std::move(devfs_root));
+  zx::result devices = BlockDevices::CreateFromFshostBlockDir(std::move(devfs_root));
   if (devices.is_error()) {
     ERROR("Failed to open device source: %s\n", devices.status_string());
     return devices.take_error();
@@ -596,9 +580,9 @@ void DynamicDataSink::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
                            fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
                            const PaverConfig& config,
                            fidl::ServerEnd<fuchsia_paver::DynamicDataSink> server,
-                           std::shared_ptr<Context> context, BlockAndController block) {
-  zx::result partitioner = DevicePartitionerFactory::Create(devices, svc_root, config,
-                                                            std::move(context), std::move(block));
+                           std::shared_ptr<Context> context) {
+  zx::result partitioner =
+      DevicePartitionerFactory::Create(devices, svc_root, config, std::move(context));
   if (partitioner.is_error()) {
     ERROR("Unable to initialize a partitioner: %s.\n", partitioner.status_string());
     fidl_epitaph_write(server.channel().get(), ZX_ERR_BAD_STATE);

@@ -30,10 +30,11 @@ namespace {
 
 using driver_integration_test::IsolatedDevmgr;
 
-/// Mocks the PartitionService exported by storage-host.
-class FakeStorageHost {
+/// Mocks the PartitionService exported by fshost.
+class FakePartitionService {
  public:
-  FakeStorageHost(async_dispatcher_t* dispatcher, std::vector<block_server::FakeServer> servers)
+  FakePartitionService(async_dispatcher_t* dispatcher,
+                       std::vector<block_server::FakeServer> servers)
       : vfs_(dispatcher),
         root_dir_(fbl::MakeRefCounted<fs::PseudoDir>()),
         servers_(std::move(servers)) {
@@ -84,7 +85,7 @@ TEST(BlockDevicesTests, TestPartitionsDir) {
       .instance_guid = {13, 14, 15, 16},
       .name = "part2",
   });
-  FakeStorageHost storage_host(loop.dispatcher(), std::move(servers));
+  FakePartitionService partition_service(loop.dispatcher(), std::move(servers));
 
   // Although devfs is provided (so BlockDevices doesn't connect to /dev), the partitions dir is
   // preferentially used.
@@ -92,7 +93,8 @@ TEST(BlockDevicesTests, TestPartitionsDir) {
   IsolatedDevmgr devmgr;
   ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr));
 
-  zx::result devices = paver::BlockDevices::CreateFromPartitionService(storage_host.svc_root());
+  zx::result devices =
+      paver::BlockDevices::CreateFromPartitionService(partition_service.svc_root());
   ASSERT_OK(devices);
 
   {

@@ -41,10 +41,8 @@ constexpr char kOldEfiName[] = "efi-system";
 
 zx::result<std::unique_ptr<DevicePartitioner>> EfiDevicePartitioner::Initialize(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, fidl::ClientEnd<fuchsia_device::Controller> block_device,
-    std::shared_ptr<Context> context) {
-  auto status =
-      GptDevicePartitioner::InitializeGpt(devices, svc_root, config, std::move(block_device));
+    const PaverConfig& config, std::shared_ptr<Context> context) {
+  auto status = GptDevicePartitioner::InitializeGpt(devices, svc_root, config);
   if (status.is_error()) {
     return status.take_error();
   }
@@ -331,10 +329,8 @@ zx::result<> EfiDevicePartitioner::OnStop() const {
 
 zx::result<std::unique_ptr<DevicePartitioner>> UefiPartitionerFactory::New(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    const PaverConfig& config, std::shared_ptr<Context> context,
-    fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  return EfiDevicePartitioner::Initialize(devices, svc_root, config, std::move(block_device),
-                                          std::move(context));
+    const PaverConfig& config, std::shared_ptr<Context> context) {
+  return EfiDevicePartitioner::Initialize(devices, svc_root, config, std::move(context));
 }
 
 zx::result<std::unique_ptr<abr::Client>> EfiDevicePartitioner::CreateAbrClient() const {
