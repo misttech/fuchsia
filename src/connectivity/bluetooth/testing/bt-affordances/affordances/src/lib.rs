@@ -31,7 +31,6 @@ use proxies::Proxies;
 
 // TODO(b/414848887): Pass more descriptive errors.
 enum Request {
-    ReadLocalAddress(oneshot::Sender<Result<[u8; 6], anyhow::Error>>),
     GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId(CString, oneshot::Sender<Result<PeerId, anyhow::Error>>),
@@ -125,28 +124,6 @@ impl WorkThread {
 
         while let Some(request) = receiver.next().await {
             match request {
-                Request::ReadLocalAddress(sender) => {
-                    if let Err(err) = sys::refresh_host_cache(&mut proxies, &mut host_cache).await {
-                        sender.send(Err(anyhow!("refresh_host_cache() error: {err}"))).unwrap();
-                        continue;
-                    }
-                    let result = host_cache
-                        .first()
-                        .ok_or_else(|| anyhow!("No hosts"))
-                        .and_then(|host| {
-                            host.addresses
-                                .clone()
-                                .ok_or_else(|| anyhow!("Host addresses field is missing"))
-                        })
-                        .and_then(|addresses| {
-                            addresses
-                                .first()
-                                .map(|address| address.bytes)
-                                .ok_or_else(|| anyhow!("Host has no address"))
-                        });
-
-                    sender.send(result).unwrap();
-                }
                 Request::GetHosts(result_sender) => {
                     if let Err(err) = sys::refresh_host_cache(&mut proxies, &mut host_cache).await {
                         result_sender
@@ -364,17 +341,6 @@ impl WorkThread {
         {
             return Err(anyhow!("Work thread exited with error: {err}"));
         }
-        Ok(())
-    }
-
-    // Overwrite `l2cap_channel` if an incoming connection is established before `timeout`.
-
-    // Write address of active host into `addr_byte_buff`.
-    pub async fn read_local_address(&self, addr_byte_buff: *mut u8) -> Result<(), anyhow::Error> {
-        let addr_bytes_slice = unsafe { std::slice::from_raw_parts_mut(addr_byte_buff, 6) };
-        let (sender, receiver) = oneshot::channel::<Result<[u8; 6], anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::ReadLocalAddress(sender))?;
-        addr_bytes_slice.clone_from_slice(&receiver.await??);
         Ok(())
     }
 

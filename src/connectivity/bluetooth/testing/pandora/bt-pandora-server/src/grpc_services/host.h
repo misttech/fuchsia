@@ -129,6 +129,7 @@ class HostService : public pandora::Host::Service {
   fidl::SharedClient<fuchsia_bluetooth_sys::Access> access_client_;
   fidl::SyncClient<fuchsia_bluetooth_affordances::PeripheralController>
       peripheral_controller_client_;
+  fidl::SyncClient<fuchsia_bluetooth_affordances::HostController> host_controller_client_;
 
   std::condition_variable cv_access_;
   std::mutex m_access_;

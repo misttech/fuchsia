@@ -68,15 +68,6 @@ extern "C" {
 /// Returns ZX_STATUS_INTERNAL if Rust affordances exited with an error (check logs).
 int32_t stop_rust_affordances();
 
-/// Populates `addr_byte_buff` with public address of active host.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-///
-/// # Safety
-///
-/// The caller must ensure that `addr_byte_buff` points to a valid buffer of 6 bytes.
-int32_t read_local_address(uint8_t *addr_byte_buff);
-
 /// Get all peers discovered by the system.
 ///
 /// The callback `cb` is invoked on every peer. The `context` provided to this function is included

@@ -30,6 +30,16 @@ HostService::HostService(async_dispatcher_t* dispatcher) {
     FX_LOGS(ERROR) << "Error connecting to PeripheralController service: "
                    << peripheral_controller_client_end.status_string();
   }
+
+  // Connect to fuchsia.bluetooth.affordances.HostController
+  zx::result host_controller_client_end =
+      component::Connect<fuchsia_bluetooth_affordances::HostController>();
+  if (host_controller_client_end.is_ok()) {
+    host_controller_client_.Bind(std::move(*host_controller_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to HostController service: "
+                   << host_controller_client_end.status_string();
+  }
 }
 
 Status HostService::FactoryReset(grpc::ServerContext* context,
@@ -47,14 +57,33 @@ Status HostService::Reset(grpc::ServerContext* context, const google::protobuf::
 Status HostService::ReadLocalAddress(grpc::ServerContext* context,
                                      const google::protobuf::Empty* request,
                                      pandora::ReadLocalAddressResponse* response) {
-  std::array<uint8_t, 6> host_addr;
-  if (read_local_address(host_addr.data()) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  auto result = host_controller_client_->GetHosts();
+  if (result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.HostController/GetHosts error: " +
+                      result.error_value().FormatDescription());
   }
-  // Convert local address from little-endian to big-endian, as expected by Pandora.
-  std::ranges::reverse(host_addr);
-  response->set_address(host_addr.data(), 6);
-  return {/*OK*/};
+
+  if (!result->hosts().has_value() || result->hosts().value().empty()) {
+    return Status(StatusCode::NOT_FOUND, "No hosts available");
+  }
+
+  const auto& hosts = result->hosts().value();
+  for (const auto& host : hosts) {
+    if (host.active().has_value() && host.active().value()) {
+      if (host.addresses().has_value() && !host.addresses().value().empty()) {
+        std::array<uint8_t, 6> host_addr;
+        std::ranges::copy(host.addresses().value()[0].bytes(), host_addr.begin());
+
+        // Convert local address from little-endian to big-endian, as expected by Pandora.
+        std::ranges::reverse(host_addr);
+        response->set_address(host_addr.data(), 6);
+        return Status::OK;
+      }
+    }
+  }
+
+  return Status(StatusCode::NOT_FOUND, "No active host with valid address found");
 }
 
 Status HostService::Connect(grpc::ServerContext* context, const pandora::ConnectRequest* request,

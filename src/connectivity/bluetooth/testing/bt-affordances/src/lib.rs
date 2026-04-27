@@ -141,22 +141,6 @@ pub extern "C" fn stop_rust_affordances() -> i32 {
     zx::Status::OK.into_raw()
 }
 
-/// Populates `addr_byte_buff` with public address of active host.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-///
-/// # Safety
-///
-/// The caller must ensure that `addr_byte_buff` points to a valid buffer of 6 bytes.
-#[unsafe(no_mangle)]
-pub extern "C" fn read_local_address(addr_byte_buff: *mut u8) -> i32 {
-    if let Err(err) = block_on(STATE.worker.read_local_address(addr_byte_buff)) {
-        eprintln!("read_local_address encountered error: {err}");
-        return zx::Status::INTERNAL.into_raw();
-    }
-    zx::Status::OK.into_raw()
-}
-
 /// `address_type` is 1 for Public or 2 for Random, corresponding to the values of
 /// fuchsia.bluetooth/AddressType.
 #[repr(C)]
