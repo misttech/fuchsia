@@ -14,10 +14,12 @@ import argparse
 import dataclasses
 import enum
 import os
+import random
 import re
 import shlex
 import subprocess
 import sys
+import time
 from typing import (
     AbstractSet,
     Any,
@@ -861,6 +863,58 @@ def detect_all_dirs(paths: Iterable[str]) -> AbstractSet[str]:
     return dirs
 
 
+def run_traced_command(
+    fsatrace_path: str, trace_output: str, command_tokens: Sequence[str]
+) -> int:
+    """Invokes a command with fsatrace, with retries for initialization failures.
+
+    fsatrace has a known race condition where it may fail to initialize
+    its FIFO connection to the traced process under heavy load.
+    See: https://fxbug.dev/507062922
+    In such cases, it prints "Timeout opening the FIFO..." to stderr and
+    fails to create the trace output file, but may still return 0 if the
+    command itself succeeded.
+
+    Args:
+      fsatrace_path: path to the fsatrace binary.
+      trace_output: path to the trace output file to create.
+      command_tokens: the command to be traced.
+
+    Returns:
+      The exit code of the traced command.
+    """
+    max_retries = 3
+    retval = 1
+    for attempt in range(max_retries):
+        retval = subprocess.call(
+            [
+                fsatrace_path,
+                "rwmdt",
+                trace_output,
+                "--",
+            ]
+            + list(command_tokens)
+        )
+
+        if os.path.exists(trace_output):
+            return retval
+
+        if attempt < max_retries - 1:
+            sleep_time = 0.5 + random.random() * 1.5
+            print(
+                f"Warning: fsatrace failed to create trace file (attempt {attempt+1}/{max_retries}). "
+                f"This is likely a transient timeout. Retrying in {sleep_time:.2f}s...",
+                file=sys.stderr,
+            )
+            time.sleep(sleep_time)
+        else:
+            print(
+                f"Error: fsatrace failed to initialize after {max_retries} attempts.",
+                file=sys.stderr,
+            )
+    return retval
+
+
 def main() -> int:
     parser = main_arg_parser()
     args = parser.parse_args()
@@ -875,14 +929,8 @@ def main() -> int:
     trace_output_dir = os.path.dirname(args.trace_output)
     os.makedirs(trace_output_dir, exist_ok=True)
 
-    retval = subprocess.call(
-        [
-            args.fsatrace_path,
-            "rwmdt",
-            args.trace_output,
-            "--",
-        ]
-        + command.tokens
+    retval = run_traced_command(
+        args.fsatrace_path, args.trace_output, command.tokens
     )
 
     hermetic_inputs = []

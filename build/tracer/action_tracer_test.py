@@ -4,12 +4,81 @@
 # found in the LICENSE file.
 
 import os
+import random
+import subprocess
 import textwrap
+import time
 import unittest
 from typing import AbstractSet, Iterable
 from unittest import mock
 
 import action_tracer
+
+
+class RunTracedCommandTests(unittest.TestCase):
+    @mock.patch.object(subprocess, "call")
+    @mock.patch.object(os.path, "exists")
+    def test_success_first_try(self, mock_exists, mock_call):
+        mock_exists.return_value = True
+        mock_call.return_value = 0
+
+        retval = action_tracer.run_traced_command(
+            "fsatrace", "trace.txt", ["echo", "hi"]
+        )
+
+        self.assertEqual(retval, 0)
+        self.assertEqual(mock_call.call_count, 1)
+
+    @mock.patch.object(subprocess, "call")
+    @mock.patch.object(os.path, "exists")
+    @mock.patch.object(time, "sleep")
+    def test_retry_once(self, mock_sleep, mock_exists, mock_call):
+        # First call: file missing. Second call: file exists.
+        mock_exists.side_effect = [False, True]
+        mock_call.return_value = 0
+
+        retval = action_tracer.run_traced_command(
+            "fsatrace", "trace.txt", ["echo", "hi"]
+        )
+
+        self.assertEqual(retval, 0)
+        self.assertEqual(mock_call.call_count, 2)
+        self.assertEqual(mock_sleep.call_count, 1)
+
+    @mock.patch.object(subprocess, "call")
+    @mock.patch.object(os.path, "exists")
+    @mock.patch.object(time, "sleep")
+    @mock.patch.object(random, "random")
+    def test_exhaust_retries(
+        self, mock_random, mock_sleep, mock_exists, mock_call
+    ):
+        # File never appears.
+        mock_exists.return_value = False
+        mock_call.return_value = 0
+        mock_random.return_value = 0.5
+
+        retval = action_tracer.run_traced_command(
+            "fsatrace", "trace.txt", ["echo", "hi"]
+        )
+
+        self.assertEqual(retval, 0)
+        self.assertEqual(mock_call.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @mock.patch.object(subprocess, "call")
+    @mock.patch.object(os.path, "exists")
+    def test_command_failure_still_stops_if_trace_exists(
+        self, mock_exists, mock_call
+    ):
+        mock_exists.return_value = True
+        mock_call.return_value = 1  # Command failed
+
+        retval = action_tracer.run_traced_command(
+            "fsatrace", "trace.txt", ["echo", "hi"]
+        )
+
+        self.assertEqual(retval, 1)
+        self.assertEqual(mock_call.call_count, 1)
 
 
 class ToolCommandTests(unittest.TestCase):
