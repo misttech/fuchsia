@@ -104,22 +104,22 @@ zx::result<display::PanelType> GetPanelType(PanelVendor panel_vendor,
 
 }  // namespace
 
-void PostInit::Start(fdf::StartCompleter completer) {
-  parent_.Bind(std::move(node()));
+zx::result<> PostInit::Start(fdf::DriverContext context) {
+  auto incoming = context.take_incoming();
+  parent_.Bind(take_node());
 
-  zx::result pbus =
-      incoming()->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>("pbus");
+  zx::result pbus = incoming->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>("pbus");
   if (pbus.is_error()) {
     fdf::error("Failed to connect to PlatformBus: {}", pbus.status_string());
-    return completer(pbus.take_error());
+    return pbus.take_error();
   }
   pbus_.Bind(*std::move(pbus));
 
   zx::result composite_manager =
-      incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
+      incoming->Connect<fuchsia_driver_framework::CompositeNodeManager>();
   if (composite_manager.is_error()) {
     fdf::error("Failed to connect to CompositeNodeManager: {}", composite_manager.status_string());
-    return completer(composite_manager.take_error());
+    return composite_manager.take_error();
   }
   composite_manager_ = fidl::SyncClient(*std::move(composite_manager));
 
@@ -129,40 +129,40 @@ void PostInit::Start(fdf::StartCompleter completer) {
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (controller_endpoints.is_error()) {
     fdf::error("Failed to create controller endpoints: {}", controller_endpoints.status_string());
-    return completer(controller_endpoints.take_error());
+    return controller_endpoints.take_error();
   }
   controller_.Bind(std::move(controller_endpoints->client));
 
-  if (zx::result result = InitBoardInfo(); result.is_error()) {
-    return completer(result.take_error());
+  if (zx::result result = InitBoardInfo(*incoming); result.is_error()) {
+    return result.take_error();
   }
 
-  if (zx::result result = SetInspectProperties(); result.is_error()) {
-    return completer(result.take_error());
+  if (zx::result result = SetInspectProperties(*incoming); result.is_error()) {
+    return result.take_error();
   }
 
-  if (zx::result result = IdentifyPanel(); result.is_error()) {
-    return completer(result.take_error());
+  if (zx::result result = IdentifyPanel(*incoming); result.is_error()) {
+    return result.take_error();
   }
 
   if (zx::result result = InitDisplay(); result.is_error()) {
-    return completer(result.take_error());
+    return result.take_error();
   }
 
-  if (zx::result result = InitTouch(); result.is_error()) {
-    return completer(result.take_error());
+  if (zx::result result = InitTouch(*incoming); result.is_error()) {
+    return result.take_error();
   }
 
   if (zx::result result = InitBacklight(); result.is_error()) {
-    return completer(result.take_error());
+    return result.take_error();
   }
 
   if (zx::result result = SetBoardInfo(); result.is_error()) {
-    return completer(result.take_error());
+    return result.take_error();
   }
 
-  if (zx::result result = AddSelinaCompositeNode(); result.is_error()) {
-    return completer(result.take_error());
+  if (zx::result result = AddSelinaCompositeNode(*incoming); result.is_error()) {
+    return result.take_error();
   }
 
   auto result = parent_->AddChild({std::move(args), std::move(controller_endpoints->server), {}});
@@ -170,20 +170,20 @@ void PostInit::Start(fdf::StartCompleter completer) {
     if (result.error_value().is_framework_error()) {
       fdf::error("Failed to add child: {}",
                  result.error_value().framework_error().FormatDescription().c_str());
-      return completer(zx::error(result.error_value().framework_error().status()));
+      return zx::error(result.error_value().framework_error().status());
     }
     if (result.error_value().is_domain_error()) {
       fdf::error("Failed to add child");
-      return completer(zx::error(ZX_ERR_INTERNAL));
+      return zx::error(ZX_ERR_INTERNAL);
     }
   }
 
-  return completer(zx::ok());
+  return zx::ok();
 }
 
-zx::result<> PostInit::InitBoardInfo() {
+zx::result<> PostInit::InitBoardInfo(const fdf::Namespace& incoming) {
   zx::result<uint32_t> board_build =
-      ReadGpios({kBoardBuildNodeNames.data(), kBoardBuildNodeNames.size()});
+      ReadGpios({kBoardBuildNodeNames.data(), kBoardBuildNodeNames.size()}, incoming);
   if (board_build.is_error()) {
     return board_build.take_error();
   }
@@ -198,7 +198,7 @@ zx::result<> PostInit::InitBoardInfo() {
   board_build_ = *board_build;
 
   zx::result<uint32_t> board_option =
-      ReadGpios({kBoardOptionNodeNames.data(), kBoardOptionNodeNames.size()});
+      ReadGpios({kBoardOptionNodeNames.data(), kBoardOptionNodeNames.size()}, incoming);
   if (board_option.is_error()) {
     return board_option.take_error();
   }
@@ -207,9 +207,9 @@ zx::result<> PostInit::InitBoardInfo() {
   return zx::ok();
 }
 
-zx::result<> PostInit::IdentifyPanel() {
+zx::result<> PostInit::IdentifyPanel(const fdf::Namespace& incoming) {
   zx::result<uint32_t> panel_vendor_result =
-      ReadGpios({kPanelVendorNodeNames.data(), kPanelVendorNodeNames.size()});
+      ReadGpios({kPanelVendorNodeNames.data(), kPanelVendorNodeNames.size()}, incoming);
   if (panel_vendor_result.is_error()) {
     fdf::error("Failed to read panel vendor GPIOs: {}", panel_vendor_result.status_string());
     return panel_vendor_result.take_error();
@@ -219,7 +219,7 @@ zx::result<> PostInit::IdentifyPanel() {
   PanelVendor panel_vendor = static_cast<PanelVendor>(std::move(panel_vendor_result).value());
 
   zx::result<uint32_t> panel_ddic_model_result =
-      ReadGpios({kPanelDdicModelNodeNames.data(), kPanelDdicModelNodeNames.size()});
+      ReadGpios({kPanelDdicModelNodeNames.data(), kPanelDdicModelNodeNames.size()}, incoming);
   if (panel_ddic_model_result.is_error()) {
     fdf::error("Failed to read panel DDIC model GPIOs: {}",
                panel_ddic_model_result.status_string());
@@ -238,8 +238,8 @@ zx::result<> PostInit::IdentifyPanel() {
   return zx::ok();
 }
 
-zx::result<> PostInit::SetInspectProperties() {
-  auto inspect_sink = incoming()->Connect<fuchsia_inspect::InspectSink>();
+zx::result<> PostInit::SetInspectProperties(const fdf::Namespace& incoming) {
+  auto inspect_sink = incoming.Connect<fuchsia_inspect::InspectSink>();
   if (inspect_sink.is_error() || !inspect_sink->is_valid()) {
     fdf::error("Failed to connect to InspectSink: {}", inspect_sink.status_string());
     return inspect_sink.take_error();
@@ -256,11 +256,12 @@ zx::result<> PostInit::SetInspectProperties() {
   return zx::ok();
 }
 
-zx::result<uint32_t> PostInit::ReadGpios(cpp20::span<const char* const> node_names) {
+zx::result<uint32_t> PostInit::ReadGpios(cpp20::span<const char* const> node_names,
+                                         const fdf::Namespace& incoming) {
   uint32_t value = 0;
 
   for (size_t i = 0; i < node_names.size(); i++) {
-    zx::result gpio = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(node_names[i]);
+    zx::result gpio = incoming.Connect<fuchsia_hardware_gpio::Service::Device>(node_names[i]);
     if (gpio.is_error()) {
       fdf::error("Failed to connect to GPIO node: {}", gpio.status_string());
       return gpio.take_error();
@@ -333,9 +334,9 @@ zx::result<> PostInit::SetBoardInfo() {
   return zx::ok();
 }
 
-zx::result<> PostInit::AddSelinaCompositeNode() {
+zx::result<> PostInit::AddSelinaCompositeNode(const fdf::Namespace& incoming) {
   if (board_build_ == kBoardBuildP1) {
-    if (auto result = EnableSelinaOsc(); result.is_error()) {
+    if (auto result = EnableSelinaOsc(incoming); result.is_error()) {
       return result.take_error();
     }
   }
@@ -428,8 +429,8 @@ zx::result<> PostInit::AddSelinaCompositeNode() {
   return zx::ok();
 }
 
-zx::result<> PostInit::EnableSelinaOsc() {
-  zx::result gpio = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("selina-osc-en");
+zx::result<> PostInit::EnableSelinaOsc(const fdf::Namespace& incoming) {
+  zx::result gpio = incoming.Connect<fuchsia_hardware_gpio::Service::Device>("selina-osc-en");
   if (gpio.is_error()) {
     fdf::error("Failed to connect to GPIO node: {}", gpio.status_string());
     return gpio.take_error();
@@ -437,7 +438,7 @@ zx::result<> PostInit::EnableSelinaOsc() {
 
   fidl::SyncClient osc_en_gpio(*std::move(gpio));
 
-  zx::result pin = incoming()->Connect<fuchsia_hardware_pin::Service::Device>("selina-osc-en");
+  zx::result pin = incoming.Connect<fuchsia_hardware_pin::Service::Device>("selina-osc-en");
   if (pin.is_error()) {
     fdf::error("Failed to connect to GPIO node: {}", pin.status_string());
     return pin.take_error();
@@ -481,4 +482,4 @@ zx::result<> PostInit::EnableSelinaOsc() {
 
 }  // namespace nelson
 
-FUCHSIA_DRIVER_EXPORT(nelson::PostInit);
+FUCHSIA_DRIVER_EXPORT2(nelson::PostInit);

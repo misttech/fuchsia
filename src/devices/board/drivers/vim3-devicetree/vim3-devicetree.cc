@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devicetree/manager/manager.h>
 #include <lib/driver/devicetree/manager/publisher-dev.h>
 #include <lib/driver/devicetree/visitors/load-visitors.h>
@@ -19,16 +19,16 @@
 
 namespace vim3_dt {
 
-zx::result<> Vim3Devicetree::Start() {
-  node_.Bind(std::move(node()));
+zx::result<> Vim3Devicetree::Start(fdf::DriverContext context) {
+  node_.Bind(take_node());
 
-  zx::result manager = fdf_devicetree::Manager::CreateFromNamespace(*incoming());
+  zx::result manager = fdf_devicetree::Manager::CreateFromNamespace(context.incoming());
   if (manager.is_error()) {
     fdf::error("Failed to create devicetree manager: {}", manager.error_value());
     return manager.take_error();
   }
 
-  auto visitors = fdf_devicetree::LoadVisitors(symbols());
+  auto visitors = fdf_devicetree::LoadVisitors(context.symbols());
   if (visitors.is_error()) {
     fdf::error("Failed to create visitors: {}", visitors.status_string());
     return visitors.take_error();
@@ -63,13 +63,15 @@ zx::result<> Vim3Devicetree::Start() {
     return status.take_error();
   }
 
-  zx::result pbus = incoming()->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
+  zx::result pbus =
+      context.incoming().Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
   if (pbus.is_error() || !pbus->is_valid()) {
     fdf::error("Failed to connect to pbus: {}", pbus);
     return pbus.take_error();
   }
 
-  zx::result group_manager = incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
+  zx::result group_manager =
+      context.incoming().Connect<fuchsia_driver_framework::CompositeNodeManager>();
   if (group_manager.is_error()) {
     fdf::error("Failed to connect to device group manager: {}", group_manager);
     return group_manager.take_error();
@@ -89,4 +91,4 @@ zx::result<> Vim3Devicetree::Start() {
 
 }  // namespace vim3_dt
 
-FUCHSIA_DRIVER_EXPORT(vim3_dt::Vim3Devicetree);
+FUCHSIA_DRIVER_EXPORT2(vim3_dt::Vim3Devicetree);

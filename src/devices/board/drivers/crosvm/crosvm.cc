@@ -43,10 +43,11 @@ zx::result<zx::resource> GetResource(const std::shared_ptr<fdf::Namespace>& inco
 }
 }  // namespace
 
-zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor) {
+zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor,
+                                    const std::shared_ptr<fdf::Namespace>& incoming) {
   // Root host resource and construction is handled first.
   zx::result<zx::resource> msi{};
-  if (msi = GetResource<fuchsia_kernel::MsiResource>(incoming()); msi.is_error()) {
+  if (msi = GetResource<fuchsia_kernel::MsiResource>(incoming); msi.is_error()) {
     fdf::error("Couldn't obtain MSI resource: {}", msi.status_string());
     return msi.take_error();
   }
@@ -55,7 +56,7 @@ zx::result<> Crosvm::CreateRoothost(const pci_dt::PciVisitor& pci_visitor) {
   // We need the MMIO resource to allocate the ECAM, as well as allowing the
   // root host to allocate exclusive MMIO regions for PCI BAR allocations.
   zx::result<zx::resource> mmio{};
-  if (mmio = GetResource<fuchsia_kernel::MmioResource>(incoming()); mmio.is_error()) {
+  if (mmio = GetResource<fuchsia_kernel::MmioResource>(incoming); mmio.is_error()) {
     fdf::error("Couldn't obtain MMIO resource: {}", mmio.status_string());
     return mmio.take_error();
   }
@@ -125,7 +126,8 @@ zx::result<> Crosvm::CreateMetadata() {
   return zx::ok();
 }
 
-zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor) {
+zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor,
+                                   const std::shared_ptr<fdf::Namespace>& incoming) {
   const auto& pci_reg = pci_visitor.reg();
   zx_paddr_t ecam_address = *pci_reg->address();
   size_t ecam_size = *pci_reg->size();
@@ -142,13 +144,13 @@ zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor) {
       {.address = ecam_address, .pci_segment = 0, .start_bus_number = 0, .end_bus_number = 0});
 
   zx::result<zx::resource> irq;
-  if (irq = GetResource<fuchsia_kernel::IrqResource>(incoming()); irq.is_error()) {
+  if (irq = GetResource<fuchsia_kernel::IrqResource>(incoming); irq.is_error()) {
     fdf::error("Couldn't obtain IRQ resource: {}", irq.status_string());
     return irq.take_error();
   }
 
   zx::result<zx::resource> iommu;
-  if (iommu = GetResource<fuchsia_kernel::IommuResource>(incoming()); iommu.is_error()) {
+  if (iommu = GetResource<fuchsia_kernel::IommuResource>(incoming); iommu.is_error()) {
     fdf::error("Couldn't obtain IRQ resource: {}", iommu.status_string());
     return iommu.take_error();
   }
@@ -165,7 +167,8 @@ zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor) {
   return zx::ok();
 }
 
-zx::result<> Crosvm::StartBanjoServer() {
+zx::result<> Crosvm::StartBanjoServer(const std::shared_ptr<fdf::Namespace>& incoming,
+                                      const std::string& node_name) {
   banjo_server_.emplace(bind_fuchsia_pci::BIND_PROTOCOL_ROOT, &*pciroot_,
                         pciroot_->pciroot_protocol_ops());
   compat::DeviceServer::BanjoConfig banjo_config{
@@ -175,7 +178,7 @@ zx::result<> Crosvm::StartBanjoServer() {
 
   // Spin up the compat server for serving fuchsia.hardware.pciroot.
   zx::result<> result =
-      compat_server_.Initialize(incoming(), outgoing(), node_name(), kPcirootNodeName,
+      compat_server_.Initialize(incoming, outgoing(), node_name, kPcirootNodeName,
                                 compat::ForwardMetadata::All(), std::move(banjo_config));
   if (result.is_error()) {
     return result.take_error();
@@ -193,8 +196,10 @@ zx::result<> Crosvm::StartBanjoServer() {
   return zx::ok();
 }
 
-zx::result<> Crosvm::Start() {
-  auto manager = fdf_devicetree::Manager::CreateFromNamespace(*incoming());
+zx::result<> Crosvm::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  auto node_name = context.node_name().value_or("");
+  auto manager = fdf_devicetree::Manager::CreateFromNamespace(*incoming);
 
   fdf_devicetree::VisitorRegistry visitors;
   auto pci_visitor = std::make_unique<pci_dt::PciVisitor>();
@@ -212,7 +217,7 @@ zx::result<> Crosvm::Start() {
     return result.take_error();
   }
 
-  if (zx::result<> result = CreateRoothost(pci_visitor_ref); result.is_error()) {
+  if (zx::result<> result = CreateRoothost(pci_visitor_ref, incoming); result.is_error()) {
     return result.take_error();
   }
 
@@ -220,11 +225,11 @@ zx::result<> Crosvm::Start() {
     return result.take_error();
   }
 
-  if (zx::result<> result = CreatePciroot(pci_visitor_ref); result.is_error()) {
+  if (zx::result<> result = CreatePciroot(pci_visitor_ref, incoming); result.is_error()) {
     return result.take_error();
   }
 
-  if (zx::result<> result = StartBanjoServer(); result.is_error()) {
+  if (zx::result<> result = StartBanjoServer(incoming, node_name); result.is_error()) {
     return result.take_error();
   }
 
@@ -233,4 +238,4 @@ zx::result<> Crosvm::Start() {
 
 }  // namespace board_crosvm
 
-FUCHSIA_DRIVER_EXPORT(board_crosvm::Crosvm);
+FUCHSIA_DRIVER_EXPORT2(board_crosvm::Crosvm);

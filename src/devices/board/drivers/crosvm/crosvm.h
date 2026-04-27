@@ -11,7 +11,8 @@
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devicetree/visitors/drivers/pci/pci.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/pci/devicetree.h>
@@ -76,18 +77,20 @@ class Pciroot : public PcirootBase, public ddk::PcirootProtocol<Pciroot> {
 
 // Ideally Crosvm and Pciroot would be the same class but PciRootHost is not trivially
 // constructable nor movable at this time which complicates overall construction.
-class Crosvm : public fdf::DriverBase {
+class Crosvm : public fdf::DriverBase2 {
  public:
-  Crosvm(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("crosvm", std::move(start_args), std::move(dispatcher)) {}
+  explicit Crosvm() : fdf::DriverBase2("crosvm") {}
   ~Crosvm() = default;
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
   zx::result<> CreateMetadata();
   // Create the `Pciroot` and any associated root host dependencies.
-  zx::result<> CreatePciroot(const pci_dt::PciVisitor& pci_visitor);
-  zx::result<> CreateRoothost(const pci_dt::PciVisitor& pci_visitor);
+  zx::result<> CreatePciroot(const pci_dt::PciVisitor& pci_visitor,
+                             const std::shared_ptr<fdf::Namespace>& incoming);
+  zx::result<> CreateRoothost(const pci_dt::PciVisitor& pci_visitor,
+                              const std::shared_ptr<fdf::Namespace>& incoming);
   // Bring up the compat server and serve the fuchsia.hardware.pciroot banjo service.
-  zx::result<> StartBanjoServer();
+  zx::result<> StartBanjoServer(const std::shared_ptr<fdf::Namespace>& incoming,
+                                const std::string& node_name);
 
  private:
   std::optional<PciRootHost> root_host_;

@@ -178,4 +178,4 @@ class Suspendable {
 
 }  // namespace fdf_power
 
-#endif
+#endif  // LIB_DRIVER_POWER_CPP_SUSPEND_H_

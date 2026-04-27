@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/wire.h>
 #include <lib/device-protocol/display-panel.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/inspect/cpp/vmo/types.h>
@@ -16,12 +16,11 @@
 
 namespace sherlock {
 
-class PostInit : public fdf::DriverBase {
+class PostInit : public fdf::DriverBase2 {
  public:
-  PostInit(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("post-init", std::move(start_args), std::move(dispatcher)) {}
+  PostInit() : fdf::DriverBase2("post-init") {}
 
-  void Start(fdf::StartCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   enum SherlockBoardBuild : uint8_t {
@@ -34,12 +33,12 @@ class PostInit : public fdf::DriverBase {
     BOARD_REV_EVT2 = 0x0F,
   };
 
-  zx::result<> InitBoardInfo();
+  zx::result<> InitBoardInfo(const fdf::Namespace& incoming);
   zx::result<> SetBoardInfo();
 
   // Identifies the panel type and stores it to `panel_type_`.
   // Must be called exactly once during driver `Start()`.
-  zx::result<> IdentifyPanel();
+  zx::result<> IdentifyPanel(const fdf::Namespace& incoming);
 
   // Must be called after `IdentifyPanel()`.
   zx::result<> InitDisplay();
@@ -50,11 +49,12 @@ class PostInit : public fdf::DriverBase {
   // Must be called after `IdentifyPanel()`.
   zx::result<> InitBacklight();
 
-  zx::result<> SetInspectProperties();
+  zx::result<> SetInspectProperties(const fdf::Namespace& incoming);
 
   // Constructs a number using the value of each GPIO as one bit. The order of elements in
   // node_names determines the bits set in the result from LSB to MSB.
-  zx::result<uint8_t> ReadGpios(cpp20::span<const char* const> node_names);
+  zx::result<uint8_t> ReadGpios(cpp20::span<const char* const> node_names,
+                                const fdf::Namespace& incoming);
 
   fidl::SyncClient<fuchsia_driver_framework::Node> parent_;
   fidl::SyncClient<fuchsia_driver_framework::NodeController> controller_;

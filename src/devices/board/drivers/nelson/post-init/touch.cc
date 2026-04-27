@@ -27,9 +27,9 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 
 namespace {
 
-zx::result<> SetPull(std::shared_ptr<fdf::Namespace> incoming, std::string_view node_name,
+zx::result<> SetPull(const fdf::Namespace& incoming, std::string_view node_name,
                      fuchsia_hardware_pin::Pull pull) {
-  zx::result pin = incoming->Connect<fuchsia_hardware_pin::Service::Device>(node_name);
+  zx::result pin = incoming.Connect<fuchsia_hardware_pin::Service::Device>(node_name);
   if (pin.is_error()) {
     fdf::error("Failed to connect to pin node: {}", pin.status_string());
     return pin.take_error();
@@ -98,9 +98,9 @@ const std::vector kGpioInitProperties = {
 };
 }  // namespace
 
-zx::result<> PostInit::InitTouch() {
+zx::result<> PostInit::InitTouch(const fdf::Namespace& incoming) {
   // The Goodix touch driver expects the interrupt line to be driven by the touch controller.
-  if (auto result = SetPull(incoming(), "touch-interrupt", fuchsia_hardware_pin::Pull::kNone);
+  if (auto result = SetPull(incoming, "touch-interrupt", fuchsia_hardware_pin::Pull::kNone);
       result.is_error()) {
     return result;
   }

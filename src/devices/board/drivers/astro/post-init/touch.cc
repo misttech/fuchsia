@@ -26,9 +26,9 @@
 #include "src/devices/board/drivers/astro/post-init/post-init.h"
 namespace {
 
-zx::result<> SetPull(std::shared_ptr<fdf::Namespace> incoming, std::string_view node_name,
+zx::result<> SetPull(const fdf::Namespace& incoming, std::string_view node_name,
                      fuchsia_hardware_pin::Pull pull) {
-  zx::result pin = incoming->Connect<fuchsia_hardware_pin::Service::Device>(node_name);
+  zx::result pin = incoming.Connect<fuchsia_hardware_pin::Service::Device>(node_name);
   if (pin.is_error()) {
     fdf::error("Failed to connect to pin node: {}", pin.status_string());
     return pin.take_error();
@@ -180,15 +180,15 @@ zx::result<> AddFocaltechTouch(
   return zx::ok();
 }
 
-zx::result<> PostInit::InitTouch() {
+zx::result<> PostInit::InitTouch(const fdf::Namespace& incoming) {
   switch (panel_type_) {
     case display::PanelType::kInnoluxP070acbFitipowerJd9364:
       // Innolux P070ACB panel on Astro uses Goodix touch controller chip.
-      return InitGoodixTouch();
+      return InitGoodixTouch(incoming);
     case display::PanelType::kBoeTv070wsmFitipowerJd9364Astro:
       // BOE TV070WSM panel on Astro uses Focaltech FT3x27 touch controller
       // chip.
-      return InitFocaltechTouch();
+      return InitFocaltechTouch(incoming);
     default:
       break;
   }
@@ -196,16 +196,16 @@ zx::result<> PostInit::InitTouch() {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
-zx::result<> PostInit::InitGoodixTouch() {
+zx::result<> PostInit::InitGoodixTouch(const fdf::Namespace& incoming) {
   // The Goodix touch driver expects the interrupt line to be pulled up and the reset line to be
   // pulled down.
   // TODO(https://fxbug.dev/428033669): Move the GPIO initialization
   // logic to the touch driver.
-  if (auto result = SetPull(incoming(), "touch-interrupt", fuchsia_hardware_pin::Pull::kUp);
+  if (auto result = SetPull(incoming, "touch-interrupt", fuchsia_hardware_pin::Pull::kUp);
       result.is_error()) {
     return result;
   }
-  if (auto result = SetPull(incoming(), "touch-reset", fuchsia_hardware_pin::Pull::kDown);
+  if (auto result = SetPull(incoming, "touch-reset", fuchsia_hardware_pin::Pull::kDown);
       result.is_error()) {
     return result;
   }
@@ -236,11 +236,11 @@ zx::result<> PostInit::InitGoodixTouch() {
   return zx::ok();
 }
 
-zx::result<> PostInit::InitFocaltechTouch() {
+zx::result<> PostInit::InitFocaltechTouch(const fdf::Namespace& incoming) {
   // The Focaltech touch driver expects the interrupt line to be driven by the touch controller.
   // TODO(https://fxbug.dev/428033669): Move the GPIO initialization
   // logic to the touch driver.
-  if (auto result = SetPull(incoming(), "touch-interrupt", fuchsia_hardware_pin::Pull::kNone);
+  if (auto result = SetPull(incoming, "touch-interrupt", fuchsia_hardware_pin::Pull::kNone);
       result.is_error()) {
     return result;
   }
