@@ -551,7 +551,7 @@ impl UnprivilegedBpfDisabled {
 impl BytesFileOps for UnprivilegedBpfDisabled {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
-        if current_task.kernel().disable_unprivileged_bpf.load(Ordering::Relaxed) == 2 {
+        if current_task.kernel().disable_unprivileged_bpf.load(Ordering::Relaxed) == 1 {
             return error!(EACCES);
         }
         let setting = parse_unsigned_file::<u8>(&data)?;

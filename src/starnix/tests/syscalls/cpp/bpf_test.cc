@@ -1050,7 +1050,7 @@ TEST_F(BpfMapTest, LpmTrie) {
 
 class BpfMapCapabilityTest
     : public BpfTestBase,
-      public ::testing::WithParamInterface<std::tuple<uint32_t, bool, bool, bool>> {
+      public ::testing::WithParamInterface<std::tuple<uint32_t, bool, bool, bool, bool>> {
  protected:
   void SetUp() override {
     if (!test_helper::HasSysAdmin()) {
@@ -1058,26 +1058,29 @@ class BpfMapCapabilityTest
     }
   }
 
-  bool GetUnprivilegedBpfDisabled() {
-    fbl::unique_fd fd(open("/proc/sys/kernel/unprivileged_bpf_disabled", O_RDONLY));
-    if (!fd.is_valid()) {
-      abort();
+  void TearDown() override {
+    if (restore_unpriv_bpf_disabled) {
+      SetUnprivilegedBpfDisabled(restore_unpriv_bpf_disabled.value());
     }
-
-    char buf[16];
-    ssize_t n = read(fd.get(), buf, sizeof(buf) - 1);
-    buf[n] = '\0';
-    int val;
-    auto r = sscanf(buf, "%d", &val);
-    if (r != 1) {
-      abort();
-    }
-    return (val != 0);
   }
+
+  void GetUnprivilegedBpfDisabled(int* out_result) {
+    std::ifstream file("/proc/sys/kernel/unprivileged_bpf_disabled");
+    ASSERT_TRUE(file.is_open());
+    ASSERT_TRUE(file >> *out_result);
+  }
+
+  void SetUnprivilegedBpfDisabled(int value) {
+    std::ofstream file("/proc/sys/kernel/unprivileged_bpf_disabled");
+    ASSERT_TRUE(file.is_open());
+    ASSERT_TRUE(file << value);
+  }
+
+  std::optional<int> restore_unpriv_bpf_disabled;
 };
 
 TEST_P(BpfMapCapabilityTest, MapCreation) {
-  auto [map_type, has_bpf, has_net_admin, has_sys_admin] = GetParam();
+  auto [map_type, unpriv_bpf_disabled, has_bpf, has_net_admin, has_sys_admin] = GetParam();
 
   bool is_starnix = test_helper::IsStarnix();
   if (!is_starnix) {
@@ -1086,12 +1089,30 @@ TEST_P(BpfMapCapabilityTest, MapCreation) {
     }
   }
 
-  bool unprivileged_bpf_disabled = GetUnprivilegedBpfDisabled();
+  // `unprivileged_bpf_disabled` can be set to 0, 1, or 2. Unprivileged BPF
+  // access is disabled when the value is either 1 or 2, but 1 also prohibits
+  // changing it.
+  int current_unpriv_bpf_disabled = {};
+  ASSERT_NO_FATAL_FAILURE(GetUnprivilegedBpfDisabled(&current_unpriv_bpf_disabled));
+
+  // True if we need to update `unprivileged_bpf_disabled` for this test.
+  bool update_unpriv_bpf_disabled = unpriv_bpf_disabled != (current_unpriv_bpf_disabled != 0);
+
+  // If `unprivileged_bpf_disabled` is 1 then we cannot update it, which means
+  // we may need to skip the test.
+  if (current_unpriv_bpf_disabled == 1 && update_unpriv_bpf_disabled) {
+    GTEST_SKIP() << "/proc/sys/kernel/unprivileged_bpf_disabled is set to 1";
+  }
+
+  if (update_unpriv_bpf_disabled) {
+    ASSERT_NO_FATAL_FAILURE(SetUnprivilegedBpfDisabled(unpriv_bpf_disabled ? 2 : 0));
+    restore_unpriv_bpf_disabled = current_unpriv_bpf_disabled;
+  }
 
   // Determine expected success.
   bool cap_bpf_always = (map_type == BPF_MAP_TYPE_LPM_TRIE || map_type == BPF_MAP_TYPE_LRU_HASH ||
                          map_type == BPF_MAP_TYPE_SK_STORAGE);
-  bool requires_bpf = cap_bpf_always || unprivileged_bpf_disabled;
+  bool requires_bpf = cap_bpf_always || unpriv_bpf_disabled;
   bool has_bpf_req = !requires_bpf || has_bpf || has_sys_admin;
 
   bool requires_net_admin =
@@ -1152,7 +1173,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Combine(::testing::Values(BPF_MAP_TYPE_HASH, BPF_MAP_TYPE_RINGBUF,
                                          BPF_MAP_TYPE_SK_STORAGE, BPF_MAP_TYPE_LPM_TRIE,
                                          BPF_MAP_TYPE_LRU_HASH, BPF_MAP_TYPE_DEVMAP_HASH),
-                       ::testing::Bool(), ::testing::Bool(), ::testing::Bool()));
+                       ::testing::Bool(), ::testing::Bool(), ::testing::Bool(), ::testing::Bool()));
 
 class BpfCgroupTest : public BpfTestBase {
  protected:
