@@ -115,6 +115,12 @@ Modern Fuchsia drivers should avoid heavy synchronization like `Mutex` when poss
 
 Both approaches allow you to share a plain reference `&RefCell<State>` among all connection handlers, avoiding both `Mutex` and `Rc`!
 
+### Recommendation: Default to `fidl_next` for New Drivers
+For new drivers or new basic support, prefer using `fidl_next` for serving FIDL protocols to match modern best practices.
+- Ensure `enable_rust_next = true` is set in the corresponding `fidl(...)` target in `BUILD.gn`.
+- Depend on `//src/lib/fidl/rust_next/fidl_next` and the `_rust_next` version of the FIDL target.
+- Implement `VregLocalServerHandler` (or equivalent) instead of matching on request streams.
+
 ## 8. Hardware Register Access with `mmio::registers`
 
 When interacting with memory-mapped hardware registers:
@@ -233,3 +239,8 @@ let mmio = pdev.map_mmio_by_id(0).await?;
 When adding a child node using `Node::add_child` or directly via `add_child` FIDL method:
 - **Keep Controller Alive**: The `NodeController` client returned by `AddChild` controls the lifetime of the node. If you drop this client, the node will be removed by the Driver Framework.
 - **Store in Struct**: Always store the `NodeController` client in your driver struct if you want the node to persist beyond the `start` method.
+
+## 15. Rust Style: Associated Functions vs Top-Level Functions
+
+When authoring helper functions in your driver file:
+- If a function does not take `&self` or `&mut self` and does not need access to the struct's private fields or constructor, prefer moving it out of the `impl` block to become a top-level function in the file or module. This is considered more idiomatic Rust.
