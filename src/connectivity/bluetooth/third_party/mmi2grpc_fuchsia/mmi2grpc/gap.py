@@ -514,11 +514,11 @@ class GAPProxy(ProfileProxy):
 
         inquiry_responses = self.host.Inquiry()
         for response in inquiry_responses:
-            assert response.address == pts_addr, (response.address, pts_addr)
-            inquiry_responses.cancel()
-            return "Yes"
+            if response.address == pts_addr:
+                inquiry_responses.cancel()
+                return "Yes"
 
-        assert False
+        return "No"
 
     @assert_description
     def TSC_MMI_iut_send_att_read_by_type_request_name_request(
