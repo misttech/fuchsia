@@ -2678,7 +2678,7 @@ fn listener_updates_correctly_when_connect_request_interrupts_connection() {
         test_setup(&mut exec, RECOVERY_PROFILE_EMPTY_STRING, false, RoamingPolicy::Disabled);
 
     // Verify initial state shows connections disabled.
-    let fidl_policy::ClientStateSummary { state, networks: _, .. } = get_client_state_update(
+    let fidl_policy::ClientStateSummary { state, .. } = get_client_state_update(
         &mut exec,
         &mut test_values.internal_objects.internal_futures,
         &mut test_values.external_interfaces.listener_updates_stream,

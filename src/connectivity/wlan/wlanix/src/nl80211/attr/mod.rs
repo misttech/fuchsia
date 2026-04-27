@@ -344,7 +344,7 @@ mod tests {
             IfaceType(2),
             Mac([1, 2, 3, 4, 5, 6]),
             // WiphyBands is not parseable right now, so we skip it.
-            RegulatoryRegionAlpha2([b'A', b'B']),
+            RegulatoryRegionAlpha2(*b"AB"),
             MaxScanSsids(10),
             ScanFrequencies(vec![1, 2, 3]),
             ScanSsids(vec![]),

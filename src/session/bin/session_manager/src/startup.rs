@@ -4,13 +4,14 @@
 
 use crate::cobalt;
 use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_session as fsession;
+use fuchsia_async as fasync;
 use fuchsia_component::runtime::{Data, DataValue, Dictionary};
 use log::info;
 use thiserror::Error;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_io as fio, fidl_fuchsia_session as fsession, fuchsia_async as fasync,
-};
 
 /// Errors returned by calls startup functions.
 #[derive(Debug, Error, Clone, PartialEq)]
@@ -270,11 +271,12 @@ mod tests {
     use super::{SESSION_CHILD_COLLECTION, SESSION_NAME, set_session, stop_session};
     use anyhow::Error;
     use fidl::endpoints::create_endpoints;
+    use fidl_fuchsia_component as fcomponent;
+    use fidl_fuchsia_io as fio;
     use fidl_test_util::spawn_stream_handler;
     use session_testing::{spawn_directory_server, spawn_server};
     use std::sync::LazyLock;
     use test_util::Counter;
-    use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio};
 
     #[fuchsia::test]
     async fn set_session_calls_realm_methods_in_appropriate_order() -> Result<(), Error> {
@@ -284,7 +286,7 @@ mod tests {
         let session_url = "session";
 
         let directory_request_handler = move |directory_request| match directory_request {
-            fio::DirectoryRequest::Open { path: _, .. } => {
+            fio::DirectoryRequest::Open { .. } => {
                 assert_eq!(NUM_REALM_REQUESTS.get(), 4);
             }
             _ => panic!("Directory handler received an unexpected request"),

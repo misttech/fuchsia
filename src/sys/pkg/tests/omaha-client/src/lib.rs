@@ -1802,11 +1802,7 @@ async fn test_omaha_client_update_error() {
                 last_progress = installation_progress;
             }
 
-            State::InstallationError(InstallationErrorData {
-                update,
-                installation_progress: _,
-                ..
-            }) => {
+            State::InstallationError(InstallationErrorData { update, .. }) => {
                 assert_eq!(update, update_info());
                 assert!(!installation_error);
                 installation_error = true;

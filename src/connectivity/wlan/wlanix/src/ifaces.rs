@@ -1893,7 +1893,7 @@ mod tests {
             Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::GetCountry { phy_id, responder })) => (phy_id, responder));
         assert_eq!(phy_id, 123);
         responder
-            .send(Ok(&fidl_device_service::GetCountryResponse { alpha2: [b'A', b'B'] }))
+            .send(Ok(&fidl_device_service::GetCountryResponse { alpha2: *b"AB" }))
             .expect("Failed to respond to GetCountry");
 
         let country = assert_matches!(test_values.exec.run_until_stalled(&mut fut), Poll::Ready(Ok(info)) => info);

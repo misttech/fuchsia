@@ -719,7 +719,6 @@ mod test {
                     let fnet_dhcp::Address {
                         address: fidl_address,
                         address_parameters: fidl_address_parameters,
-                        address_state_provider: _,
                         ..
                     } = fidl_address.expect("should be present");
 

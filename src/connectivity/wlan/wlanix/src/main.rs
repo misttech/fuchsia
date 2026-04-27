@@ -1637,7 +1637,7 @@ async fn handle_supplicant_request<I: IfaceManager, P: PowerManager>(
                 }
             }
         }
-        fidl_wlanix::SupplicantRequest::RemoveInterface { payload: _, .. } => {
+        fidl_wlanix::SupplicantRequest::RemoveInterface { .. } => {
             info!("fidl_wlanix::SupplicantRequest::RemoveInterface");
             let ifaces = iface_manager.list_ifaces();
             if ifaces.is_empty() {
@@ -2276,8 +2276,8 @@ async fn handle_nl80211_message<I: IfaceManager>(
                     Ok(mut country) => {
                         // Fuchsia has used "WW" by convention, but the more broadly accepted value
                         // for worldwide is "00".  Report that instead.
-                        if country == [b'W', b'W'] {
-                            country = [b'0', b'0'];
+                        if country == *b"WW" {
+                            country = *b"00";
                             info!("Converting country code from WW to 00 for GetReg response.");
                         }
 
@@ -4323,7 +4323,7 @@ mod tests {
         assert_matches!(result, Ok(()));
 
         // Save first WEP key
-        let key1 = [b'w', b'e', b'p', b'k', b'e'];
+        let key1 = *b"wepke";
         let index1 = 0;
         let result = test_helper.supplicant_sta_network_proxy.set_wep_key(
             &fidl_wlanix::SupplicantStaNetworkSetWepKeyRequest {
@@ -4335,7 +4335,7 @@ mod tests {
         assert_matches!(result, Ok(()));
 
         // Save a second WEP key and set this as the one to use
-        let key2 = [b'o', b't', b'h', b'e', b'r'];
+        let key2 = *b"other";
         let index2 = 2;
         let result = test_helper.supplicant_sta_network_proxy.set_wep_key(
             &fidl_wlanix::SupplicantStaNetworkSetWepKeyRequest {
@@ -5844,7 +5844,7 @@ mod tests {
         let message = expect_nl80211_message(&responses[0]);
         assert_eq!(message.payload.cmd, Nl80211Cmd::GetReg);
         // The default for the test class is XX
-        assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2([b'X', b'X'])));
+        assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2(*b"XX")));
     }
 
     #[fuchsia::test]
@@ -5882,7 +5882,7 @@ mod tests {
         let message = expect_nl80211_message(&responses[0]);
         assert_eq!(message.payload.cmd, Nl80211Cmd::GetReg);
         // The country code 00 should be returned instead of WW
-        assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2([b'0', b'0'])));
+        assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2(*b"00")));
     }
 
     #[test]

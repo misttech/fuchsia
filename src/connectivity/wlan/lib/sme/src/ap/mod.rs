@@ -775,7 +775,7 @@ fn create_start_request(
         rates: op_radio_cfg.basic_rates.clone(),
         country: fidl_mlme::Country {
             // TODO(https://fxbug.dev/42104247): Get config from wlancfg
-            alpha2: [b'U', b'S'],
+            alpha2: *b"US",
             suffix: fidl_mlme::COUNTRY_ENVIRON_ALL,
         },
         rsne: rsne_bytes,
