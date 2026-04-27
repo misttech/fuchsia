@@ -330,7 +330,7 @@ impl TouchInjectorHandler {
                 }
 
                 let mut scenic_events = vec![];
-                if touch_event.injector_contacts.values().all(|vec| vec.is_empty()) {
+                if touch_event.injector_contacts.iter().all(|(_, vec)| vec.is_empty()) {
                     let mut touch_buttons_event = Self::create_touch_buttons_event(
                         touch_event,
                         event_time,
@@ -827,7 +827,6 @@ mod tests {
     use fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next;
     use fuchsia_async as fasync;
     use futures::{FutureExt, TryStreamExt};
-    use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use sorted_vec_map_rs::SortedVecSet;
     use std::convert::TryFrom as _;
@@ -1009,7 +1008,7 @@ mod tests {
 
         let descriptor = get_touch_screen_device_descriptor();
         let event_time = zx::MonotonicInstant::get();
-        let input_event = create_touch_screen_event(hashmap! {}, event_time, &descriptor);
+        let input_event = create_touch_screen_event(SortedVecMap::new(), event_time, &descriptor);
 
         let _ = fixtures.touch_handler.clone().handle_input_events(vec![input_event]).await;
 
@@ -1049,10 +1048,10 @@ mod tests {
         let event_time = zx::MonotonicInstant::get();
         let contact = create_touch_contact(TOUCH_ID, Position { x: 20.0, y: 40.0 });
         let input_event = create_touch_screen_event(
-            hashmap! {
-                fidl_ui_input::PointerEventPhase::Add
-                    => vec![contact.clone()],
-            },
+            SortedVecMap::from_iter(vec![(
+                fidl_ui_input::PointerEventPhase::Add,
+                vec![contact.clone()],
+            )]),
             event_time,
             &descriptor,
         );
@@ -1082,7 +1081,7 @@ mod tests {
 
         let descriptor = get_touch_screen_device_descriptor();
         let event_time = zx::MonotonicInstant::get();
-        let input_event = create_touch_screen_event(hashmap! {}, event_time, &descriptor);
+        let input_event = create_touch_screen_event(SortedVecMap::new(), event_time, &descriptor);
 
         let _ = fixtures.touch_handler.clone().handle_input_events(vec![input_event]).await;
 
@@ -1213,10 +1212,10 @@ mod tests {
         let contact = create_touch_contact(TOUCH_ID, Position { x: 20.0, y: 40.0 });
         let descriptor = get_touch_screen_device_descriptor();
         let input_event = input_device::UnhandledInputEvent::try_from(create_touch_screen_event(
-            hashmap! {
-                fidl_ui_input::PointerEventPhase::Add
-                    => vec![contact.clone()],
-            },
+            SortedVecMap::from_iter(vec![(
+                fidl_ui_input::PointerEventPhase::Add,
+                vec![contact.clone()],
+            )]),
             event_time,
             &descriptor,
         ))
@@ -1280,10 +1279,10 @@ mod tests {
         let contact = create_touch_contact(TOUCH_ID, Position { x: 20.0, y: 40.0 });
         let descriptor = get_touch_screen_device_descriptor();
         let input_event = input_device::UnhandledInputEvent::try_from(create_touch_screen_event(
-            hashmap! {
-                fidl_ui_input::PointerEventPhase::Add
-                    => vec![contact.clone()],
-            },
+            SortedVecMap::from_iter(vec![(
+                fidl_ui_input::PointerEventPhase::Add,
+                vec![contact.clone()],
+            )]),
             event_time,
             &descriptor,
         ))
@@ -1417,18 +1416,18 @@ mod tests {
 
         let input_events = vec![
             create_touch_screen_event(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Add
-                        => vec![contact.clone()],
-                },
+                SortedVecMap::from_iter(vec![(
+                    fidl_ui_input::PointerEventPhase::Add,
+                    vec![contact.clone()],
+                )]),
                 event_time1,
                 &descriptor,
             ),
             create_touch_screen_event(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Move
-                        => vec![contact.clone()],
-                },
+                SortedVecMap::from_iter(vec![(
+                    fidl_ui_input::PointerEventPhase::Move,
+                    vec![contact.clone()],
+                )]),
                 event_time2,
                 &descriptor,
             ),
@@ -1436,19 +1435,19 @@ mod tests {
             create_fake_input_event(event_time2),
             // Should not count received event that has already been handled.
             create_touch_screen_event_with_handled(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Move
-                        => vec![contact.clone()],
-                },
+                SortedVecMap::from_iter(vec![(
+                    fidl_ui_input::PointerEventPhase::Move,
+                    vec![contact.clone()],
+                )]),
                 event_time2,
                 &descriptor,
                 input_device::Handled::Yes,
             ),
             create_touch_screen_event(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Remove
-                        => vec![contact.clone()],
-                },
+                SortedVecMap::from_iter(vec![(
+                    fidl_ui_input::PointerEventPhase::Remove,
+                    vec![contact.clone()],
+                )]),
                 event_time3,
                 &descriptor,
             ),
@@ -1577,10 +1576,10 @@ mod tests {
         let contact1 = create_touch_contact(TOUCH_ID, Position { x: 20.0, y: 40.0 });
         let descriptor = get_touch_screen_device_descriptor();
         let input_event1 = input_device::UnhandledInputEvent::try_from(create_touch_screen_event(
-            hashmap! {
-                fidl_ui_input::PointerEventPhase::Add
-                    => vec![contact1.clone()],
-            },
+            SortedVecMap::from_iter(vec![(
+                fidl_ui_input::PointerEventPhase::Add,
+                vec![contact1.clone()],
+            )]),
             event_time1,
             &descriptor,
         ))
@@ -1589,10 +1588,10 @@ mod tests {
         let event_time2 = event_time1 + zx::MonotonicDuration::from_millis(10);
         let contact2 = create_touch_contact(TOUCH_ID, Position { x: 25.0, y: 45.0 });
         let input_event2 = input_device::UnhandledInputEvent::try_from(create_touch_screen_event(
-            hashmap! {
-                fidl_ui_input::PointerEventPhase::Move
-                    => vec![contact2.clone()],
-            },
+            SortedVecMap::from_iter(vec![(
+                fidl_ui_input::PointerEventPhase::Move,
+                vec![contact2.clone()],
+            )]),
             event_time2,
             &descriptor,
         ))

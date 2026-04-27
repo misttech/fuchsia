@@ -17,10 +17,9 @@ use fidl::HandleBased;
 use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_fuchsia_ui_input as fidl_ui_input;
 use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;
-use maplit::hashmap;
+
 use metrics_registry::*;
-use sorted_vec_map_rs::SortedVecSet;
-use std::collections::HashMap;
+use sorted_vec_map_rs::{SortedVecMap, SortedVecSet};
 
 /// A [`TouchScreenEvent`] represents a set of contacts and the phase those contacts are in.
 ///
@@ -44,13 +43,13 @@ pub struct TouchScreenEvent {
     /// in one touch event with two [`TouchContact`]s.
     ///
     /// Contacts are grouped based on their current phase (e.g., down, move).
-    pub contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<TouchContact>>,
+    pub contacts: SortedVecMap<fidl_ui_input::PointerEventPhase, Vec<TouchContact>>,
 
     /// The contacts associated with the touch event. For example, a two-finger touch would result
     /// in one touch event with two [`TouchContact`]s.
     ///
     /// Contacts are grouped based on their current phase (e.g., add, change).
-    pub injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
+    pub injector_contacts: SortedVecMap<pointerinjector::EventPhase, Vec<TouchContact>>,
 
     /// Indicates whether any touch buttons are pressed.
     pub pressed_buttons: Vec<fidl_next_fuchsia_input_report::TouchButton>,
@@ -742,7 +741,7 @@ fn process_single_touch_screen_report(
     };
 
     let (previous_contacts, previous_buttons): (
-        HashMap<u32, TouchContact>,
+        SortedVecMap<u32, TouchContact>,
         Vec<fidl_next_fuchsia_input_report::TouchButton>,
     ) = previous_report
         .as_ref()
@@ -750,7 +749,7 @@ fn process_single_touch_screen_report(
         .map(touch_contacts_and_buttons_from_touch_report)
         .unwrap_or_default();
     let (current_contacts, current_buttons): (
-        HashMap<u32, TouchContact>,
+        SortedVecMap<u32, TouchContact>,
         Vec<fidl_next_fuchsia_input_report::TouchButton>,
     ) = touch_contacts_and_buttons_from_touch_report(touch_report);
 
@@ -779,20 +778,20 @@ fn process_single_touch_screen_report(
     // Contacts which exist only in current.
     let added_contacts: Vec<TouchContact> = Vec::from_iter(
         current_contacts
-            .values()
-            .cloned()
+            .iter()
+            .map(|(_, v)| v.clone())
             .filter(|contact| !previous_contacts.contains_key(&contact.id)),
     );
     // Contacts which exist in both previous and current.
     let moved_contacts: Vec<TouchContact> = Vec::from_iter(
         current_contacts
-            .values()
-            .cloned()
+            .iter()
+            .map(|(_, v)| v.clone())
             .filter(|contact| previous_contacts.contains_key(&contact.id)),
     );
     // Contacts which exist only in previous.
     let removed_contacts: Vec<TouchContact> =
-        Vec::from_iter(previous_contacts.values().cloned().filter(|contact| {
+        Vec::from_iter(previous_contacts.iter().map(|(_, v)| v.clone()).filter(|contact| {
             current_buttons.is_empty()
                 && previous_buttons.is_empty()
                 && !current_contacts.contains_key(&contact.id)
@@ -800,18 +799,18 @@ fn process_single_touch_screen_report(
 
     let trace_id = fuchsia_trace::Id::random();
     let event = create_touch_screen_event(
-        hashmap! {
-            fidl_ui_input::PointerEventPhase::Add => added_contacts.clone(),
-            fidl_ui_input::PointerEventPhase::Down => added_contacts.clone(),
-            fidl_ui_input::PointerEventPhase::Move => moved_contacts.clone(),
-            fidl_ui_input::PointerEventPhase::Up => removed_contacts.clone(),
-            fidl_ui_input::PointerEventPhase::Remove => removed_contacts.clone(),
-        },
-        hashmap! {
-            pointerinjector::EventPhase::Add => added_contacts,
-            pointerinjector::EventPhase::Change => moved_contacts,
-            pointerinjector::EventPhase::Remove => removed_contacts,
-        },
+        SortedVecMap::from_iter(vec![
+            (fidl_ui_input::PointerEventPhase::Add, added_contacts.clone()),
+            (fidl_ui_input::PointerEventPhase::Down, added_contacts.clone()),
+            (fidl_ui_input::PointerEventPhase::Move, moved_contacts.clone()),
+            (fidl_ui_input::PointerEventPhase::Up, removed_contacts.clone()),
+            (fidl_ui_input::PointerEventPhase::Remove, removed_contacts.clone()),
+        ]),
+        SortedVecMap::from_iter(vec![
+            (pointerinjector::EventPhase::Add, added_contacts),
+            (pointerinjector::EventPhase::Change, moved_contacts),
+            (pointerinjector::EventPhase::Remove, removed_contacts),
+        ]),
         current_buttons,
         device_descriptor,
         trace_id,
@@ -912,7 +911,7 @@ fn process_single_touchpad_report(
 
 fn touch_contacts_and_buttons_from_touch_report(
     touch_report: &fidl_next_fuchsia_input_report::TouchInputReport,
-) -> (HashMap<u32, TouchContact>, Vec<fidl_next_fuchsia_input_report::TouchButton>) {
+) -> (SortedVecMap<u32, TouchContact>, Vec<fidl_next_fuchsia_input_report::TouchButton>) {
     // First unwrap all the optionals in the input report to get to the contacts.
     let contacts: Vec<TouchContact> = touch_report
         .contacts
@@ -924,7 +923,7 @@ fn touch_contacts_and_buttons_from_touch_report(
         .unwrap_or_default();
 
     (
-        contacts.into_iter().map(|contact| (contact.id, contact)).collect(),
+        SortedVecMap::from_iter(contacts.into_iter().map(|contact| (contact.id, contact))),
         touch_report.pressed_buttons.clone().unwrap_or_default(),
     )
 }
@@ -939,8 +938,8 @@ fn touch_contacts_and_buttons_from_touch_report(
 /// - `trace_id`: The trace id to distinguish the event.
 /// - `wake_lease`: The wake lease to send with the event.
 fn create_touch_screen_event(
-    contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<TouchContact>>,
-    injector_contacts: HashMap<pointerinjector::EventPhase, Vec<TouchContact>>,
+    contacts: SortedVecMap<fidl_ui_input::PointerEventPhase, Vec<TouchContact>>,
+    injector_contacts: SortedVecMap<pointerinjector::EventPhase, Vec<TouchContact>>,
     pressed_buttons: Vec<fidl_next_fuchsia_input_report::TouchButton>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     trace_id: fuchsia_trace::Id,
@@ -1125,12 +1124,16 @@ mod tests {
         )];
 
         let expected_events = vec![create_touch_screen_event(
-            hashmap! {
-                fidl_ui_input::PointerEventPhase::Add
-                    => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                fidl_ui_input::PointerEventPhase::Down
-                    => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-            },
+            SortedVecMap::from_iter(vec![
+                (
+                    fidl_ui_input::PointerEventPhase::Add,
+                    vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                ),
+                (
+                    fidl_ui_input::PointerEventPhase::Down,
+                    vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                ),
+            ]),
             event_time_u64,
             &descriptor,
         )];
@@ -1175,22 +1178,30 @@ mod tests {
 
         let expected_events = vec![
             create_touch_screen_event(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Add
-                        => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                    fidl_ui_input::PointerEventPhase::Down
-                        => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                },
+                SortedVecMap::from_iter(vec![
+                    (
+                        fidl_ui_input::PointerEventPhase::Add,
+                        vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                    ),
+                    (
+                        fidl_ui_input::PointerEventPhase::Down,
+                        vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                    ),
+                ]),
                 event_time_u64,
                 &descriptor,
             ),
             create_touch_screen_event(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Up
-                        => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                    fidl_ui_input::PointerEventPhase::Remove
-                        => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                },
+                SortedVecMap::from_iter(vec![
+                    (
+                        fidl_ui_input::PointerEventPhase::Up,
+                        vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                    ),
+                    (
+                        fidl_ui_input::PointerEventPhase::Remove,
+                        vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                    ),
+                ]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1252,20 +1263,24 @@ mod tests {
 
         let expected_events = vec![
             create_touch_screen_event(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Add
-                        => vec![create_touch_contact(TOUCH_ID, first)],
-                    fidl_ui_input::PointerEventPhase::Down
-                        => vec![create_touch_contact(TOUCH_ID, first)],
-                },
+                SortedVecMap::from_iter(vec![
+                    (
+                        fidl_ui_input::PointerEventPhase::Add,
+                        vec![create_touch_contact(TOUCH_ID, first)],
+                    ),
+                    (
+                        fidl_ui_input::PointerEventPhase::Down,
+                        vec![create_touch_contact(TOUCH_ID, first)],
+                    ),
+                ]),
                 event_time_u64,
                 &descriptor,
             ),
             create_touch_screen_event(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Move
-                        => vec![create_touch_contact(TOUCH_ID, second)],
-                },
+                SortedVecMap::from_iter(vec![(
+                    fidl_ui_input::PointerEventPhase::Move,
+                    vec![create_touch_contact(TOUCH_ID, second)],
+                )]),
                 event_time_u64,
                 &descriptor,
             ),
@@ -1704,7 +1719,7 @@ mod tests {
         )];
 
         let expected_events = vec![create_touch_screen_event_with_buttons(
-            hashmap! {},
+            SortedVecMap::new(),
             vec![fidl_fuchsia_input_report::TouchButton::Palm],
             event_time_u64,
             &descriptor,
@@ -1753,12 +1768,16 @@ mod tests {
         )];
 
         let expected_events = vec![create_touch_screen_event_with_buttons(
-            hashmap! {
-                fidl_ui_input::PointerEventPhase::Add
-                    => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                fidl_ui_input::PointerEventPhase::Down
-                    => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-            },
+            SortedVecMap::from_iter(vec![
+                (
+                    fidl_ui_input::PointerEventPhase::Add,
+                    vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                ),
+                (
+                    fidl_ui_input::PointerEventPhase::Down,
+                    vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                ),
+            ]),
             vec![fidl_fuchsia_input_report::TouchButton::Palm],
             event_time_u64,
             &descriptor,
@@ -1810,12 +1829,16 @@ mod tests {
         )];
 
         let expected_events = vec![create_touch_screen_event_with_buttons(
-            hashmap! {
-                fidl_ui_input::PointerEventPhase::Add
-                    => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                fidl_ui_input::PointerEventPhase::Down
-                    => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-            },
+            SortedVecMap::from_iter(vec![
+                (
+                    fidl_ui_input::PointerEventPhase::Add,
+                    vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                ),
+                (
+                    fidl_ui_input::PointerEventPhase::Down,
+                    vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                ),
+            ]),
             vec![
                 fidl_fuchsia_input_report::TouchButton::Palm,
                 fidl_fuchsia_input_report::TouchButton::__SourceBreaking { unknown_ordinal: 2 },
@@ -1899,24 +1922,28 @@ mod tests {
 
         let expected_events = vec![
             create_touch_screen_event_with_buttons(
-                hashmap! {
-                    fidl_ui_input::PointerEventPhase::Add
-                        => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                    fidl_ui_input::PointerEventPhase::Down
-                        => vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
-                },
+                SortedVecMap::from_iter(vec![
+                    (
+                        fidl_ui_input::PointerEventPhase::Add,
+                        vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                    ),
+                    (
+                        fidl_ui_input::PointerEventPhase::Down,
+                        vec![create_touch_contact(TOUCH_ID, Position { x: 0.0, y: 0.0 })],
+                    ),
+                ]),
                 vec![],
                 event_time_u64,
                 &descriptor,
             ),
             create_touch_screen_event_with_buttons(
-                hashmap! {},
+                SortedVecMap::new(),
                 vec![fidl_fuchsia_input_report::TouchButton::Palm],
                 event_time_u64,
                 &descriptor,
             ),
             create_touch_screen_event_with_buttons(
-                hashmap! {},
+                SortedVecMap::new(),
                 vec![],
                 event_time_u64,
                 &descriptor,

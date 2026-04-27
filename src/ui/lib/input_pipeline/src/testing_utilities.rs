@@ -18,9 +18,7 @@ use fidl_fuchsia_ui_pointerinjector as pointerinjector;
 use fidl_next_fuchsia_ui_pointerinjector as pointerinjector_next;
 use futures::{FutureExt as _, TryFutureExt, TryStreamExt};
 use log::error;
-use maplit::hashmap;
-use sorted_vec_map_rs::SortedVecSet;
-use std::collections::HashMap;
+use sorted_vec_map_rs::{SortedVecMap, SortedVecSet};
 use zx;
 
 pub use diagnostics_assertions;
@@ -646,25 +644,37 @@ pub fn get_touch_screen_device_descriptor() -> input_device::InputDeviceDescript
 /// - `device_descriptor`: The device descriptor to add to the event.
 /// - `handled`: Whether the event has been consumed.
 pub fn create_touch_screen_event_with_handled(
-    mut contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<touch_binding::TouchContact>>,
+    mut contacts: SortedVecMap<fidl_ui_input::PointerEventPhase, Vec<touch_binding::TouchContact>>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,
     handled: input_device::Handled,
 ) -> input_device::InputEvent {
-    contacts.entry(fidl_ui_input::PointerEventPhase::Add).or_insert(vec![]);
-    contacts.entry(fidl_ui_input::PointerEventPhase::Down).or_insert(vec![]);
-    contacts.entry(fidl_ui_input::PointerEventPhase::Move).or_insert(vec![]);
-    contacts.entry(fidl_ui_input::PointerEventPhase::Up).or_insert(vec![]);
-    contacts.entry(fidl_ui_input::PointerEventPhase::Remove).or_insert(vec![]);
+    for phase in &[
+        fidl_ui_input::PointerEventPhase::Add,
+        fidl_ui_input::PointerEventPhase::Down,
+        fidl_ui_input::PointerEventPhase::Move,
+        fidl_ui_input::PointerEventPhase::Up,
+        fidl_ui_input::PointerEventPhase::Remove,
+    ] {
+        if !contacts.contains_key(phase) {
+            contacts.insert(*phase, vec![]);
+        }
+    }
 
-    let injector_contacts = hashmap! {
-        pointerinjector_next::EventPhase::Add =>
-        contacts.get(&fidl_ui_input::PointerEventPhase::Add).unwrap().clone(),
-        pointerinjector_next::EventPhase::Change =>
-        contacts.get(&fidl_ui_input::PointerEventPhase::Move).unwrap().clone(),
-        pointerinjector_next::EventPhase::Remove =>
-        contacts.get(&fidl_ui_input::PointerEventPhase::Remove).unwrap().clone(),
-    };
+    let injector_contacts = SortedVecMap::from_iter(vec![
+        (
+            pointerinjector_next::EventPhase::Add,
+            contacts.get(&fidl_ui_input::PointerEventPhase::Add).unwrap().clone(),
+        ),
+        (
+            pointerinjector_next::EventPhase::Change,
+            contacts.get(&fidl_ui_input::PointerEventPhase::Move).unwrap().clone(),
+        ),
+        (
+            pointerinjector_next::EventPhase::Remove,
+            contacts.get(&fidl_ui_input::PointerEventPhase::Remove).unwrap().clone(),
+        ),
+    ]);
     input_device::InputEvent {
         device_event: input_device::InputDeviceEvent::TouchScreen(
             touch_binding::TouchScreenEvent {
@@ -688,7 +698,7 @@ pub fn create_touch_screen_event_with_handled(
 /// - `event_time`: The time of event.
 /// - `device_descriptor`: The device descriptor to add to the event.
 pub fn create_touch_screen_event(
-    contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<touch_binding::TouchContact>>,
+    contacts: SortedVecMap<fidl_ui_input::PointerEventPhase, Vec<touch_binding::TouchContact>>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,
 ) -> input_device::InputEvent {
@@ -701,7 +711,7 @@ pub fn create_touch_screen_event(
 }
 
 pub fn create_touch_screen_event_with_buttons(
-    contacts: HashMap<fidl_ui_input::PointerEventPhase, Vec<touch_binding::TouchContact>>,
+    contacts: SortedVecMap<fidl_ui_input::PointerEventPhase, Vec<touch_binding::TouchContact>>,
     pressed_buttons: Vec<fidl_input_report::TouchButton>,
     event_time: zx::MonotonicInstant,
     device_descriptor: &input_device::InputDeviceDescriptor,

@@ -13,7 +13,7 @@ use std::{cmp, iter, slice};
 ///
 /// This map is optimized for reducing the memory usage of data that rarely or never changes.
 /// Insertions and removals take linear time while lookups take logarithmic time.
-#[derive(Eq, PartialEq, PartialOrd, Ord, Hash, Clone, Default)]
+#[derive(Eq, PartialEq, PartialOrd, Ord, Hash, Clone)]
 pub struct SortedVecMap<K, V> {
     vec: Vec<(K, V)>,
 }
@@ -229,6 +229,15 @@ impl<K, V> SortedVecMap<K, V> {
         Q: Ord + ?Sized,
     {
         self.vec.binary_search_by(|probe| probe.0.borrow().cmp(key))
+    }
+}
+
+impl<K, V> Default for SortedVecMap<K, V>
+where
+    K: Ord,
+{
+    fn default() -> SortedVecMap<K, V> {
+        SortedVecMap::new()
     }
 }
 

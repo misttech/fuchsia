@@ -382,8 +382,7 @@ mod tests {
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_input_report::InputDeviceMarker;
     use fuchsia_async as fasync;
-    use maplit::hashmap;
-    use sorted_vec_map_rs::SortedVecSet;
+    use sorted_vec_map_rs::{SortedVecMap, SortedVecSet};
     use test_case::test_case;
 
     fn fixed_now() -> zx::MonotonicInstant {
@@ -511,12 +510,16 @@ mod tests {
                 &mouse_descriptor,
             ),
             create_touch_screen_event(
-                hashmap! {
-                    fidl_fuchsia_ui_input::PointerEventPhase::Add
-                        => vec![create_touch_contact(1u32, Position { x: 10.0, y: 30.0 })],
-                    fidl_fuchsia_ui_input::PointerEventPhase::Move
-                        => vec![create_touch_contact(1u32, Position { x: 11.0, y: 31.0 })],
-                },
+                SortedVecMap::from_iter(vec![
+                    (
+                        fidl_fuchsia_ui_input::PointerEventPhase::Add,
+                        vec![create_touch_contact(1u32, Position { x: 10.0, y: 30.0 })],
+                    ),
+                    (
+                        fidl_fuchsia_ui_input::PointerEventPhase::Move,
+                        vec![create_touch_contact(1u32, Position { x: 11.0, y: 31.0 })],
+                    ),
+                ]),
                 zx::MonotonicInstant::get(),
                 &touch_screen_descriptor,
             ),
