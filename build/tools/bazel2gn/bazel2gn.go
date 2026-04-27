@@ -412,8 +412,10 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		transformers = append(transformers, bazelDepToGN)
 	case "configs":
 		transformers = append(transformers, bazelCOptToGNConfig)
-	case "api", "outputs", "sources":
+	case "api", "outputs", "sources", "inputs":
 		transformers = append(transformers, bazelFilePathsToGN)
+	case "ldflags":
+		transformers = append(transformers, bazelLdflagsToGN)
 	}
 
 	rhsY := unwrapParenExpr(expr.Y)

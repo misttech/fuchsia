@@ -72,6 +72,9 @@ def _idk_cc_prebuilt_library_impl(
         visibility,
         friend,  # buildifier: disable=unused-variable - For GN conversion only.
         public_configs,  # buildifier: disable=unused-variable - For GN conversion only.
+        ldflags = [],  # buildifier: disable=unused-variable - For GN conversion only.
+        inputs = [],  # buildifier: disable=unused-variable - For GN conversion only.
+        version_script = "",
         **kwargs):
     """Implementation for the _idk_cc_prebuilt_library() macro."""
 
@@ -234,13 +237,18 @@ def _idk_cc_prebuilt_library_impl(
 
         shared_lib_name = "lib%s.so" % output_name
 
+        user_link_flags = ['-Wl,-soname=\"%s\"' % shared_lib_name]
+        additional_linker_inputs = []
+        if version_script:
+            user_link_flags.append("-Wl,--version-script=$(location %s)" % version_script)
+            additional_linker_inputs.append(version_script)
+
         cc_shared_library(
             name = exported_target_name,
             shared_lib_name = "lib%s.so" % output_name,
             deps = [":%s" % cc_library_name],
-            # TODO(https://fxbug.dev/421888626): Remove once this flag is being
-            # automatically applied to all shared libraries as in GN.
-            user_link_flags = ['-Wl,-soname=\"%s\"' % shared_lib_name],
+            user_link_flags = user_link_flags,
+            additional_linker_inputs = additional_linker_inputs,
             testonly = testonly,
             # Only the IDK atom target should depend on this target.
             visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
@@ -601,6 +609,20 @@ not have a stable ABI. Can be either "none" or "static".""",
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
+        "version_script": attr.string(
+            doc = "The version script for the shared library.",
+            default = "",
+            configurable = False,
+        ),
+        "ldflags": attr.string_list(
+            doc = "Unused in Bazel, for GN conversion only.",
+            default = [],
+        ),
+        "inputs": attr.string_list(
+            doc = "Unused in Bazel, for GN conversion only.",
+            default = [],
+        ),
+
         # Require use of `runtime_deps` for atoms that are runtime dependencies. Do not inherit.
         "data": None,
         # Do not inherit as this attribute is specified to `cc_library()` in the implementation.

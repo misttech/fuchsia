@@ -131,9 +131,10 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// TODO(https://fxbug.dev/457605523): Support `includes` conversion to `configs` in GN.
 	// Currently the only use case is to set `includes = ["../.."]`, which is covered by
 	// `"//build/config:default_include_dirs"` in GN.
-	"cc_library":            {"includes": true},
-	"fx_cc_library":         {"includes": true},
-	"idk_cc_source_library": {"includes": true},
+	"cc_library":               {"includes": true},
+	"fx_cc_library":            {"includes": true},
+	"idk_cc_source_library":    {"includes": true},
+	"idk_cc_shared_library_zx": {"version_script": true},
 }
 
 // Common Bazel attributes that use different names in GN.

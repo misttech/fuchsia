@@ -140,3 +140,15 @@ func bazelFilePathsToGN(expr syntax.Expr) (syntax.Expr, error) {
 	lit.Raw = strings.Replace(lit.Raw, ":", "/", 1)
 	return lit, nil
 }
+
+// bazelLdflagsToGN converts Bazel ldflags to GN, supporting overwrites.
+func bazelLdflagsToGN(expr syntax.Expr) (syntax.Expr, error) {
+	lit, ok := expr.(*syntax.Literal)
+	if !ok {
+		return expr, nil
+	}
+	if flag, ok := overwrittenPath(lit); ok {
+		lit.Raw = fmt.Sprintf(`"%s"`, flag)
+	}
+	return lit, nil
+}

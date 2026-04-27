@@ -253,3 +253,39 @@ func TestPathsConversion(t *testing.T) {
 		})
 	}
 }
+
+func TestLdflagsConversion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "overwritten ldflags",
+			bazel: `cc_library(
+	name = "test",
+	ldflags = [
+		"-Wl,--something", # @bazel2gn:path_overwrite:-Wl,--something_overwritten
+		"-Wl,--another",
+	],
+)`,
+			wantGN: `source_set("test") {
+	ldflags = [
+		"-Wl,--something_overwritten",
+		"-Wl,--another",
+	]
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}
