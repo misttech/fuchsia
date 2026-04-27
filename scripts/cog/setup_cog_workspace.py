@@ -27,13 +27,6 @@ def _parse_args() -> argparse.Namespace:
         action="store_false",
         help="Disable snapshotting and initialize this workspace from scratch.",
     )
-    parser.add_argument(
-        "-l",
-        "--local-mock-cartfs",
-        dest="use_local_mock_cartfs",
-        action="store_true",
-        help="Use a local mock cartfs directory located at ~/.mock_cartfs.",
-    )
     logger.add_args(parser, default_log_level=logging.INFO)
     return parser.parse_args()
 
@@ -52,18 +45,13 @@ def main() -> int:
     )
 
     try:
-        if preflight.check_all(
-            skip_cartfs_checks=args.use_local_mock_cartfs,
-            require_grpc_cli=args.snapshot,
-        ):
+        if preflight.check_all(require_grpc_cli=args.snapshot):
             logger.log_info("All preflight checks passed!")
         else:
             return 1
 
         logger.emit_status("Creating workspace instance...")
-        ws = workspace.Workspace(
-            use_local_mock_cartfs=args.use_local_mock_cartfs
-        )
+        ws = workspace.Workspace()
 
         logger.log_debug(f"Found repository: {ws.repo_dir}")
         logger.log_debug(

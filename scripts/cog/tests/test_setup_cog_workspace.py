@@ -23,7 +23,6 @@ class TestSetupCogWorkspace(unittest.TestCase):
             return_value=MagicMock(
                 log_level=logging.INFO,
                 snapshot=False,
-                use_local_mock_cartfs=False,
                 enable_status_updates=False,
                 color=True,
             ),
@@ -49,7 +48,6 @@ class TestSetupCogWorkspace(unittest.TestCase):
             return_value=MagicMock(
                 log_level=logging.INFO,
                 snapshot=False,
-                use_local_mock_cartfs=False,
                 enable_status_updates=False,
                 color=True,
             ),
@@ -69,7 +67,6 @@ class TestSetupCogWorkspace(unittest.TestCase):
             return_value=MagicMock(
                 log_level=logging.INFO,
                 snapshot=False,
-                use_local_mock_cartfs=False,
                 enable_status_updates=False,
                 color=True,
             ),

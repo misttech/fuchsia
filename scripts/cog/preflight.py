@@ -74,7 +74,7 @@ def check_cartfs(require_grpc_cli: bool = True) -> bool:
         return False
 
     try:
-        cartfs.Cartfs.find_mount_point(False)
+        cartfs.Cartfs.find_mount_point()
     except cartfs.CartfsNotRunningError:
         logger.log_warn("Unable to find the mount point for cartfs.")
         logger.log_error(
@@ -93,35 +93,20 @@ def check_cartfs(require_grpc_cli: bool = True) -> bool:
     return True
 
 
-def _check_all(
-    skip_gcert_checks: bool,
-    skip_git_citc_cogd_checks: bool,
-    skip_cartfs_checks: bool,
-    require_grpc_cli: bool,
-) -> bool:
+def _check_all(require_grpc_cli: bool) -> bool:
     # Skip Cog and CartFS checks if gcert is not available, since those checks would otherwise
     # surface irrelevant errors.
-    if not skip_gcert_checks and not check_gcert_status():
+    if not check_gcert_status():
         return False
 
-    cog_ok = skip_git_citc_cogd_checks or check_git_citc_cogd()
-    cartfs_ok = skip_cartfs_checks or check_cartfs(require_grpc_cli)
+    cog_ok = check_git_citc_cogd()
+    cartfs_ok = check_cartfs(require_grpc_cli)
     return cog_ok and cartfs_ok
 
 
-def check_all(
-    skip_gcert_checks: bool = False,
-    skip_git_citc_cogd_checks: bool = False,
-    skip_cartfs_checks: bool = False,
-    require_grpc_cli: bool = True,
-) -> bool:
+def check_all(require_grpc_cli: bool = True) -> bool:
     """Runs all available preflight checks."""
-    result = _check_all(
-        skip_gcert_checks,
-        skip_git_citc_cogd_checks,
-        skip_cartfs_checks,
-        require_grpc_cli,
-    )
+    result = _check_all(require_grpc_cli)
     if not result:
         logger.log_error(
             "Refer to http://go/fuchsia-cog-user-guide for additional "

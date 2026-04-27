@@ -113,7 +113,7 @@ class TestCartfs(unittest.TestCase):
             with patch.object(
                 cartfs.Cartfs, "find_mount_point", return_value=fs.cartfs_dir
             ):
-                c = cartfs.Cartfs(use_local_mock_cartfs=False)
+                c = cartfs.Cartfs()
                 (fs.cartfs_dir / "test-ws").mkdir()
                 suggested_name = c.suggest_cartfs_dir_name(base_name="test-ws")
                 self.assertEqual(str(suggested_name), "test-ws-1")
@@ -339,34 +339,6 @@ class TestWorkspace(unittest.TestCase):
         self.assertTrue(expected_dir.is_dir())
         symlink_path = self.fs.repo_dir / workspace.CARTFS_SYMLINK_NAME
         self.assertTrue(symlink_path.is_symlink())
-
-    def test_init_cartfs_workspace_local_mock_cartfs(self) -> None:
-        """Test that snapshotting is skipped when using local mock cartfs."""
-        cartfs_instance = MagicMock()
-        cartfs_instance.mount_point = self.fs.cartfs_dir
-        cartfs_instance.use_local_mock_cartfs = True
-        suggested_directory_name = "new_cartfs_dir"
-        cartfs_instance.suggest_cartfs_dir_name.return_value = (
-            suggested_directory_name
-        )
-        ws = workspace.Workspace(self.fs.repo_dir)
-        ws.cartfs_instance = cartfs_instance
-
-        with patch.object(
-            workspace.Workspace, "lock_file", new_callable=PropertyMock
-        ) as mock_lock_file, patch.object(
-            ws, "_init_cartfs_workspace_snapshot"
-        ) as mock_snapshot:
-            mock_lock_file.return_value = self.fs.cog_dir / "test.lock"
-            with ws.lock():
-                ws.init_cartfs_workspace(snapshot=True)
-
-            mock_snapshot.assert_not_called()
-
-        expected_dir = (
-            Path(cartfs_instance.mount_point) / suggested_directory_name
-        )
-        self.assertTrue(expected_dir.is_dir())
 
     def test_link_to_cartfs(self) -> None:
         """Test that the workspace can be linked to a cartfs directory."""

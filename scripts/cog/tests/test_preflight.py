@@ -164,14 +164,6 @@ class TestPreflight(unittest.TestCase):
 
     @patch.object(preflight, "check_gcert_status", return_value=True)
     @patch.object(preflight, "check_git_citc_cogd", return_value=True)
-    def test_check_all_skip_cartfs(
-        self, mock_git: MagicMock, mock_gcert: MagicMock
-    ) -> None:
-        """Test that check_all skips cartfs when requested."""
-        self.assertTrue(preflight.check_all(skip_cartfs_checks=True))
-
-    @patch.object(preflight, "check_gcert_status", return_value=True)
-    @patch.object(preflight, "check_git_citc_cogd", return_value=True)
     @patch.object(preflight, "check_cartfs")
     def test_check_all_require_grpc_cli_false(
         self,

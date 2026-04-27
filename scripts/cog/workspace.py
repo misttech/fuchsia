@@ -155,11 +155,10 @@ class Workspace:
     def __init__(
         self,
         repo_dir: Path | None = None,
-        use_local_mock_cartfs: bool = False,
     ) -> None:
         """Initializes a Workspace instance."""
         self.repo_dir = repo_dir or Workspace.cogd_path()
-        self.cartfs_instance = cartfs.Cartfs(use_local_mock_cartfs)
+        self.cartfs_instance = cartfs.Cartfs()
         self.cartfs_mount_point = self.cartfs_instance.mount_point
         self._lock_file_handle: TextIO | None = None
         self._lock_count = 0
@@ -331,14 +330,8 @@ class Workspace:
 
         Args:
             snapshot: Whether to snapshot the cartfs workspace from a previous instance.
-                Only applicable when not using a local mock cartfs.
         """
         self._assert_locked()
-        if snapshot and self.cartfs_instance.use_local_mock_cartfs:
-            logger.log_warn(
-                "Snapshotting isn't supported when using a local mock cartfs."
-            )
-            snapshot = False
 
         if snapshot:
             logger.emit_status("Attempting to snapshot CartFS workspace...")

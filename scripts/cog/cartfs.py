@@ -33,13 +33,8 @@ class Cartfs:
 
     @staticmethod
     @cache
-    def find_mount_point(use_local_mock_cartfs: bool) -> Path:
+    def find_mount_point() -> Path:
         """Finds the mount point for cartfs."""
-        if use_local_mock_cartfs:
-            local_mock_cartfs_mount_point = Path.home() / ".mock_cartfs"
-            local_mock_cartfs_mount_point.mkdir(parents=True, exist_ok=True)
-            return local_mock_cartfs_mount_point
-
         try:
             output = subprocess.check_output(
                 [
@@ -66,12 +61,9 @@ class Cartfs:
                 "Unable to find the mount point for cartfs. Is it running?"
             ) from e
 
-    def __init__(self, use_local_mock_cartfs: bool) -> None:
+    def __init__(self) -> None:
         """Initializes a Cartfs instance."""
-        self.mount_point = self.__class__.find_mount_point(
-            use_local_mock_cartfs
-        )
-        self.use_local_mock_cartfs = use_local_mock_cartfs
+        self.mount_point = self.__class__.find_mount_point()
 
     def suggest_cartfs_dir_name(self, base_name: str) -> Path:
         """Suggests a directory name within the cartfs mount point.
