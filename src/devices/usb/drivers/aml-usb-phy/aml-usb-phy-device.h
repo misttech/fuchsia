@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
@@ -17,7 +17,7 @@ namespace aml_usb_phy {
 
 class AmlUsbPhy;
 
-class AmlUsbPhyDevice : public fdf::DriverBase {
+class AmlUsbPhyDevice : public fdf::DriverBase2 {
  public:
   class ChildNode : public fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController> {
    public:
@@ -49,11 +49,10 @@ class AmlUsbPhyDevice : public fdf::DriverBase {
 
   static constexpr std::string_view kDeviceName = "aml_usb_phy";
 
-  AmlUsbPhyDevice(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  AmlUsbPhyDevice() : fdf::DriverBase2(kDeviceName) {}
 
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Unbind from parent node when a fatal failure occurs.
   void UnbindOnFailure();
@@ -71,6 +70,7 @@ class AmlUsbPhyDevice : public fdf::DriverBase {
   virtual zx::result<fdf::MmioBuffer> MapMmio(fdf::PDev& pdev, uint32_t idx);
 
   std::unique_ptr<AmlUsbPhy> device_;
+
   fidl::ServerBindingGroup<fuchsia_hardware_usb_phy::UsbPhy> bindings_;
   fidl::ClientEnd<fuchsia_driver_framework::Node> node_client_;
   fidl::WireClient<fuchsia_driver_framework::NodeController> controller_;

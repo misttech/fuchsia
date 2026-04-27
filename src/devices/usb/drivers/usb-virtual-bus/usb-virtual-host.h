@@ -81,12 +81,7 @@ class UsbVirtualHost
   void GetMaxTransferSize(GetMaxTransferSizeRequest& request,
                           GetMaxTransferSizeCompleter::Sync& completer) override;
 
-  fuchsia_hardware_usb_hci::UsbHciService::InstanceHandler GetInstanceHandler() {
-    return fuchsia_hardware_usb_hci::UsbHciService::InstanceHandler({
-        .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                          fidl::kIgnoreBindingClosure),
-    });
-  }
+  fuchsia_hardware_usb_hci::UsbHciService::InstanceHandler GetInstanceHandler();
   compat::DeviceServer::BanjoConfig GetBanjoConfig() {
     compat::DeviceServer::BanjoConfig banjo_config;
     banjo_config.callbacks[ZX_PROTOCOL_USB_HCI] = banjo_server_.callback();

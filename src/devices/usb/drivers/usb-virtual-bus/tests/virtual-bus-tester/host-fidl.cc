@@ -5,14 +5,14 @@
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/host-fidl.h"
 
 #include <fidl/fuchsia.hardware.usb/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace virtualbus {
 
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
 
-void FidlDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+void FidlDevice::Stop(fdf::StopCompleter completer) {
   bulk_out_ep_->CancelAll().ThenExactlyOnce([](auto& result) {
     if (result.is_error()) {
       fdf::error("Failed to cancel all {}", result.error_value().FormatDescription().c_str());
@@ -121,8 +121,9 @@ void FidlDevice::InComplete(std::vector<fendpoint::Completion> completions) {
   }
 }
 
-zx::result<> FidlDevice::Start() {
-  zx::result result = Device::Start();
+zx::result<> FidlDevice::Start(fdf::DriverContext context) {
+  config_ = context.take_config<virtual_bus_tester_fidl_config::Config>();
+  zx::result result = Device::Start(std::move(context));
   if (result.is_error()) {
     fdf::error("Failed to start {}", result);
     return result.take_error();
@@ -154,13 +155,13 @@ zx::result<> FidlDevice::Start() {
     return zx::error(status);
   }
 
-  if (bulk_out_ep_.AddRequests(1, config_.vmo_data_size(),
+  if (bulk_out_ep_.AddRequests(1, config_->vmo_data_size(),
                                fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 1) {
     fdf::error("Failed to register VMOs");
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  if (bulk_in_ep_.AddRequests(1, config_.vmo_data_size(),
+  if (bulk_in_ep_.AddRequests(1, config_->vmo_data_size(),
                               fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) != 1) {
     fdf::error("Failed to register VMOs");
     return zx::error(ZX_ERR_INTERNAL);
@@ -171,4 +172,4 @@ zx::result<> FidlDevice::Start() {
 
 }  // namespace virtualbus
 
-FUCHSIA_DRIVER_EXPORT(virtualbus::FidlDevice);
+FUCHSIA_DRIVER_EXPORT2(virtualbus::FidlDevice);

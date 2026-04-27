@@ -19,6 +19,12 @@
 namespace usb_virtual_bus {
 
 void UsbVirtualHost::on_fidl_error(fidl::UnbindInfo error) { bus_->FinishRemove<UsbVirtualHost>(); }
+fuchsia_hardware_usb_hci::UsbHciService::InstanceHandler UsbVirtualHost::GetInstanceHandler() {
+  return fuchsia_hardware_usb_hci::UsbHciService::InstanceHandler({
+      .device =
+          bindings_.CreateHandler(this, bus_->async_dispatcher(), fidl::kIgnoreBindingClosure),
+  });
+}
 
 void UsbVirtualHost::UsbHciRequestQueue(usb_request_t* req,
                                         const usb_request_complete_callback_t* complete_cb) {

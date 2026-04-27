@@ -5,7 +5,7 @@
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester-function/peripheral-banjo.h"
 
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <usb/request-cpp.h>
@@ -18,9 +18,10 @@ zx::result<> BanjoTestFunction::SetFunctionInterface(bool connect) {
   return zx::ok();
 }
 
-zx::result<> BanjoTestFunction::Start() {
+zx::result<> BanjoTestFunction::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result<ddk::UsbFunctionProtocolClient> function =
-      compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
+      compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming_);
   if (function.is_error()) {
     fdf::error("Failed to connect function {}", function);
     return function.take_error();
@@ -45,7 +46,7 @@ zx::result<> BanjoTestFunction::Start() {
 
   parent_req_size_ = function_.GetRequestSize();
 
-  auto result = TestFunction::Start();
+  auto result = TestFunction::Start(std::move(context));
   if (result.is_error()) {
     return result.take_error();
   }
@@ -188,4 +189,4 @@ void BanjoTestFunction::QueueIn(std::vector<uint8_t> data) {
 
 }  // namespace virtualbus
 
-FUCHSIA_DRIVER_EXPORT(virtualbus::BanjoTestFunction);
+FUCHSIA_DRIVER_EXPORT2(virtualbus::BanjoTestFunction);

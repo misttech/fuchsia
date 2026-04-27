@@ -9,7 +9,8 @@
 #include <fuchsia/hardware/usb/bus/cpp/banjo.h>
 #include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <fuchsia/hardware/usb/hci/cpp/banjo.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/fit/function.h>
 
@@ -62,7 +63,7 @@ class UsbVirtualDevice;
 class UsbVirtualHost;
 
 // This is the main class for the USB virtual bus.
-class UsbVirtualBus : public fdf::DriverBase,
+class UsbVirtualBus : public fdf::DriverBase2,
                       public fidl::Server<fuchsia_hardware_usb_virtual_bus::Bus> {
  public:
   enum class ConnectedState : uint8_t {
@@ -76,16 +77,11 @@ class UsbVirtualBus : public fdf::DriverBase,
   static constexpr std::string kName = "usb-virtual-bus";
 
  public:
-  UsbVirtualBus(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kName, std::move(start_args), std::move(dispatcher)),
-        devfs_connector_(fit::bind_member<&UsbVirtualBus::Serve>(this)) {
-    for (uint8_t i = 0; i < USB_MAX_EPS; i++) {
-      eps_[i].Init(this, i);
-    }
-  }
+  UsbVirtualBus()
+      : fdf::DriverBase2(kName), devfs_connector_(fit::bind_member<&UsbVirtualBus::Serve>(this)) {}
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   zx::result<> SetBusInterface(
       fidl::ClientEnd<fuchsia_hardware_usb_hci::UsbHciInterface> client_end);
@@ -110,6 +106,9 @@ class UsbVirtualBus : public fdf::DriverBase,
   UsbVirtualEp& ep(uint8_t index) { return eps_[index]; }
 
   async_dispatcher_t* async_dispatcher() { return dispatcher(); }
+
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
+  const std::string& node_name() const { return node_name_; }
 
   template <typename T>
   void FinishRemove() {
@@ -185,6 +184,8 @@ class UsbVirtualBus : public fdf::DriverBase,
 
   bool dci_connected_ = false;
   bool hci_connected_ = false;
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::string node_name_;
   std::atomic_bool removed_{false};
 };
 

@@ -13,7 +13,7 @@
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -33,14 +33,12 @@
 
 namespace dwc2 {
 
-class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
+class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
  public:
-  Dwc2(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : DriverBase("dwc2", std::move(start_args), std::move(dispatcher)),
-        config_{take_config<dwc2_config::Config>()} {}
+  Dwc2() : fdf::DriverBase2("dwc2") {}
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Neither copyable nor movable.
   Dwc2(Dwc2&&) = delete;
@@ -48,7 +46,8 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
   Dwc2& operator=(Dwc2&&) = delete;
   Dwc2& operator=(const Dwc2&) = delete;
 
-  zx_status_t Init(const dwc2_config::Config& config) __TA_EXCLUDES(lock_);
+  zx_status_t Init(fdf::DriverContext& context, const dwc2_config::Config& config)
+      __TA_EXCLUDES(lock_);
   int IrqThread();
 
   // fuchsia_hardware_usb_dci::UsbDci protocol implementation.

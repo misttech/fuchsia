@@ -14,10 +14,9 @@ namespace virtualbus {
 class BanjoTestFunction : public TestFunction,
                           public ddk::UsbFunctionInterfaceProtocol<BanjoTestFunction> {
  public:
-  BanjoTestFunction(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : TestFunction(std::move(start_args), std::move(dispatcher)) {}
+  BanjoTestFunction() = default;
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // UsbFunctionInterfaceProtocol
   size_t UsbFunctionInterfaceGetDescriptorsSize();

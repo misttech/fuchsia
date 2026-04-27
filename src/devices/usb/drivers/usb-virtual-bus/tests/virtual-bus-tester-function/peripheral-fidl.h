@@ -16,10 +16,9 @@ namespace virtualbus {
 class FidlTestFunction : public TestFunction,
                          public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
-  FidlTestFunction(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : TestFunction(std::move(start_args), std::move(dispatcher)) {}
+  FidlTestFunction() = default;
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // UsbFunctionInterface
   void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;

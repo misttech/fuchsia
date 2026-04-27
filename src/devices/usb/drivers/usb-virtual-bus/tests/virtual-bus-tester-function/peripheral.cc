@@ -84,7 +84,10 @@ zx::result<std::vector<uint8_t>> TestFunction::DoControl(
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
-zx::result<> TestFunction::Start() {
+zx::result<> TestFunction::Start(fdf::DriverContext context) {
+  if (!incoming_) {
+    incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  }
   zx::result child = AddOwnedChild(kName);
   if (child.is_error()) {
     fdf::error("Failed to add child {}", child);
@@ -95,9 +98,7 @@ zx::result<> TestFunction::Start() {
   auto serve_result =
       outgoing()->AddService<fuchsia_hardware_usb_virtualbustest::ExpectBusTestService>(
           fuchsia_hardware_usb_virtualbustest::ExpectBusTestService::InstanceHandler({
-              .device =
-                  bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                          fidl::kIgnoreBindingClosure),
+              .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
           }));
   if (serve_result.is_error()) {
     fdf::error("Failed to add Device service {}", serve_result);

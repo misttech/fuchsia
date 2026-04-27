@@ -11,7 +11,8 @@
 #include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/async/cpp/executor.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/bridge.h>
@@ -99,7 +100,7 @@ struct UsbConfiguration {
 // This is the main class for the USB peripheral role driver.
 // It binds against the USB DCI driver device and manages a list of UsbFunction devices,
 // one for each USB function in the peripheral role configuration.
-class UsbPeripheral : public fdf::DriverBase,
+class UsbPeripheral : public fdf::DriverBase2,
                       public fidl::WireServer<fuchsia_hardware_usb_peripheral::Device> {
  public:
   // The driver uses a formal state machine to manage the lifecycle of configurations
@@ -162,8 +163,7 @@ class UsbPeripheral : public fdf::DriverBase,
   static constexpr std::string_view kDriverName = "usb_device";
   static constexpr std::string_view kChildNodeName = "usb-peripheral";
 
-  UsbPeripheral(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  UsbPeripheral() : fdf::DriverBase2(kDriverName) {}
 
   static constexpr uint8_t kMaxInterfaces = UsbConfiguration::MAX_INTERFACES;
   static constexpr uint8_t kMaxStrings = 255;
@@ -175,9 +175,9 @@ class UsbPeripheral : public fdf::DriverBase,
   static constexpr uint8_t kInEpStart = 17;
   static constexpr uint8_t kInEpEnd = 31;
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   zx_status_t UsbDciCancelAll(uint8_t ep_address);
 
@@ -425,11 +425,8 @@ class UsbPeripheral : public fdf::DriverBase,
   fdf::OwnedChildNode child_;
   driver_devfs::Connector<fuchsia_hardware_usb_peripheral::Device> devfs_connector_{
       fit::bind_member<&UsbPeripheral::Connect>(this)};
+  std::shared_ptr<fdf::Namespace> incoming_;
 };
-
-inline UsbPeripheral::UsbPeripheral(fdf::DriverStartArgs start_args,
-                                    fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
 }  // namespace usb_peripheral
 

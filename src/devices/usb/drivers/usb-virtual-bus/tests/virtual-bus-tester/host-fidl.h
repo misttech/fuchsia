@@ -14,12 +14,10 @@ namespace virtualbus {
 
 class FidlDevice : public Device {
  public:
-  FidlDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : Device(std::move(start_args), std::move(dispatcher)),
-        config_(take_config<virtual_bus_tester_fidl_config::Config>()) {}
+  FidlDevice() = default;
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   void QueueOut(std::vector<uint8_t> data) override;
@@ -28,7 +26,7 @@ class FidlDevice : public Device {
   void OutComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void InComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 
-  const virtual_bus_tester_fidl_config::Config config_;
+  std::optional<virtual_bus_tester_fidl_config::Config> config_;
   fdf::SynchronizedDispatcher dispatcher_;
 
   usb::EndpointClient<FidlDevice> bulk_out_ep_{usb::EndpointType::BULK, this,

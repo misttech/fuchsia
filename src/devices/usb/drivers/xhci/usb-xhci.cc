@@ -537,7 +537,7 @@ fpromise::promise<void, zx_status_t> UsbXhci::ConfigureHubAsync(uint32_t device_
       .box();
 }
 
-void UsbXhci::Stop() {
+UsbXhci::~UsbXhci() {
   running_ = false;
   if (!mmio_.has_value()) {
     return;
@@ -1330,7 +1330,7 @@ zx_status_t UsbXhci::InitMmio() {
     interrupter(i).GetIrq() = std::move(interrupt.value());
   }
   if (config_.enable_suspend()) {
-    zx::result activity_governer = incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
+    zx::result activity_governer = incoming_->Connect<fuchsia_power_system::ActivityGovernor>();
     if (activity_governer.is_error() || !activity_governer->is_valid()) {
       fdf::warn("Failed to connect to power system: {}, continuing without it", activity_governer);
     } else {
@@ -1457,7 +1457,7 @@ zx_status_t UsbXhci::HciFinalize() {
 
   // Initialize Inspect values
   HciVersion hci_version = HciVersion::Get().ReadFrom(&mmio_.value());
-  inspect_.Init(inspector().root(), hci_version.reg_value(), hcsparams1, hcc_);
+  inspect_.Init(inspector_->root(), hci_version.reg_value(), hcsparams1, hcc_);
 
   // Reset Warm Reset Change (WRC) bit if necessary (see Table 5-27, bit 19 in Section 5.4.8,
   // xHCI specification). This is done to acknowledge any warm reset done during bootup.
@@ -1625,7 +1625,7 @@ zx_status_t UsbXhci::CreateNode() {
   banjo_config.callbacks[ZX_PROTOCOL_USB_HCI] = banjo_server_.callback();
   {
     zx::result<> result =
-        compat_server_.Initialize(incoming(), outgoing(), node_name(), kDeviceName,
+        compat_server_.Initialize(incoming_, outgoing(), node_name_, kDeviceName,
                                   compat::ForwardMetadata::All(), std::move(banjo_config));
     if (result.is_error()) {
       fdf::error("Failed to init compat server {}", result);
@@ -1690,9 +1690,15 @@ void Inspect::Init(inspect::Node& parent, uint16_t hci_version_in, HCSPARAMS1& h
   context_size_bytes = root.CreateUint("context_size_bytes", hcc1.CSZ() == 1 ? 64 : 32);
 }
 
-zx::result<> UsbXhci::Start() {
+zx::result<> UsbXhci::Start(fdf::DriverContext context) {
+  node_name_ = std::string(context.node_name().value_or(""));
+  inspector_ = context.CreateInspector(this);
+  config_ = context.take_config<xhci_config::Config>();
+  incoming_ = context.take_incoming();
+  ddk_interaction_executor_.emplace(dispatcher());
+
   zx::result pdev_result =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_result.is_ok() && pdev_result->is_valid()) {
     pdev_ = fdf::PDev{std::move(*pdev_result)};
   } else {
@@ -1702,7 +1708,7 @@ zx::result<> UsbXhci::Start() {
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
   }
-  zx::result pci_result = incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pdev");
+  zx::result pci_result = incoming_->Connect<fuchsia_hardware_pci::Service::Device>("pdev");
   if (pci_result.is_ok()) {
     pci_ = ddk::Pci(std::move(*pci_result));
   }
@@ -1723,4 +1729,4 @@ zx::result<> UsbXhci::Start() {
 
 }  // namespace usb_xhci
 
-FUCHSIA_DRIVER_EXPORT(usb_xhci::UsbXhci);
+FUCHSIA_DRIVER_EXPORT2(usb_xhci::UsbXhci);

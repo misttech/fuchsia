@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace virtualbus {
@@ -25,8 +25,7 @@ zx::result<> FidlTestFunction::SetFunctionInterface(bool connect) {
       return endpoints.take_error();
     }
 
-    binding_ = fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                std::move(endpoints->server), this);
+    binding_ = fidl::BindServer(dispatcher(), std::move(endpoints->server), this);
 
     std::vector<uint8_t> config_data(sizeof(descriptor_));
     memcpy(config_data.data(), &descriptor_, sizeof(descriptor_));
@@ -48,9 +47,9 @@ zx::result<> FidlTestFunction::SetFunctionInterface(bool connect) {
   return zx::ok();
 }
 
-zx::result<> FidlTestFunction::Start() {
+zx::result<> FidlTestFunction::Start(fdf::DriverContext context) {
   zx::result client =
-      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (client.is_error()) {
     fdf::error("Failed to connect fidl protocol {}", client);
     return client.take_error();
@@ -111,7 +110,7 @@ zx::result<> FidlTestFunction::Start() {
     return zx::error(status);
   }
 
-  zx::result<> start_result = TestFunction::Start();
+  zx::result<> start_result = TestFunction::Start(std::move(context));
   if (start_result.is_error()) {
     fdf::error("Failed to start {}", start_result);
     return start_result.take_error();
@@ -259,4 +258,4 @@ void FidlTestFunction::InComplete(std::vector<fendpoint::Completion> completions
 
 }  // namespace virtualbus
 
-FUCHSIA_DRIVER_EXPORT(virtualbus::FidlTestFunction);
+FUCHSIA_DRIVER_EXPORT2(virtualbus::FidlTestFunction);

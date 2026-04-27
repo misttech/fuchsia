@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <fuchsia/hardware/usb/dci/c/banjo.h>
 #include <fuchsia/hardware/usb/function/c/banjo.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/span.h>
@@ -127,10 +127,11 @@ void UsbPeripheral::UsbPeripheralRequestQueue(usb_request_t* usb_request,
   dci_.RequestQueue(request.take(), &completion);
 }
 
-zx::result<> UsbPeripheral::Start() {
+zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   TRACE_DURATION("usb-peripheral", __func__);
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   executor_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher());
-  zx::result dci_fidl = incoming()->Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  zx::result dci_fidl = incoming_->Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
   if (dci_fidl.is_error()) {
     fdf::error("Failed to connect dci fidl protocol: {}", dci_fidl);
   } else {
@@ -151,7 +152,7 @@ zx::result<> UsbPeripheral::Start() {
     }
   }
 
-  zx::result dci_banjo = compat::ConnectBanjo<ddk::UsbDciProtocolClient>(incoming());
+  zx::result dci_banjo = compat::ConnectBanjo<ddk::UsbDciProtocolClient>(incoming_);
   if (dci_banjo.is_error()) {
     fdf::info("Failed to connect to dci banjo protocol: {}", dci_banjo);
   } else {
@@ -169,7 +170,7 @@ zx::result<> UsbPeripheral::Start() {
   // We read initial value and store it in dev->usb_mode, but do not actually
   // enable it until after all of our functions have bound.
   zx::result metadata =
-      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_usb_phy::Metadata>(incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_usb_phy::Metadata>(incoming_);
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();
@@ -209,7 +210,7 @@ zx::result<> UsbPeripheral::Start() {
     return add_result.take_error();
   }
 
-  auto config = take_config<usb_peripheral_config::Config>();
+  auto config = context.take_config<usb_peripheral_config::Config>();
 
   PeripheralConfigParser peripheral_config = {};
 
@@ -271,7 +272,7 @@ zx::result<> UsbPeripheral::Start() {
 zx::result<std::string> UsbPeripheral::GetSerialNumber() {
   TRACE_DURATION("usb-peripheral", __func__);
   zx::result serial_number_result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::SerialNumberMetadata>(incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::SerialNumberMetadata>(incoming_);
   if (serial_number_result.is_error()) {
     fdf::error("Failed to get serial number metadata: {}", serial_number_result);
     return serial_number_result.take_error();
@@ -288,7 +289,7 @@ zx::result<std::string> UsbPeripheral::GetSerialNumber() {
 
   // Use MAC address as the next option.
   zx::result mac_address_result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(incoming_);
   if (mac_address_result.is_error()) {
     fdf::error("Failed to get MAC address metadata: {}", mac_address_result);
     return mac_address_result.take_error();
@@ -1149,7 +1150,7 @@ zx_status_t UsbPeripheral::AddFunctionDevices() {
   for (const auto& configuration : configurations_) {
     for (auto function_index : configuration.functions) {
       auto& function = GetFunction(function_index);
-      zx::result result = function.AddChild(child_.node_, incoming(), outgoing());
+      zx::result result = function.AddChild(child_.node_, incoming_, outgoing());
       if (result.is_error() && result.status_value() != ZX_ERR_ALREADY_BOUND) {
         fdf::error("Failed to add child {}: {}; Continuing on to next.", function.name(), result);
       }
@@ -1467,10 +1468,10 @@ void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView req
       std::move(request->listener), dispatcher());
 }
 
-void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
+void UsbPeripheral::Stop(fdf::StopCompleter completer) {
   TRACE_DURATION("usb-peripheral", __func__);
 
-  fdf::info("UsbPeripheral::PrepareStop: started");
+  fdf::info("UsbPeripheral::Stop: started");
 
   fit::callback<void()> on_complete;
   bool call_clear = false;
@@ -1479,10 +1480,9 @@ void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
     stopping_driver_ = true;
 
     on_complete = [this, completer = std::move(completer)]() mutable {
-      fdf::info("UsbPeripheral::PrepareStop: Functions cleared, waiting for pending requests");
+      fdf::info("UsbPeripheral::Stop: Functions cleared, waiting for pending requests");
       WaitForPendingRequests([completer = std::move(completer)]() mutable {
-        fdf::info(
-            "UsbPeripheral::PrepareStop: All pending requests complete, replying to completer");
+        fdf::info("UsbPeripheral::Stop: All pending requests complete, replying to completer");
         completer(zx::ok());
       });
     };
@@ -1505,7 +1505,7 @@ void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
   }
 
   if (call_clear) {
-    fdf::info("UsbPeripheral::PrepareStop: proceeding to clear functions.");
+    fdf::info("UsbPeripheral::Stop: proceeding to clear functions.");
     ClearFunctions(std::move(on_complete));
   } else {
     on_complete();
@@ -1662,4 +1662,4 @@ void UsbPeripheral::WaitForFunctionsCleared(fit::callback<void()> callback) {
 }
 
 }  // namespace usb_peripheral
-FUCHSIA_DRIVER_EXPORT(usb_peripheral::UsbPeripheral);
+FUCHSIA_DRIVER_EXPORT2(usb_peripheral::UsbPeripheral);

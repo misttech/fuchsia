@@ -44,15 +44,14 @@ zx::result<void*> UsbEpServer::GetBuffer(RequestVariant& req) {
   auto& request_buffer = (*std::get<usb::FidlRequest>(req)->data())[0].buffer();
   const auto& buffer_type = request_buffer->Which();
   switch (buffer_type) {
-    case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId:
-      {
+    case fuchsia_hardware_usb_request::Buffer::Tag::kVmoId: {
       zx::result result = GetMapped(*request_buffer);
       if (result.is_error()) {
         fdf::error("Failed to map {}", result);
         return result.take_error();
       }
-        return zx::ok(reinterpret_cast<void*>(result->addr));
-      }
+      return zx::ok(reinterpret_cast<void*>(result->addr));
+    }
     case fuchsia_hardware_usb_request::Buffer::Tag::kData:
       return zx::ok(request_buffer->data()->data());
     default:
@@ -66,21 +65,19 @@ void UsbEpServer::Connect(fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoin
     fdf::error("Endpoint already bound");
     return;
   }
-  binding_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(server_end), this,
-                   [this](fidl::UnbindInfo) {
-                     fbl::AutoLock lock(&lock_);
-                     for (const auto& [_, registered_vmo] : registered_vmos_) {
-                       auto status =
-                           zx::vmar::root_self()->unmap(registered_vmo.addr, registered_vmo.size);
-                       if (status != ZX_OK) {
-                         fdf::error("Failed to unmap VMO {}", zx_status_get_string(status));
-                         continue;
-                       }
-                     }
-                     registered_vmos_.clear();
-                     async::PostTask(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                     [this]() { binding_.reset(); });
-                   });
+  binding_.emplace(
+      ep_->bus_->async_dispatcher(), std::move(server_end), this, [this](fidl::UnbindInfo) {
+        fbl::AutoLock lock(&lock_);
+        for (const auto& [_, registered_vmo] : registered_vmos_) {
+          auto status = zx::vmar::root_self()->unmap(registered_vmo.addr, registered_vmo.size);
+          if (status != ZX_OK) {
+            fdf::error("Failed to unmap VMO {}", zx_status_get_string(status));
+            continue;
+          }
+        }
+        registered_vmos_.clear();
+        async::PostTask(ep_->bus_->async_dispatcher(), [this]() { binding_.reset(); });
+      });
 }
 
 void UsbEpServer::QueueRequest(RequestVariant req) {

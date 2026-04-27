@@ -15,7 +15,8 @@
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/fit/function.h>
@@ -61,20 +62,17 @@ struct Inspect {
 
 // This is the main class for the USB XHCI host controller driver.
 // Refer to 3.1 for general architectural information on xHCI.
-class UsbXhci : public fdf::DriverBase,
+class UsbXhci : public fdf::DriverBase2,
                 public ddk::UsbHciProtocol<UsbXhci>,
                 public fidl::Server<fuchsia_hardware_usb_hci::UsbHci> {
  private:
   static constexpr char kDeviceName[] = "xhci";
 
  public:
-  UsbXhci(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)),
-        config_(take_config<xhci_config::Config>()),
-        ddk_interaction_executor_(fdf::DriverBase::dispatcher()) {}
+  UsbXhci() : fdf::DriverBase2(kDeviceName) {}
 
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  ~UsbXhci() override;
 
   // Forces an immediate shutdown of the HCI
   // This should only be called for critical errors that cannot
@@ -342,7 +340,7 @@ class UsbXhci : public fdf::DriverBase,
 
   template <typename T>
   void PostCallback(T&& callback) {
-    ddk_interaction_executor_.schedule_task(fpromise::make_ok_promise().then(
+    ddk_interaction_executor_->schedule_task(fpromise::make_ok_promise().then(
         [this, cb = std::forward<T>(callback)](fpromise::result<void, void>& result) mutable {
           cb(bus_);
         }));
@@ -363,7 +361,7 @@ class UsbXhci : public fdf::DriverBase,
   // pressure.
   uint16_t InterrupterMapping();
 
-  const xhci_config::Config config_ = {};
+  xhci_config::Config config_ = {};
 
   // Global scheduler lock. This should be held when adding or removing
   // interrupters, and; eventually dynamically assigning transfer rings
@@ -464,7 +462,7 @@ class UsbXhci : public fdf::DriverBase,
   ddk::UsbBusInterfaceProtocolClient bus_;
 
   // Pending DDK callbacks that need to be ran on the dedicated DDK interaction thread
-  async::Executor ddk_interaction_executor_;
+  std::optional<async::Executor> ddk_interaction_executor_;
 
   // Whether or not the HCI instance is currently active
   std::atomic_bool running_ = true;
@@ -498,6 +496,10 @@ class UsbXhci : public fdf::DriverBase,
   compat::BanjoServer banjo_server_{ZX_PROTOCOL_USB_HCI, this, &usb_hci_protocol_ops_};
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
   fidl::ServerBindingGroup<fuchsia_hardware_usb_hci::UsbHci> bindings_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::string node_name_;
+  std::optional<inspect::ComponentInspector> inspector_;
 };
 
 }  // namespace usb_xhci

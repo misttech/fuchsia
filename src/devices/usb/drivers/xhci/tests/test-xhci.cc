@@ -20,9 +20,9 @@ zx::result<> UsbXhci::TestInit(void* test_harness) {
   return Init(ddk_fake::CreateBufferFactory());
 }
 
-zx::result<> UsbXhci::Start() { return zx::ok(); }
+zx::result<> UsbXhci::Start(fdf::DriverContext context) { return zx::ok(); }
 
-void UsbXhci::Stop() {}
+UsbXhci::~UsbXhci() {}
 
 void UsbXhci::ConnectToEndpoint(ConnectToEndpointRequest& request,
                                 ConnectToEndpointCompleter::Sync& completer) {
@@ -80,4 +80,4 @@ zx_status_t DeviceState::InitEndpoint(uint8_t ep_addr, EventRing* event_ring, fd
 
 }  // namespace usb_xhci
 
-FUCHSIA_DRIVER_EXPORT(usb_xhci::UsbXhci);
+FUCHSIA_DRIVER_EXPORT2(usb_xhci::UsbXhci);

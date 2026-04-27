@@ -5,7 +5,7 @@
 #include "src/devices/usb/drivers/usb-virtual-bus/usb-virtual-bus.h"
 
 #include <assert.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -93,8 +93,7 @@ zx::result<> UsbVirtualBus::RemoveChild(std::unique_ptr<T>& child) {
 }
 
 void UsbVirtualBus::Serve(fidl::ServerEnd<fvirt::Bus> request) {
-  bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(request), this,
-                       fidl::kIgnoreBindingClosure);
+  bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
 }
 
 void UsbVirtualBus::SetConnectedState(ConnectedState state) {
@@ -105,8 +104,14 @@ void UsbVirtualBus::SetConnectedState(ConnectedState state) {
   connected_ = state;
 }
 
-zx::result<> UsbVirtualBus::Start() {
-  zx::result connector = devfs_connector_.Bind(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+zx::result<> UsbVirtualBus::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name().value_or("");
+  for (uint8_t i = 0; i < USB_MAX_EPS; i++) {
+    eps_[i].Init(this, i);
+  }
+
+  zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
     fdf::error("Error creating devfs node");
     return connector.take_error();
@@ -368,7 +373,7 @@ void UsbVirtualBus::OnHciConnectCompleted(zx_status_t status) {
   }
 }
 
-void UsbVirtualBus::PrepareStop(fdf::PrepareStopCompleter completer) {
+void UsbVirtualBus::Stop(fdf::StopCompleter completer) {
   Disable([completer = std::move(completer)](zx_status_t status) mutable {
     if (status != ZX_OK) {
       completer(zx::error(status));
@@ -383,7 +388,7 @@ zx::result<> UsbVirtualBus::SetBusInterface(fidl::ClientEnd<fhci::UsbHciInterfac
     return zx::error(ZX_ERR_ALREADY_BOUND);
   }
 
-  hci_intf_.Bind(std::move(client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  hci_intf_.Bind(std::move(client_end), dispatcher());
 
   if (connected_ == ConnectedState::kConnected) {
     hci_intf_->AddDevice({kDeviceSlotId, kDeviceHubId, kDeviceSpeed})
@@ -402,7 +407,7 @@ zx::result<> UsbVirtualBus::SetDciInterface(fidl::ClientEnd<fdci::UsbDciInterfac
     return zx::error(ZX_ERR_ALREADY_BOUND);
   }
 
-  dci_intf_.Bind(std::move(client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  dci_intf_.Bind(std::move(client_end), dispatcher());
   return zx::ok();
 }
 
@@ -501,4 +506,4 @@ void UsbVirtualBus::Disconnect(DisconnectCompleter::Sync& completer) {
 
 }  // namespace usb_virtual_bus
 
-FUCHSIA_DRIVER_EXPORT(usb_virtual_bus::UsbVirtualBus);
+FUCHSIA_DRIVER_EXPORT2(usb_virtual_bus::UsbVirtualBus);

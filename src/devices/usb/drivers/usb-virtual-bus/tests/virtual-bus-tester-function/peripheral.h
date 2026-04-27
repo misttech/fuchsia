@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.virtualbustest/cpp/fidl.h>
 #include <fuchsia/hardware/usb/descriptor/cpp/banjo.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 #include <queue>
 
@@ -16,17 +16,17 @@
 
 namespace virtualbus {
 
-class TestFunction : public fdf::DriverBase,
+class TestFunction : public fdf::DriverBase2,
                      public fidl::Server<fuchsia_hardware_usb_virtualbustest::ExpectBusTest> {
  protected:
   static constexpr std::string_view kName = "virtual-bus-test-peripheral";
   static constexpr auto kMaxPacketSize = 20;
 
  public:
-  TestFunction(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kName, std::move(start_args), std::move(dispatcher)) {}
+  TestFunction() : fdf::DriverBase2(kName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override { completer(zx::ok()); }
 
  protected:
   zx::result<std::vector<uint8_t>> DoControl(const fuchsia_hardware_usb_descriptor::UsbSetup& setup,
@@ -91,6 +91,10 @@ class TestFunction : public fdf::DriverBase,
 
   std::vector<uint8_t> expect_control_data_;
   std::optional<ExpectControlCompleter::Async> expect_control_;
+
+ protected:
+  std::shared_ptr<fdf::Namespace> incoming_;
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 };
 }  // namespace virtualbus
 

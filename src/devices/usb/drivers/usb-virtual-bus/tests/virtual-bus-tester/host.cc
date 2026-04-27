@@ -57,7 +57,10 @@ void Device::In(InRequest& request, InCompleter::Sync& completer) {
   QueueIn(request.size());
 }
 
-zx::result<> Device::Start() {
+zx::result<> Device::Start(fdf::DriverContext context) {
+  if (!incoming_) {
+    incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  }
   zx::result<ddk::UsbProtocolClient> usb = compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming());
   if (usb.is_error()) {
     fdf::error("Failed to connect function {}", usb);
@@ -104,8 +107,7 @@ zx::result<> Device::Start() {
 
   auto serve_result = outgoing()->AddService<fuchsia_hardware_usb_virtualbustest::BusTestService>(
       fuchsia_hardware_usb_virtualbustest::BusTestService::InstanceHandler({
-          .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                            fidl::kIgnoreBindingClosure),
+          .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
       }));
   if (serve_result.is_error()) {
     fdf::error("Failed to add Device service {}", serve_result);

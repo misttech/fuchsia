@@ -7,20 +7,20 @@
 
 #include <fidl/fuchsia.hardware.usb.virtualbustest/cpp/fidl.h>
 #include <fuchsia/hardware/usb/cpp/banjo.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace virtualbus {
 
-class Device : public fdf::DriverBase,
+class Device : public fdf::DriverBase2,
                public fidl::Server<fuchsia_hardware_usb_virtualbustest::BusTest> {
  private:
   static constexpr std::string_view kName = "virtual-bus-test";
 
  public:
-  Device(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kName, std::move(start_args), std::move(dispatcher)) {}
+  Device() : fdf::DriverBase2(kName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override { completer(zx::ok()); }
 
  protected:
   ddk::UsbProtocolClient usb_client_ = {};
@@ -41,6 +41,10 @@ class Device : public fdf::DriverBase,
 
   fdf::OwnedChildNode child_;
   fidl::ServerBindingGroup<fuchsia_hardware_usb_virtualbustest::BusTest> bindings_;
+
+ protected:
+  std::shared_ptr<fdf::Namespace> incoming_;
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 };
 
 }  // namespace virtualbus

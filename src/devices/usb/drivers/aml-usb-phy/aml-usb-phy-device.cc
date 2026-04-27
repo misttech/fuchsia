@@ -5,7 +5,7 @@
 #include "src/devices/usb/drivers/aml-usb-phy/aml-usb-phy-device.h"
 
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
@@ -100,16 +100,14 @@ zx_status_t
 
 }  // namespace
 
-AmlUsbPhyDevice::AmlUsbPhyDevice(fdf::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)) {}
+zx::result<> AmlUsbPhyDevice::Start(fdf::DriverContext context) {
+  auto incoming = context.take_incoming();
 
-zx::result<> AmlUsbPhyDevice::Start() {
   // Get Reset Register.
   fidl::ClientEnd<fuchsia_hardware_registers::Device> reset_register;
   {
     zx::result result =
-        incoming()->Connect<fuchsia_hardware_registers::Service::Device>("register-reset");
+        incoming->Connect<fuchsia_hardware_registers::Service::Device>("register-reset");
     if (result.is_error()) {
       fdf::error("Failed to open i2c service: {}", result);
       return result.take_error();
@@ -118,7 +116,7 @@ zx::result<> AmlUsbPhyDevice::Start() {
   }
 
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -367,10 +365,11 @@ void AmlUsbPhyDevice::ChildNode::on_fidl_error(fidl::UnbindInfo info) {
   fdf::info("Remove {} completed", name_.data());
 }
 
-void AmlUsbPhyDevice::Stop() {
+void AmlUsbPhyDevice::Stop(fdf::StopCompleter completer) {
   if (controller_.is_valid()) {
     (void)controller_->Remove();
   }
+  completer(zx::ok());
 }
 
 zx::result<fdf::MmioBuffer> AmlUsbPhyDevice::MapMmio(fdf::PDev& pdev, uint32_t idx) {
@@ -385,4 +384,4 @@ void AmlUsbPhyDevice::UnbindOnFailure() {
 
 }  // namespace aml_usb_phy
 
-FUCHSIA_DRIVER_EXPORT(aml_usb_phy::AmlUsbPhyDevice);
+FUCHSIA_DRIVER_EXPORT2(aml_usb_phy::AmlUsbPhyDevice);

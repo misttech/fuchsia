@@ -61,14 +61,12 @@ class FakeMmio {
 
 class TestAmlUsbPhyDevice : public AmlUsbPhyDevice {
  public:
-  TestAmlUsbPhyDevice(fdf::DriverStartArgs start_args,
-                      fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : AmlUsbPhyDevice(std::move(start_args), std::move(driver_dispatcher)) {}
+  TestAmlUsbPhyDevice() = default;
 
   static DriverRegistration GetDriverRegistration() {
     return FUCHSIA_DRIVER_REGISTRATION_V1(
-        fdf_internal::DriverServer<TestAmlUsbPhyDevice>::initialize,
-        fdf_internal::DriverServer<TestAmlUsbPhyDevice>::destroy);
+        fdf_internal::DriverServer2<TestAmlUsbPhyDevice>::initialize,
+        fdf_internal::DriverServer2<TestAmlUsbPhyDevice>::destroy);
   }
 
   bool dwc2_connected() { return device()->dwc2_connected(); }

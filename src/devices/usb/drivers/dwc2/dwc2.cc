@@ -11,7 +11,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/compat/cpp/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -106,7 +106,9 @@ zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer& buffer, zx_off_t 
   return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
 }
 
-zx::result<> Dwc2::Start() {
+zx::result<> Dwc2::Start(fdf::DriverContext context) {
+  config_ = context.take_config<dwc2_config::Config>();
+
   zx::result dispatcher = fdf::SynchronizedDispatcher::Create(
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "irq-dispatcher",
       fit::bind_member<&Dwc2::DispatcherShutdownHandler>(this),
@@ -117,7 +119,7 @@ zx::result<> Dwc2::Start() {
   }
   irq_dispatcher_ = std::move(*dispatcher);
 
-  zx_status_t status = Init(config_);
+  zx_status_t status = Init(context, config_);
   if (status != ZX_OK) {
     fdf::error("Init(): {}", zx_status_get_string(status));
     return zx::error(status);
@@ -133,7 +135,7 @@ zx::result<> Dwc2::Start() {
   return zx::ok();
 }
 
-void Dwc2::PrepareStop(fdf::PrepareStopCompleter completer) {
+void Dwc2::Stop(fdf::StopCompleter completer) {
   irq_.destroy();
   irq_dispatcher_.ShutdownAsync();
   irq_thread_stopped_.Wait();
@@ -144,7 +146,7 @@ void Dwc2::PrepareStop(fdf::PrepareStopCompleter completer) {
     const zx::result result = ResetCore();
     ZX_ASSERT_MSG(
         result.is_ok(),
-        "Failed to reset DWC2 core during PrepareStop (%s), self terminating to avoid runaway DMA\n",
+        "Failed to reset DWC2 core during Stop (%s), self terminating to avoid runaway DMA\n",
         result.status_string());
   }
 }
@@ -1080,10 +1082,11 @@ void Dwc2::SetConnected(bool connected) {
   connected_ = connected;
 }
 
-zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
+zx_status_t Dwc2::Init(fdf::DriverContext& context, const dwc2_config::Config& config) {
   std::lock_guard<std::mutex> _(lock_);
 
-  zx::result pdev = incoming()->Connect<fpdev::Service::Device>("pdev");
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result pdev = incoming->Connect<fpdev::Service::Device>("pdev");
   if (pdev.is_error()) {
     fdf::error("Connect(): {}", pdev);
     return pdev.status_value();
@@ -1141,7 +1144,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   }
 
   // Initialize mac address metadata server.
-  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
+  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming, "pdev");
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
     return result.status_value();
@@ -1153,8 +1156,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   }
 
   // Initialize serial number metadata server.
-  if (zx::result result =
-          serial_number_metadata_server_.ForwardMetadataIfExists(incoming(), "pdev");
+  if (zx::result result = serial_number_metadata_server_.ForwardMetadataIfExists(incoming, "pdev");
       result.is_error()) {
     fdf::error("Failed to forward serial number metadata: {}", result);
     return result.status_value();
@@ -1166,7 +1168,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
   }
 
   // USB PHY protocol is optional.
-  zx::result phy = incoming()->Connect<fphy::Service::Device>("dwc2-phy");
+  zx::result phy = incoming->Connect<fphy::Service::Device>("dwc2-phy");
   if (phy.is_ok()) {
     phy_.Bind(std::move(*phy));
   }
@@ -1546,4 +1548,4 @@ void Dwc2::Endpoint::OnUnbound(
 
 }  // namespace dwc2
 
-FUCHSIA_DRIVER_EXPORT(dwc2::Dwc2);
+FUCHSIA_DRIVER_EXPORT2(dwc2::Dwc2);

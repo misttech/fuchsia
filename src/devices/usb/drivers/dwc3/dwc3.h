@@ -13,9 +13,11 @@
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.policy/cpp/common_types_format.h>
 #include <fidl/fuchsia.hardware.usb.policy/cpp/fidl.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async/cpp/irq.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
@@ -64,25 +66,31 @@ class PlatformExtension {
 // UsbDci, Controller, or Endpoint FIDL methods may be safely called at any time regardless of
 // the power state. Other methods must not be called when powered down, unless indicated by comments
 // below.
-class Dwc3 : public fdf::DriverBase,
+class Dwc3 : public fdf::DriverBase2,
              public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
              public fidl::Server<fuchsia_hardware_usb_policy::Controller>,
              public fdf_power::Suspendable<Dwc3> {
  public:
-  using fdf::DriverBase::incoming;
+  Dwc3() : fdf::DriverBase2("dwc3") {}
+  ~Dwc3() override;
 
-  Dwc3(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase{"dwc3", std::move(start_args), std::move(dispatcher)},
-        config_{take_config<dwc3_config::Config>()} {}
-  ~Dwc3() { fdf::debug("~Dwc3()"); }
+  zx::result<> Start(fdf::DriverContext context) override;
+  // fdf::DriverBase2 provides an asynchronous Stop method. Synchronous cleanup should be performed
+  // in the destructor.
+  void Stop(fdf::StopCompleter completer) override;
 
-  zx::result<> Start() override;
-  void Stop() override;
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
+
   void Suspend(fdf_power::SuspendCompleter completer) override;
   void Resume(fdf_power::ResumeCompleter completer) override;
   bool SuspendEnabled() override;
 
-  // fuchsia_hardware_usb_dci::UsbDci protocol implementation.
+  inspect::ComponentInspector& inspector() { return *inspector_; }
+
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> take_power_element_runner() {
+    return std::move(power_element_runner_);
+  }
+
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
                          ConnectToEndpointCompleter::Sync& completer) override;
 
@@ -346,6 +354,7 @@ class Dwc3 : public fdf::DriverBase,
 
   zx_status_t AcquirePDevResources();
   zx_status_t Init();
+
   // This method is safe to call with the core powered down.
   void ReleaseResources();
 
@@ -458,9 +467,13 @@ class Dwc3 : public fdf::DriverBase,
       serial_number_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_hardware_usb_phy::Metadata> usb_phy_metadata_server_;
 
-  dwc3_config::Config config_;
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<dwc3_config::Config> config_;
 
-  // Inspect and metrics data.
+  std::optional<inspect::ComponentInspector> inspector_;
+
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> power_element_runner_;
+
   // The basic model here is:
   //   * Record data outside of Inspect structures for better memory efficiency
   //   * Set up lazy nodes for the Inspect structures to pull data only when needed

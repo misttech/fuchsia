@@ -47,12 +47,7 @@ class UsbVirtualDevice
   zx_status_t UsbDciCancelAll(uint8_t endpoint);
   size_t UsbDciGetRequestSize();
 
-  fuchsia_hardware_usb_dci::UsbDciService::InstanceHandler GetInstanceHandler() {
-    return fuchsia_hardware_usb_dci::UsbDciService::InstanceHandler({
-        .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                          fidl::kIgnoreBindingClosure),
-    });
-  }
+  fuchsia_hardware_usb_dci::UsbDciService::InstanceHandler GetInstanceHandler();
   compat::DeviceServer::BanjoConfig GetBanjoConfig() {
     compat::DeviceServer::BanjoConfig banjo_config;
     banjo_config.callbacks[ZX_PROTOCOL_USB_DCI] = banjo_server_.callback();

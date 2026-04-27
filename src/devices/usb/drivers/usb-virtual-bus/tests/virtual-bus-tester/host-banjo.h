@@ -11,11 +11,10 @@ namespace virtualbus {
 
 class BanjoDevice : public Device {
  public:
-  BanjoDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : Device(std::move(start_args), std::move(dispatcher)) {}
+  BanjoDevice() = default;
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   void QueueOut(std::vector<uint8_t> data) override;

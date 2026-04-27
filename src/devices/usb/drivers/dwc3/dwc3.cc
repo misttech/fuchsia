@@ -12,16 +12,21 @@
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.policy/cpp/common_types_format.h>
 #include <fidl/fuchsia.hardware.usb.policy/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.vreg/cpp/fidl.h>
+#include <fidl/fuchsia.inspect/cpp/fidl.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async_patterns/cpp/dispatcher_bound.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
+#include <lib/fdio/directory.h>
 #include <lib/fit/defer.h>
+#include <lib/inspect/component/cpp/component.h>
 #include <lib/sync/completion.h>
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
@@ -225,33 +230,53 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
 
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients;
   for (const auto& [path, node_name] : kBusPathNames) {
-    zx::result client = parent->incoming()->Connect<fhi::PathService::Path>(node_name);
-    if (client.is_error()) {
-      fdf::info("Failed to get interconnect {}, assuming not qualcomm chipset", node_name);
+    auto interconnect_result = parent->incoming()->OpenService<fhi::PathService>(node_name);
+    if (interconnect_result.is_error()) {
+      fdf::info("Failed to open interconnect service {}, assuming not qualcomm chipset", node_name);
       return nullptr;
     }
-    interconnect_clients[path] = std::move(*client);
+    auto interconnect_client = interconnect_result->connect_path();
+    if (interconnect_client.is_error()) {
+      fdf::info("Failed to connect to interconnect {}, assuming not qualcomm chipset", node_name);
+      return nullptr;
+    }
+    interconnect_clients[path] = std::move(*interconnect_client);
   }
 
   std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients;
   for (const auto& name : kClockNames) {
-    zx::result client = parent->incoming()->Connect<fclock::Service::Clock>(name);
-    if (client.is_error()) {
-      fdf::info("Failed to get clock {}, assuming not qualcomm chipset", name);
+    auto clock_result = parent->incoming()->OpenService<fclock::Service>(name);
+    if (clock_result.is_error()) {
+      fdf::info("Failed to open clock service {}, assuming not qualcomm chipset", name);
       return nullptr;
     }
-    clock_clients[name] = std::move(*client);
+    auto clock_client = clock_result->connect_clock();
+    if (clock_client.is_error()) {
+      fdf::info("Failed to connect to clock {}, assuming not qualcomm chipset", name);
+      return nullptr;
+    }
+    clock_clients[name] = std::move(*clock_client);
   }
 
-  zx::result reset_client = parent->incoming()->Connect<freset::Service::Reset>("reset");
+  auto reset_result = parent->incoming()->OpenService<freset::Service>("reset");
+  if (reset_result.is_error()) {
+    fdf::info("Failed to open reset service, assuming not qualcomm chipset");
+    return nullptr;
+  }
+  auto reset_client = reset_result->connect_reset();
   if (reset_client.is_error()) {
-    fdf::info("Failed to get reset, assuming not qualcomm chipset");
+    fdf::info("Failed to connect to reset, assuming not qualcomm chipset");
     return nullptr;
   }
 
-  zx::result regulator_client = parent->incoming()->Connect<fvreg::Service::Vreg>("regulator");
+  auto regulator_result = parent->incoming()->OpenService<fvreg::Service>("regulator");
+  if (regulator_result.is_error()) {
+    fdf::info("Failed to open regulator service, assuming not qualcomm chipset");
+    return nullptr;
+  }
+  auto regulator_client = regulator_result->connect_vreg();
   if (regulator_client.is_error()) {
-    fdf::info("Failed to get regulator, assuming not qualcomm chipset");
+    fdf::info("Failed to connect to regulator, assuming not qualcomm chipset");
     return nullptr;
   }
 
@@ -264,8 +289,8 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
   }
 
   return std::make_unique<QualcommExtension>(mmio, std::move(interconnect_clients),
-                                             std::move(clock_clients), *std::move(reset_client),
-                                             *std::move(regulator_client), std::move(*dispatcher));
+                                             std::move(clock_clients), std::move(*reset_client),
+                                             std::move(*regulator_client), std::move(*dispatcher));
 }
 
 zx::result<> QualcommExtension::VoteBandwidth(State state) {
@@ -415,15 +440,14 @@ zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t 
 }
 
 zx::eventpair Dwc3::AcquireWakeLease() {
-  TRACE_DURATION("dwc3", "Dwc3::AcquireWakeLease");
-  if (!config_.enable_suspend()) {
+  TRACE_DURATION("dwc3", "AcquireWakeLease");
+  if (!config_ || !config_->enable_suspend()) {
     return {};
   }
 
-  zx::result<fidl::ClientEnd<fuchsia_power_system::ActivityGovernor>> connect_sag_result =
-      incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
-  if (connect_sag_result.is_error()) {
-    fdf::warn("Failed to connect to SystemActivityGovernor: {}.", connect_sag_result);
+  auto sag_client = incoming_->Connect<fuchsia_power_system::ActivityGovernor>();
+  if (sag_client.is_error()) {
+    fdf::warn("Failed to connect to SystemActivityGovernor: {}.", sag_client.status_string());
     return {};
   }
 
@@ -435,7 +459,7 @@ zx::eventpair Dwc3::AcquireWakeLease() {
   }
 
   auto result =
-      fidl::Call(*connect_sag_result)
+      fidl::Call(sag_client.value())
           ->AcquireWakeLeaseWithToken({{.name = "dwc3", .server_token = std::move(server_end)}});
   if (result.is_ok()) {
     return client_end;
@@ -462,11 +486,19 @@ zx::eventpair Dwc3::AcquireWakeLease() {
   return {};
 }
 
-zx::result<> Dwc3::Start() {
+zx::result<> Dwc3::Start(fdf::DriverContext context) {
   TRACE_DURATION("dwc3", "Dwc3::Start");
-  auto phy_client_end = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
-  if (phy_client_end.is_ok()) {
-    phy_.Bind(*std::move(phy_client_end));
+  config_ = context.take_config<dwc3_config::Config>();
+  inspector_ = context.CreateInspector(this);
+  incoming_ = context.take_incoming();
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  power_element_runner_ = context.take_power_element_runner();
+#endif
+
+  auto phy_result = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
+  if (phy_result.is_ok()) {
+    phy_ = fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy>(std::move(phy_result.value()));
   }
 
   // Set up Inspect data.
@@ -487,13 +519,14 @@ zx::result<> Dwc3::Start() {
     platform_extension_ = std::move(extension);
   }
 
-  if (auto connection_watcher_client_end =
-          incoming()->Connect<fphy::ConnectionWatcherService::Watcher>("dwc3-phy");
-      connection_watcher_client_end.is_ok()) {
-    connection_watcher_.Bind(*std::move(connection_watcher_client_end),
-                             fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  auto watcher_result = incoming()->Connect<fphy::ConnectionWatcherService::Watcher>("dwc3-phy");
+  if (watcher_result.is_ok()) {
+    connection_watcher_ = fidl::Client<fuchsia_hardware_usb_phy::ConnectionWatcher>(
+        std::move(watcher_result.value()), dispatcher());
+  }
 
-    // Start the hanging-get call loop.
+  // Start the hanging-get call loop.
+  if (connection_watcher_.is_valid()) {
     connection_watcher_->WatchConnectStatusChanged({AcquireWakeLease()})
         .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
   }
@@ -510,7 +543,7 @@ zx::result<> Dwc3::Start() {
       }));
 
   if (serve_dci_result.is_error()) {
-    fdf::error("Failed to add UsbDci service: {}", serve_dci_result);
+    fdf::error("Failed to add UsbDci service: {}", serve_dci_result.status_value());
     return serve_dci_result.take_error();
   }
 
@@ -523,7 +556,7 @@ zx::result<> Dwc3::Start() {
       }));
 
   if (serve_policy_result.is_error()) {
-    fdf::error("Failed to add UsbPolicy service: {}", serve_policy_result);
+    fdf::error("Failed to add UsbPolicy service: {}", serve_policy_result.status_value());
     return serve_policy_result.take_error();
   }
 
@@ -536,29 +569,34 @@ zx::result<> Dwc3::Start() {
 
   std::vector offers = {
       // clang-format off
-      fdf::MakeOffer2<fdci::UsbDciService>(),
-      fdf::MakeOffer2<fpolicy::Service>(),
-      mac_address_metadata_server_.MakeOffer(),
-      serial_number_metadata_server_.MakeOffer(),
-      usb_phy_metadata_server_.MakeOffer(),
+        fdf::MakeOffer2<fdci::UsbDciService>(),
+        fdf::MakeOffer2<fpolicy::Service>(),
+        mac_address_metadata_server_.MakeOffer(),
+        serial_number_metadata_server_.MakeOffer(),
+        usb_phy_metadata_server_.MakeOffer(),
       // clang-format on
   };
 
-  auto child = AddChild(name(), properties, offers);
+  auto child = AddChild("dwc3", properties, offers);
   if (child.is_error()) {
-    fdf::error("AddChild(): {}", child);
+    fdf::error("Failed to add child: {}", child.status_value());
     return child.take_error();
   }
-  child_.Bind(std::move(*child));
+  child_ = fidl::SyncClient<fuchsia_driver_framework::NodeController>(std::move(*child));
 
   return zx::ok();
 }
 
 zx_status_t Dwc3::AcquirePDevResources() {
   TRACE_DURATION("dwc3", "Dwc3::AcquirePDevResources");
-  auto pdev_client_end = incoming()->Connect<fpdev::Service::Device>("pdev");
+  auto pdev_result = incoming()->OpenService<fpdev::Service>("pdev");
+  if (pdev_result.is_error()) {
+    fdf::error("incoming()->OpenService<fpdev::Service>(): {}", pdev_result.status_value());
+    return pdev_result.error_value();
+  }
+  auto pdev_client_end = pdev_result->connect_device();
   if (pdev_client_end.is_error()) {
-    fdf::error("fidl::CreateEndpoints<fpdev::Service>(): {}", pdev_client_end);
+    fdf::error("pdev_result->connect_device(): {}", pdev_client_end.status_value());
     return pdev_client_end.error_value();
   }
   pdev_ = fdf::PDev{std::move(pdev_client_end.value())};
@@ -996,9 +1034,8 @@ void Dwc3::HandleDisconnectedEvent() {
   }
 }
 
-void Dwc3::Stop() {
-  TRACE_DURATION("dwc3", "Dwc3::Stop");
-  fdf::debug("Stop()");
+Dwc3::~Dwc3() {
+  fdf::debug("~Dwc3()");
   irq_handler_.Cancel();
   ReleaseResources();
 
@@ -1011,6 +1048,14 @@ void Dwc3::Stop() {
   }
 
   controller_started_ = false;
+}
+
+void Dwc3::Stop(fdf::StopCompleter completer) {
+  TRACE_DURATION("dwc3", "Dwc3::Stop");
+  fdf::info("Dwc3::Stop called");
+  dci_bindings_.RemoveAll();
+  policy_bindings_.RemoveAll();
+  completer(zx::ok());
 }
 
 void Dwc3::Suspend(fdf_power::SuspendCompleter completer) {
@@ -1363,7 +1408,7 @@ void Dwc3::OnConnectStatusChanged(
 
   if (result.is_ok()) {
     // The USB phy driver must provide a wake lease since we passed one to it.
-    ZX_DEBUG_ASSERT_MSG(!config_.enable_suspend() || result->wake_lease().is_valid(),
+    ZX_DEBUG_ASSERT_MSG(!config_->enable_suspend() || result->wake_lease().is_valid(),
                         "USB phy driver did not provide a wake lease");
     wake_lease = std::move(result->wake_lease());
   } else {
@@ -1473,4 +1518,4 @@ void Dwc3::SetDeviceState(fpolicy::DeviceState state, uint8_t address) {
 
 }  // namespace dwc3
 
-FUCHSIA_DRIVER_EXPORT(dwc3::Dwc3);
+FUCHSIA_DRIVER_EXPORT2(dwc3::Dwc3);

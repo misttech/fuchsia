@@ -4,14 +4,14 @@
 
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/host-banjo.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <usb/request-cpp.h>
 
 namespace virtualbus {
 
-void BanjoDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+void BanjoDevice::Stop(fdf::StopCompleter completer) {
   usb_client_.CancelAll(bulk_out_addr_);
   usb_client_.CancelAll(bulk_in_addr_);
   completer(zx::ok());
@@ -82,8 +82,8 @@ void BanjoDevice::QueueIn(size_t size) {
   usb_client_.RequestQueue(req->take(), &complete);
 }
 
-zx::result<> BanjoDevice::Start() {
-  zx::result result = Device::Start();
+zx::result<> BanjoDevice::Start(fdf::DriverContext context) {
+  zx::result result = Device::Start(std::move(context));
   if (result.is_error()) {
     fdf::error("Failed to start {}", result);
     return result.take_error();
@@ -95,4 +95,4 @@ zx::result<> BanjoDevice::Start() {
 
 }  // namespace virtualbus
 
-FUCHSIA_DRIVER_EXPORT(virtualbus::BanjoDevice);
+FUCHSIA_DRIVER_EXPORT2(virtualbus::BanjoDevice);
