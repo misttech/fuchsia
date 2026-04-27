@@ -224,11 +224,9 @@ class SMProxy(ProfileProxy):
     @assert_description
     def _mmi_20117(self, **kwargs):
         """
-        Please start encryption using previously distributed key.
-
-        Description:
-        Verify that the Implementation Under Test (IUT) can successfully start
-        and complete encryption with previously distributed key.
+        Please start encryption. Use previously distributed key if available.
+        Description: Verify that the Implementation Under Test (IUT) can
+        successfully start and complete encryption.
         """
 
         return "OK"
