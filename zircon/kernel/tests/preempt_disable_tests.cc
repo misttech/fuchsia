@@ -605,6 +605,34 @@ static bool test_evaluate_timeslice_extension() {
   END_TEST;
 }
 
+// Verify that an AutoPreemptDisabler inside a CriticalMutex with a non-expired
+// timeslice extension does not clear the CriticalMutex's extension.
+static bool test_apd_in_critical_mutex() {
+  BEGIN_TEST;
+
+  PreemptionState& preemption_state = Thread::Current::preemption_state();
+
+  CriticalMutex mutex;
+
+  CriticalMutex::ShouldClear should_clear = mutex.Acquire(ZX_TIME_INFINITE);
+
+  mutex.AssertHeld();
+  EXPECT_FALSE(preemption_state.PreemptIsEnabled());
+  EXPECT_FALSE(preemption_state.EvaluateTimesliceExtension());
+  EXPECT_FALSE(preemption_state.PreemptIsEnabled());
+
+  {
+    AutoPreemptDisabler apd;
+    EXPECT_FALSE(preemption_state.PreemptIsEnabled());
+    EXPECT_FALSE(preemption_state.EvaluateTimesliceExtension());
+    EXPECT_FALSE(preemption_state.PreemptIsEnabled());
+  }
+
+  mutex.Release(should_clear);
+
+  END_TEST;
+}
+
 // This test simulates a race condition where a preemption is requested (via IPI
 // or timer) concurrent with reenabling preemption / eager rescheduling while an
 // inactive timeslice extension is in place.
@@ -694,6 +722,7 @@ UNITTEST("test_interrupt_preserves_preempt_pending", test_interrupt_preserves_pr
 UNITTEST("test_interrupt_with_preempt_disable", test_interrupt_with_preempt_disable)
 UNITTEST("test_auto_preempt_disabler", test_auto_preempt_disabler)
 UNITTEST("test_auto_timeslice_extension", test_auto_timeslice_extension)
+UNITTEST("test_apd_in_critical_mutex", test_apd_in_critical_mutex)
 UNITTEST("test_local_preempt_pending", test_local_preempt_pending)
 UNITTEST("test_evaluate_timeslice_extension", test_evaluate_timeslice_extension)
 UNITTEST("test_flush_race", test_flush_race)
