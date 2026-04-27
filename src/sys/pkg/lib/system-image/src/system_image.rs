@@ -165,7 +165,7 @@ mod tests {
 
         assert_eq!(
             system_image.static_packages().await.unwrap(),
-            StaticPackages::from_entries(vec![("name/variant".parse().unwrap(), [0; 32].into())])
+            StaticPackages::from([("name/variant".parse().unwrap(), [0; 32].into())])
         );
     }
 

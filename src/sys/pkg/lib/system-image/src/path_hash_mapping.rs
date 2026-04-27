@@ -6,6 +6,7 @@ use crate::errors::PathHashMappingError;
 use buf_read_ext::BufReadExt as _;
 use fuchsia_hash::Hash;
 use fuchsia_pkg::PackagePath;
+use sorted_vec_map::SortedVecMap;
 use std::io;
 use std::marker::PhantomData;
 use std::str::FromStr as _;
@@ -25,7 +26,7 @@ pub type StaticPackages = PathHashMapping<Static>;
 /// Deprecated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PathHashMapping<T> {
-    contents: Vec<(PackagePath, Hash)>,
+    contents: SortedVecMap<PackagePath, Hash>,
     phantom: PhantomData<T>,
 }
 
@@ -33,7 +34,7 @@ impl<T> PathHashMapping<T> {
     /// Reads the line-oriented "package-path=hash" static_packages or cache_packages file.
     /// Validates the package paths and hashes.
     pub fn deserialize(mut reader: impl io::BufRead) -> Result<Self, PathHashMappingError> {
-        let mut contents = vec![];
+        let mut contents = SortedVecMap::builder();
         let mut lines = reader.lending_lines();
         while let Some(line) = lines.next() {
             let line = line?;
@@ -42,42 +43,74 @@ impl<T> PathHashMapping<T> {
             })?;
             let hash = Hash::from_str(&line[i + 1..])?;
             let path = line[..i].parse()?;
-            contents.push((path, hash));
+            contents.insert(path, hash);
         }
-        Ok(Self { contents, phantom: PhantomData })
+        Ok(Self { contents: contents.build(), phantom: PhantomData })
     }
 
     /// Iterator over the contents of the mapping.
-    pub fn contents(&self) -> impl ExactSizeIterator<Item = &(PackagePath, Hash)> {
-        self.contents.iter()
+    pub fn contents(&self) -> &SortedVecMap<PackagePath, Hash> {
+        &self.contents
     }
 
     /// Iterator over the contents of the mapping, consuming self.
-    pub fn into_contents(self) -> impl ExactSizeIterator<Item = (PackagePath, Hash)> {
-        self.contents.into_iter()
+    pub fn into_contents(self) -> SortedVecMap<PackagePath, Hash> {
+        self.contents
     }
 
     /// Iterator over the contained hashes.
     pub fn hashes(&self) -> impl Iterator<Item = &Hash> {
-        self.contents.iter().map(|(_, hash)| hash)
+        self.contents.values()
     }
 
     /// Get the hash for a package.
     pub fn hash_for_package(&self, path: &PackagePath) -> Option<Hash> {
-        self.contents.iter().find_map(|(n, hash)| if n == path { Some(*hash) } else { None })
+        self.contents.get(path).copied()
     }
 
-    /// Create a `PathHashMapping` from a `Vec` of `(PackagePath, Hash)` pairs.
-    pub fn from_entries(entries: Vec<(PackagePath, Hash)>) -> Self {
-        Self { contents: entries, phantom: PhantomData }
+    /// Shrinks the capacity of the mapping as much as possible.
+    pub fn shrink_to_fit(&mut self) {
+        self.contents.shrink_to_fit();
     }
 
     /// Write a `static_packages` or `cache_packages` file.
     pub fn serialize(&self, mut writer: impl io::Write) -> Result<(), PathHashMappingError> {
-        for entry in self.contents.iter() {
-            writeln!(&mut writer, "{}={}", entry.0, entry.1)?;
+        for (k, v) in &self.contents {
+            writeln!(&mut writer, "{}={}", k, v)?;
         }
         Ok(())
+    }
+}
+
+impl<T> FromIterator<(PackagePath, Hash)> for PathHashMapping<T> {
+    fn from_iter<I: IntoIterator<Item = (PackagePath, Hash)>>(iter: I) -> Self {
+        let contents = SortedVecMap::from_iter(iter);
+        Self { contents, phantom: PhantomData }
+    }
+}
+
+impl<T, const N: usize> From<[(PackagePath, Hash); N]> for PathHashMapping<T> {
+    fn from(entries: [(PackagePath, Hash); N]) -> Self {
+        let contents = SortedVecMap::from_iter(entries);
+        Self { contents, phantom: PhantomData }
+    }
+}
+
+impl<T> IntoIterator for PathHashMapping<T> {
+    type Item = (PackagePath, Hash);
+    type IntoIter = std::vec::IntoIter<(PackagePath, Hash)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.contents.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a PathHashMapping<T> {
+    type Item = (&'a PackagePath, &'a Hash);
+    type IntoIter = sorted_vec_map::sorted_vec_map::Iter<'a, PackagePath, Hash>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.contents).into_iter()
     }
 }
 
@@ -136,8 +169,8 @@ mod tests {
     }
 
     #[test]
-    fn from_entries_serialize() {
-        let static_packages = StaticPackages::from_entries(vec![(
+    fn from_serialize() {
+        let static_packages = StaticPackages::from([(
             PackagePath::from_name_and_variant("name0".parse().unwrap(), "0".parse().unwrap()),
             "0000000000000000000000000000000000000000000000000000000000000000".parse().unwrap(),
         )]);
@@ -194,7 +227,7 @@ mod tests {
             (vec in prop::collection::vec(
                 (random_package_path(), random_hash()), 0..4)
             ) -> PathHashMapping<Static> {
-                StaticPackages::from_entries(vec)
+                StaticPackages::from_iter(vec)
             }
     }
 

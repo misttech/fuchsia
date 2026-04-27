@@ -9,6 +9,7 @@ use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use futures::future::BoxFuture;
 use futures::{FutureExt as _, StreamExt as _};
 use log::warn;
+use sorted_vec_map::SortedVecMap;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ pub struct FrozenIndex<Marker> {
     /// Equivalently, the contents of `packages` plus their corresponding content blobs.
     blobs: Vec<Hash>,
     /// The package urls and hashes of the root packages (i.e. not including subpackages).
-    root_package_urls_and_hashes: HashMap<UnpinnedAbsolutePackageUrl, Hash>,
+    root_package_urls_and_hashes: SortedVecMap<UnpinnedAbsolutePackageUrl, Hash>,
 
     phantom: std::marker::PhantomData<Marker>,
 }
@@ -66,6 +67,7 @@ impl FrozenIndex<Base> {
             .await
             .context("failed to determine static packages")?
             .into_contents()
+            .into_iter()
             .chain([(system_image::SystemImage::package_path(), *system_image.hash())])
             .map(|(path, hash)| {
                 let (name, variant) = path.into_name_and_variant();
@@ -75,7 +77,7 @@ impl FrozenIndex<Base> {
                 }
                 (UnpinnedAbsolutePackageUrl::new(base_repo.clone(), name, None), hash)
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<SortedVecMap<_, _>>();
         Self::from_urls(blobfs, root_package_urls_and_hashes, OnPackageLoadError::Fail).await
     }
 }
@@ -107,7 +109,7 @@ impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
     /// Determines the content and subpackage blobs by reading the meta.fars from `blobfs`.
     async fn from_urls(
         blobfs: &blobfs::Client,
-        root_package_urls_and_hashes: HashMap<UnpinnedAbsolutePackageUrl, Hash>,
+        root_package_urls_and_hashes: SortedVecMap<UnpinnedAbsolutePackageUrl, Hash>,
         on_package_load_error: OnPackageLoadError,
     ) -> Result<Self, anyhow::Error> {
         let (packages, blobs) = Self::load_packages_and_blobs(
@@ -178,7 +180,7 @@ impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
         Self {
             packages: HashSet::new(),
             blobs: vec![],
-            root_package_urls_and_hashes: HashMap::new(),
+            root_package_urls_and_hashes: SortedVecMap::new(),
             phantom: std::marker::PhantomData,
         }
     }
@@ -194,7 +196,7 @@ impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
     }
 
     /// Hashmap mapping the root (i.e not including subpackages) package urls to hashes.
-    pub fn root_package_urls_and_hashes(&self) -> &HashMap<UnpinnedAbsolutePackageUrl, Hash> {
+    pub fn root_package_urls_and_hashes(&self) -> &SortedVecMap<UnpinnedAbsolutePackageUrl, Hash> {
         &self.root_package_urls_and_hashes
     }
 
@@ -553,7 +555,7 @@ mod tests {
         );
         assert_eq!(
             cache_packages.root_package_urls_and_hashes(),
-            &HashMap::from_iter([
+            &SortedVecMap::from_iter([
                 ("fuchsia-pkg://fuchsia.com/present".parse().unwrap(), *present.hash()),
                 ("fuchsia-pkg://fuchsia.com/absent".parse().unwrap(), *absent.hash())
             ])

@@ -27,7 +27,7 @@ use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use futures::join;
 use futures::prelude::*;
 use log::{error, info};
-use std::collections::HashMap;
+use sorted_vec_map::SortedVecMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use vfs::directory::helper::DirectlyMutable as _;
@@ -441,7 +441,7 @@ async fn main_inner() -> Result<(), Error> {
 
 async fn serve_base_package_if_present(
     url: UnpinnedAbsolutePackageUrl,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     open_packages: &RootDirCache,
     scope: package_directory::ExecutionScope,
 ) -> anyhow::Result<fio::DirectoryProxy> {

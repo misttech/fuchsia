@@ -31,6 +31,7 @@ rustc_binary("bin") {
     "//sdk/rust/zx",
     "//src/lib/async-utils",
     "//src/lib/cobalt/rust/builders",
+    "//src/lib/collections/sorted-vec-map",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",

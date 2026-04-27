@@ -11,14 +11,14 @@ use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::error;
-use std::collections::HashMap;
+use sorted_vec_map::SortedVecMap;
 use std::sync::Arc;
 
 const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::PERM_EXECUTABLE);
 
 pub(crate) async fn serve_request_stream(
     mut stream: fpkg::PackageResolverRequestStream,
-    base_packages: Arc<HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
+    base_packages: Arc<SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -102,7 +102,7 @@ async fn resolve_with_context(
     package_url: &str,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -125,7 +125,7 @@ pub(super) async fn resolve_with_context_impl(
     package_url: &PackageUrl,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -156,7 +156,7 @@ pub(super) async fn resolve_with_context_impl(
 async fn resolve(
     url: &str,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -177,7 +177,7 @@ async fn resolve(
 pub(super) async fn resolve_impl(
     url: &AbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -214,7 +214,7 @@ pub(super) async fn resolve_impl(
 pub(crate) async fn resolve_package(
     url: &UnpinnedAbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -244,7 +244,7 @@ pub(crate) async fn resolve_package(
 
 async fn get_package_hash(
     url: &UnpinnedAbsolutePackageUrl,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Option<fuchsia_hash::Hash> {
     if let Some(hash) = base_packages.get(url) {
@@ -298,7 +298,7 @@ mod tests {
                 "fuchsia-pkg://fuchsia.test/name?\
                     hash=1111111111111111111111111111111111111111111111111111111111111111",
                 fidl::endpoints::create_endpoints().1,
-                &HashMap::from_iter([(
+                &SortedVecMap::from_iter([(
                     "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                     [0; 32].into()
                 )]),
@@ -324,7 +324,7 @@ mod tests {
         let _: fpkg::ResolutionContext = resolve(
             "fuchsia-pkg://fuchsia.test/name/0",
             server,
-            &HashMap::from_iter([(
+            &SortedVecMap::from_iter([(
                 "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                 *pkg.hash(),
             )]),
@@ -353,7 +353,7 @@ mod tests {
         let _: fpkg::ResolutionContext = resolve(
             &format!("fuchsia-pkg://fuchsia.test/name?hash={}", pkg.hash()),
             server,
-            &HashMap::from_iter([(
+            &SortedVecMap::from_iter([(
                 "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                 *pkg.hash(),
             )]),
@@ -377,7 +377,7 @@ mod tests {
             resolve(
                 "fuchsia-pkg://fuchsia.test/name/1",
                 fidl::endpoints::create_proxy().1,
-                &HashMap::from_iter([(
+                &SortedVecMap::from_iter([(
                     "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                     [0u8; 32].into()
                 )]),

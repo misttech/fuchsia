@@ -13,13 +13,13 @@ use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::fuchsia_pkg::{ComponentUrl, PackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::{error, warn};
-use std::collections::HashMap;
+use sorted_vec_map::SortedVecMap;
 use std::sync::Arc;
 use version_history::AbiRevision;
 
 pub(crate) async fn serve_request_stream(
     mut stream: fcomponent_resolution::ResolverRequestStream,
-    base_packages: Arc<HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
+    base_packages: Arc<SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -94,7 +94,7 @@ pub(crate) async fn serve_request_stream(
 
 async fn resolve(
     url: &str,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -122,7 +122,7 @@ async fn resolve(
 async fn resolve_with_context(
     url: &str,
     context: fcomponent_resolution::Context,
-    base_packages: &HashMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -214,7 +214,7 @@ mod tests {
         assert_matches!(
             resolve(
                 "relative#meta/missing",
-                &HashMap::new(),
+                &SortedVecMap::new(),
                 context_authenticator::ContextAuthenticator::new(),
                 &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
                 package_directory::ExecutionScope::new(),

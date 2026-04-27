@@ -12,6 +12,7 @@ rustc_library("system-image") {
 
   deps = [
     "//src/lib/buf-read-ext",
+    "//src/lib/collections/sorted-vec-map",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-url",
     "//src/sys/pkg/lib/blobfs",

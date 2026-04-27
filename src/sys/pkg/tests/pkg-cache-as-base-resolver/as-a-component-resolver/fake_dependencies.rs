@@ -4,16 +4,16 @@
 
 use anyhow::{Result, anyhow};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_metrics as fmetrics;
 use fuchsia_component::client;
 use futures::stream::TryStreamExt as _;
 use log::{info, warn};
 use mock_metrics::MockMetricEventLoggerFactory;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable as _;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics,
-};
 
 // When this feature is enabled, the base-resolver integration tests will start Fxblob.
 #[cfg(feature = "use_fxblob")]
@@ -84,10 +84,8 @@ async fn run_dictionary_router(
 async fn main() {
     info!("started");
     let this_pkg = fuchsia_pkg_testing::Package::identity().await.unwrap();
-    let static_packages = system_image::StaticPackages::from_entries(vec![(
-        "mock-package/0".parse().unwrap(),
-        *this_pkg.hash(),
-    )]);
+    let static_packages =
+        system_image::StaticPackages::from([("mock-package/0".parse().unwrap(), *this_pkg.hash())]);
     let mut static_packages_bytes = vec![];
     static_packages.serialize(&mut static_packages_bytes).expect("write static_packages");
     let system_image = fuchsia_pkg_testing::PackageBuilder::new("system_image")

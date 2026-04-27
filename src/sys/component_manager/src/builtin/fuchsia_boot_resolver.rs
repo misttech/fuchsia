@@ -342,9 +342,12 @@ impl FuchsiaBootPackageResolver {
 
         let root_dir_cache = package_directory::RootDirCache::new(boot_blob_storage);
 
-        let boot_package_index = Self::extract_bootfs_index(&proxy)
+        let mut boot_package_index = Self::extract_bootfs_index(&proxy)
             .await
             .context("Failed to extract a package index from a bootfs that contains packages")?;
+
+        // Minimize the size of the boot_package_index since this is kept in memory.
+        boot_package_index.shrink_to_fit();
 
         let context_authenticator = Default::default();
 
@@ -404,7 +407,7 @@ impl FuchsiaBootPackageResolver {
                 } else {
                     log::warn!(
                      url:?; "'{package_path}' not in bootfs index. Options are: {}",
-                     itertools::join(self.boot_package_index.contents().map(|(path, _)| path), ", ")
+                     itertools::join(self.boot_package_index.contents().keys(), ", ")
                     );
                 }
                 fpkg::ResolveError::PackageNotFound
@@ -971,7 +974,7 @@ mod tests {
             superpackage.meta_far().unwrap().read_to_end(&mut superpackage_far_contents).unwrap();
 
         // Create the test environment from the components.
-        let index = PathHashMapping::<Bootfs>::from_entries(vec![(
+        let index = PathHashMapping::<Bootfs>::from([(
             "superpackage/0".parse().unwrap(),
             *superpackage.hash(),
         )]);
