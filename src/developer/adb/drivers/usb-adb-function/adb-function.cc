@@ -473,7 +473,7 @@ void UsbAdbDevice::CheckUsbStopComplete() {
   }
 }
 
-void UsbAdbDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+void UsbAdbDevice::Stop(fdf::StopCompleter completer) {
   shutdown_callback_.emplace(std::move(completer));
   ResetOrStopUsb();
 }
@@ -497,8 +497,9 @@ zx_status_t UsbAdbDevice::InitEndpoint(
   return actual == 0 ? ZX_ERR_INTERNAL : ZX_OK;
 }
 
-zx::result<> UsbAdbDevice::Start() {
-  auto client = incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+zx::result<> UsbAdbDevice::Start(fdf::DriverContext context) {
+  auto client =
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
 
   if (client.is_error()) {
     zxlogf(ERROR, "Failed to connect fidl protocol");
@@ -597,4 +598,4 @@ void UsbAdbDevice::StartUsb() {
 
 }  // namespace usb_adb_function
 
-FUCHSIA_DRIVER_EXPORT(usb_adb_function::UsbAdbDevice);
+FUCHSIA_DRIVER_EXPORT2(usb_adb_function::UsbAdbDevice);

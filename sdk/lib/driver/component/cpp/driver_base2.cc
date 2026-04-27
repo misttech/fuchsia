@@ -104,7 +104,12 @@ void DriverBase2::DriverBaseInternalInit(DriverContext& context,
                                          fdf::UnownedSynchronizedDispatcher driver_dispatcher) {
   node_ = std::move(context.start_args_.node().value());
   driver_dispatcher_ = std::move(driver_dispatcher);
-  logger_ = Logger::Create2(context.incoming(), dispatcher(), name_, FUCHSIA_LOG_INFO);
+  logger_ = Logger::Create2(context.incoming(), dispatcher(), name_, FUCHSIA_LOG_INFO
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+                            ,
+                            std::move(context.start_args_.log_sink())
+#endif
+  );
   Logger::SetGlobalInstance(logger_.get());
   std::optional outgoing_request = std::move(context.start_args_.outgoing_dir());
   ZX_ASSERT(outgoing_request.has_value());

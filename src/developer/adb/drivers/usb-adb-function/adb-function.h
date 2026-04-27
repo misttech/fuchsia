@@ -9,8 +9,8 @@
 #include <fidl/fuchsia.hardware.adb/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/sync/cpp/completion.h>
 #include <zircon/compiler.h>
@@ -79,18 +79,16 @@ enum class State : uint8_t {
 };
 
 // Implements the USB ADB function driver.
-class UsbAdbDevice : public fdf::DriverBase,
+class UsbAdbDevice : public fdf::DriverBase2,
                      public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface>,
                      public fidl::WireServer<fadb::Device>,
                      public fidl::Server<fadb::UsbAdbImpl> {
  public:
-  explicit UsbAdbDevice(fdf::DriverStartArgs start_args,
-                        fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("usb_adb", std::move(start_args), std::move(driver_dispatcher)) {}
+  UsbAdbDevice() : fdf::DriverBase2("usb_adb") {}
 
   // Driver lifecycle methods.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // UsbFunctionInterface methods.
   void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
@@ -153,7 +151,7 @@ class UsbAdbDevice : public fdf::DriverBase,
   // call AdbStart().
   std::vector<StopAdbCompleter::Async> stop_completers_;
   // Holds Stop callback to be invoked once shutdown is complete.
-  std::optional<fdf::PrepareStopCompleter> shutdown_callback_;
+  std::optional<fdf::StopCompleter> shutdown_callback_;
 
   // USB ADB interface descriptor.
   struct {

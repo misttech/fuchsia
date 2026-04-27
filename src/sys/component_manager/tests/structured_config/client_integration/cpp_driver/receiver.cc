@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 #include <fidl/test.structuredconfig.receiver.shim/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/inspect/component/cpp/component.h>
+
+#include <optional>
 
 #include "src/sys/component_manager/tests/structured_config/client_integration/cpp_driver/receiver_config.h"
 
@@ -14,26 +16,28 @@ namespace scrs = test_structuredconfig_receiver_shim;
 
 namespace {
 
-class ReceiverDriver : public fdf::DriverBase, public fidl::WireServer<scr::ConfigReceiverPuppet> {
+class ReceiverDriver : public fdf::DriverBase2, public fidl::WireServer<scr::ConfigReceiverPuppet> {
  public:
-  ReceiverDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("receiver", std::move(start_args), std::move(driver_dispatcher)),
-        config_(take_config<receiver_config::Config>()) {}
+  ReceiverDriver() : fdf::DriverBase2("receiver") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
+    config_ = context.take_config<receiver_config::Config>();
+    inspector_.emplace(context.CreateInspector(this));
+
     auto puppet = [this](fidl::ServerEnd<scr::ConfigReceiverPuppet> server_end) -> void {
       fidl::BindServer(dispatcher(), std::move(server_end), this);
     };
     scrs::ConfigService::InstanceHandler handler({.puppet = std::move(puppet)});
 
     auto result = outgoing()->AddService<scrs::ConfigService>(std::move(handler));
-    ZX_ASSERT(result.is_ok());
+    if (result.is_error()) {
+      return result.take_error();
+    }
 
     // Serve the inspect data
-    auto config_node = inspector().root().CreateChild("config");
+    auto config_node = inspector_->root().CreateChild("config");
     config_.RecordInspect(&config_node);
-    inspector().root().Record(std::move(config_node));
+    inspector_->root().Record(std::move(config_node));
 
     return zx::ok();
   }
@@ -87,8 +91,9 @@ class ReceiverDriver : public fdf::DriverBase, public fidl::WireServer<scr::Conf
   }
 
   receiver_config::Config config_;
+  std::optional<inspect::ComponentInspector> inspector_;
 };
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(ReceiverDriver);
+FUCHSIA_DRIVER_EXPORT2(ReceiverDriver);

@@ -2,24 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
-namespace {
+#include <string_view>
 
-class LoggerDriver : public fdf::DriverBase {
+namespace logger_driver {
+
+class LoggerDriver : public fdf::DriverBase2 {
  public:
-  LoggerDriver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("logger_driver", std::move(start_args), std::move(driver_dispatcher)) {}
+  LoggerDriver() : fdf::DriverBase2("logger_driver") {}
 
-  zx::result<> Start() override {
-    FDF_LOG(INFO, "Hello, Archivist!");
+  zx::result<> Start(fdf::DriverContext context) override {
+    fdf::info("Hello, Archivist!");
     return zx::ok();
   }
 };
 
-}  // namespace
+}  // namespace logger_driver
 
-FUCHSIA_DRIVER_EXPORT(LoggerDriver);
+FUCHSIA_DRIVER_EXPORT2(logger_driver::LoggerDriver);
