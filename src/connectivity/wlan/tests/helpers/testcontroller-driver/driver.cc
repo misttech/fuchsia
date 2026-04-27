@@ -52,6 +52,26 @@ class WlanFullmacImplIfcBridgeServer
     bridge_client_->OnScanEnd(request).Then(
         ForwardResult<WlanFullmacImplIfc::OnScanEnd>(completer.ToAsync()));
   }
+  void OnScheduledScanMatchesAvailable(
+      OnScheduledScanMatchesAvailableRequest& request,
+      OnScheduledScanMatchesAvailableCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    auto result = bridge_client_->OnScheduledScanMatchesAvailable(request);
+    if (result.is_error()) {
+      FDF_SLOG(ERROR, "Failed to forward OnScheduledScanMatchesAvailable",
+               KV("status", result.error_value().FormatDescription()));
+    }
+  }
+  void OnScheduledScanStoppedByFirmware(
+      OnScheduledScanStoppedByFirmwareRequest& request,
+      OnScheduledScanStoppedByFirmwareCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    auto result = bridge_client_->OnScheduledScanStoppedByFirmware(request);
+    if (result.is_error()) {
+      FDF_SLOG(ERROR, "Failed to forward OnScheduledScanStoppedByFirmware",
+               KV("status", result.error_value().FormatDescription()));
+    }
+  }
   void ConnectConf(ConnectConfRequest& request, ConnectConfCompleter::Sync& completer) override {
     WLAN_TRACE_DURATION();
     bridge_client_->ConnectConf(request).Then(
@@ -248,6 +268,18 @@ class WlanFullmacImplBridgeServer : public fidl::Server<fuchsia_wlan_fullmac::Wl
     bridge_client_->StartScan(request).Then(
         ForwardResult<WlanFullmacImpl::StartScan>(completer.ToAsync()));
   }
+  void StartScheduledScan(StartScheduledScanRequest& request,
+                          StartScheduledScanCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->StartScheduledScan(request).Then(
+        ForwardResult<WlanFullmacImpl::StartScheduledScan>(completer.ToAsync()));
+  }
+  void StopScheduledScan(StopScheduledScanRequest& request,
+                         StopScheduledScanCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->StopScheduledScan(request).Then(
+        ForwardResult<WlanFullmacImpl::StopScheduledScan>(completer.ToAsync()));
+  }
   void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override {
     WLAN_TRACE_DURATION();
     bridge_client_->Connect(request).Then(
@@ -381,6 +413,12 @@ class WlanFullmacImplBridgeServer : public fidl::Server<fuchsia_wlan_fullmac::Wl
     WLAN_TRACE_DURATION();
     bridge_client_->GetApfPacketFilterEnabled().Then(
         ForwardResult<WlanFullmacImpl::GetApfPacketFilterEnabled>(completer.ToAsync()));
+  }
+
+  void GetScheduledScanEnabled(GetScheduledScanEnabledCompleter::Sync& completer) override {
+    WLAN_TRACE_DURATION();
+    bridge_client_->GetScheduledScanEnabled().Then(
+        ForwardResult<WlanFullmacImpl::GetScheduledScanEnabled>(completer.ToAsync()));
   }
 
   // Calling |RemoveChild| will cause this server to eventually unbind.

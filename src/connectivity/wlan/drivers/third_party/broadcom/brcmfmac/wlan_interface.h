@@ -88,6 +88,11 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
       QuerySpectrumManagementSupportCompleter::Sync& completer) override;
   void QueryTelemetrySupport(QueryTelemetrySupportCompleter::Sync& completer) override;
   void StartScan(StartScanRequestView request, StartScanCompleter::Sync& completer) override;
+  void StartScheduledScan(StartScheduledScanRequestView request,
+                          StartScheduledScanCompleter::Sync& completer) override;
+  void StopScheduledScan(StopScheduledScanRequestView request,
+                         StopScheduledScanCompleter::Sync& completer) override;
+  void GetScheduledScanEnabled(GetScheduledScanEnabledCompleter::Sync& completer) override;
   void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
   void Reconnect(ReconnectRequestView request, ReconnectCompleter::Sync& completer) override;
   void Roam(RoamRequestView request, RoamCompleter::Sync& completer) override;
@@ -96,7 +101,7 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
   void AssocResp(AssocRespRequestView request, AssocRespCompleter::Sync& completer) override;
   void Disassoc(DisassocRequestView request, DisassocCompleter::Sync& completer) override;
   void StartBss(StartBssRequestView request, StartBssCompleter::Sync& completer) override;
-  void StopBss(StopBssRequestView request, StopBssCompleter ::Sync& completer) override;
+  void StopBss(StopBssRequestView request, StopBssCompleter::Sync& completer) override;
   void SetKeys(SetKeysRequestView request, SetKeysCompleter::Sync& completer) override;
   void EapolTx(EapolTxRequestView request, EapolTxCompleter::Sync& completer) override;
   void GetIfaceStats(GetIfaceStatsCompleter::Sync& completer) override;

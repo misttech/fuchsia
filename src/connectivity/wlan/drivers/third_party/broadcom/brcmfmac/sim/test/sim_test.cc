@@ -138,6 +138,14 @@ void SimInterface::OnScanEnd(OnScanEndRequestView request, OnScanEndCompleter::S
   completer.Reply();
 }
 
+void SimInterface::OnScheduledScanMatchesAvailable(
+    OnScheduledScanMatchesAvailableRequestView request,
+    OnScheduledScanMatchesAvailableCompleter::Sync& completer) {}
+
+void SimInterface::OnScheduledScanStoppedByFirmware(
+    OnScheduledScanStoppedByFirmwareRequestView request,
+    OnScheduledScanStoppedByFirmwareCompleter::Sync& completer) {}
+
 void SimInterface::ConnectConf(ConnectConfRequestView request,
                                ConnectConfCompleter::Sync& completer) {
   ZX_ASSERT(assoc_ctx_.state == AssocContext::kAssociating);

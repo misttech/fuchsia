@@ -101,6 +101,12 @@ class SimInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacIm
   void OnScanResult(OnScanResultRequestView request,
                     OnScanResultCompleter::Sync& completer) override;
   void OnScanEnd(OnScanEndRequestView request, OnScanEndCompleter::Sync& completer) override;
+  void OnScheduledScanMatchesAvailable(
+      OnScheduledScanMatchesAvailableRequestView request,
+      OnScheduledScanMatchesAvailableCompleter::Sync& completer) override;
+  void OnScheduledScanStoppedByFirmware(
+      OnScheduledScanStoppedByFirmwareRequestView request,
+      OnScheduledScanStoppedByFirmwareCompleter::Sync& completer) override;
   void ConnectConf(ConnectConfRequestView request, ConnectConfCompleter::Sync& completer) override;
   void RoamConf(RoamConfRequestView request, RoamConfCompleter::Sync& completer) override;
   void RoamStartInd(RoamStartIndRequestView request,

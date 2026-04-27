@@ -172,6 +172,15 @@ closed protocol WlanFullmacImplIfc {
         1: txn_id uint64;
         2: code WlanScanResult;
     }) -> ();
+    /// Indicates to MLME that an individual scan within the scheduled scan plan has been completed
+    /// and results are available.
+    strict OnScheduledScanMatchesAvailable(table {
+        1: txn_id uint64;
+    });
+    /// Indicates to MLME that scheduled scanning has been stopped by the firmware.
+    strict OnScheduledScanStoppedByFirmware(table {
+        1: txn_id uint64;
+    });
     strict ConnectConf(table {
         1: peer_sta_address ieee80211.MacAddr;
         2: result_code ieee80211.StatusCode;
@@ -432,6 +441,23 @@ open protocol WlanFullmacImpl {
         /// Maximum amount of time in msecs spent on a channel during scan.
         6: max_channel_time uint32;
     }) -> ();
+    /// Starts scheduled scanning.
+    flexible StartScheduledScan(table {
+        1: txn_id uint64;
+        2: req fuchsia.wlan.common.ScheduledScanRequest;
+    }) -> () error zx.Status;
+    /// Stops scheduled scanning.
+    ///
+    /// The successful return value indicates that the scan has been stopped.
+    /// The driver will NOT send an `OnScheduledScanStoppedByFirmware` event in response to this call.
+    /// `OnScheduledScanStoppedByFirmware` is reserved for firmware-initiated stops or errors.
+    flexible StopScheduledScan(table {
+        1: txn_id uint64;
+    }) -> () error zx.Status;
+    /// Returns the transaction IDs of any currently active scheduled scans.
+    flexible GetScheduledScanEnabled() -> (table {
+        1: active_txn_ids vector<uint64>:MAX;
+    }) error zx.Status;
     strict Connect(table {
         1: selected_bss ieee80211.BssDescription;
         /// Timeout specified in beacon interval.

@@ -395,6 +395,16 @@ void WlanInterface::StartScan(StartScanRequestView request, StartScanCompleter::
   completer.Reply();
 }
 
+void WlanInterface::StartScheduledScan(StartScheduledScanRequestView request,
+                                       StartScheduledScanCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void WlanInterface::StopScheduledScan(StopScheduledScanRequestView request,
+                                      StopScheduledScanCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void WlanInterface::Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
   if (wdev_ != nullptr) {
@@ -597,6 +607,10 @@ void WlanInterface::SetApfPacketFilterEnabled(SetApfPacketFilterEnabledRequestVi
 }
 
 void WlanInterface::GetApfPacketFilterEnabled(GetApfPacketFilterEnabledCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void WlanInterface::GetScheduledScanEnabled(GetScheduledScanEnabledCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
