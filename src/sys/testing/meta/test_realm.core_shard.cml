@@ -708,10 +708,7 @@
             to: "#testing",
         },
         {
-            config: [
-                "fuchsia.fshost.FxfsBlob",
-                "fuchsia.fshost.StorageHost",
-            ],
+            config: "fuchsia.fshost.FxfsBlob",
             from: "parent",
             to: "#testing",
         },

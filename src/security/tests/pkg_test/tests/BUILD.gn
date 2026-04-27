@@ -13,7 +13,6 @@ if (is_fuchsia) {
     options = {
       data_filesystem_format = "minfs"
       fxfs_blob = false
-      storage_host = true
     }
   }
 
@@ -23,7 +22,6 @@ if (is_fuchsia) {
     options = {
       data_filesystem_format = "fxfs"
       fxfs_blob = true
-      storage_host = true
     }
   }
 

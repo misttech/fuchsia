@@ -246,7 +246,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             ("fuchsia.fshost.RamdiskImage", Config::new_bool(ramdisk_image)),
             ("fuchsia.fshost.Gpt", Config::new_bool(gpt)),
             ("fuchsia.fshost.GptAll", Config::new_bool(gpt_all)),
-            ("fuchsia.fshost.Mbr", Config::new_bool(false)),
             ("fuchsia.fshost.MergeSuperAndUserdata", Config::new_bool(merge_super_and_userdata)),
             ("fuchsia.fshost.NoZxcrypt", Config::new_bool(no_zxcrypt)),
             ("fuchsia.fshost.FormatDataOnCorruption", Config::new_bool(format_data_on_corruption)),
@@ -256,7 +255,6 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
                 Config::new_bool(blob_deprecated_padded),
             ),
             ("fuchsia.fshost.FxfsBlob", Config::new_bool(fxfs_blob)),
-            ("fuchsia.fshost.StorageHost", Config::new_bool(true)),
             ("fuchsia.fshost.FvmSliceSize", Config::new_uint64(fvm_slice_size)),
             (
                 "fuchsia.fshost.DataFilesystemFormat",

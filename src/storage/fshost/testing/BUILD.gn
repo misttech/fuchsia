@@ -9,7 +9,6 @@ import("//src/storage/fshost/fshost.gni")
 fshost_component_and_config("test-fshost") {
   testonly = true
   options = {
-    storage_host = true
   }
 }
 

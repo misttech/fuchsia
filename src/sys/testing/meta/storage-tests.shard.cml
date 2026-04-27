@@ -82,10 +82,7 @@
             availability: "optional",
         },
         {
-            config: [
-                "fuchsia.fshost.FxfsBlob",
-                "fuchsia.fshost.StorageHost",
-            ],
+            config: "fuchsia.fshost.FxfsBlob",
             from: "parent",
             to: "#storage-tests",
         },

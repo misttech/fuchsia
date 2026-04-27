@@ -103,11 +103,6 @@
             to: "#test_fxfs",
         },
         {
-            config: "fuchsia.fshost.StorageHost",
-            from: "parent",
-            to: "#test_fxfs",
-        },
-        {
             service: [ "fuchsia.storage.partitions.PartitionService" ],
             from: "parent",
             to: "#test_fxfs",

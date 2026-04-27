@@ -99,7 +99,6 @@ storage_driver_test_realm_component("block-relay-integration-test") {
 fshost_component_and_config("test-fshost") {
   testonly = true
   options = {
-    storage_host = true
   }
 }
 

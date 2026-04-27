@@ -185,9 +185,6 @@ template("fshost_integration_test_component") {
 #     [string] The format of the data partition fshost exports. One of "fxfs", "minfs", or "f2fs".
 #              The options scope can also contain additional fshost options if required.
 #
-#   options.storage_host (required to be true)
-#     [bool] Whether storage-host should be used. Must be set to true.
-#
 #   extra_deps (optional)
 #     [array] A list of extra deps for the general integration test component. These deps are not
 #             added to any of the other components right now. NB: if other test components need
@@ -197,9 +194,6 @@ template("fshost_integration_test_package") {
   assert(defined(invoker.options), "fshost options not specified")
   fshost_options = invoker.options
 
-  # TODO(https://fxbug.dev/394970436): until we remove this option entirely, forcefully make sure
-  # it is enabled for all test configurations.
-  assert(defined(fshost_options.storage_host) && fshost_options.storage_host)
   if (!defined(invoker.data_filesystem_variant)) {
     invoker.data_filesystem_variant = fshost_options.data_filesystem_format
   }
@@ -498,7 +492,6 @@ fshost_integration_test_package("fshost_integration_tests_fxfs") {
   enable_system_volume_manipulation_tests = true
   enable_shred_keys_tests = true
   options = {
-    storage_host = true
   }
   extra_deps =
       [ "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust" ]
@@ -507,7 +500,6 @@ fshost_integration_test_package("fshost_integration_tests_fxfs") {
 fshost_integration_test_package("fshost_integration_tests_fvm_minfs") {
   options = {
     data_filesystem_format = "minfs"
-    storage_host = true
     fxfs_blob = false
   }
   extra_deps = [ "//src/storage/fvm:fvm-component" ]
@@ -518,7 +510,6 @@ fshost_integration_test_package(
   data_filesystem_variant = "minfs-no-zxcrypt"
   options = {
     data_filesystem_format = "minfs"
-    storage_host = true
     fxfs_blob = false
     no_zxcrypt = true
   }

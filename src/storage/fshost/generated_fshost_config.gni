@@ -65,7 +65,6 @@ template("generated_fshost_config") {
       fxfs_crypt_url = "fuchsia-boot:///fxfs-crypt#meta/fxfs-crypt.cm"
       gpt = true
       gpt_all = false
-      mbr = false
       merge_super_and_userdata = false
       no_zxcrypt = false
       fvm_slice_size = 8388608
@@ -73,7 +72,6 @@ template("generated_fshost_config") {
       blobfs_use_deprecated_padded_format = false
       data_filesystem_format = "fxfs"
       format_data_on_corruption = true
-      storage_host = false
       disable_automount = false
       starnix_volume_name = ""
       inline_crypto = false

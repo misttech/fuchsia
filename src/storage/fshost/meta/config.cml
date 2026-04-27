@@ -84,12 +84,6 @@
             type: "bool",
         },
         {
-            // Enables MBR devices.
-            config: "fuchsia.fshost.Mbr",
-            key: "mbr",
-            type: "bool",
-        },
-        {
             // If set, the GPT component will merge `super` and `userdata` into an overlay `fxfs`
             // partition.
             config: "fuchsia.fshost.MergeSuperAndUserdata",
@@ -143,13 +137,6 @@
             key: "fxfs_crypt_url",
             type: "string",
             max_size: 64,
-        },
-        {
-            // Whether the storage-host stack should be used instead of the legacy DFv2-based
-            // storage stack.
-            config: "fuchsia.fshost.StorageHost",
-            key: "storage_host",
-            type: "bool",
         },
         {
             config: "fuchsia.fshost.DisableAutomount",
