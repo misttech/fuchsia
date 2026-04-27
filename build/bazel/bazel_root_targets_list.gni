@@ -174,6 +174,10 @@ declare_args() {
                                         ]
                                         install_host_tool = true
                                       },
+                                      {
+                                        bazel_label = "//tools/jq5:jq5"
+                                        install_host_tool = true
+                                      },
                                     ]
 
   # A similar list to extend the list above for custom build configuration

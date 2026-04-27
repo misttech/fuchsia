@@ -8,6 +8,7 @@ if (is_host) {
 
     public_deps = [
       "//build/bazel/host:bazel_root_host_tools.debroot",
+      "//build/bazel/host:bazel_root_host_tools.jq5.host_tool",
       "//build/bazel/host:bazel_root_host_tools.mdlint.host_tool",
       "//build/bazel/host:bazel_root_host_tools.pretty_serial.host_tool",
       "//tools/auto_owners",
@@ -26,7 +27,6 @@ if (is_host) {
       "//tools/fidlcat:fidlcat_host",
       "//tools/funnel:host",
       "//tools/host_test_component",
-      "//tools/jq5:install",
       "//tools/loglistener:host",
       "//tools/make-fuchsia-vol:host",
       "//tools/net/device-finder:host",
