@@ -914,6 +914,8 @@ class GAPProxy(ProfileProxy):
             "GAP/SEC/SEM/BV-13-C",
             "GAP/SEC/SEM/BV-14-C",
             "GAP/SEC/SEM/BV-15-C",
+            "GAP/DM/LEP/BV-19-C",
+            "GAP/DM/LEP/BV-23-C",
         ]:
             self.pairing_events = self.security.OnPairing()
 
