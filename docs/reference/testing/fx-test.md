@@ -259,6 +259,11 @@ argument. Values > 1 speed up output, and values < 1 show the run
 in slow motion.
 - `stats` will print statistics about the previous run, including the longest
 operations and a summary of execution time by category.
+- `show-affected-tests` does not run tests. Instead, it prints the tests
+affected by the modified files in the local repository.
+
+- `run-affected-tests` automatically selects and runs tests affected by the
+modified files in the local repository.
 - `help` prints a summary of available commands.
 
 ### Build options
