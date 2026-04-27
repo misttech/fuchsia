@@ -61,7 +61,7 @@ void TaskRecords::RecordTaskMetrics(const Subtask::Metrics& metrics,
     UpdateInt(&task_times.end_to_end_us, &task_times.node, kEndToEndIntervalUsec,
               inter_task_durations->end_to_end.to_usecs());
   }
-  if (scheduling_delay.has_value()) {
+  if (scheduling_delay.has_value() && scheduling_delay->to_usecs() > 0) {
     UpdateInt(&task_times.scheduling_delay_us, &task_times.node, kSchedulingDelayUsec,
               scheduling_delay->to_usecs());
   }
@@ -242,7 +242,7 @@ RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at,
       final_tasks_to_save_(final_task_count),
       aggregate_records_(node_, kDiagnostics) {
   started_at_ = started_at;
-  node_.RecordInt(kStartedAtUs, started_at.get() / 1000);
+  node_.RecordInt(kStartedAtUsec, started_at.get() / 1000);
 
   if (startup_tasks_to_save_) {
     startup_task_records_ = TaskRecords(node_.CreateChild(kStartupTaskRecords), startup_task_count);
@@ -254,7 +254,7 @@ RunningInterval::RunningInterval(inspect::Node node, const zx::time& started_at,
 
 void RunningInterval::RecordStopTime(const zx::time& stopped_at) {
   stopped_at_ = stopped_at;
-  node_.RecordInt(kStoppedAtUs, stopped_at.get() / 1000);
+  node_.RecordInt(kStoppedAtUsec, stopped_at.get() / 1000);
   zx::duration audio_duration = stopped_at_ - started_at_;
   node_.RecordInt(kAudioDuration, audio_duration.to_usecs());
 }

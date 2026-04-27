@@ -36,8 +36,8 @@ static constexpr std::string_view kIsOutgoingStream = "is_outgoing_stream";
 static constexpr std::string_view kCtorTime = "ctor_time";
 static constexpr std::string_view kDtorTime = "dtor_time";
 static constexpr std::string_view kRunningIntervals = "running_intervals";
-static constexpr std::string_view kStartedAtUs = "started_at_us";
-static constexpr std::string_view kStoppedAtUs = "stopped_at_us";
+static constexpr std::string_view kStartedAtUsec = "started_at_us";
+static constexpr std::string_view kStoppedAtUsec = "stopped_at_us";
 static constexpr std::string_view kAudioDuration = "audio_duration_us";
 static constexpr std::string_view kSetActiveChannelsCalls = "SetActiveChannels_calls";
 static constexpr std::string_view kChannelBitmask = "channel_bitmask";
@@ -55,14 +55,15 @@ static constexpr std::string_view kMax = "max";
 static constexpr std::string_view kSum = "sum";
 static constexpr std::string_view kAvg = "avg";
 
-static constexpr std::string_view kWallTimeUsec = "wall_time_us";
-static constexpr std::string_view kCpuTimeUsec = "cpu_time_us";
-static constexpr std::string_view kQueueTimeUsec = "queue_time_us";
-static constexpr std::string_view kPageFaultTimeUsec = "page_fault_time_us";
-static constexpr std::string_view kKernelLockContentionTimeUsec = "kernel_lock_contention_time_us";
-static constexpr std::string_view kStartToStartIntervalUsec = "start_to_start_us";
-static constexpr std::string_view kEndToEndIntervalUsec = "end_to_end_us";
-static constexpr std::string_view kSchedulingDelayUsec = "scheduling_delay_us";
+static constexpr std::string_view kEndToEndIntervalUsec = "task_interval_end_to_end_us";
+static constexpr std::string_view kStartToStartIntervalUsec = "task_interval_start_to_start_us";
+static constexpr std::string_view kSchedulingDelayUsec = "task_scheduling_delay_us";
+static constexpr std::string_view kCpuTimeUsec = "task_time_cpu_us";
+static constexpr std::string_view kKernelLockContentionTimeUsec =
+    "task_time_kernel_lock_contention_us";
+static constexpr std::string_view kPageFaultTimeUsec = "task_time_page_fault_us";
+static constexpr std::string_view kQueueTimeUsec = "task_time_queue_us";
+static constexpr std::string_view kWallTimeUsec = "task_time_wall_us";
 
 static constexpr std::string_view kCountTasks = "count_tasks";
 static constexpr std::string_view kCountDroppedTransfers = "count_dropped_transfers";
@@ -72,20 +73,21 @@ static constexpr std::string_view kWorstOverrunFrames = "worst_overrun_frames";
 static constexpr std::string_view kWorstUnderrunFrames = "worst_underrun_frames";
 
 static constexpr std::string_view kBufferAccounting = "buffer_accounting";
-static constexpr std::string_view kCountBuffersProcessed = "count_buffers_processed";
-static constexpr std::string_view kCountOutstandingBuffersAvg = "count_outstanding_buffers_avg";
-static constexpr std::string_view kCountOutstandingBuffersMax = "count_outstanding_buffers_max";
-static constexpr std::string_view kCountOutstandingBuffersMin = "count_outstanding_buffers_min";
+static constexpr std::string_view kBuffersProcessedCount = "buffers_processed_count";
+static constexpr std::string_view kBuffersProcessedDurationCumulativeUsec =
+    "buffers_processed_duration_us";
 static constexpr std::string_view kEmptyBufferDurationMaxUsec = "empty_buffer_duration_max_us";
 static constexpr std::string_view kEmptyBufferDurationCumulativeUsec =
     "empty_buffer_duration_sum_us";
-static constexpr std::string_view kEmptyBufferEpisodeCount = "empty_buffer_episodes_count";
+static constexpr std::string_view kEmptyBufferEpisodesCount = "empty_buffer_episodes_count";
 static constexpr std::string_view kFullBufferDurationMaxUsec = "full_buffer_duration_max_us";
 static constexpr std::string_view kFullBufferDurationCumulativeUsec = "full_buffer_duration_sum_us";
-static constexpr std::string_view kFullBufferEpisodeCount = "full_buffer_episodes_count";
+static constexpr std::string_view kFullBufferEpisodesCount = "full_buffer_episodes_count";
+static constexpr std::string_view kOutstandingBuffersCountAvg = "outstanding_buffers_count_avg";
+static constexpr std::string_view kOutstandingBuffersCountMax = "outstanding_buffers_count_max";
+static constexpr std::string_view kOutstandingBuffersCountMin = "outstanding_buffers_count_min";
 static constexpr std::string_view kProcessingTimeAvgUsec = "processing_time_avg_us";
 static constexpr std::string_view kProcessingTimeMaxUsec = "processing_time_max_us";
-static constexpr std::string_view kProcessingTimeCumulativeUsec = "processing_time_sum_us";
 
 // Represents a single power transition.
 class PowerTransition {
@@ -230,13 +232,20 @@ class AggregateRecords {
   Subtask::Metrics sum_metrics_;
   zx::duration sum_kernel_lock_contention_time_;
   Subtask::Metrics avg_metrics_;
-  InterTaskDurations min_inter_task_durations_ = {.start_to_start = zx::duration::infinite(),
-                                                  .end_to_end = zx::duration::infinite()};
+  InterTaskDurations min_inter_task_durations_ = {
+      .start_to_start = zx::duration::infinite(),
+      .end_to_end = zx::duration::infinite(),
+  };
   zx::duration min_schedule_delay_ = zx::duration::infinite();
-  InterTaskDurations max_inter_task_durations_ = {.start_to_start = zx::duration::infinite_past(),
-                                                  .end_to_end = zx::duration::infinite_past()};
+  InterTaskDurations max_inter_task_durations_ = {
+      .start_to_start = zx::duration::infinite_past(),
+      .end_to_end = zx::duration::infinite_past(),
+  };
   zx::duration max_schedule_delay_ = zx::duration::infinite_past();
-  InterTaskDurations sum_inter_task_durations_ = {.start_to_start{0}, .end_to_end{0}};
+  InterTaskDurations sum_inter_task_durations_ = {
+      .start_to_start = zx::duration{0},
+      .end_to_end = zx::duration{0},
+  };
   int64_t total_inter_task_durations_count_ = 0;
   zx::duration sum_schedule_delay_{0};
   size_t total_scheduling_delay_count_ = 0;

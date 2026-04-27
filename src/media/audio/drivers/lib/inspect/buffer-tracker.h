@@ -11,6 +11,7 @@
 #include <zircon/compiler.h>
 
 #include <mutex>
+#include <optional>
 #include <queue>
 
 namespace audio {
@@ -24,14 +25,14 @@ class BufferTracker {
   void RecordCompletion();
   // Should be called once a pipeline is "primed" with initial data, before streaming begins.
   void StartMonitoringOutstandingBufferCount() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    started_monitoring_min_max_buffers_ = true;
-    currently_monitoring_min_max_buffers_ = true;
+    std::scoped_lock lock(mutex_);
+    started_monitoring_buffer_levels_ = true;
+    currently_monitoring_buffer_levels_ = true;
   }
   // Should be called once a pipeline is no longer streaming, before it "drains".
   void StopMonitoringOutstandingBufferCount() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    currently_monitoring_min_max_buffers_ = false;
+    std::scoped_lock lock(mutex_);
+    currently_monitoring_buffer_levels_ = false;
   }
 
  private:
@@ -39,8 +40,8 @@ class BufferTracker {
   inspect::LazyNode buffer_tracker_node_;
   std::mutex mutex_;
 
-  bool started_monitoring_min_max_buffers_ __TA_GUARDED(mutex_) = false;
-  bool currently_monitoring_min_max_buffers_ __TA_GUARDED(mutex_) = false;
+  bool started_monitoring_buffer_levels_ __TA_GUARDED(mutex_) = false;
+  bool currently_monitoring_buffer_levels_ __TA_GUARDED(mutex_) = false;
 
   // Total buffer counts
   inspect::UintProperty buffers_processed_count_prop_;

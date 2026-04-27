@@ -162,7 +162,7 @@ TEST_F(RecorderTest, StartAndStop) {
   auto running_interval_hierarchy = hierarchy.GetByPath(running_interval_path);
   ASSERT_TRUE(running_interval_hierarchy);
   EXPECT_THAT(*running_interval_hierarchy, NodeMatches(PropertyList(IsSupersetOf({
-                                               IntIs(std::string(kStartedAtUs), 100),
+                                               IntIs(std::string(kStartedAtUsec), 100),
                                            }))));
 
   zx::time stopped_at = zx::time(zx::usec(200).get());
@@ -171,8 +171,8 @@ TEST_F(RecorderTest, StartAndStop) {
   running_interval_hierarchy = hierarchy.GetByPath(running_interval_path);
   ASSERT_TRUE(running_interval_hierarchy);
   EXPECT_THAT(*running_interval_hierarchy, NodeMatches(PropertyList(IsSupersetOf({
-                                               IntIs(std::string(kStartedAtUs), 100),
-                                               IntIs(std::string(kStoppedAtUs), 200),
+                                               IntIs(std::string(kStartedAtUsec), 100),
+                                               IntIs(std::string(kStoppedAtUsec), 200),
                                                IntIs(std::string(kAudioDuration), 100),
                                            }))));
 }
@@ -212,7 +212,7 @@ TEST_F(RecorderTest, BufferTrackerDefaults) {
   auto hierarchy = GetHierarchy();
   auto expected_buffers =
       AllOf(NameMatches(std::string("test_buffer_tracker")),
-            PropertyList(UnorderedElementsAre(UintIs(std::string(kCountBuffersProcessed), 0))));
+            PropertyList(UnorderedElementsAre(UintIs(std::string(kBuffersProcessedCount), 0))));
 
   std::vector<std::string> summary_buffer_tracker_path = {
       std::string(kRingBuffers),
@@ -239,6 +239,75 @@ TEST_F(RecorderTest, BufferTrackerDefaults) {
   EXPECT_FALSE(running_instance_buffer_tracker_hierarchy);
 }
 
+// Test buffer tracking without monitoring buffer-level.
+// Overall count and processing time should still be recorded accurately.
+TEST_F(RecorderTest, TrackingWithoutMonitoringBufferLevel) {
+  recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, false);
+  auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
+
+  // By setting max_buffer_count to 1, we can easily test empty and full cases.
+  rb_recorder->SetupBufferTracker("test_buffer_tracker", 1, zx::msec(10));
+
+  rb_recorder->RecordStartTime(zx::time(100));
+  for (uint32_t i = 0; i < 2; i++) {
+    auto task = audio::Subtask("task_" + std::to_string(i), /*collect_thread_metrics*/ true);
+    task.Start();
+    sleep(1);
+    task.Done();
+    rb_recorder->RecordTaskMetrics(task.FinalMetrics());
+  }
+  rb_recorder->RecordStopTime(zx::time(200));
+
+  // Simulate some buffer submissions and completions
+  rb_recorder->RecordBufferSubmission();
+  usleep(10 * 1000);
+  rb_recorder->RecordBufferCompletion();
+  usleep(2 * 1000);
+  rb_recorder->RecordBufferSubmission();
+  usleep(4 * 1000);
+  rb_recorder->RecordBufferCompletion();
+
+  auto expected_buffer_tracker = AllOf(
+      NameMatches(std::string("test_buffer_tracker")),
+      PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
+          // We processed 2 buffers: 10ms and 4ms.
+          UintIs(std::string(kBuffersProcessedCount), 2),
+          UintIs(std::string(kBuffersProcessedDurationCumulativeUsec), 20'000),
+          UintIs(std::string(kProcessingTimeAvgUsec), testing::Ge(7'000)),
+          UintIs(std::string(kProcessingTimeMaxUsec), testing::Ge(10'000)),
+          // We were full during each buffer and empty in-between, but this should not be captured.
+          UintIs(std::string(kEmptyBufferEpisodesCount), 0),
+          UintIs(std::string(kFullBufferEpisodesCount), 0),
+      })));
+
+  // The expectation specified above should hold true for the diagnostics summary...
+  auto hierarchy = GetHierarchy();
+  std::vector<std::string> summary_buffer_tracker_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      std::string(kDiagnosticsSummary),
+      "test_buffer_tracker",
+  };
+  const auto summary_buffer_tracker_hierarchy = hierarchy.GetByPath(summary_buffer_tracker_path);
+  ASSERT_TRUE(summary_buffer_tracker_hierarchy);
+  EXPECT_THAT(*summary_buffer_tracker_hierarchy, NodeMatches(expected_buffer_tracker));
+
+  // ...as well as for the running instance.
+  std::vector<std::string> running_instance_buffer_tracker_path = {
+      std::string(kRingBuffers),
+      "test_ring_buffer",
+      "instance_0",
+      std::string(kRunningIntervals),
+      "0",
+      std::string(kDiagnostics),
+      "test_buffer_tracker",
+  };
+  const auto running_instance_buffer_tracker_hierarchy =
+      hierarchy.GetByPath(running_instance_buffer_tracker_path);
+  ASSERT_TRUE(running_instance_buffer_tracker_hierarchy);
+  EXPECT_THAT(*running_instance_buffer_tracker_hierarchy, NodeMatches(expected_buffer_tracker));
+}
+
 TEST_F(RecorderTest, EmptyFullTracking) {
   recorder()->PopulateRingBuffer("test_ring_buffer", 1, true, true);
   auto* rb_recorder = &recorder()->CreateRingBufferInstance(1, zx::time(0));
@@ -257,6 +326,7 @@ TEST_F(RecorderTest, EmptyFullTracking) {
   rb_recorder->RecordStopTime(zx::time(200));
 
   // Simulate some buffer submissions and completions
+  rb_recorder->StartMonitoringOutstandingBufferCount();
   rb_recorder->RecordBufferSubmission();  // Our buffer-tracker is now full.
   usleep(1000);
 
@@ -267,23 +337,24 @@ TEST_F(RecorderTest, EmptyFullTracking) {
   usleep(3000);
 
   rb_recorder->RecordBufferCompletion();  // Our buffer-tracker is now empty.
+  rb_recorder->StopMonitoringOutstandingBufferCount();
 
   auto expected_buffer_tracker = AllOf(
       NameMatches(std::string("test_buffer_tracker")),
       PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
           // We processed 2 buffers which were 10ms each.
-          UintIs(std::string(kCountBuffersProcessed), 2),
-          UintIs(std::string(kProcessingTimeCumulativeUsec), 2ul * 10 * 1000),
+          UintIs(std::string(kBuffersProcessedCount), 2),
+          UintIs(std::string(kBuffersProcessedDurationCumulativeUsec), 2ul * 10 * 1000),
           // The buffers were processed in 1ms and 3ms respectively.
           UintIs(std::string(kProcessingTimeAvgUsec), testing::Ge(2000)),
           UintIs(std::string(kProcessingTimeMaxUsec), testing::Ge(3000)),
           // We were empty once,for 200ms between the two buffers.
+          UintIs(std::string(kEmptyBufferEpisodesCount), 1),
           UintIs(std::string(kEmptyBufferDurationCumulativeUsec), testing::Ge(200 * 1000)),
-          UintIs(std::string(kEmptyBufferEpisodeCount), 1),
           UintIs(std::string(kEmptyBufferDurationMaxUsec), testing::Ge(200 * 1000)),
           // We were full twice, during the 1ms and 3ms buffers, so the max full duration is 3ms.
+          UintIs(std::string(kFullBufferEpisodesCount), 2),
           UintIs(std::string(kFullBufferDurationCumulativeUsec), testing::Ge(4 * 1000)),
-          UintIs(std::string(kFullBufferEpisodeCount), 2),
           UintIs(std::string(kFullBufferDurationMaxUsec), testing::Ge(3 * 1000)),
       })));
 
@@ -400,13 +471,13 @@ TEST_F(RecorderTest, BufferLevelAccounting) {
   auto expected_buffer_tracker = AllOf(
       NameMatches(std::string("test_buffer_tracker")),
       PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
-          UintIs(std::string(kCountBuffersProcessed), 4),
+          UintIs(std::string(kBuffersProcessedCount), 4),
           // Data points: 3, 3, 2, 1. Average = 2.25
-          DoubleIs(std::string(kCountOutstandingBuffersAvg), DoubleEq(2.25)),
-          UintIs(std::string(kCountOutstandingBuffersMax), 3),
-          UintIs(std::string(kCountOutstandingBuffersMin), 2),
-          UintIs(std::string(kEmptyBufferEpisodeCount), 0),
-          UintIs(std::string(kFullBufferEpisodeCount), 0),
+          DoubleIs(std::string(kOutstandingBuffersCountAvg), DoubleEq(2.25)),
+          UintIs(std::string(kOutstandingBuffersCountMax), 3),
+          UintIs(std::string(kOutstandingBuffersCountMin), 2),
+          UintIs(std::string(kEmptyBufferEpisodesCount), 0),
+          UintIs(std::string(kFullBufferEpisodesCount), 0),
       })));
 
   auto hierarchy = GetHierarchy();
@@ -466,15 +537,13 @@ TEST_F(RecorderTest, BufferAccountingByInstance) {
   auto expected_running_instance0_buffer_tracker = AllOf(
       NameMatches(std::string("test_buffer_tracker")),
       PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
-          UintIs(std::string(kCountBuffersProcessed), 4),  // (3+3+2+1) = 9; avg = 9/4 = 2.25
-          DoubleIs(std::string(kCountOutstandingBuffersAvg), DoubleEq(2.25)),
-          UintIs(std::string(kCountOutstandingBuffersMax), 3),
-          UintIs(std::string(kCountOutstandingBuffersMin), 1),
-          UintIs(std::string(kEmptyBufferEpisodeCount), 0),
-          UintIs(std::string(kFullBufferEpisodeCount), 0),
+          UintIs(std::string(kBuffersProcessedCount), 4),  // (3+3+2+1) = 9; avg = 9/4 = 2.25
+          DoubleIs(std::string(kOutstandingBuffersCountAvg), DoubleEq(2.25)),
+          UintIs(std::string(kOutstandingBuffersCountMax), 3),
+          UintIs(std::string(kOutstandingBuffersCountMin), 1),
+          UintIs(std::string(kEmptyBufferEpisodesCount), 0),
+          UintIs(std::string(kFullBufferEpisodesCount), 0),
       })));
-
-  // We record an EMPTY episode between the 2 sessions, attributed only to the summary.
 
   // Instance 1
   rb_recorder->RecordStartTime(zx::time(21'000'000));
@@ -504,24 +573,24 @@ TEST_F(RecorderTest, BufferAccountingByInstance) {
   auto expected_running_instance1_buffer_tracker = AllOf(
       NameMatches(std::string("test_buffer_tracker")),
       PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
-          UintIs(std::string(kCountBuffersProcessed), 5),  // (3+4+3+2+1) = 13; avg = 13/5 = 2.6
-          DoubleIs(std::string(kCountOutstandingBuffersAvg), DoubleEq(2.6)),
-          UintIs(std::string(kCountOutstandingBuffersMax), 4),
-          UintIs(std::string(kCountOutstandingBuffersMin), 2),
-          UintIs(std::string(kEmptyBufferEpisodeCount), 0),
-          UintIs(std::string(kFullBufferEpisodeCount), 1),
+          UintIs(std::string(kBuffersProcessedCount), 5),  // (3+4+3+2+1) = 13; avg = 13/5 = 2.6
+          DoubleIs(std::string(kOutstandingBuffersCountAvg), DoubleEq(2.6)),
+          UintIs(std::string(kOutstandingBuffersCountMax), 4),
+          UintIs(std::string(kOutstandingBuffersCountMin), 2),
+          UintIs(std::string(kEmptyBufferEpisodesCount), 0),
+          UintIs(std::string(kFullBufferEpisodesCount), 1),
       })));
 
-  // Summary: 9 buffers; running levels 3,3,2,1,3,4,3,2,1; min 1; max 4; 1 EMPTY; 1 FULL.
+  // Summary: 9 buffers; running levels 3,3,2,1,3,4,3,2,1; min 1; max 4; 0 EMPTY; 1 FULL.
   auto expected_summary_buffer_tracker = AllOf(
       NameMatches(std::string("test_buffer_tracker")),
       PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
-          UintIs(std::string(kCountBuffersProcessed), 9),  // (3+3+2+1+3+4+3+2+1)=22; 22/9=2.44...
-          DoubleIs(std::string(kCountOutstandingBuffersAvg), DoubleEq(2.444444444444444)),
-          UintIs(std::string(kCountOutstandingBuffersMax), 4),
-          UintIs(std::string(kCountOutstandingBuffersMin), 1),
-          UintIs(std::string(kEmptyBufferEpisodeCount), 1),
-          UintIs(std::string(kFullBufferEpisodeCount), 1),
+          UintIs(std::string(kBuffersProcessedCount), 9),  // (3+3+2+1+3+4+3+2+1)=22; 22/9=2.44...
+          DoubleIs(std::string(kOutstandingBuffersCountAvg), DoubleEq(2.444444444444444)),
+          UintIs(std::string(kOutstandingBuffersCountMax), 4),
+          UintIs(std::string(kOutstandingBuffersCountMin), 1),
+          UintIs(std::string(kEmptyBufferEpisodesCount), 0),
+          UintIs(std::string(kFullBufferEpisodesCount), 1),
       })));
 
   auto hierarchy = GetHierarchy();
@@ -636,7 +705,7 @@ TEST_F(RecorderTest, SchedulingDelayMetrics) {
 
   auto expected_min_metrics =
       AllOf(NameMatches(std::string(kMin)),
-            PropertyList(Contains(IntIs(std::string("scheduling_delay_us"), testing::Ge(500)))));
+            PropertyList(Contains(IntIs(std::string(kSchedulingDelayUsec), testing::Ge(500)))));
 
   auto hierarchy = GetHierarchy();
   std::vector<std::string> rb_min_metrics_path = {
