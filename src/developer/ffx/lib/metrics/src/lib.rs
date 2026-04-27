@@ -71,7 +71,7 @@ pub async fn add_ffx_launch_event(
             Some("invoke"),
         )
         .await?;
-    metrics_svc.send_events().await
+    metrics_svc.send_events().await.map_err(anyhow::Error::from)
 }
 
 pub async fn add_daemon_metrics_event(request_str: &str) {
@@ -114,5 +114,7 @@ pub async fn add_flash_partition_event(
         ("file_size", file_size.into()),
         ("flash_time", u64_time.into()),
     ]);
-    add_custom_event(Some("ffx_flash"), None, None, custom_dimensions).await
+    add_custom_event(Some("ffx_flash"), None, None, custom_dimensions)
+        .await
+        .map_err(anyhow::Error::from)
 }

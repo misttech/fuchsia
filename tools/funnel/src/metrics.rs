@@ -14,6 +14,9 @@ pub const GA4_KEY: &str = "mHeVJ5GxQTCvAVCmVHn_dw";
 pub enum MetricsError {
     #[error("{}",.0)]
     CouldNotRecordMetrics(#[from] anyhow::Error),
+
+    #[error("{}",.0)]
+    Analytics(#[from] analytics::AnalyticsError),
 }
 
 pub trait MetricsService {

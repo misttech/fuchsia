@@ -461,7 +461,8 @@ impl Ffx {
         // Configuration initialization must happen before ANY calls to the config (or the cache won't
         // properly have the runtime parameters.
         let overrides = self.runtime_config_overrides();
-        let mut runtime_args = ffx_config::runtime::populate_runtime(&*self.config, overrides)?;
+        let mut runtime_args = ffx_config::runtime::populate_runtime(&*self.config, overrides)
+            .map_err(anyhow::Error::from)?;
         if self.direct {
             // If "-d" is passed, insert "connectivity.direct=true"
             // Note: "--direct" will take precedence over "-c connectivity.direct=false"

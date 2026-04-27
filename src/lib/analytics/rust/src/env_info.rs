@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Error, Result, bail};
+use crate::AnalyticsError;
 #[allow(unused_imports)]
 use home::home_dir;
 use nix::unistd;
@@ -38,22 +38,22 @@ fn convert_macos_to_darwin(arch: &str) -> String {
 /// When, creating this folder, if there is a legacy analytics folder,
 /// it migrates those settings.
 ///
-pub fn get_analytics_dir() -> Result<PathBuf, Error> {
+pub fn get_analytics_dir() -> Result<PathBuf, AnalyticsError> {
     let analytics_folder = new_analytics_folder();
     migrate_legacy_folder(&analytics_folder)?;
     Ok(analytics_folder)
 }
 
-pub(crate) fn migrate_legacy_folder(analytics_folder: &PathBuf) -> Result<(), Error> {
+pub(crate) fn migrate_legacy_folder(analytics_folder: &PathBuf) -> Result<(), AnalyticsError> {
     let old_analytics_folder = old_analytics_folder();
     if !analytics_folder.exists() && old_analytics_folder.exists() {
         log::trace!("Migrating analytics to {analytics_folder:?}");
-        create_dir_all(&analytics_folder)?;
+        create_dir_all(&analytics_folder).map_err(AnalyticsError::Io)?;
         copy_old_to_new(&old_analytics_folder, &analytics_folder)?;
         remove_old_analytics_dir(&old_analytics_folder);
         symlink_old_to_new(&analytics_folder, &old_analytics_folder);
     } else if !analytics_folder.exists() {
-        create_dir_all(&analytics_folder)?;
+        create_dir_all(&analytics_folder).map_err(AnalyticsError::Io)?;
     }
     Ok(())
 }
@@ -112,14 +112,15 @@ fn new_analytics_folder() -> PathBuf {
 fn copy_old_to_new(
     old_analytics_folder: &PathBuf,
     new_analytics_folder: &PathBuf,
-) -> Result<(), Error> {
+) -> Result<(), AnalyticsError> {
     if !&old_analytics_folder.exists() {
-        bail!("old_analytics_folder not found");
+        return Err(AnalyticsError::OldFolderNotFound);
     }
-    for entry in read_dir(old_analytics_folder)? {
-        let entry = entry?;
+    for entry in read_dir(old_analytics_folder).map_err(AnalyticsError::Io)? {
+        let entry = entry.map_err(AnalyticsError::Io)?;
         log::trace!("Copying file: {:?}", &entry.path());
-        copy(entry.path(), new_analytics_folder.as_path().join(entry.file_name()))?;
+        copy(entry.path(), new_analytics_folder.as_path().join(entry.file_name()))
+            .map_err(AnalyticsError::Io)?;
     }
     Ok(())
 }
@@ -204,8 +205,7 @@ const USER_REDACTED: &str = "$USER";
 const HOSTNAME_REDACTED: &str = "$HOSTNAME";
 
 pub fn is_test_env() -> bool {
-    std::env::var(TEST_ENV_VAR).is_ok()
-    || std::env::var(HOME_VAR).is_err()
+    std::env::var(TEST_ENV_VAR).is_ok() || std::env::var(HOME_VAR).is_err()
 }
 
 pub fn is_fuchsia_analytics_disabled_set() -> bool {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Error, Result};
+use crate::AnalyticsError;
 use std::fs::{File, create_dir_all, read_to_string, remove_file};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -113,7 +113,7 @@ impl MetricsState {
         metrics
     }
 
-    pub(crate) fn set_opt_in_status(&mut self, opt_in: bool) -> Result<(), Error> {
+    pub(crate) fn set_opt_in_status(&mut self, opt_in: bool) -> Result<(), AnalyticsError> {
         if self.status == MetricsStatus::Disabled {
             return Ok(());
         }
@@ -141,7 +141,10 @@ impl MetricsState {
         Ok(())
     }
 
-    pub(crate) fn set_new_opt_in_status(&mut self, status: MetricsStatus) -> Result<(), Error> {
+    pub(crate) fn set_new_opt_in_status(
+        &mut self,
+        status: MetricsStatus,
+    ) -> Result<(), AnalyticsError> {
         if self.status == MetricsStatus::Disabled {
             return Ok(());
         }
@@ -178,7 +181,7 @@ impl MetricsState {
 
     // disable analytics for this invocation only
     // this does not affect the global analytics state
-    pub fn opt_out_for_this_invocation(&mut self) -> Result<()> {
+    pub fn opt_out_for_this_invocation(&mut self) -> Result<(), AnalyticsError> {
         if self.status == MetricsStatus::Disabled {
             return Ok(());
         }
@@ -306,7 +309,6 @@ impl MetricsState {
     }
 
     fn set_internal_new_user(&mut self) {
-        self.init_uuid();
         self.is_new_internal_user = true;
     }
 }
@@ -329,36 +331,43 @@ impl Default for MetricsState {
     }
 }
 
-fn read_opt_in_status(metrics_dir: &Path) -> Result<bool, Error> {
+fn read_opt_in_status(metrics_dir: &Path) -> Result<bool, AnalyticsError> {
     let status_file = metrics_dir.join(OPT_IN_STATUS_FILENAME);
     read_bool_from(&status_file)
 }
 
-pub(crate) fn write_opt_in_status(metrics_dir: &PathBuf, status: bool) -> Result<(), Error> {
+pub(crate) fn write_opt_in_status(
+    metrics_dir: &PathBuf,
+    status: bool,
+) -> Result<(), AnalyticsError> {
     create_dir_all(&metrics_dir)?;
 
     let status_file = metrics_dir.join(OPT_IN_STATUS_FILENAME);
     write_bool_to(&status_file, status)
 }
 
-fn read_app_status(metrics_dir: &PathBuf, app: &str) -> Result<bool, Error> {
+fn read_app_status(metrics_dir: &PathBuf, app: &str) -> Result<bool, AnalyticsError> {
     let status_file = metrics_dir.join(app);
     read_bool_from(&status_file)
 }
 
-pub fn write_app_status(metrics_dir: &PathBuf, app: &str, status: bool) -> Result<(), Error> {
+pub fn write_app_status(
+    metrics_dir: &PathBuf,
+    app: &str,
+    status: bool,
+) -> Result<(), AnalyticsError> {
     create_dir_all(&metrics_dir)?;
 
     let status_file = metrics_dir.join(app);
     write_bool_to(&status_file, status)
 }
 
-fn read_analytics_status_internal(metrics_dir: &Path) -> Result<MetricsStatus, Error> {
+fn read_analytics_status_internal(metrics_dir: &Path) -> Result<MetricsStatus, AnalyticsError> {
     let status_file = metrics_dir.join(ANALYTICS_STATUS_INTERNAL_FILENAME);
     read_metric_status_from(&status_file)
 }
 
-fn read_metric_status_from(path: &PathBuf) -> Result<MetricsStatus, Error> {
+fn read_metric_status_from(path: &PathBuf) -> Result<MetricsStatus, AnalyticsError> {
     let result = read_to_string(path)?;
     let parse: &str = &result.trim_end();
     let status = match parse {
@@ -373,14 +382,14 @@ fn read_metric_status_from(path: &PathBuf) -> Result<MetricsStatus, Error> {
 pub(crate) fn write_analytics_status_internal(
     metrics_dir: &PathBuf,
     status: &MetricsStatus,
-) -> Result<(), Error> {
+) -> Result<(), AnalyticsError> {
     create_dir_all(&metrics_dir)?;
 
     let status_file = metrics_dir.join(ANALYTICS_STATUS_INTERNAL_FILENAME);
     write_metric_status_to(&status_file, status)
 }
 
-fn write_metric_status_to(path: &PathBuf, status: &MetricsStatus) -> Result<(), Error> {
+fn write_metric_status_to(path: &PathBuf, status: &MetricsStatus) -> Result<(), AnalyticsError> {
     let tmp_file = File::create(path)?;
     let value = match status {
         MetricsStatus::OptedOut => "0",
@@ -392,39 +401,39 @@ fn write_metric_status_to(path: &PathBuf, status: &MetricsStatus) -> Result<(), 
     Ok(())
 }
 
-fn read_bool_from(path: &PathBuf) -> Result<bool, Error> {
+fn read_bool_from(path: &PathBuf) -> Result<bool, AnalyticsError> {
     let result = read_to_string(path)?;
     let parse = &result.trim_end().parse::<u8>()?;
     Ok(*parse != 0)
 }
 
-fn write_bool_to(status_file_path: &PathBuf, state: bool) -> Result<(), Error> {
+fn write_bool_to(status_file_path: &PathBuf, state: bool) -> Result<(), AnalyticsError> {
     let tmp_file = File::create(status_file_path)?;
     writeln!(&tmp_file, "{}", state as u8)?;
     Ok(())
 }
 
-fn read_uuid_file(metrics_dir: &PathBuf) -> Result<Uuid, Error> {
+fn read_uuid_file(metrics_dir: &PathBuf) -> Result<Uuid, AnalyticsError> {
     let file = metrics_dir.join("uuid");
     let path = file.as_path();
     let result = read_to_string(path)?;
     match Uuid::parse_str(result.trim_end()) {
         Ok(uuid) => Ok(uuid),
-        Err(e) => Err(Error::from(e)),
+        Err(e) => Err(AnalyticsError::Uuid(e)),
     }
 }
 
-fn delete_uuid_file(metrics_dir: &PathBuf) -> Result<(), Error> {
+fn delete_uuid_file(metrics_dir: &PathBuf) -> Result<(), AnalyticsError> {
     delete_app_file(metrics_dir, "uuid")
 }
 
-fn delete_app_file(metrics_dir: &PathBuf, app: &str) -> Result<(), Error> {
+fn delete_app_file(metrics_dir: &PathBuf, app: &str) -> Result<(), AnalyticsError> {
     let file = metrics_dir.join(app);
     let path = file.as_path();
     if file.exists() { Ok(remove_file(path)?) } else { Ok(()) }
 }
 
-fn write_uuid_file(dir: &PathBuf, uuid: &str) -> Result<(), Error> {
+fn write_uuid_file(dir: &PathBuf, uuid: &str) -> Result<(), AnalyticsError> {
     create_dir_all(&dir)?;
     let file_obj = &dir.join(&"uuid");
     let uuid_file_path = file_obj.as_path();
@@ -461,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn new_user_of_any_tool() -> Result<(), Error> {
+    fn new_user_of_any_tool() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         let m = MetricsState::new(
             &dir,
@@ -501,7 +510,8 @@ mod tests {
     }
 
     #[test]
-    fn existing_user_first_use_of_this_tool() -> Result<(), Error> {
+    fn existing_user_first_use_of_this_tool() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, true)?;
 
@@ -543,7 +553,8 @@ mod tests {
     }
 
     #[test]
-    fn existing_user_of_this_tool_opted_in() -> Result<(), Error> {
+    fn existing_user_of_this_tool_opted_in() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, true)?;
         write_app_status(&dir, APP_NAME, true)?;
@@ -575,7 +586,8 @@ mod tests {
     }
 
     #[test]
-    fn existing_user_of_this_tool_opted_out() -> Result<(), Error> {
+    fn existing_user_of_this_tool_opted_out() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, false)?;
         write_app_status(&dir, &APP_NAME, true)?;
@@ -601,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn with_disable_env_var_set() -> Result<(), Error> {
+    fn with_disable_env_var_set() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         let m = MetricsState::new(
             &dir,
@@ -621,7 +633,8 @@ mod tests {
     }
 
     #[test]
-    fn existing_user_of_this_tool_opted_in_then_out_then_in() -> Result<(), Error> {
+    fn existing_user_of_this_tool_opted_in_then_out_then_in()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, true)?;
         write_app_status(&dir, &APP_NAME, true)?;
@@ -664,8 +677,8 @@ mod tests {
         Ok(())
     }
 
-    pub fn create_tmp_metrics_dir() -> Result<PathBuf, Error> {
-        let tmp_dir = tempdir()?;
+    pub fn create_tmp_metrics_dir() -> Result<PathBuf, AnalyticsError> {
+        let tmp_dir = tempdir().map_err(AnalyticsError::Io)?;
         let dir_obj = tmp_dir.path().join("fuchsia_metrics");
         let dir = dir_obj.as_path();
         Ok(dir.to_owned())

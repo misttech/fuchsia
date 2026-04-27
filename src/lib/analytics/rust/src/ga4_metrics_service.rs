@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
+use crate::AnalyticsError;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::analytics_client::GA4AnalyticsClient;
@@ -74,7 +74,7 @@ impl GA4MetricsService {
 
     /// Records Analytics participation status.
     /// TODO remove this once foxtrot is migrated to set_new_opt_in_status
-    pub fn set_opt_in_status(&mut self, enabled: bool) -> Result<()> {
+    pub fn set_opt_in_status(&mut self, enabled: bool) -> Result<(), AnalyticsError> {
         if enabled {
             if self.client.is_none() {
                 self.client = Some(GA4AnalyticsClient::new(
@@ -90,7 +90,7 @@ impl GA4MetricsService {
 
     /// Record analytics participation status in new migrated status file to support
     /// enhanced analytics for Googlers.
-    pub fn set_new_opt_in_status(&mut self, status: MetricsStatus) -> Result<()> {
+    pub fn set_new_opt_in_status(&mut self, status: MetricsStatus) -> Result<(), AnalyticsError> {
         if status.is_opted_in() {
             if self.client.is_none() {
                 self.client = Some(GA4AnalyticsClient::new(
@@ -115,13 +115,13 @@ impl GA4MetricsService {
 
     /// Disables analytics for this invocation only.
     /// This does not affect the global analytics state.
-    pub fn opt_out_for_this_invocation(&mut self) -> Result<()> {
+    pub fn opt_out_for_this_invocation(&mut self) -> Result<(), AnalyticsError> {
         self.client = None;
         self.metrics_state.opt_out_for_this_invocation()
     }
 
     /// Adds a launch event to the Post
-    pub async fn add_launch_event(&mut self, args: Option<&str>) -> Result<()> {
+    pub async fn add_launch_event(&mut self, args: Option<&str>) -> Result<(), AnalyticsError> {
         self.add_custom_event(None, args, args, BTreeMap::new(), Some("launch")).await
     }
 
@@ -135,7 +135,7 @@ impl GA4MetricsService {
         label: Option<&str>,
         custom_dimensions: BTreeMap<&str, GA4Value>,
         event_name: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<(), AnalyticsError> {
         if !self.is_opted_in() {
             return Ok(());
         }
@@ -155,7 +155,11 @@ impl GA4MetricsService {
     /// conforming to the UA Event parameters already
     /// in use.
     // TODO With GA4's flexibility, rework exception reporting to be more informative
-    pub async fn add_crash_event(&mut self, description: &str, fatal: Option<&bool>) -> Result<()> {
+    pub async fn add_crash_event(
+        &mut self,
+        description: &str,
+        fatal: Option<&bool>,
+    ) -> Result<(), AnalyticsError> {
         if !self.is_opted_in() {
             return Ok(());
         }
@@ -173,7 +177,7 @@ impl GA4MetricsService {
         variable: Option<&str>,
         label: Option<&str>,
         custom_dimensions: BTreeMap<&str, GA4Value>,
-    ) -> Result<()> {
+    ) -> Result<(), AnalyticsError> {
         if !self.is_opted_in() {
             return Ok(());
         }
@@ -191,7 +195,7 @@ impl GA4MetricsService {
 
     /// Sends the Post, with all accumulated events
     /// to the Google Analytics service.
-    pub async fn send_events(&mut self) -> Result<()> {
+    pub async fn send_events(&mut self) -> Result<(), AnalyticsError> {
         if !self.is_opted_in() {
             return Ok(());
         }
@@ -350,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn new_user_of_any_tool() -> Result<()> {
+    fn new_user_of_any_tool() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         let ms = test_metrics_svc(
             &dir,
@@ -374,7 +378,8 @@ mod tests {
     }
 
     #[test]
-    fn existing_user_first_use_of_this_tool() -> Result<()> {
+    fn existing_user_first_use_of_this_tool() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, true)?;
 
@@ -403,7 +408,8 @@ mod tests {
     }
 
     #[test]
-    fn existing_user_of_this_tool_opted_in() -> Result<()> {
+    fn existing_user_of_this_tool_opted_in() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, true)?;
         write_app_status(&dir, &APP_NAME, true)?;
@@ -428,7 +434,8 @@ mod tests {
     }
 
     #[test]
-    fn existing_user_of_this_tool_opted_out() -> Result<()> {
+    fn existing_user_of_this_tool_opted_out() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, false)?;
         write_app_status(&dir, &APP_NAME, true)?;
@@ -450,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn with_disable_env_var_set() -> Result<()> {
+    fn with_disable_env_var_set() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, true)?;
         write_app_status(&dir, &APP_NAME, true)?;
@@ -473,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn opt_out_for_this_invocation() -> Result<()> {
+    fn opt_out_for_this_invocation() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         let mut ms = test_metrics_svc(
             &dir,
@@ -499,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn opt_in_from_opted_out() -> Result<()> {
+    fn opt_in_from_opted_out() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, false)?;
         let mut ms = test_metrics_svc(
@@ -523,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn opt_out_from_opted_in() -> Result<()> {
+    fn opt_out_from_opted_in() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, true)?;
         let mut ms = test_metrics_svc(
@@ -548,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn opt_in_from_opted_in() -> Result<()> {
+    fn opt_in_from_opted_in() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, true)?;
         let mut ms = test_metrics_svc(
@@ -573,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn opt_out_from_opted_out() -> Result<()> {
+    fn opt_out_from_opted_out() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let dir = create_tmp_metrics_dir()?;
         write_opt_in_status(&dir, false)?;
         let mut ms = test_metrics_svc(
@@ -597,7 +604,7 @@ mod tests {
         Ok(())
     }
 
-    pub fn create_tmp_metrics_dir() -> Result<PathBuf> {
+    pub fn create_tmp_metrics_dir() -> Result<PathBuf, AnalyticsError> {
         let tmp_dir = tempdir()?;
         let dir_obj = tmp_dir.path().join("fuchsia_metrics");
         let dir = dir_obj.as_path();

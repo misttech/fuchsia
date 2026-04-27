@@ -2,8 +2,36 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Result};
+use thiserror::Error;
+
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Error)]
+pub enum ValidationError {
+    #[error("Too many events in Post. Limit is {0}")]
+    TooManyEvents(usize),
+
+    #[error("Too many params in Event")]
+    TooManyParams,
+
+    #[error("Too many item params. Limit is {0}")]
+    TooManyItemParams(usize),
+
+    #[error("User property value too long for property '{name}': {value}")]
+    UserPropertyValueTooLong { name: String, value: String },
+
+    #[error("String '{value}' longer than max length {max_len}")]
+    StringTooLong { value: String, max_len: usize },
+
+    #[error("Key too long: {0}")]
+    KeyTooLong(String),
+
+    #[error("Value '{value}' too long for key '{key}'")]
+    ValueTooLong { key: String, value: String },
+
+    #[error("Too many user properties. Limit is {0}")]
+    TooManyUserProperties(usize),
+}
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -47,21 +75,17 @@ impl Event {
         };
     }
 
-    pub fn validate(&self) -> Result<(), anyhow::Error> {
+    pub fn validate(&self) -> Result<(), ValidationError> {
         self.validate_name_length()?;
         self.validate_params()
     }
 
-    pub fn validate_name_length(&self) -> Result<(), anyhow::Error> {
+    pub fn validate_name_length(&self) -> Result<(), ValidationError> {
         validate_string_len(&self.name, EVENT_NAME_LENGTH_MAX)
     }
 
-    fn validate_params(&self) -> std::result::Result<(), anyhow::Error> {
-        if let Some(ps) = &self.params {
-            ps.validate()
-        } else {
-            Ok(())
-        }
+    fn validate_params(&self) -> std::result::Result<(), ValidationError> {
+        if let Some(ps) = &self.params { ps.validate() } else { Ok(()) }
     }
 }
 
@@ -85,24 +109,32 @@ impl Params {
         self.params.insert(param_key.into(), value);
     }
 
-    fn validate(&self) -> Result<(), anyhow::Error> {
+    fn validate(&self) -> Result<(), ValidationError> {
         if self.params.keys().count() > EVENT_PARAM_COUNT_MAX {
-            bail!("Too many params in Event")
+            return Err(ValidationError::TooManyParams);
         }
         // TODO add name, value validations for self::items if we ever start using them.
         // Currently, we are not using them.
         if let Some(items) = &self.items {
             if items.len() > ITEM_PARAM_COUNT_MAX {
-                bail!("Too many item params. Limit is {}", ITEM_PARAM_COUNT_MAX)
+                return Err(ValidationError::TooManyItemParams(ITEM_PARAM_COUNT_MAX));
             }
         }
         self.validate_params()
     }
 
-    fn validate_params(&self) -> std::result::Result<(), anyhow::Error> {
-        validate_map(&self.params, PARAM_NAME_LENGTH_MAX, |v: &GA4Value| match v {
-            GA4Value::Str(s) => s.len() > PARAM_VALUE_LENGTH_MAX,
-            _ => false,
+    fn validate_params(&self) -> std::result::Result<(), ValidationError> {
+        validate_map(&self.params, PARAM_NAME_LENGTH_MAX, |k: &str, v: &GA4Value| match v {
+            GA4Value::Str(s) => {
+                if s.len() > PARAM_VALUE_LENGTH_MAX {
+                    return Err(ValidationError::ValueTooLong {
+                        key: k.to_string(),
+                        value: s.clone(),
+                    });
+                }
+                Ok(())
+            }
+            _ => Ok(()),
         })
     }
 }
@@ -119,15 +151,14 @@ pub struct ValueObject {
 }
 
 impl ValueObject {
-    fn validate(&self) -> Result<(), anyhow::Error> {
+    fn validate(&self, name: &str) -> Result<(), ValidationError> {
         match &self.value {
             GA4Value::Str(s) => {
                 if s.len() > USER_PROPERTY_VALUE_LENGTH_MAX {
-                    bail!(
-                        "User property value {:?} is greater than max {:?}",
-                        &self.value,
-                        USER_PROPERTY_VALUE_LENGTH_MAX
-                    )
+                    return Err(ValidationError::UserPropertyValueTooLong {
+                        name: name.to_string(),
+                        value: s.clone(),
+                    });
                 }
             }
             _ => (),
@@ -220,9 +251,9 @@ impl Post {
         json
     }
 
-    pub fn validate(&self) -> Result<(), anyhow::Error> {
+    pub fn validate(&self) -> Result<(), ValidationError> {
         if self.events.len() > POST_EVENT_COUNT_MAX {
-            bail!("Too many events in Post. Limit is {}", POST_EVENT_COUNT_MAX);
+            return Err(ValidationError::TooManyEvents(POST_EVENT_COUNT_MAX));
         }
         if let Some(event) = self.events.iter().find(|e| e.validate().is_err()) {
             return event.validate(); // returns the error result for the found event
@@ -230,14 +261,16 @@ impl Post {
         self.validate_user_properties()
     }
 
-    fn validate_user_properties(&self) -> std::result::Result<(), anyhow::Error> {
+    fn validate_user_properties(&self) -> std::result::Result<(), ValidationError> {
         match &self.user_properties {
             Some(props) => {
                 if props.keys().len() > EVENT_USER_PROPERTY_COUNT_MAX {
-                    bail!("Too many user parameters. Limit is {}", EVENT_USER_PROPERTY_COUNT_MAX)
+                    return Err(ValidationError::TooManyUserProperties(
+                        EVENT_USER_PROPERTY_COUNT_MAX,
+                    ));
                 }
-                validate_map(props, USER_PROPERTY_NAME_LENGTH_MAX, |v: &ValueObject| {
-                    v.validate().is_err()
+                validate_map(props, USER_PROPERTY_NAME_LENGTH_MAX, |k: &str, v: &ValueObject| {
+                    v.validate(k)
                 })
             }
             None => Ok(()),
@@ -361,10 +394,10 @@ pub(crate) fn make_ga4_timing_event<'a>(
     Event::new("timing".into(), Some(Params { items: None, params: params.to_owned() }))
 }
 
-pub fn validate_string_len(string: &str, max_len: usize) -> Result<(), anyhow::Error> {
+pub fn validate_string_len(string: &str, max_len: usize) -> Result<(), ValidationError> {
     match string.len() <= max_len {
         true => Ok(()),
-        false => bail!("String, {}, longer than max length {}", string, max_len),
+        false => return Err(ValidationError::StringTooLong { value: string.to_string(), max_len }),
     }
 }
 
@@ -378,18 +411,20 @@ pub fn truncate_string_to_len(string: &str, max_len: usize) -> &str {
 /// Ensure that the keys and values of a map
 /// adhere to the Measurement Protocol constraints.
 /// The value_predicate parameter allows differing tests on values.
-fn validate_map<'a, F: Fn(&V) -> bool, V: Debug>(
+fn validate_map<'a, F, V>(
     hash_map: &'a HashMap<String, V>,
     key_max_length: usize,
     value_error_predicate: F,
-) -> std::result::Result<(), anyhow::Error> {
+) -> std::result::Result<(), ValidationError>
+where
+    F: Fn(&str, &V) -> Result<(), ValidationError>,
+    V: std::fmt::Debug,
+{
     for (k, v) in hash_map {
         if k.len() > key_max_length {
-            bail!("Key too long: {:?}", k);
+            return Err(ValidationError::KeyTooLong(k.clone()));
         }
-        if value_error_predicate(v) {
-            bail!("Value too long: {:?}", v);
-        }
+        value_error_predicate(k, v)?;
     }
     Ok(())
 }
@@ -466,47 +501,79 @@ mod tests {
     #[test]
     fn validate_keys_none() {
         let map: &mut HashMap<String, GA4Value> = &mut HashMap::new();
-        assert!(validate_map(&map, 10, |v: &GA4Value| match v {
-            GA4Value::Str(s) => {
-                s.len() > 10
-            }
-            _ => false,
-        })
-        .is_ok());
+        assert!(
+            validate_map(&map, 10, |k: &str, v: &GA4Value| match v {
+                GA4Value::Str(s) => {
+                    if s.len() > 10 {
+                        return Err(ValidationError::ValueTooLong {
+                            key: k.to_string(),
+                            value: s.clone(),
+                        });
+                    }
+                    Ok(())
+                }
+                _ => Ok(()),
+            })
+            .is_ok()
+        );
     }
 
     #[test]
     fn validate_keys_one_too_long() {
         let map: &mut HashMap<String, GA4Value> =
             &mut HashMap::from([("key_too_long".to_string(), GA4Value::Str("value".to_string()))]);
-        assert!(validate_map(&map, 10, |v: &GA4Value| match v {
-            GA4Value::Str(s) => {
-                s.len() > 10
-            }
-            _ => false,
-        })
-        .is_err());
+        assert!(
+            validate_map(&map, 10, |k: &str, v: &GA4Value| match v {
+                GA4Value::Str(s) => {
+                    if s.len() > 10 {
+                        return Err(ValidationError::ValueTooLong {
+                            key: k.to_string(),
+                            value: s.clone(),
+                        });
+                    }
+                    Ok(())
+                }
+                _ => Ok(()),
+            })
+            .is_err()
+        );
     }
 
     #[test]
     fn validate_keys_one_ok() {
         let map =
             &mut HashMap::from([("key_too_long".to_string(), GA4Value::Str("value".to_string()))]);
-        assert!(validate_map(&map, 12, |v: &GA4Value| match v {
-            GA4Value::Str(s) => {
-                s.len() > 10
-            }
-            _ => false,
-        })
-        .is_ok());
+        assert!(
+            validate_map(&map, 12, |k: &str, v: &GA4Value| match v {
+                GA4Value::Str(s) => {
+                    if s.len() > 10 {
+                        return Err(ValidationError::ValueTooLong {
+                            key: k.to_string(),
+                            value: s.clone(),
+                        });
+                    }
+                    Ok(())
+                }
+                _ => Ok(()),
+            })
+            .is_ok()
+        );
     }
 
     #[test]
     fn validate_values_none() {
         let map: &mut HashMap<String, GA4Value> = &mut HashMap::new();
-        let result = validate_map(&map, PARAM_NAME_LENGTH_MAX, |v: &GA4Value| match v {
-            GA4Value::Str(s) => s.chars().count() > PARAM_VALUE_LENGTH_MAX,
-            _ => false,
+        let result = validate_map(&map, PARAM_NAME_LENGTH_MAX, |k: &str, v: &GA4Value| match v {
+            GA4Value::Str(s) => {
+                if s.chars().count() > PARAM_VALUE_LENGTH_MAX {
+                    return Err(ValidationError::ValueTooLong {
+                        key: k.to_string(),
+                        value: s.clone(),
+                    });
+                }
+                Ok(())
+            }
+            _ => Ok(()),
         });
         assert!(result.is_ok());
     }
@@ -515,9 +582,17 @@ mod tests {
     fn validate_values_one_good() {
         let map: &mut HashMap<String, GA4Value> =
             &mut HashMap::from([("ok_key".to_string(), GA4Value::Str("ok_value".to_string()))]);
-        let result = validate_map(&map, PARAM_NAME_LENGTH_MAX, |v: &GA4Value| match v {
-            GA4Value::Str(s) => s.chars().count() > PARAM_VALUE_LENGTH_MAX,
-            _ => false,
+        let result = validate_map(&map, PARAM_NAME_LENGTH_MAX, |k: &str, v: &GA4Value| match v {
+            GA4Value::Str(s) => {
+                if s.chars().count() > PARAM_VALUE_LENGTH_MAX {
+                    return Err(ValidationError::ValueTooLong {
+                        key: k.to_string(),
+                        value: s.clone(),
+                    });
+                }
+                Ok(())
+            }
+            _ => Ok(()),
         });
         assert!(result.is_ok());
     }
@@ -526,9 +601,17 @@ mod tests {
     fn validate_values_one_too_long() {
         let map: &mut HashMap<String, GA4Value> =
             &mut HashMap::from([("ok_key".to_string(), GA4Value::Str("12345678901".to_string()))]);
-        let result = validate_map(&map, PARAM_NAME_LENGTH_MAX, |v: &GA4Value| match v {
-            GA4Value::Str(s) => s.chars().count() > 10,
-            _ => false,
+        let result = validate_map(&map, PARAM_NAME_LENGTH_MAX, |k: &str, v: &GA4Value| match v {
+            GA4Value::Str(s) => {
+                if s.chars().count() > 10 {
+                    return Err(ValidationError::ValueTooLong {
+                        key: k.to_string(),
+                        value: s.clone(),
+                    });
+                }
+                Ok(())
+            }
+            _ => Ok(()),
         });
         assert!(result.is_err());
     }
@@ -554,7 +637,7 @@ mod tests {
     #[test]
     fn valueobject_validation_ok() {
         let v = ValueObject { value: GA4Value::Str("value for event of interest".to_string()) };
-        assert!(v.validate().is_ok());
+        assert!(v.validate("property_name").is_ok());
     }
 
     #[test]
@@ -562,13 +645,15 @@ mod tests {
         let v = ValueObject {
             value: GA4Value::Str("01234567890123456789012345678901234567".to_string()),
         };
-        assert!(v.validate().is_err());
+        assert!(v.validate("property_name").is_err());
     }
 
     #[test]
     fn make_post_event() {
         let args = "config analytics enable";
-        let expected = String::from("{\"client_id\":\"1\",\"events\":[{\"name\":\"invoke\",\"params\":{\"label\":\"config analytics enable\"},\"timestamp_micros\":\"1\"}],\"non_personalized_ads\":true}");
+        let expected = String::from(
+            "{\"client_id\":\"1\",\"events\":[{\"name\":\"invoke\",\"params\":{\"label\":\"config analytics enable\"},\"timestamp_micros\":\"1\"}],\"non_personalized_ads\":true}",
+        );
         let mut event =
             make_ga4_event(None, None, Some(args), BTreeMap::new(), None, Some("invoke"));
         event.timestamp_micros = 1.to_string(); // timestamps need to be set to the same time for strings to match

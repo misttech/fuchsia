@@ -56,7 +56,7 @@ impl MetricsSession {
         };
         init_metrics_svc(analytics_path, build_info, invoker.clone(), sdk_version).await;
         if !enabled {
-            opt_out_for_this_invocation().await?
+            opt_out_for_this_invocation().await.map_err(anyhow::Error::from)?
         }
         let session_start = Instant::now();
         Ok(Self { enabled, session_start, upload_timeout })

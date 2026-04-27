@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
+use crate::AnalyticsError;
 use hyper::body::HttpBody;
 use hyper::{Body, Method, Request};
 
@@ -45,7 +45,7 @@ impl GA4AnalyticsClient {
         )
     }
 
-    pub async fn send(&self, post: &mut Post) -> Result<()> {
+    pub async fn send(&self, post: &mut Post) -> Result<(), AnalyticsError> {
         let post_body = post.to_json();
         let url = self.get_url();
         log::trace!(url:%, post_body:%; "POSTING GA4 ANALYTICS");

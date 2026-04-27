@@ -10,7 +10,8 @@ pub mod metrics_state;
 mod mock_https_client;
 mod notice;
 
-use anyhow::{Result, bail};
+use thiserror::Error;
+
 use futures::lock::Mutex;
 use metrics_state::MetricsStatus;
 use std::collections::BTreeMap;
@@ -24,7 +25,35 @@ pub use crate::ga4_event::GA4Value;
 use crate::ga4_metrics_service::*;
 use crate::metrics_state::{MetricsState, UNKNOWN_VERSION};
 
-const INIT_ERROR: &str = "Please call analytics::init prior to any other analytics api calls.";
+#[derive(Debug, Error)]
+pub enum AnalyticsError {
+    #[error("Metrics service not initialized")]
+    NotInitialized,
+
+    #[error("Metrics service already initialized")]
+    AlreadyInitialized,
+
+    #[error("Old analytics folder not found")]
+    OldFolderNotFound,
+
+    #[error("Validation error: {0}")]
+    Validation(#[from] crate::ga4_event::ValidationError),
+
+    #[error("HTTP error: {0}")]
+    Http(#[from] hyper::http::Error),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("UUID error: {0}")]
+    Uuid(#[from] uuid::Error),
+
+    #[error("Parse int error: {0}")]
+    ParseInt(#[from] std::num::ParseIntError),
+}
 
 pub static GA4_METRICS_INSTANCE: OnceLock<Arc<Mutex<GA4MetricsService>>> = OnceLock::new();
 
@@ -41,7 +70,7 @@ pub async fn initialize_ga4_metrics_service(
     ga4_product_code: String,
     ga4_key: String,
     invoker: Option<String>,
-) -> Result<Arc<Mutex<GA4MetricsService>>> {
+) -> Result<Arc<Mutex<GA4MetricsService>>, AnalyticsError> {
     let metrics_dir: PathBuf;
     let mut disabled_by_init_failure = false;
 
@@ -72,7 +101,7 @@ pub async fn initialize_ga4_metrics_service(
     let data = Mutex::new(raw_svc);
     let svc = Arc::new(data);
     if let Err(_) = GA4_METRICS_INSTANCE.set(svc.clone()) {
-        bail!(INIT_ERROR)
+        return Err(AnalyticsError::AlreadyInitialized);
     }
     Ok(svc)
 }
@@ -80,11 +109,11 @@ pub async fn initialize_ga4_metrics_service(
 /// After calling init above once in your app,
 /// use this to get an instance of the GA4MetricsService
 /// whenever necessary.
-pub async fn ga4_metrics() -> Result<impl DerefMut<Target = GA4MetricsService>> {
+pub async fn ga4_metrics() -> Result<impl DerefMut<Target = GA4MetricsService>, AnalyticsError> {
     if let Some(svc) = GA4_METRICS_INSTANCE.get() {
         Ok(svc.lock().await)
     } else {
-        bail!(INIT_ERROR)
+        return Err(AnalyticsError::NotInitialized);
     }
 }
 
@@ -105,8 +134,8 @@ pub async fn show_status_message() -> String {
 
 /// Records intended opt in status.
 /// Returns an error if init has not been called
-pub async fn set_new_opt_in_status(status: MetricsStatus) -> Result<()> {
-    ga4_metrics().await?.set_new_opt_in_status(status)
+pub async fn set_new_opt_in_status(status: MetricsStatus) -> Result<(), AnalyticsError> {
+    ga4_metrics().await.map_err(|_| AnalyticsError::NotInitialized)?.set_new_opt_in_status(status)
 }
 
 /// Returns current opt in status.
@@ -121,13 +150,15 @@ pub async fn opt_in_status() -> MetricsStatus {
 
 /// Records intended opt in status.
 /// Returns an error if init has not been called
-pub async fn set_opt_in_status(enabled: bool) -> Result<()> {
+pub async fn set_opt_in_status(enabled: bool) -> Result<(), AnalyticsError> {
     // TODO remove this method once the main enhanced analytics is checked in and foxtrot
     // is updated to use the set_new_opt_in_status
-    ga4_metrics().await?.set_new_opt_in_status(match enabled {
-        true => MetricsStatus::OptedIn,
-        false => MetricsStatus::OptedOut,
-    })
+    ga4_metrics().await.map_err(|_| AnalyticsError::NotInitialized)?.set_new_opt_in_status(
+        match enabled {
+            true => MetricsStatus::OptedIn,
+            false => MetricsStatus::OptedOut,
+        },
+    )
 }
 
 // /// Returns current opt in status.
@@ -138,8 +169,8 @@ pub async fn set_opt_in_status(enabled: bool) -> Result<()> {
 
 /// Disable analytics for this invocation only.
 /// This does not affect the global analytics state.
-pub async fn opt_out_for_this_invocation() -> Result<()> {
-    ga4_metrics().await?.opt_out_for_this_invocation()
+pub async fn opt_out_for_this_invocation() -> Result<(), AnalyticsError> {
+    ga4_metrics().await.map_err(|_| AnalyticsError::NotInitialized)?.opt_out_for_this_invocation()
 }
 
 pub fn redact_host_and_user_from(parameter: &str) -> String {
@@ -148,7 +179,7 @@ pub fn redact_host_and_user_from(parameter: &str) -> String {
 /// Records a launch event with the command line args used to launch app.
 /// Returns an error if init has not been called.
 /// TODO(https://fxbug.dev/42077438) remove this once we remove UA and update foxtrot
-pub async fn add_launch_event(args: Option<&str>) -> Result<()> {
+pub async fn add_launch_event(args: Option<&str>) -> Result<(), AnalyticsError> {
     let mut ga4_svc = ga4_metrics().await?;
     ga4_svc.add_launch_event(args).await?;
     ga4_svc.send_events().await
@@ -157,7 +188,10 @@ pub async fn add_launch_event(args: Option<&str>) -> Result<()> {
 /// Records an error event in the app.
 /// Returns an error if init has not been called.
 /// TODO(https://fxbug.dev/42077438) remove this once we remove UA
-pub async fn add_crash_event(description: &str, fatal: Option<&bool>) -> Result<()> {
+pub async fn add_crash_event(
+    description: &str,
+    fatal: Option<&bool>,
+) -> Result<(), AnalyticsError> {
     let mut ga4_svc = ga4_metrics().await?;
     ga4_svc.add_crash_event(description, fatal).await?;
     ga4_svc.send_events().await
@@ -171,7 +205,7 @@ pub async fn add_custom_event(
     action: Option<&str>,
     label: Option<&str>,
     custom_dimensions: BTreeMap<&str, GA4Value>,
-) -> Result<()> {
+) -> Result<(), AnalyticsError> {
     let mut ga4_svc = ga4_metrics().await?;
     ga4_svc.add_custom_event(category, action, label, custom_dimensions, category).await?;
     ga4_svc.send_events().await

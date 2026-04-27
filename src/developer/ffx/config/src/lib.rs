@@ -190,19 +190,19 @@ pub fn print_log_hint<W: std::io::Write>(ctx: &Option<EnvironmentContext>, write
 }
 
 pub async fn set_metrics_status(value: MetricsStatus) -> Result<()> {
-    set_new_opt_in_status(value).await
+    set_new_opt_in_status(value).await.map_err(|e| anyhow!(e))
 }
 
 pub async fn enable_basic_metrics() -> Result<()> {
-    set_new_opt_in_status(MetricsStatus::OptedIn).await
+    set_new_opt_in_status(MetricsStatus::OptedIn).await.map_err(|e| anyhow!(e))
 }
 
 pub async fn enable_enhanced_metrics() -> Result<()> {
-    set_new_opt_in_status(MetricsStatus::OptedInEnhanced).await
+    set_new_opt_in_status(MetricsStatus::OptedInEnhanced).await.map_err(|e| anyhow!(e))
 }
 
 pub async fn disable_metrics() -> Result<()> {
-    set_new_opt_in_status(MetricsStatus::OptedOut).await
+    set_new_opt_in_status(MetricsStatus::OptedOut).await.map_err(|e| anyhow!(e))
 }
 
 pub async fn show_metrics_status<W: Write>(mut writer: W) -> Result<()> {
