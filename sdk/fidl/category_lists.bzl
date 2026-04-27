@@ -172,12 +172,15 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
 # None are included in the IDK, but they may be used by prebuilt libraries in the IDK.
 PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
+    "//sdk/fidl/fuchsia.device:fuchsia.device_idk",
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_idk",
     "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_idk",
     "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_idk",
     "//sdk/fidl/fuchsia.net.tcp:fuchsia.net.tcp_idk",
     "//sdk/fidl/fuchsia.posix:fuchsia.posix_idk",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_idk",
+    "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_idk",
+    "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_idk",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_idk",
 ]
 
