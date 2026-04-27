@@ -24,10 +24,10 @@ from antlion.controllers.utils_lib.commands.command import optional, require
 from antlion.controllers.utils_lib.commands.journalctl import (
     LinuxJournalctlCommand,
 )
-from antlion.controllers.utils_lib.ssh import connection, settings
-from antlion.libs.proc import job
 from antlion.types import ControllerConfig, Json
 from antlion.validation import MapValidator
+from libs.proc import job
+from libs.ssh import connection, settings
 from mobly import logger, signals
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "IPerfServer"

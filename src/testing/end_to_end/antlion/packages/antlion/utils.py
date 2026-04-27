@@ -26,14 +26,14 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from antlion.libs.proc import job
-from antlion.runner import CalledProcessError, Runner
+from libs.proc import job
+from libs.proc.runner import CalledProcessError, Runner
 from mobly import signals
 
 if TYPE_CHECKING:
     from antlion.controllers.android_device import AndroidDevice
     from antlion.controllers.fuchsia_device import FuchsiaDevice
-    from antlion.controllers.utils_lib.ssh.connection import SshConnection
+    from libs.ssh.connection import SshConnection
 
 # File name length is limited to 255 chars on some OS, so we need to make sure
 # the file names we output fits within the limit.
@@ -633,7 +633,7 @@ def get_interface_ip_addresses(
     # Local imports are used here to prevent cyclic dependency.
     from antlion.controllers.android_device import AndroidDevice
     from antlion.controllers.fuchsia_device import FuchsiaDevice
-    from antlion.controllers.utils_lib.ssh.connection import SshConnection
+    from libs.ssh.connection import SshConnection
 
     addrs: list[str] = []
 
@@ -897,7 +897,7 @@ def ping(
 
         Any values that cannot be parsed are left as None
     """
-    from antlion.controllers.utils_lib.ssh.connection import SshConnection
+    from libs.ssh.connection import SshConnection
 
     is_local = comm_channel == job  # type: ignore # Blanket ignore to enable mypy
     os_type = platform.system() if is_local else "Linux"

@@ -15,8 +15,8 @@ from antlion.capabilities.ssh import SSHConfig, SSHResult
 from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.fuchsia_lib.ssh import FuchsiaSSHProvider
-from antlion.controllers.utils_lib.ssh.connection import SshConnection
-from antlion.libs.proc import job
+from libs.proc import job
+from libs.ssh.connection import SshConnection
 
 PROVISIONED_STATE_GOOD = 1
 
@@ -144,9 +144,7 @@ class IpAddressUtilTest(unittest.TestCase):
         ip_address = "fdsafdsafdsafdsf"
         self.assertFalse(utils.is_valid_ipv6_address(ip_address))
 
-    @mock.patch(
-        "antlion.controllers.utils_lib.ssh.connection.SshConnection.run"
-    )
+    @mock.patch("libs.ssh.connection.SshConnection.run")
     def test_ssh_get_interface_ip_addresses_full(self, ssh_mock):
         ssh_mock.side_effect = [
             job.Result(
@@ -160,9 +158,7 @@ class IpAddressUtilTest(unittest.TestCase):
             CORRECT_FULL_IP_LIST,
         )
 
-    @mock.patch(
-        "antlion.controllers.utils_lib.ssh.connection.SshConnection.run"
-    )
+    @mock.patch("libs.ssh.connection.SshConnection.run")
     def test_ssh_get_interface_ip_addresses_empty(self, ssh_mock):
         ssh_mock.side_effect = [
             job.Result(

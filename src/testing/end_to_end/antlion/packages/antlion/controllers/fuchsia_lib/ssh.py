@@ -7,7 +7,7 @@
 import time
 
 from antlion.capabilities.ssh import SSHProvider
-from antlion.runner import CalledProcessError
+from libs.proc.runner import CalledProcessError
 
 DEFAULT_SSH_USER: str = "fuchsia"
 DEFAULT_SSH_PRIVATE_KEY: str = "~/.ssh/fuchsia_ed25519"

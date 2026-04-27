@@ -20,9 +20,9 @@ from antlion.controllers.ap_lib.hostapd_constants import (
     FREQUENCY_MAP,
     VHT_CHANNEL,
 )
-from antlion.controllers.utils_lib.ssh import connection, formatter, settings
 from antlion.libs.proc.process import Process
 from antlion.types import ControllerConfig, Json
+from libs.ssh import connection, formatter, settings
 from mobly import asserts, logger
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "PacketCapture"

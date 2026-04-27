@@ -26,8 +26,8 @@ from antlion.controllers.openwrt_lib.openwrt_constants import (
     OpenWrtModelMap as modelmap,
 )
 from antlion.controllers.openwrt_lib.openwrt_constants import OpenWrtWifiSetting
-from antlion.controllers.utils_lib.ssh import connection, settings
 from antlion.types import ControllerConfig, Json
+from libs.ssh import connection, settings
 from mobly import logger, signals
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "OpenWrtAP"

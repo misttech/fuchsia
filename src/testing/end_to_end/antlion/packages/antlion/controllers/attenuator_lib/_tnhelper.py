@@ -15,7 +15,7 @@ import re
 import telnetlib
 
 from antlion.controllers import attenuator
-from antlion.libs.proc import job
+from libs.proc import job
 
 
 def _ascii_string(uc_string):

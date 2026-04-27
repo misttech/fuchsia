@@ -5,7 +5,7 @@
 import datetime
 
 from antlion.controllers.utils_lib.commands.command import LinuxCommand
-from antlion.runner import Runner
+from libs.proc.runner import Runner
 
 
 class LinuxDateCommand(LinuxCommand):

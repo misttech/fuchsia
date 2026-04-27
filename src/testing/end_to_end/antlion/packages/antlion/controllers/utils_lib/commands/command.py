@@ -5,7 +5,7 @@
 import subprocess
 from typing import IO, Protocol, TypeVar
 
-from antlion.runner import CalledProcessError, Runner
+from libs.proc.runner import CalledProcessError, Runner
 from mobly import signals
 
 

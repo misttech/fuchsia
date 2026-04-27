@@ -9,8 +9,8 @@ import sys
 import unittest
 
 import mock
-from antlion.libs.proc import job
-from antlion.runner import CalledProcessError
+from libs.proc import job
+from libs.proc.runner import CalledProcessError
 
 if os.name == "posix" and sys.version_info[0] < 3:
     import subprocess32 as subprocess
@@ -45,7 +45,7 @@ class FakePopen(object):
 
 class JobTestCases(unittest.TestCase):
     @mock.patch(
-        "antlion.libs.proc.job.subprocess.Popen",
+        "libs.proc.job.subprocess.Popen",
         return_value=FakePopen(stdout="TEST\n"),
     )
     def test_run_success(self, popen):
@@ -54,7 +54,7 @@ class JobTestCases(unittest.TestCase):
         self.assertTrue(result.stdout.startswith("TEST"))
 
     @mock.patch(
-        "antlion.libs.proc.job.subprocess.Popen",
+        "libs.proc.job.subprocess.Popen",
         return_value=FakePopen(stderr="TEST\n"),
     )
     def test_run_stderr(self, popen):
@@ -65,7 +65,7 @@ class JobTestCases(unittest.TestCase):
         self.assertFalse(result.stdout)
 
     @mock.patch(
-        "antlion.libs.proc.job.subprocess.Popen",
+        "libs.proc.job.subprocess.Popen",
         return_value=FakePopen(returncode=1),
     )
     def test_run_error(self, popen):
@@ -73,7 +73,7 @@ class JobTestCases(unittest.TestCase):
         self.assertRaises(CalledProcessError, job.run, "exit 1")
 
     @mock.patch(
-        "antlion.libs.proc.job.subprocess.Popen",
+        "libs.proc.job.subprocess.Popen",
         return_value=FakePopen(returncode=1),
     )
     def test_run_with_ignored_error(self, popen):
@@ -82,7 +82,7 @@ class JobTestCases(unittest.TestCase):
         self.assertEqual(result.exit_status, 1)
 
     @mock.patch(
-        "antlion.libs.proc.job.subprocess.Popen",
+        "libs.proc.job.subprocess.Popen",
         return_value=FakePopen(will_timeout=True),
     )
     def test_run_timeout(self, popen):
@@ -92,7 +92,7 @@ class JobTestCases(unittest.TestCase):
         )
 
     @mock.patch(
-        "antlion.libs.proc.job.subprocess.Popen",
+        "libs.proc.job.subprocess.Popen",
         return_value=FakePopen(stdout="TEST\n"),
     )
     def test_run_no_shell(self, popen):
@@ -101,7 +101,7 @@ class JobTestCases(unittest.TestCase):
         self.assertTrue(result.stdout.startswith("TEST"))
 
     @mock.patch(
-        "antlion.libs.proc.job.subprocess.Popen",
+        "libs.proc.job.subprocess.Popen",
         return_value=FakePopen(stdout="TEST\n"),
     )
     def test_job_env(self, popen):

@@ -7,7 +7,7 @@
 # Blanket ignores to enable mypy in Antlion
 # mypy: disable-error-code="no-untyped-def"
 from antlion import error
-from antlion.libs.proc import job
+from libs.proc import job
 
 
 class FastbootError(error.ActsError):

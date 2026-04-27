@@ -7,8 +7,8 @@
 import logging
 import time
 
-from antlion.controllers.utils_lib.ssh.connection import SshConnection
-from antlion.runner import CalledProcessError
+from libs.proc.runner import CalledProcessError
+from libs.ssh.connection import SshConnection
 
 _BRCTL = "brctl"
 BRIDGE_NAME = "br-lan"

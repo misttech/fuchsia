@@ -4,12 +4,11 @@
 
 from __future__ import annotations
 
-import logging
 import subprocess
 from os import PathLike
 from typing import IO, Protocol, Sequence, TypeAlias
 
-from mobly import signals
+from mobly import logger, signals
 
 StrOrBytesPath: TypeAlias = str | bytes | PathLike[str] | PathLike[bytes]
 _CMD: TypeAlias = StrOrBytesPath | Sequence[StrOrBytesPath]
@@ -18,7 +17,7 @@ _CMD: TypeAlias = StrOrBytesPath | Sequence[StrOrBytesPath]
 class Runner(Protocol):
     """A command runner."""
 
-    log: logging.LoggerAdapter[logging.Logger]
+    log: logger.PrefixLoggerAdapter
 
     def run(
         self,

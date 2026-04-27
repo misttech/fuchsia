@@ -32,7 +32,6 @@ from antlion.controllers.fuchsia_lib.ssh import (
     FuchsiaSSHProvider,
 )
 from antlion.decorators import cached_property
-from antlion.runner import CalledProcessError
 from antlion.types import ControllerConfig, Json
 from antlion.utils import (
     PingResult,
@@ -48,6 +47,7 @@ from honeydew.auxiliary_devices.power_switch.power_switch_using_dmc import (
 from honeydew.transports.ffx.config import FfxConfig
 from honeydew.transports.ffx.ffx import FFX
 from honeydew.typing.custom_types import DeviceInfo, IpPort
+from libs.proc.runner import CalledProcessError
 from mobly import logger, signals
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "FuchsiaDevice"

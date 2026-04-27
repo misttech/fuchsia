@@ -13,7 +13,7 @@ import tempfile
 
 from antlion import utils
 from antlion.libs.ota.ota_tools import ota_tool
-from antlion.libs.proc import job
+from libs.proc import job
 
 # OTA Packages can be upwards of 1 GB. This may take some time to transfer over
 # USB 2.0. A/B devices must also complete the update in the background.

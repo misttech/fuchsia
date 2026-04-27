@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from antlion.controllers.utils_lib.commands import pgrep
 from antlion.controllers.utils_lib.commands.command import LinuxCommand, require
-from antlion.runner import Runner
+from libs.proc.runner import Runner
 
 
 class LinuxNmcliCommand(LinuxCommand):

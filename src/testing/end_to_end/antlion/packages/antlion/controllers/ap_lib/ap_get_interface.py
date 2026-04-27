@@ -7,7 +7,7 @@
 import logging
 from typing import TYPE_CHECKING
 
-from antlion.runner import CalledProcessError
+from libs.proc.runner import CalledProcessError
 
 if TYPE_CHECKING:
     from antlion.controllers.access_point import AccessPoint

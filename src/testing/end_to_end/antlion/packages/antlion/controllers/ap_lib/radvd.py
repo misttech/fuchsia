@@ -9,9 +9,9 @@ import time
 
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 from antlion.controllers.utils_lib.commands import shell
-from antlion.libs.proc import job
 from antlion.logger import LogLevel
-from antlion.runner import Runner
+from libs.proc import job
+from libs.proc.runner import Runner
 from tenacity import retry, retry_if_exception_type, stop_after_delay
 
 

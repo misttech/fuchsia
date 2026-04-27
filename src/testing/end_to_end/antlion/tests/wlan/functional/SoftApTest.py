@@ -20,8 +20,6 @@ from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.controllers.utils_lib.ssh import settings
-from antlion.controllers.utils_lib.ssh.connection import SshConnection
 from antlion.test_utils.abstract_devices.wlan_device import (
     AndroidWlanDevice,
     AssociationMode,
@@ -35,6 +33,8 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     OperatingBand,
     SecurityType,
 )
+from libs.ssh import settings
+from libs.ssh.connection import SshConnection
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 

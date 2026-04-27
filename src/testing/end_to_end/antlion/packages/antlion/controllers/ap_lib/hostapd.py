@@ -21,7 +21,7 @@ from antlion.controllers.ap_lib.wireless_network_management import (
 )
 from antlion.controllers.utils_lib.commands import shell
 from antlion.logger import LogLevel
-from antlion.runner import Runner
+from libs.proc.runner import Runner
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 PROGRAM_FILE = "/usr/sbin/hostapd"
@@ -353,7 +353,7 @@ class Hostapd(object):
         Raises:
             subprocess.TimeoutExpired: When the remote command took too
                 long to execute.
-            antlion.controllers.utils_lib.ssh.connection.Error: When the ssh
+            libs.proc.runner.CalledProcessTransportError: When the ssh
                 connection failed to be created.
             subprocess.CalledProcessError: Ssh worked, but the command had an
                 error executing.

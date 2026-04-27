@@ -17,13 +17,13 @@ from dataclasses import dataclass
 from typing import IO, Mapping
 
 from antlion.net import wait_for_port
-from antlion.runner import (
+from antlion.types import Json
+from antlion.validation import MapValidator
+from libs.proc.runner import (
     CalledProcessError,
     CalledProcessTransportError,
     Runner,
 )
-from antlion.types import Json
-from antlion.validation import MapValidator
 from mobly import logger, signals
 
 DEFAULT_SSH_PORT: int = 22
@@ -41,7 +41,7 @@ class SSHResult:
         process: (
             subprocess.CompletedProcess[bytes]
             | subprocess.CompletedProcess[str]
-            | subprocess.CalledProcessError
+            | CalledProcessError
         ),
     ) -> None:
         if isinstance(process.stdout, bytes):
@@ -316,7 +316,7 @@ class SSHProvider(Runner):
             connect_retries: Amount of times to retry connect on fail.
 
         Raises:
-            subprocess.CalledProcessError: when the process exits with a non-zero status
+            CalledProcessError: when the process exits with a non-zero status
             subprocess.TimeoutExpired: when the timeout expires while waiting
                 for a child process
             CalledProcessTransportError: when the underlying transport fails

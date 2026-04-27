@@ -12,9 +12,9 @@ import enum
 import logging
 from typing import Protocol, runtime_checkable
 
-from antlion.libs.proc import job
 from antlion.types import ControllerConfig, Json
 from antlion.validation import MapValidator
+from libs.proc import job
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "Attenuator"
 ACTS_CONTROLLER_REFERENCE_NAME = "attenuators"

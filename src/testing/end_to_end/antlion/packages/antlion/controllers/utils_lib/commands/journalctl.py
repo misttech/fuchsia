@@ -7,7 +7,7 @@ from datetime import datetime
 
 from antlion.controllers.utils_lib.commands import pgrep
 from antlion.controllers.utils_lib.commands.command import LinuxCommand, require
-from antlion.runner import Runner
+from libs.proc.runner import Runner
 
 # Timestamp format accepted by systemd.
 # See https://man7.org/linux/man-pages/man7/systemd.time.7.html#PARSING_TIMESTAMPS

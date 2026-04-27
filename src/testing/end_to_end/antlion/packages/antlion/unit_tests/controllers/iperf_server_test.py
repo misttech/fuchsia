@@ -14,7 +14,7 @@ from antlion.controllers.iperf_server import (
     IPerfServerOverAdb,
     IPerfServerOverSsh,
 )
-from antlion.controllers.utils_lib.ssh import settings
+from libs.ssh import settings
 
 # The position in the call tuple that represents the args array.
 ARGS = 0

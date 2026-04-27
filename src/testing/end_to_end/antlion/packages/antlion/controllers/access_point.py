@@ -42,10 +42,10 @@ from antlion.controllers.utils_lib.commands import (
 )
 from antlion.controllers.utils_lib.commands.date import LinuxDateCommand
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
-from antlion.controllers.utils_lib.ssh import connection, settings
-from antlion.runner import CalledProcessError
 from antlion.types import ControllerConfig, Json
 from antlion.validation import MapValidator
+from libs.proc.runner import CalledProcessError
+from libs.ssh import connection, settings
 from mobly import logger
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "AccessPoint"

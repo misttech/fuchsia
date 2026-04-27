@@ -17,6 +17,7 @@ python_library("libs") {
 
   visibility = [
     ":*",
+    "//src/testing/end_to_end/antlion:*",
     "//src/testing/end_to_end/mobly_controller:*",
   ]
 

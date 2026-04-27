@@ -8,7 +8,7 @@ import subprocess
 from typing import Iterator, Literal
 
 from antlion.controllers.utils_lib.commands.command import LinuxCommand
-from antlion.runner import Runner
+from libs.proc.runner import Runner
 from mobly import signals
 
 
@@ -60,7 +60,7 @@ class LinuxRouteCommand(LinuxCommand):
                 sudo=True,
             )
         except subprocess.CalledProcessError as e:
-            if "File exists" in e.stderr:
+            if b"File exists" in e.stderr:
                 raise signals.TestError(
                     "Route already exists",
                     extras={
@@ -69,7 +69,7 @@ class LinuxRouteCommand(LinuxCommand):
                         "returncode": e.returncode,
                     },
                 )
-            if "Network is down" in e.stderr:
+            if b"Network is down" in e.stderr:
                 raise signals.TestError(
                     "Device must be up for adding a route.",
                     extras={
@@ -183,7 +183,7 @@ class LinuxRouteCommand(LinuxCommand):
                 args += ["dev", net_interface]
             self._run(args)
         except subprocess.CalledProcessError as e:
-            if "RTNETLINK answers: No such process" in e.stderr:
+            if b"RTNETLINK answers: No such process" in e.stderr:
                 # The route didn't exist.
                 return
             raise signals.TestError(

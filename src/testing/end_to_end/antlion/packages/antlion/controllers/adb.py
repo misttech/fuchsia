@@ -12,7 +12,7 @@ import shlex
 import shutil
 
 from antlion.controllers.adb_lib.error import AdbCommandError, AdbError
-from antlion.libs.proc import job
+from libs.proc import job
 
 DEFAULT_ADB_TIMEOUT = 60
 DEFAULT_ADB_PULL_TIMEOUT = 180

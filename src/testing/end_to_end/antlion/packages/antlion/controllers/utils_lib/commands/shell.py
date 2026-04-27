@@ -10,7 +10,7 @@ import signal
 import time
 from typing import Iterator
 
-from antlion.runner import CalledProcessError, Runner
+from libs.proc.runner import CalledProcessError, Runner
 
 
 class ShellCommand(object):

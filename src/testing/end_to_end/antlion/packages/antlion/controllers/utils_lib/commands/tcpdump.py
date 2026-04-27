@@ -12,7 +12,7 @@ from types import TracebackType
 
 from antlion import utils
 from antlion.controllers.utils_lib.commands.command import LinuxCommand
-from antlion.runner import Runner
+from libs.proc.runner import Runner
 from mobly.logger import (
     epoch_to_log_line_timestamp,
     normalize_log_line_timestamp,

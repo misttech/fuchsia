@@ -8,7 +8,7 @@ import subprocess
 from typing import Iterator
 
 from antlion.controllers.utils_lib.commands.command import LinuxCommand
-from antlion.runner import Runner
+from libs.proc.runner import Runner
 from mobly import signals
 
 
@@ -112,7 +112,7 @@ class LinuxIpCommand(LinuxCommand):
                 sudo=True,
             )
         except subprocess.CalledProcessError as e:
-            if e.returncode == 2 or "Address not found" in e.stdout:
+            if e.returncode == 2 or b"Address not found" in e.stdout:
                 # Do not fail if the address was already deleted or couldn't be
                 # found.
                 return
@@ -150,7 +150,7 @@ class LinuxIpCommand(LinuxCommand):
                 self.remove_ipv4_address(net_interface, address)
             except subprocess.CalledProcessError as e:
                 if (
-                    "RTNETLINK answers: Cannot assign requested address"
+                    b"RTNETLINK answers: Cannot assign requested address"
                     in e.stderr
                 ):
                     # It is possible that the address has already been removed by the
@@ -175,7 +175,7 @@ class LinuxIpCommand(LinuxCommand):
                             },
                         )
                 raise signals.TestError(
-                    f"Unable to remove address {address}: {e.stderr}",
+                    f"Unable to remove address {address}: {e.stderr.decode('utf-8', errors='replace')}",
                     extras={
                         "stdout": e.stdout,
                         "returncode": e.returncode,
