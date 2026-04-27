@@ -16,7 +16,7 @@
 
 #include <new>
 
-#include <dev/iommu.h>
+#include <dev/iommu/iommu.h>
 #include <object/process_dispatcher.h>
 #include <object/root_job_observer.h>
 #include <object/thread_dispatcher.h>
@@ -27,15 +27,16 @@ KCOUNTER(dispatcher_bti_create_count, "dispatcher.bti.create")
 KCOUNTER(dispatcher_bti_destroy_count, "dispatcher.bti.destroy")
 
 zx_status_t BusTransactionInitiatorDispatcher::Create(
-    fbl::RefPtr<IommuDispatcher> iommu, uint64_t bti_id,
-    KernelHandle<BusTransactionInitiatorDispatcher>* handle, zx_rights_t* rights) {
-  if (!iommu->iommu().IsValidBusTxnId(bti_id)) {
-    return ZX_ERR_INVALID_ARGS;
+    Iommu& iommu, uint64_t bti_id, KernelHandle<BusTransactionInitiatorDispatcher>* handle,
+    zx_rights_t* rights) {
+  zx::result<fbl::RefPtr<iommu::Bti>> maybe_bti = iommu.CreateBti(bti_id);
+  if (!maybe_bti.is_ok()) {
+    return maybe_bti.error_value();
   }
 
   fbl::AllocChecker ac;
   KernelHandle new_handle(
-      fbl::AdoptRef(new (&ac) BusTransactionInitiatorDispatcher(ktl::move(iommu), bti_id)));
+      fbl::AdoptRef(new (&ac) BusTransactionInitiatorDispatcher(ktl::move(maybe_bti.value()))));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -45,15 +46,13 @@ zx_status_t BusTransactionInitiatorDispatcher::Create(
   return ZX_OK;
 }
 
-BusTransactionInitiatorDispatcher::BusTransactionInitiatorDispatcher(
-    fbl::RefPtr<IommuDispatcher> iommu, uint64_t bti_id)
-    : iommu_(ktl::move(iommu)), bti_id_(bti_id), zero_handles_(false) {
-  DEBUG_ASSERT(iommu_);
+BusTransactionInitiatorDispatcher::BusTransactionInitiatorDispatcher(fbl::RefPtr<Bti> bti)
+    : bti_(ktl::move(bti)) {
+  DEBUG_ASSERT(bti_ != nullptr);
   kcounter_add(dispatcher_bti_create_count, 1);
 }
 
 BusTransactionInitiatorDispatcher::~BusTransactionInitiatorDispatcher() {
-  DEBUG_ASSERT(pinned_memory_.is_empty());
   kcounter_add(dispatcher_bti_destroy_count, 1);
 }
 
@@ -76,10 +75,12 @@ zx_status_t BusTransactionInitiatorDispatcher::Pin(
 
   Guard<CriticalMutex> guard{get_lock()};
   // User may not pin new memory if either our BTI has hit zero handles, or if
-  // we currently have quarantined pages.  In the case that there are active
-  // quarantined pages, driver code is expected to take the steps to stop their
-  // DMA, and then release the quarantine before proceeding to pin new memory.
-  if (zero_handles_ || !quarantine_.is_empty()) {
+  // the underlying driver is in a fault state (usually because the BTI has
+  // quarantined pages).  In the case that the driver-level BTI is in a fault
+  // state, user-mode driver code is expected to take the steps to stop their
+  // DMA, and then call `zx_bti_release_quarantine` before proceeding to pin new
+  // memory.
+  if (zero_handles_ || bti_->in_fault_state()) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -87,84 +88,20 @@ zx_status_t BusTransactionInitiatorDispatcher::Pin(
                                              pmt_handle, pmt_rights);
 }
 
-void BusTransactionInitiatorDispatcher::ReleaseQuarantine() {
-  QuarantineList tmp;
-
-  // The PMT dtor will call RemovePmo, which will reacquire this BTI's lock.
-  // To avoid deadlock, drop the lock before letting the quarantined PMTs go.
+void BusTransactionInitiatorDispatcher::on_zero_handles() {
   {
     Guard<CriticalMutex> guard{get_lock()};
-    quarantine_.swap(tmp);
+    // Prevent new pinning from happening.  The Dispatcher will stick around
+    // until all of the PMTs are closed.
+    zero_handles_ = true;
   }
-}
 
-void BusTransactionInitiatorDispatcher::on_zero_handles() {
-  Guard<CriticalMutex> guard{get_lock()};
-  // Prevent new pinning from happening.  The Dispatcher will stick around
-  // until all of the PMTs are closed.
-  zero_handles_ = true;
-
-  // Do not clear out the quarantine list.  PMTs hold a reference to the BTI
-  // and the BTI holds a reference to each quarantined PMT.  We intentionally
-  // leak the BTI, all quarantined PMTs, and their underlying VMOs.  We could
-  // get away with freeing the BTI and the PMTs, but for safety we must leak
-  // at least the pinned parts of the VMOs, since we have no assurance that
-  // hardware is not still reading/writing to it.
-  if (!quarantine_.is_empty()) {
-    PrintQuarantineWarningLocked(BtiPageLeakReason::BtiClose);
-  }
-}
-
-zx_status_t BusTransactionInitiatorDispatcher::set_name(const char* name, size_t len) {
-  // The kernel implementation of fbl::Name is protected using an internal
-  // spinlock.  No need for any special locks here.
-  return name_.set(name, len);
-}
-
-zx_status_t BusTransactionInitiatorDispatcher::get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const {
-  // The kernel implementation of fbl::Name is protected using an internal
-  // spinlock.  No need for any special locks here.
-  name_.get(ZX_MAX_NAME_LEN, out_name);
-  return ZX_OK;
-}
-
-void BusTransactionInitiatorDispatcher::AddPmoLocked(PinnedMemoryTokenDispatcher* pmt) {
-  DEBUG_ASSERT(!fbl::InContainer<PmtListTag>(*pmt));
-  pinned_memory_.push_back(pmt);
-}
-
-void BusTransactionInitiatorDispatcher::RemovePmo(PinnedMemoryTokenDispatcher* pmt) {
-  Guard<CriticalMutex> guard{get_lock()};
-  DEBUG_ASSERT(fbl::InContainer<PmtListTag>(*pmt));
-  pinned_memory_.erase(*pmt);
-}
-
-void BusTransactionInitiatorDispatcher::Quarantine(fbl::RefPtr<PinnedMemoryTokenDispatcher> pmt) {
-  Guard<CriticalMutex> guard{get_lock()};
-
-  DEBUG_ASSERT(fbl::InContainer<PmtListTag>(*pmt));
-  quarantine_.push_back(ktl::move(pmt));
-
-  if (zero_handles_) {
-    // If we quarantine when at zero handles, this PMT will be leaked.  See
-    // the comment in on_zero_handles().
-    PrintQuarantineWarningLocked(BtiPageLeakReason::PmtClose);
-  }
-}
-
-// The count of the pinned memory object tokens.
-uint64_t BusTransactionInitiatorDispatcher::pmo_count() const {
-  Guard<CriticalMutex> guard{get_lock()};
-  return pinned_memory_.size_slow();
-}
-
-// The count of the quarantined pinned memory object tokens.
-uint64_t BusTransactionInitiatorDispatcher::quarantine_count() const {
-  Guard<CriticalMutex> guard{get_lock()};
-  return quarantine_.size_slow();
+  bti().OnDispatcherZeroHandles();
 }
 
 zx_info_bti_t BusTransactionInitiatorDispatcher::GetInfo() const {
+  // TODO(johngro): Consider refactoring this so that the GetInfo operation can
+  // be made in an atomic fashion.
   zx_info_bti_t info = {
       .minimum_contiguity = minimum_contiguity(),
       .aspace_size = aspace_size(),
@@ -172,80 +109,4 @@ zx_info_bti_t BusTransactionInitiatorDispatcher::GetInfo() const {
       .quarantine_count = quarantine_count(),
   };
   return info;
-}
-
-void BusTransactionInitiatorDispatcher::PrintQuarantineWarningLocked(BtiPageLeakReason reason) {
-  uint64_t leaked_pages = 0;
-  size_t num_entries = 0;
-  for (const auto& pmt : quarantine_) {
-    leaked_pages += pmt.size() / kPageSize;
-    num_entries++;
-  }
-
-  char proc_name[ZX_MAX_NAME_LEN] = {0};
-  char thread_name[ZX_MAX_NAME_LEN] = {0};
-  char bti_name[ZX_MAX_NAME_LEN] = {0};
-
-  // If we have no current thread dispatcher, then this is a kernel thread.  We
-  // have no process to report, just report that the action was taken by a
-  // kernel thread and leave it at that.
-  ThreadDispatcher* thread_disp = ThreadDispatcher::GetCurrent();
-  if (thread_disp == nullptr) {
-    snprintf(proc_name, sizeof(proc_name), "<kernel>");
-    snprintf(thread_name, sizeof(thread_name), "<kernel>");
-  } else {
-    // Get the name of the user mode process and thread which closed the handle
-    // to the object which eventually resulted in the leak.
-    [[maybe_unused]] zx_status_t status = ProcessDispatcher::GetCurrent()->get_name(proc_name);
-    DEBUG_ASSERT(status == ZX_OK);
-    // We could be here in the context of an exiting thread, which is also the last
-    // thread in its process and wants to clean the handle table, thereby calling
-    // BusTransactionInitiatorDispatcher::on_zero_handles(). So only call get_name
-    // if the thread is not dead/dying.
-    if (!thread_disp->IsDyingOrDead()) {
-      status = thread_disp->get_name(thread_name);
-      DEBUG_ASSERT(status == ZX_OK);
-    }
-  }
-
-  // Fetch the BTI name (if any).
-  [[maybe_unused]] zx_status_t status = this->get_name(bti_name);
-  DEBUG_ASSERT(status == ZX_OK);
-
-  // If any of these strings are empty, replace them with just "<unknown>".
-  if (!proc_name[0]) {
-    snprintf(proc_name, sizeof(proc_name), "<unknown>");
-  }
-  if (!thread_name[0]) {
-    snprintf(thread_name, sizeof(thread_name), "<unknown>");
-  }
-  if (!bti_name[0]) {
-    snprintf(bti_name, sizeof(bti_name), "<unknown>");
-  }
-
-  // Finally, print the message describing the leak, as best we can.
-  const char* leak_cause;
-  switch (reason) {
-    case BtiPageLeakReason::BtiClose:
-      leak_cause = "a BTI being closed with a non-empty quarantine list";
-      break;
-
-    case BtiPageLeakReason::PmtClose:
-      leak_cause = "a pinned PMT being closed, when the BTI used to pin it was already closed";
-      break;
-
-    default:
-      leak_cause = "<unknown>";
-      break;
-  }
-
-  // If we're being torn down for reasons other than the root job being killed
-  // over a critical process dying then fire off a DRIVER OOPS to flag the
-  // improper handling of pinned pages.
-  if (!RootJobObserver::GetCriticalProcessDying()) {
-    DRIVER_OOPS("Bus Transaction Initiator (ID 0x%lx, name \"%s\") has leaked %" PRIu64
-                " pages in %zu VMOs. Leak was caused by %s. The last handle was closed by process "
-                "\"%s\", and thread \"%s\"\n",
-                bti_id_, bti_name, leaked_pages, num_entries, leak_cause, proc_name, thread_name);
-  }
 }

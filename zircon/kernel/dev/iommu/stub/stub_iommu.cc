@@ -11,7 +11,8 @@
 
 #include <new>
 
-#include <dev/iommu/stub.h>
+#include <dev/iommu/stub/stub.h>
+#include <dev/iommu/stub/stub_bti.h>
 #include <fbl/ref_ptr.h>
 #include <ktl/algorithm.h>
 #include <ktl/utility.h>
@@ -20,11 +21,12 @@
 
 #include <ktl/enforce.h>
 
-#define INVALID_PADDR UINT64_MAX
+namespace iommu {
 
 StubIommu::StubIommu() {}
+StubIommu::~StubIommu() {}
 
-zx::result<fbl::RefPtr<Iommu>> StubIommu::Create() {
+zx::result<fbl::RefPtr<::iommu::Iommu>> StubIommu::Create() {
   fbl::AllocChecker ac;
   fbl::RefPtr<StubIommu> instance = fbl::AdoptRef<StubIommu>(new (&ac) StubIommu());
 
@@ -35,91 +37,8 @@ zx::result<fbl::RefPtr<Iommu>> StubIommu::Create() {
   return zx::ok(ktl::move(instance));
 }
 
-StubIommu::~StubIommu() {}
-
-bool StubIommu::IsValidBusTxnId(uint64_t bus_txn_id) const { return true; }
-
-zx::result<uint64_t> StubIommu::Map(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
-                                    uint64_t vmo_offset, size_t size, uint32_t perms) {
-  if (!IsPageRounded(vmo_offset) || size == 0) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-  if (perms & ~(IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_WRITE | IOMMU_FLAG_PERM_EXECUTE)) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-  if (perms == 0) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-  // Return the vmo offset as our token for use in future QueryAddress calls.
-  return zx::ok(vmo_offset);
+zx::result<fbl::RefPtr<::iommu::Bti>> StubIommu::CreateBti(uint64_t bti_id) {
+  return StubBti::Create(fbl::RefPtr{this}, bti_id);
 }
 
-zx::result<uint64_t> StubIommu::MapContiguous(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
-                                              uint64_t vmo_offset, size_t size, uint32_t perms) {
-  if (!IsPageRounded(vmo_offset) || size == 0) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-  if (perms & ~(IOMMU_FLAG_PERM_READ | IOMMU_FLAG_PERM_WRITE | IOMMU_FLAG_PERM_EXECUTE)) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-  if (perms == 0) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-
-  // Ensure the VMO is contiguous for the range being mapped.
-  paddr_t paddr = INVALID_PADDR;
-  zx_status_t status = vmo->LookupContiguous(vmo_offset, size, &paddr);
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-  DEBUG_ASSERT(paddr != INVALID_PADDR);
-  // Return the vmo offset as our token for use in future QueryAddress calls.
-  return zx::ok(vmo_offset);
-}
-
-zx_status_t StubIommu::QueryAddress(uint64_t bus_txn_id, const fbl::RefPtr<VmObject>& vmo,
-                                    uint64_t map_token, uint64_t map_offset, size_t size,
-                                    dev_vaddr_t* vaddr, size_t* mapped_len) {
-  DEBUG_ASSERT(vaddr);
-  DEBUG_ASSERT(mapped_len);
-  if (!IsPageRounded(map_token) || !IsPageRounded(map_offset) || size == 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  const uint64_t offset = map_token + map_offset;
-  paddr_t paddr = INVALID_PADDR;
-  size = RoundUpPageSize(size);
-  zx_status_t status = vmo->LookupContiguous(offset, size, &paddr);
-  // If the range is fundamentally incorrect or out of range then we immediately error. Otherwise
-  // even if we have some other error case we will fall back to attempting single pages at a time.
-  if (status == ZX_ERR_INVALID_ARGS || status == ZX_ERR_OUT_OF_RANGE) {
-    return status;
-  }
-  if (status == ZX_OK) {
-    DEBUG_ASSERT(paddr != INVALID_PADDR);
-    *vaddr = paddr;
-    *mapped_len = size;
-    return ZX_OK;
-  }
-
-  status = vmo->LookupContiguous(offset, kPageSize, &paddr);
-  if (status != ZX_OK) {
-    return status;
-  }
-  DEBUG_ASSERT(paddr != INVALID_PADDR);
-  *vaddr = paddr;
-  *mapped_len = kPageSize;
-  return ZX_OK;
-}
-
-zx_status_t StubIommu::Unmap(uint64_t bus_txn_id, uint64_t map_token, size_t size) {
-  if (!IsPageRounded(map_token) || !IsPageRounded(size)) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  return ZX_OK;
-}
-
-zx_status_t StubIommu::ClearMappingsForBusTxnId(uint64_t bus_txn_id) { return ZX_OK; }
-
-uint64_t StubIommu::minimum_contiguity(uint64_t bus_txn_id) { return kPageSize; }
-
-uint64_t StubIommu::aspace_size(uint64_t bus_txn_id) { return UINT64_MAX; }
+}  // namespace iommu

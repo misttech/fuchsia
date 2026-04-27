@@ -10,18 +10,20 @@
 #include <sys/types.h>
 #include <zircon/syscalls/object.h>
 
+#include <dev/iommu/bti.h>
 #include <kernel/lockdep.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/iommu_dispatcher.h>
 #include <object/pinned_memory_token_dispatcher.h>
 
-class Iommu;
-
 class BusTransactionInitiatorDispatcher final
     : public SoloDispatcher<BusTransactionInitiatorDispatcher, ZX_DEFAULT_BTI_RIGHTS> {
  public:
-  static zx_status_t Create(fbl::RefPtr<IommuDispatcher> iommu, uint64_t bti_id,
+  using Iommu = ::iommu::Iommu;
+  using Bti = ::iommu::Bti;
+
+  static zx_status_t Create(Iommu& iommu, uint64_t bti_id,
                             KernelHandle<BusTransactionInitiatorDispatcher>* handle,
                             zx_rights_t* rights);
 
@@ -48,69 +50,49 @@ class BusTransactionInitiatorDispatcher final
   // Releases all quarantined PMTs.  The memory pins are released and the VMO
   // references are dropped, so the underlying VMOs may be immediately destroyed, and the
   // underlying physical memory may be reallocated.
-  void ReleaseQuarantine();
+  void ReleaseQuarantine() { bti().ReleaseQuarantine(); }
 
   void on_zero_handles() final;
-  [[nodiscard]] zx_status_t set_name(const char* name, size_t len) final __NONNULL((2));
-  [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final;
 
-  Iommu& iommu() const { return iommu_->iommu(); }
-  uint64_t bti_id() const { return bti_id_; }
+  [[nodiscard]] zx_status_t set_name(const char* name, size_t len) final __NONNULL((2)) {
+    return bti().set_name(name, len);
+  }
+
+  [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final {
+    return bti().get_name(out_name);
+  }
+
+  Bti& bti() const { return *bti_; }
 
   // Pin will always be able to return addresses that are contiguous for at
   // least this many bytes.  E.g. if this returns 1MB, then a call to Pin()
   // with a size of 2MB will return at most two physically-contiguous runs.  If the size
   // were 2.5MB, it will return at most three physically-contiguous runs.
-  uint64_t minimum_contiguity() const { return iommu().minimum_contiguity(bti_id_); }
+  uint64_t minimum_contiguity() const { return bti().minimum_contiguity(); }
 
   // The number of bytes in the address space (UINT64_MAX if 2^64).
-  uint64_t aspace_size() const { return iommu().aspace_size(bti_id_); }
+  uint64_t aspace_size() const { return bti().aspace_size(); }
 
   // The count of the pinned memory object tokens.
-  uint64_t pmo_count() const;
+  uint64_t pmo_count() const { return bti().pmo_count(); }
 
   // The count of the quarantined pinned memory object tokens.
-  uint64_t quarantine_count() const;
+  uint64_t quarantine_count() const { return bti().quarantine_count(); }
 
   // Returns the information for zx_object_get_inf(ZX_INFO_BTI,..);
   zx_info_bti_t GetInfo() const;
 
+  uint64_t bti_id() const { return bti_->bti_id(); }
+
  protected:
   friend PinnedMemoryTokenDispatcher;
 
-  // Used to register a PMT pointer during PMT construction
-  void AddPmoLocked(PinnedMemoryTokenDispatcher* pmt) TA_REQ(get_lock());
-  // Used to unregister a PMT pointer during PMT destruction
-  void RemovePmo(PinnedMemoryTokenDispatcher* pmt);
-
-  // Append |pmt| to the quarantine_ list. |pmt| is not removed from pinned_memory_.
-  // This will prevent its underlying VMO from being unpinned until the
-  // quarantine is cleared.
-  void Quarantine(fbl::RefPtr<PinnedMemoryTokenDispatcher> pmt) TA_EXCL(get_lock());
-
  private:
-  enum class BtiPageLeakReason {
-    BtiClose,
-    PmtClose,
-  };
+  BusTransactionInitiatorDispatcher(fbl::RefPtr<Bti> bti);
 
-  BusTransactionInitiatorDispatcher(fbl::RefPtr<IommuDispatcher> iommu, uint64_t bti_id);
-  void PrintQuarantineWarningLocked(BtiPageLeakReason reason) TA_REQ(get_lock());
+  const fbl::RefPtr<Bti> bti_;
 
-  const fbl::RefPtr<IommuDispatcher> iommu_;
-  const uint64_t bti_id_;
-
-  using PmoList = fbl::TaggedDoublyLinkedList<PinnedMemoryTokenDispatcher*, PmtListTag>;
-  using QuarantineList =
-      fbl::TaggedDoublyLinkedList<fbl::RefPtr<PinnedMemoryTokenDispatcher>, PmtQuarantineListTag>;
-
-  PmoList pinned_memory_ TA_GUARDED(get_lock());
-  QuarantineList quarantine_ TA_GUARDED(get_lock());
-
-  bool zero_handles_ TA_GUARDED(get_lock());
-
-  // The user-friendly BTI name. For debug purposes only.
-  fbl::Name<ZX_MAX_NAME_LEN> name_;
+  TA_GUARDED(get_lock()) bool zero_handles_ { false };
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_BUS_TRANSACTION_INITIATOR_DISPATCHER_H_

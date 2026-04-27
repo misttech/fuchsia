@@ -24,7 +24,7 @@
 #include <new>
 
 #include <dev/interrupt.h>
-#include <dev/iommu.h>
+#include <dev/iommu/iommu.h>
 #include <fbl/inline_array.h>
 #include <object/bus_transaction_initiator_dispatcher.h>
 #include <object/handle.h>
@@ -301,7 +301,7 @@ zx_status_t sys_bti_create(zx_handle_t iommu, uint32_t options, uint64_t bti_id,
 
   KernelHandle<BusTransactionInitiatorDispatcher> handle;
   zx_rights_t rights;
-  status = BusTransactionInitiatorDispatcher::Create(ktl::move(iommu_dispatcher), bti_id, &handle,
+  status = BusTransactionInitiatorDispatcher::Create(iommu_dispatcher->iommu(), bti_id, &handle,
                                                      &rights);
   if (status != ZX_OK) {
     return status;
@@ -452,22 +452,35 @@ zx_status_t sys_bti_pin(zx_handle_t handle, uint32_t options, zx_handle_t vmo, u
     dev_vaddr_t addr = 0;
     size_t remaining = 0;
   } consume_state;
+
   auto consume_addr = [&](size_t expected_contig) -> zx::result<dev_vaddr_t> {
-    // If the remaining part of the mapping we have cannot satisfy
+    // If the amount of contiguous memory we are tracking in our consume_state
+    // is not enough to satisfy the request, we need to perform another query.
+    // Otherwise, we can just consume from the existing consume state.
     if (expected_contig > consume_state.remaining) {
       uint64_t remain = size - consume_state.offset;
-      zx_status_t status = new_pmt_handle.dispatcher()->QueryAddress(
-          consume_state.offset, remain, &consume_state.addr, &consume_state.remaining);
-      if (status != ZX_OK) {
-        return zx::error(status);
+
+      zx::result<iommu::QueryAddressResult> maybe_range =
+          new_pmt_handle.dispatcher()->QueryAddress(consume_state.offset, remain);
+
+      if (!maybe_range.is_ok()) {
+        return maybe_range.take_error();
       }
-      if (expected_contig > consume_state.remaining) {
-        // This happening suggests an error with contiguity calculations and/or the underlying IOMMU
-        // implementation not reporting its contiguity correctly.
-        // TODO: consider making this a louder error.
+
+      const iommu::QueryAddressResult& range = maybe_range.value();
+      if (expected_contig > range.size) {
+        // This happening suggests an error with contiguity calculations and/or
+        // the underlying IOMMU implementation not reporting its contiguity
+        // correctly.
+        //
+        // TODO(teisenbe): consider making this a louder error.
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
+
+      consume_state.addr = range.device_vaddr;
+      consume_state.remaining = range.size;
     }
+
     const dev_vaddr_t ret = consume_state.addr;
     consume_state.offset += expected_contig;
     consume_state.addr += expected_contig;

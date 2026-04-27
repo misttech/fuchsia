@@ -7,10 +7,18 @@
 import("//build/cpp/library_headers.gni")
 
 static_library("stub") {
-  public_deps = [ ":headers" ]
+  public_deps = [
+    ":headers",
+    "//zircon/kernel/dev/iommu:headers",
+  ]
 
-  sources = [ "stub_iommu.cc" ]
+  sources = [
+    "stub_bti.cc",
+    "stub_iommu.cc",
+    "stub_pmt.cc",
+  ]
   deps = [
+    "//zircon/kernel/dev/iommu",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/libc",
     "//zircon/kernel/lib/page",
@@ -19,9 +27,10 @@ static_library("stub") {
 }
 
 library_headers("headers") {
-  headers = [ "dev/iommu/stub.h" ]
+  headers = [ "dev/iommu/stub/stub.h" ]
   public_deps = [
-    # <dev/iommu/stub.h> has #include <ktl/unique_ptr.h>.
-    "//zircon/kernel/lib/ktl:headers",
+    "//zircon/kernel/dev/iommu:headers",
+    "//zircon/kernel/lib/ktl:headers",  # <dev/iommu/stub/stub.h> has #include
+                                        # <ktl/unique_ptr.h>.
   ]
 }

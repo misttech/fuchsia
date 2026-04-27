@@ -69,6 +69,9 @@ void spin(uint32_t usecs);
 #define DRIVER_OOPS(fmt, ...) printf("\nDRIVER OOPS\n" fmt, ##__VA_ARGS__)
 // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
 
+// Similar to DRIVER_OOPS, except should not trigger a tefmocheck failure.
+#define DRIVER_WARN(fmt, ...) printf("\nDRIVER WARNING\n" fmt, ##__VA_ARGS__)
+
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_INCLUDE_DEBUG_H_

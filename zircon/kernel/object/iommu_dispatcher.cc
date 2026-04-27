@@ -15,8 +15,8 @@
 
 #include <new>
 
-#include <dev/iommu.h>
-#include <dev/iommu/stub.h>
+#include <dev/iommu/iommu.h>
+#include <dev/iommu/stub/stub.h>
 
 #define LOCAL_TRACE 0
 

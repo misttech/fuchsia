@@ -11,7 +11,8 @@
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <dev/iommu.h>
+#include <dev/iommu/iommu.h>
+#include <dev/iommu/pmt.h>
 #include <fbl/array.h>
 #include <fbl/intrusive_double_list.h>
 #include <fbl/ref_ptr.h>
@@ -40,17 +41,26 @@ class PinnedMemoryTokenDispatcher final
   ~PinnedMemoryTokenDispatcher();
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_PMT; }
-  void on_zero_handles() final;
+  void on_zero_handles() final TA_EXCL(get_lock());
 
-  // Unpin this PMT. If this is not done before on_zero_handles() runs, then it will get moved to
-  // the quarantine.
-  void Unpin();
+  // Unpin and unmap the memory which was managed by this PMT
+  void Unpin() TA_EXCL(get_lock()) {
+    Guard<CriticalMutex> guard{get_lock()};
+    pmt_->ReleasePinnedMemory();
+  }
 
-  zx_status_t QueryAddress(uint64_t offset, uint64_t size, dev_vaddr_t* mapped_addr,
-                           size_t* mapped_len);
+  // Query the pinned and mapped VMO for a region specified by offset/size.
+  zx::result<iommu::QueryAddressResult> QueryAddress(uint64_t offset, uint64_t size)
+      TA_EXCL(get_lock()) {
+    Guard<CriticalMutex> guard{get_lock()};
+    return pmt_->QueryAddress(offset, size);
+  }
 
   // Returns the number of bytes pinned by the PMT.
-  uint64_t size() const { return pinned_vmo_.size(); }
+  uint64_t size() const TA_EXCL(get_lock()) {
+    Guard<CriticalMutex> guard{get_lock()};
+    return pmt_->pinned_vmo().size();
+  }
 
  protected:
   friend BusTransactionInitiatorDispatcher;
@@ -62,25 +72,11 @@ class PinnedMemoryTokenDispatcher final
                             KernelHandle<PinnedMemoryTokenDispatcher>* handle, zx_rights_t* rights);
 
  private:
-  PinnedMemoryTokenDispatcher(fbl::RefPtr<BusTransactionInitiatorDispatcher> bti,
-                              PinnedVmObject pinned_vmo);
+  PinnedMemoryTokenDispatcher(fbl::RefPtr<BusTransactionInitiatorDispatcher> bti);
   DISALLOW_COPY_ASSIGN_AND_MOVE(PinnedMemoryTokenDispatcher);
 
-  zx_status_t MapIntoIommu(uint32_t perms);
-  zx_status_t UnmapFromIommuLocked() TA_REQ(get_lock());
-
-  PinnedVmObject pinned_vmo_;
-
-  // Set to true by Unpin()
-  bool explicitly_unpinned_ TA_GUARDED(get_lock()) = false;
-
+  TA_GUARDED(get_lock()) fbl::RefPtr<iommu::Pmt> pmt_;
   const fbl::RefPtr<BusTransactionInitiatorDispatcher> bti_;
-  uint64_t map_token_ TA_GUARDED(get_lock()) = UINT64_MAX;
-
-  // Set to true during Create() once we are fully initialized. Do not call
-  // any |bti_| locking methods if this is false, since that indicates we're
-  // being called from Create() and already have the |bti_| lock.
-  bool initialized_ = false;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PINNED_MEMORY_TOKEN_DISPATCHER_H_
