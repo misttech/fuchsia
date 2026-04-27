@@ -603,8 +603,25 @@ pub fn sys_setreuid(
     ruid: uid_t,
     euid: uid_t,
 ) -> Result<(), Errno> {
-    let allowed = |uid| uid == u32::MAX || new_uid_allowed(&current_task, uid);
-    if !allowed(ruid) || !allowed(euid) {
+    // Linux __sys_setreuid() uses asymmetric checks: ruid cannot be set
+    // to saved_uid, while euid can. This prevents regaining root via
+    // setreuid after a privilege drop when setresuid would be required.
+    let validate_ruid = |uid: uid_t| {
+        let creds = current_task.current_creds();
+        uid == u32::MAX
+            || uid == creds.uid
+            || uid == creds.euid
+            || security::is_task_capable_noaudit(current_task, CAP_SETUID)
+    };
+    let validate_euid = |uid: uid_t| {
+        let creds = current_task.current_creds();
+        uid == u32::MAX
+            || uid == creds.uid
+            || uid == creds.euid
+            || uid == creds.saved_uid
+            || security::is_task_capable_noaudit(current_task, CAP_SETUID)
+    };
+    if !validate_ruid(ruid) || !validate_euid(euid) {
         return error!(EPERM);
     }
 
@@ -638,8 +655,23 @@ pub fn sys_setregid(
     rgid: gid_t,
     egid: gid_t,
 ) -> Result<(), Errno> {
-    let allowed = |gid| gid == u32::MAX || new_gid_allowed(&current_task, gid);
-    if !allowed(rgid) || !allowed(egid) {
+    // Same asymmetric permission model as setreuid — see above.
+    let validate_rgid = |gid: gid_t| {
+        let creds = current_task.current_creds();
+        gid == u32::MAX
+            || gid == creds.gid
+            || gid == creds.egid
+            || security::is_task_capable_noaudit(current_task, CAP_SETGID)
+    };
+    let validate_egid = |gid: gid_t| {
+        let creds = current_task.current_creds();
+        gid == u32::MAX
+            || gid == creds.gid
+            || gid == creds.egid
+            || gid == creds.saved_gid
+            || security::is_task_capable_noaudit(current_task, CAP_SETGID)
+    };
+    if !validate_rgid(rgid) || !validate_egid(egid) {
         return error!(EPERM);
     }
 

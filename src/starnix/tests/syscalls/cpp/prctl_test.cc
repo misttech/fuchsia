@@ -141,6 +141,80 @@ TEST(PrctlTest, SetreuidNoopToPrivilegeEscalation) {
   });
 }
 
+// Test that setreuid() does not allow ruid=saved_uid.
+// Linux's __sys_setreuid() only accepts ruid={current_uid, current_euid},
+// deliberately excluding saved_uid. This prevents a process that dropped
+// privileges from regaining root via setreuid when setresuid would be required.
+TEST(PrctlTest, SetreuidRuidCannotUseSavedUid) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    // Setup: uid=1000, euid=1000, saved_uid=0
+    // Standard state after a setuid-root binary drops privileges
+    ASSERT_EQ(setresuid(1000, 1000, 0), 0);
+
+    uid_t ruid, euid, suid;
+    ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
+    ASSERT_EQ(ruid, 1000u);
+    ASSERT_EQ(euid, 1000u);
+    ASSERT_EQ(suid, 0u);
+
+    // setreuid(0, -1) — ruid=saved_uid. Linux denies this with EPERM.
+    int ret = setreuid(0, -1);
+    EXPECT_EQ(ret, -1) << "setreuid(saved_uid, -1) should be denied";
+    if (ret == -1) {
+      EXPECT_EQ(errno, EPERM);
+    }
+
+    // Verify credentials are unchanged
+    ASSERT_EQ(getresuid(&ruid, &euid, &suid), 0);
+    EXPECT_EQ(ruid, 1000u);
+    EXPECT_EQ(euid, 1000u);
+    EXPECT_EQ(suid, 0u);
+  });
+}
+
+// Same test for setregid: rgid=saved_gid should be denied.
+TEST(PrctlTest, SetregidRgidCannotUseSavedGid) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    // Set up GID state first while still privileged: gid=1000, egid=1000, saved_gid=0.
+    ASSERT_EQ(setresgid(1000, 1000, 0), 0);
+
+    // Drop effective capabilities by transitioning euid from 0 to non-zero.
+    // This mirrors a setuid-root binary that has dropped privileges, and in
+    // particular clears CAP_SETGID so the setregid check below actually
+    // exercises the saved_gid rule rather than being short-circuited by caps.
+    ASSERT_EQ(setresuid(1000, 1000, 0), 0);
+
+    gid_t rgid, egid, sgid;
+    ASSERT_EQ(getresgid(&rgid, &egid, &sgid), 0);
+    ASSERT_EQ(rgid, 1000u);
+    ASSERT_EQ(egid, 1000u);
+    ASSERT_EQ(sgid, 0u);
+
+    // setregid(0, -1) — rgid=saved_gid. Linux denies this with EPERM.
+    int ret = setregid(0, -1);
+    EXPECT_EQ(ret, -1) << "setregid(saved_gid, -1) should be denied";
+    if (ret == -1) {
+      EXPECT_EQ(errno, EPERM);
+    }
+
+    // Verify credentials are unchanged
+    ASSERT_EQ(getresgid(&rgid, &egid, &sgid), 0);
+    EXPECT_EQ(rgid, 1000u);
+    EXPECT_EQ(egid, 1000u);
+    EXPECT_EQ(sgid, 0u);
+  });
+}
+
 TEST(PrctlTest, Argv0SniffingIsUndetectableInUserspace) {
   test_helper::ForkHelper helper;
 
