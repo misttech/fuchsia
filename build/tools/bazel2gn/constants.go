@@ -352,6 +352,10 @@ var thirdPartyBazelRepos = map[string]string{
 // coptToConfig maps from Bazel copt values to configs to use in GN.
 var coptToConfig = map[string]string{
 	"-Wno-implicit-fallthrough": "//build/config:Wno-implicit-fallthrough",
+	"-Wno-vla-cxx-extension":    "//build/config:Wno-vla-cxx-extension",
+	"-Wno-deprecated-pragma":    "//build/config:Wno-deprecated-pragma",
+	"-Wno-conversion":           "//build/config:Wno-conversion",
+	"//build/config:all_source": "//build/config:all_source",
 
 	// The following are GN `configs` rather than `copt` values. These must be
 	// allowed because they both appear as `configs` by the time this map is used.
