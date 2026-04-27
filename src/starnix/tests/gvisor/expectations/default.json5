@@ -851,7 +851,6 @@
                 // tcp_socket_test
                 "AllInetTests/SimpleTcpSocketTest.SetSocketAttachDetachFilter/*",
                 "AllInetTests/SimpleTcpSocketTest.SetTCPCorkOff/*",
-                "AllInetTests/TcpSocketTest.Tiocinq/*",
 
                 // socket_ip_tcp_loopback_test
                 "AllTCPSockets/AllSocketPairTest.SetSocketRecvBufForceAboveMax/0",

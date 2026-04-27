@@ -9,6 +9,7 @@
 #include <net/if_arp.h>
 #include <net/route.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -541,6 +542,35 @@ TEST_F(IoctlTest, EVIOCGNAME_TooSmall) {
   int result = ioctl(fd, EVIOCGNAME(sizeof(dev_name)), &dev_name);
   EXPECT_EQ(result, 10);
   close(fd);
+}
+
+TEST_F(IoctlTest, FIONREAD_StreamSocket_Success) {
+  fbl::unique_fd stream_fd(socket(AF_INET, SOCK_STREAM, 0));
+  ASSERT_TRUE(stream_fd) << strerror(errno);
+  int available = -1;
+  ASSERT_EQ(ioctl(stream_fd.get(), FIONREAD, &available), 0);
+  EXPECT_EQ(available, 0);
+}
+
+TEST_F(IoctlTest, FIONREAD_StreamSocket_DataAvailable) {
+  int fds[2];
+  ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0) << strerror(errno);
+
+  const char data[] = "hello";
+  ASSERT_EQ(write(fds[0], data, sizeof(data)), static_cast<ssize_t>(sizeof(data)))
+      << strerror(errno);
+
+  struct pollfd pfd = {};
+  pfd.fd = fds[1];
+  pfd.events = POLLIN;
+  ASSERT_EQ(poll(&pfd, 1, -1), 1) << strerror(errno);
+
+  int available = -1;
+  ASSERT_EQ(ioctl(fds[1], FIONREAD, &available), 0) << strerror(errno);
+  EXPECT_EQ(available, static_cast<int>(sizeof(data)));
+
+  close(fds[0]);
+  close(fds[1]);
 }
 
 }  // namespace

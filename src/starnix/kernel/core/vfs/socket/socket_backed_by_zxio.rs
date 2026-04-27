@@ -13,7 +13,9 @@ use crate::vfs::socket::{
     SockOptValue, Socket, SocketAddress, SocketDomain, SocketHandle, SocketMessageFlags, SocketOps,
     SocketPeer, SocketProtocol, SocketShutdownFlags, SocketType,
 };
-use crate::vfs::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
+use crate::vfs::{
+    AncillaryData, FileObject, InputBuffer, MessageReadInfo, OutputBuffer, default_ioctl,
+};
 use byteorder::ByteOrder;
 use ebpf::convert_and_verify_cbpf;
 use ebpf_api::SOCKET_FILTER_CBPF_CONFIG;
@@ -23,15 +25,16 @@ use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use linux_uapi::{IP_MULTICAST_ALL, IP_PASSSEC};
 use starnix_logging::{log_warn, track_stub};
-use starnix_sync::{FileOpsCore, Locked};
+use starnix_sync::{FileOpsCore, Locked, Unlocked};
+use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_NET_RAW};
 use starnix_uapi::errors::{ENOTSUP, Errno, ErrnoCode};
-use starnix_uapi::user_address::UserAddress;
+use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    AF_PACKET, BPF_MAXINSNS, MSG_DONTWAIT, MSG_WAITALL, SO_ATTACH_FILTER, SO_BINDTODEVICE,
-    SO_BINDTOIFINDEX, SO_COOKIE, c_int, errno, errno_from_zxio_code, error, from_status_like_fdio,
-    sock_filter, uapi, ucred, uid_t,
+    AF_PACKET, BPF_MAXINSNS, FIONREAD, MSG_DONTWAIT, MSG_WAITALL, SO_ATTACH_FILTER,
+    SO_BINDTODEVICE, SO_BINDTOIFINDEX, SO_COOKIE, c_int, errno, errno_from_zxio_code, error,
+    from_status_like_fdio, sock_filter, uapi, ucred, uid_t,
 };
 use static_assertions::const_assert_eq;
 use std::mem::size_of;
@@ -834,6 +837,30 @@ impl SocketOps for ZxioBackedSocket {
             .and_then(Zxio::release)
             .map(Some)
             .map_err(|status| from_status_like_fdio!(status))
+    }
+
+    fn ioctl(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        socket: &Socket,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        request: u32,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        let user_addr = UserAddress::from(arg);
+        match request {
+            FIONREAD if socket.socket_type == SocketType::Stream => {
+                let available = self
+                    .zxio
+                    .get_read_buffer_available()
+                    .map_err(|status| from_status_like_fdio!(status))?;
+                let available: i32 = available.try_into().map_err(|_| errno!(EINVAL))?;
+                current_task.write_object(UserRef::<i32>::new(user_addr), &available)?;
+                Ok(SUCCESS)
+            }
+            _ => default_ioctl(file, locked, current_task, request, arg),
+        }
     }
 }
 

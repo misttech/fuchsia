@@ -1806,6 +1806,15 @@ impl Zxio {
         let status = unsafe { zxio::zxio_close(self.as_ptr()) };
         zx::ok(status)
     }
+
+    pub fn get_read_buffer_available(&self) -> Result<usize, zx::Status> {
+        let mut available = 0usize;
+        // SAFETY: `self.zxio` is a valid pointer and is guaranteed to be valid for the duration
+        // of the call.
+        let status = unsafe { zxio::zxio_get_read_buffer_available(self.as_ptr(), &mut available) };
+        zx::ok(status)?;
+        Ok(available)
+    }
 }
 
 impl Drop for ZxioStorage {
