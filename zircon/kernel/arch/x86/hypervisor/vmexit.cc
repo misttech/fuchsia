@@ -194,6 +194,7 @@ zx::result<> handle_cpuid(const ExitInfo& exit_info, AutoVmcs& vmcs, GuestState&
             guest_state.rdx = 0;
           }
           break;
+        // XSAVE registers are enumerated in Intel Vol. 2A, Table 3-8.
         case X86_CPUID_XSAVE:
           if (subleaf == 0) {
             auto xsave_size = compute_xsave_size(guest_state.xcr0);
@@ -202,7 +203,19 @@ zx::result<> handle_cpuid(const ExitInfo& exit_info, AutoVmcs& vmcs, GuestState&
             }
             guest_state.rbx = *xsave_size;
           } else if (subleaf == 1) {
+            // TODO(https://fxbug.dev/506251881): Properly support XSAVEC, which is currently
+            // not feasible due to missing support for extended state components such as AVX-512.
+            // In the meantime, we'll clear bit 01, which indicates that we don't support XSAVEC.
+            guest_state.rax &= ~(1u << 1);
+            // Clear bit 03, which indicates that we don't support XSAVES/XRSTORS and IA32_XSS.
             guest_state.rax &= ~(1u << 3);
+            // From the Intel manual (Vol. 2A, Table 3-8): "If EAX[1] and EAX[3] are both
+            // enumerated as 0, EBX enumerates zero."
+            guest_state.rbx = 0;
+            // ECX and EDX are for enumerating the IA32_XSS MSR size, which is a feature we've
+            // explicitly disabled above.
+            guest_state.rcx = 0;
+            guest_state.rdx = 0;
           }
           break;
         case X86_CPUID_THERMAL_AND_POWER:
