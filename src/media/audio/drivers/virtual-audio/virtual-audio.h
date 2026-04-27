@@ -6,25 +6,23 @@
 #define SRC_MEDIA_AUDIO_DRIVERS_VIRTUAL_AUDIO_VIRTUAL_AUDIO_H_
 
 #include <fidl/fuchsia.virtualaudio/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include "src/media/audio/drivers/virtual-audio/virtual-audio-composite.h"
 
 namespace virtual_audio {
 
-class VirtualAudio : public fdf::DriverBase,
+class VirtualAudio : public fdf::DriverBase2,
                      public fidl::WireServer<fuchsia_virtualaudio::Control> {
  public:
   static constexpr std::string_view kDriverName = "virtual-audio";
   static constexpr std::string_view kChildNodeName = "virtual-audio";
   static constexpr std::string_view kClassName = "virtual_audio";
 
-  VirtualAudio(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  VirtualAudio() : DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   // Implements virtualaudio.Control.

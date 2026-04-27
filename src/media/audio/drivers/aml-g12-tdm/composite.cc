@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.driver.compat/cpp/wire.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 
 namespace audio::aml_g12 {
@@ -33,8 +33,9 @@ zx::result<> Driver::CreateDevfsNode() {
   return zx::ok();
 }
 
-zx::result<> Driver::Start() {
-  zx::result pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+zx::result<> Driver::Start(fdf::DriverContext context) {
+  zx::result pdev_client =
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client.is_error() || !pdev_client->is_valid()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
@@ -63,7 +64,7 @@ zx::result<> Driver::Start() {
   }
 
   zx::result clock_gate_result =
-      incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(kClockGateParentName);
+      context.incoming().Connect<fuchsia_hardware_clock::Service::Clock>(kClockGateParentName);
   if (clock_gate_result.is_error() || !clock_gate_result->is_valid()) {
     fdf::error("Connect to clock-gate failed: {}", clock_gate_result);
     return zx::error(clock_gate_result.error_value());
@@ -72,7 +73,7 @@ zx::result<> Driver::Start() {
       std::move(clock_gate_result.value()));
 
   zx::result clock_pll_result =
-      incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(kClockPllParentName);
+      context.incoming().Connect<fuchsia_hardware_clock::Service::Clock>(kClockPllParentName);
   if (clock_pll_result.is_error() || !clock_pll_result->is_valid()) {
     fdf::error("Connect to clock-pll failed: {}", clock_pll_result);
     return zx::error(clock_pll_result.error_value());
@@ -88,14 +89,14 @@ zx::result<> Driver::Start() {
   std::vector<SclkPin> sclk_clients;
   for (auto& sclk_gpio_name : sclk_gpio_names) {
     zx::result gpio_result =
-        incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(sclk_gpio_name);
+        context.incoming().Connect<fuchsia_hardware_gpio::Service::Device>(sclk_gpio_name);
     if (gpio_result.is_error() || !gpio_result->is_valid()) {
       fdf::error("Connect to GPIO {} failed: {}", sclk_gpio_name, gpio_result);
       return zx::error(gpio_result.error_value());
     }
 
     zx::result pin_result =
-        incoming()->Connect<fuchsia_hardware_pin::Service::Device>(sclk_gpio_name);
+        context.incoming().Connect<fuchsia_hardware_pin::Service::Device>(sclk_gpio_name);
     if (pin_result.is_error() || !pin_result->is_valid()) {
       fdf::error("Connect to Pin {} failed: {}", sclk_gpio_name, pin_result);
       return zx::error(pin_result.error_value());
@@ -166,7 +167,8 @@ zx::result<> Driver::Start() {
       return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  auto recorder = std::make_unique<Recorder>(inspector().root());
+  inspector_.emplace(context.CreateInspector(this));
+  auto recorder = std::make_unique<Recorder>(inspector_->root());
   // Populate Inspect with nodes specific to AudioCompositeServer.
   for (size_t idx = 0u; idx < kNumberOfTdmEngines; ++idx) {
     recorder->PopulateRingBuffer("tdm engine #" + std::to_string(idx),
@@ -203,4 +205,4 @@ zx::result<> Driver::Start() {
 
 }  // namespace audio::aml_g12
 
-FUCHSIA_DRIVER_EXPORT(audio::aml_g12::Driver);
+FUCHSIA_DRIVER_EXPORT2(audio::aml_g12::Driver);

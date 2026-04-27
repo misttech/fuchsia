@@ -6,13 +6,13 @@
 
 #include <fidl/fuchsia.driver.compat/cpp/wire.h>
 #include <fidl/fuchsia.hardware.acpi/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fit/defer.h>
 
 namespace audio::da7219 {
 
-zx::result<zx::interrupt> Driver::GetIrq() const {
-  auto acpi_client = incoming()->Connect<fuchsia_hardware_acpi::Service::Device>("acpi");
+zx::result<zx::interrupt> Driver::GetIrq(const fdf::Namespace& incoming) const {
+  auto acpi_client = incoming.Connect<fuchsia_hardware_acpi::Service::Device>("acpi");
   if (!acpi_client.is_ok()) {
     return acpi_client.take_error();
   }
@@ -27,13 +27,14 @@ zx::result<zx::interrupt> Driver::GetIrq() const {
   return zx::ok(std::move(irq.value().value()->irq));
 }
 
-zx::result<> Driver::Start() {
-  zx::result i2c = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>("i2c000");
+zx::result<> Driver::Start(fdf::DriverContext context) {
+  auto incoming = context.take_incoming();
+  zx::result i2c = incoming->Connect<fuchsia_hardware_i2c::Service::Device>("i2c000");
   if (!i2c.is_ok()) {
     DA7219_LOG(ERROR, "Could not get I2C client: %s", i2c.status_string());
     return i2c.take_error();
   }
-  zx::result irq = GetIrq();
+  zx::result irq = GetIrq(*incoming);
   if (!irq.is_ok()) {
     DA7219_LOG(ERROR, "Could not get IRQ: %s", irq.status_string());
     return irq.take_error();
@@ -100,4 +101,4 @@ zx::result<> Driver::Serve(std::string_view name, bool is_input) {
 
 }  // namespace audio::da7219
 
-FUCHSIA_DRIVER_EXPORT(audio::da7219::Driver);
+FUCHSIA_DRIVER_EXPORT2(audio::da7219::Driver);

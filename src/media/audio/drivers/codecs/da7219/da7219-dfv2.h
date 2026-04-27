@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.hardware.audio/cpp/wire.h>
 #include <fidl/fuchsia.hardware.i2c/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
@@ -44,7 +44,7 @@ class ServerConnector : public fidl::WireServer<fuchsia_hardware_audio::CodecCon
     fidl::BindServer(core_->dispatcher(), std::move(server), this, std::move(on_unbound));
   }
 
-  zx::result<> Serve(fidl::ClientEnd<fuchsia_driver_framework::Node>& parent) {
+  zx::result<> Serve(const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent) {
     fidl::Arena arena;
     zx::result connector = devfs_connector_.Bind(core_->dispatcher());
     if (connector.is_error()) {
@@ -119,18 +119,17 @@ class ServerConnector : public fidl::WireServer<fuchsia_hardware_audio::CodecCon
   driver_devfs::Connector<fuchsia_hardware_audio::CodecConnector> devfs_connector_;
 };
 
-class Driver : public fdf::DriverBase {
+class Driver : public fdf::DriverBase2 {
  public:
-  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("da7219", std::move(start_args), std::move(driver_dispatcher)) {}
+  Driver() : fdf::DriverBase2("da7219") {}
 
   ~Driver() override = default;
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   zx::result<> Serve(std::string_view name, bool is_input);
-  zx::result<zx::interrupt> GetIrq() const;
+  zx::result<zx::interrupt> GetIrq(const fdf::Namespace& incoming) const;
 
   std::shared_ptr<Core> core_;
   std::shared_ptr<ServerConnector> server_output_;

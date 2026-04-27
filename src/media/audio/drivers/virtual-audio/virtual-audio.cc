@@ -4,11 +4,11 @@
 
 #include "src/media/audio/drivers/virtual-audio/virtual-audio.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace virtual_audio {
 
-zx::result<> VirtualAudio::Start() {
+zx::result<> VirtualAudio::Start(fdf::DriverContext context) {
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
     fdf::error("Failed to bind devfs connector: {}", connector);
@@ -96,4 +96,4 @@ void VirtualAudio::Serve(fidl::ServerEnd<fuchsia_virtualaudio::Control> server) 
 
 }  // namespace virtual_audio
 
-FUCHSIA_DRIVER_EXPORT(virtual_audio::VirtualAudio);
+FUCHSIA_DRIVER_EXPORT2(virtual_audio::VirtualAudio);
