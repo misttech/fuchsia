@@ -145,7 +145,7 @@ where
                     next2 = drain2.next();
                 }
                 std::cmp::Ordering::Equal => {
-                    out_keys.push(k2.borrow());
+                    out_keys.push(k1);
                     out_values.push(v2);
                     next1 = drain1.next();
                     next2 = drain2.next();
@@ -279,5 +279,72 @@ mod tests {
         assert_eq!(merged.get("a"), Some(&1));
         assert_eq!(merged.get("b"), Some(&2));
         assert_eq!(merged.get("c"), Some(&30));
+    }
+
+    #[derive(
+        Debug, Clone, Copy, Eq, zerocopy::IntoBytes, zerocopy::Immutable, zerocopy::Unaligned,
+    )]
+    #[repr(C)]
+    struct TestKey {
+        id: u8,
+        metadata: u8,
+    }
+
+    impl PartialEq for TestKey {
+        fn eq(&self, other: &Self) -> bool {
+            self.id == other.id
+        }
+    }
+
+    impl Ord for TestKey {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.id.cmp(&other.id)
+        }
+    }
+
+    impl PartialOrd for TestKey {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl PackedItem for TestKey {
+        unsafe fn from_bytes(bytes: &[u8]) -> &Self {
+            unsafe { &*(bytes.as_ptr() as *const TestKey) }
+        }
+    }
+
+    #[test]
+    fn test_insert_keeps_old_key_packed() {
+        let mut builder = PackedMapBuilder::new();
+        let key1 = TestKey { id: 1, metadata: 10 };
+        let key2 = TestKey { id: 1, metadata: 20 };
+
+        builder.insert(&key1, 1);
+        builder.insert(&key2, 2); // Equal, should go to packed
+
+        let map = builder.build();
+        let (k, v) = map.iter().next().unwrap();
+        assert_eq!(k.metadata, 10);
+        assert_eq!(*v, 2);
+    }
+
+    #[test]
+    fn test_insert_keeps_old_key_unpacked() {
+        let mut builder = PackedMapBuilder::new();
+        let key1 = TestKey { id: 2, metadata: 10 };
+        let key2 = TestKey { id: 1, metadata: 20 };
+        let key3 = TestKey { id: 1, metadata: 30 };
+
+        builder.insert(&key1, 1);
+        builder.insert(&key2, 2); // Out of order, goes to unpacked
+        builder.insert(&key3, 3); // Out of order, goes to unpacked
+
+        let map = builder.build();
+        let mut iter = map.iter();
+        let (k1, v1) = iter.next().unwrap();
+        assert_eq!(k1.id, 1);
+        assert_eq!(k1.metadata, 20); // Keeps old key from unpacked
+        assert_eq!(*v1, 3); // Keeps new value
     }
 }

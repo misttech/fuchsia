@@ -652,6 +652,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cmp::Ordering;
     use std::ops::Bound;
 
     #[test]
@@ -667,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn test_packed_map_append_or_update() {
+    fn test_append_or_update() {
         let mut map: PackedMap<str, i32> = PackedMap::new();
         assert_eq!(map.append_or_update("a", 1), Ok(None));
         assert_eq!(map.append_or_update("b", 2), Ok(None));
@@ -677,6 +678,56 @@ mod tests {
 
         assert_eq!(map.get("a"), Some(&10));
         assert_eq!(map.get("b"), Some(&20));
+    }
+
+    #[derive(
+        Debug, Clone, Copy, Eq, zerocopy::IntoBytes, zerocopy::Immutable, zerocopy::Unaligned,
+    )]
+    #[repr(C)]
+    struct TestKey {
+        id: u8,
+        metadata: u8,
+    }
+
+    impl PartialEq for TestKey {
+        fn eq(&self, other: &Self) -> bool {
+            self.id == other.id
+        }
+    }
+
+    impl Ord for TestKey {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.id.cmp(&other.id)
+        }
+    }
+
+    impl PartialOrd for TestKey {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl PackedItem for TestKey {
+        unsafe fn from_bytes(bytes: &[u8]) -> &Self {
+            unsafe { &*(bytes.as_ptr() as *const TestKey) }
+        }
+    }
+
+    #[test]
+    fn test_append_or_update_keeps_old_key() {
+        let mut map = PackedMap::new();
+        let key1 = TestKey { id: 1, metadata: 10 };
+        let key2 = TestKey { id: 1, metadata: 20 };
+
+        map.append_or_update(&key1, 1).unwrap();
+        map.append_or_update(&key2, 2).unwrap(); // Equal, should go to packed
+
+        let items = map.iter().collect::<Vec<_>>();
+        assert_eq!(items.len(), 1);
+
+        let (k, v) = &items[0];
+        assert_eq!(k.metadata, 10);
+        assert_eq!(**v, 2);
     }
 
     #[test]
