@@ -4,19 +4,15 @@
 
 use anyhow::anyhow;
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_bluetooth::{ChannelMode, ChannelParameters, DeviceClass, PeerId, Uuid};
-use fidl_fuchsia_bluetooth_bredr::{
-    ConnectParameters, ConnectionReceiverMarker, ConnectionReceiverRequest,
-    ConnectionReceiverRequestStream, DataElement, L2capParameters, ProtocolDescriptor,
-    ProtocolIdentifier, ServiceDefinition,
-};
+use fidl_fuchsia_bluetooth::{DeviceClass, PeerId, Uuid};
+
 use fidl_fuchsia_bluetooth_gatt2::{Characteristic, ServiceHandle, ServiceInfo};
 use fidl_fuchsia_bluetooth_le::{AdvertisingParameters, ConnectionMarker};
 use fidl_fuchsia_bluetooth_sys::{
     HostInfo, InputCapability, OutputCapability, PairingOptions, Peer,
 };
-use fuchsia_async::{LocalExecutor, TimeoutExt};
-use fuchsia_bluetooth::types::{Channel, Uuid as BtUuid};
+use fuchsia_async::LocalExecutor;
+use fuchsia_bluetooth::types::Channel;
 
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
@@ -25,6 +21,7 @@ use std::ffi::{CStr, CString};
 use std::sync::Arc;
 use std::thread;
 
+mod bredr;
 mod gatt;
 mod le;
 mod proxies;
@@ -209,7 +206,7 @@ impl WorkThread {
                     result_sender.send(sys::stop_pairing_delegate(&proxies).await).unwrap();
                 }
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
-                    match proxies.connect_l2cap(&peer_id, psm).await {
+                    match bredr::connect_l2cap(&proxies, &peer_id, psm).await {
                         Ok(channel) => {
                             l2cap_channel = Some(channel);
                             result_sender.send(Ok(())).unwrap();
@@ -335,11 +332,11 @@ impl WorkThread {
                         .unwrap();
                 }
                 Request::AdvertiseService(psm, timeout, result_sender) => {
-                    match proxies.advertise_service(psm).await {
+                    match bredr::advertise_service(&proxies, psm).await {
                         Ok(connection_receiver_stream) => {
                             result_sender
                                 .send(
-                                    Self::serve_connection_receiver(
+                                    bredr::serve_connection_receiver(
                                         connection_receiver_stream,
                                         &mut l2cap_channel,
                                         timeout,
@@ -371,30 +368,6 @@ impl WorkThread {
     }
 
     // Overwrite `l2cap_channel` if an incoming connection is established before `timeout`.
-    async fn serve_connection_receiver(
-        mut connection_receiver_stream: ConnectionReceiverRequestStream,
-        l2cap_channel: &mut Option<Channel>,
-        timeout: std::time::Duration,
-    ) -> Result<Option<PeerId>, anyhow::Error> {
-        match connection_receiver_stream.next().on_timeout(timeout, || None).await {
-            Some(Ok(ConnectionReceiverRequest::Connected {
-                peer_id,
-                channel,
-                protocol: _,
-                control_handle: _,
-            })) => {
-                *l2cap_channel = Some(channel.try_into().unwrap());
-                Ok(Some(peer_id))
-            }
-            None => Ok(None),
-            Some(Err(err)) => {
-                Err(anyhow!("fuchsia.bluetooth.bredr.ConnectionReceiver reported error: {err}"))
-            }
-            Some(Ok(_)) => Err(anyhow!(
-                "fuchsia.bluetooth.bredr.ConnectionReceiver received unexpected request"
-            )),
-        }
-    }
 
     // Write address of active host into `addr_byte_buff`.
     pub async fn read_local_address(&self, addr_byte_buff: *mut u8) -> Result<(), anyhow::Error> {
@@ -664,63 +637,6 @@ impl WorkThread {
         let (sender, receiver) = oneshot::channel::<Result<Option<PeerId>, anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::AdvertiseService(psm, timeout, sender))?;
         receiver.await?
-    }
-}
-
-impl Proxies {
-    async fn connect_l2cap(&self, peer_id: &PeerId, psm: u16) -> Result<Channel, anyhow::Error> {
-        match self
-            .profile_proxy
-            .connect(
-                peer_id,
-                &ConnectParameters::L2cap(L2capParameters { psm: Some(psm), ..Default::default() }),
-            )
-            .await
-        {
-            Ok(Ok(channel_res)) => Ok(channel_res
-                .try_into()
-                .map_err(|err| anyhow!("Couldn't convert FIDL to BT channel: {err:?}"))?),
-            Ok(Err(sapphire_err)) => {
-                Err(anyhow!("fuchsia.bluetooth.bredr.Profile/Connect error: {sapphire_err:?}"))
-            }
-            Err(fidl_err) => {
-                Err(anyhow!("fuchsia.bluetooth.bredr.Profile/Connect error: {fidl_err}"))
-            }
-        }
-    }
-
-    async fn advertise_service(
-        &self,
-        psm: u16,
-    ) -> Result<ConnectionReceiverRequestStream, anyhow::Error> {
-        let (connect_client, connect_server) =
-            fidl::endpoints::create_request_stream::<ConnectionReceiverMarker>();
-
-        let service_def = ServiceDefinition {
-            service_class_uuids: Some(vec![BtUuid::new16(0x1401).into()]), // Non-reserved ID
-            protocol_descriptor_list: Some(vec![ProtocolDescriptor {
-                protocol: Some(ProtocolIdentifier::L2Cap),
-                params: Some(vec![DataElement::Uint16(psm)]),
-                ..Default::default()
-            }]),
-            ..Default::default()
-        };
-
-        let _ = self
-            .profile_proxy
-            .advertise(fidl_fuchsia_bluetooth_bredr::ProfileAdvertiseRequest {
-                services: Some(vec![service_def]),
-                receiver: Some(connect_client),
-                parameters: Some(ChannelParameters {
-                    channel_mode: Some(ChannelMode::EnhancedRetransmission),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .await?
-            .map_err(|e| anyhow!("fuchsia.bluetooth.bredr.Profile/Advertise error: {:?}", e))?;
-
-        Ok(connect_server)
     }
 }
 
