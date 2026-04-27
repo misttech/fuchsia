@@ -75,7 +75,6 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.hardware.block.driver:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.block.encrypted:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.block.verified:verify_bazel2gn",
-  "//sdk/fidl/fuchsia.hardware.block:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.bluetooth:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.camera:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.clock:verify_bazel2gn",

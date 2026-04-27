@@ -5,7 +5,6 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_FTL_BLOCK_DEVICE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_FTL_BLOCK_DEVICE_H_
 
-#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/badblock/c/banjo.h>
 #include <fuchsia/hardware/badblock/cpp/banjo.h>
@@ -51,8 +50,7 @@ struct FtlOp {
 
 class BlockDevice;
 using DeviceType =
-    ddk::Device<BlockDevice, ddk::Unbindable, ddk::Messageable<fuchsia_hardware_block::Ftl>::Mixin,
-                ddk::Suspendable, ddk::GetProtocolable>;
+    ddk::Device<BlockDevice, ddk::Unbindable, ddk::Suspendable, ddk::GetProtocolable>;
 
 // Exposes the FTL library as a Fuchsia BlockDevice protocol.
 class BlockDevice : public DeviceType,
@@ -83,12 +81,6 @@ class BlockDevice : public DeviceType,
   zx_status_t BlockPartitionGetGuid(guidtype_t guid_type, guid_t* out_guid);
   zx_status_t BlockPartitionGetName(char* out_name, size_t capacity);
   zx_status_t BlockPartitionGetMetadata(partition_metadata_t* out_metadata);
-
-  void Format(FormatCompleter::Sync& completer) final { completer.Reply(FormatInternal()); }
-
-  void GetVmo(GetVmoCompleter::Sync& completer) final {
-    completer.ReplySuccess(DuplicateInspectVmo());
-  }
 
   // FtlInstance interface.
   bool OnVolumeAdded(uint32_t page_size, uint32_t num_pages) final;
