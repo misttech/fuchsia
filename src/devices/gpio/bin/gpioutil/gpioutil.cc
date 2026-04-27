@@ -132,16 +132,25 @@ int ParseArgs(int argc, char** argv, GpioFunc* func, fidl::AnyArena& arena,
       }
 
       break;
-    case 'f':
+    case 'f': {
       *func = Configure;
 
       if (argc < 4) {
         return -1;
       }
-      *config = fuchsia_hardware_pin::wire::Configuration::Builder(arena)
-                    .function(std::stoull(argv[3]))
-                    .Build();
+
+      char* endptr;
+      uint64_t func_val = std::strtoull(argv[3], &endptr, 10);
+      if (*endptr == '\0') {
+        *config =
+            fuchsia_hardware_pin::wire::Configuration::Builder(arena).function(func_val).Build();
+      } else {
+        *config = fuchsia_hardware_pin::wire::Configuration::Builder(arena)
+                      .function_name(fidl::StringView::FromExternal(argv[3]))
+                      .Build();
+      }
       break;
+    }
     case 'p': {
       *func = Configure;
 

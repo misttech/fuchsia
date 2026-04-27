@@ -47,7 +47,7 @@ static void usage() {
       "                    it to trigger once, then exit. <value> should be `default`, \n"
       "                    `edge-high`, `edge-low`, `edge-both`, `level-low`, or `level-high`.\n"
       "  function | f      Set the function of <name> to <value>. <value> is a function number\n"
-      "                    that is specific to the GPIO controller being used.\n"
+      "                    or string name that is specific to the GPIO controller being used.\n"
       "  pull     | p      Configure the pull-up/-down resistor on <name>. <value> should be\n"
       "                    `up`, `down`, or `none`.\n"
       "  help | h          Print this help text.\n\n"
@@ -77,6 +77,8 @@ static void usage() {
       "  Received interrupt at time 12345\n\n"
       "  Set a pin to function six:\n"
       "  $ gpioutil function GPIO_HW_ID_3 6\n\n"
+      "  Set a pin to function by name:\n"
+      "  $ gpioutil function GPIO_HW_ID_3 spi\n\n"
       "  Enable the pull-up resistor on a pin:\n"
       "  $ gpioutil pull GPIO_HW_ID_3 up\n\n");
 }

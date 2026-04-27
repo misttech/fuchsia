@@ -124,8 +124,8 @@ Set the function for a pin.
 
 `<name>` should be one of the values returned from [`list`](#list).
 
-`<value>` is an function number that is specific to the GPIO controller being
-used.
+`<value>` is a function number or string name that is specific to the GPIO
+controller being used.
 
 Aliases: `f`
 
@@ -214,6 +214,12 @@ Received interrupt at time 12345
 
 ```none {:.devsite-disable-click-to-copy}
 $ gpioutil function GPIO_HW_ID_3 6
+```
+
+### Set a pin to function by name
+
+```none {:.devsite-disable-click-to-copy}
+$ gpioutil function GPIO_HW_ID_3 spi
 ```
 
 ## Notes

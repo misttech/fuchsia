@@ -63,9 +63,12 @@ class FakeGpio : public fidl::WireServer<Gpio>,
     if (request->config.has_function()) {
       mock_set_function_.Call(request->config.function());
     }
+    if (request->config.has_function_name()) {
+      mock_set_function_name_.Call(std::string(request->config.function_name().get()));
+    }
 
     if (!request->config.has_pull() && !request->config.has_drive_strength_ua() &&
-        !request->config.has_function()) {
+        !request->config.has_function() && !request->config.has_function_name()) {
       fidl::Arena arena;
       completer.ReplySuccess(fuchsia_hardware_pin::wire::Configuration::Builder(arena)
                                  .drive_strength_ua(mock_get_drive_strength_.Call())
@@ -144,6 +147,9 @@ class FakeGpio : public fidl::WireServer<Gpio>,
   }
   mock_function::MockFunction<void>& MockReleaseInterrupt() { return mock_release_interrupt_; }
   mock_function::MockFunction<void, uint64_t>& MockSetFunction() { return mock_set_function_; }
+  mock_function::MockFunction<void, std::string>& MockSetFunctionName() {
+    return mock_set_function_name_;
+  }
   mock_function::MockFunction<void, fuchsia_hardware_pin::Pull>& MockSetPull() {
     return mock_set_pull_;
   }
@@ -162,6 +168,7 @@ class FakeGpio : public fidl::WireServer<Gpio>,
   mock_function::MockFunction<void, fuchsia_hardware_gpio::InterruptMode> mock_configure_interrupt_;
   mock_function::MockFunction<void> mock_release_interrupt_;
   mock_function::MockFunction<void, uint64_t> mock_set_function_;
+  mock_function::MockFunction<void, std::string> mock_set_function_name_;
   mock_function::MockFunction<void, fuchsia_hardware_pin::Pull> mock_set_pull_;
   bool client_got_interrupt_ = false;
 };
@@ -366,6 +373,28 @@ TEST_F(GpioUtilTest, AltFunctionTest) {
   EXPECT_EQ(config.function(), 6);
 
   gpio_->MockSetFunction().ExpectCall(6);
+  EXPECT_EQ(ClientCall(fidl::WireSyncClient(std::move(client_)), func, arena, buffer_mode,
+                       interrupt_mode, config),
+            0);
+}
+
+TEST_F(GpioUtilTest, FunctionByNameTest) {
+  int argc = 4;
+  const char* argv[] = {"gpioutil", "f", "some_path", "spi"};
+
+  fidl::Arena arena;
+  GpioFunc func;
+  fuchsia_hardware_gpio::BufferMode buffer_mode;
+  fuchsia_hardware_gpio::InterruptMode interrupt_mode;
+  fuchsia_hardware_pin::wire::Configuration config;
+  EXPECT_EQ(ParseArgs(argc, const_cast<char**>(argv), &func, arena, &buffer_mode, &interrupt_mode,
+                      &config),
+            0);
+  EXPECT_EQ(func, Configure);
+  ASSERT_TRUE(config.has_function_name());
+  EXPECT_EQ(config.function_name().get(), "spi");
+
+  gpio_->MockSetFunctionName().ExpectCall("spi");
   EXPECT_EQ(ClientCall(fidl::WireSyncClient(std::move(client_)), func, arena, buffer_mode,
                        interrupt_mode, config),
             0);
