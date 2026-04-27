@@ -4,16 +4,17 @@
 
 import argparse
 import asyncio
-import os
 import subprocess
 import sys
 import time
+from pathlib import Path
+from typing import Final
 
 from fx_cmd.lib import FxCmd
 from shared.protocol import BaseRequest, make_request, serialize
 
 # TODO(https://fxbug.dev/504962182): Replace this with something more appropriate.
-UDS_PATH = "/tmp/fx-debug-daemon.sock"
+UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
 
 
 async def main(args: list[str]) -> int:
@@ -47,9 +48,18 @@ async def main(args: list[str]) -> int:
 
 
 async def start_daemon(port: int | None) -> int:
-    if os.path.exists(UDS_PATH):
-        print(f"Daemon socket already exists at {UDS_PATH}")
-        return 1
+    # Check if a daemon is already running. If the socket file exists, attempt
+    # to connect to it to verify if it is active. If the connection is refused,
+    # the socket is stale (e.g., from a crash or rapid restart) and can be safely removed.
+    if UDS_PATH.exists():
+        try:
+            reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+            writer.close()
+            await writer.wait_closed()
+            print(f"Daemon socket already exists at {UDS_PATH}")
+            return 1
+        except (ConnectionRefusedError, FileNotFoundError):
+            UDS_PATH.unlink(missing_ok=True)
 
     fx_cmd = FxCmd()
     args = ["zxdb-daemon"]
@@ -70,7 +80,7 @@ async def start_daemon(port: int | None) -> int:
 
         # Wait for socket to appear
         for _ in range(5):
-            if os.path.exists(UDS_PATH):
+            if UDS_PATH.exists():
                 print("Daemon is ready.")
                 return 0
             time.sleep(1)
@@ -83,7 +93,7 @@ async def start_daemon(port: int | None) -> int:
 
 
 async def send_command(req: BaseRequest) -> int:
-    if not os.path.exists(UDS_PATH):
+    if not UDS_PATH.exists():
         print(f"Daemon socket not found at {UDS_PATH}. Is it running?")
         return 1
 

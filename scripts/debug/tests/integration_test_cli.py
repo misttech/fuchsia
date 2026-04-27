@@ -1,0 +1,128 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import asyncio
+import json
+import subprocess
+import unittest
+
+from cli.cli import main
+from daemon.daemon import UDS_PATH
+from fx_cmd.lib import FxCmd
+
+
+class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        if UDS_PATH.exists():
+            UDS_PATH.unlink()
+        self.dummy_server: asyncio.AbstractServer | None = None
+
+    async def asyncTearDown(self) -> None:
+        if self.dummy_server:
+            self.dummy_server.close()
+            await self.dummy_server.wait_closed()
+        if UDS_PATH.exists():
+            UDS_PATH.unlink()
+
+    async def start_dummy_dap_server(self, port: int) -> asyncio.AbstractServer:
+        async def handle_client(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            try:
+                while True:
+                    header = await reader.readuntil(b"\r\n\r\n")
+                    content_length = 0
+                    for line in header.decode("utf-8").split("\r\n"):
+                        if line.startswith("Content-Length:"):
+                            content_length = int(line.split(":")[1].strip())
+                    body = await reader.readexactly(content_length)
+                    req = json.loads(body.decode("utf-8"))
+
+                    if req.get("command") == "initialize":
+                        resp = {
+                            "seq": req["seq"],
+                            "type": "response",
+                            "request_seq": req["seq"],
+                            "success": True,
+                            "command": "initialize",
+                            "body": {},
+                        }
+                        resp_body = json.dumps(resp).encode("utf-8")
+                        resp_header = (
+                            f"Content-Length: {len(resp_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(resp_header + resp_body)
+                        await writer.drain()
+            except (asyncio.IncompleteReadError, ConnectionResetError):
+                pass
+            finally:
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except:
+                    pass
+
+        server = await asyncio.start_server(handle_client, "127.0.0.1", port)
+        return server
+
+    async def test_daemon_lifecycle(self) -> None:
+        # Find an open port
+        temp_server = await asyncio.start_server(
+            lambda r, w: None, "127.0.0.1", 0
+        )
+        port = temp_server.sockets[0].getsockname()[1]
+        temp_server.close()
+        await temp_server.wait_closed()
+
+        # Start dummy DAP server
+        self.dummy_server = await self.start_dummy_dap_server(port)
+
+        # Start Daemon manually
+        fx_cmd = FxCmd()
+        cmd = fx_cmd.command_line(
+            "zxdb-daemon",
+            "--port",
+            str(port),
+            "--connect-to-existing",
+        )
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        try:
+            # Wait for socket to appear
+            for _ in range(10):
+                if UDS_PATH.exists():
+                    break
+                await asyncio.sleep(0.5)
+            self.assertTrue(UDS_PATH.exists(), "Socket file was not created")
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+            # Wait for process to exit
+            for _ in range(10):
+                if proc.poll() is not None:
+                    break
+                await asyncio.sleep(0.5)
+            self.assertIsNotNone(
+                proc.poll(), "Daemon process did not exit after stop"
+            )
+
+            # Verify socket is deleted
+            self.assertFalse(UDS_PATH.exists(), "Socket file was not deleted")
+
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait()
+
+
+if __name__ == "__main__":
+    unittest.main()

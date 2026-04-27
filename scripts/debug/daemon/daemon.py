@@ -6,6 +6,7 @@ import asyncio
 import os
 import signal
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any, Final, TypeVar, cast, final
 
 from async_utils.command import AsyncCommand
@@ -22,7 +23,7 @@ from shared.protocol import (
 )
 
 # TODO(https://fxbug.dev/504962182): Replace this with something more appropriate.
-UDS_PATH = "/tmp/fx-debug-daemon.sock"
+UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
 
 DEFAULT_DAP_PORT: Final[int] = 15678
 
@@ -124,8 +125,8 @@ class Daemon:
             return Response(success=False, message=f"Failed to attach: {e}")
 
     async def run(self) -> int:
-        if os.path.exists(UDS_PATH):
-            os.unlink(UDS_PATH)
+        if UDS_PATH.exists():
+            UDS_PATH.unlink()
 
         server = await asyncio.start_unix_server(
             self.handle_uds_client, UDS_PATH
@@ -170,7 +171,7 @@ class Daemon:
                         self.dap_proc.terminate()
                     server.close()
                     await server.wait_closed()
-                    os.unlink(UDS_PATH)
+                    UDS_PATH.unlink(missing_ok=True)
                     return 1
                 finally:
                     loop.remove_signal_handler(signal.SIGUSR1)
@@ -203,7 +204,7 @@ class Daemon:
                 self.dap_proc.terminate()
             server.close()
             await server.wait_closed()
-            os.unlink(UDS_PATH)
+            UDS_PATH.unlink(missing_ok=True)
             return 1
 
         # Run DAP client
@@ -223,14 +224,17 @@ class Daemon:
 
         await self.stop_event.wait()
 
-        _done, pending = await asyncio.wait(self.active_handlers, timeout=5.0)
-        for task in pending:
-            task.cancel()
+        if self.active_handlers:
+            _done, pending = await asyncio.wait(
+                self.active_handlers, timeout=5.0
+            )
+            for task in pending:
+                task.cancel()
 
         server.close()
         await server.wait_closed()
-        if os.path.exists(UDS_PATH):
-            os.unlink(UDS_PATH)
+        if UDS_PATH.exists():
+            UDS_PATH.unlink(missing_ok=True)
 
         if self.dap_proc:
             self.dap_proc.terminate()

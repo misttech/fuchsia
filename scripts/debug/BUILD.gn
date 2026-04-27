@@ -25,6 +25,7 @@ if (is_host) {
     deps = [
       "cli:cli_test",
       "daemon:daemon_test",
+      "tests:cli_integration_test($host_toolchain)",
     ]
   }
 
