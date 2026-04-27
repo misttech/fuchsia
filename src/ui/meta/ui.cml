@@ -41,6 +41,10 @@
     ],
     expose: [
         {
+            protocol: "fuchsia.ui.display.color.Converter",
+            from: "#scenic",
+        },
+        {
             protocol: "fuchsia.lightsensor.Sensor",
             from: "#scene_manager",
         },

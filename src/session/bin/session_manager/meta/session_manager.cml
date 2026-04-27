@@ -421,6 +421,7 @@
                 "fuchsia.ui.composition.ScreenCapture",
                 "fuchsia.ui.composition.Screenshot",
                 "fuchsia.ui.composition.TrustedFlatlandFactory",
+                "fuchsia.ui.display.color.Converter",
                 "fuchsia.ui.display.internal.DisplayPower",
                 "fuchsia.ui.display.singleton.DisplayPower",
                 "fuchsia.ui.display.singleton.Info",
