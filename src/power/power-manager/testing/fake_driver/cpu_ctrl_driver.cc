@@ -8,16 +8,14 @@
 
 namespace fake_driver {
 
-CpuCtrlDriver::CpuCtrlDriver(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("fake-driver", std::move(start_args), std::move(driver_dispatcher)),
+CpuCtrlDriver::CpuCtrlDriver()
+    : DriverBase2("fake-driver"),
       cpu_ctrl_connector_(fit::bind_member<&CpuCtrlDriver::ServeCpuCtrl>(this)),
       cpu_ctrl_server_() {}
 
-zx::result<> CpuCtrlDriver::Start() {
-  auto* node_ptr = &node();
+zx::result<> CpuCtrlDriver::Start(fdf::DriverContext context) {
   // Create driver with topo suffix `/cpu` and class path `/dev/class/cpu-ctrl/000
-  auto result = AddChild(node_ptr, "cpu", "cpu-ctrl", cpu_ctrl_connector_);
+  auto result = AddChild(node(), "cpu", "cpu-ctrl", cpu_ctrl_connector_);
   if (result.is_error()) {
     FDF_SLOG(ERROR, "Failed to add driver", KV("status", result.status_string()));
     return result.take_error();
@@ -37,7 +35,7 @@ zx::result<> CpuCtrlDriver::Start() {
 }
 
 template <typename T>
-zx::result<> CpuCtrlDriver::AddChild(fidl::ClientEnd<fuchsia_driver_framework::Node>* parent,
+zx::result<> CpuCtrlDriver::AddChild(const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent,
                                      std::string_view node_name, std::string_view class_name,
                                      driver_devfs::Connector<T>& devfs_connector) {
   fidl::Arena arena;
@@ -72,8 +70,8 @@ zx::result<> CpuCtrlDriver::AddChild(fidl::ClientEnd<fuchsia_driver_framework::N
     return zx::error(node_endpoints.status_value());
   }
 
-  auto result = fidl::WireCall(*parent)->AddChild(args, std::move(controller_endpoints->server),
-                                                  std::move(node_endpoints->server));
+  auto result = fidl::WireCall(parent)->AddChild(args, std::move(controller_endpoints->server),
+                                                 std::move(node_endpoints->server));
   if (!result.ok()) {
     FDF_SLOG(ERROR, "Failed to add child", KV("status", result.status_string()));
     return zx::error(result.status());
@@ -90,4 +88,4 @@ void CpuCtrlDriver::ServeCpuCtrl(fidl::ServerEnd<fuchsia_hardware_cpu_ctrl::Devi
 
 }  // namespace fake_driver
 
-FUCHSIA_DRIVER_EXPORT(fake_driver::CpuCtrlDriver);
+FUCHSIA_DRIVER_EXPORT2(fake_driver::CpuCtrlDriver);

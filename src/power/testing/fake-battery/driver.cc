@@ -5,7 +5,7 @@
 #include "driver.h"
 
 #include <fidl/fuchsia.power.battery/cpp/natural_types.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/fit/function.h>
@@ -14,16 +14,14 @@
 
 namespace fake_battery {
 
-Driver::Driver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("fake-battery", std::move(start_args), std::move(driver_dispatcher)),
-      protocol_server_battery_(dispatcher()) {}
+Driver::Driver() : DriverBase2("fake-battery") {}
 
-zx::result<> Driver::Start() {
-  protocol_server_battery_.Init(outgoing());
+zx::result<> Driver::Start(fdf::DriverContext context) {
+  protocol_server_battery_ = std::make_unique<BatteryProtocolServer>(dispatcher());
+  protocol_server_battery_->Init(outgoing());
   return zx::ok();
 }
 
 }  // namespace fake_battery
 
-FUCHSIA_DRIVER_EXPORT(fake_battery::Driver);
+FUCHSIA_DRIVER_EXPORT2(fake_battery::Driver);

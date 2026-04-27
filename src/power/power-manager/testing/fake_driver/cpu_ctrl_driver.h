@@ -5,24 +5,24 @@
 #ifndef SRC_POWER_POWER_MANAGER_TESTING_FAKE_DRIVER_CPU_CTRL_DRIVER_H_
 #define SRC_POWER_POWER_MANAGER_TESTING_FAKE_DRIVER_CPU_CTRL_DRIVER_H_
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include "cpu_ctrl_server.h"
 
 namespace fake_driver {
 
-class CpuCtrlDriver : public fdf::DriverBase {
+class CpuCtrlDriver : public fdf::DriverBase2 {
  public:
-  CpuCtrlDriver(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  CpuCtrlDriver();
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   // Add a child device node and offer the service capabilities.
   template <typename T>
-  zx::result<> AddChild(fidl::ClientEnd<fuchsia_driver_framework::Node>* parent,
+  zx::result<> AddChild(const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent,
                         std::string_view node_name, std::string_view class_name,
                         driver_devfs::Connector<T>& devfs_connector);
 

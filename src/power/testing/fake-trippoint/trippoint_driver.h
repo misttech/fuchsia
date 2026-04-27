@@ -8,19 +8,19 @@
 #include <fidl/fuchsia.hardware.temperature/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.trippoint/cpp/fidl.h>
 #include <fidl/test.trippoint/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <zircon/status.h>
 
 namespace fake_trippoint {
 
-class TrippointDriver : public fdf::DriverBase,
+class TrippointDriver : public fdf::DriverBase2,
                         public fidl::WireServer<fuchsia_hardware_temperature::Device>,
                         public fidl::WireServer<fuchsia_hardware_trippoint::TripPoint>,
                         public fidl::WireServer<test_trippoint::Control> {
  public:
-  TrippointDriver(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher);
-  zx::result<> Start() override;
+  TrippointDriver() : fdf::DriverBase2("fake-trippoint") {}
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // Implements test.temperature
   void SetTemperatureCelsius(SetTemperatureCelsiusRequestView request,
@@ -46,8 +46,8 @@ class TrippointDriver : public fdf::DriverBase,
   fidl::ServerBindingGroup<test_trippoint::Control> control_bindings_;
 
   fdf::OwnedChildNode child_;
-  float temp_celsius_;
-  zx_status_t status_;
+  float temp_celsius_ = 0.0f;
+  zx_status_t status_ = ZX_OK;
 };
 
 }  // namespace fake_trippoint

@@ -4,23 +4,22 @@
 
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace {
 
-class Driver final : public fdf::DriverBase {
+class Driver final : public fdf::DriverBase2 {
  public:
-  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("example_driver", std::move(start_args), std::move(driver_dispatcher)) {}
+  Driver() : fdf::DriverBase2("example_driver") {}
 
-  zx::result<> Start() override {
-    auto broker = incoming()->Connect<fuchsia_power_broker::Topology>();
+  zx::result<> Start(fdf::DriverContext context) override {
+    auto broker = context.incoming().Connect<fuchsia_power_broker::Topology>();
     if (broker.is_error()) {
       fdf::info("Failed to connect to broker");
     }
 
-    auto sag = incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
+    auto sag = context.incoming().Connect<fuchsia_power_system::ActivityGovernor>();
     if (sag.is_error()) {
       fdf::info("Failed to connect to sag");
     }
@@ -34,7 +33,7 @@ class Driver final : public fdf::DriverBase {
       fdf::info("Successfully did GetPowerElements.");
     }
 
-    auto cpu_element = incoming()->Connect<fuchsia_power_system::CpuElementManager>();
+    auto cpu_element = context.incoming().Connect<fuchsia_power_system::CpuElementManager>();
     if (cpu_element.is_error()) {
       fdf::info("Failed to connect to cpu element manager");
     }
@@ -44,4 +43,4 @@ class Driver final : public fdf::DriverBase {
 };
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(Driver);
+FUCHSIA_DRIVER_EXPORT2(Driver);

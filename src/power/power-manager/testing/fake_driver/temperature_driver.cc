@@ -8,17 +8,15 @@
 
 namespace fake_driver {
 
-Driver::Driver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("fake-driver", std::move(start_args), std::move(driver_dispatcher)),
+Driver::Driver()
+    : DriverBase2("fake-driver"),
       temperature_connector_(fit::bind_member<&Driver::ServeTemperature>(this)),
       control_connector_(fit::bind_member<&Driver::ServeControl>(this)),
       temperature_server_("soc_thermal", &temperature_),
       control_server_(&temperature_) {}
 
-zx::result<> Driver::Start() {
-  auto* node_ptr = &node();
-  auto result = AddDriverAndControl(node_ptr, "soc_thermal", "temperature", temperature_connector_,
+zx::result<> Driver::Start(fdf::DriverContext context) {
+  auto result = AddDriverAndControl(node(), "soc_thermal", "temperature", temperature_connector_,
                                     control_connector_);
   if (result.is_error()) {
     FDF_SLOG(ERROR, "Failed to add driver and its control", KV("status", result.status_string()));
@@ -29,20 +27,20 @@ zx::result<> Driver::Start() {
 }
 
 template <typename A, typename B>
-zx::result<> Driver::AddDriverAndControl(fidl::ClientEnd<fuchsia_driver_framework::Node>* parent,
-                                         std::string_view driver_node_name,
-                                         std::string_view driver_class_name,
-                                         driver_devfs::Connector<A>& driver_devfs_connector,
-                                         driver_devfs::Connector<B>& control_devfs_connector) {
+zx::result<> Driver::AddDriverAndControl(
+    const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent,
+    std::string_view driver_node_name, std::string_view driver_class_name,
+    driver_devfs::Connector<A>& driver_devfs_connector,
+    driver_devfs::Connector<B>& control_devfs_connector) {
   // Create driver with topo suffix `/soc_thermal` and class path `/dev/class/temperature/000
-  zx::result<fidl::ClientEnd<fuchsia_driver_framework::Node>*> add_child_result =
+  zx::result<const fidl::ClientEnd<fuchsia_driver_framework::Node>*> add_child_result =
       AddChild(parent, driver_node_name, driver_class_name, driver_devfs_connector);
   if (add_child_result.is_error()) {
     return add_child_result.take_error();
   }
   // Create control driver with topo suffix `/soc_thermal/control` and class path
   // `/dev/class/test/000
-  auto result = AddChild(add_child_result.value(), "control", "test", control_devfs_connector);
+  auto result = AddChild(*add_child_result.value(), "control", "test", control_devfs_connector);
   if (result.is_error()) {
     return result.take_error();
   }
@@ -51,8 +49,8 @@ zx::result<> Driver::AddDriverAndControl(fidl::ClientEnd<fuchsia_driver_framewor
 
 // Add a child device node and offer the service capabilities.
 template <typename T>
-zx::result<fidl::ClientEnd<fuchsia_driver_framework::Node>*> Driver::AddChild(
-    fidl::ClientEnd<fuchsia_driver_framework::Node>* parent, std::string_view node_name,
+zx::result<const fidl::ClientEnd<fuchsia_driver_framework::Node>*> Driver::AddChild(
+    const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent, std::string_view node_name,
     std::string_view class_name, driver_devfs::Connector<T>& devfs_connector) {
   fidl::Arena arena;
   zx::result connector = devfs_connector.Bind(dispatcher());
@@ -85,8 +83,8 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::Node>*> Driver::AddChild(
     return zx::error(node_endpoints.status_value());
   }
 
-  auto result = fidl::WireCall(*parent)->AddChild(args, std::move(controller_endpoints->server),
-                                                  std::move(node_endpoints->server));
+  auto result = fidl::WireCall(parent)->AddChild(args, std::move(controller_endpoints->server),
+                                                 std::move(node_endpoints->server));
   if (!result.ok()) {
     FDF_SLOG(ERROR, "Failed to add child", KV("status", result.status_string()));
     return zx::error(result.status());
@@ -109,4 +107,4 @@ void Driver::ServeControl(
 
 }  // namespace fake_driver
 
-FUCHSIA_DRIVER_EXPORT(fake_driver::Driver);
+FUCHSIA_DRIVER_EXPORT2(fake_driver::Driver);

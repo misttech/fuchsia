@@ -3,29 +3,35 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.powermanager.root.test/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
+
+#include <memory>
+#include <string>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/powermanager_bindlib/cpp/bind.h>
 
 namespace {
 
-class RootDriver : public fdf::DriverBase,
+class RootDriver : public fdf::DriverBase2,
                    public fidl::WireServer<fuchsia_powermanager_root_test::Device> {
   static constexpr std::string_view driver_name = "root-device";
   static constexpr std::string_view parent_node_name = "sys";
   static constexpr std::string_view child_node_name = "platform";
 
  public:
-  RootDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(driver_name, std::move(start_args), std::move(driver_dispatcher)),
+  RootDriver()
+      : fdf::DriverBase2(driver_name),
         devfs_connector_(fit::bind_member<&RootDriver::Serve>(this)) {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_ = context.take_incoming();
+    node_name_ = context.node_name().value_or("");
+
     auto parent_result = CreateParentNode();
     ZX_ASSERT_MSG(parent_result.is_ok(), "Failed to create /dev/sys: %s",
                   parent_result.status_string());
@@ -138,6 +144,9 @@ class RootDriver : public fdf::DriverBase,
 
   fidl::ServerBindingGroup<fuchsia_powermanager_root_test::Device> bindings_;
 
+  std::unique_ptr<fdf::Namespace> incoming_;
+  std::string node_name_;
+
   std::vector<fidl::ClientEnd<fuchsia_driver_framework::Node>> nodes_;
   std::vector<fidl::WireSyncClient<fuchsia_driver_framework::NodeController>> controllers_;
   driver_devfs::Connector<fuchsia_powermanager_root_test::Device> devfs_connector_;
@@ -145,4 +154,4 @@ class RootDriver : public fdf::DriverBase,
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(RootDriver);
+FUCHSIA_DRIVER_EXPORT2(RootDriver);

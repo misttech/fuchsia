@@ -5,7 +5,8 @@
 #ifndef SRC_POWER_POWER_MANAGER_TESTING_FAKE_DRIVER_TEMPERATURE_DRIVER_H_
 #define SRC_POWER_POWER_MANAGER_TESTING_FAKE_DRIVER_TEMPERATURE_DRIVER_H_
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include "control_server.h"
@@ -13,23 +14,23 @@
 
 namespace fake_driver {
 
-class Driver : public fdf::DriverBase {
+class Driver : public fdf::DriverBase2 {
  public:
-  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  Driver();
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   // Add a child device node and offer the service capabilities.
   template <typename A, typename B>
-  zx::result<> AddDriverAndControl(fidl::ClientEnd<fuchsia_driver_framework::Node>* parent,
+  zx::result<> AddDriverAndControl(const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent,
                                    std::string_view driver_node_name,
                                    std::string_view driver_class_name,
                                    driver_devfs::Connector<A>& driver_devfs_connector,
                                    driver_devfs::Connector<B>& control_devfs_connector);
   template <typename T>
-  zx::result<fidl::ClientEnd<fuchsia_driver_framework::Node>*> AddChild(
-      fidl::ClientEnd<fuchsia_driver_framework::Node>* parent, std::string_view node_name,
+  zx::result<const fidl::ClientEnd<fuchsia_driver_framework::Node>*> AddChild(
+      const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent, std::string_view node_name,
       std::string_view class_name, driver_devfs::Connector<T>& devfs_connector);
 
   // Start serving Protocol (to be called by the devfs connector when a connection is established).

@@ -6,7 +6,7 @@
 #define SRC_POWER_TESTING_FAKE_BATTERY_DRIVER_H_
 
 #include <fidl/fuchsia.power.battery/cpp/natural_types.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <zircon/types.h>
 
@@ -14,14 +14,14 @@
 
 namespace fake_battery {
 
-class Driver : public fdf::DriverBase {
+class Driver : public fdf::DriverBase2 {
  public:
-  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  Driver();
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
-  BatteryProtocolServer protocol_server_battery_;
+  std::unique_ptr<BatteryProtocolServer> protocol_server_battery_;
 };
 
 }  // namespace fake_battery

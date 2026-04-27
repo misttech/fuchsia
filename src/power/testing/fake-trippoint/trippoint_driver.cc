@@ -5,19 +5,13 @@
 #include "trippoint_driver.h"
 
 #include <fidl/fuchsia.hardware.trippoint/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace fake_trippoint {
 
-TrippointDriver::TrippointDriver(fdf::DriverStartArgs start_args,
-                                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("fake-trippoint", std::move(start_args), std::move(driver_dispatcher)),
-      temp_celsius_(0.0f),
-      status_(ZX_OK) {}
-
-zx::result<> TrippointDriver::Start() {
+zx::result<> TrippointDriver::Start(fdf::DriverContext context) {
   fdf::info("Starting fake trippoint driver");
   fuchsia_hardware_temperature::Service::InstanceHandler temperature_handler({
       .device =
@@ -93,4 +87,4 @@ void TrippointDriver::handle_unknown_method(
 
 }  // namespace fake_trippoint
 
-FUCHSIA_DRIVER_EXPORT(fake_trippoint::TrippointDriver);
+FUCHSIA_DRIVER_EXPORT2(fake_trippoint::TrippointDriver);

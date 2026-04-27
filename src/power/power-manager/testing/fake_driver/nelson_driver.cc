@@ -8,9 +8,8 @@
 
 namespace fake_driver {
 
-Driver::Driver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("fake-driver", std::move(start_args), std::move(driver_dispatcher)),
+Driver::Driver()
+    : DriverBase2("fake-driver"),
       soc_control_connector_(fit::bind_member<&Driver::ServeSocControl>(this)),
       audio_control_connector_(fit::bind_member<&Driver::ServeAudioControl>(this)),
       thread_control_connector_(fit::bind_member<&Driver::ServeThreadControl>(this)),
@@ -24,7 +23,7 @@ Driver::Driver(fdf::DriverStartArgs start_args,
       audio_temperature_server_("therm-audio", &audio_temperature_),
       thread_temperature_server_("therm-thread", &thread_temperature_) {}
 
-zx::result<> Driver::Start() {
+zx::result<> Driver::Start(fdf::DriverContext context) {
   auto soc_nodes_result = AddNodes(node(), {"05:05:a", "aml_thermal_pll"});
   if (soc_nodes_result.is_error()) {
     FDF_SLOG(ERROR, "Failed to add `05:05:a/aml_thermal_pll`",
@@ -214,4 +213,4 @@ void Driver::ServeAudioControl(
 
 }  // namespace fake_driver
 
-FUCHSIA_DRIVER_EXPORT(fake_driver::Driver);
+FUCHSIA_DRIVER_EXPORT2(fake_driver::Driver);
