@@ -82,23 +82,22 @@ bool SetupConsole() {
   // Redirect stdout and stderr to /dev/hvc0.
   // We use a polling loop because the kernel does asynchronous work in the
   // background.
-  int fd = -1;
+  fbl::unique_fd fd;
   for (int i = 0; i < 100; i++) {
-    fd = open("/dev/hvc0", O_RDWR);
-    if (fd >= 0) {
+    fd.reset(open("/dev/hvc0", O_RDWR | O_CLOEXEC));
+    if (fd.is_valid()) {
       break;
     }
     usleep(100000);  // Wait 0.1s
   }
 
-  if (fd < 0) {
+  if (!fd.is_valid()) {
     perror("open /dev/hvc0 failed");
     return false;
   }
 
-  dup2(fd, STDOUT_FILENO);
-  dup2(fd, STDERR_FILENO);
-  close(fd);
+  dup2(fd.get(), STDOUT_FILENO);
+  dup2(fd.get(), STDERR_FILENO);
   setbuf(stdout, NULL);
   setbuf(stderr, NULL);
   return true;
