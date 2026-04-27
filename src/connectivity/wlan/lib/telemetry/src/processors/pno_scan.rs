@@ -110,6 +110,21 @@ impl PnoScanLogger {
 
         self.has_scan_results = false;
     }
+
+    pub async fn handle_periodic_telemetry(&mut self) {
+        if let Some(enabled_at) = self.enabled_at {
+            let elapsed = fasync::BootInstant::now() - enabled_at;
+            let hours = elapsed.into_hours();
+            let capped_hours = std::cmp::min(hours, 24);
+
+            let metric_events = vec![MetricEvent {
+                metric_id: metrics::ONGOING_PNO_SCAN_ELAPSED_HOURS_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::IntegerValue(capped_hours),
+            }];
+            log_cobalt_batch!(self.cobalt_proxy, &metric_events, "handle_periodic_telemetry");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -276,5 +291,54 @@ mod tests {
             metrics::PnoScanCancellationBreakdownByResultsAndSourceMetricDimensionHasScanResults::True as u32,
             metrics::PnoScanCancellationBreakdownByResultsAndSourceMetricDimensionCancellationSource::ApiRequest as u32
         ]); // had results, ApiRequest
+    }
+
+    #[fuchsia::test]
+    fn test_pno_scan_periodic_telemetry() {
+        let mut test_helper = setup_test();
+        let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
+
+        test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
+        {
+            let mut test_fut = pin!(logger.handle_pno_scan_enabled());
+            assert_eq!(
+                test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+                Poll::Ready(())
+            );
+        }
+
+        // Advance time by 5 hours
+        test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(
+            10_000_000 + 5 * 3600 * 1_000_000_000,
+        ));
+        {
+            let mut test_fut = pin!(logger.handle_periodic_telemetry());
+            assert_eq!(
+                test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+                Poll::Ready(())
+            );
+        }
+
+        let metrics =
+            test_helper.get_logged_metrics(metrics::ONGOING_PNO_SCAN_ELAPSED_HOURS_METRIC_ID);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::IntegerValue(5));
+
+        // Advance time by another 20 hours (total 25)
+        test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(
+            10_000_000 + 25 * 3600 * 1_000_000_000,
+        ));
+        {
+            let mut test_fut = pin!(logger.handle_periodic_telemetry());
+            assert_eq!(
+                test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+                Poll::Ready(())
+            );
+        }
+
+        let metrics =
+            test_helper.get_logged_metrics(metrics::ONGOING_PNO_SCAN_ELAPSED_HOURS_METRIC_ID);
+        assert_eq!(metrics.len(), 2);
+        assert_eq!(metrics[1].payload, MetricEventPayload::IntegerValue(24)); // Capped at 24
     }
 }
