@@ -28,8 +28,8 @@ macro_rules! selector_to_peer_id {
         match $selector {
             PeerSelector { id: Some(id), .. } => id,
             _ => {
-                error!("{} encountered error: id not set", $method);
-                $responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                $responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
                 return Ok(());
             }
         }
@@ -81,8 +81,8 @@ async fn handle_single_peer_request(
                 selector: Some(selector), options: Some(options), ..
             } = payload
             else {
-                error!("Pair encountered error: payload missing required fields");
-                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
                 return Ok(());
             };
             let id = selector_to_peer_id!("Pair", selector, responder);
@@ -111,7 +111,8 @@ async fn handle_single_peer_request(
         PeerControllerRequest::SetDiscovery { payload, responder } => {
             let PeerControllerSetDiscoveryRequest { discovery: Some(discovery), .. } = payload
             else {
-                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
                 return Ok(());
             };
             match worker.set_discovery(discovery).await {
@@ -160,8 +161,8 @@ async fn handle_single_host_request(
                 discoverable: Some(discoverable), ..
             } = payload
             else {
-                error!("SetDiscoverability encountered error: discoverable not set");
-                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
                 return Ok(());
             };
             match worker.set_discoverability(discoverable).await {
@@ -192,10 +193,8 @@ async fn handle_single_host_request(
                 ..
             } = payload
             else {
-                error!(
-                    "StartPairingDelegate encountered error: input_capability or output_capability not set"
-                );
-                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                responder
+                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
                 return Ok(());
             };
             match worker.start_pairing_delegate(input_capability, output_capability).await {
@@ -259,7 +258,6 @@ async fn handle_single_peripheral_request(
                 ..
             } = payload
             else {
-                error!("Advertise encountered error: parameters or timeout not set");
                 responder
                     .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
                 return Ok(());
