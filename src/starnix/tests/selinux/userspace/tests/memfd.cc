@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <sys/mman.h>
 #include <sys/xattr.h>
 #include <unistd.h>
 
@@ -32,14 +31,14 @@ TEST(MemFdTest, MemFdTransitionRetrospectivelyAppliedOnPolicyLoad) {
 
 TEST(MemFdTest, MemFdTransition) {
   int fd;
-  EXPECT_THAT((fd = memfd_create("test", 0)), SyscallSucceeds());
+  EXPECT_THAT((fd = test_helper::MemFdCreate("test", 0)), SyscallSucceeds());
   EXPECT_THAT(GetLabel(fd), "system_u:object_r:test_memfd_transition_file_t:s0");
 }
 
 TEST(MemFdTest, MemFdNoTransitionInheritsTmpFsDomain) {
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_memfd_no_transition_t:s0", []() {
     int fd;
-    EXPECT_THAT((fd = memfd_create("test", 0)), SyscallSucceeds());
+    EXPECT_THAT((fd = test_helper::MemFdCreate("test", 0)), SyscallSucceeds());
     EXPECT_THAT(GetLabel(fd), "test_u:object_r:tmpfs_t:s0");
   }));
 }
@@ -48,7 +47,7 @@ TEST(MemFdTest, MemFdNoTransitionInheritsTmpFsDomain) {
 
 extern std::string DoPrePolicyLoadWork() {
   // Create a memfd prior to policy load, to allow the test to validate the post-policy label.
-  EXPECT_THAT((g_before_policy_fd = memfd_create("test", 0)), SyscallSucceeds());
+  EXPECT_THAT((g_before_policy_fd = test_helper::MemFdCreate("test", 0)), SyscallSucceeds());
 
   // Until a policy is loaded, no file label is provided.
   EXPECT_EQ(GetLabel(g_before_policy_fd), fit::error(ENODATA));
