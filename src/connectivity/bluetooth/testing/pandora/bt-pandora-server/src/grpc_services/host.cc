@@ -40,6 +40,16 @@ HostService::HostService(async_dispatcher_t* dispatcher) {
     FX_LOGS(ERROR) << "Error connecting to HostController service: "
                    << host_controller_client_end.status_string();
   }
+
+  // Connect to fuchsia.bluetooth.affordances.PeerController
+  zx::result peer_controller_client_end =
+      component::Connect<fuchsia_bluetooth_affordances::PeerController>();
+  if (peer_controller_client_end.is_ok()) {
+    peer_controller_client_.Bind(std::move(*peer_controller_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to PeerController service: "
+                   << peer_controller_client_end.status_string();
+  }
 }
 
 Status HostService::FactoryReset(grpc::ServerContext* context,
@@ -250,10 +260,7 @@ Status HostService::Scan(::grpc::ServerContext* context, const ::pandora::ScanRe
 Status HostService::Inquiry(::grpc::ServerContext* context,
                             const ::google::protobuf::Empty* request,
                             ::grpc::ServerWriter<::pandora::InquiryResponse>* writer) {
-  if (set_discovery(true) == ZX_OK) {
-    std::lock_guard lock(m_inquiry_rsp_writer_);
-    inquiry_rsp_writer_ = writer;
-  } else {
+  if (set_discovery(true) != ZX_OK) {
     return Status(StatusCode::INTERNAL, "Failed to start discovery (check logs)");
   }
 
@@ -262,13 +269,29 @@ Status HostService::Inquiry(::grpc::ServerContext* context,
   // TODO(https://fxbug.dev/396500079): Adopt a streaming API instead of a scan period with timeout.
   std::this_thread::sleep_for(std::chrono::seconds(5));
 
-  if (get_known_peers(this, GetKnownPeersCb) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Failed to get known peers (check logs)");
+  auto result = peer_controller_client_->GetKnownPeers();
+  if (result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.PeerController/GetKnownPeers error: " +
+                      result.error_value().FormatDescription());
   }
 
-  std::lock_guard lock(m_inquiry_rsp_writer_);
-  FX_LOGS(INFO) << "Inquiry stopping after timeout.";
-  inquiry_rsp_writer_ = nullptr;
+  if (result->peers().has_value()) {
+    for (const fuchsia_bluetooth_sys::Peer& peer : result->peers().value()) {
+      pandora::InquiryResponse inquiry_rsp;
+      std::array<uint8_t, 6> peer_addr;
+      std::ranges::copy(peer.address().value().bytes(), peer_addr.begin());
+      // Convert peer address from little-endian to big-endian, as expected by Pandora.
+      std::ranges::reverse(peer_addr);
+      inquiry_rsp.set_address(peer_addr.data(), 6);
+
+      if (!writer->Write(inquiry_rsp)) {
+        FX_LOGS(INFO) << "Inquiry canceled by gRPC client.";
+        break;
+      }
+    }
+  }
+
   if (set_discovery(false) != ZX_OK) {
     return Status(StatusCode::INTERNAL, "Failed to stop discovery (check logs)");
   }

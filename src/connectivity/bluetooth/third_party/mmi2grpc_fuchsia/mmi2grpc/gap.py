@@ -845,6 +845,7 @@ class GAPProxy(ProfileProxy):
 
         return "OK"
 
+    # TODO(https://fxbug.dev/505825979): Identify Dual Mode peers without LE Scanning after Inquiry.
     @assert_description
     def TSC_MMI_iut_start_general_discovery_DM(self, pts_addr: bytes, **kwargs):
         """

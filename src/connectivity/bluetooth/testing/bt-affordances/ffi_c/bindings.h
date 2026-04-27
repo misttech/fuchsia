@@ -13,17 +13,6 @@
 
 constexpr static const uintptr_t MAX_NUM_CHARACTERISTICS = 43;
 
-/// `address_type` is 1 for Public or 2 for Random, corresponding to the values of
-/// fuchsia.bluetooth/AddressType.
-struct DiscoveredPeer {
-  uint64_t id;
-  uint8_t address_type;
-  uint8_t address[6];
-};
-
-/// `peer` is only valid for the duration of this callback.
-using GetKnownPeersCallback = void (*)(void *context, const DiscoveredPeer *peer);
-
 struct UuidBytes {
   uint8_t value[16];
 };
@@ -67,18 +56,6 @@ extern "C" {
 ///
 /// Returns ZX_STATUS_INTERNAL if Rust affordances exited with an error (check logs).
 int32_t stop_rust_affordances();
-
-/// Get all peers discovered by the system.
-///
-/// The callback `cb` is invoked on every peer. The `context` provided to this function is included
-/// in each invocation of `cb`.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-///
-/// # Safety
-///
-/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-int32_t get_known_peers(void *context, GetKnownPeersCallback cb);
 
 /// Get identifier of peer with given `address`.
 ///

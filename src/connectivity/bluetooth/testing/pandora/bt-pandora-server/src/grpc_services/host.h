@@ -69,22 +69,6 @@ class HostService : public pandora::Host::Service {
                                        ::google::protobuf::Empty* response) override;
 
  private:
-  static void GetKnownPeersCb(void* context, const DiscoveredPeer* peer) {
-    HostService* svc = static_cast<HostService*>(context);
-    std::lock_guard lock(svc->m_inquiry_rsp_writer_);
-    if (svc->inquiry_rsp_writer_) {
-      pandora::InquiryResponse inquiry_rsp;
-
-      std::string big_endian_addr(std::rbegin(peer->address), std::rend(peer->address));
-      inquiry_rsp.set_address(big_endian_addr);
-
-      if (!svc->inquiry_rsp_writer_->Write(inquiry_rsp)) {
-        FX_LOGS(INFO) << "Inquiry canceled by gRPC client.";
-        svc->inquiry_rsp_writer_ = nullptr;
-      }
-    }
-  }
-
   static void LeScanCb(void* context, const LePeer* peer) {
     HostService* svc = static_cast<HostService*>(context);
     std::lock_guard lock(svc->m_scan_rsp_writer_);
@@ -113,10 +97,6 @@ class HostService : public pandora::Host::Service {
     }
   }
 
-  std::mutex m_inquiry_rsp_writer_;
-  // If this Writer is non-null, there is an ongoing `Inquiry` response streaming RPC.
-  grpc::ServerWriter<::pandora::InquiryResponse>* inquiry_rsp_writer_ = nullptr;
-
   std::mutex m_scan_rsp_writer_;
   // If this Writer is non-null, there is an ongoing `Scan` response streaming RPC.
   grpc::ServerWriter<::pandora::ScanningResponse>* scan_rsp_writer_ = nullptr;
@@ -130,6 +110,7 @@ class HostService : public pandora::Host::Service {
   fidl::SyncClient<fuchsia_bluetooth_affordances::PeripheralController>
       peripheral_controller_client_;
   fidl::SyncClient<fuchsia_bluetooth_affordances::HostController> host_controller_client_;
+  fidl::SyncClient<fuchsia_bluetooth_affordances::PeerController> peer_controller_client_;
 
   std::condition_variable cv_access_;
   std::mutex m_access_;

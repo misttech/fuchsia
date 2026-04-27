@@ -53,6 +53,7 @@
         {
             protocol: [
                 "fuchsia.bluetooth.affordances.HostController",
+                "fuchsia.bluetooth.affordances.PeerController",
                 "fuchsia.bluetooth.affordances.PeripheralController",
             ],
             from: "#bt-affordances-server",
