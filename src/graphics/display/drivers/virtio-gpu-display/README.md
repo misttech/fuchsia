@@ -9,7 +9,7 @@ Conceptually, the `virtio-gpu` device is a combination of a display engine and a
 GPU.
 
 The `virtio_gpu_ctrl_type` enumeration in the
-[Device Operation: Request header section][virtio-spec-gpu-request-section]
+["Device Operation: Request header" section][virtio-spec-gpu-request-section]
 lists all the commands implemented by the `virtio-gpu` device. Conceptually, the
 2D commands and the cursor commands map to the display engine, while the 3D
 commands map to the GPU.
@@ -53,9 +53,16 @@ Before uploading a behavior-changing CL for review, follow
 [the manual testing process][manual-testing-process] to ensure that the CL doesn't
 regress key development workflows.
 
+## References
+
+The code contains references to the following documents.
+
+* [OASIS Virtual I/O Device (VIRTIO)][virtio-spec] specification - version
+  1.4, Committee Specification 01, dated 8 April 2026
+
 [change-validation-guide]: ./docs/change-validation.md
 [manual-testing-process]: ./docs/manual-testing.md
 [spec-processing-guide]: ./docs/spec-processing.md
-[virtio-spec]: https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html
-[virtio-spec-gpu-section]: https://docs.oasis-open.org/virtio/virtio/v1.3/csd01/virtio-v1.3-csd01.html#x1-3960007
-[virtio-spec-gpu-request-header]: https://docs.oasis-open.org/virtio/virtio/v1.3/csd01/virtio-v1.3-csd01.html#x1-4110007
+[virtio-spec]: https://docs.oasis-open.org/virtio/virtio/v1.4/virtio-v1.4.html
+[virtio-spec-gpu-section]: https://docs.oasis-open.org/virtio/virtio/v1.4/virtio-v1.4.html#x1-4730007
+[virtio-spec-gpu-request-header]: https://docs.oasis-open.org/virtio/virtio/v1.4/virtio-v1.4.html#x1-4880007

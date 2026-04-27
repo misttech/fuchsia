@@ -231,6 +231,7 @@ zx_status_t VirtioPciDevice::Init() {
 
   // Allocate the control virtqueue.
   fbl::AutoLock virtio_control_queue_lock(&virtio_control_queue_mutex_);
+  // virtio14 5.7.2 "Virtqueues": 0 controlq.
   status = virtio_control_queue_.Init(0, 16);
   if (status != ZX_OK) {
     fdf::error("Failed to allocate controlq vring: {}", zx::make_result(status));
@@ -238,6 +239,7 @@ zx_status_t VirtioPciDevice::Init() {
   }
 
   fbl::AutoLock virtio_cursor_queue_lock(&virtio_cursor_queue_mutex_);
+  // virtio14 5.7.2 "Virtqueues": 1 cursorq.
   status = virtio_cursor_queue_.Init(1, 16);
   if (status != ZX_OK) {
     fdf::error("Failed to allocate cursor vring: {}", zx::make_result(status));
@@ -300,7 +302,7 @@ void VirtioPciDevice::VirtioControlqBufferUsedByDevice(uint32_t used_descriptor_
     const uint16_t next_descriptor_index = buffer_descriptor->next;
     virtio_control_queue_.FreeDesc(used_descriptor_index_u16);
 
-    // VIRTIO spec Section 2.7.7.1 "Driver Requirements: Used Buffer
+    // virtio14 Section 2.7.7.1 "Driver Requirements: Used Buffer
     // Notification Suppression" requires that drivers handle spurious
     // notifications. So, we only notify the request thread when the device
     // reports having used the specific buffer that populated the request.
@@ -345,7 +347,7 @@ void VirtioPciDevice::VirtioCursorqBufferUsedByDevice(uint32_t used_descriptor_i
     const uint16_t next_descriptor_index = buffer_descriptor->next;
     virtio_cursor_queue_.FreeDesc(used_descriptor_index_u16);
 
-    // VIRTIO spec Section 2.7.7.1 "Driver Requirements: Used Buffer
+    // virtio14 Section 2.7.7.1 "Driver Requirements: Used Buffer
     // Notification Suppression" requires that drivers handle spurious
     // notifications. So, we only notify the request thread when the device
     // reports having used the specific buffer that populated the request.
@@ -399,7 +401,7 @@ void VirtioPciDevice::ExchangeControlqVariableLengthRequestResponse(
 
   // Allocate two virtqueue descriptors. This is the minimum number of
   // descriptors needed to represent a request / response exchange using the
-  // split virtqueue format described in the VIRTIO spec Section 2.7 "Split
+  // split virtqueue format described in the virtio14 Section 2.7 "Split
   // Virtqueues". This is because each descriptor can point to a read-only or a
   // write-only memory buffer, and we need one of each.
   //

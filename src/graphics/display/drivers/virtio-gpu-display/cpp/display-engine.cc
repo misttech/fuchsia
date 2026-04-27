@@ -468,7 +468,7 @@ void DisplayEngine::virtio_gpu_flusher() {
 zx_status_t DisplayEngine::Start() {
   fdf::trace("Start()");
 
-  // virtio13 5.7.5 "Device Requirements: Device Initialization"
+  // virtio14 5.7.5 "Device Requirements: Device Initialization"
 
   zx::result<fbl::Vector<DisplayInfo>> display_infos_result = gpu_device_->GetDisplayInfo();
   if (display_infos_result.is_error()) {
@@ -616,7 +616,7 @@ void DisplayEngine::LogEdidBytes() {
     std::span<const uint8_t> bytes(edid_->edid_bytes(), edid_->edid_length());
 
     // The virtio-gpu implementation in QEmu 9.2 reports a zero-padded EDID that
-    // takes up the maximum buffer size in the virtio-gpu 1.3 specification.
+    // takes up the maximum buffer size in the virtio 1.4 specification.
     //
     // Trimming the trailing zeros significantly reduces the log output size.
     const size_t original_size = bytes.size();

@@ -29,7 +29,7 @@
 
 namespace virtio_display {
 
-// Implements generic parts of the virtio specification over the PCI transport.
+// Implements generic parts of virtio14 over the PCI transport.
 class VirtioPciDevice : public virtio::Device {
  public:
   static zx::result<std::unique_ptr<VirtioPciDevice>> Create(
@@ -170,12 +170,12 @@ class VirtioPciDevice : public virtio::Device {
 
   // The GPU device's control virtqueue, or `controlq`.
   //
-  // Defined in the VIRTIO spec Section 5.7.2 "GPU Device" > "Virtqueues".
+  // Defined in the virtio14 Section 5.7.2 "GPU Device" > "Virtqueues".
   virtio::Ring virtio_control_queue_ __TA_GUARDED(virtio_control_queue_mutex_);
 
   // The GPU device's cursor virtqueue, or `cursorq`.
   //
-  // Defined in the VIRTIO spec Section 5.7.2 "GPU Device" > "Virtqueues".
+  // Defined in the virtio14 Section 5.7.2 "GPU Device" > "Virtqueues".
   virtio::Ring virtio_cursor_queue_ __TA_GUARDED(virtio_cursor_queue_mutex_);
 
   // Backs `virtio_control_queue_buffer_pool_`.
@@ -260,7 +260,7 @@ const ResponseType& VirtioPciDevice::ExchangeCursorqRequestResponse(const Reques
 
   // Allocate two virtqueue descriptors. This is the minimum number of
   // descriptors needed to represent a request / response exchange using the
-  // split virtqueue format described in the VIRTIO spec Section 2.7 "Split
+  // split virtqueue format described in the virtio14 Section 2.7 "Split
   // Virtqueues". This is because each descriptor can point to a read-only or a
   // write-only memory buffer, and we need one of each.
   //

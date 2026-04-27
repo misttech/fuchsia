@@ -27,6 +27,9 @@ struct DisplayInfo {
 };
 
 // Returns nullopt for an unsupported format.
+//
+// Formats are defined in virtio14 5.7.6.8 "Device Operation: controlq",
+// enum virtio_gpu_formats.
 std::optional<virtio_abi::ResourceFormat> PixelFormatToVirtioResourceFormat(
     display::PixelFormat pixel_format);
 
@@ -40,29 +43,32 @@ class VirtioGpuDevice {
 
   ~VirtioGpuDevice();
 
+  // Returns true if the device supports blob resources.
+  //
+  // virtio14 5.7.3 "Feature bits", VIRTIO_GPU_F_RESOURCE_BLOB.
   bool UseBlobResource();
 
   // Updates the cursor.
   //
-  // virtio13 5.7.6.10 "Device Operation: cursorq", operation
+  // virtio14 5.7.6.10 "Device Operation: cursorq", operation
   // VIRTIO_GPU_CMD_UPDATE_CURSOR.
   zx::result<uint32_t> UpdateCursor();
 
   // Moves the cursor.
   //
-  // virtio13 5.7.6.10 "Device Operation: cursorq", operation
+  // virtio14 5.7.6.10 "Device Operation: cursorq", operation
   // VIRTIO_GPU_CMD_MOVE_CURSOR.
   zx::result<uint32_t> SetCursorPosition(uint32_t scanout_id, uint32_t x, uint32_t y);
 
   // Retrieves the current output configuration.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_GET_DISPLAY_INFO.
   zx::result<fbl::Vector<DisplayInfo>> GetDisplayInfo();
 
   // Retrieves the VESA EDID for a scanout.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_GET_EDID.
   zx::result<fbl::Vector<uint8_t>> GetDisplayEdid(uint32_t scanout_id);
 
@@ -73,18 +79,18 @@ class VirtioGpuDevice {
   //
   // This API does not currently support releasing resources, so every allocated
   // resource remains active for the driver's lifetime. However, the underlying
-  // virtio spec does support releasing resources, via a
+  // virtio14 does support releasing resources, via a
   // VIRTIO_GPU_CMD_RESOURCE_UNREF operation. So, this API may support releasing
   // resources in the future.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_RESOURCE_CREATE_2D.
   zx::result<uint32_t> Create2DResource(uint32_t width, uint32_t height,
                                         display::PixelFormat pixel_format);
 
   // Creates a blob resource.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB.
   zx::result<uint32_t> CreateBlobResource(zx_paddr_t ptr, uint32_t size);
 
@@ -92,14 +98,14 @@ class VirtioGpuDevice {
   //
   // Setting `resource_id` to kInvalidResourceId disables the scanout.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_SET_SCANOUT.
   zx::result<> SetScanoutProperties(uint32_t scanout_id, uint32_t resource_id, uint32_t width,
                                     uint32_t height);
 
   // Sets scanout parameters using a blob resource.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_SET_SCANOUT_BLOB.
   zx::result<> SetScanoutBlob(uint32_t scanout_id, uint32_t resource_id,
                               virtio_abi::ResourceFormat resource_format, uint32_t width,
@@ -107,19 +113,19 @@ class VirtioGpuDevice {
 
   // Flushes any scanouts that use `resource_id` to the host screen.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_RESOURCE_FLUSH.
   zx::result<> FlushResource(uint32_t resource_id, uint32_t width, uint32_t height);
 
   // Transfers data from a guest resource to host memory.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D.
   zx::result<> TransferToHost2D(uint32_t resource_id, uint32_t width, uint32_t height);
 
   // Assigns an array of guest pages as the backing store for a resource.
   //
-  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // virtio14 5.7.6.8 "Device Operation: controlq", operation
   // VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING.
   zx::result<> AttachResourceBacking(uint32_t resource_id, zx_paddr_t ptr, size_t buf_len);
 
