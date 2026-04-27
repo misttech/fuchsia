@@ -20,11 +20,9 @@ use fidl_fuchsia_bluetooth_le::{
     ScanResultWatcherProxy,
 };
 use fidl_fuchsia_bluetooth_sys::{
-    AccessMarker, AccessProxy, AccessSetConnectionPolicyRequest, HostInfo, InputCapability,
-    OutputCapability, PairingDelegateMarker, PairingDelegateRequest, PairingDelegateRequestStream,
-    PairingOptions, Peer,
+    AccessMarker, AccessProxy, HostInfo, InputCapability, OutputCapability, PairingOptions, Peer,
 };
-use fuchsia_async::{LocalExecutor, Task, TimeoutExt, Timer};
+use fuchsia_async::{LocalExecutor, Task, TimeoutExt};
 use fuchsia_bluetooth::types::{Channel, Uuid as BtUuid};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
@@ -35,6 +33,8 @@ use std::sync::Arc;
 use std::thread;
 
 mod proxies;
+mod sys;
+
 use proxies::Proxies;
 
 // TODO(b/414848887): Pass more descriptive errors.
@@ -134,7 +134,7 @@ impl WorkThread {
         while let Some(request) = receiver.next().await {
             match request {
                 Request::ReadLocalAddress(sender) => {
-                    if let Err(err) = proxies.refresh_host_cache(&mut host_cache).await {
+                    if let Err(err) = sys::refresh_host_cache(&mut proxies, &mut host_cache).await {
                         sender.send(Err(anyhow!("refresh_host_cache() error: {err}"))).unwrap();
                         continue;
                     }
@@ -156,7 +156,7 @@ impl WorkThread {
                     sender.send(result).unwrap();
                 }
                 Request::GetHosts(result_sender) => {
-                    if let Err(err) = proxies.refresh_host_cache(&mut host_cache).await {
+                    if let Err(err) = sys::refresh_host_cache(&mut proxies, &mut host_cache).await {
                         result_sender
                             .send(Err(anyhow!("refresh_host_cache() error: {err}")))
                             .unwrap();
@@ -165,12 +165,12 @@ impl WorkThread {
                     result_sender.send(Ok(host_cache.clone())).unwrap();
                 }
                 Request::GetKnownPeers(result_sender) => {
-                    if let Err(err) = proxies
-                        .refresh_peer_cache(
-                            std::time::Duration::from_millis(10),
-                            peer_cache.clone(),
-                        )
-                        .await
+                    if let Err(err) = sys::refresh_peer_cache(
+                        &mut proxies,
+                        std::time::Duration::from_millis(10),
+                        peer_cache.clone(),
+                    )
+                    .await
                     {
                         result_sender
                             .send(Err(anyhow!("refresh_peer_cache() error: {err}")))
@@ -180,9 +180,13 @@ impl WorkThread {
                     result_sender.send(Ok(peer_cache.lock().clone())).unwrap();
                 }
                 Request::GetPeerId(address, result_sender) => {
-                    if let Some(peer) = proxies
-                        .get_peer(&address, std::time::Duration::from_secs(2), peer_cache.clone())
-                        .await?
+                    if let Some(peer) = sys::get_peer(
+                        &mut proxies,
+                        &address,
+                        std::time::Duration::from_secs(2),
+                        peer_cache.clone(),
+                    )
+                    .await?
                     {
                         result_sender.send(Ok(peer.id.unwrap())).unwrap();
                         continue;
@@ -190,24 +194,24 @@ impl WorkThread {
                     result_sender.send(Err(anyhow!("Peer not found"))).unwrap();
                 }
                 Request::Forget(peer_id, result_sender) => {
-                    result_sender.send(proxies.forget(&peer_id).await).unwrap();
+                    result_sender.send(sys::forget(&proxies, &peer_id).await).unwrap();
                 }
                 Request::Connect(peer_id, result_sender) => {
-                    result_sender.send(proxies.connect_peer(&peer_id).await).unwrap();
+                    result_sender.send(sys::connect_peer(&proxies, &peer_id).await).unwrap();
                 }
                 Request::Disconnect(peer_id, result_sender) => {
-                    result_sender.send(proxies.disconnect_peer(&peer_id).await).unwrap();
+                    result_sender.send(sys::disconnect_peer(&proxies, &peer_id).await).unwrap();
                 }
                 Request::Pair(peer_id, options, result_sender) => {
-                    result_sender.send(proxies.pair(&peer_id, &options).await).unwrap();
+                    result_sender.send(sys::pair(&proxies, &peer_id, &options).await).unwrap();
                 }
                 Request::StartPairingDelegate(input_cap, output_cap, result_sender) => {
                     result_sender
-                        .send(proxies.start_pairing_delegate(&input_cap, &output_cap).await)
+                        .send(sys::start_pairing_delegate(&proxies, &input_cap, &output_cap).await)
                         .unwrap();
                 }
                 Request::StopPairingDelegate(result_sender) => {
-                    result_sender.send(proxies.stop_pairing_delegate().await).unwrap();
+                    result_sender.send(sys::stop_pairing_delegate(&proxies).await).unwrap();
                 }
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match proxies.connect_l2cap(&peer_id, psm).await {
@@ -239,19 +243,23 @@ impl WorkThread {
                     }
                 }
                 Request::SetDiscovery(discovery, result_sender) => {
-                    result_sender.send(proxies.set_discovery(discovery).await).unwrap();
+                    result_sender.send(sys::set_discovery(&mut proxies, discovery).await).unwrap();
                 }
                 Request::SetDiscoverability(discoverable, result_sender) => {
-                    result_sender.send(proxies.set_discoverability(discoverable).await).unwrap();
+                    result_sender
+                        .send(sys::set_discoverability(&mut proxies, discoverable).await)
+                        .unwrap();
                 }
                 Request::SetConnectability(connectable, result_sender) => {
-                    result_sender.send(proxies.set_connectability(connectable).await).unwrap();
+                    result_sender
+                        .send(sys::set_connectability(&proxies, connectable).await)
+                        .unwrap();
                 }
                 Request::SetLocalName(name, result_sender) => {
-                    result_sender.send(proxies.set_local_name(name)).unwrap();
+                    result_sender.send(sys::set_local_name(&proxies, name)).unwrap();
                 }
                 Request::SetDeviceClass(device_class, result_sender) => {
-                    result_sender.send(proxies.set_device_class(device_class)).unwrap();
+                    result_sender.send(sys::set_device_class(&proxies, device_class)).unwrap();
                 }
                 Request::StartLeScan(result_sender) => {
                     result_sender.send(proxies.start_le_scan(peer_cache.clone()).await).unwrap();
@@ -658,183 +666,6 @@ impl WorkThread {
 }
 
 impl Proxies {
-    async fn connect_peer(&self, peer_id: &PeerId) -> Result<(), anyhow::Error> {
-        self.access_proxy
-            .connect(peer_id)
-            .await
-            .map_err(|fidl_error| {
-                anyhow!("fuchsia.bluetooth.sys.Access/Connect error: {fidl_error}")
-            })
-            .and_then(|connect_result| {
-                connect_result.map_err(|sapphire_err| {
-                    anyhow!("fuchsia.bluetooth.sys.Access/Connect error: {sapphire_err:?}")
-                })
-            })
-    }
-
-    async fn disconnect_peer(&self, peer_id: &PeerId) -> Result<(), anyhow::Error> {
-        self.access_proxy
-            .disconnect(peer_id)
-            .await
-            .map_err(|fidl_error| {
-                anyhow!("fuchsia.bluetooth.sys.Access/Disconnect error: {fidl_error}")
-            })
-            .and_then(|connect_result| {
-                connect_result.map_err(|sapphire_err| {
-                    anyhow!("fuchsia.bluetooth.sys.Access/Disconnect error: {sapphire_err:?}")
-                })
-            })
-    }
-
-    async fn pair(&self, peer_id: &PeerId, options: &PairingOptions) -> Result<(), anyhow::Error> {
-        self.access_proxy
-            .pair(peer_id, options)
-            .await
-            .map_err(|fidl_error| anyhow!("fuchsia.bluetooth.sys.Access/Pair error: {fidl_error}"))
-            .and_then(|pair_result| {
-                pair_result.map_err(|sapphire_err| {
-                    anyhow!("fuchsia.bluetooth.sys.Access/Pair error: {sapphire_err:?}")
-                })
-            })
-    }
-
-    async fn start_pairing_delegate(
-        &self,
-        input_cap: &InputCapability,
-        output_cap: &OutputCapability,
-    ) -> Result<(), anyhow::Error> {
-        let (pairing_delegate_client, pairing_delegate_request_stream) =
-            fidl::endpoints::create_request_stream::<PairingDelegateMarker>();
-
-        // Shut down any existing pairing delegate task.
-        let _ = self.stop_pairing_delegate().await;
-
-        if let Err(err) = self.pairing_proxy.set_pairing_delegate(
-            *input_cap,
-            *output_cap,
-            pairing_delegate_client,
-        ) {
-            return Err(anyhow!("fuchsia.bluetooth.sys.Pairing/SetPairingDelegate error: {err}"));
-        }
-
-        let (shutdown_sender, shutdown_receiver) = oneshot::channel::<()>();
-        let task =
-            Task::spawn(pairing_delegate_task(pairing_delegate_request_stream, shutdown_receiver));
-        *self.pairing_delegate_state.lock() = Some((task, shutdown_sender));
-        Ok(())
-    }
-
-    async fn stop_pairing_delegate(&self) -> bool {
-        if let Some((task, shutdown_sender)) = self.pairing_delegate_state.lock().take() {
-            let _ = shutdown_sender.send(());
-            task.await;
-            return true;
-        }
-        false
-    }
-
-    async fn forget(&self, peer_id: &PeerId) -> Result<(), anyhow::Error> {
-        match self.access_proxy.forget(peer_id).await {
-            Err(fidl_error) => {
-                Err(anyhow!("fuchsia.bluetooth.sys.Access/Forget error: {fidl_error}"))
-            }
-            Ok(Err(fidl_fuchsia_bluetooth_sys::Error::PeerNotFound)) => {
-                println!("Asked to forget nonexistent peer.");
-                Ok(())
-            }
-            Ok(Err(sapphire_err)) => {
-                Err(anyhow!("fuchsia.bluetooth.sys.Access/Forget error: {sapphire_err:?}"))
-            }
-            Ok(Ok(_)) => Ok(()),
-        }
-    }
-
-    fn update_peer_cache(
-        peer_cache: Arc<Mutex<Vec<Peer>>>,
-        updated: Vec<Peer>,
-        removed: Vec<PeerId>,
-    ) {
-        let mut peer_cache = peer_cache.lock();
-        if !removed.is_empty() {
-            peer_cache.retain(|peer| !removed.contains(&peer.id.unwrap()));
-        }
-        for updated_peer in updated {
-            peer_cache.retain(|peer| peer.id.unwrap() != updated_peer.id.unwrap());
-            peer_cache.push(updated_peer);
-        }
-    }
-
-    async fn refresh_peer_cache(
-        &mut self,
-        timeout: std::time::Duration,
-        peer_cache: Arc<Mutex<Vec<Peer>>>,
-    ) -> Result<(), fidl::Error> {
-        match self.peer_watcher_stream.next().on_timeout(timeout, || None).await {
-            Some(Ok((updated, removed))) => {
-                Self::update_peer_cache(peer_cache, updated, removed);
-                Ok(())
-            }
-            Some(Err(err)) => Err(err),
-            None => Ok(()),
-        }
-    }
-
-    // `address` should encode a BD_ADDR as a string of bytes in little-endian order.
-    // If `timeout` >= 1 second, a discovery session will be established.
-    // Returns None if peer is not found before `timeout` elapses.
-    //
-    // TODO(https://fxbug.dev/450986278): Migrate to fasync::MonotonicInstant.
-    async fn get_peer(
-        &mut self,
-        address: &CString,
-        mut timeout: std::time::Duration,
-        peer_cache: Arc<Mutex<Vec<Peer>>>,
-    ) -> Result<Option<Peer>, anyhow::Error> {
-        let addr_matches =
-            |peer: &Peer| peer.address.unwrap().bytes.iter().eq(address.to_bytes().iter());
-        if let Some(peer) = peer_cache.lock().iter().find(|peer: &&Peer| addr_matches(peer)) {
-            return Ok(Some(peer.clone()));
-        }
-
-        let (_token, discovery_session_server) = fidl::endpoints::create_proxy();
-        let second = std::time::Duration::from_secs(1);
-        if timeout >= second {
-            timeout -= second;
-            if let Err(err) = self.access_proxy.start_discovery(discovery_session_server).await? {
-                return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
-            }
-            // Allow discovery session to activate.
-            Timer::new(std::time::Duration::from_secs(5)).await;
-        }
-
-        self.refresh_peer_cache(timeout, peer_cache.clone()).await?;
-        if let Some(peer) = peer_cache.lock().iter().find(|peer: &&Peer| addr_matches(peer)) {
-            return Ok(Some(peer.clone()));
-        }
-        return Ok(None);
-    }
-
-    async fn refresh_host_cache<'a>(
-        &mut self,
-        host_cache: &'a mut Vec<HostInfo>,
-    ) -> Result<(), anyhow::Error> {
-        if let Some(host_watcher_result) = self
-            .host_watcher_stream
-            .next()
-            .on_timeout(std::time::Duration::from_millis(100), || None)
-            .await
-        {
-            let Ok(new_host_list) = host_watcher_result else {
-                return Err(anyhow!(
-                    "fuchsia.bluetooth.sys.HostWatcher error: {}",
-                    host_watcher_result.unwrap_err()
-                ));
-            };
-            *host_cache = new_host_list
-        }
-        Ok(())
-    }
-
     async fn connect_l2cap(&self, peer_id: &PeerId, psm: u16) -> Result<Channel, anyhow::Error> {
         match self
             .profile_proxy
@@ -854,88 +685,6 @@ impl Proxies {
                 Err(anyhow!("fuchsia.bluetooth.bredr.Profile/Connect error: {fidl_err}"))
             }
         }
-    }
-
-    async fn set_discovery(&mut self, discovery: bool) -> Result<(), anyhow::Error> {
-        let mut discovery_session = self.discovery_session.lock();
-        if !discovery {
-            if discovery_session.take().is_none() {
-                eprintln!("Asked to revoke nonexistent discovery session.");
-            }
-            return Ok(());
-        }
-        if discovery_session.is_some() {
-            return Ok(());
-        }
-        let (token, discovery_session_server) = fidl::endpoints::create_proxy();
-        if let Err(err) = self.access_proxy.start_discovery(discovery_session_server).await? {
-            return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
-        }
-        *discovery_session = Some(token);
-        // Allow discovery session to activate.
-        Timer::new(std::time::Duration::from_secs(1)).await;
-        Ok(())
-    }
-
-    async fn set_discoverability(&mut self, discoverable: bool) -> Result<(), anyhow::Error> {
-        let mut discoverability_session = self.discoverability_session.lock();
-        if !discoverable {
-            if discoverability_session.take().is_none() {
-                eprintln!("Asked to revoke nonexistent discoverability session.");
-            }
-            return Ok(());
-        }
-        if discoverability_session.is_some() {
-            return Ok(());
-        }
-        let (token, discoverability_session_server) = fidl::endpoints::create_proxy();
-        if let Err(err) =
-            self.access_proxy.make_discoverable(discoverability_session_server).await?
-        {
-            return Err(anyhow!("fuchsia.bluetooth.sys.Access/MakeDiscoverable error: {err:?}"));
-        }
-        *discoverability_session = Some(token);
-        Ok(())
-    }
-
-    async fn set_connectability(&self, connectable: bool) -> Result<(), anyhow::Error> {
-        {
-            let mut suppress_connections_session = self.suppress_connections_session.lock();
-            if connectable {
-                if suppress_connections_session.take().is_none() {
-                    eprintln!("Device is already connectable.");
-                }
-                return Ok(());
-            }
-            if suppress_connections_session.is_some() {
-                return Ok(());
-            }
-        }
-        let (token, suppress_connections_server) = fidl::endpoints::create_proxy();
-        if let Err(err) = self
-            .access_proxy
-            .set_connection_policy(AccessSetConnectionPolicyRequest {
-                suppress_bredr_connections: Some(suppress_connections_server),
-                ..Default::default()
-            })
-            .await?
-        {
-            return Err(anyhow!("fuchsia.bluetooth.sys.Access/SetConnectionPolicy error: {err:?}"));
-        }
-        *self.suppress_connections_session.lock() = Some(token);
-        Ok(())
-    }
-
-    fn set_local_name(&self, name: String) -> Result<(), anyhow::Error> {
-        self.access_proxy.set_local_name(name.as_str()).map_err(|fidl_error| {
-            anyhow!("fuchsia.bluetooth.sys.Access/SetLocalName error: {fidl_error}")
-        })
-    }
-
-    fn set_device_class(&self, device_class: DeviceClass) -> Result<(), anyhow::Error> {
-        self.access_proxy.set_device_class(&device_class).map_err(|fidl_error| {
-            anyhow!("fuchsia.bluetooth.sys.Access/SetDeviceClass error: {fidl_error}")
-        })
     }
 
     // Send peer update of those for which the address is known and return the list of those for
@@ -1031,7 +780,7 @@ impl Proxies {
                     peer_result = peer_watcher_stream.select_next_some() => {
                         match peer_result {
                             Ok((updated, removed)) => {
-                                Self::update_peer_cache(peer_cache.clone(), updated, removed);
+                                sys::update_peer_cache(peer_cache.clone(), updated, removed);
 
                                 match Self::send_peer_update(
                                     peer_cache.clone(),
@@ -1265,58 +1014,6 @@ impl Proxies {
     }
 }
 
-async fn pairing_delegate_task(
-    mut stream: PairingDelegateRequestStream,
-    shutdown_receiver: oneshot::Receiver<()>,
-) {
-    let mut shutdown_receiver = shutdown_receiver.fuse();
-    loop {
-        futures::select! {
-            request = stream.next() => {
-                match request {
-                    Some(Ok(request)) => {
-                        println!("Received pairing delegate request: {request:?}");
-                        match request {
-                            PairingDelegateRequest::OnPairingComplete {
-                                id,
-                                success,
-                                control_handle: _,
-                            } => {
-                                // Log whether the pairing was successful.
-                                println!("Pairing complete for peer {id:?}: success={success}");
-                                break;
-                            }
-                            PairingDelegateRequest::OnPairingRequest {
-                                peer,
-                                method: _,
-                                displayed_passkey: _,
-                                responder,
-                            } => {
-                                // Auto-accept the pairing request.
-                                println!("Accepting pairing request from peer {peer:?}");
-                                let _ = responder.send(true, 0);
-                            }
-                            PairingDelegateRequest::OnRemoteKeypress {
-                                id,
-                                keypress,
-                                control_handle: _,
-                            } => {
-                                // Log the keypress.
-                                println!("Peer {id:?} sent keypress: {keypress:?}");
-                            }
-                        }
-                    }
-                    _ => break,
-                }
-            }
-            _ = shutdown_receiver => {
-                println!("Pairing delegate task stopped via shutdown signal");
-                break;
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1334,7 +1031,7 @@ mod tests {
         peer2.name = Some("Peer 2".to_string());
 
         // List of updated peers includes two entries with the same ID.
-        Proxies::update_peer_cache(peer_cache.clone(), vec![peer1, peer2.clone()], vec![]);
+        sys::update_peer_cache(peer_cache.clone(), vec![peer1, peer2.clone()], vec![]);
 
         let cache = peer_cache.lock();
 
@@ -1352,7 +1049,7 @@ mod tests {
 
         // Update the peer currently inside the cache with a new name.
         peer.name = Some("Updated peer".to_string());
-        Proxies::update_peer_cache(peer_cache.clone(), vec![peer], vec![]);
+        sys::update_peer_cache(peer_cache.clone(), vec![peer], vec![]);
 
         let cache = peer_cache.lock();
 

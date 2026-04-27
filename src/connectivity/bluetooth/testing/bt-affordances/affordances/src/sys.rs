@@ -1,0 +1,328 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+use crate::proxies::Proxies;
+use anyhow::anyhow;
+use fidl_fuchsia_bluetooth::{DeviceClass, PeerId};
+use fidl_fuchsia_bluetooth_sys::{
+    AccessSetConnectionPolicyRequest, HostInfo, InputCapability, OutputCapability,
+    PairingDelegateMarker, PairingDelegateRequest, PairingDelegateRequestStream, PairingOptions,
+    Peer,
+};
+use fuchsia_async::{Task, TimeoutExt, Timer};
+use fuchsia_sync::Mutex;
+use futures::channel::oneshot;
+use futures::{FutureExt, StreamExt};
+use std::ffi::CString;
+use std::sync::Arc;
+
+pub(crate) async fn connect_peer(proxies: &Proxies, peer_id: &PeerId) -> Result<(), anyhow::Error> {
+    proxies
+        .access_proxy
+        .connect(peer_id)
+        .await
+        .map_err(|fidl_error| anyhow!("fuchsia.bluetooth.sys.Access/Connect error: {fidl_error}"))
+        .and_then(|connect_result| {
+            connect_result.map_err(|sapphire_err| {
+                anyhow!("fuchsia.bluetooth.sys.Access/Connect error: {sapphire_err:?}")
+            })
+        })
+}
+
+pub(crate) async fn disconnect_peer(
+    proxies: &Proxies,
+    peer_id: &PeerId,
+) -> Result<(), anyhow::Error> {
+    proxies
+        .access_proxy
+        .disconnect(peer_id)
+        .await
+        .map_err(|fidl_error| {
+            anyhow!("fuchsia.bluetooth.sys.Access/Disconnect error: {fidl_error}")
+        })
+        .and_then(|connect_result| {
+            connect_result.map_err(|sapphire_err| {
+                anyhow!("fuchsia.bluetooth.sys.Access/Disconnect error: {sapphire_err:?}")
+            })
+        })
+}
+
+pub(crate) async fn pair(
+    proxies: &Proxies,
+    peer_id: &PeerId,
+    options: &PairingOptions,
+) -> Result<(), anyhow::Error> {
+    proxies
+        .access_proxy
+        .pair(peer_id, options)
+        .await
+        .map_err(|fidl_error| anyhow!("fuchsia.bluetooth.sys.Access/Pair error: {fidl_error}"))
+        .and_then(|pair_result| {
+            pair_result.map_err(|sapphire_err| {
+                anyhow!("fuchsia.bluetooth.sys.Access/Pair error: {sapphire_err:?}")
+            })
+        })
+}
+
+pub(crate) async fn start_pairing_delegate(
+    proxies: &Proxies,
+    input_cap: &InputCapability,
+    output_cap: &OutputCapability,
+) -> Result<(), anyhow::Error> {
+    let (pairing_delegate_client, pairing_delegate_request_stream) =
+        fidl::endpoints::create_request_stream::<PairingDelegateMarker>();
+
+    // Shut down any existing pairing delegate task.
+    let _ = stop_pairing_delegate(proxies).await;
+
+    if let Err(err) =
+        proxies.pairing_proxy.set_pairing_delegate(*input_cap, *output_cap, pairing_delegate_client)
+    {
+        return Err(anyhow!("fuchsia.bluetooth.sys.Pairing/SetPairingDelegate error: {err}"));
+    }
+
+    let (shutdown_sender, shutdown_receiver) = oneshot::channel::<()>();
+    let task =
+        Task::spawn(pairing_delegate_task(pairing_delegate_request_stream, shutdown_receiver));
+    *proxies.pairing_delegate_state.lock() = Some((task, shutdown_sender));
+    Ok(())
+}
+
+pub(crate) async fn stop_pairing_delegate(proxies: &Proxies) -> bool {
+    if let Some((task, shutdown_sender)) = proxies.pairing_delegate_state.lock().take() {
+        let _ = shutdown_sender.send(());
+        task.await;
+        return true;
+    }
+    false
+}
+
+pub(crate) async fn forget(proxies: &Proxies, peer_id: &PeerId) -> Result<(), anyhow::Error> {
+    match proxies.access_proxy.forget(peer_id).await {
+        Err(fidl_error) => Err(anyhow!("fuchsia.bluetooth.sys.Access/Forget error: {fidl_error}")),
+        Ok(Err(fidl_fuchsia_bluetooth_sys::Error::PeerNotFound)) => {
+            println!("Asked to forget nonexistent peer.");
+            Ok(())
+        }
+        Ok(Err(sapphire_err)) => {
+            Err(anyhow!("fuchsia.bluetooth.sys.Access/Forget error: {sapphire_err:?}"))
+        }
+        Ok(Ok(_)) => Ok(()),
+    }
+}
+
+pub(crate) fn update_peer_cache(
+    peer_cache: Arc<Mutex<Vec<Peer>>>,
+    updated: Vec<Peer>,
+    removed: Vec<PeerId>,
+) {
+    let mut peer_cache = peer_cache.lock();
+    if !removed.is_empty() {
+        peer_cache.retain(|peer| !removed.contains(&peer.id.unwrap()));
+    }
+    for updated_peer in updated {
+        peer_cache.retain(|peer| peer.id.unwrap() != updated_peer.id.unwrap());
+        peer_cache.push(updated_peer);
+    }
+}
+
+pub(crate) async fn refresh_peer_cache(
+    proxies: &mut Proxies,
+    timeout: std::time::Duration,
+    peer_cache: Arc<Mutex<Vec<Peer>>>,
+) -> Result<(), fidl::Error> {
+    match proxies.peer_watcher_stream.next().on_timeout(timeout, || None).await {
+        Some(Ok((updated, removed))) => {
+            update_peer_cache(peer_cache, updated, removed);
+            Ok(())
+        }
+        Some(Err(err)) => Err(err),
+        None => Ok(()),
+    }
+}
+
+// TODO(https://fxbug.dev/450986278): Migrate to fasync::MonotonicInstant.
+pub(crate) async fn get_peer(
+    proxies: &mut Proxies,
+    address: &CString,
+    mut timeout: std::time::Duration,
+    peer_cache: Arc<Mutex<Vec<Peer>>>,
+) -> Result<Option<Peer>, anyhow::Error> {
+    let addr_matches =
+        |peer: &Peer| peer.address.unwrap().bytes.iter().eq(address.to_bytes().iter());
+    if let Some(peer) = peer_cache.lock().iter().find(|peer: &&Peer| addr_matches(peer)) {
+        return Ok(Some(peer.clone()));
+    }
+
+    let (_token, discovery_session_server) = fidl::endpoints::create_proxy();
+    let second = std::time::Duration::from_secs(1);
+    if timeout >= second {
+        timeout -= second;
+        if let Err(err) = proxies.access_proxy.start_discovery(discovery_session_server).await? {
+            return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
+        }
+        // Allow discovery session to activate.
+        Timer::new(std::time::Duration::from_secs(5)).await;
+    }
+
+    refresh_peer_cache(proxies, timeout, peer_cache.clone()).await?;
+    if let Some(peer) = peer_cache.lock().iter().find(|peer: &&Peer| addr_matches(peer)) {
+        return Ok(Some(peer.clone()));
+    }
+    Ok(None)
+}
+
+pub(crate) async fn refresh_host_cache<'a>(
+    proxies: &mut Proxies,
+    host_cache: &'a mut Vec<HostInfo>,
+) -> Result<(), anyhow::Error> {
+    if let Some(host_watcher_result) = proxies
+        .host_watcher_stream
+        .next()
+        .on_timeout(std::time::Duration::from_millis(100), || None)
+        .await
+    {
+        let Ok(new_host_list) = host_watcher_result else {
+            return Err(anyhow!(
+                "fuchsia.bluetooth.sys.HostWatcher error: {}",
+                host_watcher_result.unwrap_err()
+            ));
+        };
+        *host_cache = new_host_list
+    }
+    Ok(())
+}
+
+pub(crate) async fn set_discovery(
+    proxies: &mut Proxies,
+    discovery: bool,
+) -> Result<(), anyhow::Error> {
+    let mut discovery_session = proxies.discovery_session.lock();
+    if !discovery {
+        if discovery_session.take().is_none() {
+            eprintln!("Asked to revoke nonexistent discovery session.");
+        }
+        return Ok(());
+    }
+    if discovery_session.is_some() {
+        return Ok(());
+    }
+    let (token, discovery_session_server) = fidl::endpoints::create_proxy();
+    if let Err(err) = proxies.access_proxy.start_discovery(discovery_session_server).await? {
+        return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
+    }
+    *discovery_session = Some(token);
+    // Allow discovery session to activate.
+    Timer::new(std::time::Duration::from_secs(1)).await;
+    Ok(())
+}
+
+pub(crate) async fn set_discoverability(
+    proxies: &mut Proxies,
+    discoverable: bool,
+) -> Result<(), anyhow::Error> {
+    let mut discoverability_session = proxies.discoverability_session.lock();
+    if !discoverable {
+        if discoverability_session.take().is_none() {
+            eprintln!("Asked to revoke nonexistent discoverability session.");
+        }
+        return Ok(());
+    }
+    if discoverability_session.is_some() {
+        return Ok(());
+    }
+    let (token, discoverability_session_server) = fidl::endpoints::create_proxy();
+    if let Err(err) = proxies.access_proxy.make_discoverable(discoverability_session_server).await?
+    {
+        return Err(anyhow!("fuchsia.bluetooth.sys.Access/MakeDiscoverable error: {err:?}"));
+    }
+    *discoverability_session = Some(token);
+    Ok(())
+}
+
+pub(crate) async fn set_connectability(
+    proxies: &Proxies,
+    connectable: bool,
+) -> Result<(), anyhow::Error> {
+    {
+        let mut suppress_connections_session = proxies.suppress_connections_session.lock();
+        if connectable {
+            if suppress_connections_session.take().is_none() {
+                eprintln!("Device is already connectable.");
+            }
+            return Ok(());
+        }
+        if suppress_connections_session.is_some() {
+            return Ok(());
+        }
+    }
+    let (token, suppress_connections_server) = fidl::endpoints::create_proxy();
+    if let Err(err) = proxies
+        .access_proxy
+        .set_connection_policy(AccessSetConnectionPolicyRequest {
+            suppress_bredr_connections: Some(suppress_connections_server),
+            ..Default::default()
+        })
+        .await?
+    {
+        return Err(anyhow!("fuchsia.bluetooth.sys.Access/SetConnectionPolicy error: {err:?}"));
+    }
+    *proxies.suppress_connections_session.lock() = Some(token);
+    Ok(())
+}
+
+pub(crate) fn set_local_name(proxies: &Proxies, name: String) -> Result<(), anyhow::Error> {
+    proxies.access_proxy.set_local_name(name.as_str()).map_err(|fidl_error| {
+        anyhow!("fuchsia.bluetooth.sys.Access/SetLocalName error: {fidl_error}")
+    })
+}
+
+pub(crate) fn set_device_class(
+    proxies: &Proxies,
+    device_class: DeviceClass,
+) -> Result<(), anyhow::Error> {
+    proxies.access_proxy.set_device_class(&device_class).map_err(|fidl_error| {
+        anyhow!("fuchsia.bluetooth.sys.Access/SetDeviceClass error: {fidl_error}")
+    })
+}
+
+async fn pairing_delegate_task(
+    mut stream: PairingDelegateRequestStream,
+    shutdown_receiver: oneshot::Receiver<()>,
+) {
+    let mut shutdown_receiver = shutdown_receiver.fuse();
+    loop {
+        futures::select! {
+            request = stream.next() => {
+                match request {
+                    Some(Ok(request)) => {
+                        println!("Received pairing delegate request: {request:?}");
+                        match request {
+                            PairingDelegateRequest::OnPairingComplete {
+                                id,
+                                success,
+                                control_handle: _,
+                            } => {
+                                println!("Pairing complete for peer {id:?}: success={success}");
+                                break;
+                            }
+                            PairingDelegateRequest::OnPairingRequest {
+                                peer,
+                                method: _,
+                                displayed_passkey: _,
+                                responder,
+                            } => {
+                                println!("Accepting pairing request from peer {peer:?}");
+                                let _ = responder.send(true, 0);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            _ = shutdown_receiver => break,
+        }
+    }
+}

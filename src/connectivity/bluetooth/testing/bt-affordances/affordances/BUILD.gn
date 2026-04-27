@@ -34,6 +34,7 @@ rustc_library("affordances") {
   sources = [
     "src/lib.rs",
     "src/proxies.rs",
+    "src/sys.rs",
   ]
 }
 
