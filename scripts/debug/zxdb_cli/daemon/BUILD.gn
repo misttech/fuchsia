@@ -19,7 +19,7 @@ if (is_host) {
       "daemon.py",
     ]
     deps = [
-      "//scripts/debug/shared:protocol_lib",
+      "//scripts/debug/zxdb_cli/shared:protocol_lib",
       "//scripts/lib/ffx_cmd",
       "//scripts/lib/fx_cmd",
       "//scripts/lib/package_server",

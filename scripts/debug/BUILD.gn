@@ -10,7 +10,7 @@ if (is_host) {
     main_source = "main.py"
 
     deps = [
-      "//scripts/debug/cli:cli_lib",
+      "//scripts/debug/zxdb_cli/cli:cli_lib",
       "//scripts/lib/package_server",
     ]
   }
@@ -23,16 +23,16 @@ if (is_host) {
   group("tests") {
     testonly = true
     deps = [
-      "cli:cli_test",
-      "daemon:daemon_test",
-      "tests:cli_integration_test($host_toolchain)",
+      "zxdb_cli/cli:cli_test",
+      "zxdb_cli/daemon:daemon_test",
+      "zxdb_cli/tests:cli_integration_test($host_toolchain)",
     ]
   }
 
   group("install") {
     deps = [
       ":install-debug",
-      "daemon:install",
+      "zxdb_cli/daemon:install",
     ]
   }
 }

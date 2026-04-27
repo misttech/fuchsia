@@ -8,8 +8,8 @@ if (is_host) {
   python_host_test("cli_integration_test") {
     main_source = "integration_test_cli.py"
     libraries = [
-      "//scripts/debug/cli:cli_lib",
-      "//scripts/debug/daemon:daemon_lib",
+      "//scripts/debug/zxdb_cli/cli:cli_lib",
+      "//scripts/debug/zxdb_cli/daemon:daemon_lib",
     ]
   }
 }
