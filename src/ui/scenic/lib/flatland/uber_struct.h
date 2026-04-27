@@ -46,8 +46,11 @@ struct UberStruct {
         local_hit_regions_map(&resource_),
         debug_name(&resource_) {}
 
+  // Note: this MUST only be used to allocate memory for this UberStruct's fields
+  std::pmr::memory_resource* resource() { return &resource_; }
+
   // The local topology of this Flatland instance.
-  TransformGraph::TopologyPmrVector local_topology;
+  TransformGraph::TopologyVector local_topology;
 
   // The local (i.e. relative to the parent) geometric transformation matrix of each
   // TransformHandle. Handles with no entry indicate an identity matrix.

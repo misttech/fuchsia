@@ -148,21 +148,19 @@ void FlatlandDisplay::SetContent(ViewportCreationToken token,
   child_added = transform_graph_.AddChild(root_transform_, link_to_child_->parent_transform_handle);
   FX_DCHECK(child_added);
 
+  auto uber_struct = std::make_unique<UberStruct>();
+  uber_struct->debug_name = "FlatlandDisplay";
+
   // TODO(https://fxbug.dev/42156567): given this fixed topology, we probably don't need to use
   // ComputeAndCleanup(), we can just stamp something out based on a fixed template.
   // TODO(https://fxbug.dev/42116832): Decide on a proper limit on compute time for topological
   // sorting.
-  auto data =
-      transform_graph_.ComputeAndCleanup(root_transform_, std::numeric_limits<uint64_t>::max());
+  auto data = transform_graph_.ComputeAndCleanup(
+      root_transform_, std::numeric_limits<uint64_t>::max(), uber_struct->resource());
   FX_DCHECK(data.iterations != std::numeric_limits<uint64_t>::max());
   FX_DCHECK(data.sorted_transforms[0].handle == root_transform_);
 
-  auto uber_struct = std::make_unique<UberStruct>();
-  uber_struct->debug_name = "FlatlandDisplay";
-  // TODO(https://fxbug.dev/487048356): before we switched over to pmr, we used std::move on the
-  // result from ComputeAndCleanup().  Consider whether we can do that with pmr.  For example,
-  // maybe we can pass the UberStruct's allocator into `ComputeAndCleanup()`.
-  uber_struct->local_topology.assign(data.sorted_transforms.begin(), data.sorted_transforms.end());
+  uber_struct->local_topology = std::move(data.sorted_transforms);
 
   uber_struct->local_clip_regions[link_to_child_->parent_transform_handle] = TransformClipRegion({
       .x = 0,

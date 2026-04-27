@@ -433,7 +433,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
 
   // This is a stack of vector "iterators". We store the raw index, instead of an iterator, so that
   // we can do index comparisons.
-  std::vector<std::pair<const TransformGraph::TopologyPmrVector&, /*local_index=*/size_t>>
+  std::vector<std::pair<const TransformGraph::TopologyVector&, /*local_index=*/size_t>>
       vector_stack;
   // This is a stack of global parent indices and the number of children left to process for that
   // parent.

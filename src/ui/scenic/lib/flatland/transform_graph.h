@@ -39,10 +39,7 @@ class TransformGraph {
   // with a non-zero child count is immediately followed by its first child in the TopologyVector.
   // Because the topology vector is depth-first, a child's children (if it has any) will be listed
   // before that child's siblings.
-  using TopologyVector = std::vector<TopologyEntry>;
-  // Temporary.  Eventually all will use `pmr`, and `TopologyVector`
-  // will be the only name; TopologyPmrVector will be deleted.
-  using TopologyPmrVector = std::pmr::vector<TopologyEntry>;
+  using TopologyVector = std::pmr::vector<TopologyEntry>;
 
   // A collection of directed edges, the key in the map is the parent transform and the values are
   // the children.
@@ -130,13 +127,16 @@ class TransformGraph {
     uint64_t iterations = 0;
   };
 
-  // Generates a topology vector rooted at the "start" transform, as well as additional data
+  // Generates a topology vector rooted at the `start` transform, as well as additional data
   // involving dead transforms, cycles, and iterations. See the TopologyData struct for more
   // information.
   //
-  // If max_iterations is reached, the transform graph will be in an invalid state, and should be
-  // reset before any further methods are called.
-  TopologyData ComputeAndCleanup(TransformHandle start, uint64_t max_iterations);
+  // If `max_iterations` is reached, the transform graph will be in an invalid state, and should be
+  // reset before any further methods are called. We use `resource` to allocate (some) fields of
+  // the returned TopologyData.
+  TopologyData ComputeAndCleanup(
+      TransformHandle start, uint64_t max_iterations,
+      std::pmr::memory_resource* resource = std::pmr::get_default_resource());
 
  private:
   // Store each transform with a priority to allow callers to specify a single child edge to be
@@ -158,9 +158,11 @@ class TransformGraph {
   // following edges defined in the "children" map. Cycles are returned through the out parameter
   // "cycles".
   //
-  // Computation is halted once the return vector has grown to max_length in size.
+  // Computation is halted once the return vector has grown to max_length in size. We use
+  // `resource` to allocate the returned TopologyVector.
   static TopologyVector Traverse(TransformHandle start, const PriorityChildMap& children,
-                                 ChildMap* cycles, uint64_t max_length);
+                                 ChildMap* cycles, uint64_t max_length,
+                                 std::pmr::memory_resource* resource);
 
   const TransformHandle::InstanceId instance_id_ = 0;
 

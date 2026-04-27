@@ -382,10 +382,12 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
   }
 
   auto root_handle = GetRoot();
+  auto uber_struct = std::make_unique<UberStruct>();
 
   // TODO(https://fxbug.dev/42116832): Decide on a proper limit on compute time for topological
   // sorting.
-  auto data = transform_graph_.ComputeAndCleanup(root_handle, std::numeric_limits<uint64_t>::max());
+  auto data = transform_graph_.ComputeAndCleanup(root_handle, std::numeric_limits<uint64_t>::max(),
+                                                 uber_struct->resource());
   FX_DCHECK(data.iterations != std::numeric_limits<uint64_t>::max());
 
   // Don't commit changes if a cycle is detected. Instead, kill the channel and remove the sub-graph
@@ -459,15 +461,10 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     args.release_fences()->push_back(std::move(image_release_fence));
   }
 
-  auto uber_struct = std::make_unique<UberStruct>();
   {
     TRACE_DURATION("gfx", "Flatland::Present[populate_uberstruct]");
 
-    // TODO(https://fxbug.dev/487048356): before we switched over to pmr, we used std::move on the
-    // result from ComputeAndCleanup().  Consider whether we can do that with pmr.  For example,
-    // maybe we can pass the UberStruct's allocator into `ComputeAndCleanup()`.
-    uber_struct->local_topology.assign(data.sorted_transforms.begin(),
-                                       data.sorted_transforms.end());
+    uber_struct->local_topology = std::move(data.sorted_transforms);
 
     uber_struct->local_matrices.reserve(matrices_.size());
     for (const auto& [handle, matrix_data] : matrices_) {

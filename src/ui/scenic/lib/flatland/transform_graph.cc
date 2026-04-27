@@ -136,13 +136,14 @@ void TransformGraph::ResetGraph(TransformHandle exception) {
   is_valid_ = true;
 }
 
-TransformGraph::TopologyData TransformGraph::ComputeAndCleanup(TransformHandle start,
-                                                               uint64_t max_iterations) {
+TransformGraph::TopologyData TransformGraph::ComputeAndCleanup(
+    TransformHandle start, uint64_t max_iterations, std::pmr::memory_resource* resource) {
   TRACE_DURATION("gfx", "TransformGraph::ComputeAndCleanup");
   FX_DCHECK(is_valid_);
   FX_DCHECK(working_set_.contains(start));
 
   TopologyData data;
+  data.sorted_transforms = TopologyVector(resource);
 
   // Swap all the live nodes into the dead set, so we can pull them out as we visit them.
   std::swap(live_set_, data.dead_transforms);
@@ -152,8 +153,8 @@ TransformGraph::TopologyData TransformGraph::ComputeAndCleanup(TransformHandle s
   PriorityChildMap children_copy = children_;
 
   // Compute the topological set starting from the start transform.
-  data.sorted_transforms =
-      Traverse(start, children_copy, &data.cyclical_edges, max_iterations - data.iterations);
+  data.sorted_transforms = Traverse(start, children_copy, &data.cyclical_edges,
+                                    max_iterations - data.iterations, resource);
   data.iterations += data.sorted_transforms.size();
   for (auto [transform, child_count] : data.sorted_transforms) {
     auto [start, end] = EqualRangeAllPriorities(children_copy, transform);
@@ -166,8 +167,8 @@ TransformGraph::TopologyData TransformGraph::ComputeAndCleanup(TransformHandle s
 
   // Compute the topological set starting from every working set transform, for cleanup purposes.
   for (auto transform : working_set_) {
-    auto working_transforms =
-        Traverse(transform, children_copy, &data.cyclical_edges, max_iterations - data.iterations);
+    auto working_transforms = Traverse(transform, children_copy, &data.cyclical_edges,
+                                       max_iterations - data.iterations, resource);
     data.iterations += working_transforms.size();
     for (auto [transform, child_count] : working_transforms) {
       auto [start, end] = EqualRangeAllPriorities(children_copy, transform);
@@ -204,12 +205,18 @@ TransformGraph::IteratorPair TransformGraph::EqualRangeAllPriorities(const Prior
 
 TransformGraph::TopologyVector TransformGraph::Traverse(TransformHandle start,
                                                         const PriorityChildMap& children,
-                                                        ChildMap* cycles, uint64_t max_length) {
-  TopologyVector retval;
+                                                        ChildMap* cycles, uint64_t max_length,
+                                                        std::pmr::memory_resource* resource) {
+  TopologyVector retval(resource);
 
-  std::vector<IteratorPair> iterator_stack;
-  std::vector<TransformHandle> ancestors;
-  std::vector<uint64_t> parent_indices;
+  // Create a 4KB stack buffer for local vector allocations. This should be enough for all typical
+  // graph sizes (<=100 nodes), and should avoid heap allocations in most cases.
+  alignas(std::max_align_t) char buffer[4096];
+  std::pmr::monotonic_buffer_resource pool(buffer, sizeof(buffer));
+
+  std::pmr::vector<IteratorPair> iterator_stack(&pool);
+  std::pmr::vector<TransformHandle> ancestors(&pool);
+  std::pmr::vector<uint64_t> parent_indices(&pool);
 
   // Add the starting handle to the output, and initialize our state.
   auto start_pair = EqualRangeAllPriorities(children, start);
