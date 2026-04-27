@@ -124,14 +124,12 @@ impl KeyboardController {
         }
 
         current.keymap = keyboard_info.keymap.or(current.keymap);
-        current.autorepeat = keyboard_info.autorepeat.or(current.autorepeat).and_then(|value| {
-            if value.delay == 0 && value.period == 0 {
-                // Clean up Autorepeat when delay and period are set to zero.
-                None
-            } else {
-                Some(value)
-            }
-        });
+
+        // Clean up Autorepeat when delay and period are set to zero.
+        current.autorepeat = keyboard_info
+            .autorepeat
+            .or(current.autorepeat)
+            .filter(|&value| !(value.delay == 0 && value.period == 0));
 
         self.store
             .write(&current)
