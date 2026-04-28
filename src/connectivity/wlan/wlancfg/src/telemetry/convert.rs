@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use crate::client::roaming::lib::RoamReason;
+use fidl_fuchsia_wlan_sme as fidl_sme;
 use wlan_common::bss::Protection as BssProtection;
 use wlan_common::channel::Channel;
-use {fidl_fuchsia_wlan_sme as fidl_sme, wlan_metrics_registry as metrics};
+use wlan_metrics_registry as metrics;
 
 pub fn convert_disconnect_source(
     source: &fidl_sme::DisconnectSource,
@@ -47,8 +48,7 @@ pub fn convert_security_type(
 ) -> metrics::SuccessfulConnectBreakdownBySecurityTypeMetricDimensionSecurityType {
     use metrics::SuccessfulConnectBreakdownBySecurityTypeMetricDimensionSecurityType::*;
     match protection {
-        // TODO(https://fxbug.dev/462512152): Log OpenOweTransition and Owe to appropriate dimensions
-        BssProtection::Unknown | BssProtection::OpenOweTransition | BssProtection::Owe => Unknown,
+        BssProtection::Unknown => Unknown,
         BssProtection::Open => Open,
         BssProtection::Wep => Wep,
         BssProtection::Wpa1 => Wpa1,
@@ -60,6 +60,8 @@ pub fn convert_security_type(
         BssProtection::Wpa3Personal => Wpa3Personal,
         BssProtection::Wpa2Enterprise => Wpa2Enterprise,
         BssProtection::Wpa3Enterprise => Wpa3Enterprise,
+        BssProtection::Owe => Owe,
+        BssProtection::OpenOweTransition => OpenOweTransition,
     }
 }
 
