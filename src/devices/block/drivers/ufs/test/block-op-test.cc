@@ -433,6 +433,7 @@ TEST_F(BlockOpTest, MultiQueueDepthWriteTest) {
   for (auto queue_depth : queue_depth_list) {
     // Disable IoLoop completion
     dut_->GetTransferRequestProcessor().DisableCompletion();
+    dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
 
     auto vmos = std::make_unique<zx::vmo[]>(queue_depth);
     auto vaddrs = std::make_unique<zx_vaddr_t[]>(queue_depth);
@@ -472,7 +473,7 @@ TEST_F(BlockOpTest, MultiQueueDepthWriteTest) {
     ASSERT_OK(dut_->WaitWithTimeout(wait_for_scheduled, kMultiQueueTimeout,
                                     submission_timeout_message, zx::msec(100)));
 
-    // Wait for mock device write I/O is completed.
+    // Wait for mock device write I/O to be completed.
     auto wait_for_completion = [&]() -> bool {
       std::bitset<kMaxRequestListSize> notification =
           UtrListCompletionNotificationReg::Get().ReadFrom(&dut_->GetMmio()).notification();
@@ -483,9 +484,15 @@ TEST_F(BlockOpTest, MultiQueueDepthWriteTest) {
                                     completion_timeout_message, zx::msec(100)));
 
     dut_->GetTransferRequestProcessor().EnableCompletion();
-    dut_->ProcessIoCompletions();
-    ASSERT_EQ(GetSlotStateCount(SlotState::kFree),
-              dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount());
+
+    // Wait for request slots to be freed.
+    auto wait_for_slots_freed = [&]() -> bool {
+      return GetSlotStateCount(SlotState::kFree) ==
+             dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount();
+    };
+    fbl::String slots_freed_timeout_message = "Timeout waiting for slots to be freed";
+    ASSERT_OK(dut_->WaitWithTimeout(wait_for_slots_freed, kMultiQueueTimeout,
+                                    slots_freed_timeout_message, zx::msec(100)));
 
     for (uint32_t i = 0; i < queue_depth; ++i) {
       sync_completion_wait(&done[i], ZX_TIME_INFINITE);
