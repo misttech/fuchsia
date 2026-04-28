@@ -25,6 +25,7 @@ use fidl::Vmo;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_mem as fmem;
@@ -38,7 +39,7 @@ use num_traits::cast::FromPrimitive;
 use router_error::RouterError;
 use routing::bedrock::request_metadata::runner_metadata;
 use runtime_capabilities::{
-    Capability, Connector, Dictionary, DirConnector, Message, Request, Router, WeakInstanceToken,
+    Capability, Connector, Dictionary, DirConnector, Message, Router, WeakInstanceToken,
 };
 use serve_processargs::NamespaceBuilder;
 use std::sync::Arc;
@@ -127,7 +128,8 @@ fn open_protocols_with_numbered_handle(
                         let target = target.clone();
                         scope.spawn(async move {
                             // the router should handle logging in the event of an error
-                            if let Ok(Some(c)) = router.route(None, target).await {
+                            if let Ok(Some(c)) = router.route(RouteRequest::default(), target).await
+                            {
                                 let _ = c.send(runtime_capabilities::Message { channel: server });
                             }
                         });
@@ -487,9 +489,9 @@ async fn open_runner(
     runner_name: Name,
 ) -> Result<Option<RemoteRunner>, StartActionError> {
     // Open up a channel to the runner.
-    let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
+    let request = runner_metadata(cm_rust::Availability::Required);
     let runner_capability = runner_router
-        .route(Some(request), component.as_weak().into())
+        .route(request, component.as_weak().into())
         .await
         .map_err(|err| StartActionError::ResolveRunnerError {
             moniker: component.moniker.clone(),

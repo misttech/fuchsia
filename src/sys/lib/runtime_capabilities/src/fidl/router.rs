@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fidl::{IntoFsandboxCapability, RemotableCapability};
-use crate::{
-    Capability, CapabilityBound, Dictionary, Request, Router, RouterResponse, WeakInstanceToken,
-};
+use crate::fidl::RemotableCapability;
+use crate::{Capability, CapabilityBound, Dictionary, Router, RouterResponse, WeakInstanceToken};
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
 use router_error::{Explain, RouterError};
@@ -13,23 +12,6 @@ use std::sync::Arc;
 use vfs::directory::entry::{self, DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo};
 use vfs::execution_scope::ExecutionScope;
 use zx;
-
-impl Request {
-    pub fn into_fsandbox_request(self, token: WeakInstanceToken) -> fsandbox::RouteRequest {
-        let (token_event_pair, server) = zx::EventPair::create();
-        token.clone().register(token_event_pair.koid().unwrap(), server);
-        let fsandbox::Capability::Dictionary(dictionary_ref) =
-            self.metadata.into_fsandbox_capability(token)
-        else {
-            panic!("invalid type");
-        };
-        fsandbox::RouteRequest {
-            requesting: Some(fsandbox::InstanceToken { token: token_event_pair }),
-            metadata: Some(dictionary_ref),
-            ..Default::default()
-        }
-    }
-}
 
 impl TryFrom<fsandbox::DictionaryRouterRouteResponse> for RouterResponse<Dictionary> {
     type Error = crate::RemoteError;
@@ -54,8 +36,8 @@ pub(crate) async fn route_from_fidl<T>(
 where
     T: CapabilityBound,
 {
-    let resp = match (payload.requesting, payload.metadata) {
-        (Some(token), Some(metadata)) => {
+    let resp = match payload.requesting {
+        Some(token) => {
             let capability =
                 crate::fidl::registry::get(token.token.as_handle_ref().koid().unwrap());
             let component = match capability {
@@ -63,18 +45,9 @@ where
                 Some(_) => return Err(fsandbox::RouterError::InvalidArgs),
                 None => return Err(fsandbox::RouterError::InvalidArgs),
             };
-            let Capability::Dictionary(metadata) =
-                Capability::try_from(fsandbox::Capability::Dictionary(metadata)).unwrap()
-            else {
-                return Err(fsandbox::RouterError::InvalidArgs);
-            };
-            let request = Request { metadata };
-            router.route(Some(request), component).await?
+            router.route(RouteRequest::default(), component).await?
         }
-        (None, None) => router.route(None, token).await?,
-        _ => {
-            return Err(fsandbox::RouterError::InvalidArgs);
-        }
+        None => router.route(RouteRequest::default(), token).await?,
     };
     Ok(resp)
 }
@@ -131,13 +104,14 @@ where
                 };
 
                 // Request a capability from the `router`.
-                let result = match self.router.route(None, self.token.clone()).await {
-                    Ok(Some(c)) => Ok(Capability::from(c)),
-                    Ok(None) => {
-                        return Err(zx::Status::NOT_FOUND);
-                    }
-                    Err(e) => Err(e),
-                };
+                let result =
+                    match self.router.route(RouteRequest::default(), self.token.clone()).await {
+                        Ok(Some(c)) => Ok(Capability::from(c)),
+                        Ok(None) => {
+                            return Err(zx::Status::NOT_FOUND);
+                        }
+                        Err(e) => Err(e),
+                    };
                 let error = match result {
                     Ok(capability) => {
                         match capability

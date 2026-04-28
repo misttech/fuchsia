@@ -25,9 +25,7 @@ use crate::sandbox_util::RoutableExt;
 use ::routing::bedrock::program_output_dict::{
     ProgramOutputGenerator, build_program_output_dictionary,
 };
-use ::routing::bedrock::request_metadata::{
-    IsolatedStoragePath, Metadata, StorageSourceMoniker, StorageSubdir, event_stream_metadata,
-};
+use ::routing::bedrock::request_metadata::event_stream_metadata;
 use ::routing::bedrock::sandbox_construction::{
     ComponentSandbox, build_component_sandbox, extend_dict_with_offers,
 };
@@ -41,7 +39,6 @@ use ::routing::component_instance::{
 };
 use ::routing::error::{ComponentInstanceError, RouteRequestErrorInfo, RoutingError};
 use ::routing::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
-use ::routing::rights::Rights;
 use ::routing::subdir::SubDir;
 use ::routing::{DictExt, WeakInstanceTokenExt, WithPorcelain};
 use async_trait::async_trait;
@@ -68,6 +65,7 @@ use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
 use flyweights::FlyStr;
@@ -80,8 +78,8 @@ use log::{error, warn};
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
 use runtime_capabilities::{
-    Capability, Connector, Data, Dictionary, DirConnector, RemotableCapability, Request, Routable,
-    Router, WeakInstanceToken,
+    Capability, Connector, Data, Dictionary, DirConnector, RemotableCapability, Routable, Router,
+    WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -528,16 +526,13 @@ impl ResolvedInstanceState {
             else {
                 continue;
             };
-            let mut route_metadata = finternal::EventStreamRouteMetadata::default();
-            if let Some(scope) = &use_event_stream_decl.scope {
-                route_metadata.scope_moniker = Some(component.moniker().to_string());
-                route_metadata.scope = Some(scope.clone().native_into_fidl());
-            }
-            let metadata =
-                event_stream_metadata(use_event_stream_decl.availability, route_metadata);
-            let request = Request { metadata };
+            let route_metadata = match &use_event_stream_decl.scope {
+                Some(scope) => Some((component.moniker().clone(), scope.clone())),
+                None => None,
+            };
+            let request = event_stream_metadata(use_event_stream_decl.availability, route_metadata);
             let Ok(Some(dictionary)) =
-                offered_router.route(Some(request), component.as_weak().into()).await
+                offered_router.route(request, component.as_weak().into()).await
             else {
                 continue;
             };
@@ -552,8 +547,13 @@ impl ResolvedInstanceState {
             if event_type != EventType::CapabilityRequested {
                 continue;
             }
+            let cap = dictionary.get("event_stream_route_metadata").expect("missing metadata");
+            let bytes = match cap {
+                Capability::Data(Data::Bytes(bytes)) => bytes,
+                _ => panic!("invalid event route metadata"),
+            };
             let route_metadata: finternal::EventStreamRouteMetadata =
-                dictionary.get_metadata().expect("missing route metadata");
+                fidl::unpersist(&bytes).expect("invalid event stream route metadata");
             let Some(names) = names_from_filter(&use_event_stream_decl.filter) else {
                 continue;
             };
@@ -1364,7 +1364,7 @@ struct CapabilityRequestedHook {
 impl Routable<Connector> for CapabilityRequestedHook {
     async fn route(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<Connector>, RouterError> {
         fn cm_unexpected() -> RouterError {
@@ -1407,7 +1407,7 @@ impl Routable<Connector> for CapabilityRequestedHook {
 
     async fn route_debug(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         Ok(CapabilitySource::Component(ComponentSource {
@@ -1430,23 +1430,21 @@ struct DirConnectorOutgoingRouter {
 impl Routable<DirConnector> for DirConnectorOutgoingRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Option<DirConnector>, RouterError> {
-        let request = request.ok_or(RouterError::InvalidArgs)?;
-        let subdir: SubDir = request.metadata.get_metadata().unwrap_or_else(|| SubDir::dot());
+        let subdir = request
+            .sub_directory_path
+            .map(|s| RelativePath::new(s).expect("invalid path"))
+            .unwrap_or_else(|| RelativePath::dot());
         let subdir = vfs::path::Path::validate_and_split(format!("{}", subdir))
             .map_err(|_| RouterError::InvalidArgs)?;
         let path = subdir.with_prefix(&self.path);
-        let rights: Rights = request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
+        let flags = request.directory_rights.ok_or(RouterError::InvalidArgs)?;
         let source_component = self.source_component.upgrade().map_err(RoutingError::from)?;
-        let path = if let Some(IsolatedStoragePath(isolated_storage_path)) =
-            request.metadata.get_metadata()
-        {
-            let isolated_storage_path = vfs::path::Path::validate_and_split(
-                isolated_storage_path.to_string_lossy().into_owned(),
-            )
-            .unwrap();
+        let path = if let Some(isolated_storage_path) = request.isolated_storage_path {
+            let isolated_storage_path =
+                vfs::path::Path::validate_and_split(isolated_storage_path).unwrap();
             source_component.ensure_started(&StartReason::StorageAdmin).await.map_err(|err| {
                 RoutingError::from(ComponentInstanceError::StartFailed {
                     moniker: source_component.moniker.clone(),
@@ -1539,25 +1537,30 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
                 scope: source_component.execution_scope.clone(),
                 moniker: source_component.moniker.clone(),
                 path,
-                flags: rights.into(),
+                flags,
             });
         Ok(Some(dir_connector))
     }
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
-        let request = request.ok_or(RouterError::InvalidArgs)?;
-        let subdir: SubDir = request.metadata.get_metadata().unwrap_or_else(|| SubDir::dot());
+        let subdir = request
+            .sub_directory_path
+            .map(|s| SubDir::new(s).expect("invalid subdir"))
+            .unwrap_or_else(|| SubDir::dot());
         let subdir_relative = subdir.as_ref().clone();
-        let StorageSubdir(storage_subdir) =
-            request.metadata.get_metadata().unwrap_or_else(|| StorageSubdir(RelativePath::dot()));
-        let StorageSourceMoniker(storage_source_moniker) = request
-            .metadata
-            .get_metadata()
-            .unwrap_or_else(|| StorageSourceMoniker(Moniker::root()));
+        let storage_subdir = request
+            .storage_sub_directory_path
+            .map(|s| RelativePath::new(s).expect("invalid subdir"))
+            .unwrap_or_else(|| RelativePath::dot());
+        let storage_source_moniker = request
+            .storage_source_moniker
+            .map(|s| Moniker::parse_str(&s).expect("invalid moniker"))
+            .unwrap_or_else(|| Moniker::root());
+
         let capability_source =
             if let CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
                 capability,
@@ -1591,10 +1594,9 @@ struct ProgramDictionaryRouter {
 impl Routable<Dictionary> for ProgramDictionaryRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<Dictionary>, RouterError> {
-        let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
         fn open_error(e: OpenOutgoingDirError) -> OpenError {
             CapabilityProviderError::from(ComponentProviderError::from(e)).into()
         }
@@ -1617,8 +1619,15 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
                 dir_entry.open_entry(OpenRequest::new(ExecutionScope::new(), FLAGS, path, request))
             });
 
+            let (token_event_pair, server) = zx::EventPair::create();
+            target.clone().register(token_event_pair.koid().unwrap(), server);
+            let request = fsandbox::RouteRequest {
+                requesting: Some(fsandbox::InstanceToken { token: token_event_pair }),
+                ..Default::default()
+            };
+
             let resp = inner_router
-                .route(request.into_fsandbox_request(target))
+                .route(request)
                 .await
                 .map_err(|e| open_error(OpenOutgoingDirError::Fidl(e)))?
                 .map_err(RouterError::from)?;
@@ -1642,12 +1651,12 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
             component.context.remote_capabilities().clone(),
             component.moniker.clone(),
         );
-        router.route(Some(request), target).await
+        router.route(request, target).await
     }
 
     async fn route_debug(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         let source = CapabilitySource::Component(ComponentSource {

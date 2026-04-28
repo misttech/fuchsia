@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::request_metadata::Metadata;
 use crate::capability_source::{CapabilitySource, RemotedAtSource};
 use crate::error::RoutingError;
 use async_trait::async_trait;
 use cm_rust::CapabilityTypeName;
 use cm_types::{IterablePath, RelativePath};
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Data, Dictionary, Request, Routable, Router, RouterResponse,
+    Capability, CapabilityBound, Data, Dictionary, Routable, Router, RouterResponse,
     WeakInstanceToken,
 };
 use std::fmt::Debug;
@@ -61,7 +61,7 @@ pub trait DictExt {
         &self,
         moniker: &ExtendedMoniker,
         path: &'a impl IterablePath,
-        request: Option<Request>,
+        request: RouteRequest,
         debug: bool,
         target: WeakInstanceToken,
     ) -> Result<Option<GenericRouterResponse>, RouterError>;
@@ -156,7 +156,7 @@ impl DictExt for Dictionary {
         impl<T: CapabilityBound> Routable<T> for ErrorRouter {
             async fn route(
                 &self,
-                _request: Option<Request>,
+                _request: RouteRequest,
                 _target: WeakInstanceToken,
             ) -> Result<Option<T>, RouterError> {
                 Err(self.not_found_error.clone())
@@ -164,7 +164,7 @@ impl DictExt for Dictionary {
 
             async fn route_debug(
                 &self,
-                _request: Option<Request>,
+                _request: RouteRequest,
                 _target: WeakInstanceToken,
             ) -> Result<Data, RouterError> {
                 Err(self.not_found_error.clone())
@@ -185,10 +185,10 @@ impl DictExt for Dictionary {
         impl<P: IterablePath + Debug + 'static, T: CapabilityBound> Routable<T> for ScopedDictRouter<P> {
             async fn route(
                 &self,
-                request: Option<Request>,
+                request: RouteRequest,
                 target: WeakInstanceToken,
             ) -> Result<Option<T>, RouterError> {
-                let get_init_request = || request_with_dictionary_replacement(request.as_ref());
+                let get_init_request = || request_with_dictionary_replacement(&request);
 
                 let init_request = (get_init_request)()?;
                 match self.router.route(init_request, target.clone()).await? {
@@ -214,10 +214,10 @@ impl DictExt for Dictionary {
 
             async fn route_debug(
                 &self,
-                request: Option<Request>,
+                request: RouteRequest,
                 target: WeakInstanceToken,
             ) -> Result<Data, RouterError> {
-                let get_init_request = || request_with_dictionary_replacement(request.as_ref());
+                let get_init_request = || request_with_dictionary_replacement(&request);
 
                 // When performing a debug route, we only want to call `route_debug` on the
                 // capability at `path`. Here we're looking up the containing dictionary, so we do
@@ -358,7 +358,7 @@ impl DictExt for Dictionary {
         &self,
         moniker: &ExtendedMoniker,
         path: &'a impl IterablePath,
-        request: Option<Request>,
+        request: RouteRequest,
         debug: bool,
         target: WeakInstanceToken,
     ) -> Result<Option<GenericRouterResponse>, RouterError> {
@@ -376,7 +376,7 @@ impl DictExt for Dictionary {
             if next_idx < num_segments - 1 {
                 // Not at the end of the path yet, so there's more nesting. We expect to have found
                 // a [Dictionary], or a [Dictionary] router -- traverse into this [Dictionary].
-                let dict_request = request_with_dictionary_replacement(request.as_ref())?;
+                let dict_request = request_with_dictionary_replacement(&request)?;
                 match capability {
                     Capability::Dictionary(d) => {
                         current_dict = d;
@@ -396,7 +396,7 @@ impl DictExt for Dictionary {
                                     // so that we return the debug info to the caller (which ought
                                     // to be [`CapabilitySource::Void`]).
                                     let dict_request =
-                                        request_with_dictionary_replacement(request.as_ref())?;
+                                        request_with_dictionary_replacement(&request)?;
                                     let data = r.route_debug(dict_request, target).await?;
                                     return Ok(Some(GenericRouterResponse::Debug(data)));
                                 }
@@ -418,7 +418,6 @@ impl DictExt for Dictionary {
                 //
                 // There's a bit of repetition here because this function supports multiple router
                 // types.
-                let request = request.as_ref().map(|r| r.try_clone()).transpose()?;
                 return match (capability, debug) {
                     (Capability::DictionaryRouter(r), false) => {
                         match r.route(request, target).await? {
@@ -473,8 +472,12 @@ impl DictExt for Dictionary {
                                 panic!("component manager generated a non-router capability")
                             }
                         };
-                        let type_name: Option<CapabilityTypeName> =
-                            request.as_ref().and_then(|r| r.metadata.get_metadata());
+                        let type_name: Option<CapabilityTypeName> = request
+                            .build_type_name
+                            .as_ref()
+                            .map(|s| std::str::FromStr::from_str(s.as_str()))
+                            .transpose()
+                            .expect("invalid type name");
                         return Ok(Some(GenericRouterResponse::Debug(
                             CapabilitySource::RemotedAt(RemotedAtSource {
                                 moniker: remoted_at_moniker,
@@ -498,17 +501,14 @@ impl DictExt for Dictionary {
 /// This is convenient for router lookups of nested paths, since all lookups except the last
 /// segment are dictionary lookups.
 pub(super) fn request_with_dictionary_replacement(
-    request: Option<&Request>,
-) -> Result<Option<Request>, RoutingError> {
-    Ok(request
-        .as_ref()
-        .map(|r| r.try_clone())
-        .transpose()
-        .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?
-        .map(|r| {
-            let _ = r.metadata.set_metadata(CapabilityTypeName::Dictionary);
-            r
-        }))
+    request: &RouteRequest,
+) -> Result<RouteRequest, RoutingError> {
+    if request == &RouteRequest::default() {
+        return Ok(RouteRequest::default());
+    }
+    let mut request_clone = request.clone();
+    request_clone.build_type_name = Some(CapabilityTypeName::Dictionary.to_string());
+    Ok(request_clone)
 }
 
 struct AdditiveDictionaryRouter {
@@ -521,7 +521,7 @@ struct AdditiveDictionaryRouter {
 impl Routable<Dictionary> for AdditiveDictionaryRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<Dictionary>, RouterError> {
         let dictionary = match self.preexisting_router.route(request, target).await {
@@ -534,7 +534,7 @@ impl Routable<Dictionary> for AdditiveDictionaryRouter {
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         self.preexisting_router.route_debug(request, target).await

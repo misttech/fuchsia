@@ -6,12 +6,12 @@ use crate::capability_source::{AggregateCapability, CapabilitySource, FilteredPr
 use async_trait::async_trait;
 use cm_rust::NameMapping;
 use cm_rust::offer::{OfferDecl, OfferServiceDecl};
+use fidl_fuchsia_component_runtime::RouteRequest;
 use router_error::RouterError;
 #[cfg(target_os = "fuchsia")]
 use runtime_capabilities::RemotableCapability;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dictionary, DirConnector, Request, Routable, Router,
-    WeakInstanceToken,
+    Capability, Connector, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
 };
 
 /// A router that will apply renames/filtering on any dictionaries routed through it.
@@ -27,7 +27,7 @@ struct ServiceRenameRouter {
 impl Routable<DirConnector> for ServiceRenameRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<DirConnector>, RouterError> {
         let result = self.router.route(request, target.clone()).await;
@@ -64,7 +64,7 @@ impl Routable<DirConnector> for ServiceRenameRouter {
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         let data = self.router.route_debug(request, target).await?;

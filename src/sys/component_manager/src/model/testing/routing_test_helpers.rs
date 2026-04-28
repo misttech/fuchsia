@@ -31,6 +31,7 @@ use fidl::{self};
 use fidl_fidl_examples_routing_echo as echo;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 use fuchsia_inspect as inspect;
@@ -1521,7 +1522,7 @@ pub mod capability_util {
             _ => panic!("unexpected capability type"),
         };
         let connector = router
-            .route(None, component.clone().as_weak().into())
+            .route(RouteRequest::default(), component.clone().as_weak().into())
             .await
             .expect("failed to route")
             .expect("unexpected router response");

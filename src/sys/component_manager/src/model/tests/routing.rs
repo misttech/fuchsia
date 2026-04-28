@@ -3329,12 +3329,7 @@ async fn source_component_stopping_when_routing() {
         let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
         let cap = Router::<Connector>::try_from(cap).unwrap();
         let conn = cap
-            .route(
-                Some(runtime_capabilities::Request {
-                    metadata: protocol_metadata(Availability::Required),
-                }),
-                root.as_weak().into(),
-            )
+            .route(protocol_metadata(Availability::Required), root.as_weak().into())
             .await
             .expect("failed to route")
             .expect("capability not available");
@@ -3393,12 +3388,7 @@ async fn source_component_stopped_after_routing_before_open() {
     let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
     let cap = Router::<Connector>::try_from(cap).unwrap();
     let conn = cap
-        .route(
-            Some(runtime_capabilities::Request {
-                metadata: protocol_metadata(Availability::Required),
-            }),
-            root.as_weak().into(),
-        )
+        .route(protocol_metadata(Availability::Required), root.as_weak().into())
         .await
         .expect("failed to route")
         .expect("capability not available");
@@ -3462,12 +3452,7 @@ async fn source_component_shutdown_after_routing_before_open() {
     let cap = output.get_capability(&RelativePath::new("foo").unwrap()).unwrap();
     let cap = Router::<Connector>::try_from(cap).unwrap();
     let conn = cap
-        .route(
-            Some(runtime_capabilities::Request {
-                metadata: protocol_metadata(Availability::Required),
-            }),
-            root.as_weak().into(),
-        )
+        .route(protocol_metadata(Availability::Required), root.as_weak().into())
         .await
         .expect("failed to route")
         .expect("capability not available");

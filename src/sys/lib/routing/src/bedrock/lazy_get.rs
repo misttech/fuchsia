@@ -6,10 +6,11 @@ use crate::bedrock::dict_ext::{GenericRouterResponse, request_with_dictionary_re
 use crate::{DictExt, RoutingError};
 use async_trait::async_trait;
 use cm_types::IterablePath;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    CapabilityBound, Data, Dictionary, Request, Routable, Router, WeakInstanceToken,
+    CapabilityBound, Data, Dictionary, Routable, Router, WeakInstanceToken,
 };
 use std::fmt::Debug;
 
@@ -39,10 +40,10 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
         impl<P: IterablePath + Debug + 'static, T: CapabilityBound> Routable<T> for ScopedDictRouter<P> {
             async fn route(
                 &self,
-                request: Option<Request>,
+                request: RouteRequest,
                 target: WeakInstanceToken,
             ) -> Result<Option<T>, RouterError> {
-                let get_init_request = || request_with_dictionary_replacement(request.as_ref());
+                let get_init_request = || request_with_dictionary_replacement(&request);
 
                 let init_request = (get_init_request)()?;
                 match self.router.route(init_request, target.clone()).await? {
@@ -68,10 +69,10 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
 
             async fn route_debug(
                 &self,
-                request: Option<Request>,
+                request: RouteRequest,
                 target: WeakInstanceToken,
             ) -> Result<Data, RouterError> {
-                let get_init_request = || request_with_dictionary_replacement(request.as_ref());
+                let get_init_request = || request_with_dictionary_replacement(&request);
 
                 // When performing a debug route, we only want to call `route_debug` on the
                 // capability at `path`. Here we're looking up the containing dictionary, so we do

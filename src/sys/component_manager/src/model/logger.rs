@@ -8,6 +8,7 @@ use cm_types::Name;
 use diagnostics_log::{BufferedPublisher, PublisherOptions};
 use fidl::endpoints;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_logger as flogger;
 use fuchsia_sync::Mutex;
 use log::Log;
@@ -101,7 +102,7 @@ impl LoggerCache {
         let scope = &resolved_instance_state.execution_scope;
         scope.spawn(async move {
             // the router itself should handle logging things in event of an error
-            if let Ok(Some(c)) = router.route(None, target).await {
+            if let Ok(Some(c)) = router.route(RouteRequest::default(), target).await {
                 let _ = c.send(runtime_capabilities::Message { channel: server.into() });
             }
         });

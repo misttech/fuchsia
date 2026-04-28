@@ -41,6 +41,7 @@ fidl("fuchsia.component.runtime") {
   stable = true
   visibility = [ "*" ]
   public_deps = [
+    "//sdk/fidl/fuchsia.component",
     "//sdk/fidl/fuchsia.component.decl",
     "//sdk/fidl/fuchsia.io",
     "//zircon/vdso/zx",

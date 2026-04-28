@@ -29,7 +29,6 @@ use routing::{
     SandboxPath, debug_route_sandbox_path, debug_route_sandbox_path_with_request,
     debug_route_storage_backing_directory,
 };
-use runtime_capabilities::{Capability, Data};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -617,17 +616,9 @@ impl ComponentModelForAnalyzer {
                 }
             }
         };
-        let request = target_decl.to_route_request();
-        if skip_policy_check {
-            request
-                .metadata
-                .insert(
-                    Name::new(routing::bedrock::with_policy_check::SKIP_POLICY_CHECKS).unwrap(),
-                    Capability::Data(Data::Uint64(1)),
-                )
-                .unwrap();
-        }
-        let res = debug_route_sandbox_path_with_request(target, sandbox_path, Some(request))
+        let mut request = target_decl.to_route_request();
+        request.skip_policy_checks = Some(skip_policy_check);
+        let res = debug_route_sandbox_path_with_request(target, sandbox_path, request)
             .now_or_never()
             .expect("future was not ready immediately");
         results.push(process_route_result(res.clone()).await);
@@ -1009,7 +1000,7 @@ mod tests {
     use routing::capability_source::CapabilitySource;
     use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
     use routing::error::ComponentInstanceError;
-    use runtime_capabilities::{Capability, Request};
+    use runtime_capabilities::Capability;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -1460,8 +1451,8 @@ mod tests {
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
-        let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
-        let res = runner_router.route_debug(Some(request), child_instance.as_weak().into()).await;
+        let request = runner_metadata(cm_rust::Availability::Required);
+        let res = runner_router.route_debug(request, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
@@ -1475,8 +1466,8 @@ mod tests {
         let Capability::ConnectorRouter(resolver_router) = resolver_router_capability else {
             panic!("unexpected capability for resolver");
         };
-        let request = Request { metadata: resolver_metadata(cm_rust::Availability::Required) };
-        let res = resolver_router.route_debug(Some(request), child_instance.as_weak().into()).await;
+        let request = resolver_metadata(cm_rust::Availability::Required);
+        let res = resolver_router.route_debug(request, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
@@ -1488,8 +1479,8 @@ mod tests {
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
-        let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
-        let res = runner_router.route_debug(Some(request), child_instance.as_weak().into()).await;
+        let request = runner_metadata(cm_rust::Availability::Required);
+        let res = runner_router.route_debug(request, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
@@ -1500,8 +1491,8 @@ mod tests {
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
-        let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
-        let res = runner_router.route_debug(Some(request), child_instance.as_weak().into()).await;
+        let request = runner_metadata(cm_rust::Availability::Required);
+        let res = runner_router.route_debug(request, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
@@ -1513,8 +1504,8 @@ mod tests {
         let Capability::ConnectorRouter(resolver_router) = resolver_router_capability else {
             panic!("unexpected capability for resolver");
         };
-        let request = Request { metadata: resolver_metadata(cm_rust::Availability::Required) };
-        let res = resolver_router.route_debug(Some(request), child_instance.as_weak().into()).await;
+        let request = resolver_metadata(cm_rust::Availability::Required);
+        let res = resolver_router.route_debug(request, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(data) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),

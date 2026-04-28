@@ -7,11 +7,10 @@ use crate::component_instance::{ComponentInstanceInterface, WeakExtendedInstance
 use crate::error::{ComponentInstanceError, RoutingError};
 use crate::policy::GlobalPolicyChecker;
 use async_trait::async_trait;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-#[cfg(not(target_os = "fuchsia"))]
-use runtime_capabilities::Capability;
-use runtime_capabilities::{CapabilityBound, Data, Request, Routable, Router, WeakInstanceToken};
+use runtime_capabilities::{CapabilityBound, Data, Routable, Router, WeakInstanceToken};
 
 /// If the metadata for a route contains a Data::Uint64 value under this key with a value greater
 /// than 0, then no policy checks will be performed. This behavior is limited to non-fuchsia
@@ -75,19 +74,12 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> PolicyCheckRou
 
     fn check_policy(
         &self,
-        _request: &Option<Request>,
+        _request: &RouteRequest,
         target_token: WeakInstanceToken,
     ) -> Result<(), RouterError> {
         #[cfg(not(target_os = "fuchsia"))]
-        if let Some(Capability::Data(runtime_capabilities::Data::Uint64(num))) = _request
-            .as_ref()
-            .ok_or_else(|| RouterError::InvalidArgs)?
-            .metadata
-            .get(&cm_types::Name::new(SKIP_POLICY_CHECKS).unwrap())
-        {
-            if num > 0 {
-                return Ok(());
-            }
+        if _request.skip_policy_checks.unwrap_or(false) {
+            return Ok(());
         }
         let target = target_token
             .inner
@@ -113,7 +105,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
 {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target_token: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         self.check_policy(&request, target_token.clone())?;
@@ -122,7 +114,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target_token: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         self.check_policy(&request, target_token.clone())?;

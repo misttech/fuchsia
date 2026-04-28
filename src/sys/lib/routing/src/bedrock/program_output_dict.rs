@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::request_metadata::{
-    InheritRights, IsolatedStoragePath, Metadata, StorageSourceMoniker, StorageSubdir,
-};
 use crate::bedrock::structured_dict::ComponentInput;
 use crate::bedrock::with_policy_check::WithPolicyCheck;
 use crate::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
@@ -13,19 +10,19 @@ use crate::component_instance::{
     WeakExtendedInstanceInterface,
 };
 use crate::error::RoutingError;
-use crate::rights::Rights;
 use crate::{DictExt, LazyGet, WeakInstanceTokenExt};
 use async_trait::async_trait;
 use cm_rust::{CapabilityTypeName, NativeIntoFidl};
 use cm_types::{Path, RelativePath};
 use component_id_index::InstanceId;
 use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use log::warn;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Connector, Data, Dictionary, DirConnector, Request, Routable, Router, WeakInstanceToken,
+    Connector, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -194,9 +191,9 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             impl<C: ComponentInstanceInterface + 'static> StorageBackingDirRouter<C> {
                 fn prepare_route(
                     &self,
-                    request: Option<Request>,
+                    mut request: RouteRequest,
                     target: WeakInstanceToken,
-                ) -> Result<Request, RouterError> {
+                ) -> Result<RouteRequest, RouterError> {
                     fn generate_moniker_based_storage_path(
                         subdir: Option<String>,
                         moniker: &Moniker,
@@ -231,7 +228,6 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                         dir_path.push("data".to_string());
                         dir_path.into_iter().collect()
                     }
-                    let request = request.ok_or(RouterError::InvalidArgs)?;
                     let StorageBackingDirRouter {
                         subdir,
                         storage_id,
@@ -271,14 +267,13 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                     let subdir_opt = if subdir.is_dot() { None } else { Some(subdir.to_string()) };
                     let isolated_storage_path =
                         generate_moniker_based_storage_path(subdir_opt, &moniker, instance_id);
-                    request.metadata.set_metadata(IsolatedStoragePath(isolated_storage_path));
-                    request.metadata.set_metadata(CapabilityTypeName::Directory);
-                    request.metadata.set_metadata(Rights::from(fio::RW_STAR_DIR));
-                    request.metadata.set_metadata(InheritRights(false));
-                    request.metadata.set_metadata(StorageSubdir(subdir.clone()));
-                    request
-                        .metadata
-                        .set_metadata(StorageSourceMoniker(storage_source_moniker.clone()));
+                    request.isolated_storage_path =
+                        Some(format!("{}", isolated_storage_path.display()));
+                    request.build_type_name = Some(CapabilityTypeName::Directory.to_string());
+                    request.directory_rights = Some(fio::PERM_READABLE | fio::PERM_WRITABLE);
+                    request.inherit_rights = Some(false);
+                    request.storage_sub_directory_path = Some(subdir.to_string());
+                    request.storage_source_moniker = Some(storage_source_moniker.to_string());
                     Ok(request)
                 }
             }
@@ -289,23 +284,21 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             {
                 async fn route(
                     &self,
-                    request: Option<Request>,
+                    request: RouteRequest,
                     target: WeakInstanceToken,
                 ) -> Result<Option<DirConnector>, RouterError> {
                     let request = self.prepare_route(request, target)?;
-                    self.backing_dir_router
-                        .route(Some(request), self.backing_dir_target.clone())
-                        .await
+                    self.backing_dir_router.route(request, self.backing_dir_target.clone()).await
                 }
 
                 async fn route_debug(
                     &self,
-                    request: Option<Request>,
+                    request: RouteRequest,
                     target: WeakInstanceToken,
                 ) -> Result<Data, RouterError> {
                     let request = self.prepare_route(request, target)?;
                     self.backing_dir_router
-                        .route_debug(Some(request), self.backing_dir_target.clone())
+                        .route_debug(request, self.backing_dir_target.clone())
                         .await
                 }
             }
@@ -372,14 +365,14 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             impl Routable<Data> for ConfigRouter {
                 async fn route(
                     &self,
-                    _request: Option<Request>,
+                    _request: RouteRequest,
                     _target: WeakInstanceToken,
                 ) -> Result<Option<Data>, RouterError> {
                     Ok(Some(self.data.clone()))
                 }
                 async fn route_debug(
                     &self,
-                    _request: Option<Request>,
+                    _request: RouteRequest,
                     _target: WeakInstanceToken,
                 ) -> Result<Data, RouterError> {
                     Ok(self
@@ -457,7 +450,7 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
     impl Routable<Dictionary> for DictRouter {
         async fn route(
             &self,
-            _request: Option<Request>,
+            _request: RouteRequest,
             _target: WeakInstanceToken,
         ) -> Result<Option<Dictionary>, RouterError> {
             Ok(Some(self.dict.clone().into()))
@@ -465,7 +458,7 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
 
         async fn route_debug(
             &self,
-            _request: Option<Request>,
+            _request: RouteRequest,
             _target: WeakInstanceToken,
         ) -> Result<Data, RouterError> {
             Ok(self

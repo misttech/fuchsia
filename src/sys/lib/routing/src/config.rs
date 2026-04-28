@@ -54,10 +54,8 @@ where
         }
         .into());
     };
-    let request = runtime_capabilities::Request {
-        metadata: request_metadata::config_metadata(use_config.availability),
-    };
-    let data = match router.route(Some(request), component.as_weak().into()).await {
+    let request = request_metadata::config_metadata(use_config.availability);
+    let data = match router.route(request, component.as_weak().into()).await {
         Ok(Some(d)) => d,
         Ok(None) => return Ok(use_config.default.clone()),
         Err(e)

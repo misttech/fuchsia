@@ -19,14 +19,14 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select};
 use moniker::Moniker;
 use router_error::{Explain, RouterError};
-use routing::bedrock::request_metadata::Metadata;
 use routing::capability_source::{CapabilitySource, RemotedAtSource};
 use routing::error::RoutingError;
 use runtime_capabilities::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dictionary, DirConnectable,
-    DirConnector, Message, RemotableCapability, Request, Routable, Router, WeakInstanceToken,
+    DirConnector, Message, RemotableCapability, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use vfs::WeakExecutionScope;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
@@ -522,26 +522,6 @@ fn data_from_remote(data: fruntime::Data) -> Result<Data, fruntime::Capabilities
     }
 }
 
-fn request_to_remote(
-    remote_capabilities: &RemotedRuntimeCapabilities,
-    request: Request,
-) -> fruntime::RouteRequest {
-    let (metadata1, metadata) = zx::EventPair::create();
-    remote_capabilities.store(metadata1, request.metadata).expect("this should be infallible");
-    fruntime::RouteRequest { metadata: Some(metadata), ..Default::default() }
-}
-
-fn request_from_remote(
-    remote_capabilities: &RemotedRuntimeCapabilities,
-    request: fruntime::RouteRequest,
-) -> Result<Option<Request>, fruntime::CapabilitiesError> {
-    let sandbox_request = match request.metadata {
-        Some(m) => Some(Request { metadata: remote_capabilities.get(m)? }),
-        None => None,
-    };
-    Ok(sandbox_request)
-}
-
 async fn route_from_remote<C>(
     remote_capabilities: &RemotedRuntimeCapabilities,
     router: zx::EventPair,
@@ -555,11 +535,9 @@ where
 {
     let router: Router<C> =
         remote_capabilities.get(router).map_err(|_| zx::Status::INVALID_ARGS)?;
-    let maybe_request =
-        request_from_remote(&remote_capabilities, request).map_err(|_| zx::Status::INVALID_ARGS)?;
     let target: WeakInstanceToken =
         remote_capabilities.get(target).map_err(|_| zx::Status::INVALID_ARGS)?;
-    match router.route(maybe_request, target).await {
+    match router.route(request, target).await {
         Ok(Some(cap)) => {
             remote_capabilities
                 .store(capability_result, cap)
@@ -595,11 +573,9 @@ where
 {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: fruntime::RouteRequest,
         target_token: WeakInstanceToken,
     ) -> Result<Option<C>, RouterError> {
-        let request =
-            request.map(|r| request_to_remote(&self.remote_capabilities, r)).unwrap_or_default();
         let (token, token_other_end) = zx::EventPair::create();
         self.remote_capabilities
             .store(token_other_end, target_token)
@@ -632,10 +608,11 @@ where
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: fruntime::RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
-        let type_name: Option<CapabilityTypeName> = request.and_then(|r| r.metadata.get_metadata());
+        let type_name: Option<CapabilityTypeName> =
+            request.build_type_name.and_then(|s| CapabilityTypeName::from_str(s.as_str()).ok());
         Ok(CapabilitySource::RemotedAt(RemotedAtSource {
             moniker: self.moniker.clone(),
             type_name,
@@ -663,7 +640,7 @@ impl RemoteRoutable for fruntime::ConnectorRouterProxy {
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
     ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error> {
-        self.route(request, instance_token, event_pair).await
+        self.route(&request, instance_token, event_pair).await
     }
 }
 
@@ -675,7 +652,7 @@ impl RemoteRoutable for fruntime::DirConnectorRouterProxy {
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
     ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error> {
-        self.route(request, instance_token, event_pair).await
+        self.route(&request, instance_token, event_pair).await
     }
 }
 
@@ -687,7 +664,7 @@ impl RemoteRoutable for fruntime::DictionaryRouterProxy {
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
     ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error> {
-        self.route(request, instance_token, event_pair).await
+        self.route(&request, instance_token, event_pair).await
     }
 }
 
@@ -699,7 +676,7 @@ impl RemoteRoutable for fruntime::DataRouterProxy {
         instance_token: zx::EventPair,
         event_pair: zx::EventPair,
     ) -> Result<Result<fruntime::RouterResponse, i32>, fidl::Error> {
-        self.route(request, instance_token, event_pair).await
+        self.route(&request, instance_token, event_pair).await
     }
 }
 
@@ -1002,7 +979,7 @@ mod tests {
         let (connector, connector_other_end) = zx::EventPair::create();
         let success_route_fut = proxy.connector_router_route(
             router.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            Default::default(),
+            &Default::default(),
             instance_token,
             connector_other_end,
         );
@@ -1045,7 +1022,7 @@ mod tests {
         let (dir_connector, dir_connector_other_end) = zx::EventPair::create();
         let success_route_fut = proxy.dir_connector_router_route(
             router.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            Default::default(),
+            &Default::default(),
             instance_token,
             dir_connector_other_end,
         );
@@ -1084,7 +1061,7 @@ mod tests {
         let (dictionary, dictionary_other_end) = zx::EventPair::create();
         let success_route_fut = proxy.dictionary_router_route(
             router.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            Default::default(),
+            &Default::default(),
             instance_token,
             dictionary_other_end,
         );
@@ -1120,7 +1097,7 @@ mod tests {
         let (data, data_other_end) = zx::EventPair::create();
         let success_route_fut = proxy.data_router_route(
             router.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-            Default::default(),
+            &Default::default(),
             instance_token,
             data_other_end,
         );
@@ -1152,11 +1129,13 @@ mod tests {
 
         let router: Router<Connector> = remote_capabilities.get(router).unwrap();
 
-        let capability_source =
-            match router.route_debug(None, WeakInstanceToken::new_invalid()).await {
-                Ok(data) => CapabilitySource::try_from(data).unwrap(),
-                other_value => panic!("unexpected response from router: {other_value:?}"),
-            };
+        let capability_source = match router
+            .route_debug(fruntime::RouteRequest::default(), WeakInstanceToken::new_invalid())
+            .await
+        {
+            Ok(data) => CapabilitySource::try_from(data).unwrap(),
+            other_value => panic!("unexpected response from router: {other_value:?}"),
+        };
         assert_eq!(
             capability_source,
             CapabilitySource::RemotedAt(RemotedAtSource {
@@ -1180,7 +1159,10 @@ mod tests {
         let router: Router<Connector> = remote_capabilities.get(router).unwrap();
         drop(router_stream);
 
-        let router_err = match router.route(None, WeakInstanceToken::new_invalid()).await {
+        let router_err = match router
+            .route(fruntime::RouteRequest::default(), WeakInstanceToken::new_invalid())
+            .await
+        {
             Ok(val) => panic!("unexpected success: {val:?}"),
             Err(e) => e,
         };

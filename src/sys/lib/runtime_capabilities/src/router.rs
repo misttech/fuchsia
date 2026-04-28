@@ -2,42 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Capability, CapabilityBound, Data, Dictionary, WeakInstanceToken};
+use crate::{CapabilityBound, Data, WeakInstanceToken};
 use async_trait::async_trait;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use router_error::RouterError;
 use std::fmt;
 use std::fmt::Debug;
 use std::sync::Arc;
-
-/// [`Request`] contains metadata around how to obtain a capability.
-#[derive(Debug)]
-pub struct Request {
-    /// Metadata associated with the request.
-    pub metadata: Dictionary,
-}
-
-impl Request {
-    /// Clones the [`Request`] where the metadata [`Dictionary`] is a shallow copy. As a
-    /// result, the metadata [`Dictionary`] must not contain a nested [`Dictionary`] otherwise a
-    /// [`RouterError::InvalidArgs`] error will be returned.
-    pub fn try_clone(&self) -> Result<Self, RouterError> {
-        self.metadata
-            .enumerate()
-            .find_map(|(_, v)| {
-                match v {
-                    // Since Dictionaries are shallow copied, throw an error if
-                    // there is a nested Dictionary.
-                    Capability::Dictionary(_) => Some(Err::<Self, _>(RouterError::InvalidArgs)),
-                    _ => None,
-                }
-            })
-            .transpose()?;
-        let metadata = self.metadata.shallow_copy().map_err(|()| RouterError::InvalidArgs)?;
-        Ok(Self { metadata })
-    }
-}
 
 /// Response of a [Router] request.
 #[derive(Debug)]
@@ -61,7 +34,7 @@ where
 {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         // A reference to the requesting component.
         target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError>;
@@ -70,7 +43,7 @@ where
     /// `fidl_fuchsia_internal::CapabilitySource` persisted into bytes.
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         // A reference to the requesting component.
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError>;
@@ -126,7 +99,7 @@ impl<T: CapabilityBound> fmt::Debug for Router<T> {
 impl<T: CapabilityBound, F> Routable<T> for F
 where
     F: Fn(
-            Option<Request>,
+            RouteRequest,
             bool,
             WeakInstanceToken,
         ) -> BoxFuture<'static, Result<RouterResponse<T>, RouterError>>
@@ -137,7 +110,7 @@ where
     // We use the desugared form of `async_trait` to avoid unnecessary boxing.
     fn route<'a, 'b>(
         &'a self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> BoxFuture<'b, Result<Option<T>, RouterError>>
     where
@@ -158,7 +131,7 @@ where
 
     fn route_debug<'a, 'b>(
         &'a self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> BoxFuture<'b, Result<Data, RouterError>>
     where
@@ -181,7 +154,7 @@ where
 impl<T: CapabilityBound> Routable<T> for Router<T> {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         Router::route(self, request, target).await
@@ -189,7 +162,7 @@ impl<T: CapabilityBound> Routable<T> for Router<T> {
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         Router::route_debug(self, request, target).await
@@ -217,7 +190,7 @@ impl<T: CapabilityBound> Router<T> {
     /// Obtain a capability from this router, following the description in `request`.
     pub async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         self.routable.route(request, target).await
@@ -226,7 +199,7 @@ impl<T: CapabilityBound> Router<T> {
     /// Obtain a CapabilitySource from this router, following the description in `request`.
     pub async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         self.routable.route_debug(request, target).await
@@ -251,7 +224,7 @@ struct OkRouter<T: Clone + CapabilityBound> {
 impl<T: Clone + CapabilityBound> Routable<T> for OkRouter<T> {
     async fn route(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         Ok(Some(self.v.clone()))
@@ -259,7 +232,7 @@ impl<T: Clone + CapabilityBound> Routable<T> for OkRouter<T> {
 
     async fn route_debug(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         panic!("OkRouter does not handle debug routes");
@@ -275,7 +248,7 @@ struct DebugRouter {
 impl<T: CapabilityBound> Routable<T> for DebugRouter {
     async fn route(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         panic!("DebugRouter does not handle non-debug routes");
@@ -283,7 +256,7 @@ impl<T: CapabilityBound> Routable<T> for DebugRouter {
 
     async fn route_debug(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         Ok(self.v.clone())
@@ -299,7 +272,7 @@ struct ErrRouter {
 impl<T: CapabilityBound> Routable<T> for ErrRouter {
     async fn route(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         Err(self.v.clone())
@@ -307,7 +280,7 @@ impl<T: CapabilityBound> Routable<T> for ErrRouter {
 
     async fn route_debug(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         Err(self.v.clone())

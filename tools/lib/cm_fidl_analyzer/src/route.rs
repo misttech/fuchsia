@@ -6,13 +6,13 @@ use crate::component_model::AnalyzerModelError;
 use cm_rust::offer::OfferDeclCommon;
 use cm_rust::{Availability, CapabilityTypeName, ExposeDeclCommon, SourceName, UseDeclCommon};
 use cm_types::Name;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use moniker::Moniker;
 use routing::bedrock::request_metadata::{
     config_metadata, dictionary_metadata, directory_metadata, event_stream_metadata,
     protocol_metadata, resolver_metadata, runner_metadata, service_metadata, storage_metadata,
 };
 use routing::capability_source::CapabilitySource;
-use runtime_capabilities::Request;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, PartialEq, Debug, Serialize)]
@@ -36,7 +36,7 @@ impl TargetDecl {
         }
     }
 
-    pub fn to_route_request(&self) -> Request {
+    pub fn to_route_request(&self) -> RouteRequest {
         let (type_name, availability) = match self {
             Self::Use(u) => (CapabilityTypeName::from(u), *u.availability()),
             Self::Offer(o) => (CapabilityTypeName::from(o), *o.availability()),
@@ -45,7 +45,7 @@ impl TargetDecl {
                 (CapabilityTypeName::Resolver, Availability::Required)
             }
         };
-        let metadata = match type_name {
+        match type_name {
             CapabilityTypeName::Directory => directory_metadata(availability, None, None),
             CapabilityTypeName::EventStream => {
                 event_stream_metadata(availability, Default::default())
@@ -57,9 +57,7 @@ impl TargetDecl {
             CapabilityTypeName::Storage => storage_metadata(availability),
             CapabilityTypeName::Dictionary => dictionary_metadata(availability),
             CapabilityTypeName::Config => config_metadata(availability),
-        };
-
-        Request { metadata }
+        }
     }
 }
 

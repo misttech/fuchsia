@@ -10,10 +10,11 @@ use ::routing_test_helpers::rights::CommonRightsTest;
 use cm_rust::offer::*;
 use cm_rust::*;
 use cm_rust_testing::*;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use routing::WithPorcelain;
 use routing::error::RouteRequestErrorInfo;
-use runtime_capabilities::{DirConnector, Request, Router, WeakInstanceToken};
+use runtime_capabilities::{DirConnector, Router, WeakInstanceToken};
 
 #[fuchsia::test]
 async fn offer_increasing_rights() {
@@ -131,7 +132,7 @@ async fn framework_directory_incompatible_rights() {
             "foo_data",
             WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
                 Router::<DirConnector>::new(
-                    move |_request: Option<Request>, _debug: bool, _target: WeakInstanceToken| {
+                    move |_request: RouteRequest, _debug: bool, _target: WeakInstanceToken| {
                         panic!("routing should have failed before we get here")
                     },
                 ),

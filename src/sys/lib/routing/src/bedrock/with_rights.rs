@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::request_metadata::{InheritRights, IntermediateRights, Metadata};
 use crate::error::RoutingError;
 use crate::rights::Rights;
 use async_trait::async_trait;
+use fidl_fuchsia_component_runtime::RouteRequest;
+use fidl_fuchsia_io as fio;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use runtime_capabilities::{CapabilityBound, Data, Request, Routable, Router, WeakInstanceToken};
+use runtime_capabilities::{CapabilityBound, Data, Routable, Router, WeakInstanceToken};
 
 struct RightsRouter<T: CapabilityBound> {
     router: Router<T>,
@@ -17,31 +18,34 @@ struct RightsRouter<T: CapabilityBound> {
 }
 
 impl<T: CapabilityBound> RightsRouter<T> {
-    fn check_and_compute_rights(&self, request: Option<Request>) -> Result<Request, RouterError> {
-        let request = request.ok_or(RouterError::InvalidArgs)?;
+    fn check_and_compute_rights(
+        &self,
+        mut request: RouteRequest,
+    ) -> Result<RouteRequest, RouterError> {
+        if request == RouteRequest::default() {
+            return Err(RouterError::InvalidArgs);
+        }
         let RightsRouter { router: _, rights, moniker } = self;
-        let InheritRights(inherit) =
-            request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
-        let request_rights: Rights = match request.metadata.get_metadata() {
-            Some(request_rights) => request_rights,
+        let inherit = request.inherit_rights.ok_or(RouterError::InvalidArgs)?;
+        let request_rights: Rights = match request.directory_rights {
+            Some(request_rights) => request_rights.into(),
             None => {
                 if inherit {
-                    request.metadata.set_metadata(*rights);
+                    request.directory_rights = Some(fio::Flags::from(*rights));
                     *rights
                 } else {
                     Err(RouterError::InvalidArgs)?
                 }
             }
         };
-        let intermediate_rights: Option<IntermediateRights> = request.metadata.get_metadata();
         // The rights of the previous step (if any) of the route must be
         // compatible with this step of the route.
-        if let Some(IntermediateRights(intermediate_rights)) = intermediate_rights {
-            intermediate_rights
+        if let Some(intermediate_rights) = request.directory_intermediate_rights {
+            Rights::from(intermediate_rights)
                 .validate_next(&rights, moniker.clone().into())
                 .map_err(|e| router_error::RouterError::from(RoutingError::from(e)))?;
         };
-        request.metadata.set_metadata(IntermediateRights(*rights));
+        request.directory_intermediate_rights = Some(fio::Flags::from(*rights));
         // The rights of the request must be compatible with the
         // rights of this step of the route.
         match request_rights.validate_next(&rights, moniker.clone().into()) {
@@ -55,20 +59,20 @@ impl<T: CapabilityBound> RightsRouter<T> {
 impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         let request = self.check_and_compute_rights(request)?;
-        self.router.route(Some(request), target).await
+        self.router.route(request, target).await
     }
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         let request = self.check_and_compute_rights(request)?;
-        self.router.route_debug(Some(request), target).await
+        self.router.route_debug(request, target).await
     }
 }
 
@@ -90,7 +94,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_fuchsia_io as fio;
     use router_error::RouterError;
-    use runtime_capabilities::{Data, Dictionary, WeakInstanceToken};
+    use runtime_capabilities::{Data, WeakInstanceToken};
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -113,11 +117,12 @@ mod tests {
         let source = Data::String("hello".into());
         let base = Router::<Data>::new_ok(source);
         let proxy = base.with_rights(ExtendedMoniker::ComponentManager, fio::RW_STAR_DIR.into());
-        let metadata = Dictionary::new();
-        metadata.set_metadata(InheritRights(false));
-        metadata.set_metadata(Into::<Rights>::into(fio::R_STAR_DIR));
-        let capability =
-            proxy.route(Some(Request { metadata }), FakeComponentToken::new()).await.unwrap();
+        let request = RouteRequest {
+            directory_rights: Some(fio::PERM_READABLE),
+            inherit_rights: Some(false),
+            ..Default::default()
+        };
+        let capability = proxy.route(request, FakeComponentToken::new()).await.unwrap();
         let capability = match capability {
             Some(d) => d,
             c => panic!("Bad enum {:#?}", c),
@@ -130,11 +135,12 @@ mod tests {
         let source = Data::String("hello".into());
         let base = Router::<Data>::new_ok(source);
         let proxy = base.with_rights(ExtendedMoniker::ComponentManager, fio::R_STAR_DIR.into());
-        let metadata = Dictionary::new();
-        metadata.set_metadata(InheritRights(false));
-        metadata.set_metadata(Into::<Rights>::into(fio::RW_STAR_DIR));
-        let error =
-            proxy.route(Some(Request { metadata }), FakeComponentToken::new()).await.unwrap_err();
+        let request = RouteRequest {
+            directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
+            inherit_rights: Some(false),
+            ..Default::default()
+        };
+        let error = proxy.route(request, FakeComponentToken::new()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)
@@ -154,13 +160,12 @@ mod tests {
             .with_rights(ExtendedMoniker::ComponentManager, fio::R_STAR_DIR.into());
         let intermediate =
             base.with_rights(ExtendedMoniker::ComponentManager, fio::RW_STAR_DIR.into());
-        let metadata = Dictionary::new();
-        metadata.set_metadata(InheritRights(false));
-        metadata.set_metadata(Into::<Rights>::into(fio::R_STAR_DIR));
-        let error = intermediate
-            .route(Some(Request { metadata }), FakeComponentToken::new())
-            .await
-            .unwrap_err();
+        let request = RouteRequest {
+            directory_rights: Some(fio::PERM_READABLE),
+            inherit_rights: Some(false),
+            ..Default::default()
+        };
+        let error = intermediate.route(request, FakeComponentToken::new()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)

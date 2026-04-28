@@ -15,6 +15,7 @@ rustc_library("runtime_capabilities") {
   with_unit_tests = true
 
   deps = [
+    "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
     "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx-status",

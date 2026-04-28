@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use clonable_error::ClonableError;
 use errors::RebootError;
 use fidl::endpoints::{self};
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
@@ -18,7 +19,7 @@ use fuchsia_sync::Mutex;
 use log::warn;
 use moniker::Moniker;
 use routing::error::{ComponentInstanceError, RoutingError};
-use runtime_capabilities::{Connector, Data, Request, Routable, Router, WeakInstanceToken};
+use runtime_capabilities::{Connector, Data, Routable, Router, WeakInstanceToken};
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
@@ -122,7 +123,7 @@ impl ComponentManagerInstance {
         impl Routable<Connector> for RootCapabilityRouter {
             async fn route(
                 &self,
-                request: Option<Request>,
+                request: RouteRequest,
                 target: WeakInstanceToken,
             ) -> Result<Option<Connector>, RouterError> {
                 let router = self.get_router().await?;
@@ -130,7 +131,7 @@ impl ComponentManagerInstance {
             }
             async fn route_debug(
                 &self,
-                request: Option<Request>,
+                request: RouteRequest,
                 target: WeakInstanceToken,
             ) -> Result<Data, RouterError> {
                 let router = self.get_router().await?;

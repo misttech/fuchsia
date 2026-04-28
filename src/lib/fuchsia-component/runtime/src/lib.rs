@@ -10,10 +10,12 @@ pub use everything::*;
 
 #[cfg(fuchsia_api_level_less_than = "HEAD")]
 mod everything {
-    use {
-        fidl as _, fidl_fuchsia_component_runtime as _, fidl_fuchsia_io as _,
-        fuchsia_component_client as _, futures as _, zx as _,
-    };
+    use fidl as _;
+    use fidl_fuchsia_component_runtime as _;
+    use fidl_fuchsia_io as _;
+    use fuchsia_component_client as _;
+    use futures as _;
+    use zx as _;
 
     #[cfg(test)]
     mod tests {
@@ -24,13 +26,14 @@ mod everything {
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 mod everything {
     use fidl::endpoints::{ServerEnd, create_proxy, create_request_stream};
+    use fidl_fuchsia_component_runtime as fruntime;
+    use fidl_fuchsia_io as fio;
     use fuchsia_component_client::connect_to_protocol;
     use futures::future::BoxFuture;
     use futures::{Future, Stream, StreamExt};
     use std::pin::{Pin, pin};
     use std::task::{Context, Poll};
     use zx::HandleBased;
-    use {fidl_fuchsia_component_runtime as fruntime, fidl_fuchsia_io as fio};
 
     /// The value of a data capability. Can be stored in or retrieved from a [`Data`].
     #[derive(Debug, PartialEq, Clone)]
@@ -954,7 +957,7 @@ mod everything {
                     self.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
                         "failed to duplicate handle, please only use handles with the duplicate right",
                     ),
-                    request,
+                    &request,
                     instance_token.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
                         "failed to duplicate handle, please only use handles with the duplicate right",
                     ),
@@ -1125,7 +1128,7 @@ mod everything {
                     self.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
                         "failed to duplicate handle, please only use handles with the duplicate right",
                     ),
-                    request,
+                    &request,
                     instance_token.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
                         "failed to duplicate handle, please only use handles with the duplicate right",
                     ),
@@ -1295,7 +1298,7 @@ mod everything {
                     self.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
                         "failed to duplicate handle, please only use handles with the duplicate right",
                     ),
-                    request,
+                    &request,
                     instance_token.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
                         "failed to duplicate handle, please only use handles with the duplicate right",
                     ),
@@ -1465,7 +1468,7 @@ mod everything {
                     self.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
                         "failed to duplicate handle, please only use handles with the duplicate right",
                     ),
-                    request,
+                    &request,
                     instance_token.handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect(
                         "failed to duplicate handle, please only use handles with the duplicate right",
                     ),

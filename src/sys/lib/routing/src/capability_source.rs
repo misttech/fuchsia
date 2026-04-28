@@ -548,13 +548,6 @@ pub enum InternalCapability {
 #[fidl_decl(fidl_table = "finternal::InternalEventStreamCapability")]
 pub struct InternalEventStreamCapability {
     pub name: Name,
-    pub route_metadata: EventStreamRouteMetadata,
-}
-
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Default, Debug, PartialEq, Clone, Eq)]
-#[fidl_decl(fidl_table = "finternal::EventStreamRouteMetadata")]
-pub struct EventStreamRouteMetadata {
     pub scope_moniker: Option<String>,
     pub scope: Option<Box<[cm_rust::EventScope]>>,
 }
@@ -668,7 +661,8 @@ impl From<EventStreamDecl> for InternalCapability {
     fn from(event: EventStreamDecl) -> Self {
         Self::EventStream(InternalEventStreamCapability {
             name: event.name,
-            route_metadata: Default::default(),
+            scope_moniker: None,
+            scope: None,
         })
     }
 }

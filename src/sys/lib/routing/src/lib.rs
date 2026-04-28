@@ -22,11 +22,12 @@ use cm_rust::{
     OfferTarget, StorageDecl, StorageDirectorySource, UseDecl,
 };
 use cm_types::{IterablePath, Name, RelativePath};
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io::RW_STAR_DIR;
 use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker};
 use runtime_capabilities::{
-    Capability, CapabilityBound, Dictionary, DirConnector, Request, Routable, Router,
+    Capability, CapabilityBound, Dictionary, DirConnector, Routable, Router,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -120,7 +121,7 @@ pub async fn debug_route_sandbox_path<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     sandbox_path: impl Into<SandboxPath>,
 ) -> Result<CapabilitySource, RoutingError> {
-    debug_route_sandbox_path_with_request(component, sandbox_path, None).await
+    debug_route_sandbox_path_with_request(component, sandbox_path, RouteRequest::default()).await
 }
 
 /// Calls `route` on the router with the given request at the given path within the component
@@ -128,7 +129,7 @@ pub async fn debug_route_sandbox_path<C: ComponentInstanceInterface + 'static>(
 pub async fn debug_route_sandbox_path_with_request<C: ComponentInstanceInterface + 'static>(
     component: &Arc<C>,
     sandbox_path: impl Into<SandboxPath>,
-    request: Option<Request>,
+    request: RouteRequest,
 ) -> Result<CapabilitySource, RoutingError> {
     let sandbox_path = sandbox_path.into();
     let path: RelativePath = sandbox_path.clone().into();
@@ -191,7 +192,7 @@ pub async fn debug_route_storage_backing_directory<C: ComponentInstanceInterface
 async fn route_capability_inner<T, C>(
     dictionary: &Dictionary,
     path: &impl IterablePath,
-    metadata: Dictionary,
+    request: RouteRequest,
     target: &Arc<C>,
 ) -> Result<CapabilitySource, RoutingError>
 where
@@ -206,12 +207,12 @@ where
             name: path.iter_segments().join("/"),
         },
     );
-    perform_route::<T, C>(router, metadata, target).await
+    perform_route::<T, C>(router, request, target).await
 }
 
 async fn perform_route<T, C>(
     router: impl Routable<T>,
-    metadata: Dictionary,
+    request: RouteRequest,
     target: &Arc<C>,
 ) -> Result<CapabilitySource, RoutingError>
 where
@@ -219,9 +220,8 @@ where
     T: CapabilityBound + Debug,
     Router<T>: TryFrom<Capability>,
 {
-    let request = Request { metadata };
     let data = router
-        .route_debug(Some(request), target.as_weak().into())
+        .route_debug(request, target.as_weak().into())
         .await
         .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?;
     Ok(data.try_into().unwrap())

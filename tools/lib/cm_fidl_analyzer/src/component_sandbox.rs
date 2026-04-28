@@ -7,7 +7,6 @@ use crate::component_model::DynamicDictionaryConfig;
 use ::routing::DictExt;
 use ::routing::bedrock::aggregate_router::AggregateSource;
 use ::routing::bedrock::program_output_dict;
-use ::routing::bedrock::request_metadata::Metadata;
 use ::routing::bedrock::sandbox_construction::EventStreamSourceRouter;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_policy_check::WithPolicyCheck;
@@ -33,8 +32,8 @@ use cm_rust::{
 use cm_types::{Availability, Path};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component as fcomponent;
-use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
@@ -43,8 +42,8 @@ use futures::{FutureExt, future};
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Request, Routable,
-    Router, RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Routable, Router,
+    RouterResponse, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -55,7 +54,7 @@ where
 {
     let moniker = source.source_moniker();
     let data: Data = source.try_into().expect("failed to convert capability source to Data");
-    Router::<T>::new(move |_request: Option<Request>, debug: bool, _target: WeakInstanceToken| {
+    Router::<T>::new(move |_request: RouteRequest, debug: bool, _target: WeakInstanceToken| {
         if !debug {
             future::ready(Err(RouterError::NotFound(Arc::new(
                 RoutingError::NonDebugRoutesUnsupported { moniker: moniker.clone() },
@@ -187,20 +186,18 @@ pub fn build_root_component_input(
     for event_stream_decl in event_stream_decls {
         let event_stream_name = event_stream_decl.name.clone();
         let router = Router::<Dictionary>::new(
-            move |request: Option<runtime_capabilities::Request>,
-                  debug: bool,
-                  _target: WeakInstanceToken| {
+            move |request: RouteRequest, debug: bool, _target: WeakInstanceToken| {
                 let event_stream_name = event_stream_name.clone();
                 async move {
                     assert!(debug);
-                    let request = request.expect("missing request on event stream route");
-                    let route_metadata: finternal::EventStreamRouteMetadata =
-                        request.metadata.get_metadata().expect("missing route metadata");
                     let capability_source = CapabilitySource::Builtin(BuiltinSource {
                         capability: InternalCapability::EventStream(
                             InternalEventStreamCapability {
                                 name: event_stream_name.clone(),
-                                route_metadata: route_metadata.fidl_into_native(),
+                                scope_moniker: request.event_stream_scope_moniker.clone(),
+                                scope: request
+                                    .event_stream_scope
+                                    .map(FidlIntoNative::fidl_into_native),
                             },
                         ),
                     });
@@ -256,7 +253,7 @@ struct FrameworkRouter {
 impl Routable<Dictionary> for FrameworkRouter {
     async fn route(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<Dictionary>, RouterError> {
         let target = target
@@ -318,7 +315,7 @@ impl Routable<Dictionary> for FrameworkRouter {
 
     async fn route_debug(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         panic!("should never be debug routed");
@@ -438,7 +435,7 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
         }
         let dynamic_dictionaries = self.dynamic_dictionaries.clone();
         Router::<Dictionary>::new(
-            move |_request: Option<Request>, _debug: bool, _target: WeakInstanceToken| {
+            move |_request: RouteRequest, _debug: bool, _target: WeakInstanceToken| {
                 future::ready(Self::maybe_route_dynamic_dict(
                     &dynamic_dictionaries,
                     &component,
@@ -519,7 +516,7 @@ pub(crate) fn static_children_component_output_dictionary_routers(
     impl Routable<Dictionary> for ChildrenComponentOutputRouters {
         async fn route(
             &self,
-            _request: Option<Request>,
+            _request: RouteRequest,
             _target: WeakInstanceToken,
         ) -> Result<Option<Dictionary>, RouterError> {
             let component =
@@ -537,7 +534,7 @@ pub(crate) fn static_children_component_output_dictionary_routers(
 
         async fn route_debug(
             &self,
-            _request: Option<Request>,
+            _request: RouteRequest,
             _target: WeakInstanceToken,
         ) -> Result<Data, RouterError> {
             panic!("this should never be debug routed");
@@ -571,29 +568,23 @@ pub fn new_event_stream_multiplexing_router(
     _: &Arc<ComponentInstanceForAnalyzer>,
     sources: Vec<EventStreamSourceRouter>,
 ) -> Router<Connector> {
-    Router::new(
-        move |_request: Option<runtime_capabilities::Request>,
-              debug: bool,
-              target: WeakInstanceToken| {
-            assert!(debug, "non-debug routing is unsupported");
-            let sources = sources.clone();
-            async move {
-                let mut routing_tasks = FuturesUnordered::new();
-                for EventStreamSourceRouter { router, .. } in sources.iter() {
-                    routing_tasks.push(router.route_debug(None, target.clone()));
-                }
-                let mut any_result = None;
-                while let Some(result) = routing_tasks.next().await {
-                    match result {
-                        Ok(result) => any_result = Some(result),
-                        Err(e) => return Err(e),
-                    }
-                }
-                Ok(RouterResponse::Debug(
-                    any_result.expect("no result produced, is sources empty?"),
-                ))
+    Router::new(move |_request: RouteRequest, debug: bool, target: WeakInstanceToken| {
+        assert!(debug, "non-debug routing is unsupported");
+        let sources = sources.clone();
+        async move {
+            let mut routing_tasks = FuturesUnordered::new();
+            for EventStreamSourceRouter { router, .. } in sources.iter() {
+                routing_tasks.push(router.route_debug(RouteRequest::default(), target.clone()));
             }
-            .boxed()
-        },
-    )
+            let mut any_result = None;
+            while let Some(result) = routing_tasks.next().await {
+                match result {
+                    Ok(result) => any_result = Some(result),
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(RouterResponse::Debug(any_result.expect("no result produced, is sources empty?")))
+        }
+        .boxed()
+    })
 }

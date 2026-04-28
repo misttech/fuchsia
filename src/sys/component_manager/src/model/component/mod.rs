@@ -50,6 +50,7 @@ use fidl::endpoints::{Proxy, create_proxy};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_mem as fmem;
@@ -67,7 +68,7 @@ use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::{Explain, RouterError};
 use runner::component::StopInfo;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dictionary, DirConnector, Message, Request, Routable, Router,
+    Capability, Connector, Data, Dictionary, DirConnector, Message, Routable, Router,
     WeakInstanceToken,
 };
 use std::clone::Clone;
@@ -1119,7 +1120,7 @@ impl ComponentInstance {
         impl Routable<Dictionary> for ComponentOutput {
             async fn route(
                 &self,
-                _request: Option<Request>,
+                _request: RouteRequest,
                 _target: WeakInstanceToken,
             ) -> Result<Option<Dictionary>, RouterError> {
                 let component = self.component.upgrade().map_err(RoutingError::from)?;
@@ -1127,7 +1128,7 @@ impl ComponentInstance {
             }
             async fn route_debug(
                 &self,
-                _request: Option<Request>,
+                _request: RouteRequest,
                 _target: WeakInstanceToken,
             ) -> Result<Data, RouterError> {
                 panic!("ComponentOutput router does not support debug routes");
@@ -1465,7 +1466,7 @@ probably not intended: {}",
         };
         let resp = resolver_router
             .route(
-                Some(Request { metadata: resolver_metadata(cm_rust::Availability::Required) }),
+                resolver_metadata(cm_rust::Availability::Required),
                 self.clone().as_weak().into(),
             )
             .await

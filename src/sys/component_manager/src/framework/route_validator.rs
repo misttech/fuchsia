@@ -10,6 +10,7 @@ use ::routing::component_instance::ComponentInstanceInterface;
 use cm_rust::NativeIntoFidl;
 use cm_types::RelativePath;
 use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_sys2 as fsys;
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryStreamExt};
@@ -156,7 +157,9 @@ async fn validate_sandbox(
         .await,
     );
     if let Some(runner_router) = sandbox.program_input.runner() {
-        let result = runner_router.route_debug(None, component_instance_token.clone()).await;
+        let result = runner_router
+            .route_debug(RouteRequest::default(), component_instance_token.clone())
+            .await;
         let mut report = fsys::RouteReport {
             capability: Some("<runner>".to_string()),
             decl_type: Some(fsys::DeclType::Use),
@@ -274,26 +277,35 @@ fn validate_dictionary(
                     reports.append(&mut sub_reports);
                 }
                 Capability::ConnectorRouter(router) => {
-                    let result = router.route_debug(None, component_instance_token.clone()).await;
+                    let result = router
+                        .route_debug(RouteRequest::default(), component_instance_token.clone())
+                        .await;
                     fill_in_report_with_route_result(&mut report, result);
                     reports.push(report);
                 }
                 Capability::DirConnectorRouter(router) => {
-                    let result = router.route_debug(None, component_instance_token.clone()).await;
+                    let result = router
+                        .route_debug(RouteRequest::default(), component_instance_token.clone())
+                        .await;
                     fill_in_report_with_route_result(&mut report, result);
                     reports.push(report);
                 }
                 Capability::DataRouter(router) => {
-                    let result = router.route_debug(None, component_instance_token.clone()).await;
+                    let result = router
+                        .route_debug(RouteRequest::default(), component_instance_token.clone())
+                        .await;
                     fill_in_report_with_route_result(&mut report, result);
                     reports.push(report);
                 }
                 Capability::DictionaryRouter(router) => {
-                    let result = router.route_debug(None, component_instance_token.clone()).await;
+                    let result = router
+                        .route_debug(RouteRequest::default(), component_instance_token.clone())
+                        .await;
                     fill_in_report_with_route_result(&mut report, result);
 
-                    if let Ok(Some(routed_dictionary)) =
-                        router.route(None, component_instance_token.clone()).await
+                    if let Ok(Some(routed_dictionary)) = router
+                        .route(RouteRequest::default(), component_instance_token.clone())
+                        .await
                     {
                         let entries = routed_dictionary
                             .snapshot_keys_as_strings()

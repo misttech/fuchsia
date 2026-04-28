@@ -3,6 +3,7 @@
 
 use cm_types::{NamespacePath, Path, RelativePath};
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
@@ -150,7 +151,7 @@ impl NamespaceBuilder {
                         if res.is_err() {
                             return;
                         }
-                        match c.route(None, token.clone()).await {
+                        match c.route(RouteRequest::default(), token.clone()).await {
                             Ok(Some(dir_connector)) => {
                                 // See the comment in the `DirConnector` branch for why rights are
                                 // `None`.
@@ -206,7 +207,7 @@ impl NamespaceBuilder {
                         if res.is_err() {
                             return;
                         }
-                        match router.route(None, token.clone()).await {
+                        match router.route(RouteRequest::default(), token.clone()).await {
                             Ok(Some(dictionary)) => {
                                 let entry = match dictionary.try_into_directory_entry(scope.clone(), token.clone()) {
                                     Ok(entry) => entry,

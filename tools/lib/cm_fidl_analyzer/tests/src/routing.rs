@@ -22,6 +22,7 @@ use fidl::prelude::*;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_internal as component_internal;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
@@ -226,22 +227,20 @@ impl RoutingTestForAnalyzer {
         // Perform secondary routing to find scope
         let result = Self::route_event_stream_sync(use_decl.clone(), &target);
         let source = result.expect("Expected event_stream routing to succeed.");
-        let route_metadata = match source {
+        let (scope_moniker, scope) = match source {
             CapabilitySource::Builtin(BuiltinSource {
                 capability:
                     InternalCapability::EventStream(InternalEventStreamCapability {
                         name: _,
-                        route_metadata,
+                        scope_moniker,
+                        scope,
                     }),
-            }) => route_metadata,
+            }) => (scope_moniker, scope),
             other_value => panic!("unexpected route source: {other_value:?}"),
         };
         let actual_scope = ComponentEventRoute {
-            component: route_metadata
-                .scope_moniker
-                .map(|m| m.to_string())
-                .unwrap_or_else(|| ".".to_string()),
-            scope: route_metadata.scope.map(|scope_list| {
+            component: scope_moniker.unwrap_or_else(|| ".".to_string()),
+            scope: scope.map(|scope_list| {
                 scope_list
                     .into_iter()
                     .map(|ref_| match ref_ {
@@ -589,7 +588,10 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             Capability::ConnectorRouter(r) => r,
             _ => panic!("unexpected capability type"),
         };
-        match (expected_res, router.route_debug(None, target.as_weak().into()).await) {
+        match (
+            expected_res,
+            router.route_debug(RouteRequest::default(), target.as_weak().into()).await,
+        ) {
             (ExpectedResult::Ok, Ok(_debug_data)) => {}
             (ExpectedResult::Err(status), Err(err)) => {
                 if status != err.as_zx_status() {

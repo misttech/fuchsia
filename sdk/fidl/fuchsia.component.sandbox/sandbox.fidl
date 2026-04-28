@@ -559,9 +559,6 @@ type RouteRequest = resource table {
     /// The component that is requesting the capability. May be omitted for a default request
     /// (see `*Router.Route`).
     1: requesting InstanceToken;
-    /// Metadata associated with this capability request. May be omitted for a default request
-    /// (see `*Router.Route`).
-    2: metadata DictionaryRef;
 };
 
 @available(added=HEAD)

@@ -9,6 +9,7 @@ use anyhow::{Context, format_err};
 use clonable_error::ClonableError;
 use cm_types::Name;
 use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy};
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_update_verify as fupdate;
 use fuchsia_inspect::ArrayProperty;
 use futures::TryStreamExt;
@@ -162,16 +163,17 @@ async fn open_protocol(
             .into());
         }
     };
-    let connector = match router.route(None, instance.clone().as_weak().into()).await? {
-        Some(cap) => cap,
-        None => {
-            return Err(RoutingError::RouteUnexpectedUnavailable {
-                type_name: cm_rust::CapabilityTypeName::Protocol,
-                moniker: ExtendedMoniker::from(moniker.clone()),
+    let connector =
+        match router.route(RouteRequest::default(), instance.clone().as_weak().into()).await? {
+            Some(cap) => cap,
+            None => {
+                return Err(RoutingError::RouteUnexpectedUnavailable {
+                    type_name: cm_rust::CapabilityTypeName::Protocol,
+                    moniker: ExtendedMoniker::from(moniker.clone()),
+                }
+                .into());
             }
-            .into());
-        }
-    };
+        };
 
     let (proxy, server_end) = create_proxy::<fupdate::ComponentOtaHealthCheckMarker>();
     connector.send(Message { channel: server_end.into_channel() }).map_err(|_| {

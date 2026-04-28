@@ -205,13 +205,11 @@ pub async fn route_backing_directory(
     );
     let source: CapabilitySource = backing_dir_router
         .route_debug(
-            Some(runtime_capabilities::Request {
-                metadata: routing::bedrock::request_metadata::directory_metadata(
-                    cm_types::Availability::Transitional,
-                    Some(fio::RW_STAR_DIR.into()),
-                    None,
-                ),
-            }),
+            routing::bedrock::request_metadata::directory_metadata(
+                cm_types::Availability::Transitional,
+                Some(fio::RW_STAR_DIR.into()),
+                None,
+            ),
             storage_component.as_weak().into(),
         )
         .await

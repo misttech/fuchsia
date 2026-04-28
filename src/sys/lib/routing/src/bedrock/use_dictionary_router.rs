@@ -5,12 +5,13 @@
 use crate::capability_source::CapabilitySource;
 use crate::error::RoutingError;
 use async_trait::async_trait;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use futures::StreamExt;
 use futures::channel::oneshot;
 use futures::stream::FuturesUnordered;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, Data, Dictionary, EntryUpdate, Request, Routable, Router, UpdateNotifierRetention,
+    Capability, Data, Dictionary, EntryUpdate, Routable, Router, UpdateNotifierRetention,
     WeakInstanceToken,
 };
 
@@ -88,13 +89,12 @@ impl UseDictionaryRouter {
 impl Routable<Dictionary> for UseDictionaryRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<Dictionary>, RouterError> {
         let mut futures_unordered = FuturesUnordered::new();
         for dictionary_router in self.dictionary_routers.iter() {
-            let request = request.as_ref().and_then(|r| r.try_clone().ok());
-            futures_unordered.push(dictionary_router.route(request, target.clone()));
+            futures_unordered.push(dictionary_router.route(request.clone(), target.clone()));
         }
         let resulting_dictionary = self.original_dictionary.shallow_copy().unwrap();
         while let Some(route_result) = futures_unordered.next().await {
@@ -145,7 +145,7 @@ impl Routable<Dictionary> for UseDictionaryRouter {
 
     async fn route_debug(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         Ok(self
@@ -161,22 +161,30 @@ async fn try_get_router_source(
     target: WeakInstanceToken,
 ) -> Option<String> {
     let source: crate::capability_source::CapabilitySource = match capability {
-        Capability::DictionaryRouter(router) => match router.route_debug(None, target).await {
-            Ok(data) => data.try_into().ok()?,
-            _ => return None,
-        },
-        Capability::ConnectorRouter(router) => match router.route_debug(None, target).await {
-            Ok(data) => data.try_into().ok()?,
-            _ => return None,
-        },
-        Capability::DirConnectorRouter(router) => match router.route_debug(None, target).await {
-            Ok(data) => data.try_into().ok()?,
-            _ => return None,
-        },
-        Capability::DataRouter(router) => match router.route_debug(None, target).await {
-            Ok(data) => data.try_into().ok()?,
-            _ => return None,
-        },
+        Capability::DictionaryRouter(router) => {
+            match router.route_debug(RouteRequest::default(), target).await {
+                Ok(data) => data.try_into().ok()?,
+                _ => return None,
+            }
+        }
+        Capability::ConnectorRouter(router) => {
+            match router.route_debug(RouteRequest::default(), target).await {
+                Ok(data) => data.try_into().ok()?,
+                _ => return None,
+            }
+        }
+        Capability::DirConnectorRouter(router) => {
+            match router.route_debug(RouteRequest::default(), target).await {
+                Ok(data) => data.try_into().ok()?,
+                _ => return None,
+            }
+        }
+        Capability::DataRouter(router) => {
+            match router.route_debug(RouteRequest::default(), target).await {
+                Ok(data) => data.try_into().ok()?,
+                _ => return None,
+            }
+        }
         _ => return None,
     };
     Some(format!("{}", source))

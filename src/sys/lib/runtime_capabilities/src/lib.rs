@@ -27,7 +27,7 @@ pub use self::dir_connector::{DirConnectable, DirConnector, DirConnectorMessage}
 pub use self::handle::Handle;
 pub use self::instance_token::{WeakInstanceToken, WeakInstanceTokenAny};
 pub use self::receiver::{DirReceiver, Receiver};
-pub use self::router::{Request, Routable, Router, RouterResponse};
+pub use self::router::{Routable, Router, RouterResponse};
 
 #[cfg(target_os = "fuchsia")]
 pub use {self::fidl::store::serve_capability_store, fidl::RemotableCapability};

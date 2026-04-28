@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use cm_rust::UseStorageDecl;
 use cm_types::Availability;
 use errors::ModelError;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use log::error;
 use router_error::RouterError;
 use routing::component_instance::ComponentInstanceInterface;
@@ -41,7 +42,7 @@ pub(super) async fn route_storage(
         panic!("wrong type for used storage capability");
     };
     let storage_source: CapabilitySource = router
-        .route_debug(None, target.as_weak().into())
+        .route_debug(RouteRequest::default(), target.as_weak().into())
         .await?
         .try_into()
         .expect("failed to deserialize capability source");

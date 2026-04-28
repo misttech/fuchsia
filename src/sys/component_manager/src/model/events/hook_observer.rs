@@ -19,7 +19,7 @@ use zx::HandleBased;
 
 /// A HookObserver will register itself to receive hooks (through which events are dispatched), and
 /// watch the stream of events. When it discovers an event that matches the scope described in the
-/// route_metadata and its filter, it will convert that event into a `fcomponent::Event` and send
+/// scope and its filter, it will convert that event into a `fcomponent::Event` and send
 /// it over its `mpsc::UnboundedSender`.
 pub struct HookObserver {
     pub event_type: EventType,
@@ -56,10 +56,10 @@ impl HookObserver {
         }
     }
 
-    /// is_in_scope returns true if this event is within the scope described by route_metadata.
+    /// is_in_scope returns true if this event is within the scope described by the scope.
     ///
     /// For capability requested events, they are in scope if the source_moniker of the event
-    /// matches our subscriber moniker, and the scope in the route_metadata is ignored.
+    /// matches our subscriber moniker, and the scope field is ignored.
     fn is_in_scope(&self, event: &Event) -> bool {
         scope_down_moniker(
             &event.target_moniker,

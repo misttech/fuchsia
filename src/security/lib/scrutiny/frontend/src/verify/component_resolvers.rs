@@ -11,7 +11,7 @@ use moniker::ExtendedMoniker;
 use routing::bedrock::request_metadata::resolver_metadata;
 use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
-use runtime_capabilities::{Capability, Request};
+use runtime_capabilities::Capability;
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::v2_component_model::V2ComponentModel;
 use serde::{Deserialize, Serialize};
@@ -78,10 +78,10 @@ impl ComponentResolversVisitor {
             .resolvers()
             .get(&scheme_name)
         {
-            let request = Request { metadata: resolver_metadata(cm_types::Availability::Required) };
+            let request = resolver_metadata(cm_types::Availability::Required);
 
             let source: CapabilitySource = match resolver_router
-                .route_debug(Some(request), instance.as_weak().into())
+                .route_debug(request, instance.as_weak().into())
                 .now_or_never()
                 .expect("now or never did not return a result")
             {

@@ -5,6 +5,7 @@
 library fuchsia.component.runtime;
 
 using fuchsia.component.decl;
+using fuchsia.component;
 using fuchsia.io;
 using zx;
 
@@ -159,6 +160,7 @@ open protocol DataRouter {
     }) error zx.Status;
 };
 
+
 /// The error values returned when a route operation succeeds.
 @available(added=HEAD)
 type RouterResponse = flexible enum : uint32 {
@@ -188,19 +190,71 @@ type RouterError = flexible enum : uint32 {
     UNKNOWN = 5;
 };
 
-/// Contains metadata on how to route a capability, and a token representing the
-/// component that started the route.
-///
-/// `metadata` is a dictionary, which contains data capabilities used by
-/// component manager to track things like the type of the route (e.g. protocol,
-/// storage, runner, ...), the rights on a directory route, and the scope on an
-/// event stream route. Generally an empty dictionary is safe to pass to
-/// component manager.
-///
-/// Either both fields must be set, or neither.
+/// Contains metadata about the requested capability, which can be used to
+/// modify the returned capability (such as reducing directory rights), or used
+/// to reject the route (i.e. return an error).
 @available(added=HEAD)
-type RouteRequest = resource table {
-    1: metadata zx.Handle:EVENTPAIR;
+type RouteRequest = table {
+    /// The build-time type of the capability that's being routed (e.g.
+    /// protocol, storage, or resolver). Should always be set.
+    1: build_type_name fuchsia.component.decl.name;
+
+    /// The availability of the requested capability. Should always be set.
+    2: availability fuchsia.component.decl.Availability;
+
+    /// The rights the directory is being requested at. Should be set when
+    /// routing a directory or storage capability.
+    3: directory_rights fuchsia.io.Flags;
+
+    /// The rights associated with the previous declaration in a multi-step
+    /// route. Should be set when routing a directory or storage capability.
+    4: directory_intermediate_rights fuchsia.io.Flags;
+
+    /// Whether or not directory rights should be inherited from the capability
+    /// declaration if they are not present in an expose or offer declaration.
+    /// Must be set when routing a directory or storage capability.
+    5: inherit_rights bool;
+
+    /// The sub-path at which a directory capability should be connected. May be
+    /// set when routing a directory or storage capability.
+    6: sub_directory_path string:fuchsia.component.decl.MAX_PATH_LENGTH;
+
+    /// The path within the backing directory that a used storage capability
+    /// will be connected to.
+    7: isolated_storage_path string:fuchsia.component.decl.MAX_PATH_LENGTH;
+
+    /// The subdirectory inside of the storage backing directory's subdirectory
+    /// to use, if any. The difference between this and sub_directory_path is
+    /// that a) the sub_directory_path generically refers to the subdirectory of
+    /// a directory capability, and b) the sub_directory_path is appended to the
+    /// isolated_storage_path first (which is a path into a backing directory),
+    /// and component_manager will create the storage_sub_directory_path if it
+    /// doesn't exist but won't create sub_directory_path. Accordingly, the
+    /// complete path to a storage capability within the backing directory is
+    /// {isolated_storage_path}/{sub_directory_path}/{storage_sub_directory_path}.
+    ///
+    /// Should be set when routing a storage capability.
+    8: storage_sub_directory_path string:fuchsia.component.decl.MAX_PATH_LENGTH;
+
+    /// The moniker of a component that provides a storage build-time
+    /// capability. Should be set when routing the backing directory of a
+    /// storage capability.
+    9: storage_source_moniker string:fuchsia.component.MAX_MONIKER_LENGTH;
+
+    /// The moniker of the component that has set a scope on an event stream.
+    /// May be set when routing an event stream.
+    10: event_stream_scope_moniker string:fuchsia.component.MAX_MONIKER_LENGTH;
+
+    /// The scope(s) from which the consumer of this event stream will be able
+    /// to observe events. Relative to the `scope_moniker`. May be set when
+    /// routing an event stream.
+    11: event_stream_scope vector<fuchsia.component.decl.Ref>:MAX;
+
+    /// Disables allowlist checking for the routed capability. This flag is
+    /// ignored when not running on host, and is necessary for performing checks
+    /// on intermediate routes in scrutiny (e.g. routing from an "offer" and not
+    /// a "use"). May be set for any build-time capability type.
+    12: skip_policy_checks bool;
 };
 
 @available(added=HEAD)

@@ -2,20 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::request_metadata::{InheritRights, IntermediateRights, Metadata};
 use crate::component_instance::{ComponentInstanceInterface, WeakExtendedInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
 use crate::rights::Rights;
 use crate::subdir::SubDir;
 use async_trait::async_trait;
-use cm_rust::CapabilityTypeName;
+use cm_rust::{CapabilityTypeName, EventScope, FidlIntoNative, NativeIntoFidl};
 use cm_types::Availability;
-use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
-use moniker::ExtendedMoniker;
+use fidl_fuchsia_io as fio;
+use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Data, Dictionary, Request, Routable, Router, WeakInstanceToken,
+    Capability, CapabilityBound, Data, Dictionary, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -28,7 +28,7 @@ struct PorcelainRouter<T: CapabilityBound, R, C: ComponentInstanceInterface, con
     rights: Option<Rights>,
     subdir: Option<SubDir>,
     inherit_rights: Option<bool>,
-    event_stream_route_metadata: Option<finternal::EventStreamRouteMetadata>,
+    event_stream_scope: Option<(Moniker, Box<[EventScope]>)>,
     target: WeakExtendedInstanceInterface<C>,
     route_request: RouteRequestErrorInfo,
     error_reporter: R,
@@ -40,7 +40,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         match self.route_inner(request, D, target).await {
@@ -56,7 +56,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         match self.route_debug_inner(request, D, target).await {
@@ -76,29 +76,29 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 {
     async fn route_inner(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         supply_default: bool,
         target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         let request = self.check_and_compute_request(request, supply_default)?;
-        self.router.route(Some(request), target).await
+        self.router.route(request, target).await
     }
 
     async fn route_debug_inner(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         supply_default: bool,
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         let request = self.check_and_compute_request(request, supply_default)?;
-        self.router.route_debug(Some(request), target).await
+        self.router.route_debug(request, target).await
     }
 
     fn check_and_compute_request(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         supply_default: bool,
-    ) -> Result<Request, RouterError> {
+    ) -> Result<RouteRequest, RouterError> {
         let PorcelainRouter {
             router: _,
             porcelain_type,
@@ -106,30 +106,31 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             rights,
             subdir,
             inherit_rights,
-            event_stream_route_metadata,
+            event_stream_scope,
             target,
             route_request: _,
             error_reporter: _,
         } = self;
-        let request = if let Some(request) = request {
+        let mut request = if request != RouteRequest::default() {
             request
         } else {
             if !supply_default {
                 Err(RouterError::InvalidArgs)?;
             }
-            let metadata = Dictionary::new();
-            metadata.set_metadata(*porcelain_type);
-            metadata.set_metadata(*availability);
+            let mut request = RouteRequest::default();
+            request.build_type_name = Some(porcelain_type.to_string());
+            request.availability = Some(availability.native_into_fidl());
             if let Some(rights) = rights {
-                metadata.set_metadata(*rights);
+                request.directory_rights = Some(fio::Flags::from(*rights));
             }
             if let Some(inherit_rights) = inherit_rights {
-                metadata.set_metadata(InheritRights(*inherit_rights));
+                request.inherit_rights = Some(*inherit_rights);
             }
-            if let Some(esrm) = event_stream_route_metadata.as_ref() {
-                metadata.set_metadata(esrm.clone());
+            if let Some((scope_moniker, scope)) = event_stream_scope.as_ref() {
+                request.event_stream_scope_moniker = Some(scope_moniker.to_string());
+                request.event_stream_scope = Some(scope.clone().native_into_fidl());
             }
-            Request { metadata }
+            request
         };
 
         let moniker: ExtendedMoniker = match target {
@@ -139,41 +140,40 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         check_porcelain_type(&moniker, &request, *porcelain_type)?;
         let updated_availability = check_availability(&moniker, &request, *availability)?;
 
-        check_and_compute_rights(&moniker, &request, &rights)?;
+        check_and_compute_rights(&moniker, &mut request, &rights)?;
         if let Some(new_subdir) = check_and_compute_subdir(&moniker, &request, &subdir)? {
-            request.metadata.set_metadata(new_subdir);
+            request.sub_directory_path = Some(new_subdir.as_ref().clone().native_into_fidl());
         }
-        if let Some(esrm) = event_stream_route_metadata.as_ref() {
-            let mut route_metadata: finternal::EventStreamRouteMetadata = request
-                .metadata
-                .get_metadata()
-                .expect("missing event stream route request metadata");
-            // If the scope is already set then it's a smaller scope (because we can't expose these),
-            // so only set our scope if the request doesn't have one yet.
-            if route_metadata.scope.is_none() && esrm.scope.is_some() {
-                route_metadata.scope_moniker = Some(esrm.scope_moniker.clone().unwrap());
-                route_metadata.scope = Some(esrm.scope.clone().unwrap());
-                request.metadata.set_metadata(route_metadata);
+        if let Some((new_scope_moniker, new_scope)) = event_stream_scope.as_ref() {
+            // If the scope is already set then it's a smaller scope (because we can't expose
+            // these), so only set our scope if the request doesn't have one yet.
+            if request.event_stream_scope_moniker.is_none() {
+                request.event_stream_scope_moniker =
+                    Some(new_scope_moniker.clone().native_into_fidl());
+                request.event_stream_scope = Some(new_scope.clone().native_into_fidl());
             }
         }
 
         // Everything checks out, forward the request.
-        request.metadata.set_metadata(updated_availability);
+        request.availability = Some(updated_availability.native_into_fidl());
         Ok(request)
     }
 }
 
 fn check_porcelain_type(
     moniker: &ExtendedMoniker,
-    request: &Request,
+    request: &RouteRequest,
     expected_type: CapabilityTypeName,
 ) -> Result<(), RouterError> {
-    let capability_type: CapabilityTypeName = request.metadata.get_metadata().ok_or_else(|| {
-        RoutingError::BedrockMissingCapabilityType {
+    let capability_type: CapabilityTypeName = request
+        .build_type_name
+        .as_ref()
+        .ok_or_else(|| RoutingError::BedrockMissingCapabilityType {
             type_name: expected_type.to_string(),
             moniker: moniker.clone(),
-        }
-    })?;
+        })?
+        .parse()
+        .map_err(|_| RouterError::InvalidArgs)?;
     if capability_type != expected_type {
         Err(RoutingError::BedrockWrongCapabilityType {
             moniker: moniker.clone(),
@@ -186,48 +186,47 @@ fn check_porcelain_type(
 
 fn check_availability(
     moniker: &ExtendedMoniker,
-    request: &Request,
+    request: &RouteRequest,
     availability: Availability,
 ) -> Result<Availability, RouterError> {
     // The availability of the request must be compatible with the
     // availability of this step of the route.
     let request_availability =
-        request.metadata.get_metadata().ok_or(fsandbox::RouterError::InvalidArgs).inspect_err(
-            |e| log::error!("request {:?} did not have availability metadata: {e:?}", request),
-        )?;
-    crate::availability::advance(&moniker, request_availability, availability)
+        request.availability.ok_or(fsandbox::RouterError::InvalidArgs).inspect_err(|e| {
+            log::error!("request {:?} did not have availability metadata: {e:?}", request)
+        })?;
+    crate::availability::advance(&moniker, request_availability.fidl_into_native(), availability)
         .map_err(|e| RoutingError::from(e).into())
 }
 
 fn check_and_compute_rights(
     moniker: &ExtendedMoniker,
-    request: &Request,
+    request: &mut RouteRequest,
     rights: &Option<Rights>,
 ) -> Result<(), RouterError> {
     let Some(rights) = rights else {
         return Ok(());
     };
-    let InheritRights(inherit) = request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
-    let request_rights: Rights = match request.metadata.get_metadata() {
-        Some(request_rights) => request_rights,
+    let inherit = request.inherit_rights.ok_or(RouterError::InvalidArgs)?;
+    let request_rights: Rights = match request.directory_rights {
+        Some(request_rights) => request_rights.into(),
         None => {
             if inherit {
-                request.metadata.set_metadata(*rights);
+                request.directory_rights = Some(fio::Flags::from(*rights));
                 *rights
             } else {
                 Err(RouterError::InvalidArgs)?
             }
         }
     };
-    let intermediate_rights: Option<IntermediateRights> = request.metadata.get_metadata();
     // The rights of the previous step (if any) of the route must be
     // compatible with this step of the route.
-    if let Some(IntermediateRights(intermediate_rights)) = intermediate_rights {
-        intermediate_rights
+    if let Some(intermediate_rights) = request.directory_intermediate_rights {
+        Rights::from(intermediate_rights)
             .validate_next(&rights, moniker.clone().into())
             .map_err(|e| router_error::RouterError::from(RoutingError::from(e)))?;
     };
-    request.metadata.set_metadata(IntermediateRights(*rights));
+    request.directory_intermediate_rights = Some(fio::Flags::from(*rights));
     // The rights of the request must be compatible with the
     // rights of this step of the route.
     request_rights.validate_next(&rights, moniker.clone().into()).map_err(RoutingError::from)?;
@@ -236,14 +235,15 @@ fn check_and_compute_rights(
 
 fn check_and_compute_subdir(
     moniker: &ExtendedMoniker,
-    request: &Request,
+    request: &RouteRequest,
     subdir: &Option<SubDir>,
 ) -> Result<Option<SubDir>, RouterError> {
     let Some(mut subdir_from_decl) = subdir.clone() else {
         return Ok(None);
     };
 
-    let request_subdir: Option<SubDir> = request.metadata.get_metadata();
+    let request_subdir: Option<SubDir> =
+        request.sub_directory_path.as_ref().map(|s| SubDir::new(s).expect("invalid sub directory"));
 
     if let Some(request_subdir) = request_subdir {
         let success = subdir_from_decl.as_mut().extend(request_subdir.clone().into());
@@ -261,9 +261,9 @@ fn check_and_compute_subdir(
 
 pub type DefaultMetadataFn = Arc<dyn Fn(Availability) -> Dictionary + Send + Sync + 'static>;
 
-/// Builds a router that ensures the capability request has an availability
-/// strength that is at least the provided `availability`. A default `Request`
-/// is populated with `metadata_fn` if the client passes a `None` `Request`.
+/// Builds a router that ensures the capability request has an availability strength that is at
+/// least the provided `availability`. A default `RouteRequest` is populated with `metadata_fn` if
+/// the client passes an empty `RouteRequest`.
 pub struct PorcelainBuilder<
     T: CapabilityBound,
     R: ErrorReporter,
@@ -276,7 +276,7 @@ pub struct PorcelainBuilder<
     rights: Option<Rights>,
     subdir: Option<SubDir>,
     inherit_rights: Option<bool>,
-    event_stream_route_metadata: Option<finternal::EventStreamRouteMetadata>,
+    event_stream_scope: Option<(Moniker, Box<[EventScope]>)>,
     target: Option<WeakExtendedInstanceInterface<C>>,
     error_info: Option<RouteRequestErrorInfo>,
     error_reporter: Option<R>,
@@ -293,7 +293,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             rights: None,
             subdir: None,
             inherit_rights: None,
-            event_stream_route_metadata: None,
+            event_stream_scope: None,
             target: None,
             error_info: None,
             error_reporter: None,
@@ -322,11 +322,8 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         self
     }
 
-    pub fn event_stream_route_metadata(
-        mut self,
-        esrm: finternal::EventStreamRouteMetadata,
-    ) -> Self {
-        self.event_stream_route_metadata = Some(esrm);
+    pub fn event_stream_scope(mut self, scope: (Moniker, Box<[EventScope]>)) -> Self {
+        self.event_stream_scope = Some(scope);
         self
     }
 
@@ -372,7 +369,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             rights: self.rights,
             subdir: self.subdir,
             inherit_rights: self.inherit_rights,
-            event_stream_route_metadata: self.event_stream_route_metadata,
+            event_stream_scope: self.event_stream_scope,
             target: self.target.expect("must set target"),
             route_request: self.error_info.expect("must set route_request"),
             error_reporter: self.error_reporter.expect("must set error_reporter"),
@@ -440,21 +437,20 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 
 pub fn metadata_for_porcelain_type(
     typename: CapabilityTypeName,
-) -> Arc<dyn Fn(Availability) -> Dictionary + Send + Sync + 'static> {
+) -> Arc<dyn Fn(Availability) -> RouteRequest + Send + Sync + 'static> {
     type MetadataMap = HashMap<
         CapabilityTypeName,
-        Arc<dyn Fn(Availability) -> Dictionary + Send + Sync + 'static>,
+        Arc<dyn Fn(Availability) -> RouteRequest + Send + Sync + 'static>,
     >;
     static CLOSURES: LazyLock<MetadataMap> = LazyLock::new(|| {
         fn entry_for_typename(
             typename: CapabilityTypeName,
-        ) -> (CapabilityTypeName, Arc<dyn Fn(Availability) -> Dictionary + Send + Sync + 'static>)
+        ) -> (CapabilityTypeName, Arc<dyn Fn(Availability) -> RouteRequest + Send + Sync + 'static>)
         {
-            let v = Arc::new(move |availability: Availability| {
-                let metadata = Dictionary::new();
-                metadata.set_metadata(typename);
-                metadata.set_metadata(availability);
-                metadata
+            let v = Arc::new(move |availability: Availability| RouteRequest {
+                build_type_name: Some(typename.to_string()),
+                availability: Some(availability.native_into_fidl()),
+                ..Default::default()
             });
             (typename, v)
         }
@@ -478,7 +474,7 @@ mod tests {
     use fuchsia_sync::Mutex;
     use moniker::Moniker;
     use router_error::RouterError;
-    use runtime_capabilities::{Data, Dictionary};
+    use runtime_capabilities::Data;
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -592,12 +588,13 @@ mod tests {
             .error_info(&error_info())
             .error_reporter(TestErrorReporter::new())
             .build();
-        let metadata = Dictionary::new();
-        metadata.set_metadata(CapabilityTypeName::Protocol);
-        metadata.set_metadata(Availability::Optional);
+        let request = RouteRequest {
+            build_type_name: Some(CapabilityTypeName::Protocol.to_string()),
+            availability: Some(Availability::Optional.native_into_fidl()),
+            ..Default::default()
+        };
 
-        let capability =
-            proxy.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap();
+        let capability = proxy.route(request, component.as_weak().into()).await.unwrap();
         let capability = match capability {
             Some(d) => d,
             _ => panic!(),
@@ -619,11 +616,12 @@ mod tests {
             .error_info(&error_info())
             .error_reporter(reporter)
             .build();
-        let metadata = Dictionary::new();
-        metadata.set_metadata(Availability::Optional);
+        let request = RouteRequest {
+            availability: Some(Availability::Optional.native_into_fidl()),
+            ..Default::default()
+        };
 
-        let error =
-            proxy.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap_err();
+        let error = proxy.route(request, component.as_weak().into()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)
@@ -652,12 +650,13 @@ mod tests {
             .error_info(&error_info())
             .error_reporter(reporter)
             .build();
-        let metadata = Dictionary::new();
-        metadata.set_metadata(CapabilityTypeName::Service);
-        metadata.set_metadata(Availability::Optional);
+        let request = RouteRequest {
+            build_type_name: Some(CapabilityTypeName::Service.to_string()),
+            availability: Some(Availability::Optional.native_into_fidl()),
+            ..Default::default()
+        };
 
-        let error =
-            proxy.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap_err();
+        let error = proxy.route(request, component.as_weak().into()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)
@@ -688,12 +687,13 @@ mod tests {
             .error_info(&error_info())
             .error_reporter(reporter)
             .build();
-        let metadata = Dictionary::new();
-        metadata.set_metadata(CapabilityTypeName::Protocol);
-        metadata.set_metadata(Availability::Required);
+        let request = RouteRequest {
+            build_type_name: Some(CapabilityTypeName::Protocol.to_string()),
+            availability: Some(Availability::Required.native_into_fidl()),
+            ..Default::default()
+        };
 
-        let error =
-            proxy.route(Some(Request { metadata }), component.as_weak().into()).await.unwrap_err();
+        let error = proxy.route(request, component.as_weak().into()).await.unwrap_err();
         assert_matches!(
             error,
             RouterError::NotFound(err)

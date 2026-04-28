@@ -56,6 +56,15 @@ impl Into<fio::Operations> for Rights {
     }
 }
 
+impl From<fio::Flags> for Rights {
+    fn from(flags: fio::Flags) -> Self {
+        Self(
+            fio::Operations::from_bits(flags.bits())
+                .expect("operations is bit-compatible with flags"),
+        )
+    }
+}
+
 impl fmt::Display for Rights {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(rights) = &self;

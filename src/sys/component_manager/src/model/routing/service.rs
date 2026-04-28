@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use cm_rust::{CapabilityTypeName, ChildRef};
 use cm_types::{IterablePath, Name, RelativePath};
 use errors::{ModelError, VfsError};
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use flyweights::FlyStr;
 use fuchsia_async::{DurationExt, TimeoutExt};
@@ -517,7 +518,7 @@ impl AnonymizedAggregateServiceDir {
             self.parent.upgrade().map_err(|err| ModelError::ComponentInstanceError { err })?;
 
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let result = router.route(None, self.parent.clone().into()).await;
+        let result = router.route(RouteRequest::default(), self.parent.clone().into()).await;
         let dir_connector = match result? {
             Some(dir_connector) => dir_connector,
             None => {
@@ -907,7 +908,7 @@ mod tests {
     use maplit::hashmap;
     use proptest::prelude::*;
     use rand::SeedableRng;
-    use runtime_capabilities::{Request, RouterResponse, WeakInstanceToken};
+    use runtime_capabilities::{RouterResponse, WeakInstanceToken};
     use std::collections::HashSet;
     use vfs::pseudo_directory;
 
@@ -976,16 +977,15 @@ mod tests {
                                 "my.service.Service",
                             ),
                         );
-                    let request =
-                        Request { metadata: service_metadata(cm_types::Availability::Required) };
+                    let request = service_metadata(cm_types::Availability::Required);
                     if !debug {
-                        match service_router.route(Some(request), target).await? {
+                        match service_router.route(request, target).await? {
                             Some(c) => Ok(RouterResponse::Capability(c)),
                             None => Ok(RouterResponse::Unavailable),
                         }
                     } else {
                         Ok(RouterResponse::Debug(
-                            service_router.route_debug(Some(request), target).await?,
+                            service_router.route_debug(request, target).await?,
                         ))
                     }
                 }

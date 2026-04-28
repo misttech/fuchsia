@@ -9,7 +9,6 @@ use crate::model::resolver::Resolver;
 use crate::model::routing::RoutingFailureErrorReporter;
 use crate::sandbox_util::{LaunchTaskOnReceive, take_handle_as_stream};
 use ::routing::bedrock::dict_ext::DictExt;
-use ::routing::bedrock::request_metadata::Metadata;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_porcelain::WithPorcelain;
 use ::routing::capability_source::{
@@ -27,6 +26,7 @@ use cm_types::{Name, RelativePath, Url};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServerEnd};
 use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryStreamExt, future};
@@ -34,7 +34,7 @@ use hooks::EventType;
 use log::warn;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, Data, DirConnector, Router, RouterResponse, WeakInstanceToken,
+    Capability, Data, Dictionary, DirConnector, Router, RouterResponse, WeakInstanceToken,
 };
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
@@ -196,9 +196,7 @@ impl RootInputBuilder {
             capability: ComponentCapability::Directory(directory.clone()),
         });
         let router = Router::<DirConnector>::new(
-            move |request: Option<runtime_capabilities::Request>,
-                  debug,
-                  _target: WeakInstanceToken| {
+            move |request: RouteRequest, debug, _target: WeakInstanceToken| {
                 if debug {
                     return futures::future::ready(Ok(RouterResponse::Debug(
                         capability_source
@@ -210,14 +208,12 @@ impl RootInputBuilder {
                 }
                 let mut path = path.clone();
                 async move {
-                    let request = request.ok_or(RouterError::InvalidArgs)?;
                     let rights: ::routing::rights::Rights =
-                        request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
+                        request.directory_rights.ok_or(RouterError::InvalidArgs)?.into();
                     let subdir: ::routing::subdir::SubDir = request
-                        .metadata
-                        .get_metadata()
-                        .or(Some(::routing::subdir::SubDir::dot()))
-                        .unwrap();
+                        .sub_directory_path
+                        .map(|s| ::routing::subdir::SubDir::new(s).expect("invalid path"))
+                        .unwrap_or_else(|| ::routing::subdir::SubDir::dot());
                     let success = path.extend(subdir.clone().into());
                     if !success {
                         return Err(::routing::error::RoutingError::PathTooLong {
@@ -239,14 +235,10 @@ impl RootInputBuilder {
                             return Err(RouterError::Internal);
                         }
                     };
-                    let dir_connector = match request.metadata.get_metadata() {
-                        Some(::routing::bedrock::request_metadata::IsolatedStoragePath(
-                            isolated_storage_path,
-                        )) => {
-                            let isolated_storage_path = vfs::path::Path::validate_and_split(
-                                isolated_storage_path.to_string_lossy().into_owned(),
-                            )
-                            .unwrap();
+                    let dir_connector = match request.isolated_storage_path {
+                        Some(isolated_storage_path) => {
+                            let isolated_storage_path =
+                                vfs::path::Path::validate_and_split(isolated_storage_path).unwrap();
                             let isolated_storage_proxy =
                                 fuchsia_fs::directory::create_directory_recursive(
                                     &dir_proxy,
@@ -464,21 +456,19 @@ impl RootInputBuilder {
 
     pub fn add_event_stream_capabilities(&self) {
         for event_type in EventType::values() {
-            let router = Router::new(
-                move |request: Option<runtime_capabilities::Request>,
-                      debug,
-                      _target: WeakInstanceToken| {
+            let router =
+                Router::new(move |request: RouteRequest, debug, _target: WeakInstanceToken| {
                     async move {
                         if debug {
                             let name = Name::new(event_type.as_str()).unwrap();
-                            let request = request.expect("missing request on event stream route");
-                            let route_metadata: finternal::EventStreamRouteMetadata =
-                                request.metadata.get_metadata().expect("missing route metadata");
                             let capability_source = CapabilitySource::Builtin(BuiltinSource {
                                 capability: InternalCapability::EventStream(
                                     InternalEventStreamCapability {
                                         name,
-                                        route_metadata: route_metadata.fidl_into_native(),
+                                        scope_moniker: request.event_stream_scope_moniker,
+                                        scope: request
+                                            .event_stream_scope
+                                            .map(FidlIntoNative::fidl_into_native),
                                     },
                                 ),
                             });
@@ -486,17 +476,26 @@ impl RootInputBuilder {
                                 capability_source.try_into().unwrap(),
                             ));
                         }
-                        let request = request.expect("missing request on event stream route");
-                        let request_metadata = request.metadata;
+                        let request_metadata = Dictionary::new();
                         let _ = request_metadata.insert(
                             Name::new("event_stream_name").unwrap(),
                             Capability::Data(Data::String(event_type.to_string().into())),
                         );
+                        let esrm = finternal::EventStreamRouteMetadata {
+                            scope_moniker: request.event_stream_scope_moniker,
+                            scope: request.event_stream_scope,
+                            ..Default::default()
+                        };
+                        let _ = request_metadata.insert(
+                            Name::new("event_stream_route_metadata").unwrap(),
+                            Capability::Data(Data::Bytes(
+                                fidl::persist(&esrm).expect("failed to persist metadata").into(),
+                            )),
+                        );
                         Ok(RouterResponse::Capability(request_metadata))
                     }
                     .boxed()
-                },
-            );
+                });
             let name = Name::new(event_type.as_str()).unwrap();
             if let Err(e) = self.input.capabilities().insert_capability(&name, router.into()) {
                 warn!(

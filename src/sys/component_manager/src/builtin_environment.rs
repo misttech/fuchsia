@@ -99,7 +99,7 @@ use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use hooks::EventType;
 use log::{error, info, warn};
-use runtime_capabilities::{Capability, Message, Request};
+use runtime_capabilities::{Capability, Message};
 use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
@@ -1291,20 +1291,17 @@ impl BuiltinEnvironment {
                 .collect::<Vec<_>>();
             let use_router = EventStreamUseRouter::new(self.model.root(), source_routes);
 
-            let metadata =
+            let request =
                 event_stream_metadata(cm_rust::Availability::Required, Default::default());
-            let request = Request { metadata };
 
-            let connector = match use_router
-                .route(Some(request), self.model.root().clone().as_weak().into())
-                .await
-            {
-                Ok(Some(connector)) => connector,
-                other_response => panic!(
-                    "event stream routing from root should always succeed, instead we got {:?}",
-                    other_response
-                ),
-            };
+            let connector =
+                match use_router.route(request, self.model.root().clone().as_weak().into()).await {
+                    Ok(Some(connector)) => connector,
+                    other_response => panic!(
+                        "event stream routing from root should always succeed, instead we got {:?}",
+                        other_response
+                    ),
+                };
 
             service_fs.dir("svc").add_service_connector(
                 move |server_end: ServerEnd<fcomponent::EventStreamMarker>| {

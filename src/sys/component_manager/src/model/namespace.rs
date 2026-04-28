@@ -15,7 +15,7 @@ use router_error::RouterError;
 use routing::DictExt;
 use routing::bedrock::request_metadata::storage_metadata;
 use routing::error::RoutingError;
-use runtime_capabilities::{Capability, Dictionary, Request};
+use runtime_capabilities::{Capability, Dictionary};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -66,7 +66,7 @@ pub async fn create_namespace(
                 {
                     if let Err(RouterError::NotFound(e)) = router
                         .route_debug(
-                            Some(Request { metadata: storage_metadata(Availability::Required) }),
+                            storage_metadata(Availability::Required),
                             component.as_weak().into(),
                         )
                         .await

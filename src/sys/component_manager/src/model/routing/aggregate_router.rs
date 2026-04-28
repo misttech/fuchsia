@@ -9,6 +9,7 @@ use crate::model::routing::service::{
 use async_trait::async_trait;
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use fuchsia_fs::directory::readdir;
 use fuchsia_sync::Mutex;
@@ -24,7 +25,7 @@ use routing::capability_source::{
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use runtime_capabilities::{
-    Capability, Data, Dictionary, DirConnector, RemotableCapability, Request, Routable, Router,
+    Capability, Data, Dictionary, DirConnector, RemotableCapability, Routable, Router,
     WeakInstanceToken,
 };
 use std::cmp::Ordering;
@@ -67,7 +68,7 @@ pub struct AggregateRouter {
 impl Routable<DirConnector> for AggregateRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Option<DirConnector>, RouterError> {
         let aggregate_dir = self.get_aggregate_dir(request).await?;
@@ -76,7 +77,7 @@ impl Routable<DirConnector> for AggregateRouter {
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         let _aggregate_dir = self.get_aggregate_dir(request).await?;
@@ -147,10 +148,7 @@ impl AggregateRouter {
     }
 
     /// Returns the directory containing aggregated entries, and initializes it if necessary.
-    async fn get_aggregate_dir(
-        &self,
-        request: Option<Request>,
-    ) -> Result<DirConnector, RouterError> {
+    async fn get_aggregate_dir(&self, request: RouteRequest) -> Result<DirConnector, RouterError> {
         let mut maybe_directory = self.aggregate_directory.lock().await;
         if let Some(aggregate_directory) = &*maybe_directory {
             return Ok(aggregate_directory.clone());
@@ -202,7 +200,7 @@ impl AggregateRouter {
 
     async fn create_filtered_aggregate(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
     ) -> Result<DirConnector, RouterError> {
         let source_dir_routers = self.sources.iter().filter_map(|source| match source {
             AggregateSource::DirectoryRouter { source_instance: _, router } => Some(router),
@@ -210,10 +208,7 @@ impl AggregateRouter {
         });
         let mut routing_futures = FuturesUnordered::new();
         for router in source_dir_routers {
-            routing_futures.push(router.route(
-                request.as_ref().map(|r| r.try_clone()).transpose()?,
-                self.component.clone().into(),
-            ));
+            routing_futures.push(router.route(request.clone(), self.component.clone().into()));
         }
         let aggregate_dictionary = Dictionary::new();
         while let Some(router_response) = routing_futures.next().await {
@@ -403,7 +398,7 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
             }
         };
         let data = router
-            .route_debug(None, self.component.clone().into())
+            .route_debug(RouteRequest::default(), self.component.clone().into())
             .await
             .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?;
         Ok((router, data.try_into().expect("failed to convert capability source data to struct")))

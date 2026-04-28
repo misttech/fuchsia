@@ -24,6 +24,7 @@ use cm_types::RelativePath;
 use component_id_index::InstanceId;
 use fidl::endpoints::{ServerEnd, create_proxy};
 use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io::{self as fio, DirectoryProxy, DirentType};
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_async as fasync;
@@ -185,7 +186,7 @@ impl StorageAdmin {
     ) -> Result<CapabilitySource, fcomponent::Error> {
         let data = self
             .get_storage_router(target)
-            .route_debug(None, target.as_weak().into())
+            .route_debug(RouteRequest::default(), target.as_weak().into())
             .await
             .map_err(|e| {
                 log::error!("failed to route storage: {e:?}");
@@ -198,13 +199,14 @@ impl StorageAdmin {
         &self,
         target: &Arc<ComponentInstance>,
     ) -> Result<DirConnector, fcomponent::Error> {
-        let router_res =
-            self.get_storage_router(target).route(None, target.as_weak().into()).await.map_err(
-                |e| {
-                    log::error!("failed to route storage: {e:?}");
-                    fcomponent::Error::Internal
-                },
-            )?;
+        let router_res = self
+            .get_storage_router(target)
+            .route(RouteRequest::default(), target.as_weak().into())
+            .await
+            .map_err(|e| {
+                log::error!("failed to route storage: {e:?}");
+                fcomponent::Error::Internal
+            })?;
         match router_res {
             Some(dir_connector) => Ok(dir_connector),
             None => Err(fcomponent::Error::Internal),
@@ -228,7 +230,9 @@ impl StorageAdmin {
             .subdir(cm_types::RelativePath::dot().into())
             .inherit_rights(false)
             .build();
-        let router_res = backing_dir_router.route(None, self.weak_component.clone().into()).await;
+        let router_res = backing_dir_router
+            .route(RouteRequest::default(), self.weak_component.clone().into())
+            .await;
         let dir_connector = match router_res {
             Ok(Some(dir_connector)) => dir_connector,
             Ok(None) => return Err(fcomponent::Error::Internal),
@@ -707,11 +711,12 @@ impl StorageAdmin {
                     Some(Capability::DirConnectorRouter(router)) => router,
                     _ => continue,
                 };
-                let storage_source = match router.route_debug(None, component_weak).await {
-                    Ok(data) => CapabilitySource::try_from(data)
-                        .expect("failed to convert Data to capability source"),
-                    _ => continue,
-                };
+                let storage_source =
+                    match router.route_debug(RouteRequest::default(), component_weak).await {
+                        Ok(data) => CapabilitySource::try_from(data)
+                            .expect("failed to convert Data to capability source"),
+                        _ => continue,
+                    };
 
                 if storage_source
                     == CapabilitySource::StorageBackingDirectory(storage_source_info.clone())

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::bedrock::aggregate_router::{AggregateRouterFn, AggregateSource};
-use crate::bedrock::request_metadata::Metadata;
 use crate::bedrock::structured_dict::{
     ComponentEnvironment, ComponentInput, ComponentOutput, StructuredDictMap,
 };
@@ -20,14 +19,14 @@ use crate::{DictExt, LazyGet, WithPorcelain};
 use async_trait::async_trait;
 use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
-    CapabilityTypeName, DictionaryValue, ExposeDecl, ExposeDeclCommon, NativeIntoFidl, SourceName,
+    CapabilityTypeName, DictionaryValue, ExposeDecl, ExposeDeclCommon, FidlIntoNative, SourceName,
     SourcePath, UseDeclCommon,
 };
 use cm_types::{Availability, BorrowedSeparatedPath, IterablePath, Name, SeparatedPath};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_sync::Mutex;
@@ -37,8 +36,8 @@ use log::warn;
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Request, Routable,
-    Router, WeakInstanceToken,
+    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Routable, Router,
+    WeakInstanceToken,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
@@ -199,14 +198,14 @@ impl Default for ComponentSandbox {
         impl Routable<Dictionary> for NullRouter {
             async fn route(
                 &self,
-                _request: Option<Request>,
+                _request: RouteRequest,
                 _target: WeakInstanceToken,
             ) -> Result<Option<Dictionary>, RouterError> {
                 panic!("null router invoked");
             }
             async fn route_debug(
                 &self,
-                _request: Option<Request>,
+                _request: RouteRequest,
                 _target: WeakInstanceToken,
             ) -> Result<Data, RouterError> {
                 panic!("null router invoked");
@@ -1343,22 +1342,19 @@ fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
     let routers = use_event_stream_decls
         .into_iter()
         .map(|use_event_stream_decl| {
-            let mut route_metadata = finternal::EventStreamRouteMetadata::default();
-            if let Some(scope) = &use_event_stream_decl.scope {
-                route_metadata.scope_moniker = Some(component.moniker().to_string());
-                route_metadata.scope = Some(scope.clone().native_into_fidl());
-            }
-
             let source_path = use_event_stream_decl.source_path().to_owned();
-            let router =
+            let mut router_builder =
                 use_from_parent_router::<Dictionary>(component_input, source_path, &moniker)
                     .with_porcelain_with_default(porcelain_type)
                     .availability(use_event_stream_decl.availability)
-                    .event_stream_route_metadata(route_metadata)
                     .target(component)
                     .error_info(RouteRequestErrorInfo::from(use_event_stream_decl.as_ref()))
-                    .error_reporter(error_reporter.clone())
-                    .build();
+                    .error_reporter(error_reporter.clone());
+            if let Some(scope) = &use_event_stream_decl.scope {
+                router_builder =
+                    router_builder.event_stream_scope((component.moniker().clone(), scope.clone()));
+            }
+            let router = router_builder.build();
             let filter = use_event_stream_decl.filter.clone();
             EventStreamSourceRouter { router, filter }
         })
@@ -1754,11 +1750,7 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
     if let cm_rust::offer::OfferDecl::EventStream(offer_event_stream) = offer {
         if let Some(scope) = &offer_event_stream.scope {
             router_builder =
-                router_builder.event_stream_route_metadata(finternal::EventStreamRouteMetadata {
-                    scope_moniker: Some(component.moniker().to_string()),
-                    scope: Some(scope.clone().native_into_fidl()),
-                    ..Default::default()
-                });
+                router_builder.event_stream_scope((component.moniker().clone(), scope.clone()));
         }
     }
 
@@ -1784,9 +1776,8 @@ where
     Router<T>: TryFrom<Capability>,
     C: ComponentInstanceInterface + 'static,
 {
-    let request = Request { metadata: Dictionary::new() };
     let dict: Result<Option<Dictionary>, RouterError> = router
-        .route(Some(request), component.as_weak().into())
+        .route(RouteRequest::default(), component.as_weak().into())
         .now_or_never()
         .expect("failed to now_or_never");
     let dict = match dict {
@@ -1946,7 +1937,8 @@ impl<C: ComponentInstanceInterface + 'static> UnavailableRouter<C> {
             OfferDecl::EventStream(_) => {
                 InternalCapability::EventStream(InternalEventStreamCapability {
                     name,
-                    route_metadata: Default::default(),
+                    scope_moniker: None,
+                    scope: None,
                 })
             }
             OfferDecl::Dictionary(_) => InternalCapability::Dictionary(name),
@@ -1976,11 +1968,10 @@ impl<T: CapabilityBound, C: ComponentInstanceInterface + 'static> Routable<T>
 {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
-        let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
-        let availability = request.metadata.get_metadata().ok_or(RouterError::InvalidArgs)?;
+        let availability = request.availability.ok_or(RouterError::InvalidArgs)?.fidl_into_native();
         match availability {
             cm_rust::Availability::Required | cm_rust::Availability::SameAsTarget => {
                 Err(RoutingError::SourceCapabilityIsVoid {
@@ -1994,7 +1985,7 @@ impl<T: CapabilityBound, C: ComponentInstanceInterface + 'static> Routable<T>
 
     async fn route_debug(
         &self,
-        _request: Option<Request>,
+        _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         let data = CapabilitySource::Void(VoidSource {

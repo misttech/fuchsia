@@ -11,6 +11,7 @@ use cm_types::Name;
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_internal as finternal;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_inspect::InspectSinkMarker;
 use fuchsia_inspect::Inspector;
 use futures::channel::mpsc;
@@ -21,12 +22,11 @@ use inspect_runtime::{PublishOptions, publish};
 use measure_tape_for_events::Measurable;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use routing::bedrock::request_metadata::Metadata;
 use routing::bedrock::sandbox_construction::{EventStreamFilter, EventStreamSourceRouter};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dictionary, Receiver, Request, Routable, Router, WeakInstanceToken,
+    Capability, Connector, Data, Dictionary, Receiver, Routable, Router, WeakInstanceToken,
 };
 use std::pin::{Pin, pin};
 use std::sync::Arc;
@@ -48,15 +48,17 @@ pub struct EventStreamUseRouter {
 impl Routable<Connector> for EventStreamUseRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Option<Connector>, RouterError> {
         let mut routing_tasks = FuturesUnordered::new();
         for source_route in self.sources.iter() {
-            let request = request.as_ref().and_then(|r| r.try_clone().ok());
             let filter = source_route.filter.clone();
             routing_tasks.push(
-                source_route.router.route(request, target.clone()).map(move |res| (res, filter)),
+                source_route
+                    .router
+                    .route(request.clone(), target.clone())
+                    .map(move |res| (res, filter)),
             );
         }
         let mut routed_dictionaries = vec![];
@@ -74,13 +76,12 @@ impl Routable<Connector> for EventStreamUseRouter {
 
     async fn route_debug(
         &self,
-        request: Option<Request>,
+        request: RouteRequest,
         target: WeakInstanceToken,
     ) -> Result<Data, RouterError> {
         let mut routing_tasks = FuturesUnordered::new();
         for source_route in self.sources.iter() {
-            let request = request.as_ref().and_then(|r| r.try_clone().ok());
-            routing_tasks.push(source_route.router.route_debug(request, target.clone()));
+            routing_tasks.push(source_route.router.route_debug(request.clone(), target.clone()));
         }
         // Our router might route multiple capabilities to perform its job. In this case the
         // current API isn't a great fit, because we'll get multiple capability sources, but we can
@@ -152,8 +153,13 @@ impl EventStreamUseReceiver {
         let mut hooks = vec![];
         let (mpsc_sender, mpsc_receiver) = mpsc::unbounded();
         for (dictionary, filter) in &self.routed_dictionaries {
+            let cap = dictionary.get("event_stream_route_metadata").expect("missing metadata");
+            let bytes = match cap {
+                Capability::Data(Data::Bytes(bytes)) => bytes,
+                _ => panic!("invalid event route metadata"),
+            };
             let route_metadata: finternal::EventStreamRouteMetadata =
-                dictionary.get_metadata().expect("missing route metadata");
+                fidl::unpersist(&bytes).expect("invalid event stream route metadata");
             let capability_name = match dictionary.get("event_stream_name") {
                 Some(Capability::Data(Data::String(name))) => name,
                 other_value => {
@@ -182,7 +188,7 @@ impl EventStreamUseReceiver {
                     target_component.execution_scope.clone(),
                     &mpsc_sender,
                     target_component.context.inspector(),
-                    &route_metadata,
+                    &route_metadata.scope_moniker,
                     filter,
                 );
                 target_component.execution_scope.spawn(forward_capability_requested_events(
@@ -289,10 +295,10 @@ impl EventStreamUseReceiver {
         scope: ExecutionScope,
         sender: &mpsc::UnboundedSender<fcomponent::Event>,
         inspector: &Inspector,
-        route_metadata: &finternal::EventStreamRouteMetadata,
+        event_stream_scope_moniker: &Option<String>,
         filter: &EventStreamFilter,
     ) {
-        if route_metadata.scope_moniker.is_some() {
+        if event_stream_scope_moniker.is_some() {
             // We're not in scope, so let's not send an event
             return;
         }
