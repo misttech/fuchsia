@@ -241,7 +241,7 @@ enum ProfileConfig {
         #[allow(unused)]
         capacity: String,
         #[allow(unused)]
-        deadline: String,
+        deadline: Option<String>,
         #[allow(unused)]
         period: String,
     },

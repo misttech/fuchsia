@@ -44,7 +44,7 @@
     // constant bandwidth tasks with tighter periods. To be clear: SCHED_FIFO
     // tasks are NOT the most important tasks in the system, even if they are
     // the most important tasks in Android.
-    "fuchsia.starnix.realtime": { "capacity": "19ms", "deadline": "20ms", "period": "20ms" },
+    "fuchsia.starnix.realtime": { "capacity": "19ms", "period": "20ms" },
     // LINT.ThenChange(src/starnix/kernel/task/scheduler/manager.rs)
   },
   "memory": {
