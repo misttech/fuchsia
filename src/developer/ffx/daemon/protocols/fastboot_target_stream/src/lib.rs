@@ -33,6 +33,7 @@ pub struct FastbootTargetStreamProtocol {
 impl FidlProtocol for FastbootTargetStreamProtocol {
     type Protocol = ffx::FastbootTargetStreamMarker;
     type StreamHandler = FidlStreamHandler<Self>;
+    type Error = anyhow::Error;
 
     async fn handle(&self, _cx: &Context, req: ffx::FastbootTargetStreamRequest) -> Result<()> {
         match req {

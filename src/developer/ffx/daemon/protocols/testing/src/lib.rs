@@ -15,6 +15,7 @@ pub struct Testing;
 impl FidlProtocol for Testing {
     type Protocol = ffx::TestingMarker;
     type StreamHandler = FidlStreamHandler<Self>;
+    type Error = anyhow::Error;
 
     async fn handle(&self, _cx: &Context, req: ffx::TestingRequest) -> Result<()> {
         match req {

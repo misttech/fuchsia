@@ -55,6 +55,9 @@ pub trait FidlProtocol: Unpin + Default {
     /// [`FidlProtocol::handle`] functions.
     type Protocol: DiscoverableProtocolMarker;
 
+    /// The error type returned by this protocol.
+    type Error: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static;
+
     /// Type to determine how streams are handled when they come in. For
     /// example, setting this type to `FidlStreamHandler<Self>` will ensure that
     /// there will only ever be one instance of this protocol ever allocated.
@@ -73,7 +76,7 @@ pub trait FidlProtocol: Unpin + Default {
         &'a self,
         cx: &'a Context,
         mut stream: <Self::Protocol as ProtocolMarker>::RequestStream,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), Self::Error> {
         while let Ok(Some(req)) = stream.try_next().await {
             self.handle(cx, req).await?
         }
@@ -83,11 +86,15 @@ pub trait FidlProtocol: Unpin + Default {
     /// Handles each individual request coming from a FIDL request stream. If
     /// interacting with another protocol, or some specific Daemon internal is
     /// necessary, use the [`Context`] object.
-    async fn handle(&self, cx: &Context, req: Request<Self::Protocol>) -> Result<()>;
+    async fn handle(
+        &self,
+        cx: &Context,
+        req: Request<Self::Protocol>,
+    ) -> std::result::Result<(), Self::Error>;
 
     /// Invoked before any streams are opened for the protocol. This will only
     /// ever be invoked once through the lifetime of this protocol.
-    async fn start(&mut self, _cx: &Context) -> Result<()> {
+    async fn start(&mut self, _cx: &Context) -> std::result::Result<(), Self::Error> {
         Ok(())
     }
 
@@ -95,7 +102,7 @@ pub trait FidlProtocol: Unpin + Default {
     /// invoked after every active request stream has been stopped and every
     /// running [`FidlProtocol::handle`] function has exited. This function
     /// will only ever be invoked once.
-    async fn stop(&mut self, _cx: &Context) -> Result<()> {
+    async fn stop(&mut self, _cx: &Context) -> std::result::Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -165,13 +172,13 @@ where
     ) -> Result<LocalBoxFuture<'static, Result<()>>> {
         let stream = <F::Protocol as ProtocolMarker>::RequestStream::from_inner(server, false);
         let mut svc = F::default();
-        svc.start(&cx).await?;
+        svc.start(&cx).await.map_err(|e| anyhow::anyhow!("{}", e))?;
         let fut = Box::pin(async move {
             let serve_res = svc.serve(&cx, stream).await.map_err(|e| {
                 log::warn!("protocol failure while handling stream. Stopping protocol: {:?}", e);
-                e
+                anyhow::anyhow!("{}", e)
             });
-            svc.stop(&cx).await?;
+            svc.stop(&cx).await.map_err(|e| anyhow::anyhow!("{}", e))?;
             serve_res
         });
         Ok(fut)
@@ -208,7 +215,7 @@ where
             // start more than once.
             if let Some(inner) = inner.upgrade() {
                 if let Some(ref mut inner) = *inner.write().await {
-                    Rc::new(inner.start(&cx).await)
+                    Rc::new(inner.start(&cx).await.map_err(|e| anyhow::anyhow!("{}", e)))
                 } else {
                     Rc::new(Err(anyhow!("singleton has been shut down")))
                 }
@@ -270,6 +277,7 @@ where
                     .ok_or_else(|| anyhow!("protocol has been shutdown"))?
                     .serve(&cx, stream)
                     .await
+                    .map_err(|e| anyhow::anyhow!("{}", e))
             } else {
                 log::debug!("dropped singleton protocol Rc<_>");
                 Ok(())
@@ -286,6 +294,7 @@ where
             .ok_or_else(|| anyhow!("protocol has been stopped"))?
             .stop(cx)
             .await
+            .map_err(|e| anyhow::anyhow!("{}", e))
     }
 }
 
@@ -324,6 +333,7 @@ mod tests {
     impl FidlProtocol for CounterProtocol {
         type Protocol = ffx_test::CounterMarker;
         type StreamHandler = FidlInstancedStreamHandler<Self>;
+        type Error = anyhow::Error;
 
         async fn handle(&self, cx: &Context, req: ffx_test::CounterRequest) -> Result<()> {
             // This is just here for some additional stress.
@@ -376,6 +386,7 @@ mod tests {
     impl FidlProtocol for NoopProtocolPanicker {
         type Protocol = ffx_test::NoopMarker;
         type StreamHandler = FidlInstancedStreamHandler<Self>;
+        type Error = anyhow::Error;
 
         async fn handle(&self, _cx: &Context, _req: ffx_test::NoopRequest) -> Result<()> {
             Err(anyhow!("this is intended to fail every time"))
@@ -414,6 +425,7 @@ mod tests {
     impl FidlProtocol for SingletonCounterProtocol {
         type Protocol = ffx_test::CounterMarker;
         type StreamHandler = FidlStreamHandler<Self>;
+        type Error = anyhow::Error;
 
         async fn handle(&self, cx: &Context, req: ffx_test::CounterRequest) -> Result<()> {
             // This is just here for some additional stress.

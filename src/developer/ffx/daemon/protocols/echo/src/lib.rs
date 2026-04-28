@@ -15,6 +15,7 @@ pub struct Echo;
 impl FidlProtocol for Echo {
     type Protocol = ffx::EchoMarker;
     type StreamHandler = FidlInstancedStreamHandler<Self>;
+    type Error = anyhow::Error;
 
     async fn handle(&self, _cx: &Context, req: ffx::EchoRequest) -> Result<()> {
         match req {

@@ -16,13 +16,14 @@ use ffx_daemon_target::target_collection::TargetCollection;
 use ffx_target::Description;
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, Proxy, Request, RequestStream};
 use fidl::server::ServeInner;
+use fidl_fuchsia_developer_ffx as ffx;
+use fidl_fuchsia_developer_remotecontrol as rcs;
 use futures::future::LocalBoxFuture;
 use futures::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
-use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_developer_remotecontrol as rcs};
 
 #[derive(Default)]
 struct InjectedStreamHandler<F: FidlProtocol> {
@@ -49,7 +50,7 @@ impl<F: 'static + FidlProtocol> StreamHandler for InjectedStreamHandler<F> {
         server: Arc<ServeInner>,
     ) -> Result<LocalBoxFuture<'static, Result<()>>> {
         if !self.started.get() {
-            self.inner.borrow_mut().start(&cx).await?;
+            self.inner.borrow_mut().start(&cx).await.map_err(|e| anyhow::anyhow!("{}", e))?;
             self.started.set(true);
         }
         let mut stream =
@@ -59,7 +60,7 @@ impl<F: 'static + FidlProtocol> StreamHandler for InjectedStreamHandler<F> {
         let inner = self.inner.clone();
         let fut = Box::pin(async move {
             while let Ok(Some(req)) = stream.try_next().await {
-                inner.borrow().handle(&cx, req).await?
+                inner.borrow().handle(&cx, req).await.map_err(|e| anyhow::anyhow!("{}", e))?
             }
             Ok(())
         });
@@ -68,7 +69,7 @@ impl<F: 'static + FidlProtocol> StreamHandler for InjectedStreamHandler<F> {
 
     async fn shutdown(&self, cx: &Context) -> Result<()> {
         if !self.stopped.get() {
-            self.inner.borrow_mut().stop(cx).await?;
+            self.inner.borrow_mut().stop(cx).await.map_err(|e| anyhow::anyhow!("{}", e))?;
         } else {
             panic!("can only be stopped once");
         }

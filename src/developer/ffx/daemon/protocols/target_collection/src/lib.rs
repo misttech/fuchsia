@@ -282,6 +282,8 @@ impl FidlProtocol for TargetCollectionProtocol {
     type Protocol = ffx::TargetCollectionMarker;
     type StreamHandler = FidlStreamHandler<Self>;
 
+    type Error = anyhow::Error;
+
     async fn handle(&self, cx: &Context, req: ffx::TargetCollectionRequest) -> Result<()> {
         log::debug!("handling request {req:?}");
         let target_collection = cx.get_target_collection().await?;
@@ -952,6 +954,7 @@ mod tests {
     impl FidlProtocol for TestMdns {
         type Protocol = ffx::MdnsMarker;
         type StreamHandler = FidlStreamHandler<Self>;
+        type Error = anyhow::Error;
 
         async fn handle(&self, _cx: &Context, req: ffx::MdnsRequest) -> Result<()> {
             match req {
@@ -997,6 +1000,7 @@ mod tests {
     impl FidlProtocol for FakeFastboot {
         type Protocol = ffx::FastbootTargetStreamMarker;
         type StreamHandler = FidlStreamHandler<Self>;
+        type Error = anyhow::Error;
 
         async fn handle(
             &self,
@@ -1240,6 +1244,7 @@ mod tests {
     impl FidlProtocol for FakeMdns {
         type Protocol = ffx::MdnsMarker;
         type StreamHandler = FidlStreamHandler<Self>;
+        type Error = anyhow::Error;
 
         async fn handle(&self, _cx: &Context, _req: ffx::MdnsRequest) -> Result<()> {
             futures::future::pending::<()>().await;

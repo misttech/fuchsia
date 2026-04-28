@@ -46,7 +46,9 @@ pub enum ContextError {
     #[error("Unable to load SDK while searching for the 'main' ffx binary: {0}")]
     LoadSdkForMainFfx(String),
 
-    #[error("Failed to get 'ffx' host tool from SDK while searching for the 'main' ffx binary: {0}")]
+    #[error(
+        "Failed to get 'ffx' host tool from SDK while searching for the 'main' ffx binary: {0}"
+    )]
     GetHostToolForMainFfx(String),
 
     #[error("SDK tool error: {0}")]

@@ -78,6 +78,8 @@ impl FidlProtocol for Forward {
     type Protocol = ffx::TunnelMarker;
     type StreamHandler = FidlInstancedStreamHandler<Self>;
 
+    type Error = anyhow::Error;
+
     async fn handle(&self, cx: &Context, req: ffx::TunnelRequest) -> Result<()> {
         let cx = cx.clone();
         let cx_clone = cx.clone();

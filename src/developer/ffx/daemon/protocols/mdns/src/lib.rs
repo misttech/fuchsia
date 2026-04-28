@@ -50,6 +50,7 @@ impl MdnsEnabledChecker for ConfigLoader {
 impl FidlProtocol for Mdns {
     type Protocol = ffx::MdnsMarker;
     type StreamHandler = FidlStreamHandler<Self>;
+    type Error = anyhow::Error;
 
     async fn handle(&self, _cx: &Context, req: ffx::MdnsRequest) -> Result<()> {
         match req {

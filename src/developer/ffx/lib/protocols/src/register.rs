@@ -226,7 +226,8 @@ mod test {
     use ffx::DaemonError;
     use ffx_config::EnvironmentContext;
     use fidl::endpoints::DiscoverableProtocolMarker;
-    use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_ffx_test as ffx_test};
+    use fidl_fuchsia_developer_ffx as ffx;
+    use fidl_fuchsia_ffx_test as ffx_test;
 
     #[derive(Default, Clone)]
     struct TestDaemon;
@@ -270,6 +271,7 @@ mod test {
     impl FidlProtocol for NoopProtocol {
         type Protocol = ffx_test::NoopMarker;
         type StreamHandler = FidlStreamHandler<Self>;
+        type Error = anyhow::Error;
 
         async fn handle(&self, _cx: &Context, req: ffx_test::NoopRequest) -> Result<()> {
             match req {
