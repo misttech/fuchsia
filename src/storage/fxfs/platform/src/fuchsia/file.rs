@@ -5,7 +5,7 @@
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::errors::map_to_status;
 use crate::fuchsia::node::{FxNode, OpenedNode};
-use crate::fuchsia::paged_object_handle::PagedObjectHandle;
+use crate::fuchsia::paged_object_handle::{BACKGROUND_FLUSH_THRESHOLD, PagedObjectHandle};
 use crate::fuchsia::pager::{
     MarkDirtyRange, PageInRange, PagerBacked, PagerPacketReceiverRegistration, default_page_in,
 };
@@ -26,7 +26,7 @@ use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::fmt::{Debug, Formatter};
 use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use storage_device::buffer;
 use vfs::directory::entry::{EntryInfo, GetEntryInfo};
 use vfs::directory::entry_container::MutableDirectory;
@@ -114,6 +114,7 @@ pub struct FxFile {
     handle: PagedObjectHandle,
     state: AtomicU64,
     pager_packet_receiver_registration: PagerPacketReceiverRegistration<Self>,
+    background_flush_running: AtomicBool,
 }
 
 #[fxfs_trace::trace]
@@ -136,6 +137,7 @@ impl FxFile {
                 handle: PagedObjectHandle::new(handle, vmo),
                 state: AtomicU64::new(0),
                 pager_packet_receiver_registration,
+                background_flush_running: AtomicBool::new(false),
             }
         })
     }
@@ -733,9 +735,28 @@ impl PagerBacked for FxFile {
 
         let byte_count = range.len();
         self.handle.owner().clone().report_pager_dirty(byte_count, move || {
-            if let Err(_) = self.handle.mark_dirty(range) {
-                // Undo the report of the dirty pages since mark_dirty failed.
-                self.handle.owner().report_pager_clean(byte_count);
+            match self.handle.mark_dirty(range) {
+                Ok(dirty_bytes) => {
+                    // If there's a whole batch worth to write. Just write it. Spurious failures
+                    // here are fine. This is best effort so keep it cheap.
+                    if dirty_bytes > BACKGROUND_FLUSH_THRESHOLD
+                        && !self.background_flush_running.swap(true, Ordering::Relaxed)
+                    {
+                        let owner = self.handle.owner().clone();
+                        owner.spawn(async move {
+                            if let Err(e) = self.handle.flush(false).await {
+                                warn!(error:? = e; "Background flush failed.");
+                            }
+                            // If this future gets dropped before resetting this it means the
+                            // volume is shutting down anyways.
+                            self.background_flush_running.store(false, Ordering::Relaxed);
+                        });
+                    }
+                }
+                Err(_) => {
+                    // Undo the report of the dirty pages since mark_dirty failed.
+                    self.handle.owner().report_pager_clean(byte_count)
+                }
             }
         });
     }
@@ -766,6 +787,8 @@ impl GetVmo for FxFile {
 
 #[cfg(test)]
 mod tests {
+    use super::FxFile;
+    use crate::fuchsia::paged_object_handle::FLUSH_BATCH_SIZE;
     use crate::fuchsia::testing::{
         TestFixture, TestFixtureOptions, close_file_checked, open_dir_checked, open_file,
         open_file_checked,
@@ -773,7 +796,7 @@ mod tests {
     use anyhow::format_err;
     use fidl_fuchsia_io as fio;
     use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions};
-    use fuchsia_async as fasync;
+    use fuchsia_async::{self as fasync, unblock};
     use fuchsia_fs::file;
     use futures::join;
     use fxfs::fsck::fsck;
@@ -783,6 +806,7 @@ mod tests {
     use rand::{Rng, rng};
     use std::sync::Arc;
     use std::sync::atomic::{self, AtomicBool};
+    use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
     use zx::Status;
@@ -1853,6 +1877,80 @@ mod tests {
             std::mem::drop(file);
 
             fasync::unblock(move || vmo.write(b"hello", 0).expect("write failed")).await;
+        }
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_background_flush() {
+        let fixture = TestFixture::new().await;
+        {
+            let root = fixture.root();
+
+            let file = open_file_checked(
+                &root,
+                "foo",
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE
+                    | fio::Flags::PROTOCOL_FILE,
+                &Default::default(),
+            )
+            .await;
+
+            let stream = file.describe().await.unwrap().stream.unwrap();
+            let file_id = file
+                .get_attributes(fio::NodeAttributesQuery::ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .1
+                .id
+                .unwrap();
+            // Block background flush completion by holding the truncate lock.
+            let truncate_guard = fixture
+                .fs()
+                .truncate_guard(fixture.volume().volume().store().store_object_id(), file_id)
+                .await;
+
+            let file_obj = fixture
+                .volume()
+                .volume()
+                .cache()
+                .get(file_id)
+                .unwrap()
+                .into_any()
+                .downcast::<FxFile>()
+                .unwrap();
+            let file_clone = file_obj.clone();
+
+            unblock(move || {
+                let page_size = zx::system_get_page_size() as u64;
+                let mut offset: u64 = 0;
+                while !file_clone
+                    .background_flush_running
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    assert!(offset <= FLUSH_BATCH_SIZE * 4, "Background flush not triggering");
+                    stream
+                        .write_at(zx::StreamWriteOptions::empty(), offset, &[0, 1, 2, 3, 4])
+                        .expect("write should succeed");
+                    offset += page_size;
+                }
+            })
+            .await;
+
+            // Release the truncate lock to unblock the writing, wait for the flush to complete.
+            std::mem::drop(truncate_guard);
+            const MAX_WAIT: Duration = Duration::from_secs(10);
+            let wait_increments = Duration::from_millis(100);
+            let mut total_waited = Duration::ZERO;
+            while file_obj.background_flush_running.load(std::sync::atomic::Ordering::Relaxed) {
+                total_waited += wait_increments;
+                assert!(total_waited < MAX_WAIT);
+                fasync::Timer::new(wait_increments).await;
+            }
         }
 
         fixture.close().await;
