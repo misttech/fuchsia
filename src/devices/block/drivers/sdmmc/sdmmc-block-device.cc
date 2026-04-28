@@ -23,6 +23,8 @@
 #include <zircon/threads.h>
 
 #include <algorithm>
+#include <atomic>
+#include <memory>
 
 #include <fbl/alloc_checker.h>
 #include <safemath/safe_conversions.h>
@@ -522,12 +524,30 @@ void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::PrepareStopComple
   }
   rpmb_list_.clear();
 
-  for (auto& device : child_partition_devices_) {
-    device->StopBlockServer();
+  if (child_partition_devices_.empty()) {
+    if (completer.has_value()) {
+      completer.value()(zx::ok());
+    }
+    return;
   }
 
-  if (completer.has_value()) {
-    completer.value()(zx::ok());
+  struct Context {
+    Context(size_t count, std::optional<fdf::PrepareStopCompleter> comp)
+        : pending_count(count), completer(std::move(comp)) {}
+    std::atomic<size_t> pending_count;
+    std::optional<fdf::PrepareStopCompleter> completer;
+  };
+
+  auto ctx = std::make_shared<Context>(child_partition_devices_.size(), std::move(completer));
+
+  for (auto& device : child_partition_devices_) {
+    device->StopBlockServer([ctx]() {
+      if (ctx->pending_count.fetch_sub(1) == 1) {
+        if (ctx->completer.has_value()) {
+          ctx->completer.value()(zx::ok());
+        }
+      }
+    });
   }
 }
 
@@ -1449,8 +1469,12 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
   fbl::AutoLock lock(&worker_lock_);
   while (power_suspended_ && !shutdown_)
     worker_condition_.Wait(&worker_lock_);
-  if (shutdown_)
+  if (shutdown_) {
+    for (auto& request : requests) {
+      partition.SendReply(request.request_id, zx::error(ZX_ERR_CANCELED));
+    }
     return;
+  }
 
   class Packer {
    public:

@@ -248,7 +248,8 @@ TEST(BlockServer, AsyncTermination) {
   client = *std::move(client_result);
 
   sync_completion_t completion;
-  test_interface.TakeServer().DestroyAsync([&] {
+  block_server::BlockServer server = test_interface.TakeServer();
+  server.DestroyAsync([&] {
     EXPECT_EQ(test_interface.threads_running(), 0);
     sync_completion_signal(&completion);
   });

@@ -53,7 +53,7 @@ class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
 
   void SendReply(block_server::RequestId, zx::result<>);
 
-  void StopBlockServer();
+  void StopBlockServer(fit::callback<void()> callback);
 
   // block_server::DriverInterface
   std::string_view SessionSchedulerRole() const final {

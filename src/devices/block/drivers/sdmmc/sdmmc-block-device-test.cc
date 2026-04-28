@@ -45,6 +45,7 @@
 #include "sdmmc-root-device.h"
 #include "sdmmc-rpmb-device.h"
 #include "sdmmc-types.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
 
 namespace sdmmc {
@@ -1131,7 +1132,12 @@ TEST_P(SdmmcBlockDeviceTest, CompleteTransactions) {
 TEST_P(SdmmcBlockDeviceTest, CompleteTransactionsOnStop) {
   ASSERT_OK(StartDriverForMmc());
   // Stop the worker dispatcher so queued requests don't get completed.
-  block_device_->StopWorkerDispatcher();
+  sync_completion_t completion;
+  block_device_->StopWorkerDispatcher(fdf::PrepareStopCompleter([&](zx::result<> result) {
+    EXPECT_OK(result);
+    sync_completion_signal(&completion);
+  }));
+  EXPECT_OK(sync_completion_wait(&completion, zx::duration::infinite().get()));
 
   std::optional<block::Operation<OperationContext>> op1;
   ASSERT_NO_FATAL_FAILURE(MakeBlockOp(BLOCK_OPCODE_WRITE, 1, 0, &op1));
@@ -1686,7 +1692,12 @@ TEST_P(SdmmcBlockDeviceTest, RpmbRequestLimit) {
 
   ASSERT_OK(StartDriverForMmc());
   BindRpmbClient();
-  block_device_->StopWorkerDispatcher();
+  sync_completion_t completion;
+  block_device_->StopWorkerDispatcher(fdf::PrepareStopCompleter([&](zx::result<> result) {
+    EXPECT_OK(result);
+    sync_completion_signal(&completion);
+  }));
+  EXPECT_OK(sync_completion_wait(&completion, zx::duration::infinite().get()));
 
   zx::vmo tx_frames;
   ASSERT_OK(zx::vmo::create(512, 0, &tx_frames));
@@ -2722,6 +2733,36 @@ TEST_P(SdmmcBlockDeviceTest, BlockServer) {
   driver_test_.runtime().PerformBlockingWork(test_fn);
   instance_name = "boot2";
   driver_test_.runtime().PerformBlockingWork(test_fn);
+}
+
+TEST_P(SdmmcBlockDeviceTest, TeardownWithActiveClient) {
+  ASSERT_OK(StartDriverForMmc());
+
+  const char* instance_name = "user";
+
+  sync_completion_t completion;
+  std::unique_ptr<block_client::RemoteBlockDevice> remote_device;
+  std::unique_ptr<block_client::ReaderWriter> client;
+  driver_test_.runtime().PerformBlockingWork([&] {
+    zx::result remote = GetRemoteBlockDeviceForBlockServer(instance_name);
+    ASSERT_OK(remote);
+    remote_device = std::move(*remote);
+    client = std::make_unique<block_client::ReaderWriter>(*remote_device);
+    sync_completion_signal(&completion);
+  });
+  sync_completion_wait(&completion, ZX_TIME_INFINITE);
+  std::atomic<bool> stopped = false;
+  std::thread t([&]() {
+    while (!stopped) {
+      uint8_t buffer[FakeSdmmcDevice::kBlockSize];
+      [[maybe_unused]] zx_status_t status = client->Read(0, sizeof(buffer), buffer);
+    }
+  });
+
+  EXPECT_OK(driver_test_.StopDriver());
+  dut_ = nullptr;
+  stopped = true;
+  t.join();
 }
 
 TEST_P(SdmmcBlockDeviceTest, BlockServerMaxTransferSize) {

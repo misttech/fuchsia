@@ -61,9 +61,7 @@ class FakeServer::FakeInterface : public Interface {
           break;
       }
       const BlockServer* server = server_.server_.get();
-      if (server) {
-        server->SendReply(request.request_id, zx::ok());
-      }
+      server->SendReply(request.request_id, zx::ok());
     }
   }
 

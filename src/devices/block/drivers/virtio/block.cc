@@ -176,6 +176,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
         status != ZX_OK) {
       fdf::warn("Invalid request range.");
       std::lock_guard lock(block_server_lock_);
+      ZX_DEBUG_ASSERT(block_server_);
       if (block_server_) {
         block_server_->SendReply(request.request_id, zx::make_result(status));
       }

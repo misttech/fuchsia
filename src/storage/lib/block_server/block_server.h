@@ -83,7 +83,8 @@ class Interface {
   // Called when new requests arrive.  It is OK for this method to block so as to cause push back on
   // the fifo (which is recommended for effective flow control).  Each request must eventually be
   // completed by calling BlockServer::SendReply; failure to do so will result in resource leaks
-  // until the block server terminates.
+  // until the block server terminates. This remains true even during server shutdown; all requests
+  // received must be completed (e.g. with ZX_ERR_CANCELED).
   virtual void OnRequests(std::span<Request>) = 0;
 
   // Called for log messages.
@@ -144,19 +145,30 @@ class BlockServer {
   ~BlockServer();
 
   // Destroys the server asynchronously and calls `callback` when complete.
+  //
+  // Once the callback is invoked, it is guaranteed that all sessions will have terminated, and no
+  // new sessions wil start.  The server can be deleted at any point after the callback is invoked
+  // (including in the callback itself).
   template <typename Callback>
-  void DestroyAsync(Callback callback) && {
+  void DestroyAsync(Callback callback) {
     if (server_) {
-      auto owned_callback = std::make_unique<Callback>(std::move(callback));
       internal::BlockServer* server = server_;
-      server_ = nullptr;
+
+      struct State {
+        BlockServer* self;
+        Callback callback;
+      };
+
+      auto state = std::make_unique<State>(State{this, std::move(callback)});
+
       block_server_delete_async(
           server,
           [](void* arg) {
-            auto owned_callback = std::unique_ptr<Callback>(reinterpret_cast<Callback*>(arg));
-            (*owned_callback)();
+            auto state = std::unique_ptr<State>(reinterpret_cast<State*>(arg));
+            state->self->server_ = nullptr;
+            state->callback();
           },
-          owned_callback.release());
+          state.release());
     } else {
       callback();
     }

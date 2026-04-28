@@ -214,10 +214,16 @@ void PartitionDevice::AddChild(AddChildRequestView request, AddChildCompleter::S
 
 fdf::Logger& PartitionDevice::logger() const { return sdmmc_parent_->logger(); }
 
-void PartitionDevice::StopBlockServer() {
+void PartitionDevice::StopBlockServer(fit::callback<void()> callback) {
   fbl::AutoLock lock(&lock_);
   if (block_server_) {
-    std::move(block_server_).value().DestroyAsync([]() {});
+    block_server_->DestroyAsync([this, callback = std::move(callback)]() mutable {
+      fbl::AutoLock lock(&lock_);
+      block_server_.reset();
+      callback();
+    });
+  } else {
+    callback();
   }
 }
 
@@ -227,6 +233,7 @@ void PartitionDevice::OnRequests(cpp20::span<block_server::Request> requests) {
 
 void PartitionDevice::SendReply(block_server::RequestId request, zx::result<> status) {
   fbl::AutoLock lock(&lock_);
+  ZX_DEBUG_ASSERT(block_server_);
   if (block_server_) {
     block_server_->SendReply(request, status);
   }
