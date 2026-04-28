@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 pub(crate) fn data(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
     static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(DATA)").unwrap());
 
-    replace(&*REGEX, || ctx.get_data_path(), value)
+    replace(&*REGEX, || Ok(ctx.get_data_path()?), value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

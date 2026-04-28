@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result};
 use log::LevelFilter;
 use logging::{FfxLog, FfxLogSink, Filter, FormatOpts, LogSinkTrait, TargetsFilter, TestWriter};
 use std::fs::{File, OpenOptions, create_dir_all, remove_file, rename};
@@ -13,6 +12,40 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, RwLock};
 
 use crate::EnvironmentContext;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum LoggingError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Config error: {0}")]
+    Config(#[from] crate::ConfigError),
+
+    #[error("opening log file: {0}")]
+    OpenLog(#[source] std::io::Error),
+
+    #[error("checking log file size: {0}")]
+    CheckSize(#[source] std::io::Error),
+
+    #[error("deleting stale log: {0}")]
+    DeleteLog(#[source] std::io::Error),
+
+    #[error("rotating log files: {0}")]
+    RotateLog(#[source] std::io::Error),
+
+    #[error("seeking through old log file: {0}")]
+    SeekLog(#[source] std::io::Error),
+
+    #[error("writing log truncation notice: {0}")]
+    TruncateNotice(#[source] std::io::Error),
+
+    #[error("reading old log file: {0}")]
+    ReadOldLog(#[source] std::io::Error),
+
+    #[error("writing truncated log file: {0}")]
+    WriteTruncatedLog(#[source] std::io::Error),
+}
 
 /// The valid destinations for a log file
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,7 +124,7 @@ fn generate_id() -> u64 {
 // crate.
 
 /// Global function to change the current log file (if we are logging to a file).
-pub fn change_log_file(file: &Path) -> Result<()> {
+pub fn change_log_file(file: &Path) -> std::result::Result<(), LoggingError> {
     if let Some(mut lfh) = log_file_holder() {
         lfh.change_log_file(file)?;
     }
@@ -100,7 +133,7 @@ pub fn change_log_file(file: &Path) -> Result<()> {
 
 /// Global function to change the reset the current log file back to the
 /// original (if we are logging to a file).
-pub fn reset_log_file() -> Result<()> {
+pub fn reset_log_file() -> std::result::Result<(), LoggingError> {
     if let Some(mut lfh) = log_file_holder() {
         lfh.reset_log_file()?;
     }
@@ -126,7 +159,7 @@ impl LogFileHolder {
         ResettableWriter::new(self.writer.clone())
     }
 
-    fn change_log_file(&mut self, path: &Path) -> Result<()> {
+    fn change_log_file(&mut self, path: &Path) -> std::result::Result<(), LoggingError> {
         let file = open_log_file(path)?;
         let mut w = self.writer.write().unwrap_or_else(|e| e.into_inner());
         // Replace the writer.  The underlying File will be flushed and closed.
@@ -134,7 +167,7 @@ impl LogFileHolder {
         Ok(())
     }
 
-    fn reset_log_file(&mut self) -> Result<()> {
+    fn reset_log_file(&mut self) -> std::result::Result<(), LoggingError> {
         self.change_log_file(&self.orig_path.clone())?;
         Ok(())
     }
@@ -186,7 +219,7 @@ fn rotate_file(
     log_rotate_size: Option<u64>,
     log_rotations: u64,
     log_path: &PathBuf,
-) -> Result<Option<File>> {
+) -> Result<Option<File>, LoggingError> {
     let mut rot_path = log_path.clone();
 
     if let Some(log_rotate_size) = log_rotate_size {
@@ -194,14 +227,13 @@ fn rotate_file(
         // so open the current file and, if it's smaller than that size, return it.
         match OpenOptions::new().write(true).append(true).create(false).open(log_path) {
             Ok(mut f) => {
-                if f.seek(SeekFrom::End(0)).context("checking log file size")? < log_rotate_size {
+                if f.seek(SeekFrom::End(0)).map_err(LoggingError::CheckSize)? < log_rotate_size {
                     return Ok(Some(f));
                 }
             }
             Err(e) if e.kind() == ErrorKind::NotFound => (),
-            other => {
-                other.context("opening log file")?;
-                unreachable!();
+            Err(e) => {
+                return Err(LoggingError::OpenLog(e));
             }
         }
     }
@@ -209,7 +241,7 @@ fn rotate_file(
     rot_path.set_file_name(format!("{}.{}", log_path.display(), log_rotations - 1));
     match remove_file(&rot_path) {
         Err(e) if e.kind() == ErrorKind::NotFound => (),
-        other => other.context("deleting stale log")?,
+        other => other.map_err(LoggingError::DeleteLog)?,
     }
 
     for rotation in (0..log_rotations - 1).rev() {
@@ -217,7 +249,7 @@ fn rotate_file(
         rot_path.set_file_name(format!("{}.{}", log_path.display(), rotation));
         match rename(&rot_path, prev_path) {
             Err(e) if e.kind() == ErrorKind::NotFound => (),
-            other => other.context("rotating log files")?,
+            other => other.map_err(LoggingError::RotateLog)?,
         }
     }
 
@@ -226,40 +258,37 @@ fn rotate_file(
         // rotation length.
         match OpenOptions::new().read(true).create(false).open(log_path) {
             Ok(mut f) => {
-                let size = f.seek(SeekFrom::End(0)).context("checking size of old log file")?;
+                let size = f.seek(SeekFrom::End(0)).map_err(LoggingError::CheckSize)?;
                 let log_rotate_size = std::cmp::min(size, log_rotate_size);
-                f.seek(SeekFrom::End(-(log_rotate_size as i64)))
-                    .context("seeking through old log file")?;
+                f.seek(SeekFrom::End(-(log_rotate_size as i64))).map_err(LoggingError::SeekLog)?;
                 let mut new = OpenOptions::new()
                     .write(true)
                     .create(true)
                     .open(rot_path)
-                    .context("opening rotating log file")?;
-                new.write_all(b"<truncated for length>")
-                    .context("writing log truncation notice")?;
+                    .map_err(LoggingError::OpenLog)?;
+                new.write_all(b"<truncated for length>").map_err(LoggingError::TruncateNotice)?;
                 let mut buf = [0; 4096];
                 loop {
-                    let got = f.read(&mut buf).context("reading old log file")?;
+                    let got = f.read(&mut buf).map_err(LoggingError::ReadOldLog)?;
                     if got == 0 {
                         break;
                     }
-                    new.write_all(&buf[..got]).context("writing truncated log file")?;
+                    new.write_all(&buf[..got]).map_err(LoggingError::WriteTruncatedLog)?;
                 }
                 match remove_file(&log_path) {
                     Err(e) if e.kind() == ErrorKind::NotFound => (),
-                    other => other.context("deleting stale untruncated log")?,
+                    other => other.map_err(LoggingError::DeleteLog)?,
                 }
             }
             Err(e) if e.kind() == ErrorKind::NotFound => (),
-            other => {
-                other.context("opening old log file")?;
-                unreachable!();
+            Err(e) => {
+                return Err(LoggingError::OpenLog(e));
             }
         }
     } else {
         match rename(&log_path, rot_path) {
             Err(e) if e.kind() == ErrorKind::NotFound => (),
-            other => other.context("rotating log files")?,
+            other => other.map_err(LoggingError::RotateLog)?,
         }
     }
     Ok(None)
@@ -269,7 +298,7 @@ fn init_global_log_file(
     ctx: &EnvironmentContext,
     name: &PathBuf,
     log_dir_handling: LogDirHandling,
-) -> Result<()> {
+) -> Result<(), LoggingError> {
     let (f, log_path) = log_file_with_info(ctx, name, log_dir_handling)?;
     init_log_file_holder(log_path, f);
     Ok(())
@@ -279,17 +308,18 @@ pub fn log_file_with_info(
     ctx: &EnvironmentContext,
     name: &PathBuf,
     log_dir_handling: LogDirHandling,
-) -> Result<(File, PathBuf)> {
-    let mut log_path: PathBuf = ctx.get(LOG_DIR)?;
+) -> Result<(File, PathBuf), LoggingError> {
+    let mut log_path: PathBuf = ctx.get(LOG_DIR).map_err(LoggingError::Config)?;
     create_dir_all(&log_path)?;
     log_path.push(name);
 
     let mut f: Option<File> = None;
     if let LogDirHandling::WithDirWithRotate = log_dir_handling {
-        let log_rotations: Option<u64> = ctx.get(LOG_ROTATIONS)?;
+        let log_rotations: Option<u64> = ctx.get(LOG_ROTATIONS).map_err(LoggingError::Config)?;
         let log_rotations = log_rotations.unwrap_or(0);
         if log_rotations > 0 {
-            let log_rotate_size: Option<u64> = ctx.get(LOG_ROTATE_SIZE)?;
+            let log_rotate_size: Option<u64> =
+                ctx.get(LOG_ROTATE_SIZE).map_err(LoggingError::Config)?;
             // rotate_file() returns Some(f) if it uses an existing file
             f = rotate_file(log_rotate_size, log_rotations, &log_path)?;
         }
@@ -307,13 +337,18 @@ pub fn log_file(
     ctx: &EnvironmentContext,
     name: &PathBuf,
     log_dir_handling: LogDirHandling,
-) -> Result<File> {
+) -> Result<File, LoggingError> {
     let (f, _) = log_file_with_info(ctx, name, log_dir_handling)?;
     Ok(f)
 }
 
-fn open_log_file(path: &Path) -> Result<std::fs::File> {
-    OpenOptions::new().write(true).append(true).create(true).open(path).context("opening log file")
+fn open_log_file(path: &Path) -> std::result::Result<std::fs::File, LoggingError> {
+    OpenOptions::new()
+        .write(true)
+        .append(true)
+        .create(true)
+        .open(path)
+        .map_err(LoggingError::OpenLog)
 }
 
 pub fn is_enabled(ctx: &EnvironmentContext) -> bool {
@@ -349,7 +384,7 @@ pub fn init(
     ctx: &EnvironmentContext,
     mut log_to_stdio: bool,
     log_destination: &Option<LogDestination>,
-) -> Result<()> {
+) -> Result<(), LoggingError> {
     let mut destinations = vec![];
 
     // We log to a file if config(log.enabled) is true, AND if either of the following are true:
@@ -439,7 +474,7 @@ pub fn target_levels_log(ctx: &EnvironmentContext) -> Vec<(String, log::LevelFil
 pub fn setup_logging_with_log(
     ctx: &EnvironmentContext,
     destinations: Vec<LogDestination>,
-) -> Result<()> {
+) -> Result<(), LoggingError> {
     let logger = build_logger_with_destinations(ctx, destinations)?;
     let _ = log::set_boxed_logger(Box::new(logger))
         .map(|()| log::set_max_level(log::LevelFilter::Trace));
@@ -449,7 +484,7 @@ pub fn setup_logging_with_log(
 pub fn build_logger_with_destinations(
     ctx: &EnvironmentContext,
     destinations: Vec<LogDestination>,
-) -> Result<impl log::Log + use<>> {
+) -> Result<impl log::Log + use<>, LoggingError> {
     let level = level_filter(ctx);
     let target_levels = target_levels_log(ctx);
     let format = FormatOpts::new(*LOGGING_ID);

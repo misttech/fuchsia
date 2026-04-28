@@ -106,7 +106,7 @@ impl RemoveTool {
         let list = match cfg.storage_get().await {
             Ok(v) => v,
             Err(e) => {
-                if format!("{e:?}").contains("no value") {
+                if format!("{e:?}").to_lowercase().contains("no value") {
                     return Ok("No manual targets found.".into());
                 } else {
                     return_bug!(e)

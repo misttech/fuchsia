@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 pub(crate) fn config(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
     static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(CONFIG)").unwrap());
 
-    replace(&*REGEX, || ctx.get_config_path(), value)
+    replace(&*REGEX, || Ok(ctx.get_config_path()?), value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

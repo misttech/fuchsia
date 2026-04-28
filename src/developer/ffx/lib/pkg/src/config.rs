@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow};
+
 use ffx_config::{ConfigLevel, EnvironmentContext};
 const CONFIG_KEY_DEFAULT_REPOSITORY: &str = "repository.default";
 const CONFIG_KEY_SERVER_LISTEN: &str = "repository.server.listen";
@@ -79,21 +80,21 @@ pub fn get_default_repository(context: &EnvironmentContext) -> Result<Option<Str
 
 /// Sets the default repository from the config.
 pub fn set_default_repository(context: &EnvironmentContext, repo_name: &str) -> Result<()> {
-    context
+    Ok(context
         .query(CONFIG_KEY_DEFAULT_REPOSITORY)
         .level(Some(ConfigLevel::User))
         .build()
-        .set(context, repo_name.into())
+        .set(context, repo_name.into())?)
 }
 
 /// Unsets the default repository from the config.
 
 pub fn unset_default_repository(context: &EnvironmentContext) -> Result<()> {
-    context
+    Ok(context
         .query(CONFIG_KEY_DEFAULT_REPOSITORY)
         .level(Some(ConfigLevel::User))
         .build()
-        .remove(context)
+        .remove(context)?)
 }
 
 #[cfg(test)]

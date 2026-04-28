@@ -4,7 +4,7 @@
 
 use crate::EnvironmentContext;
 use crate::mapping::{postprocess, preprocess, replace_regex as replace};
-use anyhow::anyhow;
+
 use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
@@ -40,7 +40,11 @@ pub fn env_var_check(ctx: &EnvironmentContext, value: &Value) -> Option<String> 
         return None;
     }
     if REGEX.is_match(&e) {
-        let res = replace(&e, &*REGEX, |v| ctx.env_var(v).map_err(|_| anyhow!("")));
+        let res = replace(&e, &*REGEX, |v| {
+            ctx.env_var(v).map_err(|_| {
+                crate::mapping::MappingError::EnvironmentVariableNotFound(v.to_string())
+            })
+        });
         // At this point we know it's a string, given it matches a regex, etc, so convert the
         // value to a string.
         return Some(postprocess(res).to_string());
@@ -57,7 +61,13 @@ pub fn env_var(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
     }
     env_string
         .as_ref()
-        .map(|s| replace(s, &*REGEX, |v| ctx.env_var(v).map_err(|_| anyhow!(""))))
+        .map(|s| {
+            replace(s, &*REGEX, |v| {
+                ctx.env_var(v).map_err(|_| {
+                    crate::mapping::MappingError::EnvironmentVariableNotFound(v.to_string())
+                })
+            })
+        })
         .map(postprocess)
         .or(Some(value))
 }

@@ -2,10 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
 use regex::{Captures, Regex};
 use serde_json::Value;
 use std::path::PathBuf;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum MappingError {
+    #[error("path contains invalid UTF-8: {0:?}")]
+    InvalidUtf8(PathBuf),
+
+    #[error("Paths error: {0}")]
+    Paths(#[from] crate::paths::PathsError),
+
+    #[error("environment variable not found: {0}")]
+    EnvironmentVariableNotFound(String),
+
+    #[cfg(test)]
+    #[error("Custom error: {0}")]
+    Custom(String),
+}
 
 mod build;
 mod cache;
@@ -48,7 +64,7 @@ fn postprocess(value: String) -> Value {
 
 fn replace_regex<T>(value: &String, regex: &Regex, replacer: T) -> String
 where
-    T: Fn(&str) -> Result<String>,
+    T: Fn(&str) -> Result<String, MappingError>,
 {
     regex
         .replace_all(value, |caps: &Captures<'_>| {
@@ -65,9 +81,9 @@ where
 
 // Replace at most one occurrence of the regex with the replacer(str). If the replacer
 // returns an Err, this function returns that error.
-fn try_replace_regex<T>(value: &String, regex: &Regex, replacer: T) -> Result<String>
+fn try_replace_regex<T>(value: &String, regex: &Regex, replacer: T) -> Result<String, MappingError>
 where
-    T: Fn(&str) -> Result<String>,
+    T: Fn(&str) -> Result<String, MappingError>,
 {
     // Check if we need the replacement before actually doing the replacement, so we can determine
     // whether the replacer is returning an error.
@@ -84,7 +100,7 @@ where
 
 fn replace<'a, P>(regex: &'a Regex, base_path: P, value: Value) -> Option<Value>
 where
-    P: Fn() -> Result<PathBuf> + Sync + Send + 'a,
+    P: Fn() -> Result<PathBuf, MappingError> + Sync + Send + 'a,
 {
     preprocess(&value)
         .as_ref()
@@ -100,18 +116,16 @@ where
         .or(Some(value))
 }
 
-fn try_replace<'a, P>(regex: &'a Regex, base_path: P, value: Value) -> Result<Value>
+fn try_replace<'a, P>(regex: &'a Regex, base_path: P, value: Value) -> Result<Value, MappingError>
 where
-    P: Fn() -> Result<PathBuf> + Sync + Send + 'a,
+    P: Fn() -> Result<PathBuf, MappingError> + Sync + Send + 'a,
 {
     if let Some(ref s) = preprocess(&value) {
         Ok(postprocess(try_replace_regex(s, regex, |_| {
             // Don't invoke the base_path closure until we know we actually need it (i.e. when regex.replace
             // actually calls the "replacer" closure)
             let p = base_path()?;
-            p.to_str()
-                .map(|s| s.to_string())
-                .ok_or_else(|| anyhow::anyhow!("path contains invalid UTF-8: {p:?}"))
+            p.to_str().map(|s| s.to_string()).ok_or(MappingError::InvalidUtf8(p))
         })?))
     } else {
         // Not a string
@@ -122,7 +136,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::anyhow;
+
     use serde_json::json;
 
     #[test]
@@ -137,7 +151,8 @@ mod tests {
     fn test_try_replace_regex_error() {
         let regex = Regex::new(r"\$TEST").unwrap();
         let value = "hello $TEST world".to_string();
-        let result = try_replace_regex(&value, &regex, |_| Err(anyhow!("test error")));
+        let result =
+            try_replace_regex(&value, &regex, |_| Err(MappingError::Custom("test error".into())));
         assert!(result.is_err());
     }
 
@@ -161,7 +176,7 @@ mod tests {
     fn test_try_replace_error() {
         let regex = Regex::new(r"\$TEST").unwrap();
         let value = json!("hello $TEST world");
-        let result = try_replace(&regex, || Err(anyhow!("test error")), value);
+        let result = try_replace(&regex, || Err(MappingError::Custom("test error".into())), value);
         assert!(result.is_err());
     }
 

@@ -74,7 +74,7 @@ impl FhoEnvironment {
             log_file.set_extension("log");
             log::info!("Switching log file to {log_file:?}");
             eprintln!("Switching log file to {log_file:?}");
-            ffx_config::logging::change_log_file(&log_file)?;
+            ffx_config::logging::change_log_file(&log_file).map_err(anyhow::Error::from)?;
         }
         Ok(())
     }

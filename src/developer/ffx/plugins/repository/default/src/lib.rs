@@ -40,7 +40,8 @@ pub async fn exec_repository_default_impl<W: std::io::Write + ToolIO>(
             .query(CONFIG_KEY_DEFAULT)
             .level(Some(set.level))
             .build()
-            .set(context, serde_json::Value::String(set.name.clone()))?,
+            .set(context, serde_json::Value::String(set.name.clone()))
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?,
         SubCommand::Unset(unset) => {
             let _ = context
                 .query(CONFIG_KEY_DEFAULT)

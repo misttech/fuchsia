@@ -191,7 +191,7 @@ class FfxTest(ffxtestcase.FfxTestCase):
         asserts.assert_equal(output_json["type"], "unexpected")
         asserts.assert_equal(
             output_json["message"],
-            "--config must either be a file path, /\n            a valid JSON object, or comma separated key=value pairs.",
+            "--config must either be a file path, a valid JSON object, or comma separated key=value pairs.",
         )
         asserts.assert_equal(output_json["code"], 1)
 

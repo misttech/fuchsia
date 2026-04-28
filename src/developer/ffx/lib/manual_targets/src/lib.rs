@@ -5,7 +5,7 @@
 use anyhow::{Context as _, Result, anyhow};
 use async_lock::Mutex;
 use async_trait::async_trait;
-use ffx_config::api::ConfigError;
+
 use ffx_config::{ConfigLevel, EnvironmentContext};
 use serde_json::{Map, Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -78,6 +78,7 @@ impl ManualTargets for Config {
             .level(Some(ConfigLevel::User))
             .build()
             .set(&self.context, targets.into())
+            .map_err(anyhow::Error::from)
     }
 }
 
@@ -90,12 +91,7 @@ pub struct Mock {
 #[async_trait(?Send)]
 impl ManualTargets for Mock {
     async fn storage_get(&self) -> Result<Value> {
-        self.targets
-            .lock()
-            .await
-            .clone()
-            .map(|t| Ok(t))
-            .unwrap_or(Err(anyhow::Error::new(ConfigError::new(anyhow!("value missing")))))
+        self.targets.lock().await.clone().map(|t| Ok(t)).unwrap_or(Err(anyhow!("value missing")))
     }
 
     async fn storage_set(&self, targets: Value) -> Result<()> {

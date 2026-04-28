@@ -8,7 +8,7 @@ use crate::api::value::merge_map;
 use crate::environment::Environment;
 use crate::nested::{nested_get, nested_remove, nested_set};
 use crate::{ConfigLevel, EnvironmentContext};
-use anyhow::{Context, Result, anyhow, bail};
+
 use config_macros::include_default;
 use fuchsia_lockfile::{LockContext, Lockfile};
 use log::error;
@@ -18,6 +18,46 @@ use std::fmt;
 use std::fs::OpenOptions;
 use std::io::{BufReader, BufWriter, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("writing config file: {0}")]
+    WriteConfig(#[source] serde_json::Error),
+
+    #[error("flushing config file: {0}")]
+    FlushConfig(#[source] std::io::Error),
+
+    #[error("Lockfile error: {0}")]
+    Lockfile(#[source] Box<fuchsia_lockfile::LockfileCreateError>),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Persist error: {0}")]
+    Persist(String),
+
+    #[error("Can't set empty key")]
+    EmptyKey,
+
+    #[error("Config error: {0}")]
+    Config(#[from] crate::ConfigError),
+
+    #[error("Nested error: {0}")]
+    Nested(#[from] crate::nested::NestedError),
+
+    #[error("No mutable access to runtime level configuration")]
+    NoMutableRuntime,
+
+    #[error("No mutable access to default level configuration")]
+    NoMutableDefault,
+}
+
+impl From<fuchsia_lockfile::LockfileCreateError> for StorageError {
+    fn from(e: fuchsia_lockfile::LockfileCreateError) -> Self {
+        Self::Lockfile(Box::new(e))
+    }
+}
 
 fn format_env_variables_error(preamble: &Option<String>, values: &Vec<ConfigValue>) -> String {
     let error_list_string = values
@@ -64,8 +104,9 @@ pub struct ConfigValue {
 pub enum AssertNoEnvError {
     #[error("{}", format_env_variables_error(.0, .1))]
     EnvVariablesFound(Option<String>, Vec<ConfigValue>),
-    #[error("critical unexpected error during no-env assert: {:?}", .0)]
-    Unexpected(#[source] anyhow::Error),
+
+    #[error("critical unexpected error during no-env assert: {0}")]
+    Unexpected(#[from] crate::api::ConfigError),
 }
 
 pub trait AssertNoEnv {
@@ -187,11 +228,14 @@ fn read_json<T: DeserializeOwned>(file: impl Read) -> Option<T> {
     serde_json::from_reader(file).ok()
 }
 
-fn write_json<W: Write>(file: Option<W>, value: Option<&Value>) -> Result<()> {
+fn write_json<W: Write>(
+    file: Option<W>,
+    value: Option<&Value>,
+) -> std::result::Result<(), StorageError> {
     match (value, file) {
         (Some(v), Some(mut f)) => {
-            serde_json::to_writer_pretty(&mut f, v).context("writing config file")?;
-            f.flush().map_err(Into::into)
+            serde_json::to_writer_pretty(&mut f, v).map_err(StorageError::WriteConfig)?;
+            f.flush().map_err(StorageError::FlushConfig)
         }
         (_, _) => {
             // If either value or file are None, then return Ok(()). File being none will
@@ -226,15 +270,17 @@ impl<T: Write> Write for MaybeFlushWriter<T> {
 
 /// Atomically write to the file by creating a temporary file and passing it
 /// to the closure, and atomically rename it to the destination file.
-fn with_writer<F>(path: Option<&Path>, f: F, flush: bool) -> Result<()>
+fn with_writer<F>(path: Option<&Path>, f: F, flush: bool) -> std::result::Result<(), StorageError>
 where
-    F: FnOnce(Option<BufWriter<&mut MaybeFlushWriter<tempfile::NamedTempFile>>>) -> Result<()>,
+    F: FnOnce(
+        Option<BufWriter<&mut MaybeFlushWriter<tempfile::NamedTempFile>>>,
+    ) -> std::result::Result<(), StorageError>,
 {
     if let Some(path) = path {
         let path = Path::new(path);
         let _lockfile = Lockfile::new_for(path, LockContext::current()).map_err(|e| {
             error!("Failed to create a lockfile for {path}. Check that {lockpath} doesn't exist and can be written to. Ownership information: {owner:#?}", path=path.display(), lockpath=e.lock_path.display(), owner=e.owner);
-            e
+            StorageError::Lockfile(e)
         })?;
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         let tmp = tempfile::NamedTempFile::new_in(parent)?;
@@ -242,7 +288,7 @@ where
         log::debug!("Calling writer callback");
         f(Some(BufWriter::new(&mut writer)))?;
         log::debug!("Calling persist");
-        writer.writer.persist(path)?;
+        writer.writer.persist(path).map_err(|e| StorageError::Persist(e.to_string()))?;
         log::debug!("Persisted");
 
         Ok(())
@@ -269,7 +315,7 @@ impl ConfigFile {
         Self { path, contents, dirty: false, flush }
     }
 
-    fn from_file(path: &Path) -> Result<Self> {
+    fn from_file(path: &Path) -> std::result::Result<Self, StorageError> {
         let file = OpenOptions::new().read(true).open(path);
 
         match file {
@@ -280,11 +326,11 @@ impl ConfigFile {
                 dirty: false,
                 flush: true,
             }),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(StorageError::Io(e)),
         }
     }
 
-    fn from_nonflushing_file(path: &Path) -> Result<Self> {
+    fn from_nonflushing_file(path: &Path) -> std::result::Result<Self, StorageError> {
         let file = OpenOptions::new().read(true).open(path);
 
         match file {
@@ -295,7 +341,7 @@ impl ConfigFile {
                 dirty: false,
                 flush: false,
             }),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(StorageError::Io(e)),
         }
     }
 
@@ -303,22 +349,23 @@ impl ConfigFile {
         self.dirty
     }
 
-    fn set(&mut self, key: &str, value: Value) -> Result<bool> {
+    fn set(&mut self, key: &str, value: Value) -> std::result::Result<bool, StorageError> {
         let key_vec: Vec<&str> = key.split('.').collect();
-        let key = *key_vec.get(0).context("Can't set empty key")?;
+        let key = *key_vec.get(0).ok_or(StorageError::EmptyKey)?;
         let changed = nested_set(&mut self.contents, key, &key_vec[1..], value);
         self.dirty = self.dirty || changed;
         Ok(changed)
     }
 
-    pub fn remove(&mut self, key: &str) -> Result<()> {
+    pub fn remove(&mut self, key: &str) -> Result<(), StorageError> {
         let key_vec: Vec<&str> = key.split('.').collect();
-        let key = *key_vec.get(0).context(ConfigError::KeyNotFound)?;
+        let key = *key_vec.get(0).ok_or(ConfigError::KeyNotFound)?;
         self.dirty = true;
-        nested_remove(&mut self.contents, key, &key_vec[1..])
+        nested_remove(&mut self.contents, key, &key_vec[1..])?;
+        Ok(())
     }
 
-    fn save(&mut self) -> Result<()> {
+    fn save(&mut self) -> Result<(), StorageError> {
         log::debug!("Saving path {:?}", self.path);
 
         // FIXME(81502): There is a race between the ffx CLI and the daemon service
@@ -370,7 +417,7 @@ impl Config {
         Self { user, build, global, runtime, default }
     }
 
-    pub(crate) fn from_env(env: &Environment) -> Result<Self> {
+    pub(crate) fn from_env(env: &Environment) -> Result<Self, StorageError> {
         let user_conf: Option<PathBuf> = env.get_user();
         let build_conf: Option<PathBuf> = env.get_build();
         let global_conf: Option<PathBuf> = env.get_global();
@@ -394,7 +441,12 @@ impl Config {
     }
 
     #[cfg(test)]
-    fn write<W: Write>(&self, global: Option<W>, build: Option<W>, user: Option<W>) -> Result<()> {
+    fn write<W: Write>(
+        &self,
+        global: Option<W>,
+        build: Option<W>,
+        user: Option<W>,
+    ) -> Result<(), StorageError> {
         write_json(
             user,
             self.user.as_ref().map(|file| Value::Object(file.contents.clone())).as_ref(),
@@ -410,7 +462,7 @@ impl Config {
         Ok(())
     }
 
-    pub(crate) fn save(&mut self) -> Result<()> {
+    pub(crate) fn save(&mut self) -> Result<(), StorageError> {
         let files = [&mut self.global, &mut self.build, &mut self.user];
         // Try to save all files and only fail out if any of them fail afterwards (with the first error). This hopefully mitigates
         // any weird partial-save issues, though there's no way to eliminate them altogether (short of filesystem
@@ -488,12 +540,17 @@ impl Config {
         }
     }
 
-    pub fn set(&mut self, key: &str, level: ConfigLevel, value: Value) -> Result<bool> {
+    pub fn set(
+        &mut self,
+        key: &str,
+        level: ConfigLevel,
+        value: Value,
+    ) -> Result<bool, StorageError> {
         let file = self.get_level_mut(level)?;
         file.set(key, value)
     }
 
-    pub fn remove(&mut self, key: &str, level: ConfigLevel) -> Result<()> {
+    pub fn remove(&mut self, key: &str, level: ConfigLevel) -> Result<(), StorageError> {
         let file = self.get_level_mut(level)?;
         file.remove(key)
     }
@@ -502,20 +559,25 @@ impl Config {
         PriorityIterator { curr: None, config: self }
     }
 
-    fn get_level_mut(&mut self, level: ConfigLevel) -> Result<&mut ConfigFile> {
+    fn get_level_mut(
+        &mut self,
+        level: ConfigLevel,
+    ) -> std::result::Result<&mut ConfigFile, StorageError> {
         match level {
-            ConfigLevel::Runtime => bail!("No mutable access to runtime level configuration"),
-            ConfigLevel::User => {
-                self.user.as_mut().ok_or_else(|| anyhow!(ConfigError::UnconfiguredLevel { level }))
-            }
-            ConfigLevel::Build => {
-                self.build.as_mut().ok_or_else(|| anyhow!(ConfigError::UnconfiguredLevel { level }))
-            }
+            ConfigLevel::Runtime => return Err(StorageError::NoMutableRuntime),
+            ConfigLevel::User => self
+                .user
+                .as_mut()
+                .ok_or(StorageError::Config(ConfigError::UnconfiguredLevel { level })),
+            ConfigLevel::Build => self
+                .build
+                .as_mut()
+                .ok_or(StorageError::Config(ConfigError::UnconfiguredLevel { level })),
             ConfigLevel::Global => self
                 .global
                 .as_mut()
-                .ok_or_else(|| anyhow!(ConfigError::UnconfiguredLevel { level })),
-            ConfigLevel::Default => bail!("No mutable access to default level configuration"),
+                .ok_or(StorageError::Config(ConfigError::UnconfiguredLevel { level })),
+            ConfigLevel::Default => return Err(StorageError::NoMutableDefault),
         }
     }
 }
@@ -633,7 +695,7 @@ mod test {
     const LITERAL: &'static [u8] = b"[]";
 
     #[test]
-    fn test_persistent_build() -> Result<()> {
+    fn test_persistent_build() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let persistent_config = Config::new(
             Some(ConfigFile::from_buf(None, BufReader::new(GLOBAL), true)),
             Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -677,7 +739,7 @@ mod test {
     }
 
     #[test]
-    fn test_priority_iterator() -> Result<()> {
+    fn test_priority_iterator() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -697,7 +759,7 @@ mod test {
     }
 
     #[test]
-    fn test_priority_iterator_with_nones() -> Result<()> {
+    fn test_priority_iterator_with_nones() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: None,
@@ -717,7 +779,7 @@ mod test {
     }
 
     #[test]
-    fn test_get() -> Result<()> {
+    fn test_get() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -780,7 +842,7 @@ mod test {
     }
 
     #[test]
-    fn test_set_non_map_value() -> Result<()> {
+    fn test_set_non_map_value() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(ERROR), true)),
             build: None,
@@ -795,7 +857,7 @@ mod test {
     }
 
     #[test]
-    fn test_get_nonexistent_config() -> Result<()> {
+    fn test_get_nonexistent_config() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -809,7 +871,7 @@ mod test {
     }
 
     #[test]
-    fn test_set() -> Result<()> {
+    fn test_set() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -825,7 +887,8 @@ mod test {
     }
 
     #[test]
-    fn test_set_twice_does_not_change_config() -> Result<()> {
+    fn test_set_twice_does_not_change_config()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -867,7 +930,7 @@ mod test {
     }
 
     #[test]
-    fn test_set_build_from_none() -> Result<()> {
+    fn test_set_build_from_none() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::default()),
             build: Some(ConfigFile::default()),
@@ -903,7 +966,7 @@ mod test {
     }
 
     #[test]
-    fn test_remove() -> Result<()> {
+    fn test_remove() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -946,7 +1009,7 @@ mod test {
     }
 
     #[test]
-    fn test_display() -> Result<()> {
+    fn test_display() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -978,7 +1041,7 @@ mod test {
     }
 
     #[test]
-    fn test_mapping() -> Result<()> {
+    fn test_mapping() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(MAPPED), true)),
             build: None,
@@ -996,7 +1059,7 @@ mod test {
     }
 
     #[test]
-    fn test_nested_get() -> Result<()> {
+    fn test_nested_get() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: None,
             build: None,
@@ -1010,7 +1073,8 @@ mod test {
     }
 
     #[test]
-    fn test_nested_get_should_return_sub_tree() -> Result<()> {
+    fn test_nested_get_should_return_sub_tree()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: None,
             build: None,
@@ -1024,7 +1088,8 @@ mod test {
     }
 
     #[test]
-    fn test_nested_get_should_return_full_match() -> Result<()> {
+    fn test_nested_get_should_return_full_match()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: None,
             build: None,
@@ -1038,7 +1103,8 @@ mod test {
     }
 
     #[test]
-    fn test_nested_get_should_map_values_in_sub_tree() -> Result<()> {
+    fn test_nested_get_should_map_values_in_sub_tree()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: None,
             build: None,
@@ -1052,7 +1118,8 @@ mod test {
     }
 
     #[test]
-    fn test_get_should_merge_values_in_sub_tree() -> Result<()> {
+    fn test_get_should_merge_values_in_sub_tree()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: None,
             build: None,
@@ -1069,7 +1136,8 @@ mod test {
     }
 
     #[test]
-    fn test_get_should_merge_overlapping_values_in_sub_tree() -> Result<()> {
+    fn test_get_should_merge_overlapping_values_in_sub_tree()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         const SHALLOW2: &'static [u8] = br#"
             {
                 "name": {
@@ -1092,7 +1160,8 @@ mod test {
     }
 
     #[test]
-    fn test_get_should_merge_objects_in_sub_tree() -> Result<()> {
+    fn test_get_should_merge_objects_in_sub_tree()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         const OBJ1: &'static [u8] = br#"
             {
                 "top": {
@@ -1120,7 +1189,7 @@ mod test {
     }
 
     #[test]
-    fn test_nested_set_from_none() -> Result<()> {
+    fn test_nested_set_from_none() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::default()),
             build: None,
@@ -1135,7 +1204,8 @@ mod test {
     }
 
     #[test]
-    fn test_nested_set_from_already_populated_tree() -> Result<()> {
+    fn test_nested_set_from_already_populated_tree()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(NESTED), true)),
             build: None,
@@ -1154,7 +1224,7 @@ mod test {
     }
 
     #[test]
-    fn test_nested_set_override_literals() -> Result<()> {
+    fn test_nested_set_override_literals() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(LITERAL), true)),
             build: None,
@@ -1175,7 +1245,7 @@ mod test {
     }
 
     #[test]
-    fn test_nested_remove_from_none() -> Result<()> {
+    fn test_nested_remove_from_none() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: None,
             build: None,
@@ -1189,7 +1259,8 @@ mod test {
     }
 
     #[test]
-    fn test_nested_remove_throws_error_if_key_not_found() -> Result<()> {
+    fn test_nested_remove_throws_error_if_key_not_found()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(NESTED), true)),
             build: None,
@@ -1203,7 +1274,8 @@ mod test {
     }
 
     #[test]
-    fn test_nested_remove_deletes_literals() -> Result<()> {
+    fn test_nested_remove_deletes_literals() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(DEEP), true)),
             build: None,
@@ -1218,7 +1290,8 @@ mod test {
     }
 
     #[test]
-    fn test_nested_remove_deletes_subtrees() -> Result<()> {
+    fn test_nested_remove_deletes_subtrees() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let mut test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(DEEP), true)),
             build: None,
@@ -1233,7 +1306,7 @@ mod test {
     }
 
     #[test]
-    fn test_additive_mode() -> Result<()> {
+    fn test_additive_mode() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = Config {
             user: Some(ConfigFile::from_buf(None, BufReader::new(USER), true)),
             build: Some(ConfigFile::from_buf(None, BufReader::new(BUILD), true)),
@@ -1252,7 +1325,9 @@ mod test {
                 assert_eq!(v.next(), Some(Value::String("Global".to_string())));
                 assert_eq!(v.next(), Some(Value::String("Default".to_string())));
             }
-            _ => anyhow::bail!("additive mode should return a Value::Array full of all values."),
+            _ => {
+                return Err("additive mode should return a Value::Array full of all values.".into());
+            }
         }
         Ok(())
     }

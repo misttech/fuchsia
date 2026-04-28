@@ -1308,7 +1308,8 @@ mod tests {
         env.query(config::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
             .build()
-            .set(&env, json!(root.display().to_string()))?;
+            .set(&env, json!(root.display().to_string()))
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
 
         guest.kernel_image = Some(kernel_path);
         guest.ramdisk = Some(Ramdisk { path: zbi_path, kind: RamdiskKind::Zbi });
@@ -1319,11 +1320,13 @@ mod tests {
         env.query("ssh.pub")
             .level(Some(ConfigLevel::User))
             .build()
-            .set(&env, json!([root.join("test_authorized_keys")]))?;
+            .set(&env, json!([root.join("test_authorized_keys")]))
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
         env.query("ssh.priv")
             .level(Some(ConfigLevel::User))
             .build()
-            .set(&env, json!([root.join("test_ed25519_key")]))?;
+            .set(&env, json!([root.join("test_ed25519_key")]))
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
 
         Ok(PathBuf::from(root))
     }

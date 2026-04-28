@@ -1172,7 +1172,8 @@ mod tests {
             .query("emu.name")
             .level(Some(ConfigLevel::User))
             .build()
-            .set(&env.context, "".into())?;
+            .set(&env.context, "".into())
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
 
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
 

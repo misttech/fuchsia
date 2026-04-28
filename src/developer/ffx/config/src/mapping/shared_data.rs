@@ -3,16 +3,23 @@
 // found in the LICENSE file.
 
 use crate::EnvironmentContext;
-use crate::mapping::try_replace;
-use anyhow::Result;
+
 use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-pub(crate) fn shared_data(ctx: &EnvironmentContext, value: Value) -> Result<Option<Value>> {
+pub(crate) fn shared_data(
+    ctx: &EnvironmentContext,
+    value: Value,
+) -> Result<Option<Value>, crate::mapping::MappingError> {
     static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(SHARED_DATA)").unwrap());
 
-    try_replace(&*REGEX, || ctx.get_shared_data_path(), value).map(|v| Some(v))
+    crate::mapping::try_replace(
+        &*REGEX,
+        || ctx.get_shared_data_path().map_err(crate::mapping::MappingError::Paths),
+        value,
+    )
+    .map(|v| Some(v))
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -134,27 +134,30 @@ fn exec_get<W: Write>(ctx: &EnvironmentContext, get_cmd: &GetCommand, writer: W)
                 output_first_element(writer, value)
             }
         },
-        None => print_config(ctx, writer),
+        None => print_config(ctx, writer).map_err(anyhow::Error::from),
     }
 }
 
 async fn exec_set(ctx: &EnvironmentContext, set_cmd: &SetCommand) -> Result<()> {
     log::debug!("Set command running...");
-    set_cmd.query(ctx).set(ctx, set_cmd.value.clone())
+    set_cmd.query(ctx).set(ctx, set_cmd.value.clone()).map_err(anyhow::Error::from)
 }
 
 async fn exec_remove(ctx: &EnvironmentContext, remove_cmd: &RemoveCommand) -> Result<()> {
     let entry = remove_cmd.query(ctx);
     // Check that there is a value before removing it.
     if let Ok(Some(_val)) = entry.get_raw::<Option<Value>>(ctx) {
-        entry.remove(ctx)
+        entry.remove(ctx).map_err(anyhow::Error::from)
     } else {
         ffx_bail_with_code!(2, "Configuration key not found")
     }
 }
 
 async fn exec_add(ctx: &EnvironmentContext, add_cmd: &AddCommand) -> Result<()> {
-    add_cmd.query(ctx).add(ctx, Value::String(format!("{}", add_cmd.value)))
+    add_cmd
+        .query(ctx)
+        .add(ctx, Value::String(format!("{}", add_cmd.value)))
+        .map_err(anyhow::Error::from)
 }
 
 async fn exec_env_set<W: Write>(
@@ -184,7 +187,7 @@ async fn exec_env_set<W: Write>(
         ConfigLevel::Global => env.set_global(Some(&s.file)),
         _ => ffx_bail!("This configuration is not stored in the environment."),
     }
-    env.save()
+    env.save().map_err(anyhow::Error::from)
 }
 
 async fn exec_env<W: Write>(

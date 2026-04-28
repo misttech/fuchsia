@@ -488,16 +488,16 @@ impl Ffx {
                     //
                     // The long and short of it is: it's a user error if env variables were found, a
                     // bug if it's anything else.
-                    Err(root_error) => match root_error.downcast::<AssertNoEnvError>() {
-                        Ok(anee) => match anee {
-                            u @ AssertNoEnvError::Unexpected(_) => {
-                                Err(anyhow::Error::from(u).into())
+                    Err(root_error) => match root_error {
+                        ffx_config::environment::ContextError::AssertNoEnv(anee) => match anee {
+                            AssertNoEnvError::Unexpected(_) => {
+                                Err(anyhow::Error::from(anee).into())
                             }
-                            evf @ AssertNoEnvError::EnvVariablesFound(..) => {
-                                Err(crate::Error::User(evf.into()))
+                            AssertNoEnvError::EnvVariablesFound(..) => {
+                                Err(crate::Error::User(anee.into()))
                             }
                         },
-                        Err(e) => Err(e.into()),
+                        _ => Err(anyhow::Error::from(root_error).into()),
                     },
                 }
             }
@@ -509,7 +509,7 @@ impl Ffx {
                     Some(isolate_root.clone()),
                     self.no_environment,
                 )
-                .map_err(Into::into)
+                .map_err(|e| anyhow::Error::from(e).into())
             }
             (Ffx { env_root: Some(domain_root), .. }, isolate_root) => {
                 EnvironmentContext::config_domain_root(
@@ -519,7 +519,7 @@ impl Ffx {
                     isolate_root,
                     self.no_environment,
                 )
-                .map_err(Into::into)
+                .map_err(|e| anyhow::Error::from(e).into())
             }
             (&Ffx { isolate_dir: Some(ref path), .. }, _) | (_, Some(ref path)) => {
                 EnvironmentContext::isolated(
@@ -531,7 +531,7 @@ impl Ffx {
                     Utf8PathBuf::try_from(current_dir).ok().as_deref(),
                     self.no_environment,
                 )
-                .map_err(Into::into)
+                .map_err(|e| anyhow::Error::from(e).into())
             }
             _ => EnvironmentContext::detect(
                 exe_kind,

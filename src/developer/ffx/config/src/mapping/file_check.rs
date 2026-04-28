@@ -25,24 +25,24 @@ pub(crate) fn file_check(value: Value) -> Option<Value> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use anyhow::{Result, bail};
+
     use serde_json::json;
     use tempfile::NamedTempFile;
 
     #[test]
-    fn test_file_mapper() -> Result<()> {
+    fn test_file_mapper() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let file = NamedTempFile::new()?;
         if let Some(path) = file.path().to_str() {
             let test = Value::String(path.to_string());
             assert_eq!(file_check(test), Some(Value::String(path.to_string())));
             Ok(())
         } else {
-            bail!("Unable to get temp file path");
+            return Err("Unable to get temp file path".into());
         }
     }
 
     #[test]
-    fn test_file_mapper_returns_none() -> Result<()> {
+    fn test_file_mapper_returns_none() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let test = json!("/fake_path/should_not_exist");
         assert_eq!(file_check(test), None);
         Ok(())

@@ -6,7 +6,7 @@ use crate::ConfigValue;
 use crate::api::value::TryConvert;
 use crate::environment::EnvironmentContext;
 use crate::nested::nested_get;
-use anyhow::anyhow;
+
 use ffx_config_domain::ConfigMap;
 use serde_json::Value;
 
@@ -29,7 +29,7 @@ impl ConfigAliases for EnvironmentContext {
         // These are called only by functions that hard-code the keys, so we won't panic
         let key_head = key_vec[0];
         let alias_head = alias_vec[0];
-        let read_guard = config.read().map_err(|_| anyhow!("config read guard")).ok()?;
+        let read_guard = config.read().ok()?;
         for config in read_guard.iter() {
             let kval = nested_get(config, key_head, &key_vec[1..]);
             let aval = nested_get(config, alias_head, &alias_vec[1..]);

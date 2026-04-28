@@ -225,7 +225,7 @@ pub async fn run<T: ToolSuite>(icmd: InitializedCmd) -> Result<ExitStatus> {
     } else {
         app.log_destination.clone()
     };
-    ffx_config::logging::init(&context, app.verbose, &log_dest)?;
+    ffx_config::logging::init(&context, app.verbose, &log_dest).map_err(anyhow::Error::from)?;
 
     let metrics = MetricsSession::start(&context).await?;
     log::debug!("metrics session started");

@@ -29,7 +29,8 @@ impl FfxMain for SymbolizeTool {
             eprintln!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
 
-        let symbolizer_path = ffx_config::get_host_tool(&self.context, "symbolizer")?;
+        let symbolizer_path = ffx_config::get_host_tool(&self.context, "symbolizer")
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
         let mut args = self.cmd.symbolizer_args;
         if self.cmd.auth {
             args.push("--auth".to_owned());

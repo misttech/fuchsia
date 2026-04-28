@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 pub(crate) fn runtime(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
     static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(RUNTIME)").unwrap());
 
-    replace(&*REGEX, || ctx.get_runtime_path(), value)
+    replace(&*REGEX, || Ok(ctx.get_runtime_path()?), value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

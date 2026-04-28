@@ -55,7 +55,13 @@ impl FfxMain for SdkTool {
                 if writer.is_machine() {
                     return_user_error!("This command does not support machine output");
                 }
-                exec_populate_path(writer, self.context.get_sdk_root()?, &cmd.path)
+                exec_populate_path(
+                    writer,
+                    self.context
+                        .get_sdk_root()
+                        .map_err(ffx_config::macro_deps::anyhow::Error::from)?,
+                    &cmd.path,
+                )
             }
         }
     }

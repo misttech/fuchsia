@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use errors as _;
+
 use crate::api::value::{ConfigValue, ValueStrategy};
-use ::errors::ffx_bail;
+
 use analytics::metrics_state::MetricsStatus;
 use analytics::{set_new_opt_in_status, show_status_message};
-use anyhow::{Context, Result, anyhow};
+
 use core::fmt;
 use futures::future::LocalBoxFuture;
 use std::fmt::Debug;
@@ -38,6 +40,40 @@ pub use environment::{Environment, EnvironmentContext, TestEnv, test_env, test_i
 pub use paths::get_state_base as get_state_base_path;
 pub use sdk::{self, Sdk, SdkRoot};
 pub use storage::{AssertNoEnv, AssertNoEnvError, ConfigMap};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum LibError {
+    #[error("SDK context error: {0}")]
+    Sdk(#[from] crate::environment::ContextError),
+
+    #[error("Override path for {0} set to {1:?}, but does not exist")]
+    OverrideNotExist(String, PathBuf),
+
+    #[error("SDK returned {0:?} for {1}, but does not exist")]
+    SdkToolNotExist(PathBuf, String),
+
+    #[error("Config error: {0}")]
+    Config(#[from] crate::ConfigError),
+
+    #[error("Environment error: {0}")]
+    Environment(#[from] crate::environment::EnvironmentError),
+
+    #[error("Config read guard failed")]
+    ReadGuard,
+
+    #[error("Displaying config failed: {0}")]
+    DisplayConfig(#[source] std::io::Error),
+
+    #[error("Failed to load host log directories from ffx config: {0}")]
+    LoadLogDirs(String),
+
+    #[error("Metrics error: {0}")]
+    Metrics(String),
+
+    #[error("SDK error: {0}")]
+    SdkError(#[from] sdk::SdkError),
+}
 
 #[doc(hidden)]
 pub mod macro_deps {
@@ -122,7 +158,7 @@ pub const SDK_OVERRIDE_KEY_PREFIX: &str = "sdk.overrides";
 /// Returns the path to the tool with the given name by first
 /// checking for configured override with the key of `sdk.override.{name}`,
 /// and no override is found, sdk.get_host_tool() is called.
-pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf> {
+pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf, LibError> {
     // Check for configured override for the host tool.
     let sdk = ctx.get_sdk()?;
     let override_key = format!("{SDK_OVERRIDE_KEY_PREFIX}.{name}");
@@ -133,37 +169,32 @@ pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf> {
             log::info!("Using configured override for {name}: {tool_path:?}");
             return Ok(tool_path);
         } else {
-            return Err(anyhow!(
-                "Override path for {name} set to {tool_path:?}, but does not exist"
-            ));
+            return Err(LibError::OverrideNotExist(name.to_string(), tool_path));
         }
     }
-    match sdk.get_host_tool(name) {
-        Ok(tool_path) if tool_path.exists() => {
-            log::info!("SDK returned {tool_path:?} for {name}");
-            Ok(tool_path)
-        }
-        Ok(tool_path) => Err(anyhow!("SDK returned {tool_path:?} for {name}, but does not exist")),
-        Err(e) => Err(e.into()),
+    let tool_path = sdk.get_host_tool(name)?;
+    if tool_path.exists() {
+        log::info!("SDK returned {tool_path:?} for {name}");
+        Ok(tool_path)
+    } else {
+        Err(LibError::SdkToolNotExist(tool_path, name.to_string()))
     }
 }
 
-pub fn print_config<W: Write>(ctx: &EnvironmentContext, mut writer: W) -> Result<()> {
+pub fn print_config<W: Write>(ctx: &EnvironmentContext, mut writer: W) -> Result<(), LibError> {
     let config = ctx.load()?.config_from_cache()?;
-    let read_guard = config.read().map_err(|_| anyhow!("config read guard"))?;
-    writeln!(writer, "{}", *read_guard).context("displaying config")
+    let read_guard = config.read().map_err(|_| LibError::ReadGuard)?;
+    writeln!(writer, "{}", *read_guard).map_err(LibError::DisplayConfig)
 }
 
-fn get_log_dirs(ctx: &Option<EnvironmentContext>) -> Result<Vec<String>> {
+fn get_log_dirs(ctx: &Option<EnvironmentContext>) -> Result<Vec<String>, LibError> {
     match ctx {
         None => {
-            ffx_bail!(
-                "Failed to load host log directories from ffx config: No EnvironmentContext provided"
-            )
+            return Err(LibError::LoadLogDirs("No EnvironmentContext provided".into()));
         }
         Some(con) => match con.get("log.dir") {
             Ok(log_dirs) => Ok(log_dirs),
-            Err(e) => ffx_bail!("Failed to load host log directories from ffx config: {:?}", e),
+            Err(e) => return Err(LibError::LoadLogDirs(format!("{:?}", e))),
         },
     }
 }
@@ -189,25 +220,29 @@ pub fn print_log_hint<W: std::io::Write>(ctx: &Option<EnvironmentContext>, write
     }
 }
 
-pub async fn set_metrics_status(value: MetricsStatus) -> Result<()> {
-    set_new_opt_in_status(value).await.map_err(|e| anyhow!(e))
+pub async fn set_metrics_status(value: MetricsStatus) -> Result<(), crate::api::ConfigError> {
+    set_new_opt_in_status(value).await?;
+    Ok(())
 }
 
-pub async fn enable_basic_metrics() -> Result<()> {
-    set_new_opt_in_status(MetricsStatus::OptedIn).await.map_err(|e| anyhow!(e))
+pub async fn enable_basic_metrics() -> Result<(), crate::api::ConfigError> {
+    set_new_opt_in_status(MetricsStatus::OptedIn).await?;
+    Ok(())
 }
 
-pub async fn enable_enhanced_metrics() -> Result<()> {
-    set_new_opt_in_status(MetricsStatus::OptedInEnhanced).await.map_err(|e| anyhow!(e))
+pub async fn enable_enhanced_metrics() -> Result<(), crate::api::ConfigError> {
+    set_new_opt_in_status(MetricsStatus::OptedInEnhanced).await?;
+    Ok(())
 }
 
-pub async fn disable_metrics() -> Result<()> {
-    set_new_opt_in_status(MetricsStatus::OptedOut).await.map_err(|e| anyhow!(e))
+pub async fn disable_metrics() -> Result<(), crate::api::ConfigError> {
+    set_new_opt_in_status(MetricsStatus::OptedOut).await?;
+    Ok(())
 }
 
-pub async fn show_metrics_status<W: Write>(mut writer: W) -> Result<()> {
+pub async fn show_metrics_status<W: Write>(mut writer: W) -> Result<(), LibError> {
     let status_message = show_status_message().await;
-    writeln!(&mut writer, "{status_message}")?;
+    writeln!(&mut writer, "{status_message}").map_err(LibError::DisplayConfig)?;
     Ok(())
 }
 
@@ -247,7 +282,7 @@ mod test {
     }
 
     #[test]
-    fn test_converting_array() -> Result<()> {
+    fn test_converting_array() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let c = |val: Value| -> ConfigValue { ConfigValue(Some(val)) };
         let conv_elem: Vec<String> = <_>::try_convert(c(json!("test")))?;
         assert_eq!(1, conv_elem.len());
@@ -261,11 +296,9 @@ mod test {
         assert_eq!(3, conv_num.len());
         let conv_num_2: Vec<u64> = <_>::try_convert(c(json!([3, "false", 1000])))?;
         assert_eq!(2, conv_num_2.len());
-        let bad_elem: std::result::Result<Vec<u64>, ConfigError> =
-            <_>::try_convert(c(json!("test")));
+        let bad_elem: Result<Vec<u64>, ConfigError> = <_>::try_convert(c(json!("test")));
         assert!(bad_elem.is_err());
-        let bad_elem_2: std::result::Result<Vec<u64>, ConfigError> =
-            <_>::try_convert(c(json!(["test"])));
+        let bad_elem_2: Result<Vec<u64>, ConfigError> = <_>::try_convert(c(json!(["test"])));
         assert!(bad_elem_2.is_err());
         Ok(())
     }
@@ -306,9 +339,9 @@ mod test {
     fn test_conversion_errors() {
         // Probably don't want so much in the way of hard-coded string comparison, but this might
         // at least simplify it a bit.
-        let nv_str = |ty: &'static str| format!("no value set. Could not convert to {ty}");
+        let nv_str = |ty: &'static str| format!("No value set. Could not convert to {ty}");
         let badv_str = |from: &'static str, to: &'static str| {
-            format!("conversion to {to} not possible for value: {from}")
+            format!("Conversion to {to} not possible for value: {from}")
         };
         let no_val = ConfigValue(None);
         let err = <String>::try_convert(no_val.clone()).unwrap_err();

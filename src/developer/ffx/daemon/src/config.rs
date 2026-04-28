@@ -30,7 +30,7 @@ impl DaemonConfig for EnvironmentContext {
     async fn get_ascendd_path(&self) -> Result<PathBuf> {
         match self.get(Self::OVERNET_SOCKET_KEY) {
             Ok(path) => Ok(path),
-            _ => self.get_default_ascendd_path(),
+            _ => Ok(self.get_default_ascendd_path()?),
         }
     }
 

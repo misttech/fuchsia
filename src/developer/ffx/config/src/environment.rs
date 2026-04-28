@@ -4,7 +4,7 @@
 
 use crate::storage::Config;
 use crate::{ConfigLevel, ConfigMap};
-use anyhow::{Context, Result, bail};
+
 use fuchsia_lockfile::{Lockfile, LockfileCreateError};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,60 @@ use std::io::{BufReader, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum EnvironmentError {
+    #[error("reading environment from disk: {0}")]
+    ReadEnv(#[source] serde_json::Error),
+
+    #[error("loading host log directories from ffx config: {0}")]
+    LoadLogDirs(#[source] std::io::Error),
+
+    #[error("writing environment to disk: {0}")]
+    WriteEnv(#[source] serde_json::Error),
+
+    #[error("flushing environment: {0}")]
+    FlushEnv(#[source] std::io::Error),
+
+    #[error("persist error: {0}")]
+    Persist(String),
+
+    #[error("Tried to set unknown build directory")]
+    UnknownBuildDir,
+
+    #[error("writing default user configuration file: {0}")]
+    WriteDefaultUserConfig(#[source] std::io::Error),
+
+    #[error("syncing default user configuration file to filesystem: {0}")]
+    SyncDefaultUserConfig(#[source] std::io::Error),
+
+    #[error("creating default user configuration file: {0}")]
+    CreateDefaultUserConfig(#[source] std::io::Error),
+
+    #[error(
+        "Global configuration not set. Use 'ffx config env set' command to setup the environment."
+    )]
+    GlobalConfigNotSet,
+
+    #[error("Cannot set a build configuration without a build directory.")]
+    NoBuildDir,
+
+    #[error("This config level is not writable.")]
+    NotWritable,
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Config error: {0}")]
+    Config(#[from] crate::ConfigError),
+
+    #[error("Paths error: {0}")]
+    Paths(#[from] crate::paths::PathsError),
+
+    #[error("Context error: {0}")]
+    Context(#[from] crate::environment::ContextError),
+}
 
 mod context;
 mod kind;
@@ -46,7 +100,7 @@ impl Environment {
         Self { context, files }
     }
 
-    fn load(context: &EnvironmentContext) -> Result<Self> {
+    fn load(context: &EnvironmentContext) -> std::result::Result<Self, EnvironmentError> {
         Ok(if context.has_no_environment() {
             Self::new_empty(context.clone())
         } else {
@@ -67,7 +121,10 @@ impl Environment {
     /// Used to implement diagnostics for `ffx doctor`.
     pub async fn check_locks(
         context: &EnvironmentContext,
-    ) -> Result<Vec<(PathBuf, Result<PathBuf, Box<LockfileCreateError>>)>> {
+    ) -> std::result::Result<
+        Vec<(PathBuf, std::result::Result<PathBuf, Box<LockfileCreateError>>)>,
+        EnvironmentError,
+    > {
         let path = context.env_file_path()?.clone();
         let env = Self::load_env_file(&path, context)?;
 
@@ -89,7 +146,7 @@ impl Environment {
         Ok(checked)
     }
 
-    pub fn save(&self) -> Result<()> {
+    pub fn save(&self) -> std::result::Result<(), EnvironmentError> {
         let path = self.context.env_file_path()?;
 
         Self::save_env_file(path, &self.files)?;
@@ -99,32 +156,42 @@ impl Environment {
         Ok(())
     }
 
-    pub(crate) fn config_from_cache(self) -> Result<Arc<RwLock<Config>>> {
-        crate::cache::load_config(&self.context.cache, || Config::from_env(&self))
+    pub(crate) fn config_from_cache(
+        self,
+    ) -> std::result::Result<Arc<RwLock<Config>>, EnvironmentError> {
+        Ok(crate::cache::load_config(&self.context.cache, || Config::from_env(&self))
+            .map_err(crate::ConfigError::from)?)
     }
 
-    fn load_env_file(path: &Path, context: &EnvironmentContext) -> Result<Self> {
+    fn load_env_file(
+        path: &Path,
+        context: &EnvironmentContext,
+    ) -> std::result::Result<Self, EnvironmentError> {
         let files = match File::open(path) {
-            Ok(file) => serde_json::from_reader(BufReader::new(file))
-                .context("reading environment from disk"),
+            Ok(file) => {
+                serde_json::from_reader(BufReader::new(file)).map_err(EnvironmentError::ReadEnv)
+            }
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(EnvironmentFiles::default()),
-            Err(e) => Err(e).context("loading host log directories from ffx config"),
+            Err(e) => Err(EnvironmentError::LoadLogDirs(e)),
         }?;
 
         Ok(Self { files, context: context.clone() })
     }
 
-    fn save_env_file(path: PathBuf, files: &EnvironmentFiles) -> Result<()> {
+    fn save_env_file(
+        path: PathBuf,
+        files: &EnvironmentFiles,
+    ) -> std::result::Result<(), EnvironmentError> {
         // First save the config to a temp file in the same location as the file, then atomically
         // rename the file to the final location to avoid partially written files.
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
 
-        serde_json::to_writer_pretty(&mut tmp, files).context("writing environment to disk")?;
+        serde_json::to_writer_pretty(&mut tmp, files).map_err(EnvironmentError::WriteEnv)?;
 
-        tmp.flush().context("flushing environment")?;
+        tmp.flush().map_err(EnvironmentError::FlushEnv)?;
 
-        let _ = tmp.persist(path)?;
+        tmp.persist(path).map_err(|e| EnvironmentError::Persist(e.to_string()))?;
 
         Ok(())
     }
@@ -196,15 +263,13 @@ impl Environment {
         }
     }
 
-    pub fn set_build(&mut self, to: &Path) -> Result<()> {
+    pub fn set_build(&mut self, to: &Path) -> std::result::Result<(), EnvironmentError> {
         assert!(
             !self.context.no_environment,
             "Cannot set build configuration with --no-environment"
         );
-        let build_dir = self
-            .override_build_dir(None)
-            .context("Tried to set unknown build directory")?
-            .to_owned();
+        let build_dir =
+            self.override_build_dir(None).ok_or(EnvironmentError::UnknownBuildDir)?.to_owned();
         let build_dirs = match &mut self.files.build {
             Some(build_dirs) => build_dirs,
             None => self.files.build.get_or_insert_with(Default::default),
@@ -281,7 +346,10 @@ impl Environment {
 
     /// Checks the config files at the requested level to make sure they exist and are configured
     /// properly.
-    pub fn populate_defaults(&mut self, level: &ConfigLevel) -> Result<()> {
+    pub fn populate_defaults(
+        &mut self,
+        level: &ConfigLevel,
+    ) -> std::result::Result<(), EnvironmentError> {
         match level {
             ConfigLevel::User => {
                 log::debug!("Populating user defaults");
@@ -294,12 +362,10 @@ impl Environment {
                         Ok(mut file) => {
                             log::debug!("Doing write_all");
                             file.write_all(b"{}")
-                                .context("writing default user configuration file")?;
+                                .map_err(EnvironmentError::WriteDefaultUserConfig)?;
                             log::debug!("Syncing block cache with underlying storage");
                             if !self.context().env_kind().is_isolated() {
-                                file.sync_all().context(
-                                    "syncing default user configuration file to filesystem",
-                                )?;
+                                file.sync_all().map_err(EnvironmentError::SyncDefaultUserConfig)?;
                             }
                             log::debug!("Done syncing");
                         }
@@ -307,7 +373,7 @@ impl Environment {
                             log::debug!("File already exists");
                         }
                         other => {
-                            other.context("creating default user configuration file").map(|_| ())?
+                            other.map_err(EnvironmentError::CreateDefaultUserConfig).map(|_| ())?
                         }
                     }
                     self.files.user = Some(default_path);
@@ -316,10 +382,7 @@ impl Environment {
             ConfigLevel::Global => {
                 log::debug!("Populating global defaults");
                 if let None = self.files.global {
-                    bail!(
-                        "Global configuration not set. Use 'ffx config env set' command \
-                         to setup the environment."
-                    );
+                    return Err(EnvironmentError::GlobalConfigNotSet);
                 }
             }
             ConfigLevel::Build => match self.build_dir().map(Path::to_owned) {
@@ -348,9 +411,9 @@ impl Environment {
                     }
                     log::debug!("Build defaults populated");
                 }
-                None => bail!("Cannot set a build configuration without a build directory."),
+                None => return Err(EnvironmentError::NoBuildDir),
             },
-            _ => bail!("This config level is not writable."),
+            _ => return Err(EnvironmentError::NotWritable),
         }
         Ok(())
     }

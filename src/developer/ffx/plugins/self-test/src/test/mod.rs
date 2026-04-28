@@ -31,6 +31,7 @@ async fn set_value_in_isolate(
         .level(Some(ffx_config::ConfigLevel::User))
         .build()
         .set(&isolate.env_context(), value)
+        .map_err(anyhow::Error::from)
 }
 
 fn subtest_log_file(isolate: &ffx_isolate::Isolate) -> PathBuf {

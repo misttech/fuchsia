@@ -4,11 +4,26 @@
 
 //! Functions for interacting with nested json objects in a recursive way.
 
-use anyhow::{Context, Result};
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
 
 use crate::ConfigError;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum NestedError {
+    #[error("Configuration literal found when expecting a map.")]
+    LiteralExpectedMap,
+
+    #[error("Current key not found trying to recursively remove")]
+    CurrentKeyNotFound,
+
+    #[error("Config error: {0}")]
+    Config(#[from] crate::ConfigError),
+
+    #[error("Mapping error: {0}")]
+    Mapping(#[from] crate::mapping::MappingError),
+}
 
 /// A trait that adds a recursive mapping function to a nested json value tree.
 ///
@@ -29,24 +44,26 @@ pub(crate) trait RecursiveMap {
     fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Self::Output;
 
     /// Filters values recursively through the function provided. Can report an error.
-    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>>>(
+    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>, crate::api::ConfigError>>(
         self,
         mapper: &T,
-    ) -> Result<Self::Output>;
+    ) -> Result<Self::Output, crate::api::ConfigError>;
 }
 
 impl RecursiveMap for Value {
     type Output = Option<Value>;
+
     fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Option<Value> {
         // We can use unwrap() because try_recursive_map() only returns
         // an error if the mapper function does
-        self.try_recursive_map(&|v| Ok(mapper(v))).unwrap()
+        self.try_recursive_map(&|v| Ok::<Option<Value>, crate::api::ConfigError>(mapper(v)))
+            .unwrap()
     }
 
-    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>>>(
+    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>, crate::api::ConfigError>>(
         self,
         mapper: &T,
-    ) -> Result<Self::Output> {
+    ) -> Result<Self::Output, crate::api::ConfigError> {
         match self {
             Value::Object(map) => {
                 let mut result = Map::new();
@@ -67,7 +84,7 @@ impl RecursiveMap for Value {
                     arr.into_iter()
                         .map(|v| v.try_recursive_map(mapper))
                         // This is the magic line: if there were any errors, get an error result
-                        .collect::<Result<Vec<Option<Value>>>>()?
+                        .collect::<Result<Vec<Option<Value>>, crate::api::ConfigError>>()?
                         .into_iter()
                         .flatten(),
                 );
@@ -80,14 +97,15 @@ impl RecursiveMap for Value {
 
 impl RecursiveMap for Option<Value> {
     type Output = Option<Value>;
+
     fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Self::Output {
         self.and_then(|value| value.recursive_map(mapper))
     }
 
-    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>>>(
+    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>, crate::api::ConfigError>>(
         self,
         mapper: &T,
-    ) -> Result<Self::Output> {
+    ) -> Result<Self::Output, crate::api::ConfigError> {
         match self {
             None => Ok(None),
             Some(v) => v.try_recursive_map(mapper),
@@ -162,19 +180,21 @@ pub(crate) fn nested_remove(
     cur: &mut Map<String, Value>,
     key: &str,
     remaining_keys: &[&str],
-) -> Result<()> {
+) -> Result<(), NestedError> {
     if remaining_keys.len() == 0 {
-        cur.remove(&key.to_string()).context(ConfigError::KeyNotFound).map(|_| ())
+        cur.remove(&key.to_string())
+            .ok_or(NestedError::Config(ConfigError::KeyNotFound))
+            .map(|_| ())
     } else {
         // Just ensured this would be a case.
         let next_map = cur
             .get_mut(key)
-            .context(ConfigError::KeyNotFound)?
+            .ok_or(NestedError::Config(ConfigError::KeyNotFound))?
             .as_object_mut()
-            .context("Configuration literal found when expecting a map.")?;
+            .ok_or(NestedError::LiteralExpectedMap)?;
         nested_remove(next_map, remaining_keys[0], &remaining_keys[1..])?;
         if next_map.len() == 0 {
-            cur.remove(key).context("Current key not found trying to recursively remove")?;
+            cur.remove(key).ok_or(NestedError::CurrentKeyNotFound)?;
         }
         Ok(())
     }
@@ -183,14 +203,14 @@ pub(crate) fn nested_remove(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::anyhow;
+
     use serde_json::json;
 
     #[test]
     fn test_try_recursive_map_object_error() {
         let value = json!({"a": 1, "b": 2});
         let res = value.try_recursive_map(&|v| {
-            if v == 2 { Err(anyhow!("failed")) } else { Ok(Some(v)) }
+            if v == 2 { Err(crate::api::ConfigError::KeyNotFound) } else { Ok(Some(v)) }
         });
         assert!(res.is_err());
     }
@@ -199,7 +219,7 @@ mod tests {
     fn test_try_recursive_map_array_error() {
         let value = json!([1, 2, 3]);
         let res = value.try_recursive_map(&|v| {
-            if v == 2 { Err(anyhow!("failed")) } else { Ok(Some(v)) }
+            if v == 2 { Err(crate::api::ConfigError::KeyNotFound) } else { Ok(Some(v)) }
         });
         assert!(res.is_err());
     }
@@ -208,7 +228,7 @@ mod tests {
     fn test_try_recursive_map_nested_error() {
         let value = json!({"a": 1, "b": [2, 3]});
         let res = value.try_recursive_map(&|v| {
-            if v == 2 { Err(anyhow!("failed")) } else { Ok(Some(v)) }
+            if v == 2 { Err(crate::api::ConfigError::KeyNotFound) } else { Ok(Some(v)) }
         });
         assert!(res.is_err());
     }
@@ -216,7 +236,7 @@ mod tests {
     #[test]
     fn test_try_recursive_map_object_success() {
         let value = json!({"a": 1, "b": 2});
-        let res = value.try_recursive_map(&|v| {
+        let res: Result<_, crate::api::ConfigError> = value.try_recursive_map(&|v| {
             if v.is_object() {
                 Ok(Some(v))
             } else {
@@ -229,7 +249,7 @@ mod tests {
     #[test]
     fn test_try_recursive_map_array_success() {
         let value = json!([1, 2, 3]);
-        let res = value.try_recursive_map(&|v| {
+        let res: Result<_, crate::api::ConfigError> = value.try_recursive_map(&|v| {
             if v.is_array() {
                 Ok(Some(v))
             } else {
@@ -242,7 +262,7 @@ mod tests {
     #[test]
     fn test_try_recursive_map_nested_success() {
         let value = json!({"a": 1, "b": [2, 3]});
-        let res = value.try_recursive_map(&|v| {
+        let res: Result<_, crate::api::ConfigError> = value.try_recursive_map(&|v| {
             if v.is_object() || v.is_array() {
                 Ok(Some(v))
             } else {

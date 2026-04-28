@@ -477,7 +477,8 @@ mod test {
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
             .build()
-            .set(context, instance_root.to_string_lossy().into())?;
+            .set(context, instance_root.to_string_lossy().into())
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
 
         let mgr = PkgServerInstances::new(instance_root);
         let repo_config = RepositoryConfigBuilder::new(

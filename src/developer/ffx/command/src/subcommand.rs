@@ -44,7 +44,10 @@ impl ExternalSubTool {
     pub fn run_and_capture(self) -> Result<(ExitStatus, String, String)> {
         let mut command = std::process::Command::new(&self.path);
         command
-            .env(EnvironmentContext::FFX_BIN_ENV, self.context.rerun_bin()?)
+            .env(
+                EnvironmentContext::FFX_BIN_ENV,
+                self.context.rerun_bin().map_err(ffx_config::macro_deps::anyhow::Error::from)?,
+            )
             .args(self.cmd_line.ffx_args_iter().chain(self.cmd_line.subcmd_iter()))
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -84,7 +87,10 @@ impl ToolRunner for ExternalSubTool {
         // we don't have to do signal management, but later versions of fho
         // will likely need to do more here.
         let exec_err = std::process::Command::new(&self.path)
-            .env(EnvironmentContext::FFX_BIN_ENV, self.context.rerun_bin()?)
+            .env(
+                EnvironmentContext::FFX_BIN_ENV,
+                self.context.rerun_bin().map_err(ffx_config::macro_deps::anyhow::Error::from)?,
+            )
             .args(self.cmd_line.ffx_args_iter().chain(self.cmd_line.subcmd_iter()))
             .exec();
 

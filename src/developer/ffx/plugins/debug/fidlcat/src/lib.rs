@@ -71,7 +71,8 @@ impl FfxMain for FidlTool {
             log::warn!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
 
-        let fidlcat_path = ffx_config::get_host_tool(&context, "fidlcat")?;
+        let fidlcat_path = ffx_config::get_host_tool(&context, "fidlcat")
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
         let mut arguments = ProcessArguments::new();
         let mut debug_agent_socket: Option<DebugAgentSocket> = None;
 

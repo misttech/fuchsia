@@ -4,33 +4,52 @@
 
 use crate::EnvironmentContext;
 use crate::environment::EnvironmentKind;
-use anyhow::{Result, anyhow, bail};
+
 use camino::Utf8Path;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 
 use std::env::var;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum PathsError {
+    #[error("cannot find home directory")]
+    HomeDirectoryNotFound,
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("'shared_data' config: {0} is not a string")]
+    SharedDataNotString(String),
+
+    #[error("SHARED_DATA must be specified in strict mode. Use `ffx ... -c shared_data=<dir>.`")]
+    SharedDataRequiredInStrictMode,
+}
 
 pub const ENV_FILE: &str = ".ffx_env";
 pub const USER_FILE: &str = ".ffx_user_config.json";
 pub const DEFAULT_BUILD_CONFIG_FILE: &str = "ffx-config.json";
 
 impl EnvironmentContext {
-    pub fn get_default_user_file_path(&self) -> Result<PathBuf> {
+    pub fn get_default_user_file_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join(USER_FILE)),
             _ => get_default_user_file_path(),
         }
     }
 
-    pub fn get_default_env_path(&self) -> Result<PathBuf> {
+    pub fn get_default_env_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join(ENV_FILE)),
             _ => default_env_path(),
         }
     }
 
-    pub fn get_default_build_dir_config_path(&self, build_dir: &Path) -> Result<PathBuf> {
+    pub fn get_default_build_dir_config_path(
+        &self,
+        build_dir: &Path,
+    ) -> std::result::Result<PathBuf, PathsError> {
         let filename = build_dir.join(DEFAULT_BUILD_CONFIG_FILE);
         Ok(filename)
     }
@@ -44,7 +63,7 @@ impl EnvironmentContext {
         }
     }
 
-    pub fn get_default_ascendd_path(&self) -> Result<PathBuf> {
+    pub fn get_default_ascendd_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match (self.env_var("ASCENDD"), self.env_kind()) {
             (Ok(path), _) => Ok(PathBuf::from(&path)),
             (_, EnvironmentKind::InTree { build_dir: Some(p), .. }) => {
@@ -58,35 +77,35 @@ impl EnvironmentContext {
         }
     }
 
-    pub fn get_runtime_path(&self) -> Result<PathBuf> {
+    pub fn get_runtime_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join("runtime")),
             _ => get_runtime_base_path(),
         }
     }
 
-    pub fn get_cache_path(&self) -> Result<PathBuf> {
+    pub fn get_cache_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join("cache")),
             _ => get_cache_base_path(),
         }
     }
 
-    pub fn get_config_path(&self) -> Result<PathBuf> {
+    pub fn get_config_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join("config")),
             _ => get_config_base_path(),
         }
     }
 
-    pub fn get_data_path(&self) -> Result<PathBuf> {
+    pub fn get_data_path(&self) -> std::result::Result<PathBuf, PathsError> {
         match self.env_kind().isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join("data")),
             _ => get_data_base_path(),
         }
     }
 
-    pub fn get_shared_data_path(&self) -> Result<PathBuf> {
+    pub fn get_shared_data_path(&self) -> std::result::Result<PathBuf, PathsError> {
         // Special handling for $SHARED_DATA: it can be specified on the command
         // line with "-c shared_data=<dir>". Then, we allow the expansion of
         // $SHARED_DATA in strict mode, but _only_ if the actual shared-data
@@ -97,15 +116,13 @@ impl EnvironmentContext {
             if let Some(s) = v.as_str() {
                 Ok(PathBuf::from(s))
             } else {
-                bail!("'shared_data' config: {v:?} is not a string")
+                return Err(PathsError::SharedDataNotString(format!("{v:?}")));
             }
         } else {
             if self.is_strict() {
-                bail!(
-                    "SHARED_DATA must be specified in strict mode. Use `ffx ... -c shared_data=<dir>.`"
-                )
+                return Err(PathsError::SharedDataRequiredInStrictMode);
             } else {
-                get_shared_data_base_path().and_then(|base| Ok(base.join("shared")))
+                Ok(get_shared_data_base_path()?.join("shared"))
             }
         }
     }
@@ -121,14 +138,14 @@ impl EnvironmentContext {
     }
 }
 
-fn get_runtime_base() -> Result<PathBuf> {
+fn get_runtime_base() -> std::result::Result<PathBuf, PathsError> {
     if cfg!(target_os = "macos") {
-        let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+        let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
         home.push("Library");
         Ok(home)
     } else {
         var("XDG_RUNTIME_HOME").map(PathBuf::from).or_else(|_| {
-            let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+            let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
             home.push(".local");
             home.push("share");
             Ok(home)
@@ -142,7 +159,7 @@ fn default_ascendd_path() -> PathBuf {
     path
 }
 
-fn get_runtime_base_path() -> Result<PathBuf> {
+fn get_runtime_base_path() -> std::result::Result<PathBuf, PathsError> {
     let mut path = get_runtime_base()?;
     path.push("Fuchsia");
     path.push("ffx");
@@ -151,15 +168,15 @@ fn get_runtime_base_path() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn get_cache_base() -> Result<PathBuf> {
+fn get_cache_base() -> std::result::Result<PathBuf, PathsError> {
     if cfg!(target_os = "macos") {
-        let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+        let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
         home.push("Library");
         home.push("Caches");
         Ok(home)
     } else {
         var("XDG_CACHE_HOME").map(PathBuf::from).or_else(|_| {
-            let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+            let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
             home.push(".local");
             home.push("share");
             Ok(home)
@@ -167,7 +184,7 @@ fn get_cache_base() -> Result<PathBuf> {
     }
 }
 
-fn get_cache_base_path() -> Result<PathBuf> {
+fn get_cache_base_path() -> std::result::Result<PathBuf, PathsError> {
     let mut path = get_cache_base()?;
     path.push("Fuchsia");
     path.push("ffx");
@@ -176,15 +193,15 @@ fn get_cache_base_path() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn get_config_base() -> Result<PathBuf> {
+fn get_config_base() -> std::result::Result<PathBuf, PathsError> {
     if cfg!(target_os = "macos") {
-        let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+        let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
         home.push("Library");
         home.push("Preferences");
         Ok(home)
     } else {
         var("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|_| {
-            let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+            let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
             home.push(".local");
             home.push("share");
             Ok(home)
@@ -192,7 +209,7 @@ fn get_config_base() -> Result<PathBuf> {
     }
 }
 
-fn get_config_base_path() -> Result<PathBuf> {
+fn get_config_base_path() -> std::result::Result<PathBuf, PathsError> {
     let mut path = get_config_base()?;
     path.push("Fuchsia");
     path.push("ffx");
@@ -201,7 +218,7 @@ fn get_config_base_path() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn get_analytics_base_path() -> Result<PathBuf> {
+fn get_analytics_base_path() -> std::result::Result<PathBuf, PathsError> {
     let mut path = get_data_base()?;
     path.push("Fuchsia");
     path.push("metrics");
@@ -209,7 +226,7 @@ fn get_analytics_base_path() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn default_env_path() -> Result<PathBuf> {
+fn default_env_path() -> std::result::Result<PathBuf, PathsError> {
     // Environment file that keeps track of configuration files
     get_config_base_path().map(|mut path| {
         path.push(ENV_FILE);
@@ -217,14 +234,14 @@ fn default_env_path() -> Result<PathBuf> {
     })
 }
 
-fn get_data_base() -> Result<PathBuf> {
+fn get_data_base() -> std::result::Result<PathBuf, PathsError> {
     if cfg!(target_os = "macos") {
-        let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+        let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
         home.push("Library");
         Ok(home)
     } else {
         var("XDG_DATA_HOME").map(PathBuf::from).or_else(|_| {
-            let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+            let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
             home.push(".local");
             home.push("share");
             Ok(home)
@@ -232,14 +249,14 @@ fn get_data_base() -> Result<PathBuf> {
     }
 }
 
-pub fn get_state_base() -> Result<PathBuf> {
+pub fn get_state_base() -> std::result::Result<PathBuf, PathsError> {
     if cfg!(target_os = "macos") {
-        let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+        let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
         home.push("Library");
         Ok(home)
     } else {
         var("XDG_STATE_HOME").map(PathBuf::from).or_else(|_| {
-            let mut home = home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?;
+            let mut home = home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)?;
             home.push(".local");
             home.push("share");
             Ok(home)
@@ -247,7 +264,7 @@ pub fn get_state_base() -> Result<PathBuf> {
     }
 }
 
-fn get_data_base_path() -> Result<PathBuf> {
+fn get_data_base_path() -> std::result::Result<PathBuf, PathsError> {
     let mut path = get_data_base()?;
     path.push("Fuchsia");
     path.push("ffx");
@@ -255,7 +272,7 @@ fn get_data_base_path() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn get_shared_data_base_path() -> Result<PathBuf> {
+fn get_shared_data_base_path() -> std::result::Result<PathBuf, PathsError> {
     let mut path = get_state_base()?;
     path.push("Fuchsia");
     path.push("ffx");
@@ -263,7 +280,7 @@ fn get_shared_data_base_path() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn get_default_user_file_path() -> Result<PathBuf> {
+fn get_default_user_file_path() -> std::result::Result<PathBuf, PathsError> {
     // Default user configuration file
     const DEFAULT_USER_CONFIG: &str = ".ffx_user_config.json";
 

@@ -8,9 +8,8 @@ use crate::api::value::{TryConvert, ValueStrategy};
 use crate::cache::Cache;
 use crate::storage::{AssertNoEnv, Config};
 use crate::{ConfigMap, ConfigQueryBuilder, Environment, is_analytics_disabled};
-use anyhow::{Context, Result};
+
 use camino::{Utf8Path, Utf8PathBuf};
-use errors::ffx_error;
 use ffx_config_domain::ConfigDomain;
 use sdk::{Sdk, SdkRoot};
 use std::collections::HashMap;
@@ -20,6 +19,41 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ContextError {
+    #[error("SDK error: {0}")]
+    Sdk(String),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("Config domain root not found for path: {0}")]
+    DomainRootNotFound(Utf8PathBuf),
+
+    #[error("Failed to load config domain: {0}")]
+    DomainLoad(#[from] ffx_config_domain::FileError),
+
+    #[error("Failed to get build ID: {0}")]
+    BuildId(#[from] buildid::Error),
+
+    #[error("SDK load error: {0}")]
+    SdkLoad(String),
+
+    #[error("SDK tool error: {0}")]
+    SdkTool(String),
+
+    #[error("Environment detect error: {0}")]
+    Detect(#[from] EnvironmentDetectError),
+    #[error("Paths error: {0}")]
+    Paths(#[from] crate::paths::PathsError),
+
+    #[error("AssertNoEnv error: {0}")]
+    AssertNoEnv(#[from] crate::storage::AssertNoEnvError),
+}
 
 /// A name for the type used as an environment variable mapping for isolation override
 pub(crate) type EnvVars = HashMap<String, String>;
@@ -102,7 +136,7 @@ impl EnvironmentContext {
 
     /// Initializes an environment type that is just the bare minimum, containing no ambient configuration, only
     /// the runtime args.
-    pub fn strict(exe_kind: ExecutableKind, runtime_args: ConfigMap) -> Result<Self> {
+    pub fn strict(exe_kind: ExecutableKind, runtime_args: ConfigMap) -> Result<Self, ContextError> {
         let cache = Arc::new(Cache::<Config>::new(None));
         let mut res = Self {
             kind: EnvironmentKind::StrictContext,
@@ -158,13 +192,10 @@ impl EnvironmentContext {
         runtime_args: ConfigMap,
         isolate_root: Option<PathBuf>,
         no_environment: bool,
-    ) -> Result<Self> {
-        let domain_config = ConfigDomain::find_root(&domain_root).with_context(|| {
-            ffx_error!("Could not find config domain root from '{domain_root}'")
-        })?;
-        let domain = ConfigDomain::load_from(&domain_config).with_context(|| {
-            ffx_error!("Could not load config domain file at '{domain_config}'")
-        })?;
+    ) -> Result<Self, ContextError> {
+        let domain_config = ConfigDomain::find_root(&domain_root)
+            .ok_or_else(|| ContextError::DomainRootNotFound(domain_root.clone()))?;
+        let domain = ConfigDomain::load_from(&domain_config)?;
         Ok(Self::config_domain(exe_kind, domain, runtime_args, isolate_root, no_environment))
     }
 
@@ -197,7 +228,7 @@ impl EnvironmentContext {
         env_file_path: Option<PathBuf>,
         current_dir: Option<&Utf8Path>,
         no_environment: bool,
-    ) -> Result<Self> {
+    ) -> Result<Self, ContextError> {
         if let Some(domain_path) = current_dir.and_then(ConfigDomain::find_root) {
             let domain = ConfigDomain::load_from(&domain_path)?;
             Ok(Self::config_domain(
@@ -314,7 +345,7 @@ impl EnvironmentContext {
         }
     }
 
-    pub fn env_file_path(&self) -> Result<PathBuf> {
+    pub fn env_file_path(&self) -> Result<PathBuf, ContextError> {
         match &self.env_file_path {
             Some(path) => Ok(path.clone()),
             None => Ok(self.get_default_env_path()?),
@@ -348,15 +379,15 @@ impl EnvironmentContext {
     }
 
     /// Returns a unique identifier denoting the version of the daemon binary.
-    pub fn daemon_version_string(&self) -> Result<String> {
-        buildid::get_build_id().map_err(Into::into)
+    pub fn daemon_version_string(&self) -> Result<String, ContextError> {
+        Ok(buildid::get_build_id()?)
     }
 
     pub fn env_kind(&self) -> &EnvironmentKind {
         &self.kind
     }
 
-    pub fn load(&self) -> Result<Environment> {
+    pub fn load(&self) -> Result<Environment, crate::environment::EnvironmentError> {
         Environment::load(self)
     }
 
@@ -414,7 +445,7 @@ impl EnvironmentContext {
 
     /// A shorthand for the very common case of querying a value from the global config
     /// cache and this environment, using the provided value converted into a query.
-    pub fn get<'a, T, U>(&'a self, with: U) -> std::result::Result<T, ConfigError>
+    pub fn get<'a, T, U>(&'a self, with: U) -> Result<T, ConfigError>
     where
         T: TryConvert + ValueStrategy,
         U: Into<ConfigQueryBuilder<'a>>,
@@ -424,7 +455,7 @@ impl EnvironmentContext {
 
     /// A shorthand for the very common case of querying a value from the global config
     /// cache and this environment, using the provided value converted into a query.
-    pub fn get_optional<'a, T, U>(&'a self, with: U) -> std::result::Result<T, ConfigError>
+    pub fn get_optional<'a, T, U>(&'a self, with: U) -> Result<T, ConfigError>
     where
         T: TryConvert + ValueStrategy,
         U: Into<ConfigQueryBuilder<'a>>,
@@ -434,21 +465,24 @@ impl EnvironmentContext {
 
     /// Find the appropriate sdk root for this invocation of ffx, looking at configuration
     /// values and the current environment context to determine the correct place to find it.
-    pub fn get_sdk_root(&self) -> Result<SdkRoot> {
+    pub fn get_sdk_root(&self) -> Result<SdkRoot, ContextError> {
         // some in-tree tooling directly overrides sdk.root. But if that's not done, the 'root' is just the
         // build directory.
         // Out of tree, we will always want to pull the config from the normal config path, which
         // we can defer to the SdkRoot's mechanisms for.
         let runtime_root: Option<PathBuf> = self.query("sdk.root").build().get(self).ok();
         match (&self.kind, runtime_root) {
-            (EnvironmentKind::InTree { .. }, None) => Ok(SdkRoot::from_paths(None)?),
-            (_, runtime_root) => Ok(SdkRoot::from_paths(runtime_root.as_deref())?),
+            (EnvironmentKind::InTree { .. }, None) => {
+                SdkRoot::from_paths(None).map_err(|e| ContextError::Sdk(e.to_string()))
+            }
+            (_, runtime_root) => SdkRoot::from_paths(runtime_root.as_deref())
+                .map_err(|e| ContextError::Sdk(e.to_string())),
         }
     }
 
     /// Load the sdk configured for this environment context
-    pub fn get_sdk(&self) -> Result<Sdk> {
-        Ok(self.get_sdk_root()?.get_sdk()?)
+    pub fn get_sdk(&self) -> Result<Sdk, ContextError> {
+        self.get_sdk_root()?.get_sdk().map_err(|e| ContextError::Sdk(e.to_string()))
     }
 
     /// The environment variable we search for
@@ -462,7 +496,7 @@ impl EnvironmentContext {
     /// context's `ExecutableType` is MainFfx.
     /// - If neither of those are found, and an sdk is configured, search the
     /// sdk manifest for the ffx host-tool entry and use that.
-    pub fn rerun_bin(&self) -> Result<PathBuf, anyhow::Error> {
+    pub fn rerun_bin(&self) -> Result<PathBuf, ContextError> {
         if let Some(bin_from_env) = self.env_var(Self::FFX_BIN_ENV).ok() {
             return Ok(bin_from_env.into());
         }
@@ -471,16 +505,13 @@ impl EnvironmentContext {
             return Ok(self.self_path.clone());
         }
 
-        let sdk = self.get_sdk().with_context(|| {
-            ffx_error!("Unable to load SDK while searching for the 'main' ffx binary")
-        })?;
-        sdk.get_host_tool("ffx")
-            .with_context(|| ffx_error!("Unable to find the 'main' ffx binary in the loaded SDK"))
+        let sdk = self.get_sdk().map_err(|e| ContextError::SdkLoad(e.to_string()))?;
+        sdk.get_host_tool("ffx").map_err(|e| ContextError::SdkTool(e.to_string()))
     }
 
     /// Creates a command builder that starts with everything necessary to re-run ffx within the same context,
     /// without any subcommands.
-    pub fn rerun_prefix(&self) -> Result<Command, anyhow::Error> {
+    pub fn rerun_prefix(&self) -> Result<Command, ContextError> {
         // we may have been run by a wrapper script, so we want to make sure we're using the 'real' executable.
         let mut ffx_path = self.rerun_bin()?;
         // if we daemonize, our path will change to /, so get the canonical path before that occurs.

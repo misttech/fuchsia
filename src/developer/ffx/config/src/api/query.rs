@@ -8,7 +8,7 @@ use crate::api::ConfigResult;
 use crate::mapping::env_var::env_var_strict;
 use crate::nested::RecursiveMap;
 use crate::{ConfigError, ConfigLevel, Environment, EnvironmentContext, ValueStrategy};
-use anyhow::{Result, anyhow, bail};
+
 use serde_json::Value;
 use std::default::Default;
 use thiserror::Error;
@@ -71,7 +71,7 @@ impl<'a> ConfigQueryBuilder<'a> {
 impl<'a> ConfigQuery<'a> {
     fn get_config(&self, env: Environment) -> ConfigResult {
         let config = env.config_from_cache()?;
-        let read_guard = config.read().map_err(|_| anyhow!("config read guard"))?;
+        let read_guard = config.read().map_err(|_| ConfigError::ReadLockFailed)?;
         let result = match self {
             Self { name: Some(name), level: None, select, .. } => read_guard.get(*name, *select),
             Self { name: Some(name), level: Some(level), .. } => {
@@ -83,7 +83,7 @@ impl<'a> ConfigQuery<'a> {
             _ => {
                 let err_string = format!("Invalid query: {self}");
                 log::debug!("{err_string}");
-                bail!("{err_string}");
+                return Err(ConfigError::InvalidQuery(err_string));
             }
         }
         .into();
@@ -97,9 +97,7 @@ impl<'a> ConfigQuery<'a> {
     {
         let ctx = context;
         T::validate_query(self)?;
-        let cv = self
-            .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
-            .map_err(|e| ConfigError::new(e))?;
+        let cv = self.get_config(ctx.load()?)?;
         T::try_convert(cv)
     }
 
@@ -138,9 +136,8 @@ impl<'a> ConfigQuery<'a> {
             // difficult, so for now, let's have an explicit check. Unfortunately, we need to
             // do all the other mappings first, since they _all_ look like env vars ("$BUILD_DIR", etc)
             let cv = self
-                .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
-                .map_err(|e| ConfigError::new(e))?
-                .try_recursive_map(&|val| shared_data(&ctx, val))?
+                .get_config(ctx.load()?)?
+                .try_recursive_map(&|val| Ok(shared_data(&ctx, val)?))?
                 .recursive_map(&|val| build(&ctx, val))
                 .recursive_map(&|val| workspace(&ctx, val));
             let cv = if let Some(ref v) = cv.0 {
@@ -170,12 +167,11 @@ impl<'a> ConfigQuery<'a> {
             T::try_convert(cv)
         } else {
             let cv = self
-                .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
-                .map_err(|e| ConfigError::new(e))?
+                .get_config(ctx.load()?)?
                 .recursive_map(&|val| runtime(&ctx, val))
                 .recursive_map(&|val| cache(&ctx, val))
                 .recursive_map(&|val| data(&ctx, val))
-                .try_recursive_map(&|val| shared_data(&ctx, val))?
+                .try_recursive_map(&|val| Ok(shared_data(&ctx, val)?))?
                 .recursive_map(&|val| config(&ctx, val))
                 .recursive_map(&|val| home(&ctx, val))
                 .recursive_map(&|val| build(&ctx, val))
@@ -197,9 +193,8 @@ impl<'a> ConfigQuery<'a> {
         // See comments re strict checking in get() above
         if ctx.is_strict() {
             let cv = self
-                .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
-                .map_err(|e| ConfigError::new(e))?
-                .try_recursive_map(&|val| shared_data(&ctx, val))?
+                .get_config(ctx.load()?)?
+                .try_recursive_map(&|val| Ok(shared_data(&ctx, val)?))?
                 .recursive_map(&|val| build(&ctx, val))
                 .recursive_map(&|val| workspace(&ctx, val));
             let cv = if let Some(ref v) = cv.0 {
@@ -222,12 +217,11 @@ impl<'a> ConfigQuery<'a> {
             T::try_convert(cv)
         } else {
             let cv = self
-                .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
-                .map_err(|e| ConfigError::new(e))?
+                .get_config(ctx.load()?)?
                 .recursive_map(&|val| runtime(&ctx, val))
                 .recursive_map(&|val| cache(&ctx, val))
                 .recursive_map(&|val| data(&ctx, val))
-                .try_recursive_map(&|val| shared_data(&ctx, val))?
+                .try_recursive_map(&|val| Ok(shared_data(&ctx, val)?))?
                 .recursive_map(&|val| config(&ctx, val))
                 .recursive_map(&|val| home(&ctx, val))
                 .recursive_map(&|val| build(&ctx, val))
@@ -239,23 +233,29 @@ impl<'a> ConfigQuery<'a> {
         }
     }
 
-    fn validate_write_query(&self) -> Result<(&str, ConfigLevel)> {
+    fn validate_write_query(&self) -> std::result::Result<(&str, ConfigLevel), ConfigError> {
         match self {
             ConfigQuery { name: None, .. } => {
-                bail!("Name of configuration is required to write to a value")
+                return Err(ConfigError::ValidationError(super::ValidationError::NameRequired));
             }
             ConfigQuery { level: None, .. } => {
-                bail!("Level of configuration is required to write to a value")
+                return Err(ConfigError::ValidationError(super::ValidationError::LevelRequired));
             }
             ConfigQuery { level: Some(level), .. } if level == &ConfigLevel::Default => {
-                bail!("Cannot override defaults")
+                return Err(ConfigError::ValidationError(
+                    super::ValidationError::CannotOverrideDefaults,
+                ));
             }
             ConfigQuery { name: Some(key), level: Some(level), .. } => Ok((*key, *level)),
         }
     }
 
     /// Set the queried location to the given Value.
-    pub fn set(&self, context: &EnvironmentContext, value: Value) -> Result<()> {
+    pub fn set(
+        &self,
+        context: &EnvironmentContext,
+        value: Value,
+    ) -> std::result::Result<(), ConfigError> {
         log::debug!("Setting config value");
         let (key, level) = self.validate_write_query()?;
         let mut env = context.load()?;
@@ -264,7 +264,7 @@ impl<'a> ConfigQuery<'a> {
         log::debug!("Config set defaults populated");
         let config = env.config_from_cache()?;
         log::debug!("Config set got value from cache");
-        let mut write_guard = config.write().map_err(|_| anyhow!("config write guard"))?;
+        let mut write_guard = config.write().map_err(|_| ConfigError::WriteLockFailed)?;
         log::debug!("Config set got write guard");
         write_guard.set(key, level, value)?;
         log::debug!("Config set performed");
@@ -274,26 +274,32 @@ impl<'a> ConfigQuery<'a> {
     }
 
     /// Remove the value at the queried location.
-    pub fn remove(&self, context: &EnvironmentContext) -> Result<()> {
+    pub fn remove(&self, context: &EnvironmentContext) -> std::result::Result<(), ConfigError> {
         let (key, level) = self.validate_write_query()?;
         let env = context.load()?;
         let config = env.config_from_cache()?;
-        let mut write_guard = config.write().map_err(|_| anyhow!("config write guard"))?;
+        let mut write_guard = config.write().map_err(|_| ConfigError::WriteLockFailed)?;
         write_guard.remove(key, level)?;
-        write_guard.save()
+        write_guard.save().map_err(Into::into)
     }
 
     /// Add this value at the queried location as an array item, converting the location to an array
     /// if necessary.
-    pub fn add(&self, context: &EnvironmentContext, value: Value) -> Result<()> {
+    pub fn add(
+        &self,
+        context: &EnvironmentContext,
+        value: Value,
+    ) -> std::result::Result<(), ConfigError> {
         let (key, level) = self.validate_write_query()?;
         let mut env = context.load()?;
         env.populate_defaults(&level)?;
         let config = env.config_from_cache()?;
-        let mut write_guard = config.write().map_err(|_| anyhow!("config write guard"))?;
+        let mut write_guard = config.write().map_err(|_| ConfigError::WriteLockFailed)?;
         if let Some(mut current) = write_guard.get_in_level(key, level) {
             if current.is_object() {
-                bail!("cannot add a value to a subtree");
+                return Err(ConfigError::ValidationError(
+                    super::ValidationError::CannotAddToSubtree,
+                ));
             } else {
                 match current.as_array_mut() {
                     Some(v) => {
@@ -307,7 +313,7 @@ impl<'a> ConfigQuery<'a> {
             write_guard.set(key, level, value)?
         };
 
-        write_guard.save()
+        write_guard.save().map_err(Into::into)
     }
 }
 

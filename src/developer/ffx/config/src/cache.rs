@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::api::ConfigError;
 use crate::storage::{AssertNoEnv, AssertNoEnvError};
-use anyhow::{Result, anyhow};
+
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -46,8 +47,7 @@ impl<T: AssertNoEnv + Default> AssertNoEnv for Cache<T> {
         preamble: Option<String>,
         ctx: &crate::EnvironmentContext,
     ) -> Result<(), AssertNoEnvError> {
-        load_config(self, || Ok(T::default()))
-            .map_err(|e| AssertNoEnvError::Unexpected(e.into()))?;
+        load_config(self, || Ok::<T, ConfigError>(T::default()))?;
         let config = self.locker.read().expect("cache read mutex poisoned");
         let defaults = config.as_ref().expect("config did not load");
         let default_config = defaults.config.read().expect("config read mutex poisoned");
@@ -75,26 +75,33 @@ fn read_cache<T>(
         .map(|item| item.config.clone())
 }
 
-pub(crate) fn load_config<T>(
+pub(crate) fn load_config<T, E>(
     cache: &Cache<T>,
-    new_config: impl FnOnce() -> Result<T>,
-) -> Result<Arc<RwLock<T>>> {
+    new_config: impl FnOnce() -> Result<T, E>,
+) -> Result<Arc<RwLock<T>>, E>
+where
+    E: From<ConfigError>,
+{
     load_config_with_instant(Instant::now(), cache, new_config)
 }
 
-fn load_config_with_instant<T>(
+fn load_config_with_instant<T, E>(
     now: Instant,
     cache: &Cache<T>,
-    new_config: impl FnOnce() -> Result<T>,
-) -> Result<Arc<RwLock<T>>> {
+    new_config: impl FnOnce() -> Result<T, E>,
+) -> Result<Arc<RwLock<T>>, E>
+where
+    E: From<ConfigError>,
+{
     let cache_hit = {
-        let guard = cache.locker.read().map_err(|_| anyhow!("config read guard"))?;
+        let guard = cache.locker.read().map_err(|_| E::from(ConfigError::ReadLockFailed))?;
         read_cache(&guard, now, cache.cache_timeout)
     };
     match cache_hit {
         Some(h) => Ok(h),
         None => {
-            let mut guard = cache.locker.write().map_err(|_| anyhow!("config write guard"))?;
+            let mut guard =
+                cache.locker.write().map_err(|_| E::from(ConfigError::WriteLockFailed))?;
             let config = Arc::new(RwLock::new(new_config()?));
 
             *guard = Some(CacheItem { created: now, config: config.clone() });
@@ -113,7 +120,7 @@ mod test {
         let tests = 25;
         let mut result = Vec::new();
         for x in 0..tests {
-            result.push(load_config_with_instant(now, cache, move || Ok(x)));
+            result.push(load_config_with_instant(now, cache, move || Ok::<usize, ConfigError>(x)));
         }
         assert_eq!(tests, result.len());
         result.iter().for_each(|x| {
@@ -152,7 +159,8 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_expiration_check_does_not_panic() -> Result<()> {
+    fn test_expiration_check_does_not_panic() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let now = Instant::now();
         let later = now.checked_add(Duration::from_millis(1)).expect("timeout should not overflow");
         let item = CacheItem { created: later, config: Arc::new(RwLock::new(1)) };
