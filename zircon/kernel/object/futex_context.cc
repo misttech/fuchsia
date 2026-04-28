@@ -81,7 +81,10 @@ zx_status_t ValidateFutexOwner(zx_handle_t new_owner_handle,
 }
 
 inline zx_status_t ValidateFutexPointer(user_in_ptr<const zx_futex_t> value_ptr) {
-  if (!value_ptr || (reinterpret_cast<uintptr_t>(value_ptr.get()) % sizeof(zx_futex_t))) {
+  if (reinterpret_cast<uintptr_t>(value_ptr.get()) % sizeof(zx_futex_t) != 0) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  if (FutexId(value_ptr) == FutexId::Null()) {
     return ZX_ERR_INVALID_ARGS;
   }
   return ZX_OK;

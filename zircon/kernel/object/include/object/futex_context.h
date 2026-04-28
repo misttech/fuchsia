@@ -30,7 +30,12 @@ class FutexId {
   bool operator!=(const FutexId& other) const { return id_ != other.id_; }
   uintptr_t get() const { return id_; }
 
-  static inline constexpr FutexId Null() { return FutexId{}; }
+  static inline constexpr FutexId Null() {
+    // Since user address spaces always start above 0, 0 is never a legal
+    // address and we are free to use it as a sentinel value.
+    static_assert(USER_ASPACE_BASE > 0);
+    return FutexId{};
+  }
   static size_t GetHash(FutexId key) { return key.id_; }
 
  private:

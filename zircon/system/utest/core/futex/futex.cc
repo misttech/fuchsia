@@ -779,5 +779,31 @@ TEST(FutexTest, FutexRequeueTbiReturnsInvalidArgs) {
 #endif
 }
 
+#if defined(__aarch64__)
+// Regression tests for b/505923588
+#define NULL_FUTEX_PTR ((zx_futex_t*)0xff00000000000000ULL)
+
+TEST(FutexTest, WaitWithNullIdReturnsInvalidArgs) {
+  zx_status_t status = zx_futex_wait(NULL_FUTEX_PTR, 0, ZX_HANDLE_INVALID, ZX_TIME_INFINITE_PAST);
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
+}
+
+TEST(FutexTest, RequeueWithFirstNullIdReturnsInvalidArgs) {
+  zx_futex_t valid_futex = 0;
+  zx_status_t status = zx_futex_requeue(NULL_FUTEX_PTR, 1, 0, &valid_futex, 1, ZX_HANDLE_INVALID);
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
+}
+
+TEST(FutexTest, RequeueWithSecondNullIdReturnsInvalidArgs) {
+  zx_futex_t valid_futex = 0;
+  zx_status_t status = zx_futex_requeue(&valid_futex, 1, 0, NULL_FUTEX_PTR, 1, ZX_HANDLE_INVALID);
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
+}
+
+TEST(FutexTest, WakeWithNullIdReturnsInvalidArgs) {
+  zx_status_t status = zx_futex_wake(NULL_FUTEX_PTR, 1);
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
+}
+#endif  // defined(__aarch64__)
 }  // namespace
 }  // namespace futex
