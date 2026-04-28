@@ -15,7 +15,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.
 set -e
 
 readonly CARTFS_MOUNT_POINT="/google/cartfs/mount"
-readonly CARTFS_MOUNT_POINT_LOCAL_MOCK="$HOME/.mock_cartfs"
 readonly GIT_CITC_PATH="$(which git-citc)"
 
 # Collect the list of cog workspaces.
@@ -23,51 +22,58 @@ cog_workspaces=$(git-citc list)
 
 # Collect the stale dirs from CartFS.
 stale_dirs=()
-for mount_point in "$CARTFS_MOUNT_POINT" "$CARTFS_MOUNT_POINT_LOCAL_MOCK"; do
-  fx-info "Processing CartFS mount point: $mount_point"
-  if [ ! -d "$mount_point" ]; then
+if [[ ! -d "$CARTFS_MOUNT_POINT" ]]; then
+  fx-info "CartFS mount point not found: $CARTFS_MOUNT_POINT. Nothing to clean."
+  exit 0
+fi
+
+fx-info "Processing CartFS mount point: $CARTFS_MOUNT_POINT"
+while IFS= read -r cartfs_dir; do
+  if [[ -z "$cartfs_dir" ]]; then
     continue
   fi
-  while IFS= read -r cartfs_dir; do
-    if [ -z "$cartfs_dir" ]; then
-      continue
-    fi
 
-    cog_json_path="$mount_point/$cartfs_dir/.cog.json"
-    # If the .cog.json file is not present, skip it.
-    if [ ! -f "$cog_json_path" ]; then
-      continue
-    fi
+  # Skip the shared jiri root directory.
+  if [[ "$cartfs_dir" == ".jiri_root" ]]; then
+    continue
+  fi
 
-    workspace_name=$(fx-command-run jq -r .workspace_name "$cog_json_path")
-    metadata_workspace_id=$(fx-command-run jq -r .workspace_id "$cog_json_path")
-    if [[ "$metadata_workspace_id" == "null" ]]; then
-      metadata_workspace_id=""
-    fi
+  cartfs_abs_path="$CARTFS_MOUNT_POINT/$cartfs_dir"
+  cog_json_path="$cartfs_abs_path/.cog.json"
+  # If the .cog.json file is not present, skip it.
+  if [[ ! -f "$cog_json_path" ]]; then
+    fx-warn "Skipping unrecognized CartFS directory '$cartfs_abs_path' (no .cog.json found)"
+    continue
+  fi
 
-    # If the workspace name is not in the list of cog workspaces, remove it from CartFS.
-    if ! echo "${cog_workspaces}" | grep -Fxq "${workspace_name}"; then
-      fx-info "Find stale '${cartfs_dir}' from $mount_point (workspace no longer exists)"
-      stale_dirs+=("$mount_point/$cartfs_dir")
-      continue
-    fi
+  workspace_name=$(fx-command-run jq -r .workspace_name "$cog_json_path")
+  metadata_workspace_id=$(fx-command-run jq -r .workspace_id "$cog_json_path")
+  if [[ "$metadata_workspace_id" == "null" ]]; then
+    metadata_workspace_id=""
+  fi
 
-    # Verify the workspace_id matches the current workspace instance.
-    actual_workspace_id_path="/google/cog/cloud/$(id -un)/$workspace_name/.citc/workspace_id"
-    actual_workspace_id=""
-    if [[ -f "$actual_workspace_id_path" ]]; then
-      actual_workspace_id=$(cat "$actual_workspace_id_path")
-    fi
+  # If the workspace name is not in the list of cog workspaces, remove it from CartFS.
+  if ! echo "${cog_workspaces}" | grep -Fxq "${workspace_name}"; then
+    fx-info "Found stale directory '$cartfs_abs_path' (workspace no longer exists)"
+    stale_dirs+=("$cartfs_abs_path")
+    continue
+  fi
 
-    if [[ "$metadata_workspace_id" != "$actual_workspace_id" ]]; then
-      fx-info "Find stale '${cartfs_dir}' from $mount_point (workspace ID mismatch: '$metadata_workspace_id' != '$actual_workspace_id')"
-      stale_dirs+=("$mount_point/$cartfs_dir")
-    fi
-  done <<< "$(ls -A "$mount_point")"
-done
+  # Verify the workspace_id matches the current workspace instance.
+  actual_workspace_id_path="/google/cog/cloud/$(id -un)/$workspace_name/.citc/workspace_id"
+  actual_workspace_id=""
+  if [[ -f "$actual_workspace_id_path" ]]; then
+    actual_workspace_id=$(cat "$actual_workspace_id_path")
+  fi
+
+  if [[ "$metadata_workspace_id" != "$actual_workspace_id" ]]; then
+    fx-info "Found stale directory '$cartfs_abs_path' (workspace ID mismatch: '$metadata_workspace_id' != '$actual_workspace_id')"
+    stale_dirs+=("$cartfs_abs_path")
+  fi
+done <<< "$(ls -A "$CARTFS_MOUNT_POINT")"
 
 # Prompt the user to confirm the stale dirs to remove.
-if [ "${#stale_dirs[@]}" -gt 0 ]; then
+if [[ "${#stale_dirs[@]}" -gt 0 ]]; then
   fx-info
   fx-info "The following stale dirs will be removed:"
   fx-info
@@ -89,4 +95,3 @@ if [ "${#stale_dirs[@]}" -gt 0 ]; then
 else
   fx-info "No stale dirs found."
 fi
-
