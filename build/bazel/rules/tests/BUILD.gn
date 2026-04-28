@@ -14,8 +14,9 @@ bazel_build_action("tests") {
     },
   ]
 
-  # The SDK is required because the C++ tests rely on it for the sysroot.
-  # TODO(https://fxbug.dev/443766378): Set to true once a proper sysroot is
-  # available for the platform build.
+  deps = [ "//zircon/public/sysroot_sdk:sysroot_for_fuchsia_platform" ]
+
+  # TODO(https://fxbug.dev/505802054): Specify that the "fuchsia_platform"
+  # platform should be used and remove this dependency on the in-tree SDK.
   no_sdk = false
 }
