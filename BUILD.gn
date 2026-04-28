@@ -2679,3 +2679,12 @@ group("root_targets") {
 pool("console") {
   depth = 1
 }
+
+# An action that pretends to create ninja_outputs.json. Dependents will be
+# re-run when this file is regenerated, which will happen when the regenerator
+# is invoked.
+action("ninja_outputs_json") {
+  script = "//build/scripts/no_op.sh"
+  outputs = [ "${root_build_dir}/ninja_outputs.json" ]
+  args = rebase_path(outputs, root_build_dir)
+}
