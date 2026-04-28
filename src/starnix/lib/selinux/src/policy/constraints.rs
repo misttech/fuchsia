@@ -104,8 +104,8 @@ enum ConstraintNode<'a> {
 impl<'a> ConstraintNode<'a> {
     fn try_from_constraint_term(
         value: &'a ConstraintTerm,
-        source: &SecurityContext,
-        target: &SecurityContext,
+        source: &'a SecurityContext,
+        target: &'a SecurityContext,
     ) -> Result<ConstraintNode<'a>, ConstraintError> {
         if let Ok(op) = BooleanOperator::try_from_constraint_term(value) {
             Ok(ConstraintNode::Branch(op))
@@ -180,7 +180,7 @@ enum Operand<'a> {
     UserId(UserId),
     RoleId(RoleId),
     TypeId(TypeId),
-    Level(SecurityLevel),
+    Level(&'a SecurityLevel),
     UserIds(HashSet<UserId>),
     RoleIds(HashSet<RoleId>),
     TypeIds(TypeIds<'a>),
@@ -192,7 +192,7 @@ impl From<&Operand<'_>> for ContextOperand {
             Operand::UserId(user_id) => Self::UserId(user_id.clone()),
             Operand::RoleId(role_id) => Self::RoleId(role_id.clone()),
             Operand::TypeId(type_id) => Self::TypeId(type_id.clone()),
-            Operand::Level(security_level) => Self::Level(security_level.clone()),
+            Operand::Level(security_level) => Self::Level((*security_level).clone()),
             Operand::UserIds(user_ids) => Self::UserIds(user_ids.clone()),
             Operand::RoleIds(role_ids) => Self::RoleIds(role_ids.clone()),
             Operand::TypeIds(type_ids) => Self::TypeIds(
@@ -274,11 +274,11 @@ impl<'a> ContextExpression<'a> {
                 }),
             },
             (Operand::Level(left), Operand::Level(right)) => match self.operator {
-                ContextOperator::Equal => Ok(left.compare(right) == Some(Ordering::Equal)),
-                ContextOperator::NotEqual => Ok(left.compare(right) != Some(Ordering::Equal)),
-                ContextOperator::Dominates => Ok(left.dominates(right)),
-                ContextOperator::DominatedBy => Ok(right.dominates(left)),
-                ContextOperator::Incomparable => Ok(left.compare(right).is_none()),
+                ContextOperator::Equal => Ok((*left).compare(*right) == Some(Ordering::Equal)),
+                ContextOperator::NotEqual => Ok((*left).compare(*right) != Some(Ordering::Equal)),
+                ContextOperator::Dominates => Ok((*left).dominates(*right)),
+                ContextOperator::DominatedBy => Ok((*right).dominates(*left)),
+                ContextOperator::Incomparable => Ok((*left).compare(*right).is_none()),
             },
             _ => Err(ConstraintError::InvalidContextOperands {
                 left: ContextOperand::from(&self.left),
@@ -289,8 +289,8 @@ impl<'a> ContextExpression<'a> {
 
     fn try_from_constraint_term(
         value: &'a ConstraintTerm,
-        source: &SecurityContext,
-        target: &SecurityContext,
+        source: &'a SecurityContext,
+        target: &'a SecurityContext,
     ) -> Result<ContextExpression<'a>, ConstraintError> {
         let (left, right) = match value.constraint_term_type() {
             CONSTRAINT_TERM_TYPE_EXPR => {
@@ -325,8 +325,8 @@ impl<'a> ContextExpression<'a> {
 
     fn operands_from_expr(
         operand_type: u32,
-        source: &SecurityContext,
-        target: &SecurityContext,
+        source: &'a SecurityContext,
+        target: &'a SecurityContext,
     ) -> Result<(Operand<'a>, Operand<'a>), ConstraintError> {
         match operand_type {
             CONSTRAINT_EXPR_OPERAND_TYPE_USER => {
@@ -338,29 +338,28 @@ impl<'a> ContextExpression<'a> {
             CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => {
                 Ok((Operand::TypeId(source.type_()), Operand::TypeId(target.type_())))
             }
-            CONSTRAINT_EXPR_OPERAND_TYPE_L1_L2 => Ok((
-                Operand::Level(source.low_level().clone()),
-                Operand::Level(target.low_level().clone()),
-            )),
+            CONSTRAINT_EXPR_OPERAND_TYPE_L1_L2 => {
+                Ok((Operand::Level(source.low_level()), Operand::Level(target.low_level())))
+            }
             CONSTRAINT_EXPR_OPERAND_TYPE_L1_H2 => Ok((
-                Operand::Level(source.low_level().clone()),
-                Operand::Level(target.effective_high_level().clone()),
+                Operand::Level(source.low_level()),
+                Operand::Level(target.effective_high_level()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_H1_L2 => Ok((
-                Operand::Level(source.effective_high_level().clone()),
-                Operand::Level(target.low_level().clone()),
+                Operand::Level(source.effective_high_level()),
+                Operand::Level(target.low_level()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_H1_H2 => Ok((
-                Operand::Level(source.effective_high_level().clone()),
-                Operand::Level(target.effective_high_level().clone()),
+                Operand::Level(source.effective_high_level()),
+                Operand::Level(target.effective_high_level()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_L1_H1 => Ok((
-                Operand::Level(source.low_level().clone()),
-                Operand::Level(source.effective_high_level().clone()),
+                Operand::Level(source.low_level()),
+                Operand::Level(source.effective_high_level()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_L2_H2 => Ok((
-                Operand::Level(target.low_level().clone()),
-                Operand::Level(target.effective_high_level().clone()),
+                Operand::Level(target.low_level()),
+                Operand::Level(target.effective_high_level()),
             )),
             _ => Err(ConstraintError::InvalidContextOperandType { type_: operand_type }),
         }
@@ -369,8 +368,8 @@ impl<'a> ContextExpression<'a> {
     fn operands_from_expr_with_names(
         operand_type: u32,
         names: &'a ExtensibleBitmap,
-        source: &SecurityContext,
-        target: &SecurityContext,
+        source: &'a SecurityContext,
+        target: &'a SecurityContext,
     ) -> Result<(Operand<'a>, Operand<'a>), ConstraintError> {
         let ids = names.indices_of_set_bits().map(|i| NonZeroU32::new(i + 1).unwrap());
 
