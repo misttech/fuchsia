@@ -25,6 +25,7 @@ class FakePin : public fidl::testing::WireTestBase<fuchsia_hardware_pin::Pin> {
   std::optional<uint32_t> take_drive_strength_ua();
   std::optional<uint64_t> take_function();
   std::optional<uint64_t> take_slew_rate();
+  std::optional<std::string> take_function_name();
 
  private:
   void Configure(ConfigureRequestView request, ConfigureCompleter::Sync& completer) override;
@@ -44,6 +45,7 @@ class FakePin : public fidl::testing::WireTestBase<fuchsia_hardware_pin::Pin> {
   std::optional<uint32_t> drive_strength_ua_;
   std::optional<uint64_t> function_;
   std::optional<uint64_t> slew_rate_;
+  std::optional<std::string> function_name_;
   fidl::ServerBindingGroup<fuchsia_hardware_pin::Pin> bindings_;
 };
 

@@ -36,6 +36,12 @@ std::optional<uint64_t> FakePin::take_slew_rate() {
   return slew_rate;
 }
 
+std::optional<std::string> FakePin::take_function_name() {
+  std::optional<std::string> function_name = function_name_;
+  function_name_.reset();
+  return function_name;
+}
+
 void FakePin::Configure(ConfigureRequestView request, ConfigureCompleter::Sync& completer) {
   if (request->config.has_pull()) {
     pull_ = request->config.pull();
@@ -48,6 +54,9 @@ void FakePin::Configure(ConfigureRequestView request, ConfigureCompleter::Sync& 
   }
   if (request->config.has_slew_rate()) {
     slew_rate_ = request->config.slew_rate();
+  }
+  if (request->config.has_function_name()) {
+    function_name_ = std::string(request->config.function_name().get());
   }
   completer.ReplySuccess(request->config);
 }
