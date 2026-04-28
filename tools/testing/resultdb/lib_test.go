@@ -93,8 +93,8 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 		"is_top_level_test": "true",
 		"owners":            "testgoogler1@google.com,testgoogler2@google.com,testgoogler3@google.com,testgoogler4@google.com,testgoogler5@google.com",
 	}
-	if diff := cmp.Diff(expectedTags, tags); diff != "" {
-		t.Errorf("tags differ (-want +got):\n%s", diff)
+	if diff := cmp.Diff(tags, expectedTags); diff != "" {
+		t.Errorf("tags differ (-got +want):\n%s", diff)
 	}
 
 	if len(result.Artifacts) != 2 {
@@ -117,10 +117,10 @@ func TestSetTestDetailsToResultSink(t *testing.T) {
 			},
 		},
 	}
-	if diff := cmp.Diff(expectedMetadata.Name, result.TestMetadata.Name); diff != "" {
+	if diff := cmp.Diff(result.TestMetadata.Name, expectedMetadata.Name); diff != "" {
 		t.Errorf("Diff in metadata name (-got +want):\n%s", diff)
 	}
-	if diff := cmp.Diff(expectedMetadata.BugComponent.GetIssueTracker().ComponentId, result.TestMetadata.BugComponent.GetIssueTracker().ComponentId); diff != "" {
+	if diff := cmp.Diff(result.TestMetadata.BugComponent.GetIssueTracker().ComponentId, expectedMetadata.BugComponent.GetIssueTracker().ComponentId); diff != "" {
 		t.Errorf("Diff in the bug component's component id (-got +want):\n%s", diff)
 	}
 }
@@ -158,8 +158,8 @@ func TestSetTestDetailsToResultSink_DefaultFailureReason_ExceedsMaxSize(t *testi
 		"affected":          "false",
 		"is_top_level_test": "true",
 	}
-	if diff := cmp.Diff(expectedTags, tags); diff != "" {
-		t.Errorf("tags differ (-want +got):\n%s", diff)
+	if diff := cmp.Diff(tags, expectedTags); diff != "" {
+		t.Errorf("tags differ (-got +want):\n%s", diff)
 	}
 
 	if len(result.Artifacts) != 2 {
@@ -229,7 +229,7 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 
 			if tc.expectedFailureReason == "" {
 				if result.FailureReason != nil {
-					t.Errorf("Expected nil FailureReason, got %+v", result.FailureReason)
+					t.Errorf("got FailureReason %+v, want nil", result.FailureReason)
 				}
 			} else {
 				if result.FailureReason == nil {
@@ -240,7 +240,7 @@ func TestSetTestDetailsToResultSink_NonSuccessCases(t *testing.T) {
 					gotErr = result.FailureReason.Errors[0].Message
 				}
 				if gotErr != tc.expectedFailureReason {
-					t.Errorf("Expected failure reason %q, got %q", tc.expectedFailureReason, gotErr)
+					t.Errorf("got failure reason %q, want %q", gotErr, tc.expectedFailureReason)
 				}
 			}
 		})
@@ -278,8 +278,8 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 			"key1":         "value1",
 			"owners":       "testgoogler1@google.com,testgoogler2@google.com,testgoogler3@google.com,testgoogler4@google.com,testgoogler5@google.com",
 		}
-		if diff := cmp.Diff(expectedTags, tags); diff != "" {
-			t.Errorf("tags differ (-want +got):\n%s", diff)
+		if diff := cmp.Diff(tags, expectedTags); diff != "" {
+			t.Errorf("tags differ (-got +want):\n%s", diff)
 		}
 		if len(result.Artifacts) != 2 {
 			t.Errorf("Got %d artifacts for test case %d, want 2", len(result.Artifacts), i+1)
@@ -293,6 +293,7 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 			t.Errorf("Diff in output files (-got +want):\n%s", diff)
 		}
 		expectedMetadata := resultpb.TestMetadata{
+			Name: detail.Cases[i].DisplayName,
 			BugComponent: &resultpb.BugComponent{
 				System: &resultpb.BugComponent_IssueTracker{
 					IssueTracker: &resultpb.IssueTrackerComponent{
@@ -301,10 +302,10 @@ func TestSetTestCaseToResultSink(t *testing.T) {
 				},
 			},
 		}
-		if diff := cmp.Diff(expectedMetadata.Name, result.TestMetadata.Name); diff != "" {
+		if diff := cmp.Diff(result.TestMetadata.Name, expectedMetadata.Name); diff != "" {
 			t.Errorf("Diff in metadata name (-got +want):\n%s", diff)
 		}
-		if diff := cmp.Diff(expectedMetadata.BugComponent.GetIssueTracker().ComponentId, result.TestMetadata.BugComponent.GetIssueTracker().ComponentId); diff != "" {
+		if diff := cmp.Diff(result.TestMetadata.BugComponent.GetIssueTracker().ComponentId, expectedMetadata.BugComponent.GetIssueTracker().ComponentId); diff != "" {
 			t.Errorf("Diff in the bug component's component id (-got +want):\n%s", diff)
 		}
 	}

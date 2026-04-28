@@ -125,11 +125,10 @@ func artifactName(file string) string {
 }
 
 // set the TestMetadata on TestResult
-func setTestMetadata(r *sinkpb.TestResult, testDetail runtests.TestDetails) {
+func setTestMetadata(r *sinkpb.TestResult, testDetail runtests.TestDetails, displayName string) {
 	if testDetail.Metadata.ComponentID > 0 {
 		r.TestMetadata = &resultpb.TestMetadata{
-			// Do not set the Name field or else that will override the title
-			// that gets displayed in the Test Results UI.
+			Name: displayName,
 			BugComponent: &resultpb.BugComponent{
 				System: &resultpb.BugComponent_IssueTracker{
 					IssueTracker: &resultpb.IssueTrackerComponent{
@@ -213,7 +212,7 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 				log.Printf("[Warn] outputFile: %s is not readable, skip.", outputFile)
 			}
 		}
-		setTestMetadata(&r, *testDetail)
+		setTestMetadata(&r, *testDetail, testCase.DisplayName)
 		testResult = append(testResult, &r)
 	}
 	return testResult, testsSkipped
@@ -280,7 +279,7 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 		}
 	}
 
-	setTestMetadata(&r, *testDetail)
+	setTestMetadata(&r, *testDetail, "")
 	return &r, testsSkipped, nil
 }
 
