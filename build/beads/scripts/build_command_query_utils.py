@@ -3,12 +3,10 @@
 # found in the LICENSE file.
 
 import json
-import os
 import pathlib
 import sys
 import typing as T
-
-import gn_runner
+from itertools import zip_longest
 
 # Root directory of the Fuchsia source tree.
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
@@ -32,112 +30,164 @@ def debug(s: T.Any) -> None:
         print(f"DEBUG: {s}", file=sys.stderr)
 
 
-def query_gn_outputs(
-    gn: gn_runner.GnRunner, gn_label_pattern: str
-) -> dict[str, str]:
-    """
-    Query GN for outputs matching the given label pattern.
-
-    Args:
-        gn: The GnRunner instance to use.
-        gn_label_pattern: The GN label pattern to query for.
-
-    Returns:
-        A dictionary mapping GN labels to their corresponding output files.
-        GN labels with no outputs are NOT included in the final output.
-    """
-    debug(f"Querying GN outputs using gn desc for {gn_label_pattern}...")
-    return {}
-
-
 def query_ninja_commands(
-    gn: gn_runner.GnRunner,
     ninja_runner: ninja_artifacts.NinjaRunner,
+    ninja_outputs_path: pathlib.Path,
     gn_labels: list[str],
-    fuchsia_dir: pathlib.Path,
 ) -> dict[str, str]:
     """
-    Fetch the command line of the rustc command for the given GN labels.
+    Fetch the ninja build commands for the given GN labels.
 
     Args:
-        gn: The GnRunner instance to use.
         ninja_runner: The NinjaRunner instance to use.
+        ninja_outputs_path: Path to the ninja outputs JSON file, it stores a mapping from GN labels
+            to Ninja outputs.
         gn_labels: The GN labels to fetch the command line for.
-        fuchsia_dir: Path to the Fuchsia source tree.
 
     Returns:
-        A dictionary mapping GN labels to their corresponding rustc command lines.
+        A dictionary mapping GN labels to their corresponding Ninja build commands.
     """
-    debug(f"Fetching Ninja commands for GN labels {gn_labels}...")
-    return {
-        gn_label: query_ninja_command(gn, ninja_runner, gn_label, fuchsia_dir)
-        for gn_label in gn_labels
-    }
+    debug(f"Querying Ninja commands for GN labels {gn_labels}...")
+
+    if not gn_labels:
+        return {}
+
+    with ninja_outputs_path.open("r") as f:
+        ninja_outputs: dict[str, list[str]] = json.load(f)
+
+    all_outputs = []
+    for gn_label in gn_labels:
+        outputs = ninja_outputs.get(gn_label)
+        if not outputs:
+            raise ValueError(
+                f"Could not find outputs for label {gn_label} in {ninja_outputs_path}"
+            )
+        all_outputs.append((gn_label, outputs))
+    debug(f"Found Ninja outputs: {all_outputs}")
+
+    outputs_for_query = [
+        output for _, outputs in all_outputs for output in outputs
+    ]
+    ninja_cmd = ["-t", "commands", "-s"] + outputs_for_query
+    debug(f"Running ninja command with args: {ninja_cmd}")
+
+    ninja_cmd_output = ninja_runner.run_and_extract_output(ninja_cmd)
+    commands = ninja_cmd_output.strip().splitlines()
+
+    # On successful runs of `ninja -t commands -s`, each GN label should have a single Ninja command
+    # associated with it.
+    #
+    # We check that this is true by checking that each command contains the expected output.
+    results = {}
+    for (gn_label, outputs), cmd in zip_longest(all_outputs, commands):
+        # This happens if the ninja query returned a shorter output than expected.
+        if not cmd:
+            raise ValueError(
+                f"Could not find command for label: {gn_label}, no command returned from Ninja query"
+            )
+
+        # Confirm that the command is associated with the expected output.
+        for output in outputs:
+            if output in cmd:
+                results[gn_label] = cmd
+                break
+
+        if gn_label not in results:
+            raise ValueError(
+                f"Could not find command for label: {gn_label}, no matching output found in Ninja command"
+            )
+
+    return results
 
 
 def query_ninja_command(
-    gn: gn_runner.GnRunner,
     ninja_runner: ninja_artifacts.NinjaRunner,
+    ninja_outputs_path: pathlib.Path,
     gn_label: str,
-    fuchsia_dir: pathlib.Path,
 ) -> str:
     """
-    Fetch the command line of the rustc command for the given GN label.
-
-    This function uses `fx gn desc` to get the output files of the GN label.
-    Then it uses `fx ninja -t commands` to get the command line of the rustc
-    command.
+    Fetch the Ninja build command for the given GN label.
 
     Args:
-        gn: The GnRunner instance to use.
         ninja_runner: The NinjaRunner instance to use.
+        ninja_outputs_path: Path to the ninja outputs JSON file.
         gn_label: The GN label to fetch the command line for.
 
     Returns:
-        A string representing the command line of the rustc command.
+        A string representing the Ninja build command for the given GN label.
     """
     debug(f"Fetching Ninja command for GN label {gn_label}...")
-
-    debug(
-        f"Running gn desc for target {gn_label} in build directory {gn.build_dir}"
-    )
-    desc_output = gn.run_and_extract_output(["desc", gn_label, "outputs"])
-    outputs = desc_output.strip().splitlines()
-    if not outputs:
-        debug(f"No outputs found for GN label {gn_label}.")
-        return ""
-
-    debug(f"outputs from GN desc: {outputs}")
-    # Outputs are in format `//out/dir/foo/bar`. Need to strip the `//out/dir` part.
-    # Build root is `out/dir`.
-    build_root_relpath = os.path.relpath(gn.build_dir, fuchsia_dir)
-    relative_outputs = [
-        os.path.relpath(output[2:], build_root_relpath) for output in outputs
+    return query_ninja_commands(ninja_runner, ninja_outputs_path, [gn_label])[
+        gn_label
     ]
 
-    cmd_raw = ""
-    for candidate in relative_outputs:
-        try:
-            ninja_cmd = ["-t", "commands", "-s", candidate]
-            debug(f"Running ninja command with args: {ninja_cmd}")
-            ninja_cmd_output = ninja_runner.run_and_extract_output(ninja_cmd)
-            out = ninja_cmd_output.strip()
-            if out:
-                cmd_raw = out
-                selected_output = candidate
-                break
-        except Exception as e:
-            print(f"ERROR: running ninja -t commands for {candidate}: {e}")
+
+def query_bazel_commands(
+    bazel_launcher: build_utils.BazelLauncher, bazel_labels: list[str]
+) -> dict[str, str]:
+    """
+    Query Bazel for the command lines of the rustc commands for the given Bazel labels.
+
+    Args:
+        bazel_launcher: The BazelLauncher instance to use.
+        bazel_labels: The Bazel labels to fetch the command lines for.
+
+    Returns:
+        A dictionary mapping Bazel labels to their corresponding rustc command lines.
+    """
+    if not bazel_labels:
+        return {}
+
+    query_targets = " + ".join(bazel_labels)
+    query_args = [
+        "--config=host",
+        "--config=quiet",
+        "--output=jsonproto",
+        f'mnemonic("Rustc", {query_targets})',
+    ]
+    debug(
+        f"Fetching Bazel commands for {bazel_labels} using aquery with args: {query_args}"
+    )
+    res = bazel_launcher.run_query(
+        "aquery",
+        query_args,
+        ignore_errors=False,
+    )
+    if res.returncode != 0:
+        debug(f"Bazel aquery stdout:\n{res.stdout}")
+        debug(f"Bazel aquery stderr:\n{res.stderr}")
+        raise ValueError(
+            f"Failed to run bazel aquery for labels, return code: {res.returncode}"
+        )
+
+    aquery_json = json.loads(res.stdout)
+    targets = aquery_json.get("targets", [])
+    target_id_to_label = {
+        target.get("id"): target.get("label") for target in targets
+    }
+
+    results: dict[str, str] = {}
+    actions = aquery_json.get("actions", [])
+    for action in actions:
+        target_id = action.get("targetId")
+        if not target_id:
             continue
 
-    if not cmd_raw:
-        debug("Failed to retrieve ninja command for any output.")
-        return ""
+        label = target_id_to_label.get(target_id)
+        if not label:
+            # Not a label we know about, skip.
+            continue
+        arguments = " ".join(action.get("arguments", []))
+        if not arguments:
+            # Skip actions that don't have any arguments.
+            continue
+        results.setdefault(label, arguments)
 
-    debug(
-        f"Selected GN output artifact: {selected_output} to retrieve Ninja command"
-    )
-    return cmd_raw
+    missing_labels = [label for label in bazel_labels if label not in results]
+    if missing_labels:
+        raise ValueError(f"Could not find command for labels: {missing_labels}")
+
+    return results
 
 
 def query_bazel_command(
@@ -154,38 +204,5 @@ def query_bazel_command(
     Returns:
         A string representing the command line of the rustc command.
     """
-    query_args = [
-        "--config=host",
-        "--config=quiet",
-        "--output=jsonproto",
-        f'mnemonic("Rustc", {bazel_label})',
-    ]
-    debug(
-        f"Fetching Bazel command for {bazel_label} using aquery with args: {query_args}"
-    )
-    res = bazel_launcher.run_query(
-        "aquery",
-        query_args,
-        ignore_errors=False,
-    )
-    if res.returncode != 0:
-        debug(
-            f"Failed to run bazel aquery for {bazel_label}, return code: {res.returncode}"
-        )
-        debug(f"Stdout:\n{res.stdout}")
-        debug(f"Stderr:\n{res.stderr}")
-        return ""
-
-    try:
-        aquery_json = json.loads(res.stdout)
-    except json.JSONDecodeError as e:
-        debug(f"Error parsing Bazel aquery JSON: {e}")
-        return ""
-
-    actions = aquery_json.get("actions", [])
-    if not actions:
-        debug(f"No actions found in Bazel aquery for {bazel_label}")
-        return ""
-
-    # Assume the first action is the relevant action for this target.
-    return " ".join(actions[0].get("arguments", []))
+    debug(f"Fetching Bazel command for Bazel label {bazel_label}...")
+    return query_bazel_commands(bazel_launcher, [bazel_label])[bazel_label]

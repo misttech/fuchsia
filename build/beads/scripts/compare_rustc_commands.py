@@ -15,7 +15,6 @@ import tempfile
 import typing as T
 
 import build_command_query_utils
-import gn_runner
 import shell_utils
 
 # Enable debug logging.
@@ -26,9 +25,6 @@ _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 
 # Path to the default Ninja binary.
 _DEFAULT_NINJA_BIN = _FUCHSIA_DIR / "prebuilt/third_party/ninja/linux-x64/ninja"
-
-# Path to the default GN binary.
-_DEFAULT_GN_BIN = _FUCHSIA_DIR / "prebuilt/third_party/gn/linux-x64/gn"
 
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
 import ninja_artifacts
@@ -193,16 +189,15 @@ def main() -> int:
         help="Path to GN build directory (e.g. out/default)",
     )
     parser.add_argument(
+        "--ninja_outputs_path",
+        type=pathlib.Path,
+        help="Path to ninja outputs JSON file",
+    )
+    parser.add_argument(
         "--ninja_bin",
         type=pathlib.Path,
         default=_DEFAULT_NINJA_BIN,
         help="Path to ninja binary",
-    )
-    parser.add_argument(
-        "--gn_bin",
-        type=pathlib.Path,
-        default=_DEFAULT_GN_BIN,
-        help="Path to gn binary",
     )
     parser.add_argument(
         "--gn_label", required=True, help="GN Rust target label"
@@ -233,18 +228,20 @@ def main() -> int:
             "Error: Could not determine build directory. Please provide --build_dir."
         )
         return 1
+    ninja_outputs_path = args.ninja_outputs_path or (
+        build_dir / "ninja_outputs.json"
+    )
 
     debug(f"Fuchsia Dir: {args.fuchsia_dir}")
     debug(f"Build Dir: {build_dir}")
-    debug(f"GN Path: {args.gn_bin}")
+    debug(f"Ninja outputs path: {ninja_outputs_path}")
     debug(f"Ninja Path: {args.ninja_bin}")
     debug(f"GN Label: {args.gn_label}")
     debug(f"Bazel Label: {args.bazel_label}")
 
-    gn = gn_runner.GnRunner(build_dir, args.gn_bin)
     ninja_runner = ninja_artifacts.NinjaRunner(args.ninja_bin, build_dir)
     gn_cmd_raw = build_command_query_utils.query_ninja_command(
-        gn, ninja_runner, args.gn_label, args.fuchsia_dir
+        ninja_runner, ninja_outputs_path, args.gn_label
     )
     gn_cmd = shell_utils.ShellCommand(gn_cmd_raw)
 
