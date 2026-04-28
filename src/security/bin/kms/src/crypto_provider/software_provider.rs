@@ -9,6 +9,7 @@ use crate::crypto_provider::{
 use aes_gcm::aead::AeadInPlace;
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce, Tag};
 use fidl_fuchsia_kms::{AsymmetricKeyAlgorithm, KeyProvider};
+use rkyv;
 use serde::{Deserialize, Serialize};
 
 const AES_KEY_SIZE: usize = 32;
@@ -36,7 +37,7 @@ struct AesKey {
     key: [u8; AES_KEY_SIZE],
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 struct EncryptedData {
     iv: [u8; AES_IV_SIZE],
     cipher_text: Vec<u8>,
@@ -84,23 +85,26 @@ impl SealingProviderKey for SoftwareSealingKey {
         let tag = cipher
             .encrypt_in_place_detached(&iv, &[], &mut cipher_text)
             .expect("buffer is large enough");
-        let output =
-            bincode::serialize(&EncryptedData { iv: iv.into(), cipher_text, tag: tag.into() })
-                .map_err(|err| {
-                    CryptoProviderError::new(&format!(
-                        "failed to serialize encrypted data: {:?}",
-                        err
-                    ))
-                })?;
+        let output = rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(
+            &EncryptedData { iv: iv.into(), cipher_text, tag: tag.into() },
+            Vec::new(),
+        )
+        .map_err(|err| {
+            CryptoProviderError::new(&format!("failed to serialize encrypted data: {:?}", err))
+        })?;
         Ok(output)
     }
 
     fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoProviderError> {
         let key = Key::<Aes256Gcm>::from_slice(&self.inner_key.key);
         let cipher = Aes256Gcm::new(key);
-        let encrypted_data: EncryptedData = bincode::deserialize(data).map_err(|err| {
-            CryptoProviderError::new(&format!("failed to deserialize encrypted data: {:?}", err))
-        })?;
+        let encrypted_data: EncryptedData =
+            rkyv::from_bytes::<EncryptedData, rkyv::rancor::Failure>(data).map_err(|err| {
+                CryptoProviderError::new(&format!(
+                    "failed to deserialize encrypted data: {:?}",
+                    err
+                ))
+            })?;
         let iv = Nonce::from_slice(&encrypted_data.iv);
         let mut plain_text = encrypted_data.cipher_text.to_vec();
         let tag = Tag::from_slice(&encrypted_data.tag);
@@ -217,7 +221,11 @@ impl CryptoProvider for SoftwareProvider {
             cipher_text: vec![0; data_size],
             tag: [0; AES_TAG_SIZE],
         };
-        let fake_sealed_data = bincode::serialize(&fake_encrypted_data).map_err(|err| {
+        let fake_sealed_data = rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(
+            &fake_encrypted_data,
+            Vec::new(),
+        )
+        .map_err(|err| {
             CryptoProviderError::new(&format!(
                 "failed to serialize encrypted data to calculate size: {:?}",
                 err
