@@ -103,6 +103,7 @@ class Flags:
     restrict_logs: bool
     also_run_disabled_tests: bool
     show_full_moniker_in_logs: bool
+    capture_syslog: bool
     break_on_failure: bool
     breakpoints: typing.List[str]
     use_existing_debugger: bool
@@ -748,6 +749,12 @@ def parse_args(
         type=float,
         default=1,
         help="Speed up replays by this amount. Can be less than 1 for slow motion.",
+    )
+    output.add_argument(
+        "--capture-syslog",
+        action=argparse.BooleanOptionalAction,
+        help="""If set, include captured syslog in output. Set by default.""",
+        default=True,
     )
 
     if defaults is not None:

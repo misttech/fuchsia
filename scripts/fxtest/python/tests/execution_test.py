@@ -101,6 +101,18 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
                 [],
             ),
             (
+                "with default capture syslog",
+                [],
+                [["--capture-syslog"]],
+                [],
+            ),
+            (
+                "without capture syslog",
+                ["--no-capture-syslog"],
+                [],
+                ["--capture-syslog"],
+            ),
+            (
                 "with min log severity override",
                 ["--min-severity-logs", "DEBUG"],
                 [["--min-severity-logs", "DEBUG"]],
@@ -306,6 +318,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             ]
             + expected_args
             + [
+                "--capture-syslog",
                 "--timeout",
                 "300",
                 "fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm",
@@ -382,6 +395,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
             ]
             + expected_args
             + [
+                "--capture-syslog",
                 "--timeout",
                 "300",
                 "fuchsia-pkg://fuchsia.com/foo#meta/foo_test.cm",

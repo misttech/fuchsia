@@ -13,11 +13,13 @@ use crate::suite_definition::{
 };
 use anyhow::{Context, Result, format_err};
 use async_trait::async_trait;
+use chrono::{TimeDelta, Utc};
 use errors::{ffx_bail, ffx_bail_with_code, ffx_error, ffx_error_with_code};
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_developer_remotecontrol as fremotecontrol;
 use fdomain_fuchsia_test_manager as ftest_manager;
 use ffx_config::EnvironmentContext;
+use ffx_target;
 use ffx_test_args::{
     EarlyBootProfileCommand, ListCommand, RunCommand, TestCommand, TestSubCommand,
 };
@@ -52,6 +54,9 @@ pub static TIMED_OUT_CODE: LazyLock<i32> = LazyLock::new(|| -fidl::Status::TIMED
 /// pulling debug data off device is expensive we also want to limit the number of
 /// times this occurs.
 const SUITE_BATCH_SIZE: usize = 100;
+
+const SYSLOG_FILE_NAME: &str = "syslog.txt";
+const SYSLOG_SINCE_MARGIN: TimeDelta = TimeDelta::seconds(5);
 
 #[derive(FfxTool)]
 pub struct TestTool {
@@ -235,6 +240,7 @@ async fn run_test<W: 'static + Write + Send + Sync>(
     let disable_output_directory = cmd.disable_output_directory;
     let filter_ansi = cmd.filter_ansi;
     let called_by_test_pilot = cmd.pilot.is_some();
+    let capture_syslog = cmd.capture_syslog;
 
     let params = if called_by_test_pilot {
         params_from_pilot(context, &remote_control, cmd).await?
@@ -274,6 +280,7 @@ async fn run_test<W: 'static + Write + Send + Sync>(
     });
 
     let start_time = std::time::Instant::now();
+    let start_utc = Utc::now();
     let outcome = run_test_suite_lib::run_test_and_get_outcome(
         RunConnector::new(remote_control, SUITE_BATCH_SIZE),
         params.test_params,
@@ -282,6 +289,16 @@ async fn run_test<W: 'static + Write + Send + Sync>(
         cancel_receiver.map(|_| ()),
     )
     .await;
+
+    if capture_syslog {
+        if let Some(outdir) = &output_directory {
+            let _ = invoke_ffx_log_dump(
+                &context,
+                &(start_utc - SYSLOG_SINCE_MARGIN).to_rfc3339(),
+                &outdir.join(SYSLOG_FILE_NAME),
+            );
+        }
+    }
 
     if called_by_test_pilot {
         if let Some(outdir) = output_directory {
@@ -350,6 +367,33 @@ capabilities, pass in correct realm. See https://fuchsia.dev/go/components/non-h
             other => ffx_bail!("There was an error running tests: {:?}", other),
         },
     }
+}
+
+fn invoke_ffx_log_dump(
+    context: &EnvironmentContext,
+    since: &str,
+    output_path: &std::path::Path,
+) -> Result<()> {
+    let file = std::fs::File::create(output_path)
+        .with_context(|| format!("Failed to create log file at {:?}", output_path))?;
+
+    let spec = ffx_target::get_target_specifier(&context)?;
+    let mut cmd = std::process::Command::new("ffx");
+    cmd.arg("--direct");
+    if let Some(target) = spec {
+        cmd.arg("-t").arg(target);
+    }
+    let status = cmd
+        .args(["log", "--dump", "--since", since])
+        .stdout(file)
+        .status()
+        .context("Failed to run ffx log")?;
+
+    if !status.success() {
+        return Err(anyhow::anyhow!("ffx log command failed with status: {}", status));
+    }
+
+    Ok(())
 }
 
 /// Generate TestParams from |cmd|.
@@ -707,6 +751,7 @@ mod test {
                     break_on_failure: false,
                     no_exception_channel: false,
                     no_cases_equals_success: false,
+                    capture_syslog: false,
                 },
                 CombinedParams {
                     run_params: run_test_suite_lib::RunParams {
@@ -759,6 +804,7 @@ mod test {
                     break_on_failure: false,
                     no_exception_channel: true,
                     no_cases_equals_success: false,
+                    capture_syslog: false,
                 },
                 CombinedParams {
                     run_params: run_test_suite_lib::RunParams {
@@ -811,6 +857,7 @@ mod test {
                     break_on_failure: false,
                     no_exception_channel: false,
                     no_cases_equals_success: false,
+                    capture_syslog: false,
                 },
                 CombinedParams {
                     run_params: run_test_suite_lib::RunParams {
@@ -863,6 +910,7 @@ mod test {
                     break_on_failure: false,
                     no_exception_channel: false,
                     no_cases_equals_success: false,
+                    capture_syslog: false,
                 },
                 CombinedParams {
                     run_params: run_test_suite_lib::RunParams {
@@ -917,6 +965,7 @@ mod test {
                     break_on_failure: false,
                     no_exception_channel: false,
                     no_cases_equals_success: false,
+                    capture_syslog: false,
                 },
                 CombinedParams {
                     run_params: run_test_suite_lib::RunParams {
@@ -1000,6 +1049,7 @@ mod test {
                     break_on_failure: false,
                     no_exception_channel: false,
                     no_cases_equals_success: false,
+                    capture_syslog: false,
                 },
             ),
             (
@@ -1028,6 +1078,7 @@ mod test {
                     break_on_failure: false,
                     no_exception_channel: false,
                     no_cases_equals_success: false,
+                    capture_syslog: false,
                 },
             ),
             (
@@ -1056,6 +1107,7 @@ mod test {
                     break_on_failure: false,
                     no_exception_channel: false,
                     no_cases_equals_success: false,
+                    capture_syslog: false,
                 },
             ),
         ];

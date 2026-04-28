@@ -218,6 +218,20 @@ class TestArgs(unittest.TestCase):
         flags.validate()
         self.assertEqual(flags.allow_temporary_emulator, False)
 
+    def test_capture_syslog(self) -> None:
+        # Default should be True
+        flags = args.parse_args([])
+        flags.validate()
+        self.assertEqual(flags.capture_syslog, True)
+
+        flags = args.parse_args(["--capture-syslog"])
+        flags.validate()
+        self.assertEqual(flags.capture_syslog, True)
+
+        flags = args.parse_args(["--no-capture-syslog"])
+        flags.validate()
+        self.assertEqual(flags.capture_syslog, False)
+
     def test_json(self) -> None:
         flags = args.parse_args(["--json"])
         flags.validate()

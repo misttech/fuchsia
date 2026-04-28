@@ -200,6 +200,11 @@ pub struct RunCommand {
     /// as success rather than failure.
     #[argh(switch)]
     pub no_cases_equals_success: bool,
+
+    /// indicates whether a syslog that covers the duration of the test run should be captured in
+    /// the test output.
+    #[argh(switch)]
+    pub capture_syslog: bool,
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]

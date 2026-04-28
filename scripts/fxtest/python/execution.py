@@ -253,6 +253,8 @@ class TestExecution:
                 extra_args += ["--break-on-failure"]
             if self._outdir is not None:
                 extra_args += ["--output-directory", self._outdir]
+            if self._flags.capture_syslog:
+                extra_args += ["--capture-syslog"]
 
             timeout = self._calculate_timeout()
             if timeout is not None:
