@@ -33,9 +33,45 @@ class Security(enum.StrEnum):
 
 @dataclasses.dataclass(frozen=True)
 class BssChannel:
+    """Represents a Wi-Fi channel configuration.
+
+    Attributes:
+        band: The Wi-Fi frequency band
+        number: The channel number
+        bandwidth: The channel bandwidth (20, 40, 80, 160, 320)
+        mode: The Wi-Fi mode
+            HT: High Throughput (802.11n)
+            VHT: Very High Throughput (802.11ac)
+            HE: High Efficiency (802.11ax / Wi-Fi 6)
+            EHT: Extremely High Throughput (802.11be / Wi-Fi 7)
+            NOHT: Disables 802.11n/ac/ax/be
+    """
+
     band: Band
     number: int
     bandwidth: Literal[20, 40, 80, 160, 320]
+    mode: Literal["HT", "VHT", "HE", "EHT", "NOHT"] = "HE"
+
+    def __post_init__(self) -> None:
+        valid_modes = ["HT", "VHT", "HE", "EHT", "NOHT"]
+        if self.mode not in valid_modes:
+            raise ValueError(
+                f"Invalid mode: {self.mode}. Must be one of {valid_modes}"
+            )
+
+        valid_bandwidths = {
+            "HT": [20, 40],
+            "VHT": [20, 40, 80, 160],
+            "HE": [20, 40, 80, 160],
+            "EHT": [20, 40, 80, 160, 320],
+            "NOHT": [20],
+        }
+
+        if self.bandwidth not in valid_bandwidths[self.mode]:
+            raise ValueError(
+                f"Invalid bandwidth {self.bandwidth} for mode {self.mode}. "
+                f"Must be one of {valid_bandwidths[self.mode]}"
+            )
 
 
 DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, 20)
@@ -84,22 +120,26 @@ class RadioConfig:
     Attributes:
         channel: The specific channel within the band
         bss_settings: The settings for all additional bss
+        country: The country code for the radio (default: "US")
     """
 
     channel: BssChannel
     bss_settings: list[BssSettings] | None = None
+    country: str = "US"
 
     @classmethod
     def generate(
         cls,
         channel: BssChannel,
         bss_settings: list[BssSettings] | None = None,
+        country: str = "US",
     ) -> "RadioConfig":
         """Creates a RadioConfig object with the specified channel and BSS settings.
 
         Args:
             channel: The Wi-Fi channel configuration.
             bss_settings: Optional list of additional BSS settings.
+            country: The country code for the radio.
 
         Returns:
             A RadioConfig object.
@@ -110,6 +150,7 @@ class RadioConfig:
         return cls(
             channel=channel,
             bss_settings=bss_settings,
+            country=country,
         )
 
 

@@ -148,6 +148,17 @@ class OpenWrtAP:
             self.ssh.run(
                 f"uci set wireless.{radio}.channel='{radio_config.channel.number}'"
             )
+            if radio_config.channel.mode == "NOHT":
+                self.ssh.run(f"uci set wireless.{radio}.htmode='NOHT'")
+            else:
+                self.ssh.run(
+                    f"uci set wireless.{radio}.htmode='{radio_config.channel.mode}{radio_config.channel.bandwidth}'"
+                )
+
+            country = radio_config.country
+            if str(radio_config.channel.number) in ["12", "13", "14"]:
+                country = "AU"
+            self.ssh.run(f"uci set wireless.{radio}.country='{country}'")
             if radio_config.bss_settings:
                 for bss in radio_config.bss_settings:
                     self._configure_bss(bss, radio)
@@ -155,42 +166,44 @@ class OpenWrtAP:
         self.ssh.run("uci commit wireless")
         self.start_wifi()
 
-    def get_wifi_status(self, band: Band) -> bool:
-        """Checks if the wireless interface is up and running.
-
-        Returns:
-            True if the radio interface is marked as 'up', False otherwise
-            or if the status command fails.
-        """
+    def _is_ap_enabled(self, band: Band) -> bool:
+        """Checks if the active hostapd instances for a specific band are reporting 'ENABLED' status."""
         try:
-            radio = Radio.RADIO_2G if band == Band.BAND_2G else Radio.RADIO_5G
-            result = self.ssh.run(f"wifi status {radio}").stdout.decode()
-            radio_data = json.loads(result)
-            return radio_data[radio]["up"]
-        except Exception as e:
-            logging.error("Failed to get WiFi status: %s", e)
+            phy = "phy0" if band == Band.BAND_2G else "phy1"
+            res = self.ssh.run(f"ubus list hostapd.{phy}*")
+            interfaces = res.stdout.decode("utf-8").splitlines()
+            if not interfaces:
+                return False
+            for iface in interfaces:
+                status_res = self.ssh.run(
+                    f"ubus call {iface.strip()} get_status"
+                )
+                status_data = json.loads(status_res.stdout.decode("utf-8"))
+                if status_data.get("status") != "ENABLED":
+                    return False
+            return True
+        except Exception:
             return False
 
     # TODO(https://fxbug.dev/487804746): Use async functions in this file.
     def verify_wifi_status(
         self,
         band: Band,
-        timeout_sec: int = 20,
+        timeout_sec: int = 70,  # TODO(b/504795188): Bypass DFS wait times (60s) via custom regdb
     ) -> bool:
-        """Polls the AP until the Wi-Fi interfaces are ready.
+        """Polls the AP until hostapd is ENABLED.
 
         Args:
-            timeout_sec: Maximum time in seconds to wait for the interface
-                to report as 'up'.
             band: The band to verify the status for.
+            timeout_sec: Maximum time in seconds to wait for AP to be 'ENABLED'.
 
         Returns:
-            True if the radios are confirmed up within the timeout, False otherwise.
+            True if the radios are confirmed up and ENABLED within the timeout, False otherwise.
         """
         start_time = time.time()
         end_time = start_time + timeout_sec
         while time.time() < end_time:
-            if self.get_wifi_status(band=band):
+            if self._is_ap_enabled(band):
                 return True
             time.sleep(1)
         return False
