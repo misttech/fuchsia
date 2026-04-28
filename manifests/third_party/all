@@ -520,7 +520,7 @@
              path="third_party/tink"
              remote="https://fuchsia.googlesource.com/third_party/tink"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="298a1d24ad7b6c30d48bca554e4fbaf6a032e0dd"/>
+             revision="4eb4d23222b666217d8e1f3cf27518687e9af310"/>
     <project name="third_party/tpm2-tss"
              path="third_party/tpm2-tss/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/tpm2-software/tpm2-tss"
