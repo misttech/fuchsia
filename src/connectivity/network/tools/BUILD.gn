@@ -7,7 +7,7 @@ group("tools") {
   deps = [
     "nc",
     "sockscripter",
-    "//src/lib/testing/expectation/tool",
+    "//build/bazel/host:bazel_root_host_tools.list_test_expectations.host_tool",
   ]
 }
 

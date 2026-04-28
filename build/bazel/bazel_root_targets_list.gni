@@ -50,6 +50,16 @@ declare_args() {
   default_bazel_root_host_targets = sdk_host_tool_bazel_targets +
                                     _migration_example_bazel_targets + [
                                       {
+                                        bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/list_test_expectations"
+                                            ninja = "list_test_expectations"
+                                          },
+                                        ]
+                                        install_host_tool = true
+                                      },
+                                      {
                                         bazel_label = "//tools/rust_test_parser:rust_test_parser"
                                         copy_outputs = [
                                           {
