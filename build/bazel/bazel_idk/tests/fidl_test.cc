@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.examples/cpp/fidl.h>
 #include <fidl/fuchsia.images2/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.math/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire_types.h>
 #include <fuchsia/sysmem2/cpp/fidl.h>
+#include <zircon/availability.h>
 
 // The testing library only works on Fuchsia.
 #ifdef __Fuchsia__
@@ -40,6 +42,17 @@ int main() {
   [[maybe_unused]] bool is_empty_hlcpp = hlcpp_constraints.IsEmpty();
   assert(is_empty_hlcpp);
 
-  fuchsia_math::Vec vec(1, 2);
+  // Verify the FIDL and Clang API levels are consistent and working correctly.
+#if FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+  // Both aliases are available in the platform build.
+  fuchsia_examples::AvailableUntilApiLevelNext before_next = 10;
+  fuchsia_examples::AvailableFromApiLevelNext y_value = 10000 + before_next;
+#elif FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // NEVER_REPLACE_NEXT
+  fuchsia_examples::AvailableFromApiLevelNext y_value = 10000;
+#else
+  fuchsia_examples::AvailableUntilApiLevelNext y_value = 30;
+#endif
+
+  fuchsia_math::Vec vec(1, y_value);
   return vec.x() + vec.y();
 }

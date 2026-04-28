@@ -34,7 +34,7 @@ filegroup(
         ":build_only_tests_requiring_api_level",
         ":build_only_tests_in_host_configuration",
 
-        # Fuchsia tests that do not require defining the API level as "PLATFORM".
+        # Fuchsia tests that do not require defining the Clang API level as "PLATFORM".
         "//build/bazel/bazel_idk/tests:build_only_tests_for_combinations",
     ],
     # Individual test groups can transition to host as needed.

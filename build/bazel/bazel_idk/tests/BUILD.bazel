@@ -855,6 +855,7 @@ cc_binary(
     testonly = True,
     srcs = ["fidl_test.cc"],
     deps = [
+        "//examples/fidl/fuchsia.examples:fuchsia.examples_cpp",
         "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp_hlcpp_conversion",
         "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
@@ -1114,9 +1115,7 @@ filegroup(
             # TODO(https://fxbug.dev/505806966): Uncomment once the `llvm-ar`
             # issue is resolved.
             # ":test_executable_using_imported_cc_static_library",
-            # TODO(https://fxbug.dev/443762519): Uncomment once the Clang API
-            # level is being set.
-            # ":test_executable_using_fidl_cc",
+            ":test_executable_using_fidl_cc",
 
             # Depend directly on the underlying source libraries since they are
             # not dependencies of the atoms.

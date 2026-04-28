@@ -5,6 +5,7 @@
 """Transitions used to build the IDK."""
 
 load("@fuchsia_build_info//:args.bzl", "idk_buildable_api_levels", "idk_buildable_cpus", "target_cpu")
+load("//build/bazel:fuchsia_api_level.bzl", "get_integer_for_api_level")
 
 visibility(["//build/bazel/bazel_idk/tests/..."])
 
@@ -34,6 +35,17 @@ def _verify_is_main_platform_configuration_from_settings(settings):
 def _cpu_api_level_transition_impl(settings, _attr):
     _verify_is_main_platform_configuration_from_settings(settings)
 
+    _platform_api_level_clang_switch = "-ffuchsia-api-level"
+
+    # Remove any existing API level options.
+    # TODO(https://fxbug.dev/443766378): Remove this once the Clang toolchain
+    # automatically adds the flag based on `fuchsia_api_level`.
+    base_copt = []
+    for copt in settings["//command_line_option:copt"]:
+        if copt.startswith(_platform_api_level_clang_switch + "="):
+            continue
+        base_copt.append(copt)
+
     combinations = []
 
     # In addition to the API levels supported by the IDK, we also build for
@@ -50,6 +62,10 @@ def _cpu_api_level_transition_impl(settings, _attr):
             combinations.append({
                 "@//build/bazel:fuchsia_api_level": api_level,
                 "//command_line_option:platforms": "@//build/bazel/platforms:fuchsia_platform_%s" % cpu,
+
+                # TODO(https://fxbug.dev/443766378): Remove this once the Clang
+                # toolchain automatically adds the flag based on `fuchsia_api_level`.
+                "//command_line_option:copt": base_copt + ["%s=%s" % (_platform_api_level_clang_switch, get_integer_for_api_level(api_level))],
             })
     return combinations
 
@@ -58,10 +74,12 @@ cpu_api_level_transition = transition(
     implementation = _cpu_api_level_transition_impl,
     inputs = [
         "@//build/bazel:fuchsia_api_level",
+        "//command_line_option:copt",
         "//command_line_option:platforms",
     ],
     outputs = [
         "@//build/bazel:fuchsia_api_level",
+        "//command_line_option:copt",
         "//command_line_option:platforms",
     ],
 )
