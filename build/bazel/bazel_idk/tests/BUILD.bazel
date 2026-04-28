@@ -748,7 +748,7 @@ idk_molecule(
     name = "test_submolecule_idk",
     testonly = True,
     deps = [
-        "platform_dependent_source_library_idk",
+        ":platform_dependent_source_library_idk",
         ":test-shared-library_idk",
         ":test-source-library_idk",
         ":test-static-library_idk",
@@ -870,14 +870,30 @@ cc_binary(
     ),
 )
 
+# The `cc_library()` targets underlying each of the `idk_cc_source_library()` targets.
 filegroup(
-    name = "build_only_tests",
+    name = "all_underlying_source_libraries",
     testonly = True,
     srcs = [
-        # Depends on the IDK atom targets.
-        ":test_molecule_idk",
+        ":platform_dependent_source_library",
+        ":test-source-library",
+        ":test_source_set_dependency",
+        ":tests",
+    ] + select({
+        # TODO(https://fxbug.dev/505380228): Merge these targets into the main
+        # list once sysroots are available for all CPU architectures.
+        "//build/bazel/platforms:is_fuchsia_" + target_cpu: [
+            ":test_source_set_zx",
+        ],
+        "//conditions:default": [],
+    }),
+)
 
-        # Linking executables verifies that all deps are properly specified.
+filegroup(
+    name = "all_test_executables",
+    testonly = True,
+    srcs = [
+        # In the order they are defined above.
         ":test_executable_using_cc_shared_library",
         ":test_executable_using_cc_source_library",
         ":test_executable_using_cc_static_library",
@@ -887,6 +903,19 @@ filegroup(
         ":test_executable_using_cc_static_library_zx",
         ":test_executable_using_imported_cc_static_library",
         ":test_executable_using_fidl_cc",
+    ],
+)
+
+filegroup(
+    name = "build_only_tests",
+    testonly = True,
+    srcs = [
+        # Depends on the IDK atom targets.
+        ":test_molecule_idk",
+
+        # Linking executables verifies that all deps are properly specified and
+        # that FIDL bindings were generated correctly.
+        ":all_test_executables",
 
         # Verify that the file paths of prebuilt libraries are correct.
         ":verify_test_shared_library_file_path",
@@ -915,11 +944,7 @@ filegroup(
 
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
-        ":platform_dependent_source_library",
-        ":test-source-library",
-        ":test_source_set_dependency",
-        ":test_source_set_zx",
-        ":tests",
+        ":all_underlying_source_libraries",
         "//sdk/lib/async:async-cpp",
         "//sdk/lib/fidl",
         "//sdk/lib/fidl/cpp",
@@ -1020,35 +1045,23 @@ filegroup(
     name = "targets_to_build_for_each_cpu_and_api_level_combination",
     testonly = True,
     srcs = [
+        ":platform_dependent_source_library_idk",
+        ":test-source-library_idk",
         ":test_data_atom_idk",
+        ":test_source_set_zx_idk",
+        ":tests_idk",
         "//sdk/lib/magma_common:magma_common_idk",
         "//sdk/lib/media/cpp:no_converters_idk",
         "//sdk/lib/memory_barriers:memory_barriers_idk",
         "//sdk/lib/stdcompat:stdcompat_idk",
         "//sdk/lib/utf-utils:utf-utils_idk",
 
-        # TODO(https://fxbug.dev/443766378): Fix the
-        # "unable to find library -lzircon", etc. errors and uncomment.
-        # ":test_molecule_idk",
-
-        # A shared library that exercises use of the API level-specific golden IFS files.
-        # TODO(https://fxbug.dev/443766378): Fix the sysroot headers not found
-        # error and uncomment.
-        # "//sdk/lib/async-default:async-default_idk",
-
         # Depend directly on the underlying source libraries since they are not
         # dependencies of the atoms.
-        ":test-source-library",
-        ":test_source_set_dependency",
+        ":all_underlying_source_libraries",
         "//sdk/lib/magma_common",
-        # TODO(https://fxbug.dev/443766378): Fix the sysroot headers not found
-        # error and uncomment.
-        # "//sdk/lib/media/cpp:no_converters",
         "//sdk/lib/memory_barriers",
         "//sdk/lib/stdcompat",
-        # TODO(https://fxbug.dev/443766378): Fix the use of incorrect headers
-        # with missing symbols and uncomment.
-        # "//sdk/lib/utf-utils",
 
         # Exercise FIDL.
         # TODO(https://fxbug.dev/443762519): Remove these once FIDL bindings are
@@ -1070,15 +1083,44 @@ filegroup(
             # ":test-shared-library_idk",
             # ":test_shared_library_zx_idk",
 
+            # A shared library that exercises use of the API level-specific
+            # golden IFS files.
+            # TODO(https://fxbug.dev/505806966): Uncomment once `.ifs` file
+            # differences are resolved.
+            # "//sdk/lib/async-default:async-default_idk",
+
             # TODO(https://fxbug.dev/505806966): Append "_idk" to these targets
             # once the `llvm-ar` issue is resolved.
             ":test-static-library",
             ":test_static_library_zx",
 
-            # Linking executables verifies that all deps are properly specified.
+            # Depends on the IDK atom targets.
+            # TODO(https://fxbug.dev/505806966): Uncomment and remove
+            # ":test-static-library*" above once the issues have been resolved.
+            # ":test_molecule_idk",
+
+            # Linking executables verifies that all deps are properly specified
+            # and that FIDL bindings were generated correctly.
+            # TODO(https://fxbug.dev/443762519): Replace the list below with
+            # ":all_test_executables" after uncommenting all targets below.
             ":test_executable_using_cc_shared_library",
             ":test_executable_using_cc_source_library",
             ":test_executable_using_cc_static_library",
+            ":test_executable_using_platform_dependent_source_library",
+            ":test_executable_using_cc_shared_library_zx",
+            ":test_executable_using_cc_source_library_zx",
+            ":test_executable_using_cc_static_library_zx",
+            # TODO(https://fxbug.dev/505806966): Uncomment once the `llvm-ar`
+            # issue is resolved.
+            # ":test_executable_using_imported_cc_static_library",
+            # TODO(https://fxbug.dev/443762519): Uncomment once the Clang API
+            # level is being set.
+            # ":test_executable_using_fidl_cc",
+
+            # Depend directly on the underlying source libraries since they are
+            # not dependencies of the atoms.
+            "//sdk/lib/media/cpp:no_converters",
+            "//sdk/lib/utf-utils",
         ],
         "//conditions:default": [],
     }),
