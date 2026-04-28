@@ -7,7 +7,6 @@
 import argparse
 import os
 import pathlib
-import shlex
 import shutil
 import subprocess
 import sys
@@ -15,6 +14,7 @@ import tempfile
 import typing as T
 
 import build_command_query_utils
+import normalize_rustc_args
 import shell_utils
 
 # Enable debug logging.
@@ -31,71 +31,6 @@ import ninja_artifacts
 
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
 import build_utils
-
-# List of args to ignore when comparing GN and Bazel commands.
-_ARGS_TO_IGNORE = (
-    # Dependency directories and externs are provided by response files in GN,
-    # so omit them.
-    # This should be OK since missing these args would cause compilation to fail.
-    "--extern",
-    "-L",
-    "-Ldependency",
-    "-Zshell-argfiles",
-    "@shell:",
-    # Ignore --emit flags for now. In GN they are used to emit dep-info and
-    # rmeta files, which Bazel doesn't need for now.
-    "--emit=",
-    "-Zdep-info-omit-d-target",
-    # This is the default value, which Bazel sets explicitly, and GN omits.
-    "--error-format=human",
-    # GN and Bazel writes outputs to different locations, so ignore output flags.
-    "--out-dir=",
-    "-o=",
-    # Bazel sets sysroot to the Rust toolchain in bazel-out, while GN omits this.
-    "--sysroot=",
-    # Bazel sets this for determinism purposes, and GN omits it.
-    "--remap-path-prefix=",
-    # TODO(https://fxbug.dev/477167250): Propagate debug_info to Bazel and
-    # remove this.
-    "-Cdebug-assertions=",
-    "-Cdebuginfo=",
-    # TODO(https://fxbug.dev/478707341): LTO and thinlto seems to cause
-    # inconsistency here, figure out how to match the config between GN and
-    # Bazel.
-    "-Cembed-bitcode=",
-    "-Ccodegen-units=16",
-    # TODO(https://fxbug.dev/478707341): Figure out why the default value of
-    # -Cstrip is different between GN and Bazel.
-    "-Cstrip=",
-    # TODO(https://fxbug.dev/478707341): Figure out why the default value of
-    # -Copt-level is different between GN and Bazel.
-    "-Copt-level=",
-    # TODO(https://fxbug.dev/478707341): Figure out how to set the following args in Bazel and remove this.
-    "--cfg=__rust_toolchain=",
-    "-Cmetadata=",
-    "@rust_api_level_cfg_flags.txt",
-    "RUST_BACKTRACE=1",
-    # TODO(https://fxbug.dev/478707341): Figure out the root causes of link-arg inconsistencies.
-    "-Clink-arg=",
-    "-Clink-args=",
-    # TODO(https://fxbug.dev/478707341): Figure out how to make remote flags
-    # consistent between GN and Bazel.
-    "--remote-flag=",
-    # TODO(https://fxbug.dev/478707341): GN uses clang++ and Bazel uses clang.
-    # Figure out where this discrepancy comes from and remove this.
-    "-Clinker=",
-    # TODO(https://fxbug.dev/478707341): Bazel adds this for some binaries.
-    # Figure out why and determine if it's OK to ignore.
-    "-Cextra-filename=",
-)
-
-# Argument prefixes that need to be converted for consistency between GN and Bazel.
-_ARGS_PREFIXES_TO_CONVERT = {
-    "--codegen": "-C",
-    "--allow": "-A",
-    "--deny": "-D",
-    "--warn": "-W",
-}
 
 
 def debug(s: T.Any) -> None:
@@ -117,60 +52,6 @@ def try_get_build_dir(fuchsia_dir: pathlib.Path) -> T.Optional[pathlib.Path]:
     if not fx_build_dir_file.exists():
         return None
     return pathlib.Path(fx_build_dir_file.read_text().strip())
-
-
-def normalize_rustc_arg(arg: str) -> str:
-    """Normalize a single rustc argument.
-
-    This function normalizes arguments by:
-    - Omitting certain arguments that are not relevant to the comparison.
-    - Converting some flags to a more common format.
-
-    Args:
-        arg: The argument to normalize.
-
-    Returns:
-        The normalized argument.
-    """
-    # Convert to the same flag format.
-    if arg.startswith(tuple(_ARGS_PREFIXES_TO_CONVERT.keys())):
-        opt, _, val = arg.partition("=")
-        opt_new = _ARGS_PREFIXES_TO_CONVERT[opt]
-        arg = f"{opt_new}{val}"
-
-    if arg.startswith(_ARGS_TO_IGNORE):
-        return ""
-
-    if arg.startswith("-Clinker="):
-        parts = arg.split("=", maxsplit=1)
-        base_linker_name = os.path.basename(parts[1])
-        return f"-Clinker={base_linker_name}"
-
-    if not arg.startswith("-"):
-        # This is likely a path, e.g. not a `--arg=val` argument, so try to
-        # apply path-related normalization.
-
-        # Normalize paths to the `rustc` compiler.
-        if os.path.basename(arg) == "rustc":
-            return "rustc"
-
-        # Ignore Bazel-specific paths for prebuilt rust toolchain lib.
-        if arg.startswith("bazel-out") and "fuchsia_prebuilt_rust" in arg:
-            return ""
-
-        # Strip `../../` prefixes, which is how GN/Ninja locates sources.
-        if arg.startswith("../../"):
-            return arg[6:]
-
-    return arg
-
-
-def rindex(l: list[str], value: str) -> int:
-    """Find the last index of a value in a list."""
-    for i in range(len(l) - 1, -1, -1):
-        if l[i] == value:
-            return i
-    raise ValueError(f"Value {value} not found in list.")
 
 
 def main() -> int:
@@ -266,20 +147,11 @@ def main() -> int:
         print("Failed to get GN or Bazel rustc command.")
         return 1
 
-    # Fixups to the GN rustc command where it uses `--arg val` instead of
-    # `--arg=val`, which differ from Bazel. These need to be done before
-    # tokenizing the command line.
-    gn_rustc_cmd_replaced = (
+    normalized_gn_args = normalize_rustc_args.normalize_rustc_cmd(
         str(gn_rustc_cmd)
-        .replace("--target ", "--target=")
-        .replace("-o ", "-o=")
     )
-
-    normalized_gn_args = sorted(
-        set(normalize_rustc_arg(a) for a in shlex.split(gn_rustc_cmd_replaced))
-    )
-    normalized_bazel_args = sorted(
-        set(normalize_rustc_arg(a) for a in shlex.split(str(bazel_rustc_cmd)))
+    normalized_bazel_args = normalize_rustc_args.normalize_rustc_cmd(
+        str(bazel_rustc_cmd)
     )
 
     temp_dir = tempfile.mkdtemp(

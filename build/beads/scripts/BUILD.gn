@@ -20,15 +20,9 @@ if (is_host) {
     inputs = [ "shell_utils.py" ]
   }
 
-  python_build_time_tests("compare_rustc_commands_test") {
-    tests = [ "compare_rustc_commands_test.py" ]
-    inputs = [
-      "build_command_query_utils.py",
-      "compare_rustc_commands.py",
-      "shell_utils.py",
-      "//build/api/ninja_artifacts.py",
-      "//build/bazel/scripts/build_utils.py",
-    ]
+  python_build_time_tests("normalize_rustc_args_test") {
+    tests = [ "normalize_rustc_args_test.py" ]
+    inputs = [ "normalize_rustc_args.py" ]
   }
 
   python_build_time_tests("gn_runner_test") {
@@ -56,6 +50,7 @@ if (is_host) {
       "//build/bazel/scripts/build_utils.py",
       "build_command_query_utils.py",
       "gn_runner.py",
+      "normalize_rustc_args.py",
       "shell_utils.py",
     ]
   }
@@ -65,8 +60,8 @@ group("tests") {
   testonly = true
   deps = [
     ":build_command_query_utils_test($host_toolchain)",
-    ":compare_rustc_commands_test($host_toolchain)",
     ":discover_migration_candidates_test($host_toolchain)",
+    ":normalize_rustc_args_test($host_toolchain)",
     ":shell_utils_test($host_toolchain)",
   ]
 }
