@@ -8,5 +8,6 @@ group("tests") {
     ".agent/skills/migrating_host_tool_to_bazel/examples:migration_examples",
     ".agent/skills/migrating_host_tool_to_bazel/examples:tests",
     "scripts:tests",
+    "verifications:tests($host_toolchain)",
   ]
 }

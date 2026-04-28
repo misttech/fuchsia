@@ -257,6 +257,10 @@ group("non_hermetic_deps") {
     "//src/ui/input/drivers/adc-buttons:*",
   ]
 
+  # Bazel migration verification tests run GN, Ninja, and Bazel queries, and
+  # it's very difficult to list all the files they read.
+  visibility += [ "//build/beads/verifications/*" ]
+
   # Bluetooth Bazel test packages are wrapped in the bazel_fuchsia_test_package
   # GN rule, which has unspecified outputs.
   # bt-host tests will be migrated out-of-tree.
