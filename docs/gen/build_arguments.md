@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:181
+From //build/bazel/bazel_root_targets_list.gni:195
 
 ### bazel_upload_build_events
 
@@ -1015,7 +1015,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
@@ -1024,7 +1024,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -2191,6 +2191,13 @@ artifact. Schema is:
 }]
   install_host_tool = true
 }, {
+  bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/list_test_expectations"
+  ninja = "list_test_expectations"
+}]
+  install_host_tool = true
+}, {
   bazel_label = "//tools/rust_test_parser:rust_test_parser"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/rust_test_parser_/rust_test_parser"
@@ -2268,6 +2275,9 @@ artifact. Schema is:
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/whereiscl_/whereiscl"
   ninja = "whereiscl"
 }]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/jq5:jq5"
   install_host_tool = true
 }]
 ```
