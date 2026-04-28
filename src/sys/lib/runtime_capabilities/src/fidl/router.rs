@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::RemotableCapability;
-use crate::{Capability, CapabilityBound, Dictionary, Router, RouterResponse, WeakInstanceToken};
+use crate::{Capability, CapabilityBound, Router, WeakInstanceToken};
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_io as fio;
@@ -12,19 +12,6 @@ use std::sync::Arc;
 use vfs::directory::entry::{self, DirectoryEntry, DirectoryEntryAsync, EntryInfo, GetEntryInfo};
 use vfs::execution_scope::ExecutionScope;
 use zx;
-
-impl TryFrom<fsandbox::DictionaryRouterRouteResponse> for RouterResponse<Dictionary> {
-    type Error = crate::RemoteError;
-
-    fn try_from(resp: fsandbox::DictionaryRouterRouteResponse) -> Result<Self, Self::Error> {
-        Ok(match resp {
-            fsandbox::DictionaryRouterRouteResponse::Dictionary(dict) => {
-                RouterResponse::<Dictionary>::Capability(dict.try_into()?)
-            }
-            fsandbox::DictionaryRouterRouteResponse::Unavailable(_) => RouterResponse::Unavailable,
-        })
-    }
-}
 
 /// Binds a Route request from fidl to the Rust [Router::Route] API. Shared by
 /// [Router] server implementations.

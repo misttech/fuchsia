@@ -434,11 +434,10 @@ pub mod tests {
     use cm_rust::{Availability, NativeIntoFidl};
     use cm_types::{Name, RelativePath};
     use fuchsia_async::TestExecutor;
-    use futures::FutureExt;
     use moniker::Moniker;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::{DictExt, GenericRouterResponse, LazyGet, test_invalid_instance_token};
-    use runtime_capabilities::{Capability, Data, Dictionary, RemotableCapability, RouterResponse};
+    use runtime_capabilities::{Capability, Data, Dictionary, RemotableCapability, Routable};
     use std::pin::pin;
     use std::sync::Weak;
     use std::task::Poll;
@@ -778,21 +777,29 @@ pub mod tests {
         let source_moniker: Moniker = "source".try_into().unwrap();
         let mut source = WeakComponentInstance::invalid();
         source.moniker = source_moniker;
-        let debug_router =
-            Router::<Connector>::new(move |_: RouteRequest, debug: bool, _: WeakInstanceToken| {
-                async move {
-                    assert!(debug);
-                    let res: Result<RouterResponse<Connector>, RouterError> =
-                        Ok(RouterResponse::<Connector>::Debug(Box::new(CapabilitySource::Void(
-                            VoidSource {
-                                capability: InternalCapability::Protocol(Name::new("a").unwrap()),
-                                moniker: Moniker::root(),
-                            },
-                        ))));
-                    res
-                }
-                .boxed()
-            });
+        struct DebugRouter;
+        #[async_trait]
+        impl Routable<Connector> for DebugRouter {
+            async fn route(
+                &self,
+                _request: RouteRequest,
+                _target: WeakInstanceToken,
+            ) -> Result<Option<Connector>, RouterError> {
+                panic!("non-debug routing unexpected");
+            }
+
+            async fn route_debug(
+                &self,
+                _request: RouteRequest,
+                _target: WeakInstanceToken,
+            ) -> Result<CapabilitySource, RouterError> {
+                Ok(CapabilitySource::Void(VoidSource {
+                    capability: InternalCapability::Protocol(Name::new("a").unwrap()),
+                    moniker: Moniker::root(),
+                }))
+            }
+        }
+        let debug_router = Router::new(DebugRouter {});
         let router = debug_router.clone().on_readable(scope.clone());
 
         let target = ComponentInstance::new_root(

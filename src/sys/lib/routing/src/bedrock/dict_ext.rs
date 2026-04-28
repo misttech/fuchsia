@@ -12,7 +12,7 @@ use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Dictionary, Routable, Router, RouterResponse, WeakInstanceToken,
+    Capability, CapabilityBound, Dictionary, Routable, Router, WeakInstanceToken,
 };
 use std::fmt::Debug;
 
@@ -54,8 +54,7 @@ pub trait DictExt {
     ///
     /// Note that the return value can contain any capability type, instead of a parameterized `T`.
     /// This is because some callers work with a generic capability and don't care about the
-    /// specific type. Callers who do care can use `TryFrom` to cast to the expected
-    /// [RouterResponse] type.
+    /// specific type.
     async fn get_with_request<'a>(
         &self,
         moniker: &ExtendedMoniker,
@@ -78,23 +77,6 @@ pub enum GenericRouterResponse {
 
     /// Routing succeeded in debug mode, `Data` contains the debug data.
     Debug(Box<CapabilitySource>),
-}
-
-impl<T: CapabilityBound> TryFrom<GenericRouterResponse> for RouterResponse<T> {
-    // Returns the capability's debug typename.
-    type Error = &'static str;
-
-    fn try_from(r: GenericRouterResponse) -> Result<Self, Self::Error> {
-        let r = match r {
-            GenericRouterResponse::Capability(c) => {
-                let debug_name = c.debug_typename();
-                RouterResponse::<T>::Capability(c.try_into().map_err(|_| debug_name)?)
-            }
-            GenericRouterResponse::Unavailable => RouterResponse::<T>::Unavailable,
-            GenericRouterResponse::Debug(d) => RouterResponse::<T>::Debug(d),
-        };
-        Ok(r)
-    }
 }
 
 impl<T: CapabilityBound> TryFrom<GenericRouterResponse> for Option<T> {

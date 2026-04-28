@@ -902,11 +902,11 @@ mod tests {
     use cm_rust::offer::*;
     use cm_rust::*;
     use cm_rust_testing::*;
-    use futures::FutureExt;
     use maplit::hashmap;
     use proptest::prelude::*;
     use rand::SeedableRng;
-    use runtime_capabilities::{RouterResponse, WeakInstanceToken};
+    use router_error::RouterError;
+    use runtime_capabilities::{Routable, WeakInstanceToken};
     use std::collections::HashSet;
     use vfs::pseudo_directory;
 
@@ -950,12 +950,12 @@ mod tests {
                 }),
                 moniker: component_instance.moniker.clone(),
             });
-            let weak_component = component_instance.clone();
-            let router = Router::new(move |_request, debug: bool, target: WeakInstanceToken| {
-                assert!(!debug);
-                let weak_component = weak_component.clone();
-                async move {
-                    let component = weak_component.upgrade().map_err(RoutingError::from)?;
+            struct TestRouter {
+                weak_component: WeakComponentInstance,
+            }
+            impl TestRouter {
+                async fn get_service_router(&self) -> Result<Router<DirConnector>, RoutingError> {
+                    let component = self.weak_component.upgrade().map_err(RoutingError::from)?;
                     let program_output_dict = component
                         .lock_resolved_state()
                         .await
@@ -963,33 +963,40 @@ mod tests {
                         .sandbox
                         .program_output_dict
                         .clone();
-                    let service_router = program_output_dict
-                        .get_router_or_not_found::<DirConnector>(
-                            &cm_types::Name::new("my.service.Service").unwrap(),
-                            // We might not be exposing the capability, but the core issue is sameish
-                            // (the component did not declare the capability), and this is test code,
-                            // so hopefully using an only mostly-right error code here doesn't trip
-                            // someone up later.
-                            RoutingError::expose_from_self_not_found(
-                                &component.moniker(),
-                                "my.service.Service",
-                            ),
-                        );
-                    let request = service_metadata(cm_types::Availability::Required);
-                    if !debug {
-                        match service_router.route(request, target).await? {
-                            Some(c) => Ok(RouterResponse::Capability(c)),
-                            None => Ok(RouterResponse::Unavailable),
-                        }
-                    } else {
-                        Ok(RouterResponse::Debug(Box::new(
-                            service_router.route_debug(request, target).await?,
-                        )))
-                    }
+                    Ok(program_output_dict.get_router_or_not_found::<DirConnector>(
+                        &cm_types::Name::new("my.service.Service").unwrap(),
+                        // We might not be exposing the capability, but the core issue is sameish
+                        // (the component did not declare the capability), and this is test code,
+                        // so hopefully using an only mostly-right error code here doesn't trip
+                        // someone up later.
+                        RoutingError::expose_from_self_not_found(
+                            &component.moniker(),
+                            "my.service.Service",
+                        ),
+                    ))
                 }
-                .boxed()
-            });
-            Ok((router, source))
+            }
+            #[async_trait]
+            impl Routable<DirConnector> for TestRouter {
+                async fn route(
+                    &self,
+                    _request: RouteRequest,
+                    target: WeakInstanceToken,
+                ) -> Result<Option<DirConnector>, RouterError> {
+                    let service_router = self.get_service_router().await?;
+                    let request = service_metadata(cm_types::Availability::Required);
+                    service_router.route(request, target).await
+                }
+
+                async fn route_debug(
+                    &self,
+                    _request: RouteRequest,
+                    _target: WeakInstanceToken,
+                ) -> Result<CapabilitySource, RouterError> {
+                    panic!("debug routing not expected");
+                }
+            }
+            Ok((Router::new(TestRouter { weak_component: component_instance.clone() }), source))
         }
 
         async fn list_instances(&self) -> Result<Vec<AggregateInstance>, RoutingError> {

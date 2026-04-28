@@ -6,25 +6,9 @@ use crate::{CapabilityBound, WeakInstanceToken};
 use async_trait::async_trait;
 use capability_source::CapabilitySource;
 use fidl_fuchsia_component_runtime::RouteRequest;
-use futures::FutureExt;
-use futures::future::BoxFuture;
 use router_error::RouterError;
 use std::fmt;
-use std::fmt::Debug;
 use std::sync::Arc;
-
-/// Response of a [Router] request.
-#[derive(Debug)]
-pub enum RouterResponse<T: CapabilityBound> {
-    /// Routing succeeded and returned this capability.
-    Capability(T),
-
-    /// Routing succeeded, but the capability was marked unavailable.
-    Unavailable,
-
-    /// Routing succeeded in debug mode.
-    Debug(Box<CapabilitySource>),
-}
 
 /// Types that implement [`Routable`] let the holder asynchronously request capabilities
 /// from them.
@@ -57,10 +41,6 @@ where
 /// During routing, a request usually traverses through the component topology,
 /// passing through several routers, ending up at some router that will fulfill
 /// the request instead of forwarding it upstream.
-///
-/// [`Router`] differs from [`Router`] in that it is parameterized on the capability
-/// type `T`. Instead of a [`Capability`], [`Router`] returns a [`RouterResponse`].
-/// [`Router`] will supersede [`Router`].
 #[derive(Clone)]
 pub struct Router<T: CapabilityBound> {
     routable: Arc<dyn Routable<T>>,
@@ -92,62 +72,6 @@ impl<T: CapabilityBound> fmt::Debug for Router<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO(https://fxbug.dev/329680070): Require `Debug` on `Routable` trait.
         f.debug_struct("Router").field("routable", &"[some routable object]").finish()
-    }
-}
-
-/// Syntax sugar within the framework to express custom routing logic using a function
-/// that takes a request and returns such future.
-impl<T: CapabilityBound, F> Routable<T> for F
-where
-    F: Fn(
-            RouteRequest,
-            bool,
-            WeakInstanceToken,
-        ) -> BoxFuture<'static, Result<RouterResponse<T>, RouterError>>
-        + Send
-        + Sync
-        + 'static,
-{
-    // We use the desugared form of `async_trait` to avoid unnecessary boxing.
-    fn route<'a, 'b>(
-        &'a self,
-        request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> BoxFuture<'b, Result<Option<T>, RouterError>>
-    where
-        'a: 'b,
-        Self: 'b,
-    {
-        async move {
-            match self(request, false, target).await? {
-                RouterResponse::Capability(c) => Ok(Some(c)),
-                RouterResponse::Unavailable => Ok(None),
-                RouterResponse::Debug(_) => {
-                    panic!("router returned debug info for non-debug route")
-                }
-            }
-        }
-        .boxed()
-    }
-
-    fn route_debug<'a, 'b>(
-        &'a self,
-        request: RouteRequest,
-        target: WeakInstanceToken,
-    ) -> BoxFuture<'b, Result<CapabilitySource, RouterError>>
-    where
-        'a: 'b,
-        Self: 'b,
-    {
-        async move {
-            match self(request, true, target).await? {
-                RouterResponse::Capability(_) | RouterResponse::Unavailable => {
-                    panic!("router returned non-debug info for debug route")
-                }
-                RouterResponse::Debug(source) => Ok(*source),
-            }
-        }
-        .boxed()
     }
 }
 

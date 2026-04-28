@@ -7,14 +7,17 @@ use crate::model::routing::RoutingFailureErrorReporter;
 use crate::model::testing::routing_test_helpers::*;
 use ::routing_test_helpers::RoutingTestModel;
 use ::routing_test_helpers::rights::CommonRightsTest;
+use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use cm_rust::offer::*;
 use cm_rust::*;
 use cm_rust_testing::*;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
+use router_error::RouterError;
 use routing::WithPorcelain;
 use routing::error::RouteRequestErrorInfo;
-use runtime_capabilities::{DirConnector, Router, WeakInstanceToken};
+use runtime_capabilities::{DirConnector, Routable, Router, WeakInstanceToken};
 
 #[fuchsia::test]
 async fn offer_increasing_rights() {
@@ -126,16 +129,31 @@ async fn framework_directory_incompatible_rights() {
         ),
     ];
     let test = RoutingTest::new("a", components).await;
+    struct PanicRouter {}
+    #[async_trait]
+    impl Routable<DirConnector> for PanicRouter {
+        async fn route(
+            &self,
+            _request: RouteRequest,
+            _target: WeakInstanceToken,
+        ) -> Result<Option<DirConnector>, RouterError> {
+            panic!("routing should have failed before we get here")
+        }
+
+        async fn route_debug(
+            &self,
+            _request: RouteRequest,
+            _target: WeakInstanceToken,
+        ) -> Result<CapabilitySource, RouterError> {
+            panic!("routing should have failed before we get here")
+        }
+    }
     test.model
         .context()
         .add_framework_capability(
             "foo_data",
             WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-                Router::<DirConnector>::new(
-                    move |_request: RouteRequest, _debug: bool, _target: WeakInstanceToken| {
-                        panic!("routing should have failed before we get here")
-                    },
-                ),
+                Router::new(PanicRouter {}),
                 CapabilityTypeName::Directory,
             )
             .availability(Availability::Required)

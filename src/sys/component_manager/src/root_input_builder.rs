@@ -34,7 +34,7 @@ use hooks::EventType;
 use log::warn;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, Data, Dictionary, DirConnector, Router, RouterResponse, WeakInstanceToken,
+    Capability, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
 };
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
@@ -191,75 +191,77 @@ impl RootInputBuilder {
     }
 
     pub fn add_namespace_directory(&mut self, directory: &cm_rust::DirectoryDecl) {
+        struct NamespaceDirectoryRouter {
+            path: cm_types::Path,
+            capability_source: CapabilitySource,
+        }
+        #[async_trait]
+        impl Routable<DirConnector> for NamespaceDirectoryRouter {
+            async fn route(
+                &self,
+                request: RouteRequest,
+                _target: WeakInstanceToken,
+            ) -> Result<Option<DirConnector>, RouterError> {
+                let rights: ::routing::rights::Rights =
+                    request.directory_rights.ok_or(RouterError::InvalidArgs)?.into();
+                let subdir: ::routing::subdir::SubDir = request
+                    .sub_directory_path
+                    .map(|s| ::routing::subdir::SubDir::new(s).expect("invalid path"))
+                    .unwrap_or_else(|| ::routing::subdir::SubDir::dot());
+                let mut path = self.path.clone();
+                let success = path.extend(subdir.clone().into());
+                if !success {
+                    return Err(::routing::error::RoutingError::PathTooLong {
+                        moniker: moniker::ExtendedMoniker::ComponentManager,
+                        path: format!("{path}/{subdir}"),
+                        keyword: "subdir".to_string(),
+                    }
+                    .into());
+                }
+                let path = path.to_string();
+                let flags = fio::Flags::from_bits(rights.into()).unwrap();
+                let dir_proxy = match fuchsia_fs::directory::open_in_namespace(&path, flags) {
+                    Ok(proxy) => proxy,
+                    Err(e) => {
+                        warn!(
+                            "failed to open path {} in component manager's namespace: {:?}",
+                            path, e
+                        );
+                        return Err(RouterError::Internal);
+                    }
+                };
+                let dir_connector = match request.isolated_storage_path {
+                    Some(isolated_storage_path) => {
+                        let isolated_storage_path =
+                            vfs::path::Path::validate_and_split(isolated_storage_path).unwrap();
+                        let isolated_storage_proxy =
+                            fuchsia_fs::directory::create_directory_recursive(
+                                &dir_proxy,
+                                isolated_storage_path.as_str(),
+                                fio::Flags::from_bits(fio::RW_STAR_DIR.bits()).unwrap(),
+                            )
+                            .await
+                            .unwrap();
+                        DirConnector::from_proxy(isolated_storage_proxy, RelativePath::dot(), flags)
+                    }
+                    None => DirConnector::from_proxy(dir_proxy, RelativePath::dot(), flags),
+                };
+                Ok(Some(dir_connector))
+            }
+
+            async fn route_debug(
+                &self,
+                _request: RouteRequest,
+                _target: WeakInstanceToken,
+            ) -> Result<CapabilitySource, RouterError> {
+                Ok(self.capability_source.clone())
+            }
+        }
         let path = directory.source_path.as_ref().unwrap().clone();
         let capability_source = CapabilitySource::Namespace(NamespaceSource {
             capability: ComponentCapability::Directory(directory.clone()),
         });
-        let router = Router::<DirConnector>::new(
-            move |request: RouteRequest, debug, _target: WeakInstanceToken| {
-                if debug {
-                    return futures::future::ready(Ok(RouterResponse::Debug(
-                        capability_source
-                            .clone()
-                            .try_into()
-                            .expect("failed to convert capability source to Data"),
-                    )))
-                    .boxed();
-                }
-                let mut path = path.clone();
-                async move {
-                    let rights: ::routing::rights::Rights =
-                        request.directory_rights.ok_or(RouterError::InvalidArgs)?.into();
-                    let subdir: ::routing::subdir::SubDir = request
-                        .sub_directory_path
-                        .map(|s| ::routing::subdir::SubDir::new(s).expect("invalid path"))
-                        .unwrap_or_else(|| ::routing::subdir::SubDir::dot());
-                    let success = path.extend(subdir.clone().into());
-                    if !success {
-                        return Err(::routing::error::RoutingError::PathTooLong {
-                            moniker: moniker::ExtendedMoniker::ComponentManager,
-                            path: format!("{path}/{subdir}"),
-                            keyword: "subdir".to_string(),
-                        }
-                        .into());
-                    }
-                    let path = path.to_string();
-                    let flags = fio::Flags::from_bits(rights.into()).unwrap();
-                    let dir_proxy = match fuchsia_fs::directory::open_in_namespace(&path, flags) {
-                        Ok(proxy) => proxy,
-                        Err(e) => {
-                            warn!(
-                                "failed to open path {} in component manager's namespace: {:?}",
-                                path, e
-                            );
-                            return Err(RouterError::Internal);
-                        }
-                    };
-                    let dir_connector = match request.isolated_storage_path {
-                        Some(isolated_storage_path) => {
-                            let isolated_storage_path =
-                                vfs::path::Path::validate_and_split(isolated_storage_path).unwrap();
-                            let isolated_storage_proxy =
-                                fuchsia_fs::directory::create_directory_recursive(
-                                    &dir_proxy,
-                                    isolated_storage_path.as_str(),
-                                    fio::Flags::from_bits(fio::RW_STAR_DIR.bits()).unwrap(),
-                                )
-                                .await
-                                .unwrap();
-                            DirConnector::from_proxy(
-                                isolated_storage_proxy,
-                                RelativePath::dot(),
-                                flags,
-                            )
-                        }
-                        None => DirConnector::from_proxy(dir_proxy, RelativePath::dot(), flags),
-                    };
-                    Ok(RouterResponse::Capability(dir_connector))
-                }
-                .boxed()
-            },
-        );
+        let router = Router::new(NamespaceDirectoryRouter { path, capability_source });
         let router = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
             router,
             CapabilityTypeName::Directory,
@@ -455,48 +457,53 @@ impl RootInputBuilder {
     }
 
     pub fn add_event_stream_capabilities(&self) {
+        struct EventStreamRouter {
+            event_type: EventType,
+        }
+        #[async_trait]
+        impl Routable<Dictionary> for EventStreamRouter {
+            async fn route(
+                &self,
+                request: RouteRequest,
+                _target: WeakInstanceToken,
+            ) -> Result<Option<Dictionary>, RouterError> {
+                let request_metadata = Dictionary::new();
+                let _ = request_metadata.insert(
+                    Name::new("event_stream_name").unwrap(),
+                    Capability::Data(Data::String(self.event_type.to_string().into())),
+                );
+                let esrm = finternal::EventStreamRouteMetadata {
+                    scope_moniker: request.event_stream_scope_moniker,
+                    scope: request.event_stream_scope,
+                    ..Default::default()
+                };
+                let _ = request_metadata.insert(
+                    Name::new("event_stream_route_metadata").unwrap(),
+                    Capability::Data(Data::Bytes(
+                        fidl::persist(&esrm).expect("failed to persist metadata").into(),
+                    )),
+                );
+                Ok(Some(request_metadata))
+            }
+
+            async fn route_debug(
+                &self,
+                request: RouteRequest,
+                _target: WeakInstanceToken,
+            ) -> Result<CapabilitySource, RouterError> {
+                let name = Name::new(self.event_type.as_str()).unwrap();
+                Ok(CapabilitySource::Builtin(BuiltinSource {
+                    capability: InternalCapability::EventStream(InternalEventStreamCapability {
+                        name,
+                        scope_moniker: request.event_stream_scope_moniker,
+                        scope: request.event_stream_scope.map(FidlIntoNative::fidl_into_native),
+                    }),
+                }))
+            }
+        }
         for event_type in EventType::values() {
-            let router =
-                Router::new(move |request: RouteRequest, debug, _target: WeakInstanceToken| {
-                    async move {
-                        if debug {
-                            let name = Name::new(event_type.as_str()).unwrap();
-                            let capability_source = CapabilitySource::Builtin(BuiltinSource {
-                                capability: InternalCapability::EventStream(
-                                    InternalEventStreamCapability {
-                                        name,
-                                        scope_moniker: request.event_stream_scope_moniker,
-                                        scope: request
-                                            .event_stream_scope
-                                            .map(FidlIntoNative::fidl_into_native),
-                                    },
-                                ),
-                            });
-                            return Ok(RouterResponse::Debug(
-                                capability_source.try_into().unwrap(),
-                            ));
-                        }
-                        let request_metadata = Dictionary::new();
-                        let _ = request_metadata.insert(
-                            Name::new("event_stream_name").unwrap(),
-                            Capability::Data(Data::String(event_type.to_string().into())),
-                        );
-                        let esrm = finternal::EventStreamRouteMetadata {
-                            scope_moniker: request.event_stream_scope_moniker,
-                            scope: request.event_stream_scope,
-                            ..Default::default()
-                        };
-                        let _ = request_metadata.insert(
-                            Name::new("event_stream_route_metadata").unwrap(),
-                            Capability::Data(Data::Bytes(
-                                fidl::persist(&esrm).expect("failed to persist metadata").into(),
-                            )),
-                        );
-                        Ok(RouterResponse::Capability(request_metadata))
-                    }
-                    .boxed()
-                });
             let name = Name::new(event_type.as_str()).unwrap();
+            let router = Router::new(EventStreamRouter { event_type });
             if let Err(e) = self.input.capabilities().insert_capability(&name, router.into()) {
                 warn!(
                     "failed to add event_stream {} to root component offered capabilities: {e:?}",
