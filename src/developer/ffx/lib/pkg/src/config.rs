@@ -2,11 +2,39 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, anyhow};
-
 use ffx_config::{ConfigLevel, EnvironmentContext};
 const CONFIG_KEY_DEFAULT_REPOSITORY: &str = "repository.default";
 const CONFIG_KEY_SERVER_LISTEN: &str = "repository.server.listen";
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum RepositoryConfigError {
+    #[error(
+        "Server listening address is unspecified. You can fix this with:\n\
+             $ ffx config set repository.server.listen '[::]:8083'\n\
+             $ ffx repository server start\n\
+             Or alternatively specify at runtime \n\
+             $ ffx repository server start --address <addr>"
+    )]
+    AddressUnspecified,
+
+    #[error(
+        "ffx config detects repository.server.listen to be {0} \
+             Another process may be using that address. \
+             Try shutting it down \n\
+             $ ffx repository server stop --all\n\
+             Or alternatively specify a different address on the command line\n\
+             $ ffx repository server start --address <addr>"
+    )]
+    AddressInUse(std::net::SocketAddr),
+
+    #[error("Parsing {0}: {1}")]
+    ParseAddressError(String, #[source] std::net::AddrParseError),
+
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+}
 
 /// Default name used for package repositories in ffx. It is expected that there is no need to
 /// change this constant. But in case this is changed, ensure that it is consistent with the ffx
@@ -19,7 +47,7 @@ pub const DEFAULT_REPO_NAME: &str = "devhost";
 // Try to figure out why the server is not running.
 pub fn determine_why_repository_server_is_not_running(
     context: &EnvironmentContext,
-) -> anyhow::Error {
+) -> RepositoryConfigError {
     macro_rules! check {
         ($e:expr) => {
             match $e {
@@ -33,23 +61,10 @@ pub fn determine_why_repository_server_is_not_running(
 
     match check!(repository_listen_addr(context)) {
         Some(addr) => {
-            return anyhow!(
-                "ffx config detects repository.server.listen to be {addr} \
-                Another process may be using that address. \
-                Try shutting it down \n\
-                $ ffx repository server stop --all\n\
-                Or alternatively specify a different address on the command line\n\
-                $ ffx repository server start --address <addr>",
-            );
+            return RepositoryConfigError::AddressInUse(addr);
         }
         None => {
-            return anyhow!(
-                "Server listening address is unspecified. You can fix this with:\n\
-                $ ffx config set repository.server.listen '[::]:8083'\n\
-                $ ffx repository server start\n\
-                Or alternatively specify at runtime \n\
-                $ ffx repository server start --address <addr>",
-            );
+            return RepositoryConfigError::AddressUnspecified;
         }
     }
 }
@@ -57,16 +72,14 @@ pub fn determine_why_repository_server_is_not_running(
 /// Return the repository server address from ffx config.
 pub fn repository_listen_addr(
     context: &EnvironmentContext,
-) -> Result<Option<std::net::SocketAddr>> {
+) -> std::result::Result<Option<std::net::SocketAddr>, RepositoryConfigError> {
     if let Some(address) = context.get::<Option<String>, _>(CONFIG_KEY_SERVER_LISTEN)? {
         if address.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(
-                address
-                    .parse::<std::net::SocketAddr>()
-                    .with_context(|| format!("Parsing {}", CONFIG_KEY_SERVER_LISTEN))?,
-            ))
+            Ok(Some(address.parse::<std::net::SocketAddr>().map_err(|e| {
+                RepositoryConfigError::ParseAddressError(CONFIG_KEY_SERVER_LISTEN.to_string(), e)
+            })?))
         }
     } else {
         Ok(None)
@@ -74,27 +87,34 @@ pub fn repository_listen_addr(
 }
 
 /// Return the default repository from the configuration if set.
-pub fn get_default_repository(context: &EnvironmentContext) -> Result<Option<String>> {
-    context.get(CONFIG_KEY_DEFAULT_REPOSITORY).map_err(Into::into)
+pub fn get_default_repository(
+    context: &EnvironmentContext,
+) -> Result<Option<String>, RepositoryConfigError> {
+    Ok(context.get(CONFIG_KEY_DEFAULT_REPOSITORY)?)
 }
 
 /// Sets the default repository from the config.
-pub fn set_default_repository(context: &EnvironmentContext, repo_name: &str) -> Result<()> {
-    Ok(context
+pub fn set_default_repository(
+    context: &EnvironmentContext,
+    repo_name: &str,
+) -> Result<(), RepositoryConfigError> {
+    context
         .query(CONFIG_KEY_DEFAULT_REPOSITORY)
         .level(Some(ConfigLevel::User))
         .build()
-        .set(context, repo_name.into())?)
+        .set(context, repo_name.into())?;
+    Ok(())
 }
 
 /// Unsets the default repository from the config.
 
-pub fn unset_default_repository(context: &EnvironmentContext) -> Result<()> {
-    Ok(context
+pub fn unset_default_repository(context: &EnvironmentContext) -> Result<(), RepositoryConfigError> {
+    context
         .query(CONFIG_KEY_DEFAULT_REPOSITORY)
         .level(Some(ConfigLevel::User))
         .build()
-        .remove(context)?)
+        .remove(context)?;
+    Ok(())
 }
 
 #[cfg(test)]

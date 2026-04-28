@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result, bail};
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
 use fidl_fuchsia_pkg_ext::{
@@ -19,7 +18,42 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::{fs, process};
+use thiserror::Error;
 use timeout::timeout;
+
+#[derive(Debug, Error)]
+pub enum InstanceError {
+    #[error("terminate can only be called on non-daemon server instances")]
+    NonDaemonTerminate,
+
+    #[error("Terminate error: {0}")]
+    TerminateError(String),
+
+    #[error(
+        "Multiple instances match repo-name: {name}. Disambiguate with one of {disambiguation}"
+    )]
+    MultipleInstances { name: String, disambiguation: String },
+
+    #[error(
+        "Cannot overrite running server with same name and a different pid: {name} existing pid: {existing_pid} new pid: {new_pid}"
+    )]
+    PidMismatch { name: String, existing_pid: u32, new_pid: u32 },
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("IO error on {0}: {1}")]
+    IoWithPath(std::path::PathBuf, #[source] std::io::Error),
+
+    #[error("Serde error: {0}")]
+    Serde(#[from] serde_json::Error),
+
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[error("Nix error: {0}")]
+    Nix(#[from] nix::Error),
+}
 
 /// ServerMode is the execution mode of the server process.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
@@ -93,23 +127,26 @@ impl PkgServerInfo {
     /// Termination is done by sending the SIGTERM signal and then waiting
     /// the specified timeout, and if the process is still running, SIGKILL is
     /// is sent.
-    pub async fn terminate(&self, wait_timeout: Duration) -> Result<()> {
+    pub async fn terminate(
+        &self,
+        wait_timeout: Duration,
+    ) -> std::result::Result<(), InstanceError> {
         if self.server_mode == ServerMode::Daemon {
-            bail!("terminate can only be called on non-daemon server instances");
+            return Err(InstanceError::NonDaemonTerminate);
         }
         if self.is_running() {
             let pid: Pid = nix::unistd::Pid::from_raw(
                 self.pid.try_into().expect("pid to be representable as i32"),
             );
             match nix::sys::signal::kill(pid, Some(nix::sys::signal::Signal::SIGTERM)) {
-                Err(e) => bail!("Terminate error: {}", e),
+                Err(e) => return Err(InstanceError::Nix(e)),
                 Ok(_) => {
                     match timeout(wait_timeout, async {
                         let options =
                             WaitPidFlag::union(WaitPidFlag::WNOHANG, WaitPidFlag::WEXITED);
                         loop {
                             match waitpid(pid, Some(options)) {
-                                Err(e) => bail!("Terminate error: {}", e),
+                                Err(e) => return Err(InstanceError::Nix(e)),
                                 Ok(WaitStatus::Exited(p, code)) => {
                                     log::debug!("process {p} exited with code {code}");
                                     return Ok(());
@@ -128,7 +165,7 @@ impl PkgServerInfo {
                                 pid,
                                 Some(nix::sys::signal::Signal::SIGKILL),
                             )
-                            .map_err(Into::into);
+                            .map_err(|e| InstanceError::Nix(e));
                         }
                     }
                 }
@@ -172,7 +209,7 @@ impl PkgServerInfo {
 /// objects that manage package server instance info.
 pub trait PkgServerInstanceInfo {
     /// Returns a list of running package servers.
-    fn list_instances(&self) -> Result<Vec<PkgServerInfo>>;
+    fn list_instances(&self) -> std::result::Result<Vec<PkgServerInfo>, InstanceError>;
 
     /// Returns the information for the package server with the
     /// provided name, or None if there is no running server with that
@@ -183,7 +220,11 @@ pub trait PkgServerInstanceInfo {
     /// different ports, and most likely serving different repository paths.
     /// For those, the port that the server is listening on can be used to disambiguate.
     /// An error is returned if the name is non-unique.
-    fn get_instance(&self, name: String, port: Option<u16>) -> Result<Option<PkgServerInfo>>;
+    fn get_instance(
+        &self,
+        name: String,
+        port: Option<u16>,
+    ) -> std::result::Result<Option<PkgServerInfo>, InstanceError>;
 
     ///  Removes the instance information for the server with the given name.
     /// If the name does not exist, it is ignored.
@@ -193,10 +234,14 @@ pub trait PkgServerInstanceInfo {
     /// different ports, and most likely serving different repository paths.
     /// For those, the port that the server is listening on can be used to disambiguate.
     /// An error is returned if the name is non-unique.
-    fn remove_instance(&self, name: String, port: Option<u16>) -> Result<()>;
+    fn remove_instance(
+        &self,
+        name: String,
+        port: Option<u16>,
+    ) -> std::result::Result<(), InstanceError>;
 
     /// Writes the instance information provided.
-    fn write_instance(&self, instance: &PkgServerInfo) -> Result<()>;
+    fn write_instance(&self, instance: &PkgServerInfo) -> std::result::Result<(), InstanceError>;
 }
 
 pub struct PkgServerInstances {
@@ -210,11 +255,13 @@ impl PkgServerInstances {
 }
 
 impl PkgServerInstanceInfo for PkgServerInstances {
-    fn list_instances(&self) -> Result<Vec<PkgServerInfo>> {
+    fn list_instances(&self) -> std::result::Result<Vec<PkgServerInfo>, InstanceError> {
         let mut instances = Vec::<PkgServerInfo>::new();
         let root = self.instance_root.as_path();
         if root.is_dir() {
-            for entry in root.read_dir().with_context(|| format!("read dir {root:?}"))? {
+            for entry in
+                root.read_dir().map_err(|e| InstanceError::IoWithPath(root.to_path_buf(), e))?
+            {
                 if let Ok(entry) = entry {
                     if entry.path().is_dir() {
                         continue;
@@ -222,7 +269,7 @@ impl PkgServerInstanceInfo for PkgServerInstances {
                     if entry.path().extension().unwrap_or_default() == "json" {
                         // If there is a problem reading the file, return the error.
                         let data = fs::read(entry.path())
-                            .with_context(|| format!("read {:?}", entry.path()))?;
+                            .map_err(|e| InstanceError::IoWithPath(entry.path(), e))?;
 
                         match serde_json::from_slice::<PkgServerInfo>(&data) {
                             Ok(info) => {
@@ -230,7 +277,7 @@ impl PkgServerInstanceInfo for PkgServerInstances {
                                     instances.push(info);
                                 } else {
                                     fs::remove_file(entry.path())
-                                        .with_context(|| format!("remove {:?}", entry.path()))?;
+                                        .map_err(|e| InstanceError::IoWithPath(entry.path(), e))?;
                                 }
                             }
                             Err(e) => {
@@ -240,9 +287,8 @@ impl PkgServerInstanceInfo for PkgServerInstances {
                                 );
                                 let mut bad_name = entry.path().clone();
                                 bad_name.set_extension("json.bad");
-                                fs::rename(entry.path(), &bad_name).with_context(|| {
-                                    format!("rename {:?} to {:?}", entry.path(), bad_name)
-                                })?;
+                                fs::rename(entry.path(), &bad_name)
+                                    .map_err(|e| InstanceError::IoWithPath(entry.path(), e))?;
                                 log::warn!(
                                     "Renamed instance file {old} to {new}",
                                     old = entry.path().display(),
@@ -257,10 +303,13 @@ impl PkgServerInstanceInfo for PkgServerInstances {
         Ok(instances)
     }
 
-    fn get_instance(&self, name: String, port: Option<u16>) -> Result<Option<PkgServerInfo>> {
+    fn get_instance(
+        &self,
+        name: String,
+        port: Option<u16>,
+    ) -> std::result::Result<Option<PkgServerInfo>, InstanceError> {
         let instances: Vec<PkgServerInfo> = self
-            .list_instances()
-            .context("list instances")?
+            .list_instances()?
             .iter()
             .filter(|r| r.name == name)
             .filter(|r| r.is_running())
@@ -270,18 +319,20 @@ impl PkgServerInstanceInfo for PkgServerInstances {
         if instances.len() <= 1 {
             return Ok(instances.first().cloned());
         } else {
-            bail!(
-                "Multiple instances match repo-name: {name}. Disambiguate with one of {}",
-                instances
-                    .iter()
-                    .map(|r| format!("{} port: {}", r.name, r.port()))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            )
+            let disambiguation = instances
+                .iter()
+                .map(|r| format!("{} port: {}", r.name, r.port()))
+                .collect::<Vec<String>>()
+                .join(", ");
+            return Err(InstanceError::MultipleInstances { name, disambiguation });
         }
     }
 
-    fn remove_instance(&self, name: String, port: Option<u16>) -> Result<()> {
+    fn remove_instance(
+        &self,
+        name: String,
+        port: Option<u16>,
+    ) -> std::result::Result<(), InstanceError> {
         if let Some(instance) = self.get_instance(name, port)? {
             let filename = instance.filename();
             let instance_file = self.instance_root.join(filename);
@@ -289,7 +340,8 @@ impl PkgServerInstanceInfo for PkgServerInstances {
             let fullpath = self.instance_root.join(instance_file);
 
             if fullpath.exists() {
-                fs::remove_file(&fullpath).with_context(|| format!("removing {fullpath:?}"))
+                fs::remove_file(&fullpath)
+                    .map_err(|e| InstanceError::IoWithPath(fullpath.clone(), e))
             } else {
                 Ok(())
             }
@@ -298,10 +350,10 @@ impl PkgServerInstanceInfo for PkgServerInstances {
         }
     }
 
-    fn write_instance(&self, instance: &PkgServerInfo) -> Result<()> {
+    fn write_instance(&self, instance: &PkgServerInfo) -> std::result::Result<(), InstanceError> {
         if !self.instance_root.exists() {
             fs::create_dir_all(&self.instance_root)
-                .with_context(|| format!("create root {:?}", self.instance_root))?;
+                .map_err(|e| InstanceError::IoWithPath(self.instance_root.clone(), e))?;
         }
         // There can be multiple repository servers that are serving the same instance name
         // This is common where the repository name is constrained, such as preconfigured on the
@@ -311,7 +363,7 @@ impl PkgServerInstanceInfo for PkgServerInstances {
         let instance_file = self.instance_root.join(filename);
         let contents = serde_json::to_string_pretty(&instance)?;
         fs::write(&instance_file, &contents)
-            .with_context(|| format!("writing file {instance_file:?}"))
+            .map_err(|e| InstanceError::IoWithPath(instance_file.clone(), e))
     }
 }
 
@@ -324,7 +376,7 @@ pub async fn write_instance_info(
     storage_type: RepositoryStorageType,
     conflict_mode: RepositoryRegistrationAliasConflictMode,
     repo_config: RepositoryConfig,
-) -> Result<()> {
+) -> std::result::Result<(), InstanceError> {
     let instance_root = env_context.get("repository.process_dir")?;
     let mgr = PkgServerInstances::new(instance_root);
 
@@ -340,16 +392,16 @@ pub async fn write_instance_info(
     };
     if let Some(existing) = mgr.get_instance(name.into(), Some(info.port()))? {
         if existing.pid != info.pid {
-            bail!(
-                "Cannot overrite running server with same name and a different pid: {name} existing pid: {} new pid: {}",
-                existing.pid,
-                info.pid
-            );
+            return Err(InstanceError::PidMismatch {
+                name: name.to_string(),
+                existing_pid: existing.pid,
+                new_pid: info.pid,
+            });
         }
         let message = format!("WARNING: Overwriting server info for {name}: {existing:?}");
         log::error!("{message}");
     }
-    mgr.write_instance(&info).map_err(Into::into)
+    mgr.write_instance(&info)
 }
 
 #[cfg(test)]

@@ -118,7 +118,8 @@ impl RegisterTool {
         let mut repo_name = if let Some(name) = &self.cmd.repository {
             Some(name.to_string())
         } else {
-            pkg::config::get_default_repository(&self.context)?
+            pkg::config::get_default_repository(&self.context)
+                .map_err(ffx_config::macro_deps::anyhow::Error::from)?
         }
         .ok_or_else(|| {
             user_error!(
@@ -129,10 +130,14 @@ impl RegisterTool {
         let repo_port = self.cmd.port;
 
         // if none was found, check for a product bundle repo server which has the prefix of repo_name.
-        let pkg_server_info = match mgr.get_instance(repo_name.clone(), repo_port)? {
+        let pkg_server_info = match mgr
+            .get_instance(repo_name.clone(), repo_port)
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?
+        {
             Some(instance) => Some(instance),
             None => {
-                let instances = mgr.list_instances()?;
+                let instances =
+                    mgr.list_instances().map_err(ffx_config::macro_deps::anyhow::Error::from)?;
                 instances
                     .iter()
                     .find(|s| s.name.starts_with(&format!("{repo_name}.")))
@@ -497,7 +502,8 @@ mod test {
             pid: std::process::id(),
             repo_config,
         })
-        .map_err(Into::into)
+        .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+        Ok(())
     }
 
     fn to_target_info(nodename: String, ssh_host_address: Option<SshHostAddrInfo>) -> TargetInfo {

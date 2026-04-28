@@ -265,7 +265,7 @@ pub async fn serve_impl_validate_args(
     let instance_root =
         context.get("repository.process_dir").map_err(|e: ffx_config::api::ConfigError| bug!(e))?;
     let mgr = PkgServerInstances::new(instance_root);
-    let running_instances = mgr.list_instances()?;
+    let running_instances = mgr.list_instances().map_err(anyhow::Error::from)?;
 
     // Check all the name/path pairs for conflicts. If there is an exact match, return it as
     // an indicator that the server is already running and does not need to be started again.

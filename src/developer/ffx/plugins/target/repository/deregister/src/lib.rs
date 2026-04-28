@@ -47,7 +47,7 @@ impl FfxMain for DeregisterTool {
                 Some(name.to_string())
             }
         } else {
-            pkg::config::get_default_repository(&self.context)?
+            pkg::config::get_default_repository(&self.context).map_err(ffx_config::macro_deps::anyhow::Error::from)?
         }
         .ok_or_else(|| {
             user_error!(
@@ -57,7 +57,9 @@ impl FfxMain for DeregisterTool {
         })?;
         let repo_port = self.cmd.port;
 
-        let pkg_server_info = mgr.get_instance(repo_name.clone(), repo_port)?;
+        let pkg_server_info = mgr
+            .get_instance(repo_name.clone(), repo_port)
+            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
 
         if let Some(server_info) = pkg_server_info {
             deregister_standalone(&server_info.name, self.repo_proxy, self.engine_proxy).await?
@@ -193,7 +195,8 @@ mod test {
             pid: process::id(),
             repo_config,
         })
-        .map_err(Into::into)
+        .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+        Ok(())
     }
 
     macro_rules! rule {

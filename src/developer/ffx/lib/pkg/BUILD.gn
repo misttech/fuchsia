@@ -23,7 +23,6 @@ template("ffx_pkg_lib") {
       "//src/lib/fuchsia-url",
       "//src/sys/lib/fidl-fuchsia-pkg-ext",
       "//src/sys/pkg/lib/fuchsia-repo",
-      "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:async-lock",
       "//third_party/rust_crates:camino",
       "//third_party/rust_crates:http",
@@ -32,6 +31,7 @@ template("ffx_pkg_lib") {
       "//third_party/rust_crates:schemars",
       "//third_party/rust_crates:serde",
       "//third_party/rust_crates:serde_json",
+      "//third_party/rust_crates:thiserror",
       "//third_party/rust_crates:tuf",
       "//third_party/rust_crates:url",
     ]

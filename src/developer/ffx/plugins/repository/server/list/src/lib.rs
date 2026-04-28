@@ -142,7 +142,8 @@ impl RepoListTool {
         let instance_root =
             self.context.get("repository.process_dir").map_err(|e: ConfigError| bug!(e))?;
         let mgr = PkgServerInstances::new(instance_root);
-        let instances = mgr.list_instances()?;
+        let instances =
+            mgr.list_instances().map_err(ffx_config::macro_deps::anyhow::Error::from)?;
 
         Ok(instances)
     }

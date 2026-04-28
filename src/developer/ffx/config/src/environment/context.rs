@@ -43,6 +43,12 @@ pub enum ContextError {
     #[error("SDK load error: {0}")]
     SdkLoad(String),
 
+    #[error("Unable to load SDK while searching for the 'main' ffx binary: {0}")]
+    LoadSdkForMainFfx(String),
+
+    #[error("Failed to get 'ffx' host tool from SDK while searching for the 'main' ffx binary: {0}")]
+    GetHostToolForMainFfx(String),
+
     #[error("SDK tool error: {0}")]
     SdkTool(String),
 
@@ -505,8 +511,8 @@ impl EnvironmentContext {
             return Ok(self.self_path.clone());
         }
 
-        let sdk = self.get_sdk().map_err(|e| ContextError::SdkLoad(e.to_string()))?;
-        sdk.get_host_tool("ffx").map_err(|e| ContextError::SdkTool(e.to_string()))
+        let sdk = self.get_sdk().map_err(|e| ContextError::LoadSdkForMainFfx(e.to_string()))?;
+        sdk.get_host_tool("ffx").map_err(|e| ContextError::GetHostToolForMainFfx(e.to_string()))
     }
 
     /// Creates a command builder that starts with everything necessary to re-run ffx within the same context,
