@@ -27,6 +27,17 @@ struct Graph {
     edges: BTreeSet<Edge>,
 }
 
+impl Graph {
+    fn in_degrees(&self) -> BTreeMap<Ident, usize> {
+        let mut in_degrees: BTreeMap<Ident, usize> =
+            self.levels.iter().map(|l| (l.clone(), 0)).collect();
+        for Edge { to, .. } in self.edges.iter() {
+            *in_degrees.get_mut(to).unwrap() += 1;
+        }
+        in_degrees
+    }
+}
+
 impl syn::parse::Parse for Graph {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let mut levels = BTreeSet::new();
@@ -74,20 +85,22 @@ fn build_lock_graph(
 /// for all the levels from which X is reachable.
 #[proc_macro]
 pub fn lock_ordering(input: TokenStream) -> TokenStream {
-    let Graph { levels, edges } = syn::parse_macro_input!(input as Graph);
+    let graph = syn::parse_macro_input!(input as Graph);
+    let levels = &graph.levels;
+    let edges = &graph.edges;
     let mut adj_list: BTreeMap<Ident, BTreeSet<Ident>> = BTreeMap::new();
 
     let mut result = proc_macro2::TokenStream::new();
-    for level in levels.into_iter() {
+    for level in levels.iter() {
         adj_list.insert(level.clone(), BTreeSet::new());
-        if level != "Unlocked" {
+        if *level != "Unlocked" {
             result.extend(quote::quote! {
                 pub enum #level {}
                 impl starnix_sync::LockEqualOrBefore<#level> for #level {}
             });
         }
     }
-    for Edge { from, to } in edges.into_iter() {
+    for Edge { from, to } in edges.iter() {
         adj_list
             .get_mut(&from)
             .expect("Unexpected level in lock leveling graph")
@@ -99,9 +112,48 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
     let mut all_edges: BTreeSet<Edge> = BTreeSet::new();
     build_lock_graph(&unlocked_id, &mut past, &adj_list, &mut all_edges);
 
+    let mut in_degree = graph.in_degrees();
+
+    let mut queue: std::collections::BTreeSet<Ident> = in_degree
+        .iter()
+        .filter_map(|(k, &v)| if v == 0 { Some(k.clone()) } else { None })
+        .collect();
+
+    let mut next_id: usize = 0;
+    let mut lock_ids: BTreeMap<Ident, usize> = BTreeMap::new();
+
+    while let Some(node) = queue.pop_first() {
+        if node != "Unlocked" {
+            lock_ids.insert(node.clone(), next_id);
+            // Space out IDs by 16 (4 bits) for subclassing
+            next_id += 16;
+        }
+        if let Some(neighbors) = adj_list.get(&node) {
+            for neighbor in neighbors {
+                let deg = in_degree.get_mut(neighbor).unwrap();
+                assert!(*deg > 0);
+                *deg -= 1;
+                if *deg == 0 {
+                    queue.insert(neighbor.clone());
+                }
+            }
+        }
+    }
+
     for Edge { from, to } in all_edges.into_iter() {
         result.extend(quote::quote! {
             impl starnix_sync::LockAfter<#from> for #to {}
+        });
+    }
+
+    for (level, id) in lock_ids {
+        result.extend(quote::quote! {
+            impl #level {
+                pub const LOCK_ID: usize = #id;
+            }
+            impl starnix_sync::LockLevel for #level {
+                const LOCK_ID: usize = #id;
+            }
         });
     }
 

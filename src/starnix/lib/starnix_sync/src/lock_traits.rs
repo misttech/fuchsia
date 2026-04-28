@@ -4,6 +4,12 @@
 
 use core::ops::{Deref, DerefMut};
 
+/// A trait for types that represent a lock level in the lock dependency tracker.
+pub trait LockLevel {
+    /// The unique identifier for this lock level.
+    const LOCK_ID: usize;
+}
+
 /// Describes how to apply a lock type to the implementing type.
 ///
 /// An implementation of `LockFor<L>` for some `Self` means that `Self` can

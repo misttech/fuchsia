@@ -6,6 +6,7 @@
 
 mod atomic_time;
 mod interruptible_event;
+mod lock_dep_mutex;
 mod lock_ordering;
 mod lock_relations;
 mod lock_sequence;
@@ -15,6 +16,7 @@ mod port_event;
 
 pub use atomic_time::*;
 pub use interruptible_event::*;
+pub use lock_dep_mutex::*;
 pub use lock_ordering::*;
 pub use lock_ordering_macro::*;
 pub use lock_relations::*;
