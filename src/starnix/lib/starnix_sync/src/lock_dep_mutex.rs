@@ -36,7 +36,7 @@ mod tracking {
     ///
     /// Panics if a self-deadlock or lock cycle is detected.
     #[inline(always)]
-    pub fn check_and_push_lock(target_value: usize, name: &'static str) {
+    fn check_and_push_lock(target_value: usize, name: &'static str) {
         STATE.with(|state| {
             let mut s = state.borrow_mut();
             if let Some(last) = s.held_locks.last() {
@@ -76,7 +76,7 @@ mod tracking {
 
     /// Removes a lock from the thread-local stack when it is released.
     #[inline(always)]
-    pub fn pop_lock(target_value: usize) {
+    fn pop_lock(target_value: usize) {
         STATE.with(|state| {
             let mut s = state.borrow_mut();
             let Some(pos) = s.held_locks.iter().rposition(|v| v.encoded_value == target_value)
@@ -113,7 +113,7 @@ mod tracking {
     ///
     /// Returns `0` if no subclass is currently authorized.
     #[inline(always)]
-    pub fn get_subclass(lock_id: usize) -> u8 {
+    fn get_subclass(lock_id: usize) -> u8 {
         STATE.with(|state| {
             let s = state.borrow();
             if let Some(last) = s.held_locks.last() {
@@ -130,7 +130,7 @@ mod tracking {
     ///
     /// Returns the lock ID and the new subclass level.
     #[inline(always)]
-    pub fn enable_subclass_for_maximal() -> usize {
+    fn enable_subclass_for_maximal() -> usize {
         STATE.with(|state| {
             let mut s = state.borrow_mut();
             if let Some(last) = s.held_locks.last_mut() {
@@ -145,7 +145,7 @@ mod tracking {
 
     /// Revokes the subclass authorization for the given lock ID when a `SubclassToken` is dropped.
     #[inline(always)]
-    pub fn disable_subclass(encoded_value: usize) {
+    fn disable_subclass(encoded_value: usize) {
         if encoded_value == usize::MAX {
             return;
         }
@@ -170,24 +170,71 @@ mod tracking {
             lock.active_subclass_tokens -= 1;
         });
     }
+
+    /// A token that represents a lock level being held for lockdep purposes.
+    /// This does not actually hold a lock, but updates the lockdep state as if it did.
+    pub struct LockLevelToken<L> {
+        target_value: usize,
+        _level: std::marker::PhantomData<L>,
+    }
+
+    impl<L: crate::LockLevel> LockLevelToken<L> {
+        pub fn new() -> Self {
+            let subclass = get_subclass(L::LOCK_ID);
+            assert!(subclass < 16, "subclass must be between 0 and 15");
+            let target_value = L::LOCK_ID | (subclass as usize & 0xF);
+            check_and_push_lock(target_value, L::name());
+            Self { target_value, _level: std::marker::PhantomData }
+        }
+    }
+
+    impl<L> Drop for LockLevelToken<L> {
+        fn drop(&mut self) {
+            pop_lock(self.target_value);
+        }
+    }
+
+    /// A token that allows the next lock acquisition of the same level as the currently maximal
+    /// held lock to use an incremented subclass.
+    pub struct SubclassToken {
+        encoded_value: usize,
+    }
+
+    impl SubclassToken {
+        pub fn new() -> Self {
+            let encoded_value = enable_subclass_for_maximal();
+            Self { encoded_value }
+        }
+    }
+
+    impl Drop for SubclassToken {
+        fn drop(&mut self) {
+            disable_subclass(self.encoded_value);
+        }
+    }
 }
 
 #[cfg(not(feature = "detect_lock_dep_cycles"))]
 mod tracking {
-    #[inline(always)]
-    pub fn check_and_push_lock(_target_value: usize, _name: &'static str) {}
-    #[inline(always)]
-    pub fn pop_lock(_target_value: usize) {}
-    #[inline(always)]
-    pub fn get_subclass(_lock_id: usize) -> u8 {
-        0
+    pub struct LockLevelToken<L> {
+        _level: std::marker::PhantomData<L>,
     }
-    #[inline(always)]
-    pub fn enable_subclass_for_maximal() -> usize {
-        usize::MAX
+
+    impl<L: crate::LockLevel> LockLevelToken<L> {
+        #[inline(always)]
+        pub fn new() -> Self {
+            Self { _level: std::marker::PhantomData }
+        }
     }
-    #[inline(always)]
-    pub fn disable_subclass(_encoded_value: usize) {}
+
+    pub struct SubclassToken {}
+
+    impl SubclassToken {
+        #[inline(always)]
+        pub fn new() -> Self {
+            Self {}
+        }
+    }
 }
 
 /// A Mutex that dynamically enforces lock ordering at runtime.
@@ -203,18 +250,14 @@ impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
 
     #[inline(always)]
     pub fn lock(&self) -> LockDepGuard<'_, T, L> {
-        let subclass = tracking::get_subclass(L::LOCK_ID);
-        assert!(subclass < 16, "subclass must be between 0 and 15");
-        let target_value = L::LOCK_ID | (subclass as usize & 0xF);
-        tracking::check_and_push_lock(target_value, L::name());
-        LockDepGuard { inner: self.inner.lock(), target_value, _level: PhantomData }
+        let token = tracking::LockLevelToken::new();
+        LockDepGuard { inner: self.inner.lock(), _token: token }
     }
 }
 
 pub struct LockDepGuard<'a, T, L> {
     inner: MutexGuard<'a, T>,
-    target_value: usize,
-    _level: PhantomData<L>,
+    _token: tracking::LockLevelToken<L>,
 }
 
 impl<'a, T, L> std::ops::Deref for LockDepGuard<'a, T, L> {
@@ -231,12 +274,6 @@ impl<'a, T, L> std::ops::DerefMut for LockDepGuard<'a, T, L> {
     }
 }
 
-impl<'a, T, L> Drop for LockDepGuard<'a, T, L> {
-    fn drop(&mut self) {
-        tracking::pop_lock(self.target_value);
-    }
-}
-
 /// An RwLock that dynamically enforces lock ordering at runtime.
 pub struct LockDepRwLock<T, L> {
     inner: fuchsia_sync::RwLock<T>,
@@ -250,27 +287,20 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
 
     #[inline(always)]
     pub fn read(&self) -> LockDepReadGuard<'_, T, L> {
-        let subclass = tracking::get_subclass(L::LOCK_ID);
-        assert!(subclass < 16, "subclass must be between 0 and 15");
-        let target_value = L::LOCK_ID | (subclass as usize & 0xF);
-        tracking::check_and_push_lock(target_value, L::name());
-        LockDepReadGuard { inner: self.inner.read(), target_value, _level: PhantomData }
+        let token = tracking::LockLevelToken::new();
+        LockDepReadGuard { inner: self.inner.read(), _token: token }
     }
 
     #[inline(always)]
     pub fn write(&self) -> LockDepWriteGuard<'_, T, L> {
-        let subclass = tracking::get_subclass(L::LOCK_ID);
-        assert!(subclass < 16, "subclass must be between 0 and 15");
-        let target_value = L::LOCK_ID | (subclass as usize & 0xF);
-        tracking::check_and_push_lock(target_value, L::name());
-        LockDepWriteGuard { inner: self.inner.write(), target_value, _level: PhantomData }
+        let token = tracking::LockLevelToken::new();
+        LockDepWriteGuard { inner: self.inner.write(), _token: token }
     }
 }
 
 pub struct LockDepReadGuard<'a, T, L> {
     inner: RwLockReadGuard<'a, T>,
-    target_value: usize,
-    _level: PhantomData<L>,
+    _token: tracking::LockLevelToken<L>,
 }
 
 impl<'a, T, L> std::ops::Deref for LockDepReadGuard<'a, T, L> {
@@ -281,16 +311,9 @@ impl<'a, T, L> std::ops::Deref for LockDepReadGuard<'a, T, L> {
     }
 }
 
-impl<'a, T, L> Drop for LockDepReadGuard<'a, T, L> {
-    fn drop(&mut self) {
-        tracking::pop_lock(self.target_value);
-    }
-}
-
 pub struct LockDepWriteGuard<'a, T, L> {
     inner: RwLockWriteGuard<'a, T>,
-    target_value: usize,
-    _level: PhantomData<L>,
+    _token: tracking::LockLevelToken<L>,
 }
 
 impl<'a, T, L> std::ops::Deref for LockDepWriteGuard<'a, T, L> {
@@ -307,34 +330,17 @@ impl<'a, T, L> std::ops::DerefMut for LockDepWriteGuard<'a, T, L> {
     }
 }
 
-impl<'a, T, L> Drop for LockDepWriteGuard<'a, T, L> {
-    fn drop(&mut self) {
-        tracking::pop_lock(self.target_value);
-    }
-}
-
 /// A token that allows the next lock acquisition of the same level as the currently maximal
 /// held lock to use an incremented subclass.
-pub struct SubclassToken {
-    encoded_value: usize,
-}
-
-impl SubclassToken {
-    pub fn new() -> Self {
-        let encoded_value = tracking::enable_subclass_for_maximal();
-        Self { encoded_value }
-    }
-}
-
-impl Drop for SubclassToken {
-    fn drop(&mut self) {
-        tracking::disable_subclass(self.encoded_value);
-    }
-}
-
 /// Allows subclassing of the currently maximal held lock.
-pub fn allow_subclass() -> SubclassToken {
-    SubclassToken::new()
+pub fn allow_subclass() -> tracking::SubclassToken {
+    tracking::SubclassToken::new()
+}
+
+/// Asserts that the current thread can acquire locks at level `L`.
+/// Returns a token that, when held, forces subsequent locks to be after `L`.
+pub fn assert_lock_level<L: crate::LockLevel>() -> tracking::LockLevelToken<L> {
+    tracking::LockLevelToken::new()
 }
 
 #[cfg(test)]
@@ -506,16 +512,30 @@ mod tests {
         let _token = allow_subclass();
         std::mem::drop(guard);
     }
+
     #[test]
-    #[should_panic(expected = "Invalid lock ordering cycle detected: attempted to acquire 'LevelA' after 'LevelB'")]
+    #[should_panic(
+        expected = "Invalid lock ordering cycle detected: attempted to acquire 'LevelA' after 'LevelB'"
+    )]
     fn test_panic_message_contains_names() {
         tracking::clear_state();
-        {
-            let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
-            let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
+        let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+        let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
 
-            let _guard_b = lock_b.lock();
-            let _guard_a = lock_a.lock(); // Should panic
-        }
+        let _guard_b = lock_b.lock();
+        let _guard_a = lock_a.lock();
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid lock ordering cycle detected")]
+    fn test_assert_lock_level_panic() {
+        tracking::clear_state();
+        let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
+
+        let _guard_b = lock_b.lock();
+        // LevelA is before LevelB in the ordering.
+        // So asserting LevelA after holding LevelB should panic!
+        let _token = assert_lock_level::<LevelA>();
     }
 }
+
