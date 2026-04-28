@@ -108,6 +108,23 @@ impl State {
     }
 }
 
+/// The type of the flush to reflect the caller intent.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum FlushType {
+    /// The default sync type. This flushes everything it can and if there are errors then it
+    /// stops early and will try to flush the rest later.
+    #[default]
+    Sync,
+
+    /// When the file is being closed and the flush needs to clean everything up. If there are
+    /// errors then it will still return all resources even if that means data loss.
+    LastChance,
+
+    /// Flushing some pages in the background because there are a lot of dirty pages to push. May
+    /// not get all dirty pages.
+    Background,
+}
+
 /// FxFile represents an open connection to a file.
 #[derive(ToWeakNode)]
 pub struct FxFile {
@@ -216,8 +233,8 @@ impl FxFile {
     /// ensure that we don't accidentally try to flush a file handle that is in the process of
     /// being removed. (See use of cache in `FxVolume::flush_all_files`.)
     #[trace]
-    pub async fn flush(this: &OpenedNode<FxFile>, last_chance: bool) -> Result<(), Error> {
-        this.handle.flush(last_chance).await.map(|_| ())
+    pub async fn flush(this: &OpenedNode<FxFile>, flush_type: FlushType) -> Result<(), Error> {
+        this.handle.flush(flush_type).await.map(|_| ())
     }
 
     pub fn get_block_size(&self) -> u64 {
@@ -616,7 +633,7 @@ impl File for FxFile {
 
     async fn enable_verity(&self, options: fio::VerificationOptions) -> Result<(), Status> {
         self.handle.set_read_only();
-        self.handle.flush(false).await.map_err(map_to_status)?;
+        self.handle.flush(FlushType::Sync).await.map_err(map_to_status)?;
         self.handle.uncached_handle().enable_verity(options).await.map_err(map_to_status)
     }
 
@@ -687,7 +704,7 @@ impl File for FxFile {
     }
 
     async fn sync(&self, mode: SyncMode) -> Result<(), Status> {
-        self.handle.flush(false).await.map_err(map_to_status)?;
+        self.handle.flush(FlushType::Sync).await.map_err(map_to_status)?;
 
         // TODO(https://fxbug.dev/42178163): at the moment, this doesn't send a flush to the device, which
         // doesn't match minfs.
@@ -744,9 +761,8 @@ impl PagerBacked for FxFile {
                     {
                         let owner = self.handle.owner().clone();
                         owner.spawn(async move {
-                            if let Err(e) = self.handle.flush(false).await {
-                                warn!(error:? = e; "Background flush failed.");
-                            }
+                            // Ignore the result, the flush call already logs the errors.
+                            let _ = self.handle.flush(FlushType::Background).await;
                             // If this future gets dropped before resetting this it means the
                             // volume is shutting down anyways.
                             self.background_flush_running.store(false, Ordering::Relaxed);

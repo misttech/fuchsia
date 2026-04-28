@@ -5,7 +5,7 @@
 use crate::fuchsia::component::map_to_raw_status;
 use crate::fuchsia::directory::FxDirectory;
 use crate::fuchsia::dirent_cache::DirentCache;
-use crate::fuchsia::file::FxFile;
+use crate::fuchsia::file::{FlushType, FxFile};
 use crate::fuchsia::memory_pressure::{MemoryPressureLevel, MemoryPressureMonitor};
 use crate::fuchsia::node::{FxNode, GetResult, NodeCache};
 use crate::fuchsia::pager::Pager;
@@ -367,7 +367,7 @@ impl FxVolume {
             return;
         }
 
-        self.flush_all_files(true).await;
+        self.flush_all_files(FlushType::LastChance).await;
         self.store.filesystem().graveyard().flush().await;
         if self.store.crypt().is_some() {
             if let Err(e) = self.store.lock().await {
@@ -541,7 +541,7 @@ impl FxVolume {
                 self.dirent_cache.set_limit(config.for_level(&level).cache_size_limit);
             }
             if should_flush {
-                self.flush_all_files(false).await;
+                self.flush_all_files(FlushType::Sync).await;
                 self.dirent_cache.recycle_stale_files();
             } else if low_mem {
                 // This is a softer version of flushing files, so don't bother if we're flushing.
@@ -587,11 +587,11 @@ impl FxVolume {
     }
 
     #[trace]
-    pub async fn flush_all_files(&self, last_chance: bool) {
+    pub async fn flush_all_files(&self, flush_type: FlushType) {
         let mut flushed = 0;
         for file in self.cache.files() {
             if let Some(node) = file.into_opened_node() {
-                if let Err(e) = FxFile::flush(&node, last_chance).await {
+                if let Err(e) = FxFile::flush(&node, flush_type).await {
                     warn!(
                         store_id = self.store.store_object_id(),
                         oid = node.object_id(),
@@ -599,7 +599,7 @@ impl FxVolume {
                         "Failed to flush",
                     )
                 }
-                if last_chance {
+                if flush_type == FlushType::LastChance {
                     let file = node.clone();
                     std::mem::drop(node);
                     file.force_clean();

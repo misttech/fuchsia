@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::fuchsia::file::FlushType;
 use crate::fuchsia::pager::{
     MarkDirtyRange, Pager, PagerBacked, PagerVmoStatsOptions, VmoDirtyRange,
 };
@@ -101,6 +102,16 @@ impl std::ops::Sub for DirtyPages {
 impl std::ops::SubAssign for DirtyPages {
     fn sub_assign(&mut self, rhs: Self) {
         *self = *self - rhs;
+    }
+}
+
+impl std::ops::Add for DirtyPages {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            reserved: self.reserved + rhs.reserved,
+            unreserved: self.unreserved + rhs.unreserved,
+        }
     }
 }
 
@@ -320,12 +331,13 @@ struct FlushState {
     /// The number of pages we have actually flushed.
     pages_flushed: DirtyPages,
 
-    /// The number of COW pages we won't be flushing because they're beyond the current end of the
-    /// file.
-    reserved_pages_not_to_flush: u64,
+    /// The number of dirty pages we won't be flushing either because they're beyond the current end
+    /// of the file or we're not flushing all the pages. The reserved pages need to save their
+    /// reservation.
+    dirty_pages_not_to_flush: DirtyPages,
 
-    /// If this flush is the last chance to flush the file before it is destroyed.
-    last_chance: bool,
+    /// The type of the flush.
+    flush_type: FlushType,
 
     /// True when extra pages were taken because of races where after capturing the initial
     /// reservation and dirty page counts more pages got marked dirty while collecting the batches
@@ -334,14 +346,18 @@ struct FlushState {
 }
 
 impl FlushState {
-    fn new(reservation: Reservation, marked_dirty_pages: DirtyPages, last_chance: bool) -> Self {
+    fn new(
+        reservation: Reservation,
+        marked_dirty_pages: DirtyPages,
+        flush_type: FlushType,
+    ) -> Self {
         Self {
             reservation,
             marked_dirty_pages,
             pages_to_flush: Default::default(),
             pages_flushed: Default::default(),
-            reserved_pages_not_to_flush: 0,
-            last_chance,
+            dirty_pages_not_to_flush: Default::default(),
+            flush_type,
             has_extra_reserved: false,
         }
     }
@@ -357,18 +373,19 @@ impl FlushState {
     fn set_flush_batch_count(
         &mut self,
         dirty_pages_to_flush: DirtyPages,
-        reserved_pages_not_to_flush: u64,
+        dirty_pages_not_to_flush: DirtyPages,
     ) -> Result<(), ()> {
         assert_eq!(self.pages_to_flush.total(), 0, "This should only be called once.");
         self.pages_to_flush = dirty_pages_to_flush;
-        self.reserved_pages_not_to_flush = reserved_pages_not_to_flush;
+        self.dirty_pages_not_to_flush = dirty_pages_not_to_flush;
 
         // Need to ensure that we are flushing not only the correct number of total pages, but also
         // the correct number of reserved pages to ensure that we have enough reservation. The
         // reservation should also cover the reserved pages not to flush.
-        if self.pages_to_flush.reserved + self.reserved_pages_not_to_flush
+        if self.pages_to_flush.reserved + self.dirty_pages_not_to_flush.reserved
             > self.marked_dirty_pages.reserved
-            || self.pages_to_flush.unreserved > self.marked_dirty_pages.unreserved
+            || self.pages_to_flush.unreserved + self.dirty_pages_not_to_flush.unreserved
+                > self.marked_dirty_pages.unreserved
         {
             Err(())
         } else {
@@ -386,12 +403,14 @@ impl FlushState {
         self.marked_dirty_pages += inner.move_to(&self.reservation);
 
         assert!(
-            self.reservation.amount() >= reservation_needed(self.pages_to_flush.reserved),
-            "reservation: {}, needed: {}, dirty_pages.reserved: {}, pages_to_flush: {}",
+            self.reservation.amount() >= reservation_needed(self.pages_to_flush.reserved)
+                && self.marked_dirty_pages.total()
+                    >= self.pages_to_flush.total() + self.dirty_pages_not_to_flush.total(),
+            "reservation: {}, needed: {}, dirty_pages: {:?}, pages_to_flush: {:?}",
             self.reservation.amount(),
             reservation_needed(self.pages_to_flush.reserved),
-            self.marked_dirty_pages.reserved,
-            self.pages_to_flush.reserved
+            self.marked_dirty_pages,
+            self.pages_to_flush,
         );
     }
 
@@ -410,38 +429,40 @@ impl FlushState {
             "Should not clean more than it planned to clean."
         );
 
-        let new_dirty_pages = if self.last_chance {
-            // No more pages can be flushed now.
+        let new_dirty_pages = if self.flush_type == FlushType::LastChance {
+            // No more pages can be flushed now. Data loss is possible, but returning reservations.
             DirtyPages::default()
         } else if self.pages_flushed.reserved == self.pages_to_flush.reserved
             && self.pages_flushed.unreserved == self.pages_to_flush.unreserved
             && !self.has_extra_reserved
         {
             // In this (common) case, there was no race and we succeeded in flushing
-            // all the pages we expected to, so the number of pages we need to keep
-            // reserved is simply the reserved pages beyond the end of the file.
-            DirtyPages { reserved: self.reserved_pages_not_to_flush, unreserved: 0 }
+            // all the pages we expected to, so the number of pages we keep are the ones we
+            // elected not to flush.
+            self.dirty_pages_not_to_flush
         } else if self.pages_flushed.unreserved > self.marked_dirty_pages.unreserved {
             // It's possible that pages can be marked dirty as COW but then get allocated before
-            // collecting the ranges, creating a mismatch. This allows for that shift to happen.
+            // collecting the ranges, creating a mismatch. This allows for that shift to happen
+            // without underflow.
             DirtyPages {
-                reserved: self.marked_dirty_pages.total() - self.pages_flushed.total(),
-                unreserved: 0,
+                reserved: self.marked_dirty_pages.total()
+                    - self.pages_flushed.total()
+                    - self.dirty_pages_not_to_flush.unreserved,
+                unreserved: self.dirty_pages_not_to_flush.unreserved,
             }
         } else {
-            // In this path, just subtract whatever we successfully flushed.
+            // In this path, just subtract whatever we successfully flushed. With races or failed
+            // writes there is no way of knowing how many dirty pages should or should not be there.
             self.marked_dirty_pages - self.pages_flushed
         };
 
-        {
+        if new_dirty_pages.total() > 0 {
             let mut inner = inner.lock();
-            if new_dirty_pages.total() > 0 {
-                inner.put_back(new_dirty_pages, &self.reservation);
-            }
+            inner.put_back(new_dirty_pages, &self.reservation);
         }
 
         // Report the delta
-        (self.marked_dirty_pages - new_dirty_pages).total()
+        self.marked_dirty_pages.total() - new_dirty_pages.total()
     }
 }
 
@@ -534,7 +555,7 @@ impl PagedObjectHandle {
         if self.handle.overwrite_ranges().is_empty() && self.inner.lock().reservation() == 0 {
             return Ok(());
         }
-        self.flush(false).await
+        self.flush(FlushType::Sync).await
     }
 
     /// Attempts to mark the page range as dirty. On success, returns the number of current dirty
@@ -651,14 +672,15 @@ impl PagedObjectHandle {
     fn collect_flush_batches(
         &self,
         content_size: u64,
-    ) -> Result<(Vec<FlushBatch>, DirtyPages, u64), Error> {
+        flush_type: FlushType,
+    ) -> Result<(Vec<FlushBatch>, DirtyPages, DirtyPages), Error> {
         let page_aligned_content_size = round_up(content_size, zx::system_get_page_size()).unwrap();
         let modified_ranges =
             self.collect_modified_ranges().context("collect_modified_ranges failed")?;
 
         debug!(modified_ranges:?, page_aligned_content_size:?; "flush: modified ranges from kernel");
 
-        let mut flush_batches = FlushBatches::default();
+        let mut flush_batches = FlushBatches::new(flush_type);
         let mut last_end = 0;
         for modified_range in modified_ranges {
             // Skip ranges entirely past the stream size.  It might be tempting to consider
@@ -839,7 +861,7 @@ impl PagedObjectHandle {
     async fn flush_locked<'a>(
         &self,
         truncate_guard: &TruncateGuard<'a>,
-        last_chance: bool,
+        flush_type: FlushType,
     ) -> Result<(), Error> {
         Pager::page_in_barrier().await;
 
@@ -875,6 +897,10 @@ impl PagedObjectHandle {
             self.inner.lock().pending_shrink = PendingShrink::None;
         }
 
+        // BEGIN: No early returns.
+        // Once we've taken dirty pages we cannot return early until we've got the current state
+        // inside of FlushState.
+
         // If the file had several dirty pages and then was truncated to before those dirty pages
         // then we'll still have space reserved that is no longer needed and should be released as
         // part of this flush.
@@ -892,7 +918,7 @@ impl PagedObjectHandle {
             )
         };
 
-        let flush_state = FlushState::new(reservation, dirty_pages, last_chance);
+        let flush_state = FlushState::new(reservation, dirty_pages, flush_type);
 
         // Can't use a normal drop on FlushState here without letting it hold a reference to the
         // FxVolume in order to report the cleaned pages. If we do that then we lose the ability to
@@ -910,19 +936,25 @@ impl PagedObjectHandle {
 
         let content_size = self.vmo().get_stream_size().context("get_stream_size failed")?;
         let previous_content_size = self.handle.get_size();
-        let (flush_batches, dirty_pages_to_flush, reserved_pages_not_to_flush) =
-            self.collect_flush_batches(content_size)?;
+        let (flush_batches, dirty_pages_to_flush, dirty_pages_not_to_flush) =
+            self.collect_flush_batches(content_size, flush_type)?;
 
         #[cfg(test)]
         CALLBACK_AFTER_RANGE_COLLECTION.call();
 
         if let Err(_) = flush_state_wrapper
-            .set_flush_batch_count(dirty_pages_to_flush, reserved_pages_not_to_flush)
+            .set_flush_batch_count(dirty_pages_to_flush, dirty_pages_not_to_flush)
         {
             flush_state_wrapper.take_extra_dirty_pages(&mut *self.inner.lock());
         }
 
+        // End: No early returns.
+
         if flush_batches.is_empty() {
+            // If there's no data to flush in a background flush, quit early doing nothing.
+            if flush_type == FlushType::Background {
+                return Ok(());
+            }
             self.flush_metadata(content_size, previous_content_size, crtime, mtime).await?;
             self.inner.lock().end_flush();
             Ok(())
@@ -939,7 +971,7 @@ impl PagedObjectHandle {
         }
     }
 
-    async fn flush_impl(&self, last_chance: bool) -> Result<(), Error> {
+    async fn flush_impl(&self, flush_type: FlushType) -> Result<(), Error> {
         if !self.needs_flush() {
             return Ok(());
         }
@@ -951,11 +983,11 @@ impl PagedObjectHandle {
         // prevent the file from shrinking while it's being flushed.
         let truncate_guard =
             fs.truncate_guard(store.store_object_id(), self.handle.object_id()).await;
-        self.flush_locked(&truncate_guard, last_chance).await
+        self.flush_locked(&truncate_guard, flush_type).await
     }
 
-    pub async fn flush(&self, last_chance: bool) -> Result<(), Error> {
-        match self.flush_impl(last_chance).await {
+    pub async fn flush(&self, flush_type: FlushType) -> Result<(), Error> {
+        match self.flush_impl(flush_type).await {
             Ok(()) => Ok(()),
             Err(error) => {
                 error!(error:?; "Failed to flush");
@@ -1169,7 +1201,7 @@ impl PagedObjectHandle {
         // the whole time to make sure the ordering of those operations is correct. Clearing most
         // of the pending write reservations that might overlap with allocated range is a nice side
         // effect, but it's not really required.
-        self.flush_locked(&truncate_guard, false)
+        self.flush_locked(&truncate_guard, FlushType::Sync)
             .await
             .inspect_err(|error| error!(error:?; "Failed to flush in allocate"))?;
 
@@ -1264,15 +1296,24 @@ struct FlushBatches {
     dirty_pages: DirtyPages,
 
     /// The number of pages that were marked dirty but are not included in `batches` because they
-    /// don't need to be flushed. These are pages that were beyond the VMO's stream size.
-    skipped_dirty_page_count: u64,
+    /// don't need to be flushed. These are pages that were beyond the VMO's stream size, or are
+    /// being left as this is a background flush.
+    skipped_dirty_page_count: DirtyPages,
 
     /// Any zero ranges get put into their own batch. Zero ranges don't actually add any metadata
     /// at the moment (and will error if they do) so we don't need to split them up.
     zero_batch: Option<FlushBatch>,
+
+    /// The type of flush this is for. For background flushes we try to only do full batches and
+    /// defer partial batches for later.
+    flush_type: FlushType,
 }
 
 impl FlushBatches {
+    fn new(flush_type: FlushType) -> Self {
+        Self { flush_type, ..Default::default() }
+    }
+
     fn add_range(&mut self, range: Range<u64>, mode: BatchMode) {
         let working_batch_ref = match mode {
             BatchMode::Zero => &mut self.zero_batch,
@@ -1297,16 +1338,34 @@ impl FlushBatches {
         }
     }
 
+    /// Skip ranges that are outside the content size.
     fn skip_range(&mut self, range: Range<u64>) {
-        self.skipped_dirty_page_count += page_count(range);
+        // Ranges outside the content size cannot be pre-allocated, and so must have a reservation.
+        self.skipped_dirty_page_count.reserved += page_count(range);
     }
 
-    fn consume(mut self) -> (Vec<FlushBatch>, DirtyPages, u64) {
+    fn consume(mut self) -> (Vec<FlushBatch>, DirtyPages, DirtyPages) {
         if let Some(batch) = self.working_cow_batch {
-            self.batches.push(batch);
+            if self.flush_type == FlushType::Background && batch.dirty_byte_count < FLUSH_BATCH_SIZE
+            {
+                let dirty_pages =
+                    batch.dirty_byte_count.div_ceil(zx::system_get_page_size() as u64);
+                self.skipped_dirty_page_count.reserved += dirty_pages;
+                self.dirty_pages.reserved -= dirty_pages;
+            } else {
+                self.batches.push(batch);
+            }
         }
         if let Some(batch) = self.working_overwrite_batch {
-            self.batches.push(batch);
+            if self.flush_type == FlushType::Background && batch.dirty_byte_count < FLUSH_BATCH_SIZE
+            {
+                let dirty_pages =
+                    batch.dirty_byte_count.div_ceil(zx::system_get_page_size() as u64);
+                self.skipped_dirty_page_count.unreserved += dirty_pages;
+                self.dirty_pages.unreserved -= dirty_pages;
+            } else {
+                self.batches.push(batch);
+            }
         }
         if let Some(batch) = self.zero_batch {
             self.batches.push(batch)
@@ -2002,7 +2061,7 @@ mod tests {
         batches.add_range(0..(FLUSH_BATCH_SIZE * 2 + 8192), BatchMode::Cow);
         let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
         assert_eq!(dirty_page_count.reserved, 258);
-        assert_eq!(skipped_dirty_page_count, 0);
+        assert_eq!(skipped_dirty_page_count.total(), 0);
         assert_eq!(
             batches,
             vec![
@@ -2026,6 +2085,92 @@ mod tests {
     }
 
     #[test]
+    fn test_flush_cow_batches_background() {
+        let page_size = zx::system_get_page_size() as u64;
+        let mut batches = FlushBatches::new(FlushType::Background);
+        batches.add_range(0..(FLUSH_BATCH_SIZE * 2 + page_size * 2), BatchMode::Cow);
+        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE * 2 / page_size);
+        assert_eq!(skipped_dirty_page_count.reserved, 2);
+        assert_eq!(
+            batches,
+            vec![
+                FlushBatch {
+                    ranges: vec![0..FLUSH_BATCH_SIZE],
+                    dirty_byte_count: FLUSH_BATCH_SIZE,
+                    mode: BatchMode::Cow,
+                },
+                FlushBatch {
+                    ranges: vec![FLUSH_BATCH_SIZE..(FLUSH_BATCH_SIZE * 2)],
+                    dirty_byte_count: FLUSH_BATCH_SIZE,
+                    mode: BatchMode::Cow,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_flush_overwrite_batches_background() {
+        let page_size = zx::system_get_page_size() as u64;
+        let mut batches = FlushBatches::new(FlushType::Background);
+        batches.add_range(0..(FLUSH_BATCH_SIZE + page_size), BatchMode::Overwrite);
+        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        assert_eq!(dirty_page_count.unreserved, FLUSH_BATCH_SIZE / page_size);
+        // We don't count overwrite pages here, they don't need reservations.
+        assert_eq!(skipped_dirty_page_count.unreserved, 1);
+        assert_eq!(
+            batches,
+            vec![FlushBatch {
+                ranges: vec![0..FLUSH_BATCH_SIZE],
+                dirty_byte_count: FLUSH_BATCH_SIZE,
+                mode: BatchMode::Overwrite,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_flush_one_full_batch_background() {
+        let page_size = zx::system_get_page_size() as u64;
+        let mut batches = FlushBatches::new(FlushType::Background);
+        batches.add_range(0..FLUSH_BATCH_SIZE, BatchMode::Cow);
+        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE / page_size);
+        assert_eq!(skipped_dirty_page_count.reserved, 0);
+        assert_eq!(
+            batches,
+            vec![FlushBatch {
+                ranges: vec![0..FLUSH_BATCH_SIZE],
+                dirty_byte_count: FLUSH_BATCH_SIZE,
+                mode: BatchMode::Cow,
+            },]
+        );
+    }
+
+    #[test]
+    fn test_flush_batches_background_drops_last_pages() {
+        let page_size = zx::system_get_page_size() as u64;
+        let mut batches = FlushBatches::new(FlushType::Background);
+        // Despite having better chunking, it will drop the last pages not the smaller ranges.
+        // This matters since part of the goal is not to get in the way of linear writers.
+        batches.add_range(0..(FLUSH_BATCH_SIZE - page_size * 2), BatchMode::Cow);
+        batches.add_range(FLUSH_BATCH_SIZE..(FLUSH_BATCH_SIZE * 2), BatchMode::Cow);
+        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE / page_size);
+        assert_eq!(skipped_dirty_page_count.reserved, (FLUSH_BATCH_SIZE / page_size) - 2);
+        assert_eq!(
+            batches,
+            vec![FlushBatch {
+                ranges: vec![
+                    0..(FLUSH_BATCH_SIZE - page_size * 2),
+                    FLUSH_BATCH_SIZE..(FLUSH_BATCH_SIZE + page_size * 2)
+                ],
+                dirty_byte_count: FLUSH_BATCH_SIZE,
+                mode: BatchMode::Cow,
+            },]
+        );
+    }
+
+    #[test]
     fn test_flush_batches_add_range_multiple_ranges() {
         let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::default();
@@ -2038,7 +2183,7 @@ mod tests {
         let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
         assert_eq!(dirty_page_count.reserved, 144);
         assert_eq!(dirty_page_count.unreserved, 150);
-        assert_eq!(skipped_dirty_page_count, 0);
+        assert_eq!(skipped_dirty_page_count.total(), 0);
         assert_eq!(
             batches,
             vec![
@@ -2078,7 +2223,7 @@ mod tests {
         let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
         assert_eq!(dirty_page_count.reserved, 0);
         assert_eq!(batches, Vec::new());
-        assert_eq!(skipped_dirty_page_count, 2);
+        assert_eq!(skipped_dirty_page_count.reserved, 2);
     }
 
     #[fuchsia::test]
@@ -2699,7 +2844,7 @@ mod tests {
                     cloned_file.unblock(request1);
                 });
 
-                file.handle.flush(false).await.expect("flush failed");
+                file.handle.flush(FlushType::Sync).await.expect("flush failed");
 
                 // We don't care what the original VMO read request returned, but reading now should
                 // return the new content, i.e. zeroes.  The original page-in request would/will
@@ -3109,7 +3254,7 @@ mod tests {
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 1);
 
             // Now we need a "last chance" flush to clean it up.
-            object.handle().flush(true).await.unwrap();
+            object.handle().flush(FlushType::LastChance).await.unwrap();
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
         }
         fixture.close().await;
@@ -3215,7 +3360,11 @@ mod tests {
                 let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
                     fail.store(1, Ordering::Relaxed);
                 });
-                object.handle().flush(true).await.expect_err("Partial flush success");
+                object
+                    .handle()
+                    .flush(FlushType::LastChance)
+                    .await
+                    .expect_err("Partial flush success");
             }
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
         }
@@ -3264,6 +3413,285 @@ mod tests {
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
         }
 
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_race_mark_dirty_with_background_flush_cow() {
+        race_mark_dirty_with_background_flush(false).await;
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_race_mark_dirty_with_background_flush_overwrite() {
+        race_mark_dirty_with_background_flush(true).await;
+    }
+
+    async fn race_mark_dirty_with_background_flush(allocate_range: bool) {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
+            let page_size = zx::system_get_page_size() as u64;
+            let background_pages_threshold = BACKGROUND_FLUSH_THRESHOLD / page_size;
+
+            if allocate_range {
+                proxy
+                    .allocate(
+                        0,
+                        BACKGROUND_FLUSH_THRESHOLD + page_size * 2,
+                        fio::AllocateMode::empty(),
+                    )
+                    .await
+                    .unwrap()
+                    .expect("Allocate");
+                proxy.sync().await.unwrap().expect("Sync after allocate");
+            }
+
+            for i in 0..background_pages_threshold {
+                stream
+                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .expect("Dirty page");
+            }
+
+            // No background flush yet.
+            assert_eq!(
+                object.handle().inner.lock().dirty_pages.total(),
+                background_pages_threshold
+            );
+
+            let flush_counter = Arc::new(AtomicU64::new(0));
+            let flush_counter_clone = flush_counter.clone();
+            let stream_dup = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+            let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
+                // Dirty one more page.
+                if flush_counter_clone.fetch_add(1, Ordering::Relaxed) == 0 {
+                    stream_dup
+                        .write_at(
+                            zx::StreamWriteOptions::empty(),
+                            BACKGROUND_FLUSH_THRESHOLD + page_size,
+                            &[1u8],
+                        )
+                        .expect("Dirty one page race");
+                }
+            });
+            // This should trigger the background flush.
+            stream
+                .write_at(zx::StreamWriteOptions::empty(), BACKGROUND_FLUSH_THRESHOLD, &[1u8])
+                .expect("Dirty page");
+
+            let mut timeout = Duration::from_secs(10);
+            while flush_counter.load(Ordering::Relaxed) == 0 {
+                let increment = Duration::from_millis(5);
+                fasync::Timer::new(increment).await;
+                assert!(timeout > increment, "Timed out awaiting background flush");
+                timeout -= increment;
+            }
+            // After the flush has started, take a truncate lock on the file, to see that the flush
+            // has finished.
+            let _ = fixture
+                .fs()
+                .truncate_guard(
+                    fixture.volume().volume().store().store_object_id(),
+                    object.object_id(),
+                )
+                .await;
+
+            // The two pages should be left dirty.
+            assert_eq!(object.handle().inner.lock().dirty_pages.total(), 2);
+
+            // See that they can be cleaned up normally.
+            proxy.sync().await.unwrap().expect("Syncing");
+            assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
+        }
+
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_background_flush_with_allocated_shift_to_cow() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
+            let page_size = zx::system_get_page_size() as u64;
+            let batch_pages = FLUSH_BATCH_SIZE / page_size;
+
+            // Allocate 2 pages, dirty them, then truncate away the second one.
+            proxy
+                .allocate(0, page_size * 2, fio::AllocateMode::empty())
+                .await
+                .unwrap()
+                .expect("Allocate");
+            proxy.sync().await.unwrap().expect("Sync after allocate");
+            for i in 0..2 {
+                stream
+                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .expect("Dirty page");
+            }
+            proxy.resize(page_size).await.unwrap().expect("Truncating");
+
+            // Write one full batch of COW starting from the second page.
+            for i in 1..(batch_pages + 1) {
+                stream
+                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .expect("Dirty page");
+            }
+
+            // Trigger a background flush.
+            object.handle().flush(FlushType::Background).await.expect("Flushing");
+            // The one allocated page should have been ignored. Not an entire batch.
+            assert_eq!(object.handle().inner.lock().dirty_pages.unreserved, 1);
+
+            // Dirty one more page to make the file need a flush then do a full flush. Everything
+            // should be cleared.
+            stream
+                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 1) * page_size, &[1u8])
+                .expect("Dirty page");
+            proxy.sync().await.unwrap().expect("Syncing");
+            assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
+        }
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_background_flush_with_cow_shift_to_allocated() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
+            let page_size = zx::system_get_page_size() as u64;
+            let batch_pages = FLUSH_BATCH_SIZE / page_size;
+
+            // Allocate 1 page.
+            proxy
+                .allocate(0, page_size, fio::AllocateMode::empty())
+                .await
+                .unwrap()
+                .expect("Allocate");
+
+            {
+                // Allocate a batch where it gets dirtied as COW between the sync that allocate does
+                // and the actual allocation. Dirty one page as cow afterwards as well.
+                let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                let _guard = CALLBACK_AFTER_RANGE_COLLECTION.set(move || {
+                    for i in 0..(batch_pages + 2) {
+                        stream2
+                            .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                            .expect("Dirty page");
+                    }
+                });
+
+                proxy
+                    .allocate(page_size, batch_pages * page_size, fio::AllocateMode::empty())
+                    .await
+                    .unwrap()
+                    .expect("Allocate");
+            }
+            // Trigger a background flush with a race to force taking dirty pages again.
+            {
+                let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
+                    stream2
+                        .write_at(
+                            zx::StreamWriteOptions::empty(),
+                            (batch_pages + 2) * page_size,
+                            &[1u8],
+                        )
+                        .expect("Dirty page");
+                });
+
+                object.handle().flush(FlushType::Background).await.expect("Flushing");
+            }
+
+            // Dirty one more page to make the file need a flush then do a full flush. Everything
+            // should be cleared.
+            stream
+                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 3) * page_size, &[1u8])
+                .expect("Dirty page");
+            proxy.sync().await.unwrap().expect("Syncing");
+            assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
+        }
+        fixture.close().await;
+    }
+
+    // This triggers putting back more unreserved pages than were ever marked dirty. This would have
+    // cause an underflow if the clean pages calculation is not handled properly.
+    #[fuchsia::test(threads = 3)]
+    async fn test_background_flush_with_cow_shift_to_allocated_underflow() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
+            let page_size = zx::system_get_page_size() as u64;
+            let batch_pages = FLUSH_BATCH_SIZE / page_size;
+
+            {
+                // Allocate a batch where it gets dirtied as COW between the sync that allocate does
+                // and the actual allocation. Dirty one page as cow afterwards as well.
+                let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                let _guard = CALLBACK_AFTER_RANGE_COLLECTION.set(move || {
+                    for i in 0..(batch_pages + 2) {
+                        stream2
+                            .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                            .expect("Dirty page");
+                    }
+                });
+
+                proxy
+                    .allocate(0, (batch_pages + 2) * page_size, fio::AllocateMode::empty())
+                    .await
+                    .unwrap()
+                    .expect("Allocate");
+            }
+            // Trigger a background flush with a race to force taking dirty pages again.
+            {
+                let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
+                    stream2
+                        .write_at(
+                            zx::StreamWriteOptions::empty(),
+                            (batch_pages + 2) * page_size,
+                            &[1u8],
+                        )
+                        .expect("Dirty page");
+                });
+
+                object.handle().flush(FlushType::Background).await.expect("Flushing");
+            }
+
+            // Dirty one more page to make the file need a flush then do a full flush. Everything
+            // should be cleared.
+            stream
+                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 3) * page_size, &[1u8])
+                .expect("Dirty page");
+            proxy.sync().await.unwrap().expect("Syncing");
+            assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
+        }
+        fixture.close().await;
+    }
+
+    // Ensure that when background flush returns early it puts back the correct number of dirty
+    // pages.
+    #[fuchsia::test(threads = 3)]
+    async fn test_background_flush_underflow_race() {
+        let fixture = TestFixture::new_unencrypted().await;
+        {
+            let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
+            let page_size = zx::system_get_page_size() as u64;
+
+            // Mark 1 page dirty via normal write. This will get needs_flush() returning true.
+            stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8]).expect("Dirty page");
+
+            {
+                let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
+                    // This should get an extra page in the range collection. So now
+                    // dirty_pages_not_to_flush will be 2 while marked_dirty_pages is 1.
+                    stream
+                        .write_at(zx::StreamWriteOptions::empty(), page_size, &[1u8])
+                        .expect("Dirty page in a race");
+                });
+
+                object.handle().flush(FlushType::Background).await.expect("Flush failed");
+            }
+            proxy.sync().await.unwrap().expect("Syncing");
+            assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
+        }
         fixture.close().await;
     }
 
