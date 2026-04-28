@@ -142,6 +142,7 @@ class Daemon:
                 args = [
                     "debug",
                     "connect",
+                    "--new-agent",
                     "--",
                     "--enable-debug-adapter",
                     f"--signal-when-ready={pid}",
