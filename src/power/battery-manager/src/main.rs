@@ -12,7 +12,11 @@ use crate::battery_simulator::SimulatedBatteryInfoSource;
 use crate::history_logger::{HistoryLogger, HistoryLoggerConfig, RecorderConfig};
 use anyhow::{Context, Error};
 use battery_manager_config::Config;
+use fidl_fuchsia_power_battery as fpower;
 use fidl_fuchsia_power_battery::BatteryManagerRequestStream;
+use fidl_fuchsia_power_battery_test as spower;
+use fidl_fuchsia_power_system as fsystem;
+use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{self as inspect};
@@ -21,10 +25,6 @@ use inspect_runtime::PublishOptions;
 use log::{error, info, warn};
 use std::path::Path;
 use std::sync::{Arc, Weak};
-use {
-    fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_battery_test as spower,
-    fidl_fuchsia_power_system as fsystem, fuchsia_async as fasync,
-};
 
 enum IncomingService {
     BatteryManager(BatteryManagerRequestStream),

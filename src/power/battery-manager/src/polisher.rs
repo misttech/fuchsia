@@ -345,7 +345,7 @@ struct LevelChecker;
 impl LevelChecker {
     // Used to determine the level_status, after scale_level
     const THRESHOLD_LEVEL_OK: f32 = 80.0;
-    const THRESHOLD_LEVEL_WARNING: f32 = 30.0;
+    const THRESHOLD_LEVEL_WARNING: f32 = 40.0;
     const THRESHOLD_LEVEL_LOW: f32 = 0.0;
 
     fn determine_level_status(
@@ -376,131 +376,143 @@ struct CurvePoint {
     ui: f32,
 }
 
-/// Tracks which curve is currently active.
+impl CurvePoint {
+    fn interpolate(p1: &Self, p2: &Self, x: f32) -> f32 {
+        let dx = p2.real - p1.real;
+        if dx == 0.0 {
+            return p1.ui;
+        }
+
+        let slope = (p2.ui - p1.ui) / dx;
+        p1.ui + slope * (x - p1.real)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum CurveState {
-    Unmodified,
-    Spoofing,
-    Splicing(CurvePoint),
+pub enum PlugTransition {
+    PluggedIn,
+    Unplugged,
+    None,
 }
 
 struct CurveMapper {
-    curve_state: CurveState,
-    prev_ui_level: f32,
-    prev_charge_status: Option<fpower::ChargeStatus>,
+    current_curve: [CurvePoint; CurveMapper::UICURVE_MAX],
 }
 
 impl CurveMapper {
-    // Constants for battery level spoofing to report 100% before reaching there.
+    const UICURVE_MAX: usize = 3;
+
+    // Constants for battery level spoofing to remap real SOC.
     // TODO(https://fxbug.dev/422755268): Make these constants configurable.
-    const LEVEL_TRUE: f32 = 15.0;
-    const LEVEL_SPOOF: f32 = 95.0;
-    const LEVEL_FULL: f32 = 100.0;
+    // SSOC_TRUE: the point below which all "spoofing" is disabled.
+    // SSOC_SPOOF: default threshold where real SOC starts mapping towards 100% UI.
+    // SSOC_DELTA: offset distance to overwrite spoofing threshold when unplugged.
+    const SSOC_TRUE: f32 = 15.0;
+    const SSOC_SPOOF: f32 = 95.0;
+    const SSOC_FULL: f32 = 100.0;
+    const SSOC_DELTA: f32 = 2.0;
+
+    const CHG_CURVE_DEFAULT: [CurvePoint; Self::UICURVE_MAX] = [
+        CurvePoint { real: Self::SSOC_TRUE, ui: Self::SSOC_TRUE },
+        CurvePoint { real: Self::SSOC_SPOOF, ui: Self::SSOC_SPOOF },
+        CurvePoint { real: Self::SSOC_FULL, ui: Self::SSOC_FULL },
+    ];
+
+    const DISCHARGE_CURVE_DEFAULT: [CurvePoint; Self::UICURVE_MAX] = [
+        CurvePoint { real: Self::SSOC_TRUE, ui: Self::SSOC_TRUE },
+        CurvePoint { real: Self::SSOC_SPOOF, ui: Self::SSOC_FULL },
+        CurvePoint { real: Self::SSOC_FULL, ui: Self::SSOC_FULL },
+    ];
 
     pub fn new() -> CurveMapper {
         CurveMapper {
-            curve_state: CurveState::Unmodified,
-            prev_ui_level: 0.0,
-            prev_charge_status: None,
+            current_curve: Self::CHG_CURVE_DEFAULT, // Start with CHG curve as default
         }
     }
 
-    fn splice_for_level(level: f32, left_point: CurvePoint, right_point: CurvePoint) -> f32 {
-        if level < left_point.real {
-            level
-        } else if level < right_point.real {
-            // Interpolate between left_point and right_point
-            left_point.ui
-                + (level - left_point.real) * (right_point.ui - left_point.ui)
-                    / (right_point.real - left_point.real)
+    /// Maps the real battery level (scaled real SoC) to the UI level using the current curve.
+    ///
+    /// # Arguments
+    /// * `real` - The real battery level (scaled real SoC) to map.
+    fn ssoc_uicurve_map(&self, real: f32) -> f32 {
+        // Destructure the array into the three points we know exist
+        let [p_left, p_mid, p_right] = self.current_curve;
+
+        if real < p_left.real {
+            real
+        } else if real < p_mid.real {
+            CurvePoint::interpolate(&p_left, &p_mid, real)
+        } else if real < p_right.real {
+            CurvePoint::interpolate(&p_mid, &p_right, real)
         } else {
-            right_point.ui
+            p_right.ui
         }
     }
 
-    /// Calculates the UI level using the discharging splicing curve.
-    fn splice_for_discharging(real_level: f32, end_point: CurvePoint) -> f32 {
-        debug!("end point for discharging: {:?}", end_point);
-        Self::splice_for_level(
-            real_level,
-            CurvePoint { real: Self::LEVEL_TRUE, ui: Self::LEVEL_TRUE },
-            end_point,
-        )
-    }
-
-    /// Calculates the UI level using the charging splicing curve.
-    fn splice_for_charging(real_level: f32, end_point: CurvePoint) -> f32 {
-        debug!("end point for charging: {:?}", end_point);
-        Self::splice_for_level(
-            real_level,
-            end_point,
-            CurvePoint { real: Self::LEVEL_FULL, ui: Self::LEVEL_FULL },
-        )
-    }
-
-    // Applies the different fitting logic according to state transition:
-    // 1. When first started, always in Unmodified state (TRUE);
-    //    Only leaves Unmodified state and reach Spoofing when level is Full;
-    // 2. From Spoofing, can only arrive at Splicing when level drops below 95%;
-    // 3. From Splicing, can reach Unmodified at 15%, or Spoofing at Full;
-    //    Within Splicing, if charging direction changes, record the end point.
-    fn determine_new_state(&mut self, level: f32, charge_status: Option<fpower::ChargeStatus>) {
-        let new_curve_state = match self.curve_state {
-            CurveState::Unmodified => {
-                if charge_status == Some(fpower::ChargeStatus::Full) {
-                    CurveState::Spoofing
-                } else {
-                    self.curve_state
-                }
-            }
-            CurveState::Spoofing => {
-                if level < Self::LEVEL_SPOOF {
-                    CurveState::Splicing(CurvePoint {
-                        real: Self::LEVEL_SPOOF,
-                        ui: Self::LEVEL_FULL,
-                    })
-                } else {
-                    self.curve_state
-                }
-            }
-            CurveState::Splicing(_end_point_ref) => {
-                if level < Self::LEVEL_TRUE {
-                    CurveState::Unmodified
-                } else if charge_status == Some(fpower::ChargeStatus::Full)
-                    && level > Self::LEVEL_SPOOF
-                {
-                    CurveState::Spoofing
-                } else if self.prev_charge_status != charge_status {
-                    // Assuming charge status direction changes without level changes
-                    CurveState::Splicing(CurvePoint { real: level, ui: self.prev_ui_level })
-                } else {
-                    self.curve_state
-                }
-            }
-        };
-        if new_curve_state != self.curve_state {
-            info!("curve_state changed from {:?} to {:?}", self.curve_state, new_curve_state);
+    /// Sets the midpoint of the curve (index 1).
+    ///
+    /// This is used to hold the UI at 100% or taper off on disconnect.
+    ///
+    /// # Arguments
+    /// * `curve` - The curve to modify.
+    /// * `real` - The real battery level for the midpoint.
+    /// * `ui` - The UI battery level for the midpoint.
+    fn set_midpoint(curve: &mut [CurvePoint; Self::UICURVE_MAX], real: f32, ui: f32) {
+        if real < curve[0].real || real > curve[2].real {
+            return;
         }
-        self.curve_state = new_curve_state;
+        curve[1].real = real;
+        curve[1].ui = ui;
     }
 
-    fn adjust_level(&mut self, level: f32, info: &mut fpower::BatteryInfo) {
-        let new_level = match self.curve_state {
-            CurveState::Spoofing => Self::LEVEL_FULL,
-            CurveState::Splicing(end_point) => {
-                if info.charge_status == Some(fpower::ChargeStatus::Charging) {
-                    Self::splice_for_charging(level, end_point)
+    /// Updates the current curve based on connection state changes.
+    ///
+    /// # Arguments
+    /// * `transition` - The plug transition state since last update.
+    /// * `scaled_real_soc` - The current scaled real SoC.
+    /// * `current_ui_soc` - The current UI SoC.
+    pub fn update_curve_state(
+        &mut self,
+        transition: PlugTransition,
+        scaled_real_soc: f32,
+        current_ui_soc: f32,
+    ) {
+        let mut curve_changed = false;
+        let mut new_curve = self.current_curve;
+
+        match transition {
+            PlugTransition::Unplugged => {
+                new_curve = Self::DISCHARGE_CURVE_DEFAULT;
+                curve_changed = true;
+
+                let (new_midpoint, ui) = if current_ui_soc >= Self::SSOC_FULL {
+                    let new_midpoint =
+                        (scaled_real_soc.max(Self::SSOC_SPOOF) - Self::SSOC_DELTA).max(0.0);
+                    info!(
+                        "CurveMapper: Splicing discharge curve at real={:.2} due to disconnect while FULL",
+                        new_midpoint
+                    );
+                    (new_midpoint, Self::SSOC_FULL)
                 } else {
-                    Self::splice_for_discharging(level, end_point)
-                }
+                    info!("CurveMapper: Switching to default discharge curve on disconnect");
+                    (scaled_real_soc, current_ui_soc)
+                };
+
+                Self::set_midpoint(&mut new_curve, new_midpoint, ui);
             }
-            _ => level,
-        };
+            PlugTransition::PluggedIn => {
+                info!("CurveMapper: Detected Connect");
+                new_curve = Self::CHG_CURVE_DEFAULT;
+                Self::set_midpoint(&mut new_curve, scaled_real_soc, current_ui_soc);
+                curve_changed = true;
+            }
+            PlugTransition::None => {}
+        }
 
-        self.prev_ui_level = new_level;
-        self.prev_charge_status = info.charge_status;
-
-        info.level_percent = Some(new_level);
+        if curve_changed {
+            self.current_curve = new_curve;
+            info!("CurveMapper: New curve: {:?}", self.current_curve);
+        }
     }
 }
 
@@ -597,20 +609,24 @@ impl RateLimiter {
 
 pub(crate) struct Polisher {
     curve_mapper: CurveMapper,
-    last_level: Option<f32>,
+    last_rate_limited_level: Option<f32>,
     last_post_curve: Option<f32>,
     estimator: ChargeTimeEstimator,
     rate_limiter: RateLimiter,
+    last_is_plugged_in: Option<bool>,
+    last_original_level: Option<f32>,
 }
 
 impl Polisher {
     pub fn new() -> Polisher {
         Polisher {
             curve_mapper: CurveMapper::new(),
-            last_level: None,
+            last_rate_limited_level: None,
             last_post_curve: None,
             estimator: ChargeTimeEstimator::new(/*use_actual_capacity*/ false),
             rate_limiter: RateLimiter::default(),
+            last_is_plugged_in: None,
+            last_original_level: None,
         }
     }
 
@@ -620,36 +636,52 @@ impl Polisher {
         }
     }
 
-    fn set_level_status(&self, info: &mut fpower::BatteryInfo) {
-        if let Some(level) = info.level_percent {
-            info.level_status =
-                Some(LevelChecker::determine_level_status(level as f32, info.charge_status));
+    fn set_level_status(&self, level: Option<f32>, info: &mut fpower::BatteryInfo) {
+        if let Some(l) = level {
+            info.level_status = Some(LevelChecker::determine_level_status(l, info.charge_status));
         }
     }
 
-    fn process_curve_state(&mut self, info: &mut fpower::BatteryInfo) {
-        let Some(level) = info.level_percent else { return };
-        self.curve_mapper.determine_new_state(level, info.charge_status);
-        self.curve_mapper.adjust_level(level, info);
-    }
-
-    fn calculate_time_to_full(&mut self, info: &mut fpower::BatteryInfo) {
-        let Some(level) = info.level_percent else {
-            warn!("level shouldn't be none");
+    /// Calculates the estimated time to full charge.
+    ///
+    /// # Arguments
+    /// * `scaled_real_soc` - The current scaled real SoC.
+    /// * `rate_limited_soc` - The current rate-limited UI level (RL).
+    /// * `info` - The BatteryInfo to update with the TTF result.
+    fn calculate_time_to_full(
+        &mut self,
+        scaled_real_soc: Option<f32>,
+        rate_limited_soc: Option<f32>,
+        info: &mut fpower::BatteryInfo,
+    ) {
+        let Some(real_level) = scaled_real_soc else {
+            warn!("Missing real level for TTF");
+            info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+            return;
+        };
+        let Some(current_ui_level) = rate_limited_soc else {
+            warn!("Missing UI level for TTF");
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
         };
 
-        // Short-circuit if no power source (Time To Full is only calculated when plugged in)
-        if !Self::has_power_source(info) {
+        // Short-circuit if not plugged in (Time To Full is only calculated when plugged in)
+        if !Self::is_plugged_in(info) {
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+            return;
+        }
+
+        // --- TTF "Full" Check ---
+        // If the *UI* level is 100%, TTF is 0.
+        if current_ui_level >= CurveMapper::SSOC_FULL {
+            info.time_remaining = Some(fpower::TimeRemaining::FullCharge(0));
             return;
         }
 
         let actual_current = info.average_charging_current_ua.or(info.present_charging_current_ua);
 
         let avg_current = self.estimator.update_average_current(
-            level,
+            real_level,
             actual_current,
             info.timestamp,
             info.charge_status,
@@ -673,19 +705,25 @@ impl Polisher {
 
         self.estimator.set_actual_capacity(info.full_capacity_uah);
 
-        let time_to_full_estimate =
-            match self.estimator.time_to_full(level, 100.0, current_to_use, info.temperature_mc) {
-                Ok(duration) => duration.into_nanos(),
-                Err(e) => {
-                    warn!("Failed to estimate time to full: {:?}", e);
-                    info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
-                    return;
-                }
-            };
+        // --- Core TTF Estimation ---
+        // The estimator.time_to_full function uses the REAL level (scaled_real_soc)
+        let time_to_full_estimate = match self.estimator.time_to_full(
+            real_level,
+            100.0,
+            current_to_use,
+            info.temperature_mc,
+        ) {
+            Ok(duration) => duration.into_nanos(),
+            Err(e) => {
+                warn!("Failed to estimate time to full: {:?}", e);
+                info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
+                return;
+            }
+        };
         info.time_remaining = Some(fpower::TimeRemaining::FullCharge(time_to_full_estimate));
     }
 
-    pub(crate) fn has_power_source(info: &fpower::BatteryInfo) -> bool {
+    pub(crate) fn is_plugged_in(info: &fpower::BatteryInfo) -> bool {
         !matches!(
             info.charge_source,
             Some(fpower::ChargeSource::None) | Some(fpower::ChargeSource::Unknown) | None
@@ -705,31 +743,103 @@ impl Polisher {
             || info.charge_status == Some(fpower::ChargeStatus::Full);
 
         // The curve-mapped level becomes the *target* for the rate limiter.
-        let rate_limited_level =
+        let rate_limited_soc =
             self.rate_limiter.apply_rate_limit(level, is_charging_or_full, timestamp_ns);
 
-        info.level_percent = Some(rate_limited_level);
+        info.level_percent = Some(rate_limited_soc);
+    }
+
+    /// Applies battery level spoofing by updating the curve and mapping the level.
+    /// Returns the mapped level (post-curve).
+    fn apply_spoofing(
+        &mut self,
+        info: &fpower::BatteryInfo,
+        scaled_real_soc: Option<f32>,
+    ) -> Option<f32> {
+        let is_plugged_in = Self::is_plugged_in(info);
+
+        // Initialization on first run
+        if self.last_is_plugged_in.is_none() {
+            self.curve_mapper.current_curve = CurveMapper::CHG_CURVE_DEFAULT;
+            if let Some(level) = scaled_real_soc {
+                CurveMapper::set_midpoint(
+                    &mut self.curve_mapper.current_curve,
+                    level,
+                    level, // Anchor UI to Real at boot
+                );
+            }
+        }
+
+        let was_plugged_in = self.last_is_plugged_in.unwrap_or(is_plugged_in);
+
+        // Get the previous rate-limited level (RL) for curve state updates
+        let prev_rate_limited_level =
+            self.last_rate_limited_level.unwrap_or_else(|| scaled_real_soc.unwrap_or(0.0));
+
+        if let Some(level) = scaled_real_soc {
+            // Update Curve State (based on current scaled_real_soc and previous RL)
+            let transition = match (was_plugged_in, is_plugged_in) {
+                (true, false) => PlugTransition::Unplugged,
+                (false, true) => PlugTransition::PluggedIn,
+                _ => PlugTransition::None,
+            };
+
+            self.curve_mapper.update_curve_state(transition, level, prev_rate_limited_level);
+
+            // Handle Full state spoofing
+            if info.charge_status == Some(fpower::ChargeStatus::Full) {
+                info!(
+                    "CurveMapper: Splicing curve to FULL at real={:.2} due to FULL status",
+                    level
+                );
+                CurveMapper::set_midpoint(
+                    &mut self.curve_mapper.current_curve,
+                    level,
+                    CurveMapper::SSOC_FULL,
+                );
+            }
+        }
+
+        // Return the curve-mapped level (UIC equivalent)
+        scaled_real_soc.map(|level| self.curve_mapper.ssoc_uicurve_map(level))
     }
 
     pub fn polish_info(&mut self, info: fpower::BatteryInfo) -> fpower::BatteryInfo {
         let original_level = info.level_percent;
         let mut info = info;
-        self.scale_battery_level(&mut info);
-        self.set_level_status(&mut info);
-        let scaled_level = info.level_percent;
-        self.calculate_time_to_full(&mut info);
-        self.process_curve_state(&mut info);
-        let post_curve = info.level_percent;
-        self.rate_limit_level(&mut info);
 
-        if self.last_level != original_level || self.last_post_curve != post_curve {
+        // 1. Scaled Real SoC
+        self.scale_battery_level(&mut info);
+        let scaled_real_soc = info.level_percent;
+
+        // 2. Apply Spoofing & Curve Mapping (returns UIC)
+        let post_curve = self.apply_spoofing(&info, scaled_real_soc);
+        info.level_percent = post_curve;
+
+        // 3. Rate Limiting (RL equivalent)
+        self.rate_limit_level(&mut info);
+        let rate_limited_soc = info.level_percent; // RL
+
+        // 4. Time to Full Calculation (Uses scaled_real_soc for core, RL for "is full")
+        self.calculate_time_to_full(scaled_real_soc, rate_limited_soc, &mut info);
+
+        // 5. Set Level Status (Uses rate_limited_soc / RL)
+        self.set_level_status(rate_limited_soc, &mut info);
+
+        // Logging
+        if self.last_original_level != original_level
+            || self.last_post_curve != post_curve
+            || self.last_rate_limited_level != rate_limited_soc
+        {
             info!(
                 "Levels - original: {:?}, scaled: {:?}, post curve mapping: {:?}, rate limited: {:?}",
-                original_level, scaled_level, post_curve, info.level_percent
+                original_level, scaled_real_soc, post_curve, rate_limited_soc
             );
-            self.last_level = original_level;
-            self.last_post_curve = post_curve;
+            self.last_original_level = original_level;
+            self.last_rate_limited_level = rate_limited_soc; // Store current RL for next cycle
+            self.last_post_curve = post_curve; // Store UIC here!
         }
+        self.last_is_plugged_in = Some(Self::is_plugged_in(&info));
         info
     }
 
@@ -814,7 +924,12 @@ mod tests {
         fpower::BatteryInfo {
             level_percent: Some(level),
             charge_status: Some(status),
-            charge_source: Some(fpower::ChargeSource::Usb),
+            charge_source: match status {
+                fpower::ChargeStatus::Charging | fpower::ChargeStatus::Full => {
+                    Some(fpower::ChargeSource::Usb)
+                }
+                _ => Some(fpower::ChargeSource::None),
+            },
             ..Default::default()
         }
     }
@@ -825,11 +940,34 @@ mod tests {
         // Input a normal charging level
         let info = polisher.polish_info(new_info(83.0, fpower::ChargeStatus::Charging));
 
-        // The spoof function should see it's a normal charge and do nothing.
-        // The final level should just be the scaled value.
         let expected_level = InitialScaler::scale_level(83.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
-        assert_matches!(polisher.curve_mapper.curve_state, CurveState::Unmodified);
+
+        // The curve should have its midpoint set at the first reading (83.0)
+        let expected_curve = [
+            CurvePoint { real: 15.0, ui: 15.0 },
+            CurvePoint { real: 83.0, ui: 83.0 },
+            CurvePoint { real: 100.0, ui: 100.0 },
+        ];
+        assert_eq!(polisher.curve_mapper.current_curve, expected_curve);
+    }
+
+    #[fuchsia::test]
+    fn test_initialization_discharging_is_one_to_one() {
+        let mut polisher = Polisher::new();
+        // Input a discharging level at boot
+        let info = polisher.polish_info(new_info(77.0, fpower::ChargeStatus::Discharging));
+
+        let expected_level = InitialScaler::scale_level(77.0);
+        assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
+
+        // The curve should have its midpoint set at the first reading (77.0)
+        let expected_curve = [
+            CurvePoint { real: 15.0, ui: 15.0 },
+            CurvePoint { real: 77.0, ui: 77.0 },
+            CurvePoint { real: 100.0, ui: 100.0 },
+        ];
+        assert_eq!(polisher.curve_mapper.current_curve, expected_curve);
     }
 
     #[fuchsia::test]
@@ -837,76 +975,33 @@ mod tests {
         let mut polisher = Polisher::new();
         // Establish that we are in a charging state.
         let _ = polisher.polish_info(new_info(95.0, fpower::ChargeStatus::Charging));
-        assert_matches!(polisher.curve_mapper.curve_state, CurveState::Unmodified);
+        assert_eq!(polisher.curve_mapper.current_curve, CurveMapper::CHG_CURVE_DEFAULT);
 
         // Unplug at 96%.
         let _ = polisher.polish_info(new_info(96.0, fpower::ChargeStatus::Charging));
         let info = polisher.polish_info(new_info(96.0, fpower::ChargeStatus::Discharging));
         let expected_level = InitialScaler::scale_level(96.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
-        assert_matches!(polisher.curve_mapper.curve_state, CurveState::Unmodified);
-    }
 
-    // Helper to calculate the expected smooth level (from previous analysis)
-    fn calculate_expected_splice_level(raw_level: f32) -> f32 {
-        let left = CurvePoint { real: CurveMapper::LEVEL_TRUE, ui: CurveMapper::LEVEL_TRUE };
-        let right = CurvePoint { real: CurveMapper::LEVEL_SPOOF, ui: CurveMapper::LEVEL_FULL };
-
-        CurveMapper::splice_for_level(raw_level, left, right)
+        // Verify that the curve midpoint was set at the current point on disconnect
+        assert_eq!(polisher.curve_mapper.current_curve[1].real, 96.0);
+        assert_eq!(polisher.curve_mapper.current_curve[1].ui, 96.0);
     }
 
     const NANOS_PER_SEC: i64 = 1_000_000_000;
 
     #[fuchsia::test]
-    fn test_drain_while_full() {
-        let mut polisher = Polisher::new();
-        const T_SEC: i64 = 1000;
-        let mut timestamp: zx::sys::zx_time_t = 0;
+    fn test_discharge_curve_spoofing_hold() {
+        let mut mapper = CurveMapper::new();
+        mapper.current_curve = CurveMapper::DISCHARGE_CURVE_DEFAULT;
 
-        // --- SETUP: CHARGE TO 100% AND ENTER SPOOFING ---
-        let mut info = new_info(98.0, fpower::ChargeStatus::Charging);
-        info.timestamp = Some(timestamp);
-        let _ = polisher.polish_info(info);
+        // 97 real should be > 95 so it interpolates between (95, 100) and (100, 100), yielding 100.
+        let mapped = mapper.ssoc_uicurve_map(97.0);
+        assert_eq!(mapped, 100.0);
 
-        timestamp += T_SEC * NANOS_PER_SEC;
-        let mut info = new_info(100.0, fpower::ChargeStatus::Full);
-        info.timestamp = Some(timestamp);
-        let polished = polisher.polish_info(info);
-
-        // Check Spoofing is active and UI is 100.0
-        assert_matches!(polisher.curve_mapper.curve_state, CurveState::Spoofing);
-        assert_eq!(polished.level_percent, Some(100.0), "Full level should be 100.0%");
-
-        timestamp += T_SEC * NANOS_PER_SEC;
-        let level_drops_to = 97.0;
-        let mut info = new_info(level_drops_to, fpower::ChargeStatus::Full);
-        info.timestamp = Some(timestamp);
-        let polished = polisher.polish_info(info);
-        assert_eq!(polished.level_percent, Some(100.0), "Spoofed level should be 100.0%");
-
-        // Just drops out of spoofing while on charger.
-        timestamp += T_SEC * NANOS_PER_SEC;
-        let level_drops_to = 94.0;
-        let mut info = new_info(level_drops_to, fpower::ChargeStatus::Full);
-        info.timestamp = Some(timestamp);
-        let polished = polisher.polish_info(info);
-
-        let scaled_level = InitialScaler::scale_level(level_drops_to);
-        let expected_level = calculate_expected_splice_level(scaled_level);
-        assert_ne!(polished.level_percent, Some(level_drops_to), "Spliced level should change");
-        assert_eq!(polished.level_percent, Some(expected_level));
-
-        // Check not zig zag
-        timestamp += T_SEC * NANOS_PER_SEC;
-        let level_drops_to = 93.0;
-        let mut info = new_info(level_drops_to, fpower::ChargeStatus::Full);
-        info.timestamp = Some(timestamp);
-        let polished = polisher.polish_info(info);
-
-        let scaled_level = InitialScaler::scale_level(level_drops_to);
-        let expected_level = calculate_expected_splice_level(scaled_level);
-        assert_ne!(polished.level_percent, Some(100.0), "Spliced level should change");
-        assert_eq!(polished.level_percent, Some(expected_level));
+        // 90 real interpolates between (15, 15) and (95, 100).
+        let mapped_90 = mapper.ssoc_uicurve_map(90.0);
+        assert_eq!(mapped_90, 15.0 + 75.0 * (85.0 / 80.0));
     }
 
     #[fuchsia::test]
@@ -933,8 +1028,8 @@ mod tests {
             assert!(polished.level_percent.is_some());
             let current_level = polished.level_percent.unwrap();
             assert!(
-                current_level > previous_level,
-                "level_percent should increase during charging"
+                current_level >= previous_level,
+                "level_percent should increase or remain flat during charging"
             );
             previous_level = current_level;
         }
@@ -950,8 +1045,8 @@ mod tests {
             assert!(polished.level_percent.is_some());
             let current_level = polished.level_percent.unwrap();
             assert!(
-                current_level < previous_level,
-                "level_percent should decrease during charging"
+                current_level <= previous_level,
+                "level_percent should decrease or remain flat during discharging"
             );
             previous_level = current_level;
         }
@@ -967,8 +1062,8 @@ mod tests {
             assert!(polished.level_percent.is_some());
             let current_level = polished.level_percent.unwrap();
             assert!(
-                current_level > previous_level,
-                "level_percent should increase during charging"
+                current_level >= previous_level,
+                "level_percent should increase or remain flat during charging"
             );
             previous_level = current_level;
         }
@@ -1255,13 +1350,13 @@ mod tests {
             charge_source: Some(fpower::ChargeSource::Usb),
             ..Default::default()
         };
-        polisher.calculate_time_to_full(&mut info);
+        polisher.calculate_time_to_full(info.level_percent, info.level_percent, &mut info);
         assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::Indeterminate(0)),);
 
         // Test glitched negative current
         info = new_info(50.0, fpower::ChargeStatus::Charging);
         info.average_charging_current_ua = Some(-1);
-        polisher.calculate_time_to_full(&mut info);
+        polisher.calculate_time_to_full(info.level_percent, info.level_percent, &mut info);
         assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::Indeterminate(0)));
 
         // Test 50%
@@ -1269,7 +1364,7 @@ mod tests {
         info = new_info(50.0, fpower::ChargeStatus::Charging);
         info.average_charging_current_ua =
             Some(ChargeTimeEstimator::get_reference_current_ua(50.0, None));
-        polisher.calculate_time_to_full(&mut info);
+        polisher.calculate_time_to_full(info.level_percent, info.level_percent, &mut info);
         assert_eq!(
             info.time_remaining,
             Some(fpower::TimeRemaining::FullCharge(expected_50_nanos)),
@@ -1279,7 +1374,7 @@ mod tests {
         // Test 100%
         info = new_info(100.0, fpower::ChargeStatus::Charging);
         info.average_charging_current_ua = None;
-        polisher.calculate_time_to_full(&mut info);
+        polisher.calculate_time_to_full(info.level_percent, info.level_percent, &mut info);
         assert_eq!(
             info.time_remaining,
             Some(fpower::TimeRemaining::FullCharge(0)),
@@ -1305,7 +1400,7 @@ mod tests {
         info.temperature_mc = Some(25_000);
         info.average_charging_current_ua = Some(actual_current_ua);
 
-        polisher.calculate_time_to_full(&mut info);
+        polisher.calculate_time_to_full(info.level_percent, info.level_percent, &mut info);
 
         // At 50% with an actual current of 250,000uA:
         // - 50-78% (32 seconds): implied_cc=472.5mA, ratio=1.89. Total: 29 * 32s * 1.89 = 1753.92s
@@ -1324,18 +1419,133 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_splice_for_level() {
-        let left = CurvePoint { real: 0.0, ui: 0.0 };
-        let right = CurvePoint { real: 100.0, ui: 100.0 };
-        let spliced_level = CurveMapper::splice_for_level(25.0, left, right);
-        assert_eq!(spliced_level, 25.0);
+    fn test_uicurve_map_and_set_midpoint() {
+        let mut curve = CurveMapper::CHG_CURVE_DEFAULT;
+        CurveMapper::set_midpoint(&mut curve, 98.0, 100.0);
 
-        let left = CurvePoint { real: 10.0, ui: 0.0 };
-        let right = CurvePoint { real: 90.0, ui: 100.0 };
-        let spliced_level = CurveMapper::splice_for_level(30.0, left, right);
-        assert_eq!(spliced_level, 25.0);
-        let spliced_level = CurveMapper::splice_for_level(70.0, left, right);
-        assert_eq!(spliced_level, 75.0);
+        assert_eq!(curve[1].real, 98.0);
+        assert_eq!(curve[1].ui, 100.0);
+    }
+
+    #[fuchsia::test]
+    fn test_interpolate() {
+        let p1 = CurvePoint { real: 0.0, ui: 0.0 };
+        let p2 = CurvePoint { real: 100.0, ui: 100.0 };
+
+        // Midpoint
+        assert_eq!(CurvePoint::interpolate(&p1, &p2, 50.0), 50.0);
+
+        // Exact match with points
+        assert_eq!(CurvePoint::interpolate(&p1, &p2, 0.0), 0.0);
+        assert_eq!(CurvePoint::interpolate(&p1, &p2, 100.0), 100.0);
+
+        // Different slope
+        let p3 = CurvePoint { real: 10.0, ui: 0.0 };
+        let p4 = CurvePoint { real: 90.0, ui: 100.0 };
+        // slope = (100 - 0) / (90 - 10) = 100 / 80 = 1.25
+        // for x = 30: 0 + 1.25 * (30 - 10) = 1.25 * 20 = 25.0
+        assert_eq!(CurvePoint::interpolate(&p3, &p4, 30.0), 25.0);
+
+        // dx == 0 case
+        let p5 = CurvePoint { real: 50.0, ui: 50.0 };
+        let p6 = CurvePoint { real: 50.0, ui: 60.0 };
+        assert_eq!(CurvePoint::interpolate(&p5, &p6, 50.0), 50.0);
+    }
+
+    #[fuchsia::test]
+    fn test_update_curve_state() {
+        let mut mapper = CurveMapper::new();
+
+        // Initially CHG curve
+        assert_eq!(mapper.current_curve, CurveMapper::CHG_CURVE_DEFAULT);
+
+        // No state change when transition is None
+        mapper.update_curve_state(PlugTransition::None, 50.0, 50.0);
+        assert_eq!(mapper.current_curve, CurveMapper::CHG_CURVE_DEFAULT);
+
+        // Connect (PluggedIn)
+        // It should set the midpoint of the curve at real=50.0, ui=50.0
+        mapper.update_curve_state(PlugTransition::PluggedIn, 50.0, 50.0);
+        assert_eq!(mapper.current_curve[1].real, 50.0);
+        assert_eq!(mapper.current_curve[1].ui, 50.0);
+
+        // Disconnect when not full (Unplugged)
+        mapper.update_curve_state(PlugTransition::Unplugged, 60.0, 60.0);
+        assert_eq!(mapper.current_curve[1].real, 60.0);
+        assert_eq!(mapper.current_curve[1].ui, 60.0);
+
+        // Disconnect when full (Unplugged)
+        // scaled_real_soc = 95.0, current_ui_soc = 100.0
+        // new_midpoint = (95.0.max(95.0) - 2.0) = 93.0
+        mapper.update_curve_state(PlugTransition::Unplugged, 95.0, 100.0);
+        assert_eq!(mapper.current_curve[1].real, 93.0);
+        assert_eq!(mapper.current_curve[1].ui, 100.0);
+    }
+
+    #[fuchsia::test]
+    fn test_set_midpoint_guard() {
+        let mut curve = CurveMapper::CHG_CURVE_DEFAULT;
+        let original_mid_point = curve[1].real;
+
+        // Force curve[2].real to 90.0
+        curve[2].real = 90.0;
+
+        // Attempt to set midpoint at real=95.0.
+        // Reality check: 95.0 > 90.0 (curve[2].real).
+        // The guard in set_midpoint should trigger and return early.
+        CurveMapper::set_midpoint(&mut curve, 95.0, 95.0);
+
+        // Verify that NO change occurred because the guard blocked it
+        assert_eq!(curve[1].real, original_mid_point);
+        assert_eq!(curve[2].real, 90.0);
+    }
+
+    #[fuchsia::test]
+    fn test_set_midpoint_valid() {
+        let mut curve = CurveMapper::CHG_CURVE_DEFAULT;
+
+        // Set midpoint at a valid point (within 15.0 and 100.0)
+        CurveMapper::set_midpoint(&mut curve, 77.0, 77.0);
+
+        assert_eq!(curve[1].real, 77.0);
+        assert_eq!(curve[1].ui, 77.0);
+    }
+
+    #[fuchsia::test]
+    fn test_apply_spoofing() {
+        let mut polisher = Polisher::new();
+
+        let mut info = fpower::BatteryInfo {
+            status: Some(fpower::BatteryStatus::Ok),
+            charge_status: Some(fpower::ChargeStatus::Discharging), // off charger
+            ..Default::default()
+        };
+
+        // First run, off-charger
+        polisher.last_is_plugged_in = Some(false);
+        polisher.last_rate_limited_level = Some(50.0);
+
+        let level = polisher.apply_spoofing(&info, Some(50.0));
+        assert_eq!(level, Some(50.0));
+
+        // Now connect
+        info.charge_status = Some(fpower::ChargeStatus::Charging);
+        info.charge_source = Some(fpower::ChargeSource::Usb);
+        // We simulated last_is_plugged_in = false and last_rate_limited_level = 50.0
+        let level = polisher.apply_spoofing(&info, Some(60.0));
+        assert_eq!(level, Some(50.0));
+
+        // It should set midpoint at real=60.0, ui=prev_RL (50.0)
+        assert_eq!(polisher.curve_mapper.current_curve[1].real, 60.0);
+        assert_eq!(polisher.curve_mapper.current_curve[1].ui, 50.0);
+
+        // Now test Full state spoofing
+        info.charge_status = Some(fpower::ChargeStatus::Full);
+        let level = polisher.apply_spoofing(&info, Some(95.0));
+        assert_eq!(level, Some(100.0));
+        // It should set midpoint to FULL (real=95, ui=100)
+        assert_eq!(polisher.curve_mapper.current_curve[1].real, 95.0);
+        assert_eq!(polisher.curve_mapper.current_curve[1].ui, 100.0);
     }
 
     fn seconds_to_nanoseconds(sec: TimeStampNs) -> TimeStampNs {
@@ -1451,49 +1661,40 @@ mod tests {
     #[fuchsia::test]
     fn test_polish_info_for_full_cycle() {
         let mut polisher = Polisher::new();
-        // Establish that we are charging and unmodified.
+        // Establish that we are charging.
         let info = polisher.polish_info(new_info(95.0, fpower::ChargeStatus::Charging));
-        assert_matches!(polisher.curve_mapper.curve_state, CurveState::Unmodified);
-        let expected_level = InitialScaler::scale_level(95.0);
-        assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
+        assert_eq!(polisher.curve_mapper.current_curve, CurveMapper::CHG_CURVE_DEFAULT);
+        let expected_real = InitialScaler::scale_level(95.0);
+        assert_matches!(info.level_percent, Some(p) if (p - expected_real).abs() < f32::EPSILON);
 
-        // Reaching 100%, then unplug at 96%, and expect 100% spoofed.
+        // Reaching 100%, then unplug. Real is 96%, but since previous UI was 100% and
+        // we disconnected, we set midpoint.
         let _ = polisher.polish_info(new_info(100.0, fpower::ChargeStatus::Full));
         let info = polisher.polish_info(new_info(96.0, fpower::ChargeStatus::Discharging));
-        let expected_level = InitialScaler::scale_level(100.0);
-        assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
-        assert_matches!(polisher.curve_mapper.curve_state, CurveState::Spoofing);
 
-        // Drop to 90%
+        // Since disconnect happened from 100% UI, it sets the midpoint at real = 96.0 - 2.0 = 94.0.
+        // Curve will become [(15, 15), (94, 100), (100, 100)].
+        assert_eq!(polisher.curve_mapper.current_curve[1].real, 94.0);
+        assert_eq!(polisher.curve_mapper.current_curve[1].ui, 100.0);
+
+        // UI level should be interpolated between 94 (100%) and 100 (100%), so for real=96, UI=100.0
+        assert_matches!(info.level_percent, Some(p) if (p - 100.0).abs() < f32::EPSILON);
+
+        // Drop to 90% (real)
         let info = polisher.polish_info(new_info(90.0, fpower::ChargeStatus::Discharging));
-        let expected_level = InitialScaler::scale_level(90.0);
-        let expected_level = CurveMapper::splice_for_level(
-            expected_level,
-            CurvePoint { real: CurveMapper::LEVEL_TRUE, ui: CurveMapper::LEVEL_TRUE },
-            CurvePoint { real: CurveMapper::LEVEL_SPOOF, ui: CurveMapper::LEVEL_FULL },
-        );
-        info!("expected leve = {:?}", expected_level);
+        // It's below the midpoint 94, so interpolates between 15,15 and 94,100.
+        let expected_level = polisher.curve_mapper.ssoc_uicurve_map(90.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
-        assert_matches!(
-            polisher.curve_mapper.curve_state,
-            CurveState::Splicing(cp) => {
-                // Logic you want to run ONLY if it matches Splicing
-                assert_eq!(cp.ui, CurveMapper::LEVEL_FULL);
-                assert_eq!(cp.real, CurveMapper::LEVEL_SPOOF);
-            }
-        );
 
-        // Back to Unmodified
+        // Back to Unmodified behavior?
+        // Map function naturally maps real=12.0 to ui=12.0 since it's below curve[0].real (15.0).
         let info = polisher.polish_info(new_info(14.0, fpower::ChargeStatus::Discharging));
-        let expected_level = InitialScaler::scale_level(14.0);
-        assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
-        assert_matches!(polisher.curve_mapper.curve_state, CurveState::Unmodified);
+        assert_matches!(info.level_percent, Some(p) if (p - 12.0).abs() < f32::EPSILON);
     }
 
     #[fuchsia::test]
     fn test_polish_info() {
         let mut polisher = Polisher::new();
-        info!(" original end point: {:?}", polisher.curve_mapper.curve_state);
 
         // Test when level_percent = shutdown offset
         let mut info = fpower::BatteryInfo {
@@ -1593,50 +1794,37 @@ mod tests {
         let mut polisher = Polisher::new();
 
         // Initial State: Full (triggers Spoofing)
-        let mut info = fpower::BatteryInfo {
-            level_percent: Some(100.0),
-            charge_status: Some(fpower::ChargeStatus::Full),
-            ..Default::default()
-        };
-        polisher.process_curve_state(&mut info);
+        let info = polisher.polish_info(new_info(100.0, fpower::ChargeStatus::Full));
+        assert_eq!(info.level_percent.unwrap(), 100.0);
 
-        // Discharge down to 95% (Spoofing phase)
+        // Discharge down to 95% (Spoofing phase).
+        let mut expected_ui = 100.0;
         for level in (95..100).rev() {
             let lvl = level as f32;
-            info = fpower::BatteryInfo {
-                level_percent: Some(lvl),
-                charge_status: Some(fpower::ChargeStatus::Discharging),
-                ..Default::default()
-            };
-            polisher.process_curve_state(&mut info);
-            assert_eq!(info.level_percent.unwrap(), 100.0);
+            let info = polisher.polish_info(new_info(lvl, fpower::ChargeStatus::Discharging));
+            let curr_ui = info.level_percent.unwrap();
+            assert!(curr_ui <= expected_ui);
+            expected_ui = curr_ui;
         }
 
-        // Drop to 94% (Triggers Splicing)
-        info = fpower::BatteryInfo {
-            level_percent: Some(94.0),
-            charge_status: Some(fpower::ChargeStatus::Discharging),
-            ..Default::default()
-        };
-        polisher.process_curve_state(&mut info);
+        // Drop to 94%
+        let info_disch_res =
+            polisher.polish_info(new_info(94.0, fpower::ChargeStatus::Discharging));
 
         // UI level should be higher than raw level during discharge from full
-        let ui_level_discharging = info.level_percent.unwrap();
-        assert!(ui_level_discharging > 98.0, "UI level was {}", ui_level_discharging);
+        let ui_level_discharging = info_disch_res.level_percent.unwrap();
+        // Since we dropped 4% from 98%, UI interpolates between 98->100
+        assert!(ui_level_discharging > 94.0, "UI level was {}", ui_level_discharging);
 
         // Switch back to Charging at 94%
-        let mut info_charging = fpower::BatteryInfo {
-            level_percent: Some(94.0),
-            charge_status: Some(fpower::ChargeStatus::Charging),
-            ..Default::default()
-        };
-        polisher.process_curve_state(&mut info_charging);
+        let info_charging_res =
+            polisher.polish_info(new_info(94.0, fpower::ChargeStatus::Charging));
 
-        let ui_level_charging = info_charging.level_percent.unwrap();
+        let ui_level_charging = info_charging_res.level_percent.unwrap();
 
-        // It should match smoothly with the discharging level
+        // Now with splicing on direction change, it maintains continuity and doesn't snap to 94.0.
+        // It should be equal to the level before direction change (ui_level_discharging).
         assert_eq!(ui_level_charging, ui_level_discharging);
-        info!("UI level charging: {}, discharging: {}", ui_level_charging, ui_level_discharging);
     }
 
     #[fuchsia::test]
