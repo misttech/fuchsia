@@ -7,9 +7,13 @@
 use libasync_sys::*;
 
 use core::cell::UnsafeCell;
+use core::fmt;
 use core::future::Future;
 use core::marker::PhantomData;
-use core::ptr::NonNull;
+use core::mem::ManuallyDrop;
+use core::pin::Pin;
+use core::ptr::{self, NonNull};
+use core::task::{Context, Poll};
 use std::sync::{Arc, Weak};
 
 use zx::Status;
@@ -99,6 +103,43 @@ impl<'a> AsyncDispatcher for AsyncDispatcherRef<'a> {
     }
 }
 
+/// A `JoinHandle` that aborts on drop.
+pub struct Task<T> {
+    join_handle: JoinHandle<T>,
+}
+
+impl<T> Drop for Task<T> {
+    fn drop(&mut self) {
+        self.join_handle.abort();
+    }
+}
+
+impl<T> Task<T> {
+    /// Detaches the task, preventing the task from aborting it when dropped.
+    ///
+    /// Returns a `JoinHandle` to the same task.
+    pub fn detach_on_drop(self) -> JoinHandle<T> {
+        let this = ManuallyDrop::new(self);
+        unsafe { ptr::read(&this.join_handle) }
+    }
+}
+
+impl<T> fmt::Debug for Task<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Task").finish()
+    }
+}
+
+impl<T> Future for Task<T> {
+    type Output = <JoinHandle<T> as Future>::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: `join_handle` is struturally pinned.
+        let join_handle = unsafe { self.map_unchecked_mut(|this| &mut this.join_handle) };
+        join_handle.poll(cx)
+    }
+}
+
 /// A trait that can be used to access a lifetime-constrained dispatcher in a generic way.
 pub trait OnDispatcher: Clone + Send + Sync {
     /// Runs the function `f` with a lifetime-bound [`AsyncDispatcherRef`] for this object's dispatcher.
@@ -123,21 +164,21 @@ pub trait OnDispatcher: Clone + Send + Sync {
         })
     }
 
-    /// Spawn an asynchronous task on this dispatcher. If this returns [`Ok`] then the task has
-    /// successfully been scheduled and will run or be cancelled and dropped when the dispatcher
-    /// shuts down. The returned future's result will be [`Ok`] if the future completed
-    /// successfully, or an [`Err`] if the task did not complete for some reason (like the
-    /// dispatcher shut down).
+    /// Spawn an asynchronous task on this dispatcher.
     ///
     /// Returns a [`JoinHandle`] that will detach the future when dropped.
-    fn spawn(
-        &self,
-        future: impl Future<Output = ()> + Send + 'static,
-    ) -> Result<JoinHandle<()>, Status>
+    fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
     where
-        Self: 'static,
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
     {
-        Task::try_start(future, self.clone()).map(Task::detach_on_drop)
+        self.on_dispatcher(|dispatcher| {
+            if let Some(dispatcher) = dispatcher {
+                unsafe { spawn_on_unchecked(future, dispatcher.inner()) }
+            } else {
+                spawn_aborted()
+            }
+        })
     }
 
     /// Spawn an asynchronous task that outputs type 'T' on this dispatcher. The returned future's
@@ -156,7 +197,7 @@ pub trait OnDispatcher: Clone + Send + Sync {
     where
         Self: 'static,
     {
-        Task::start(future, self.clone())
+        Task { join_handle: self.spawn(future) }
     }
 
     /// Returns a future that will fire when after the given deadline time.

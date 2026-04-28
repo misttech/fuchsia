@@ -17,7 +17,6 @@ rustc_library("rust") {
     "//sdk/lib/async",
     "//sdk/lib/async/rust/sys",
     "//sdk/rust/zx",
-    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
   ]
 
@@ -30,7 +29,10 @@ rustc_library("rust") {
     "src/dispatcher.rs",
     "src/dispatcher/after_deadline.rs",
     "src/dispatcher/task.rs",
+    "src/dispatcher/task/state.rs",
     "src/lib.rs",
+    "src/sys.rs",
+    "src/test_dispatcher.rs",
   ]
 
   visibility = [
