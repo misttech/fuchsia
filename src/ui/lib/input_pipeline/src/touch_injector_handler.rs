@@ -24,7 +24,6 @@ use futures::stream::StreamExt;
 use metrics_registry::*;
 use sorted_vec_map::SortedVecMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 #[cfg(feature = "dso")]
@@ -79,7 +78,7 @@ struct MutableState {
     injectors: SortedVecMap<u32, fidl_next::Client<pointerinjector::Device, Transport>>,
 
     /// The touch button listeners, key referenced by proxy channel's raw handle.
-    pub listeners: HashMap<u32, fidl_ui_policy::TouchButtonsListenerProxy>,
+    pub listeners: SortedVecMap<u32, fidl_ui_policy::TouchButtonsListenerProxy>,
 
     /// The last TouchButtonsEvent sent to all listeners.
     /// This is used to send new listeners the state of the touchscreen buttons.
@@ -273,7 +272,7 @@ impl TouchInjectorHandler {
             mutable_state: RefCell::new(MutableState {
                 viewport: None,
                 injectors: SortedVecMap::new(),
-                listeners: HashMap::new(),
+                listeners: SortedVecMap::new(),
                 last_button_event: None,
                 send_event_task_tracker: LocalTaskTracker::new(),
             }),
@@ -716,7 +715,7 @@ impl TouchInjectorHandler {
     async fn send_event_to_listeners(self: &Rc<Self>, event: &fidl_ui_input::TouchButtonsEvent) {
         let tracker = &self.mutable_state.borrow().send_event_task_tracker;
 
-        for (handle, listener) in &self.mutable_state.borrow().listeners {
+        for (handle, listener) in self.mutable_state.borrow().listeners.iter() {
             let weak_handler = Rc::downgrade(&self);
             let listener_clone = listener.clone();
             let handle_clone = handle.clone();
