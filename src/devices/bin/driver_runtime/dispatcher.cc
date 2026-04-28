@@ -826,10 +826,6 @@ zx_status_t Dispatcher::PostTask(async_task_t* task) {
     }
     QueueRegisteredCallback(callback_ptr, ZX_OK);
   } else {
-    if (task->deadline == ZX_TIME_INFINITE) {
-      // Tasks must complete.
-      return ZX_ERR_INVALID_ARGS;
-    }
     auto delayed_task = std::make_unique<DelayedTask>(zx::time(task->deadline));
     delayed_task->SetCallback(static_cast<fdf_dispatcher_t*>(this), std::move(callback), task);
 
