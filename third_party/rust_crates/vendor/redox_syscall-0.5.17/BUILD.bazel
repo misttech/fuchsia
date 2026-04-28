@@ -71,6 +71,6 @@ rust_library(
     }),
     version = "0.5.17",
     deps = [
-        "//third_party/rust_crates/vendor/bitflags-2.11.0:bitflags",
+        "//third_party/rust_crates/vendor/bitflags-2.11.1:bitflags",
     ],
 )
