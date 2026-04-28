@@ -147,12 +147,14 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
     }
 
     for (level, id) in lock_ids {
+        let name = level.to_string();
         result.extend(quote::quote! {
             impl #level {
                 pub const LOCK_ID: usize = #id;
             }
             impl starnix_sync::LockLevel for #level {
                 const LOCK_ID: usize = #id;
+                fn name() -> &'static str { #name }
             }
         });
     }

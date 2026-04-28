@@ -15,6 +15,8 @@ mod tracking {
         encoded_value: usize,
         /// The count of active subclass tokens for this lock.
         active_subclass_tokens: usize,
+        /// The name of the lock level.
+        name: &'static str,
     }
 
     /// Centralized thread-local state for lockdep tracking.
@@ -34,7 +36,7 @@ mod tracking {
     ///
     /// Panics if a self-deadlock or lock cycle is detected.
     #[inline(always)]
-    pub fn check_and_push_lock(target_value: usize) {
+    pub fn check_and_push_lock(target_value: usize, name: &'static str) {
         STATE.with(|state| {
             let mut s = state.borrow_mut();
             if let Some(last) = s.held_locks.last() {
@@ -43,22 +45,32 @@ mod tracking {
                 let target_level = target_value & !0xF;
 
                 if target_value == last_value {
-                    panic!("LockDep: Self-deadlock detected (level {target_value})!");
+                    panic!(
+                        "LockDep: Self-deadlock detected on lock '{name}' (level {target_value})!"
+                    );
                 }
                 if target_level < last_level {
                     panic!(
-                        "Invalid lock ordering cycle detected \
-                        ({target_level} < {last_level})!"
+                        "Invalid lock ordering cycle detected: attempted to acquire '{name}' \
+                        after '{}' ({target_level} < {last_level})!",
+                        last.name
                     );
                 }
                 if target_level == last_level {
                     // We are acquiring a sublock!
                     if last.active_subclass_tokens == 0 {
-                        panic!("LockDep: Subclassing not allowed or already consumed");
+                        panic!(
+                            "LockDep: Subclassing not allowed or already consumed for lock '{}'",
+                            last.name
+                        );
                     }
                 }
             }
-            s.held_locks.push(HeldLock { encoded_value: target_value, active_subclass_tokens: 0 });
+            s.held_locks.push(HeldLock {
+                encoded_value: target_value,
+                active_subclass_tokens: 0,
+                name,
+            });
         });
     }
 
@@ -163,7 +175,7 @@ mod tracking {
 #[cfg(not(feature = "detect_lock_dep_cycles"))]
 mod tracking {
     #[inline(always)]
-    pub fn check_and_push_lock(_target_value: usize) {}
+    pub fn check_and_push_lock(_target_value: usize, _name: &'static str) {}
     #[inline(always)]
     pub fn pop_lock(_target_value: usize) {}
     #[inline(always)]
@@ -194,7 +206,7 @@ impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
         let subclass = tracking::get_subclass(L::LOCK_ID);
         assert!(subclass < 16, "subclass must be between 0 and 15");
         let target_value = L::LOCK_ID | (subclass as usize & 0xF);
-        tracking::check_and_push_lock(target_value);
+        tracking::check_and_push_lock(target_value, L::name());
         LockDepGuard { inner: self.inner.lock(), target_value, _level: PhantomData }
     }
 }
@@ -241,7 +253,7 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
         let subclass = tracking::get_subclass(L::LOCK_ID);
         assert!(subclass < 16, "subclass must be between 0 and 15");
         let target_value = L::LOCK_ID | (subclass as usize & 0xF);
-        tracking::check_and_push_lock(target_value);
+        tracking::check_and_push_lock(target_value, L::name());
         LockDepReadGuard { inner: self.inner.read(), target_value, _level: PhantomData }
     }
 
@@ -250,7 +262,7 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
         let subclass = tracking::get_subclass(L::LOCK_ID);
         assert!(subclass < 16, "subclass must be between 0 and 15");
         let target_value = L::LOCK_ID | (subclass as usize & 0xF);
-        tracking::check_and_push_lock(target_value);
+        tracking::check_and_push_lock(target_value, L::name());
         LockDepWriteGuard { inner: self.inner.write(), target_value, _level: PhantomData }
     }
 }
@@ -493,5 +505,17 @@ mod tests {
         let guard = lock_a.lock();
         let _token = allow_subclass();
         std::mem::drop(guard);
+    }
+    #[test]
+    #[should_panic(expected = "Invalid lock ordering cycle detected: attempted to acquire 'LevelA' after 'LevelB'")]
+    fn test_panic_message_contains_names() {
+        tracking::clear_state();
+        {
+            let lock_a: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+            let lock_b: LockDepMutex<i32, LevelB> = LockDepMutex::new(0);
+
+            let _guard_b = lock_b.lock();
+            let _guard_a = lock_a.lock(); // Should panic
+        }
     }
 }
