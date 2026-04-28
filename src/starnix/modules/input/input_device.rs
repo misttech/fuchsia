@@ -346,8 +346,9 @@ impl InputDevice {
                 file
             }
         };
+        input_file.init_inspect_status();
         self.open_files.lock().push(Arc::downgrade(&input_file));
-        Box::new(input_file)
+        Box::new(crate::input_file::ArcInputFile(input_file))
     }
 
     #[cfg(test)]
@@ -1193,6 +1194,10 @@ mod test {
                     fd_notify_count: 6u64,
                     last_generated_uapi_event_timestamp_ns: 0i64,
                     last_read_uapi_event_timestamp_ns: 0i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 },
             }
         });
@@ -1265,6 +1270,10 @@ mod test {
                     fd_notify_count: 6u64,
                     last_generated_uapi_event_timestamp_ns: 0i64,
                     last_read_uapi_event_timestamp_ns: 0i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 },
             }
         });
@@ -1957,6 +1966,10 @@ mod test {
                     fd_notify_count: 0u64,
                     last_generated_uapi_event_timestamp_ns: 0i64,
                     last_read_uapi_event_timestamp_ns: 0i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 }
             }
         });
@@ -2057,6 +2070,10 @@ mod test {
                     fd_notify_count: 22u64,
                     last_generated_uapi_event_timestamp_ns: 5000i64,
                     last_read_uapi_event_timestamp_ns: 5000i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 },
             }
         });
@@ -2218,6 +2235,10 @@ mod test {
                     fd_notify_count: 0u64,
                     last_generated_uapi_event_timestamp_ns: 0i64,
                     last_read_uapi_event_timestamp_ns: 0i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 },
                 touch_file_1: {
                     fidl_events_received_count: 5u64,
@@ -2230,56 +2251,93 @@ mod test {
                     fd_notify_count: 22u64,
                     last_generated_uapi_event_timestamp_ns: 5000i64,
                     last_read_uapi_event_timestamp_ns: 5000i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 },
             }
         });
     }
 
     #[::fuchsia::test]
-    async fn file_status_inspect_not_empty_after_drop() {
+    async fn file_status_inspect_not_empty_after_close() {
         let inspector = fuchsia_inspect::Inspector::default();
-        let child_node = inspector.root().create_child("touch_file_0");
+        #[allow(deprecated, reason = "pre-existing usage")]
+        let (_kernel, current_task, locked) = create_kernel_task_and_unlocked();
 
-        let input_file = crate::InputFile::new_touch(
-            input_id { bustype: BUS_VIRTUAL as u16, vendor: 0, product: 0, version: 0 },
-            700,
-            700,
-            Some(&child_node),
-        );
+        let input_device = InputDevice::new_touch(700, 700, inspector.root());
+        let file_handle =
+            input_device.open_test(locked, &current_task).expect("Failed to create input file");
 
-        let status = input_file.inspect_status.clone().expect("touch file must have status");
+        let status = file_handle
+            .downcast_file::<crate::input_file::ArcInputFile>()
+            .unwrap()
+            .0
+            .inspect_status
+            .clone()
+            .expect("touch file must have status");
         status.count_received_events(5);
 
         assert_data_tree!(inspector, root: {
-            touch_file_0: {
-                fidl_events_received_count: 5u64,
-                fd_notify_count: 0u64,
-                fd_read_count: 0u64,
-                fidl_events_converted_count: 0u64,
-                fidl_events_ignored_count: 0u64,
-                fidl_events_unexpected_count: 0u64,
-                last_generated_uapi_event_timestamp_ns: 0i64,
-                last_read_uapi_event_timestamp_ns: 0i64,
-                uapi_events_generated_count: 0u64,
-                uapi_events_read_count: 0u64,
+            touch_device: {
+                active_wake_leases_count: AnyProperty,
+                last_generated_uapi_event_timestamp_ns: AnyProperty,
+                total_events_with_wake_lease_count: AnyProperty,
+                total_fidl_events_converted_count: AnyProperty,
+                total_fidl_events_ignored_count: AnyProperty,
+                total_fidl_events_received_count: AnyProperty,
+                total_fidl_events_unexpected_count: AnyProperty,
+                total_uapi_events_generated_count: AnyProperty,
+                touch_file_0: {
+                    fidl_events_received_count: 5u64,
+                    fd_notify_count: 0u64,
+                    fd_read_count: 0u64,
+                    fidl_events_converted_count: 0u64,
+                    fidl_events_ignored_count: 0u64,
+                    fidl_events_unexpected_count: 0u64,
+                    last_generated_uapi_event_timestamp_ns: 0i64,
+                    last_read_uapi_event_timestamp_ns: 0i64,
+                    uapi_events_generated_count: 0u64,
+                    uapi_events_read_count: 0u64,
+                    opened_without_nonblock: true,
+                    open_timestamp_ns: AnyProperty,
+                    closed: false,
+                    close_timestamp_ns: 0i64,
+                }
             }
         });
 
         drop(status);
-        drop(input_file);
+        input_device.open_files.lock().clear();
+        drop(file_handle);
 
         assert_data_tree!(inspector, root: {
-            touch_file_0: {
-                fidl_events_received_count: 5u64,
-                fd_notify_count: 0u64,
-                fd_read_count: 0u64,
-                fidl_events_converted_count: 0u64,
-                fidl_events_ignored_count: 0u64,
-                fidl_events_unexpected_count: 0u64,
-                last_generated_uapi_event_timestamp_ns: 0i64,
-                last_read_uapi_event_timestamp_ns: 0i64,
-                uapi_events_generated_count: 0u64,
-                uapi_events_read_count: 0u64,
+            touch_device: {
+                active_wake_leases_count: AnyProperty,
+                last_generated_uapi_event_timestamp_ns: AnyProperty,
+                total_events_with_wake_lease_count: AnyProperty,
+                total_fidl_events_converted_count: AnyProperty,
+                total_fidl_events_ignored_count: AnyProperty,
+                total_fidl_events_received_count: AnyProperty,
+                total_fidl_events_unexpected_count: AnyProperty,
+                total_uapi_events_generated_count: AnyProperty,
+                touch_file_0: {
+                    fidl_events_received_count: 5u64,
+                    fd_notify_count: 0u64,
+                    fd_read_count: 0u64,
+                    fidl_events_converted_count: 0u64,
+                    fidl_events_ignored_count: 0u64,
+                    fidl_events_unexpected_count: 0u64,
+                    last_generated_uapi_event_timestamp_ns: 0i64,
+                    last_read_uapi_event_timestamp_ns: 0i64,
+                    uapi_events_generated_count: 0u64,
+                    uapi_events_read_count: 0u64,
+                    opened_without_nonblock: true,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
+                }
             }
         });
     }
@@ -2313,6 +2371,10 @@ mod test {
                     fd_notify_count: 0u64,
                     last_generated_uapi_event_timestamp_ns: 0i64,
                     last_read_uapi_event_timestamp_ns: 0i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 }
             }
         });
@@ -2383,6 +2445,10 @@ mod test {
                     // Button events perform a realtime clockread, so any value will do.
                     last_generated_uapi_event_timestamp_ns: AnyProperty,
                     last_read_uapi_event_timestamp_ns: AnyProperty,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 },
             }
         });
@@ -2417,6 +2483,10 @@ mod test {
                     fd_notify_count: 0u64,
                     last_generated_uapi_event_timestamp_ns: 0i64,
                     last_read_uapi_event_timestamp_ns: 0i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 }
             }
         });
@@ -2501,6 +2571,10 @@ mod test {
                     fd_notify_count: 5u64,
                     last_generated_uapi_event_timestamp_ns: 5000i64,
                     last_read_uapi_event_timestamp_ns: 5000i64,
+                    opened_without_nonblock: AnyProperty,
+                    open_timestamp_ns: AnyProperty,
+                    closed: AnyProperty,
+                    close_timestamp_ns: AnyProperty,
                 },
             }
         });

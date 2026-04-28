@@ -606,7 +606,7 @@ impl DeviceOps for VirtualDevice {
 
         self.open_files.lock().push(Arc::downgrade(&input_file));
 
-        Ok(Box::new(input_file))
+        Ok(Box::new(crate::input_file::ArcInputFile(input_file)))
     }
 }
 

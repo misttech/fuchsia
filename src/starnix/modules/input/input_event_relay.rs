@@ -1273,7 +1273,7 @@ mod test {
         FileObject::new(
             locked,
             &current_task,
-            Box::new(device_file),
+            Box::new(crate::input_file::ArcInputFile(device_file)),
             root_namespace_node,
             OpenFlags::empty(),
         )
@@ -1528,7 +1528,7 @@ mod test {
         let device_id_10_file_object = FileObject::new(
             locked,
             &current_task,
-            Box::new(device_id_10_file),
+            Box::new(crate::input_file::ArcInputFile(device_id_10_file)),
             root_namespace_node,
             OpenFlags::empty(),
         )
@@ -1600,7 +1600,7 @@ mod test {
         let device_id_10_file_object = FileObject::new(
             locked,
             &current_task,
-            Box::new(device_id_10_file),
+            Box::new(crate::input_file::ArcInputFile(device_id_10_file)),
             root_namespace_node,
             OpenFlags::empty(),
         )

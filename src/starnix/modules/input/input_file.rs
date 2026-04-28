@@ -8,12 +8,13 @@ use starnix_core::fileops_impl_nonseekable;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
-use starnix_core::vfs::{CloseFreeSafe, FileObject, FileOps, fileops_impl_noop_sync};
+use starnix_core::vfs::{FileObject, FileOps, fileops_impl_noop_sync};
 use starnix_logging::{log_info, trace_duration, trace_flow_begin, trace_flow_end, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::time::duration_from_timeval;
 use starnix_uapi::errors::Errno;
+use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
@@ -23,8 +24,8 @@ use starnix_uapi::{
     SW_CNT, errno, error, uapi,
 };
 use std::collections::VecDeque;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
 use zerocopy::IntoBytes as _; // for `as_bytes()`
 
 uapi::check_arch_independent_layout! {
@@ -74,6 +75,21 @@ pub struct InputFileStatus {
 
     /// Number of notify calls.
     pub fd_notify_count: AtomicU64,
+
+    /// Whether the file was opened without the NONBLOCK flag.
+    pub opened_without_nonblock: AtomicBool,
+
+    /// The timestamp when the file was opened.
+    pub open_timestamp_ns: AtomicI64,
+
+    /// Whether the file was closed (dropped).
+    pub closed: AtomicBool,
+
+    /// The timestamp when the file was closed.
+    pub close_timestamp_ns: AtomicI64,
+
+    /// The weak pointer to the InputFile.
+    pub input_file: Mutex<Weak<InputFile>>,
 }
 
 impl InputFileStatus {
@@ -89,12 +105,22 @@ impl InputFileStatus {
             last_read_uapi_event_timestamp_ns: AtomicI64::new(0),
             fd_read_count: AtomicU64::new(0),
             fd_notify_count: AtomicU64::new(0),
+            opened_without_nonblock: AtomicBool::new(false),
+            open_timestamp_ns: AtomicI64::new(0),
+            closed: AtomicBool::new(false),
+            close_timestamp_ns: AtomicI64::new(0),
+            input_file: Mutex::new(Weak::new()),
         });
 
         let cloned_status = status.clone();
         node.record_lazy_values("status", move || {
             let cloned_cloned_status = cloned_status.clone();
             async move {
+                let is_dropped = cloned_cloned_status.input_file.lock().upgrade().is_none();
+                if is_dropped && !cloned_cloned_status.closed.load(Ordering::Relaxed) {
+                    cloned_cloned_status.closed.store(true, Ordering::Relaxed);
+                }
+
                 let inspector = Inspector::default();
                 let root = inspector.root();
                 root.record_uint(
@@ -104,6 +130,19 @@ impl InputFileStatus {
                 root.record_uint(
                     "fd_notify_count",
                     cloned_cloned_status.fd_notify_count.load(Ordering::Relaxed),
+                );
+                root.record_bool(
+                    "opened_without_nonblock",
+                    cloned_cloned_status.opened_without_nonblock.load(Ordering::Relaxed),
+                );
+                root.record_int(
+                    "open_timestamp_ns",
+                    cloned_cloned_status.open_timestamp_ns.load(Ordering::Relaxed),
+                );
+                root.record_bool("closed", cloned_cloned_status.closed.load(Ordering::Relaxed));
+                root.record_int(
+                    "close_timestamp_ns",
+                    cloned_cloned_status.close_timestamp_ns.load(Ordering::Relaxed),
                 );
                 root.record_uint(
                     "fidl_events_received_count",
@@ -179,6 +218,22 @@ impl InputFileStatus {
 
     pub fn count_fd_notify_calls(&self) {
         self.fd_notify_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn set_opened_without_nonblock(&self) {
+        self.opened_without_nonblock.store(true, Ordering::Relaxed);
+    }
+
+    pub fn set_open_timestamp(&self, timestamp: i64) {
+        self.open_timestamp_ns.store(timestamp, Ordering::Relaxed);
+    }
+
+    pub fn set_closed(&self) {
+        self.closed.store(true, Ordering::Relaxed);
+    }
+
+    pub fn set_closed_timestamp(&self, timestamp: i64) {
+        self.close_timestamp_ns.store(timestamp, Ordering::Relaxed);
     }
 }
 
@@ -432,6 +487,12 @@ impl InputFile {
         }
     }
 
+    pub fn init_inspect_status(self: &Arc<Self>) {
+        if let Some(inspect) = &self.inspect_status {
+            *inspect.input_file.lock() = Arc::downgrade(self);
+        }
+    }
+
     pub fn add_events(&self, events: Vec<uapi::input_event>) {
         if events.is_empty() {
             return;
@@ -479,11 +540,36 @@ impl InputFile {
 // request.
 const EVIOCGNAME_MASK: u32 = 0b11_00_0000_0000_0000_1111_1111_1111_1111;
 
-/// `InputFile` doesn't implement the `close` method.
-impl CloseFreeSafe for InputFile {}
 impl FileOps for InputFile {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
+
+    fn open(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        if let Some(inspect) = &self.inspect_status {
+            inspect.set_open_timestamp(zx::MonotonicInstant::get().into_nanos());
+            if (file.flags() & OpenFlags::NONBLOCK) != OpenFlags::NONBLOCK {
+                inspect.set_opened_without_nonblock();
+            }
+        }
+        Ok(())
+    }
+
+    fn close(
+        self: Box<Self>,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &starnix_core::vfs::FileObjectState,
+        _current_task: &CurrentTask,
+    ) {
+        if let Some(inspect) = &self.inspect_status {
+            inspect.set_closed();
+            inspect.set_closed_timestamp(zx::MonotonicInstant::get().into_nanos());
+        }
+    }
 
     fn ioctl(
         &self,
@@ -703,6 +789,89 @@ impl FileOps for InputFile {
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         Ok(if self.inner.lock().events.is_empty() { FdEvents::empty() } else { FdEvents::POLLIN })
+    }
+}
+
+pub struct ArcInputFile(pub Arc<InputFile>);
+
+impl FileOps for ArcInputFile {
+    fileops_impl_nonseekable!();
+    fileops_impl_noop_sync!();
+
+    fn open(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        self.0.as_ref().open(locked, file, current_task)
+    }
+
+    fn close(
+        self: Box<Self>,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &starnix_core::vfs::FileObjectState,
+        _current_task: &CurrentTask,
+    ) {
+        let arc_file = *self;
+        if let Some(inspect) = &arc_file.0.inspect_status {
+            inspect.set_closed();
+            inspect.set_closed_timestamp(zx::MonotonicInstant::get().into_nanos());
+        }
+    }
+
+    fn ioctl(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        request: u32,
+        arg: SyscallArg,
+    ) -> Result<SyscallResult, Errno> {
+        self.0.as_ref().ioctl(locked, file, current_task, request, arg)
+    }
+
+    fn read(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn OutputBuffer,
+    ) -> Result<usize, Errno> {
+        self.0.as_ref().read(locked, file, current_task, offset, data)
+    }
+
+    fn write(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        offset: usize,
+        data: &mut dyn InputBuffer,
+    ) -> Result<usize, Errno> {
+        self.0.as_ref().write(locked, file, current_task, offset, data)
+    }
+
+    fn wait_async(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+        waiter: &Waiter,
+        events: FdEvents,
+        handler: EventHandler,
+    ) -> Option<WaitCanceler> {
+        self.0.as_ref().wait_async(locked, file, current_task, waiter, events, handler)
+    }
+
+    fn query_events(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<FdEvents, Errno> {
+        self.0.as_ref().query_events(locked, file, current_task)
     }
 }
 
