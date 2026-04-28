@@ -107,3 +107,12 @@ closed protocol TicTacToe {
     });
 };
 // [END protocols]
+
+// The following aliases are available before and at "NEXT", respectively.
+// They are excluded from replacement with the next numbered API level since
+// they are used in tests.
+@available(added=27, removed=NEXT) // NEVER_REPLACE_NEXT
+alias AvailableUntilApiLevelNext = int32;
+
+@available(added=NEXT) // NEVER_REPLACE_NEXT
+alias AvailableFromApiLevelNext = int32;

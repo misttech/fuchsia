@@ -1,5 +1,10 @@
 [
     {
+        "kind": "alias",
+        "name": "fuchsia.examples/AvailableFromApiLevelNext",
+        "type": "int32"
+    },
+    {
         "kind": "const",
         "name": "fuchsia.examples/BOARD_SIZE",
         "type": "uint8",
