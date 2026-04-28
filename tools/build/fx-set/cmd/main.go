@@ -182,19 +182,31 @@ func mainImpl(ctx context.Context) error {
 		}
 	}
 
-	_, err = fint.Set(ctx, staticSpec, contextSpec, args.skipLocalArgs, args.assemblyOverrideStrings)
-	if err != nil {
-		return err
-	}
+	if !isMainPbName {
+		// For the "normal" case where --main-pb is a label (or not set), we can run fint.Set once.
+		_, err = fint.Set(ctx, staticSpec, contextSpec, args.skipLocalArgs, args.assemblyOverrideStrings)
+		if err != nil {
+			return err
+		}
+	} else {
+		// if the --main-pb is specified as a name, we need to run GN twice, with slightly different
+		// arguments.
 
-	// If --main-pb was a name, resolve it now that product_bundles.json exists.
-	if isMainPbName {
+		// First, run without any overrides so that we can generate the list of product bundles.
+		_, err = fint.Set(ctx, staticSpec, contextSpec, args.skipLocalArgs, []string{})
+		if err != nil {
+			return err
+		}
+
+		// Resolve the product bundle name now that we can do so.
 		label, err := resolveProductBundleName(args.checkoutDir, args.buildDir, originalMainPb)
 		if err != nil {
 			return err
 		}
 		staticSpec.MainPbLabel = label
-		// Re-run fint.Set to update args.gn with the correct main_pb_label.
+
+		// Re-run fint.Set to update args.gn with the correct main_pb_label, and now pass the assembly
+		// overrides if they were provided.
 		_, err = fint.Set(ctx, staticSpec, contextSpec, args.skipLocalArgs, args.assemblyOverrideStrings)
 		if err != nil {
 			return err
