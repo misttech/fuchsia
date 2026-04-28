@@ -29,6 +29,7 @@ async def main(args: list[str]) -> int:
     subparsers.add_parser("get-state", help="Get state of session")
     attach_parser = subparsers.add_parser("attach", help="Attach to a process")
     attach_parser.add_argument("filter", help="Process name or ID to attach to")
+    subparsers.add_parser("threads", help="Get list of threads")
 
     parsed_args = parser.parse_args(args)
 

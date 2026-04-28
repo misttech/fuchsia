@@ -59,16 +59,25 @@ stopping the daemon.
    ```
    Output:
    ```
-   Response: {"success": true, "message": "", "body": {"success": true}}
+   {"success": true, "message": "", "body": {"success": true}}
    ```
 
-3. **Stop the daemon**:
+3. **Query threads**:
+   ```bash
+   fx debug cli threads
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"threads": [{"id": 1, "name": "main"}, {"id": 2, "name": "worker"}]}}
+   ```
+
+4. **Stop the daemon**:
    ```bash
    fx debug cli stop
    ```
    Output:
    ```
-   Response: {"success": true, "message": "Daemon stopping", "body": null}
+   {"success": true, "message": "Daemon stopping", "body": null}
    ```
 
 ## Technical Architecture

@@ -3,9 +3,10 @@
 # found in the LICENSE file.
 
 import unittest
+from unittest.mock import AsyncMock, Mock, patch
 
-from daemon.daemon import CommandHandlerRegistry
-from shared.protocol import BaseRequest, Response
+from daemon.daemon import CommandHandlerRegistry, Daemon
+from shared.protocol import AttachRequest, BaseRequest, Response, ThreadsRequest
 
 
 class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
@@ -33,17 +34,10 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Unknown command", resp.message or "")
 
     async def test_attach_registration(self) -> None:
-        from daemon.daemon import Daemon
-
         daemon = Daemon(port=15678)
         self.assertIn("attach", daemon.registry.handlers)
 
     async def test_handle_attach_success(self) -> None:
-        from unittest.mock import AsyncMock, Mock, patch
-
-        from daemon.daemon import Daemon
-        from shared.protocol import AttachRequest
-
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
 
@@ -60,11 +54,6 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             mock_attach.assert_called_once()
 
     async def test_handle_attach_failure(self) -> None:
-        from unittest.mock import AsyncMock, Mock, patch
-
-        from daemon.daemon import Daemon
-        from shared.protocol import AttachRequest
-
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
 
@@ -80,9 +69,6 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Failed to attach", resp.message or "")
 
     async def test_handle_attach_not_connected(self) -> None:
-        from daemon.daemon import Daemon
-        from shared.protocol import AttachRequest
-
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = None
 
@@ -91,6 +77,37 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(resp.success)
         self.assertIn("Not connected", resp.message or "")
+
+    def test_threads_registration(self) -> None:
+        daemon = Daemon(port=15678)
+        self.assertIn("threads", daemon.registry.handlers)
+
+    @patch("daemon.daemon.DapClient")
+    async def test_handle_threads(self, mock_dap_client_class: Mock) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_threads_resp = Mock()
+        mock_thread1 = Mock()
+        mock_thread1.id = 1
+        mock_thread1.name = "main"
+        mock_thread2 = Mock()
+        mock_thread2.id = 2
+        mock_thread2.name = "worker"
+        mock_threads_resp.threads = [mock_thread1, mock_thread2]
+        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.handle_threads(ThreadsRequest())
+
+        self.assertTrue(resp.success)
+        assert resp.body is not None
+        threads = resp.body["threads"]
+        self.assertEqual(len(threads), 2)
+        self.assertEqual(threads[0]["id"], 1)
+        self.assertEqual(threads[0]["name"], "main")
+        self.assertEqual(threads[1]["id"], 2)
+        self.assertEqual(threads[1]["name"], "worker")
 
 
 if __name__ == "__main__":

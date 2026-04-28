@@ -18,6 +18,7 @@ from shared.protocol import (
     GetStateRequest,
     Response,
     StopRequest,
+    ThreadsRequest,
     deserialize_request,
     serialize,
 )
@@ -81,6 +82,11 @@ class Daemon:
             self.handle_attach,
         )
 
+        self.registry.register(
+            "threads",
+            self.handle_threads,
+        )
+
     async def handle_stop(self, _req: StopRequest) -> Response:
         self.stop_event.set()
         return Response(success=True, message="Daemon stopping")
@@ -123,6 +129,22 @@ class Daemon:
             return Response(success=True, body=resp)
         except Exception as e:
             return Response(success=False, message=f"Failed to attach: {e}")
+
+    async def handle_threads(self, _req: ThreadsRequest) -> Response:
+        if not self.zxdb_writer:
+            return Response(
+                success=False, message="Not connected to zxdb DAP server"
+            )
+
+        from pydap.models import dataclass_to_dict
+
+        try:
+            resp = await self.dap_client.threads(self.zxdb_writer)
+            return Response(success=True, body=dataclass_to_dict(resp))
+        except Exception as e:
+            return Response(
+                success=False, message=f"Failed to get threads: {e}"
+            )
 
     async def run(self) -> int:
         if UDS_PATH.exists():

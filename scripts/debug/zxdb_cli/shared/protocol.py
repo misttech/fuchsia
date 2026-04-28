@@ -28,6 +28,11 @@ class AttachRequest(BaseRequest):
     command: str = "attach"
 
 
+@dataclasses.dataclass(kw_only=True)
+class ThreadsRequest(BaseRequest):
+    command: str = "threads"
+
+
 @dataclasses.dataclass
 class ThreadInfo:
     id: int
@@ -62,6 +67,8 @@ def make_request(data: dict[str, Any]) -> BaseRequest:
         if filter is None:
             raise ValueError("Filter must be specified for attach")
         return AttachRequest(filter=filter)
+    elif command == "threads":
+        return ThreadsRequest()
     else:
         raise ValueError("Unknown command")
 

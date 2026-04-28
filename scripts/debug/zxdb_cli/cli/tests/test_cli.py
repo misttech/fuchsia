@@ -45,6 +45,15 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self.assertIn("filter", args)
         self.assertEqual(args["filter"], "my_process")
 
+    @patch("cli.cli.send_command")
+    async def test_threads_command(self, mock_send: Mock) -> None:
+        from shared.protocol import ThreadsRequest
+
+        mock_send.return_value = 0
+        exit_code = await main(["threads"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(ThreadsRequest())
+
 
 if __name__ == "__main__":
     unittest.main()
