@@ -163,10 +163,9 @@ template("bad_signature_update") {
 
   # Specify production fshost component and config for test environment.
   if (use_fxfs_blob) {
-    fshost_component =
-        [ "//src/security/tests/pkg_test/tests:fshost-fxfs_blob" ]
+    fshost_component = [ "//src/storage/fshost/testing:test-fshost" ]
   } else {
-    fshost_component = [ "//src/security/tests/pkg_test/tests:fshost-minfs" ]
+    fshost_component = [ "//src/storage/fshost/testing:test-fshost-minfs" ]
   }
 
   # Note: Despite being independent of template parameters, this target must

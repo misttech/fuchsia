@@ -2,29 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//src/storage/fshost/fshost.gni")
 import("access_ota_blob_as_executable/access_ota_blob_as_executable.gni")
 import("bad_signature_update/bad_signature_update.gni")
 
 if (is_fuchsia) {
-  fshost_component_and_config("fshost-minfs") {
-    component_name = "fshost"
-    testonly = true
-    options = {
-      data_filesystem_format = "minfs"
-      fxfs_blob = false
-    }
-  }
-
-  fshost_component_and_config("fshost-fxfs_blob") {
-    component_name = "fshost"
-    testonly = true
-    options = {
-      data_filesystem_format = "fxfs"
-      fxfs_blob = true
-    }
-  }
-
   # Fake boot arguments for base (v0) system.
   fuchsia_test_component("fake_boot_arguments_v0-component") {
     component_name = "fake_boot_arguments_v0"

@@ -7,8 +7,18 @@ import("//build/rust/rustc_library.gni")
 import("//src/storage/fshost/fshost.gni")
 
 fshost_component_and_config("test-fshost") {
+  component_name = "test-fshost"
   testonly = true
   options = {
+  }
+}
+
+fshost_component_and_config("test-fshost-minfs") {
+  component_name = "test-fshost"
+  testonly = true
+  options = {
+    data_filesystem_format = "minfs"
+    fxfs_blob = false
   }
 }
 
