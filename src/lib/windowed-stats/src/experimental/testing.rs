@@ -83,11 +83,12 @@ impl TimeMatrixCallLog {
 #[derive(Clone)]
 pub struct MockTimeMatrixClient {
     calls: Arc<Mutex<Vec<(String, TimeMatrixCall<DynamicSample>)>>>,
+    prefix: String,
 }
 
 impl MockTimeMatrixClient {
     pub fn new() -> Self {
-        Self { calls: Arc::new(Mutex::new(vec![])) }
+        Self { calls: Arc::new(Mutex::new(vec![])), prefix: String::new() }
     }
 }
 
@@ -114,7 +115,7 @@ impl InspectSender for MockTimeMatrixClient {
         F::Sample: Send,
         P: InterpolationKind,
     {
-        let name = name.into();
+        let name = format!("{}{}", self.prefix, name.into());
         let matrix = MockTimeMatrix {
             name: name.clone(),
             calls: Arc::clone(&self.calls),
@@ -137,6 +138,13 @@ impl InspectSender for MockTimeMatrixClient {
         P: InterpolationKind,
     {
         self.inspect_time_matrix(name, matrix)
+    }
+
+    fn clone_with_child(&self, name: &str) -> Self {
+        let mut new_prefix = self.prefix.clone();
+        new_prefix.push_str(name);
+        new_prefix.push_str("/");
+        Self { calls: Arc::clone(&self.calls), prefix: new_prefix }
     }
 }
 

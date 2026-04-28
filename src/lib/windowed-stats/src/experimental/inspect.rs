@@ -53,6 +53,9 @@ pub trait InspectSender {
         F: SerialStatistic<P>,
         F::Sample: Send,
         P: InterpolationKind;
+
+    /// Clones the client and scopes it to a child node with the given name.
+    fn clone_with_child(&self, name: &str) -> Self;
 }
 
 type SharedTimeMatrix = Arc<Mutex<dyn TimeMatrixTick>>;
@@ -133,6 +136,10 @@ impl InspectSender for TimeMatrixClient {
             use crate::experimental::series::metadata::Metadata;
             metadata.record_with_parent(node);
         })
+    }
+
+    fn clone_with_child(&self, name: &str) -> Self {
+        Self { node: self.node.create_child(name) }
     }
 }
 
@@ -305,6 +312,26 @@ mod tests {
                             "2": "battery",
                             "3": "coolant",
                         }
+                    }
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    async fn inspected_time_matrix_clone_with_child_properly_scoped() {
+        let inspector = Inspector::default();
+        let client = TimeMatrixClient::new(inspector.root().create_child("serve_test_node"));
+        let child_client = client.clone_with_child("child");
+        let _matrix = child_client
+            .inspect_time_matrix("connectivity", TimeMatrix::<Union<u64>, LastSample>::default());
+
+        assert_data_tree!(inspector, root: contains {
+            serve_test_node: {
+                child: {
+                    connectivity: {
+                        "type": "bitset",
+                        "data": AnyBytesProperty,
                     }
                 }
             }
