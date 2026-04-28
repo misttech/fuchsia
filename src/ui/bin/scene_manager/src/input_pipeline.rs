@@ -6,7 +6,7 @@ use crate::lib::chromebook_keyboard_handler::ChromebookKeyboardHandler;
 use crate::lib::factory_reset_handler::FactoryResetHandler;
 use crate::lib::ime_handler::ImeHandler;
 use crate::lib::input_device::InputPipelineFeatureFlags;
-use crate::lib::input_pipeline::{InputDeviceBindingHashMap, InputPipeline, InputPipelineAssembly};
+use crate::lib::input_pipeline::{InputDeviceBindingMap, InputPipeline, InputPipelineAssembly};
 use crate::lib::light_sensor::{
     Calibration as LightSensorCalibration, Configuration as LightSensorConfiguration,
     FactoryFileLoader,
@@ -751,7 +751,7 @@ pub async fn handle_input_device_registry_request_streams(
     >,
     input_device_types: Vec<input_device::InputDeviceType>,
     input_event_sender: futures::channel::mpsc::UnboundedSender<Vec<input_device::InputEvent>>,
-    input_device_bindings: InputDeviceBindingHashMap,
+    input_device_bindings: InputDeviceBindingMap,
     injected_devices_node: inspect::Node,
     feature_flags: crate::lib::input_device::InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,

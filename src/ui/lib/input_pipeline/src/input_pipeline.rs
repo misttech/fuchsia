@@ -22,7 +22,7 @@ use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use metrics_registry::*;
-use std::collections::HashMap;
+use sorted_vec_map::SortedVecMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -46,9 +46,9 @@ fn get_next_device_id() -> u32 {
 
 type BoxedInputDeviceBinding = Box<dyn input_device::InputDeviceBinding>;
 
-/// An [`InputDeviceBindingHashMap`] maps an input device to one or more InputDeviceBindings.
+/// An [`InputDeviceBindingMap`] maps an input device to one or more InputDeviceBindings.
 /// It uses unique device id as key.
-pub type InputDeviceBindingHashMap = Arc<Mutex<HashMap<u32, Vec<BoxedInputDeviceBinding>>>>;
+pub type InputDeviceBindingMap = Arc<Mutex<SortedVecMap<u32, Vec<BoxedInputDeviceBinding>>>>;
 
 /// An input pipeline assembly.
 ///
@@ -245,7 +245,7 @@ pub struct InputPipeline {
     input_device_types: Vec<input_device::InputDeviceType>,
 
     /// The InputDeviceBindings bound to this pipeline.
-    input_device_bindings: InputDeviceBindingHashMap,
+    input_device_bindings: InputDeviceBindingMap,
 
     /// This node is bound to the lifetime of this InputPipeline.
     /// Inspect data will be dumped for this pipeline as long as it exists.
@@ -296,7 +296,8 @@ impl InputPipeline {
         InputPipeline::run(receiver, handlers, metrics_logger.clone());
 
         let (device_event_sender, device_event_receiver) = futures::channel::mpsc::unbounded();
-        let input_device_bindings: InputDeviceBindingHashMap = Arc::new(Mutex::new(HashMap::new()));
+        let input_device_bindings: InputDeviceBindingMap =
+            Arc::new(Mutex::new(SortedVecMap::new()));
         InputPipeline {
             pipeline_sender,
             device_event_sender,
@@ -405,7 +406,7 @@ impl InputPipeline {
     }
 
     /// Gets the input device bindings.
-    pub fn input_device_bindings(&self) -> &InputDeviceBindingHashMap {
+    pub fn input_device_bindings(&self) -> &InputDeviceBindingMap {
         &self.input_device_bindings
     }
 
@@ -457,7 +458,7 @@ impl InputPipeline {
         dir_proxy: fio::DirectoryProxy,
         device_types: Vec<input_device::InputDeviceType>,
         input_event_sender: UnboundedSender<Vec<input_device::InputEvent>>,
-        bindings: InputDeviceBindingHashMap,
+        bindings: InputDeviceBindingMap,
         input_devices_node: &fuchsia_inspect::Node,
         break_on_idle: bool,
         feature_flags: input_device::InputPipelineFeatureFlags,
@@ -526,7 +527,7 @@ impl InputPipeline {
         mut stream: fidl_fuchsia_input_injection::InputDeviceRegistryRequestStream,
         device_types: &Vec<input_device::InputDeviceType>,
         input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
-        bindings: &InputDeviceBindingHashMap,
+        bindings: &InputDeviceBindingMap,
         input_devices_node: &fuchsia_inspect::Node,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
@@ -712,7 +713,7 @@ async fn add_device_bindings(
     filename: &String,
     device_proxy: fidl_next::Client<fidl_next_fuchsia_input_report::InputDevice, Transport>,
     input_event_sender: &UnboundedSender<Vec<input_device::InputEvent>>,
-    bindings: &InputDeviceBindingHashMap,
+    bindings: &InputDeviceBindingMap,
     device_id: u32,
     input_devices_node: &fuchsia_inspect::Node,
     devices_connected: Option<&fuchsia_inspect::UintProperty>,
@@ -809,7 +810,11 @@ async fn add_device_bindings(
 
     if !new_bindings.is_empty() {
         let mut bindings = bindings.lock().await;
-        bindings.entry(device_id).or_insert(Vec::new()).extend(new_bindings);
+        if let Some(v) = bindings.get_mut(&device_id) {
+            v.extend(new_bindings);
+        } else {
+            bindings.insert(device_id, new_bindings);
+        }
     }
 }
 
@@ -947,7 +952,7 @@ mod tests {
             device_event_sender,
             device_event_receiver,
             input_device_types: vec![],
-            input_device_bindings: Arc::new(Mutex::new(HashMap::new())),
+            input_device_bindings: Arc::new(Mutex::new(SortedVecMap::new())),
             inspect_node: test_node,
             metrics_logger: metrics::MetricsLogger::default(),
             feature_flags: input_device::InputPipelineFeatureFlags::default(),
@@ -1007,7 +1012,7 @@ mod tests {
             device_event_sender,
             device_event_receiver,
             input_device_types: vec![],
-            input_device_bindings: Arc::new(Mutex::new(HashMap::new())),
+            input_device_bindings: Arc::new(Mutex::new(SortedVecMap::new())),
             inspect_node: test_node,
             metrics_logger: metrics::MetricsLogger::default(),
             feature_flags: input_device::InputPipelineFeatureFlags::default(),
@@ -1063,7 +1068,7 @@ mod tests {
         let dir_proxy_for_pipeline = vfs::directory::serve_read_only(dir);
 
         let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
-        let bindings: InputDeviceBindingHashMap = Arc::new(Mutex::new(HashMap::new()));
+        let bindings: InputDeviceBindingMap = Arc::new(Mutex::new(SortedVecMap::new()));
         let supported_device_types = vec![input_device::InputDeviceType::Mouse];
 
         let inspector = fuchsia_inspect::Inspector::default();
@@ -1095,9 +1100,9 @@ mod tests {
         .await;
 
         // Assert that one mouse device with accurate device id was found.
-        let bindings_hashmap = bindings.lock().await;
-        assert_eq!(bindings_hashmap.len(), 1);
-        let bindings_vector = bindings_hashmap.get(&10);
+        let bindings_map = bindings.lock().await;
+        assert_eq!(bindings_map.len(), 1);
+        let bindings_vector = bindings_map.get(&10);
         assert!(bindings_vector.is_some());
         assert_eq!(bindings_vector.unwrap().len(), 1);
         let boxed_mouse_binding = bindings_vector.unwrap().get(0);
@@ -1172,7 +1177,7 @@ mod tests {
         let dir_proxy_for_pipeline = vfs::directory::serve_read_only(dir);
 
         let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
-        let bindings: InputDeviceBindingHashMap = Arc::new(Mutex::new(HashMap::new()));
+        let bindings: InputDeviceBindingMap = Arc::new(Mutex::new(SortedVecMap::new()));
         let supported_device_types = vec![input_device::InputDeviceType::Keyboard];
 
         let inspector = fuchsia_inspect::Inspector::default();
@@ -1239,7 +1244,7 @@ mod tests {
 
         let device_types = vec![input_device::InputDeviceType::Mouse];
         let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
-        let bindings: InputDeviceBindingHashMap = Arc::new(Mutex::new(HashMap::new()));
+        let bindings: InputDeviceBindingMap = Arc::new(Mutex::new(SortedVecMap::new()));
 
         // Handle input device requests.
         let mut count: i8 = 0;
