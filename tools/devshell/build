@@ -483,7 +483,7 @@ function main {
 
   if [[ -n "${log_file}" ]]; then
     if [[ -f "${log_file}" ]]; then
-      fx-error "File \"${log_file}\" exists."
+      fx-error "File \"${log_file}\" exists. Please delete the file or specify a different path."
       return 1
     fi
     is_logging=true
