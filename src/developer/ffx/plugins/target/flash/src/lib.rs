@@ -351,6 +351,7 @@ async fn reboot_target_to_bootloader_and_rediscover(
     ctx: &EnvironmentContext,
     device_proxy: DeviceProxy,
     power_proxy: AdminProxy,
+    node_name: &Option<String>,
 ) -> fho::Result<TargetHandle> {
     // Wait to allow the Target to fully cycle to the bootloader
     writeln!(writer, "Waiting for Target to reboot...")
@@ -378,7 +379,11 @@ async fn reboot_target_to_bootloader_and_rediscover(
         Err(e) => handle_fidl_connection_err(e)?,
     };
 
-    let query = info.serial_number.map_or(TargetInfoQuery::First, |sn| TargetInfoQuery::Serial(sn));
+    let query = match (info.serial_number, node_name) {
+        (Some(sn), _) => TargetInfoQuery::Serial(sn),
+        (None, Some(nn)) => TargetInfoQuery::NodenameOrSerial(nn.clone()),
+        (None, None) => TargetInfoQuery::First,
+    };
     ffx_target::discover_fastboot_target(&ctx, query, Some(100000)).await.map_err(|e| e.into())
 }
 
@@ -413,6 +418,7 @@ Reboot the Target to the bootloader and re-run this command."
                     &self.ctx,
                     device_proxy,
                     power_proxy,
+                    &handle.node_name,
                 )
                 .await?
             }
