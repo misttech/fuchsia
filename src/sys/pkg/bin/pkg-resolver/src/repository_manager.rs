@@ -859,7 +859,9 @@ impl ToResolveError for OpenRepoError {
 
 #[derive(Debug, Error)]
 pub enum GetPackageError {
-    #[error("the repository manager does not have a repository config for: {0}")]
+    #[error(
+        "the repository manager does not have a repository config for: {0}. Try running `ffx repository server start`. If that doesn't work, the package might be missing from the build or there could be a network issue."
+    )]
     RepoNotFound(RepositoryUrl),
 
     #[error("while opening the repo")]
@@ -880,7 +882,9 @@ pub enum GetPackageError {
 
 #[derive(Debug, Error)]
 pub enum GetPackageHashError {
-    #[error("the repository manager does not have a repository config for: {0}")]
+    #[error(
+        "the repository manager does not have a repository config for: {0}. Try running `ffx repository server start`. If that doesn't work, the package might be missing from the build or there could be a network issue."
+    )]
     RepoNotFound(RepositoryUrl),
 
     #[error("while opening the repo")]
