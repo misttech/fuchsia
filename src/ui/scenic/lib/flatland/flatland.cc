@@ -578,11 +578,11 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
     }
   };
 
-  if (config_.pass_acquire_fences) {
-    task();
-  } else {
-    fence_queue_->QueueTask(std::move(task), std::move(*args.acquire_fences()));
-  }
+  // TODO(https://fxbug.dev/474444799): If |config_.pass_acquire_fences| is true, these fences
+  // can be directly queued on the render task rather than waiting on cpu. This will be possible
+  // in the new Flatland API where we define per-layer fences.
+  fence_queue_->QueueTask(std::move(task), std::move(*args.acquire_fences()));
+
   pending_link_operations_.clear();
 }
 
