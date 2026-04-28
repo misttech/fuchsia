@@ -114,5 +114,17 @@ TEST_F(ArmGicVisitorTest, WakeVectors) {
   EXPECT_TRUE(irqs[1].wake_vector().value_or(false));
 }
 
+TEST_F(ArmGicVisitorTest, TestInterruptProperty4) {
+  auto nodes = irq_tester()->GetPbusNodes("sample-device-4");
+  ASSERT_EQ(1lu, nodes.size());
+  auto irq = nodes[0].irq();
+  ASSERT_TRUE(irq);
+  ASSERT_EQ(2lu, irq->size());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ7_SPI) + 32, *(*irq)[0].irq());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ8_SPI) + 32, *(*irq)[1].irq());
+  EXPECT_EQ(static_cast<uint32_t>(IRQ7_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[0].mode()));
+  EXPECT_EQ(static_cast<uint32_t>(IRQ8_MODE_FUCHSIA), static_cast<uint32_t>(*(*irq)[1].mode()));
+}
+
 }  // namespace
 }  // namespace arm_gic_dt

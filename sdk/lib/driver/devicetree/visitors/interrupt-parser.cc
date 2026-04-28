@@ -54,9 +54,10 @@ zx::result<ParsedProperties> InterruptParser::Parse(Node& node) {
     return zx::ok(*interrupt_values);
   }
 
-  // Find the interrupt parent.
+  // Find the interrupt parent. Start the search at the current node's parent, as nodes cannot be
+  // their own interrupt parent.
   ReferenceNode interrupt_parent(nullptr);
-  ParentNode current(&node);
+  ParentNode current(node.parent());
   // Traverse the parent chain upwards until interrupt parent or interrupt controller is
   // encountered.
   while (current) {

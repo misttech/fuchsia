@@ -26,4 +26,11 @@
 #define IRQ6_MODE 4  // active high level-sensitive
 #define IRQ6_MODE_FUCHSIA ZX_INTERRUPT_MODE_LEVEL_HIGH
 
+#define IRQ7_SPI 51
+#define IRQ7_MODE 4  // active high level-sensitive
+#define IRQ7_MODE_FUCHSIA ZX_INTERRUPT_MODE_LEVEL_HIGH
+#define IRQ8_SPI 52
+#define IRQ8_MODE 4  // active high level-sensitive
+#define IRQ8_MODE_FUCHSIA ZX_INTERRUPT_MODE_LEVEL_HIGH
+
 #endif  // LIB_DRIVER_DEVICETREE_VISITORS_DRIVERS_INTERRUPT_CONTROLLERS_ARM_GIC_TEST_DTS_INTERRUPTS_H_

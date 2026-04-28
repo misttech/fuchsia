@@ -64,4 +64,14 @@
         interrupt-names = "irq1", "irq2";
         fuchsia,interrupt-wake-vectors = "irq2";
     };
+
+    sample-device@4 {
+        compatible = "fuchsia,sample-device";
+	/* This node is both an interrupt controller and has interrupts. */
+        #interrupt-cells = <2>;
+        interrupt-controller;
+        reg = <0x0 0x4 0x0 0x1>;
+        interrupts = <0 IRQ7_SPI IRQ7_MODE
+                      0 IRQ8_SPI IRQ8_MODE>;
+    };
 };
