@@ -9,6 +9,7 @@ use cm_rust::CapabilityTypeName;
 use cm_types::{IterablePath, RelativePath};
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_component_sandbox as fsandbox;
+use itertools::Itertools;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
@@ -60,40 +61,18 @@ pub trait DictExt {
         moniker: &ExtendedMoniker,
         path: &'a impl IterablePath,
         request: RouteRequest,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<Option<GenericRouterResponse>, RouterError>;
-}
+    ) -> Result<Option<Capability>, RouterError>;
 
-/// The analogue of a [RouterResponse] that can hold any type of capability. This is the
-/// return type of [DictExt::get_with_request].
-#[derive(Debug)]
-pub enum GenericRouterResponse {
-    /// Routing succeeded and returned this capability.
-    Capability(Capability),
-
-    /// Routing succeeded, but the capability was marked unavailable.
-    Unavailable,
-
-    /// Routing succeeded in debug mode, `Data` contains the debug data.
-    Debug(Box<CapabilitySource>),
-}
-
-impl<T: CapabilityBound> TryFrom<GenericRouterResponse> for Option<T> {
-    // Returns the capability's debug typename.
-    type Error = &'static str;
-
-    fn try_from(r: GenericRouterResponse) -> Result<Self, Self::Error> {
-        let r = match r {
-            GenericRouterResponse::Capability(c) => {
-                let debug_name = c.debug_typename();
-                Some(c.try_into().map_err(|_| debug_name)?)
-            }
-            GenericRouterResponse::Unavailable => None,
-            GenericRouterResponse::Debug(_) => return Err("unexpected debug value"),
-        };
-        Ok(r)
-    }
+    /// Identical to `get_with_request`, except it returns the source of the capability at `path`
+    /// instead of the capability itself.
+    async fn get_with_request_debug<'a>(
+        &self,
+        moniker: &ExtendedMoniker,
+        path: &'a impl IterablePath,
+        request: RouteRequest,
+        target: WeakInstanceToken,
+    ) -> Result<CapabilitySource, RouterError>;
 }
 
 #[async_trait]
@@ -175,19 +154,28 @@ impl DictExt for Dictionary {
                 match self.router.route(init_request, target.clone()).await? {
                     Some(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
-                        let resp = dict
-                            .get_with_request(&moniker, &self.path, request, false, target)
-                            .await?;
-                        let resp =
-                            resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
-                        let resp = resp.try_into().map_err(|debug_name: &'static str| {
-                            RoutingError::BedrockWrongCapabilityType {
-                                expected: T::debug_typename().into(),
-                                actual: debug_name.into(),
-                                moniker,
+                        match dict.get_with_request(&moniker, &self.path, request, target).await {
+                            Err(router_error)
+                                if let Ok(RoutingError::BedrockNotPresentInDictionary {
+                                    ..
+                                }) = router_error.clone().try_into() =>
+                            {
+                                Err(self.not_found_error.clone().into())
                             }
-                        })?;
-                        Ok(resp)
+                            Err(e) => Err(e),
+                            Ok(None) => Ok(None),
+                            Ok(Some(cap)) => {
+                                let actual_type_name = cap.debug_typename();
+                                let cap = T::try_from(cap).map_err(|_| {
+                                    RoutingError::BedrockWrongCapabilityType {
+                                        expected: T::debug_typename().into(),
+                                        actual: actual_type_name.into(),
+                                        moniker,
+                                    }
+                                })?;
+                                Ok(Some(cap))
+                            }
+                        }
                     }
                     None => Ok(None),
                 }
@@ -207,16 +195,18 @@ impl DictExt for Dictionary {
                 match self.router.route(init_request, target.clone()).await? {
                     Some(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
-                        let resp = dict
-                            .get_with_request(&moniker, &self.path, request, true, target)
-                            .await?;
-                        let resp =
-                            resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
-                        match resp {
-                            GenericRouterResponse::Debug(source) => Ok(*source),
-                            _other => {
-                                panic!("non-debug value from debug route")
+                        match dict
+                            .get_with_request_debug(&moniker, &self.path, request, target)
+                            .await
+                        {
+                            Err(router_error)
+                                if let Ok(RoutingError::BedrockNotPresentInDictionary {
+                                    ..
+                                }) = router_error.clone().try_into() =>
+                            {
+                                Err(self.not_found_error.clone().into())
                             }
+                            other_result => other_result,
                         }
                     }
                     None => {
@@ -340,9 +330,8 @@ impl DictExt for Dictionary {
         moniker: &ExtendedMoniker,
         path: &'a impl IterablePath,
         request: RouteRequest,
-        debug: bool,
         target: WeakInstanceToken,
-    ) -> Result<Option<GenericRouterResponse>, RouterError> {
+    ) -> Result<Option<Capability>, RouterError> {
         let mut current_dict = self.clone();
         let num_segments = path.iter_segments().count();
         for (next_idx, next_name) in path.iter_segments().enumerate() {
@@ -351,40 +340,26 @@ impl DictExt for Dictionary {
 
             // The capability doesn't exist.
             let Some(capability) = capability else {
-                return Ok(None);
+                return Err(RoutingError::BedrockNotPresentInDictionary {
+                    name: path.iter_segments().join("/"),
+                    moniker: moniker.clone(),
+                }
+                .into());
             };
 
             if next_idx < num_segments - 1 {
                 // Not at the end of the path yet, so there's more nesting. We expect to have found
                 // a [Dictionary], or a [Dictionary] router -- traverse into this [Dictionary].
-                let dict_request = request_with_dictionary_replacement(&request)?;
                 match capability {
                     Capability::Dictionary(d) => {
                         current_dict = d;
                     }
                     Capability::DictionaryRouter(r) => {
-                        match r.route(dict_request, target.clone()).await? {
-                            Some(d) => {
-                                current_dict = d;
-                            }
-                            None => {
-                                if !debug {
-                                    return Ok(Some(GenericRouterResponse::Unavailable));
-                                } else {
-                                    // `debug=true` was the input to this function but the call
-                                    // above to [`Router::route`] used `debug=false`. Call the
-                                    // router again with the same arguments but with `debug=true`
-                                    // so that we return the debug info to the caller (which ought
-                                    // to be [`CapabilitySource::Void`]).
-                                    let dict_request =
-                                        request_with_dictionary_replacement(&request)?;
-                                    let source = r.route_debug(dict_request, target).await?;
-                                    return Ok(Some(GenericRouterResponse::Debug(Box::new(
-                                        source,
-                                    ))));
-                                }
-                            }
-                        }
+                        let request = request_with_dictionary_replacement(&request)?;
+                        let Some(new_dictionary) = r.route(request, target.clone()).await? else {
+                            return Ok(None);
+                        };
+                        current_dict = new_dictionary;
                     }
                     _ => {
                         return Err(RoutingError::BedrockWrongCapabilityType {
@@ -395,86 +370,143 @@ impl DictExt for Dictionary {
                         .into());
                     }
                 }
-            } else {
-                // We've reached the end of our path. The last capability should have type
-                // `T` or `Router<T>`.
-                //
-                // There's a bit of repetition here because this function supports multiple router
-                // types.
-                return match (capability, debug) {
-                    (Capability::DictionaryRouter(r), false) => {
-                        match r.route(request, target).await? {
-                            Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
-                            None => Ok(Some(GenericRouterResponse::Unavailable)),
-                        }
-                    }
-                    (Capability::DictionaryRouter(r), true) => {
-                        let source = r.route_debug(request, target).await?;
-                        Ok(Some(GenericRouterResponse::Debug(Box::new(source))))
-                    }
-                    (Capability::ConnectorRouter(r), false) => {
-                        match r.route(request, target).await? {
-                            Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
-                            None => Ok(Some(GenericRouterResponse::Unavailable)),
-                        }
-                    }
-                    (Capability::ConnectorRouter(r), true) => {
-                        let source = r.route_debug(request, target).await?;
-                        Ok(Some(GenericRouterResponse::Debug(Box::new(source))))
-                    }
-                    (Capability::DataRouter(r), false) => match r.route(request, target).await? {
-                        Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
-                        None => Ok(Some(GenericRouterResponse::Unavailable)),
-                    },
-                    (Capability::DataRouter(r), true) => {
-                        let source = r.route_debug(request, target).await?;
-                        Ok(Some(GenericRouterResponse::Debug(Box::new(source))))
-                    }
-                    (Capability::DirConnectorRouter(r), false) => {
-                        match r.route(request, target).await? {
-                            Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
-                            None => Ok(Some(GenericRouterResponse::Unavailable)),
-                        }
-                    }
-                    (Capability::DirConnectorRouter(r), true) => {
-                        let source = r.route_debug(request, target).await?;
-                        Ok(Some(GenericRouterResponse::Debug(Box::new(source))))
-                    }
-                    (_other, true) => {
-                        // This is a debug route, and we've found a non-router capability. We must
-                        // return debug information for the debug route, and the only reason there
-                        // would be a non-router capability in a dictionary would be if a user
-                        // created one, so we can safely report that this was a remotely created
-                        // capability.
-                        let remoted_at_moniker = match moniker {
-                            ExtendedMoniker::ComponentInstance(m) => m.clone(),
-                            // Component manager always generates routers, so we should never find
-                            // a non-router capability at the point where this moniker would be for
-                            // component manager.
-                            ExtendedMoniker::ComponentManager => {
-                                panic!("component manager generated a non-router capability")
-                            }
-                        };
-                        let type_name: Option<CapabilityTypeName> = request
-                            .build_type_name
-                            .as_ref()
-                            .map(|s| std::str::FromStr::from_str(s.as_str()))
-                            .transpose()
-                            .expect("invalid type name");
-                        return Ok(Some(GenericRouterResponse::Debug(
-                            CapabilitySource::RemotedAt(RemotedAtSource {
-                                moniker: remoted_at_moniker,
-                                type_name,
-                            })
-                            .try_into()
-                            .expect("failed to serialize capability source"),
-                        )));
-                    }
-                    (other, false) => Ok(Some(GenericRouterResponse::Capability(other))),
-                };
+                continue;
             }
+
+            // We've reached the end of our path. The last capability should have type
+            // `T` or `Router<T>`.
+            //
+            // There's a bit of repetition here because this function supports multiple router
+            // types.
+            match capability {
+                Capability::DictionaryRouter(r) => {
+                    return r.route(request, target).await.map(|option| option.map(Into::into));
+                }
+                Capability::ConnectorRouter(r) => {
+                    return r.route(request, target).await.map(|option| option.map(Into::into));
+                }
+                Capability::DataRouter(r) => {
+                    return r.route(request, target).await.map(|option| option.map(Into::into));
+                }
+                Capability::DirConnectorRouter(r) => {
+                    return r.route(request, target).await.map(|option| option.map(Into::into));
+                }
+                other_capability => return Ok(Some(other_capability.into())),
+            };
         }
         unreachable!("get_with_request: All cases are handled in the loop");
+    }
+
+    async fn get_with_request_debug<'a>(
+        &self,
+        moniker: &ExtendedMoniker,
+        path: &'a impl IterablePath,
+        request: RouteRequest,
+        target: WeakInstanceToken,
+    ) -> Result<CapabilitySource, RouterError> {
+        let mut current_dict = self.clone();
+        let mut closest_moniker = moniker.clone();
+        let num_segments = path.iter_segments().count();
+        for (next_idx, next_name) in path.iter_segments().enumerate() {
+            // Get the capability.
+            let capability = current_dict.get(next_name);
+
+            // The capability doesn't exist.
+            let Some(capability) = capability else {
+                return Err(RoutingError::BedrockNotPresentInDictionary {
+                    name: path.iter_segments().join("/"),
+                    moniker: moniker.clone(),
+                }
+                .into());
+            };
+
+            if next_idx < num_segments - 1 {
+                // Not at the end of the path yet, so there's more nesting. We expect to have found
+                // a [Dictionary], or a [Dictionary] router -- traverse into this [Dictionary].
+                match capability {
+                    Capability::Dictionary(d) => {
+                        current_dict = d;
+                    }
+                    Capability::DictionaryRouter(r) => {
+                        // We want to do two routes of this: one debug and one non-debug. The debug
+                        // route is needed so we can determine where this dictionary comes from
+                        // (which is needed below if we find a non-router capability), and the
+                        // non-debug route here is needed to recurse into.
+                        let req = request_with_dictionary_replacement(&request)?;
+                        let maybe_new_dictionary = r.route(req.clone(), target.clone()).await?;
+                        let source = r.route_debug(req.clone(), target.clone()).await?;
+
+                        let Some(new_dictionary) = maybe_new_dictionary else {
+                            // The capability is not available! Let's return the source of it
+                            // (which ought to be [`CapabilitySource::Void`])
+                            return Ok(source);
+                        };
+                        current_dict = new_dictionary;
+                        closest_moniker = source.source_moniker();
+                    }
+                    _ => {
+                        return Err(RoutingError::BedrockWrongCapabilityType {
+                            expected: Dictionary::debug_typename().into(),
+                            actual: capability.debug_typename().into(),
+                            moniker: moniker.clone(),
+                        }
+                        .into());
+                    }
+                }
+                continue;
+            }
+
+            // We've reached the end of our path. The last capability should have type
+            // `T` or `Router<T>`.
+            //
+            // There's a bit of repetition here because this function supports multiple router
+            // types.
+            match capability {
+                Capability::DictionaryRouter(r) => {
+                    return r.route_debug(request, target).await;
+                }
+                Capability::ConnectorRouter(r) => {
+                    return r.route_debug(request, target).await;
+                }
+                Capability::DataRouter(r) => {
+                    return r.route_debug(request, target).await;
+                }
+                Capability::DirConnectorRouter(r) => {
+                    return r.route_debug(request, target).await;
+                }
+                _other_capability => {
+                    // This is a debug route, and we've found a non-router capability. We must
+                    // return debug information for the debug route, and the only reason there
+                    // would be a non-router capability in a dictionary would be if a user
+                    // created one, so we can safely report that this was a remotely created
+                    // capability.
+                    //
+                    // We attribute this to the provider of the most recent dictionary we routed,
+                    // which should be the component that put this non-router capability in a
+                    // dictionary.
+                    let remoted_at_moniker = match closest_moniker {
+                        ExtendedMoniker::ComponentInstance(m) => m,
+                        // Component manager always generates routers, so we should never find
+                        // a non-router capability at the point where this moniker would be for
+                        // component manager.
+                        ExtendedMoniker::ComponentManager => {
+                            panic!("component manager generated a non-router capability")
+                        }
+                    };
+                    let type_name: Option<CapabilityTypeName> = request
+                        .build_type_name
+                        .as_ref()
+                        .map(|s| std::str::FromStr::from_str(s.as_str()))
+                        .transpose()
+                        .expect("invalid type name");
+                    return Ok(CapabilitySource::RemotedAt(RemotedAtSource {
+                        moniker: remoted_at_moniker,
+                        type_name,
+                    }));
+                }
+            };
+        }
+        unreachable!("get_with_request_debug: All cases are handled in the loop");
     }
 }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::bedrock::dict_ext::{GenericRouterResponse, request_with_dictionary_replacement};
+use crate::bedrock::dict_ext::request_with_dictionary_replacement;
 use crate::{DictExt, RoutingError};
 use async_trait::async_trait;
 use capability_source::CapabilitySource;
@@ -48,19 +48,28 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
                 match self.router.route(init_request, target.clone()).await? {
                     Some(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
-                        let resp = dict
-                            .get_with_request(&moniker, &self.path, request, false, target)
-                            .await?;
-                        let resp =
-                            resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
-                        let resp = resp.try_into().map_err(|debug_name: &'static str| {
-                            RoutingError::BedrockWrongCapabilityType {
-                                expected: T::debug_typename().into(),
-                                actual: debug_name.into(),
-                                moniker,
+                        match dict.get_with_request(&moniker, &self.path, request, target).await {
+                            Err(router_error)
+                                if let Ok(RoutingError::BedrockNotPresentInDictionary {
+                                    ..
+                                }) = router_error.clone().try_into() =>
+                            {
+                                Err(self.not_found_error.clone().into())
                             }
-                        })?;
-                        Ok(resp)
+                            Err(e) => Err(e),
+                            Ok(None) => Ok(None),
+                            Ok(Some(cap)) => {
+                                let actual_type_name = cap.debug_typename();
+                                let cap = T::try_from(cap).map_err(|_| {
+                                    RoutingError::BedrockWrongCapabilityType {
+                                        expected: T::debug_typename().into(),
+                                        actual: actual_type_name.into(),
+                                        moniker,
+                                    }
+                                })?;
+                                Ok(Some(cap))
+                            }
+                        }
                     }
                     None => Ok(None),
                 }
@@ -80,16 +89,18 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
                 match self.router.route(init_request, target.clone()).await? {
                     Some(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
-                        let resp = dict
-                            .get_with_request(&moniker, &self.path, request, true, target)
-                            .await?;
-                        let resp =
-                            resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
-                        match resp {
-                            GenericRouterResponse::Debug(source) => Ok(*source),
-                            _other => {
-                                panic!("non-debug value from debug route")
+                        match dict
+                            .get_with_request_debug(&moniker, &self.path, request, target)
+                            .await
+                        {
+                            Err(router_error)
+                                if let Ok(RoutingError::BedrockNotPresentInDictionary {
+                                    ..
+                                }) = router_error.clone().try_into() =>
+                            {
+                                Err(self.not_found_error.clone().into())
                             }
+                            other_result => other_result,
                         }
                     }
                     None => {

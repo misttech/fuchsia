@@ -24,14 +24,14 @@ use cm_types::{IterablePath, Name, RelativePath};
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io::RW_STAR_DIR;
 use itertools::Itertools;
-use moniker::{ChildName, ExtendedMoniker};
+use moniker::ChildName;
 use runtime_capabilities::{
     Capability, CapabilityBound, Dictionary, DirConnector, Routable, Router,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
 
-pub use bedrock::dict_ext::{DictExt, GenericRouterResponse};
+pub use bedrock::dict_ext::DictExt;
 pub use bedrock::lazy_get::LazyGet;
 pub use bedrock::weak_instance_token_ext::{WeakInstanceTokenExt, test_invalid_instance_token};
 pub use bedrock::with_porcelain::WithPorcelain;
@@ -134,26 +134,16 @@ pub async fn debug_route_sandbox_path_with_request<C: ComponentInstanceInterface
     let path: RelativePath = sandbox_path.clone().into();
     let sandbox = component.component_sandbox().await.map_err(RoutingError::from)?;
     let sandbox_dictionary: Dictionary = sandbox.into();
-    let maybe_response = sandbox_dictionary
-        .get_with_request(
-            &ExtendedMoniker::ComponentManager,
+    let component_moniker = component.moniker().clone();
+    sandbox_dictionary
+        .get_with_request_debug(
+            &component_moniker.into(),
             &path,
             request,
-            true,
             component.as_weak().into(),
         )
         .await
-        .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?;
-    match maybe_response {
-        Some(GenericRouterResponse::Debug(data)) => Ok(*data),
-        None => Err(RoutingError::BedrockNotPresentInDictionary {
-            name: sandbox_path.path,
-            moniker: component.moniker().clone().into(),
-        }),
-        other_value => {
-            panic!("unexpected response to route: {other_value:?}")
-        }
-    }
+        .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))
 }
 
 /// Routes the backing directory for the storage declaration on the component.

@@ -436,7 +436,7 @@ pub mod tests {
     use fuchsia_async::TestExecutor;
     use moniker::Moniker;
     use routing::bedrock::structured_dict::ComponentInput;
-    use routing::{DictExt, GenericRouterResponse, LazyGet, test_invalid_instance_token};
+    use routing::{DictExt, LazyGet, test_invalid_instance_token};
     use runtime_capabilities::{Capability, Data, Dictionary, RemotableCapability, Routable};
     use std::pin::pin;
     use std::sync::Weak;
@@ -530,13 +530,12 @@ pub mod tests {
                 &Moniker::root().into(),
                 &RelativePath::new("foo/bar/data").unwrap(),
                 request,
-                false,
                 test_invalid_instance_token::<ComponentInstance>(),
             )
             .await;
         assert_matches!(
             cap,
-            Ok(Some(GenericRouterResponse::Capability(Capability::Data(Data::String(str)))))
+            Ok(Some(Capability::Data(Data::String(str))))
                 if &*str == "hello"
         );
     }
@@ -557,7 +556,6 @@ pub mod tests {
                 &Moniker::root().into(),
                 &RelativePath::new("foo/bar").unwrap(),
                 request,
-                false,
                 test_invalid_instance_token::<ComponentInstance>(),
             )
             .await;
@@ -584,11 +582,18 @@ pub mod tests {
                 &Moniker::root().into(),
                 &RelativePath::new("foo/bar").unwrap(),
                 request,
-                false,
                 test_invalid_instance_token::<ComponentInstance>(),
             )
             .await;
-        assert_matches!(cap, Ok(None));
+        assert_matches!(
+                cap,
+                Err(RouterError::NotFound(err))
+                if matches!(
+                    err.as_any()
+        .downcast_ref::<RoutingError>(),
+                    Some(&RoutingError::BedrockNotPresentInDictionary { .. })
+                )
+            );
     }
 
     #[fuchsia::test]
@@ -608,14 +613,10 @@ pub mod tests {
                 &Moniker::root().into(),
                 &RelativePath::new("foo").unwrap(),
                 request,
-                false,
                 test_invalid_instance_token::<ComponentInstance>(),
             )
             .await;
-        assert_matches!(
-            cap,
-            Ok(Some(GenericRouterResponse::Capability(Capability::Dictionary(_))))
-        );
+        assert_matches!(cap, Ok(Some(Capability::Dictionary(_))));
 
         let request = RouteRequest {
             availability: Some(Availability::Required.native_into_fidl()),
@@ -626,11 +627,18 @@ pub mod tests {
                 &Moniker::root().into(),
                 &RelativePath::new("foo/bar").unwrap(),
                 request,
-                false,
                 test_invalid_instance_token::<ComponentInstance>(),
             )
             .await;
-        assert_matches!(cap, Ok(None));
+        assert_matches!(
+                cap,
+                Err(RouterError::NotFound(err))
+                if matches!(
+                    err.as_any()
+        .downcast_ref::<RoutingError>(),
+                    Some(&RoutingError::BedrockNotPresentInDictionary { .. })
+                )
+            );
     }
 
     #[derive(Debug, Clone)]

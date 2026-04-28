@@ -444,7 +444,10 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
         _request: RouteRequest,
         _target: WeakInstanceToken,
     ) -> Result<CapabilitySource, RouterError> {
-        panic!("debug routing is not supported");
+        Ok(CapabilitySource::Component(ComponentSource {
+            capability: self.capability.clone(),
+            moniker: self.component.moniker.clone(),
+        }))
     }
 }
 
