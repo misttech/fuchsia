@@ -189,8 +189,8 @@ Run `fx format-code` after making changes to ensure your code adheres to Fuchsia
 style guidelines.
 
 You do not need to run `fx format-code` frequently during the iteration process.
-It need only be run as a final step before committing or before returning
-control to the user.
+It need only be run as a final step before committing, prior to pushing your
+code, or before returning control to the user.
 
 ### Linting
 
