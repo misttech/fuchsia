@@ -12,10 +12,18 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::str::FromStr;
+use thiserror::Error;
 
 /// Error returned when we try to turn a non-network address into a `SocketAddr`
 #[derive(Copy, Clone, Debug)]
 pub struct NotANetworkAddress;
+
+/// Error returned when parsing a target address fails.
+#[derive(Debug, Error)]
+pub enum TargetAddrParseError {
+    #[error("Invalid address: {0}")]
+    Parse(#[from] std::net::AddrParseError),
+}
 
 /// Represents an address associated with a target, like [`TargetAddr`], but is
 /// restricted only to network addresses, i.e. addresses which might be suitable
@@ -62,9 +70,9 @@ impl TargetIpAddr {
 /// Construct a new TargetIpAddr from a string representation of the form
 /// accepted by std::net::SocketAddr, e.g. 127.0.0.1:22, or [fe80::1%1]:0.
 impl FromStr for TargetIpAddr {
-    type Err = anyhow::Error;
+    type Err = TargetAddrParseError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let sa = s.parse::<SocketAddr>()?;
         Ok(Self::from(sa))
     }
@@ -402,9 +410,9 @@ impl From<SocketAddr> for TargetAddr {
 /// Construct a new TargetAddr from a string representation of the form
 /// accepted by std::net::SocketAddr, e.g. 127.0.0.1:22, or [fe80::1%1]:0.
 impl FromStr for TargetAddr {
-    type Err = anyhow::Error;
+    type Err = TargetAddrParseError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let sa = s.parse::<SocketAddr>()?;
         Ok(Self::from(sa))
     }
