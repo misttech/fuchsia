@@ -10,7 +10,12 @@ load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
-load(":idk_common.bzl", "get_allowlist_target", "get_atom_visibility")
+load(
+    ":idk_common.bzl",
+    "get_allowlist_target",
+    "get_atom_visibility",
+    "verify_atom_is_in_allowlist",
+)
 
 ConfigurableInfo = provider(
     doc = "Maps of IDK destination paths to source files.",
@@ -290,6 +295,15 @@ def _create_idk_atom_impl(ctx):
     if not ctx.attr.name.endswith("_idk"):
         fail("IDK atom `name`s must end with `_idk`.")
 
+    verify_atom_is_in_allowlist(
+        label = ctx.label,
+        type = ctx.attr.type,
+        category = ctx.attr.category,
+        stable = ctx.attr.stable,
+        testonly = ctx.attr.testonly,
+        prebuilt_library_format = ctx.attr.prebuilt_library_format,
+    )
+
     # Merge additional prebuild info dictionaries if necessary.
     additional_prebuild_info = ctx.attr.additional_prebuild_info
     if ctx.attr.configurable_info:
@@ -460,6 +474,10 @@ Possible values, from most restrictive to least restrictive:
             providers = [ConfigurableInfo],
             mandatory = False,
         ),
+        "prebuilt_library_format": attr.string(
+            doc = "The format of a prebuilt library. Only applies to 'cc_prebuilt_library' type atoms.",
+            default = "",
+        ),
         "_current_api_level": attr.label(
             default = "@//build/bazel:fuchsia_api_level",
         ),
@@ -480,8 +498,8 @@ def _idk_atom_impl(
         atom_build_deps,
         additional_prebuild_info,
         configurable_info,
-        allowlist,
         prebuilt_library_format,
+        allowlist,
         testonly,
         **kwargs):
     if prebuilt_library_format:
@@ -554,6 +572,7 @@ def _idk_atom_impl(
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = additional_prebuild_info,
         configurable_info = configurable_info,
+        prebuilt_library_format = prebuilt_library_format,
         testonly = testonly,
         **kwargs
     )
@@ -609,15 +628,15 @@ Atoms will be checked for category and API area violations when generating the I
             default = {},
             configurable = False,
         ),
+        "prebuilt_library_format": attr.string(
+            doc = "The format of a prebuilt library. Only applies to 'cc_prebuilt_library' type atoms.",
+            default = "",
+            configurable = False,
+        ),
         # Non-inherited attributes.
         "allowlist": attr.label(
             doc = "The allowlist to check for this target configuration. Set by a wrapper macro.",
             mandatory = True,
-            configurable = False,
-        ),
-        "prebuilt_library_format": attr.string(
-            doc = "See get_allowlist_target().",
-            default = "",
             configurable = False,
         ),
     },

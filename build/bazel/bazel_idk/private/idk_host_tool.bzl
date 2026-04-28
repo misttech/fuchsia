@@ -12,6 +12,7 @@ load(
     "get_allowlist_target",
     "get_atom_visibility",
     "json_encode_dict_values",
+    "verify_target_is_in_allowlist",
 )
 
 visibility(["//build/bazel/bazel_idk/..."])
@@ -44,6 +45,17 @@ def _idk_host_tool_impl(
     additional_prebuild_info_values = {
         "file_base": file_base,
     }
+
+    # Verify the allowlist here to catch cases where this macro is used but
+    # there is no dependency on the atom target.
+    verify_target_is_in_allowlist(
+        # This is a unique case where "_idk" has already been appended to the name.
+        name.removesuffix("_idk"),
+        atom_type,
+        category,
+        stable = True,
+        testonly = False,
+    )
 
     idk_atom(
         name = name,

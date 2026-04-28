@@ -2,13 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+visibility(["//build/bazel/bazel_idk/private"])
+
 """Lists of FIDL libraries in each category.
 
 For information on categories, see
 https://fuchsia.dev/fuchsia-src/contribute/sdk/categories.
 """
-
-visibility("private")
 
 # Stable FIDL libraries in the partner category.
 # All are included in the IDK.

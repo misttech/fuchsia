@@ -21,6 +21,7 @@ load(
 load("//build/bazel/bazel_idk/private:idk_transitions.bzl", "build_idk_combinations")
 load("//build/bazel/rules/testing:defs.bzl", "verify_file_path")
 load("//build/bazel/rules/tests:rules.bzl", "build_for_host")
+load(":analysis_tests.bzl", "analysis_test_suite")
 load(
     ":rules.bzl",
     "create_test_atom_info",
@@ -959,9 +960,6 @@ filegroup(
         "//zircon/system/ulib/sync:sync-cpp",
         "//zircon/system/ulib/zx",
 
-        # Build some of the targets on the host toolchain.
-        ":build_only_tests_in_host_configuration",
-
         # Exercise FIDL.
         # TODO(https://fxbug.dev/428285014): Remove these once we are building them elsewhere.
         "//examples/fidl/fuchsia.examples.docs",
@@ -973,6 +971,7 @@ filegroup(
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp_hlcpp_conversion",
         "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
         # A library with indirect dependencies.
+        # It is also a library not in a category.
         "//sdk/fidl/fuchsia.hardware.display.engine",
         # TODO(https://fxbug.dev/454977301): Uncomment once FIDL for drivers is supported.
         # "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_cpp",
@@ -995,6 +994,12 @@ filegroup(
         # Non-IDK targets.
         # TODO(https://fxbug.dev/428229472): Remove once there are other dependencies on them.
         "//zircon/system/ulib/zircon-internal",
+
+        # Build some of the targets on the host toolchain.
+        ":build_only_tests_in_host_configuration",
+
+        # Analysis tests.
+        ":analysis_tests",
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
@@ -1135,4 +1140,11 @@ build_idk_combinations(
     # Do not add to this list. Add to
     # ":targets_to_build_for_each_cpu_and_api_level_combination" instead.
     deps = [":targets_to_build_for_each_cpu_and_api_level_combination"],
+)
+
+# Although this will output errors when built with `bazel build`, it will not
+# fail the build. It must be run with `bazel test` in order for test failures to
+# cause Bazel to fail.
+analysis_test_suite(
+    name = "analysis_tests",
 )

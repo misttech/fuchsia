@@ -21,6 +21,7 @@ load(
     "get_idk_deps",
     "json_encode_dict_values",
     "select_for_fuchsia",
+    "verify_target_is_in_allowlist",
 )
 
 visibility(["//build/bazel/bazel_idk/..."])
@@ -246,6 +247,10 @@ def _idk_cc_source_library_impl(
         hdrs = hdrs_for_idk,
         srcs = srcs_for_idk,
     )
+
+    # Verify the allowlist here to catch cases where this macro is used but
+    # there is no dependency on the atom target.
+    verify_target_is_in_allowlist(name, atom_type, category, stable, testonly)
 
     idk_atom(
         name = name + "_idk",

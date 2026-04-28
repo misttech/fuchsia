@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-visibility(["//build/bazel/bazel_idk"])
+visibility(["//build/bazel/bazel_idk/..."])
 
 """Lists of targets included in the Fuchsia IDK."""
 
@@ -15,6 +15,8 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/fidl:fidl_idk",
     "//sdk/lib/fidl/cpp:cpp_base_idk",
     "//sdk/lib/fidl/cpp:cpp_idk",
+    "//sdk/lib/fidl/cpp:hlcpp_conversion_idk",
+    "//sdk/lib/fidl/cpp:natural_ostream_idk",
     "//sdk/lib/fidl/cpp/wire:wire_idk",
     "//sdk/lib/fidl/hlcpp:hlcpp_base_idk",
     "//sdk/lib/fidl/hlcpp:hlcpp_idk",
@@ -72,3 +74,9 @@ NON_BUILD_HOST_TOOLS_ATOMS = [
 ]
 
 ALL_HOST_TOOL_ATOMS = BUILD_HOST_TOOLS_ATOMS + NON_BUILD_HOST_TOOLS_ATOMS
+
+NOOP_ATOMS_LIST = [
+    # buildifier: keep sorted
+    "//sdk/lib/zircon-assert:zircon-assert_idk",
+    "//src/zircon/lib/zircon:zircon_idk",
+]

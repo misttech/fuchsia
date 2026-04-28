@@ -29,6 +29,7 @@ load(
     "get_idk_deps",
     "json_encode_dict_values",
     "select_for_fuchsia",
+    "verify_target_is_in_allowlist",
 )
 
 visibility(["//build/bazel/bazel_idk/..."])
@@ -400,6 +401,17 @@ def _idk_cc_prebuilt_library_impl(
 
     if no_headers and (api_path or api_contents_map or idk_header_files_map):
         fail("Internal error: Unexpected populated variables when `no_headers` is True.")
+
+    # Verify the allowlist here to catch cases where this macro is used but
+    # there is no dependency on the atom target.
+    verify_target_is_in_allowlist(
+        name = name,
+        type = atom_type,
+        category = category,
+        stable = stable,
+        testonly = testonly,
+        prebuilt_library_format = prebuilt_library_type,
+    )
 
     idk_atom(
         name = name + "_idk",

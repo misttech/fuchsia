@@ -13,6 +13,7 @@ load(
     "get_atom_visibility",
     "get_idk_deps",
     "json_encode_dict_values",
+    "verify_target_is_in_allowlist",
 )
 load("//zircon/tools/zither:zither_library.bzl", "zither_library")
 load(":fidl_cc_library.bzl", "fidl_cpp_family")
@@ -396,6 +397,10 @@ def _fidl_library_impl(
     # TODO(https://fxbug.dev/442637596): Implement host test data or similar in the proper conditions.
 
     if category:
+        # Verify the allowlist here to catch cases where this macro is used but
+        # there is no dependency on the atom target.
+        verify_target_is_in_allowlist(name, atom_type, category, stable, testonly)
+
         # LINT.IfChange(idk_name)
         idk_name = library_name
         # LINT.ThenChange(//build/bazel/rules/fidl/collect_fidl_library_data.bzl:idk_fidl_json_data_contents)

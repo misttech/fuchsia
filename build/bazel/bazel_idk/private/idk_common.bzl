@@ -6,6 +6,24 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fuchsia_build_info//:args.bzl", "idk_buildable_api_levels")
+load(
+    "//sdk:atom_lists.bzl",
+    "ALL_HOST_TOOL_ATOMS",
+    "CC_PREBUILT_SHARED_LIBRARY_ATOMS",
+    "CC_PREBUILT_STATIC_LIBRARY_ATOMS",
+    "DATA_ATOMS",
+    "NOOP_ATOMS_LIST",
+    "STABLE_CC_SOURCE_LIBRARY_ATOMS",
+    "UNSTABLE_CC_SOURCE_LIBRARY_ATOMS",
+)
+load(
+    "//sdk/fidl:category_lists.bzl",
+    "COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST",
+    "HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST",
+    "PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST",
+    "PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST",
+    "PREBUILT_FIDL_LIBRARY_ATOMS_LIST",
+)
 
 visibility(["//build/bazel/rules/fidl/..."])
 
@@ -42,8 +60,8 @@ def get_allowlist_target(type, category, stable, prebuilt_library_format = None)
 
     All atoms must be in an allowlist.
     """
-    if prebuilt_library_format and type != "cc_prebuilt_library":
-        fail("`prebuilt_library_format` is only valid for the 'cc_prebuilt_library' type.")
+    if bool(prebuilt_library_format) != (type == "cc_prebuilt_library"):
+        fail("`prebuilt_library_format` must be set if and only if `type` is 'cc_prebuilt_library'.")
 
     if type == "cc_source_library":
         if category == "partner":
@@ -83,6 +101,130 @@ def get_allowlist_target(type, category, stable, prebuilt_library_format = None)
         fail("Unhandled atom type: %s" % type)
 
     fail("Create a separate allowlist when adding support for other categories or stability.")
+
+def verify_target_is_in_allowlist(
+        name,
+        type,
+        category,
+        stable,
+        testonly,
+        prebuilt_library_format = None):
+    """Verifies that the atom for non-IDK target `name` is in the allowlist for its type, category, and stability.
+
+    If the atom fails verification, `fail()` is called with a message describing
+    the issue. Otherwise, the function returns without side effects. No target
+    is created.
+
+    All atom-defining macros must call this when a category is specified if they
+    expose any targets (e.g., a `cc_library()`) other than the IDK atom.
+
+    All atoms must be in an allowlist.
+
+    Args:
+        name: The name of the atom to verify. It is a name (not label) of a
+            target in the current package and does not have the "_idk" suffix.
+        type: The atom's type.
+        category: The atom's category.
+        stable: Whether the atom is stable.
+        testonly: Standard meaning.
+        prebuilt_library_format: The format of a prebuilt library.
+            Only applies to "cc_prebuilt_library" type atoms.
+    """
+    return verify_atom_is_in_allowlist(
+        _get_idk_label(name),
+        type,
+        category,
+        stable,
+        testonly,
+        prebuilt_library_format,
+    )
+
+def verify_atom_is_in_allowlist(
+        label,
+        type,
+        category,
+        stable,
+        testonly,
+        prebuilt_library_format = None):
+    """Verifies that the atom is in the allowlist for its type, category, and stability.
+
+    If the atom fails verification, `fail()` is called with a message describing
+    the issue. Otherwise, the function returns without side effects. No target
+    is created.
+
+    All atoms must be in an allowlist.
+
+    Args:
+        label: The Label of the atom to verify.
+        type: The atom's type.
+        category: The atom's category.
+        stable: Whether the atom is stable.
+        testonly: Standard meaning.
+        prebuilt_library_format:  The format of a prebuilt library.
+            Only applies to "cc_prebuilt_library" type atoms.
+    """
+    if bool(prebuilt_library_format) != (type == "cc_prebuilt_library"):
+        fail("`prebuilt_library_format` must be set if and only if `type` is 'cc_prebuilt_library'.")
+
+    # Strip the leading "@@" from the label string if present.
+    label_str = str(label).lstrip("@")
+
+    allowed_targets = None
+
+    if type == "cc_source_library":
+        if category == "partner":
+            if stable:
+                allowed_targets = STABLE_CC_SOURCE_LIBRARY_ATOMS
+            else:
+                allowed_targets = UNSTABLE_CC_SOURCE_LIBRARY_ATOMS
+    elif type == "cc_prebuilt_library":
+        if category == "partner" and stable:
+            if prebuilt_library_format == "shared":
+                allowed_targets = CC_PREBUILT_SHARED_LIBRARY_ATOMS
+            elif prebuilt_library_format == "static":
+                allowed_targets = CC_PREBUILT_STATIC_LIBRARY_ATOMS
+            else:
+                fail("Unrecognized prebuilt library format: '%s'" % prebuilt_library_format)
+    elif type == "data":
+        if category == "partner" and stable:
+            allowed_targets = DATA_ATOMS
+    elif type == "fidl_library":
+        if category == "partner":
+            if stable:
+                allowed_targets = PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST
+            else:
+                allowed_targets = PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST
+        if category == "prebuilt" and stable:
+            allowed_targets = PREBUILT_FIDL_LIBRARY_ATOMS_LIST
+        elif category == "host_tool" and stable:
+            allowed_targets = HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST
+        elif category == "compat_test" and stable:
+            allowed_targets = COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST
+    elif type == "host_tool":
+        if category == "partner" and stable:
+            allowed_targets = ALL_HOST_TOOL_ATOMS
+    elif type == "none":
+        if category == "partner" and stable:
+            allowed_targets = NOOP_ATOMS_LIST
+    else:
+        fail("Unhandled atom type: '%s'" % type)
+
+    if allowed_targets == None:
+        fail(("No allowlist for type='%s', category='%s', stable='%s'. " +
+              "Does target `%s` have the correct values? " +
+              "Add a new allowlist when adding support for other categories or stability.") %
+             (type, category, stable, label_str))
+
+    # Exempt IDK test atoms from allowlist verification.
+    # Do this last so they still exercise all the other logic.
+    if label_str.startswith("//build/bazel/bazel_idk/tests:") and testonly:
+        return
+
+    # TODO(https://fxbug.dev/496597510): Consider optimizing performance by
+    # making the lists sets or doing a binary search through the sorted lists.
+    if label_str not in allowed_targets:
+        fail("Target `%s` is not in the allowlist for type='%s', category='%s', stable='%s'" %
+             (label_str, type, category, stable))
 
 def get_atom_visibility(target_visibility, is_fidl_library = False):
     """Returns the visibility to use for an atom target.
