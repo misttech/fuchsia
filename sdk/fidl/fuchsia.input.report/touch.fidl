@@ -113,7 +113,6 @@ type ContactInputReport = table {
     /// contact was an intended, valid contact. The device should report 0 if the
     /// contact is not a valid touch. The device should report 1 if the contact is
     /// intended and valid (e.g. a pointing touch)
-    @available(added=9)
     7: confidence bool;
 };
 
