@@ -47,11 +47,10 @@ pub type GetParentCallback = Arc<dyn Fn(&str) -> Parent + Send + Sync>;
 pub struct PathSource {
     path: &'static str,
     source_type: PathSourceType,
-    // TODO(https://fxbug.dev/394970436): once storage-host is enabled on all products, we can
-    // remove this side-channel check. For non-storage-host configurations, once we find the block
-    // device that represents the SystemPartitionTable, we need to configure its children, based on
-    // the path prefix, as having the SystemPartitionTable parent instead of the Dev parent. Post
-    // storage-host, they are separate sources, and thus static.
+    // TODO(https://fxbug.dev/394968352): once we stop watching devfs for block devices, we can
+    // remove this side-channel check. For devfs devices, once we find the block device that
+    // represents the SystemPartitionTable, we need to configure its children, based on the path
+    // prefix, as having the SystemPartitionTable parent instead of the Dev parent.
     get_parent: Option<GetParentCallback>,
 }
 

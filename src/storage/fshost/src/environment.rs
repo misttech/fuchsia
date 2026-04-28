@@ -257,8 +257,8 @@ impl MaybeFs for Option<Box<dyn Container>> {
 /// Implements the Environment trait and keeps track of mounted filesystems.
 pub struct FshostEnvironment {
     config: Arc<fshost_config::Config>,
-    // When storage-host is enabled, the GPT is run as a component.  `gpt_device_service_instance`
-    // will connect to the volume Service instance for the block device that `gpt` is mounted on.
+    // The GPT is run as a component.  `gpt_device_service_instance` will connect to the volume
+    // Service instance for the block device that `gpt` is mounted on.
     gpt: Filesystem,
     gpt_device_service_instance: BufferedDirectory,
     // `container` is set inside mount_fxblob() or mount_fvm() and represents the overall

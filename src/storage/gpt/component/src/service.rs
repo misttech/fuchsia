@@ -7,18 +7,20 @@ use crate::gpt::GptManager;
 use anyhow::{Context as _, Error};
 use block_client::RemoteBlockClient;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream as _, ServiceMarker as _};
+use fidl_fuchsia_fs as ffs;
+use fidl_fuchsia_fs_startup as fstartup;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process_lifecycle as flifecycle;
+use fidl_fuchsia_storage_block as fblock;
+use fidl_fuchsia_storage_partitions as fpartitions;
+use fuchsia_async as fasync;
 use futures::lock::Mutex as AsyncMutex;
 use futures::stream::TryStreamExt as _;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_fs as ffs, fidl_fuchsia_fs_startup as fstartup, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process_lifecycle as flifecycle, fidl_fuchsia_storage_block as fblock,
-    fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
-};
 
-pub struct StorageHostService {
+pub struct GptService {
     state: AsyncMutex<State>,
 
     // The execution scope of the pseudo filesystem.
@@ -47,7 +49,7 @@ impl State {
     }
 }
 
-impl StorageHostService {
+impl GptService {
     pub fn new() -> Arc<Self> {
         let export_dir = vfs::directory::immutable::simple();
         let partitions_dir = vfs::directory::immutable::simple();
@@ -430,20 +432,21 @@ impl StorageHostService {
 
 #[cfg(test)]
 mod tests {
-    use super::StorageHostService;
+    use super::GptService;
     use block_client::RemoteBlockClient;
     use fidl::endpoints::Proxy as _;
+    use fidl_fuchsia_fs as ffs;
+    use fidl_fuchsia_fs_startup as fstartup;
+    use fidl_fuchsia_io as fio;
     use fidl_fuchsia_process_lifecycle::LifecycleMarker;
+    use fidl_fuchsia_storage_block as fblock;
+    use fidl_fuchsia_storage_partitions as fpartitions;
+    use fuchsia_async as fasync;
     use fuchsia_component::client::connect_to_protocol_at_dir_svc;
     use futures::FutureExt as _;
     use gpt::{Gpt, Guid, PartitionInfo};
     use std::sync::Arc;
     use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
-    use {
-        fidl_fuchsia_fs as ffs, fidl_fuchsia_fs_startup as fstartup, fidl_fuchsia_io as fio,
-        fidl_fuchsia_storage_block as fblock, fidl_fuchsia_storage_partitions as fpartitions,
-        fuchsia_async as fasync,
-    };
 
     async fn setup_server(
         block_size: u32,
@@ -500,7 +503,7 @@ mod tests {
             },
             async {
                 // Server
-                let service = StorageHostService::new();
+                let service = GptService::new();
                 service
                     .run(outgoing_dir_server.into_channel(), Some(lifecycle_server.into_channel()))
                     .await
@@ -560,7 +563,7 @@ mod tests {
             },
             async {
                 // Server
-                let service = StorageHostService::new();
+                let service = GptService::new();
                 service.run(outgoing_dir_server.into_channel(), None).await.expect("Run failed");
             },
             async {
@@ -652,7 +655,7 @@ mod tests {
             },
             async {
                 // Server
-                let service = StorageHostService::new();
+                let service = GptService::new();
                 service
                     .run(outgoing_dir_server.into_channel(), Some(lifecycle_server.into_channel()))
                     .await

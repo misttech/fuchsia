@@ -29,8 +29,7 @@ pub enum Parent {
     /// The parent is the system partition table, this is a gpt partition in the main gpt.
     SystemPartitionTable,
 
-    /// The parent is a df driver. In non-storage-host, this includes any meta drivers like fvm or
-    /// zxcrypt as long as they aren't on a gpt.
+    /// The parent is a df driver.
     Dev,
 
     /// The parent is fshost. This is mainly for the fshost ramdisk.
@@ -220,8 +219,8 @@ impl BlockDevice {
             is_fshost_ramdisk: false,
             // All of these devices are technically from dev. The system partition table takes
             // precedence, and may be set later if the topological path matches.
-            // TODO(https://fxbug.dev/394970436): This field can go away once storage host is the
-            // only configuration.
+            // TODO(https://fxbug.dev/394968352): This field can go away once we stop watching dev
+            // for block devices.
             parent: Parent::Dev,
         })
     }

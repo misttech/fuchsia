@@ -6,7 +6,7 @@ use anyhow::Error;
 use fuchsia_async as fasync;
 use fuchsia_component::server::MissingStartupHandle;
 use fuchsia_runtime::HandleType;
-use gpt_component::service::StorageHostService;
+use gpt_component::service::GptService;
 
 #[fasync::run(6)]
 async fn main() -> Result<(), Error> {
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Error> {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
 
     log::info!("Starting up");
-    StorageHostService::new()
+    GptService::new()
         .run(
             fuchsia_runtime::take_startup_handle(HandleType::DirectoryRequest.into())
                 .ok_or(MissingStartupHandle)?
