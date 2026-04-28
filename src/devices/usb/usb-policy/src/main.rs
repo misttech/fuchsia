@@ -24,41 +24,57 @@ mod controller;
 
 use fuchsia_component::server::ServiceFs;
 
-struct SharedState {
-    controller: std::sync::Mutex<Option<Arc<controller::ControllerState>>>,
-    waiters: std::sync::Mutex<Vec<futures::channel::oneshot::Sender<()>>>,
+/// State shared between the background discovery task and the FIDL server instances.
+///
+/// It holds the active USB controller state (once discovered) and a list of waiters
+/// that need to be notified as soon as the controller becomes available.
+struct UsbPolicySharedStateInner {
+    /// The active controller state, if discovered.
+    controller: Option<Arc<controller::ControllerState>>,
+    /// Senders to notify tasks waiting for the controller to become available.
+    waiters: Vec<futures::channel::oneshot::Sender<()>>,
 }
 
-impl SharedState {
+/// A thread-safe wrapper around `UsbPolicySharedStateInner` that encapsulates locking.
+struct UsbPolicySharedState {
+    inner: std::sync::Mutex<UsbPolicySharedStateInner>,
+}
+
+impl UsbPolicySharedState {
     pub fn new() -> Self {
-        Self { controller: std::sync::Mutex::new(None), waiters: std::sync::Mutex::new(Vec::new()) }
+        Self {
+            inner: std::sync::Mutex::new(UsbPolicySharedStateInner {
+                controller: None,
+                waiters: Vec::new(),
+            }),
+        }
     }
 
     pub fn set_controller(&self, state: Arc<controller::ControllerState>) {
-        let mut controller_guard = self.controller.lock().unwrap_or_else(|e| e.into_inner());
-        *controller_guard = Some(state);
-        let mut waiters_guard = self.waiters.lock().unwrap_or_else(|e| e.into_inner());
-        for sender in waiters_guard.drain(..) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.controller = Some(state);
+        for sender in inner.waiters.drain(..) {
             let _ = sender.send(());
         }
     }
 
     pub fn get_controller(&self) -> Option<Arc<controller::ControllerState>> {
-        let controller_guard = self.controller.lock().unwrap_or_else(|e| e.into_inner());
-        controller_guard.clone()
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.controller.clone()
     }
 
     pub async fn wait_for_controller(&self) -> Arc<controller::ControllerState> {
         loop {
-            if let Some(controller) = self.get_controller() {
-                return controller;
-            }
-            let (sender, receiver) = futures::channel::oneshot::channel();
-            {
-                let mut waiters_guard = self.waiters.lock().unwrap_or_else(|e| e.into_inner());
-                waiters_guard.push(sender);
-            }
-            let _ = receiver.await;
+            let rx = {
+                let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(controller) = &inner.controller {
+                    return controller.clone();
+                }
+                let (sender, receiver) = futures::channel::oneshot::channel();
+                inner.waiters.push(sender);
+                receiver
+            };
+            let _ = rx.await;
         }
     }
 }
@@ -70,7 +86,7 @@ enum IncomingRequest {
 
 async fn run_provider_server(
     mut stream: usb_policy::PolicyProviderRequestStream,
-    shared_state: Arc<SharedState>,
+    shared_state: Arc<UsbPolicySharedState>,
 ) {
     let state = shared_state.wait_for_controller().await;
     let (initial_state, mut rx) = state.subscribe();
@@ -119,7 +135,7 @@ async fn run_provider_server(
 
 async fn run_health_server(
     mut stream: usb_policy::HealthRequestStream,
-    shared_state: Arc<SharedState>,
+    shared_state: Arc<UsbPolicySharedState>,
 ) {
     while let Some(Ok(request)) = stream.next().await {
         match request {
@@ -147,16 +163,23 @@ async fn run_health_server(
 }
 
 async fn run_usb_policy_service() -> Result<(), Error> {
-    let shared_state = Arc::new(SharedState::new());
+    let shared_state = Arc::new(UsbPolicySharedState::new());
 
     let shared_state_clone = shared_state.clone();
-    fuchsia_async::Task::local(async move {
+    let scope = fuchsia_async::Scope::new();
+    let _task = scope.spawn(async move {
         let result = async {
             let client = Service::open(fpolicy::ServiceMarker)?;
             let instance = client.watch_for_any().await?;
             let controller = instance.connect_to_controller()?;
-            let controller_state =
-                Arc::new(controller::ControllerState::new(controller, DeviceState::NotAttached, 0));
+            let inspector = fuchsia_inspect::component::inspector();
+            let inspect_node = inspector.root().create_child("usb_state_history");
+            let controller_state = Arc::new(controller::ControllerState::new(
+                controller,
+                DeviceState::NotAttached,
+                0,
+                inspect_node,
+            ));
             shared_state_clone.set_controller(controller_state.clone());
             let _ = controller_state.monitor_device_state().await;
             Ok::<(), anyhow::Error>(())
@@ -165,8 +188,7 @@ async fn run_usb_policy_service() -> Result<(), Error> {
         if let Err(e) = result {
             warn!("Background discovery failed: {:?}", e);
         }
-    })
-    .detach();
+    });
 
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(IncomingRequest::Health).add_service_at(
@@ -191,6 +213,10 @@ async fn run_usb_policy_service() -> Result<(), Error> {
 
 #[fuchsia::main(logging_tags = ["usb-policy"])]
 async fn main() -> Result<(), Error> {
+    let _inspect_server_task = inspect_runtime::publish(
+        fuchsia_inspect::component::inspector(),
+        inspect_runtime::PublishOptions::default(),
+    );
     Box::pin(run_usb_policy_service()).await.and(Err(format_err!("USB policy layer stopped")))
 }
 
@@ -203,9 +229,13 @@ mod tests {
     #[fasync::run_singlethreaded(test)]
     async fn test_health_report() -> Result<(), anyhow::Error> {
         let (controller_proxy, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
-        let shared_state = Arc::new(SharedState::new());
-        let controller_state =
-            Arc::new(controller::ControllerState::new(controller_proxy, DeviceState::Attached, 42));
+        let shared_state = Arc::new(UsbPolicySharedState::new());
+        let controller_state = Arc::new(controller::ControllerState::new(
+            controller_proxy,
+            DeviceState::Attached,
+            42,
+            fuchsia_inspect::Inspector::default().root().create_child("test"),
+        ));
         shared_state.set_controller(controller_state);
 
         let (health_proxy, stream) = create_proxy_and_stream::<usb_policy::HealthMarker>();
@@ -225,11 +255,12 @@ mod tests {
     #[fasync::run_singlethreaded(test)]
     async fn test_provider_server_state() -> Result<(), anyhow::Error> {
         let (controller_proxy, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
-        let shared_state = Arc::new(SharedState::new());
+        let shared_state = Arc::new(UsbPolicySharedState::new());
         let controller_state = Arc::new(controller::ControllerState::new(
             controller_proxy,
             DeviceState::Configured,
             10,
+            fuchsia_inspect::Inspector::default().root().create_child("test"),
         ));
         shared_state.set_controller(controller_state);
 
@@ -250,7 +281,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_health_report_not_ready() -> Result<(), anyhow::Error> {
-        let shared_state = Arc::new(SharedState::new());
+        let shared_state = Arc::new(UsbPolicySharedState::new());
         let (health_proxy, stream) = create_proxy_and_stream::<usb_policy::HealthMarker>();
 
         fasync::Task::local(run_health_server(stream, shared_state)).detach();
@@ -267,7 +298,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_provider_server_wait() -> Result<(), anyhow::Error> {
-        let shared_state = Arc::new(SharedState::new());
+        let shared_state = Arc::new(UsbPolicySharedState::new());
         let (provider_proxy, stream) =
             create_proxy_and_stream::<usb_policy::PolicyProviderMarker>();
 
@@ -278,6 +309,7 @@ mod tests {
             controller_proxy,
             DeviceState::Configured,
             10,
+            fuchsia_inspect::Inspector::default().root().create_child("test"),
         ));
 
         let shared_state_clone = shared_state.clone();

@@ -18,6 +18,9 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_rust",
     "//sdk/rust/zx",
     "//src/lib/async-utils",
+    "//src/lib/diagnostics/inspect/contrib/rust",
+    "//src/lib/diagnostics/inspect/runtime/rust",
+    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
@@ -27,7 +30,10 @@ rustc_binary("bin") {
   ]
 
   with_unit_tests = true
-  test_deps = [ "//src/lib/fidl/rust/fidl" ]
+  test_deps = [
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/lib/fidl/rust/fidl",
+  ]
 
   sources = [
     "src/controller.rs",
