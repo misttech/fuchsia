@@ -880,7 +880,6 @@ assembly_input_bundle("bootstrap_eng") {
     "//src/devices/serial/bin/serialutil:bootfs",
     "//src/devices/spi/bin/spiutil:bootfs",
     "//src/devices/spmi/bin/spmi-ctl:bootfs",
-    "//src/devices/power/bin/vreg-ctl:bootfs",
     "//src/devices/suspend/bin/suspendctl:bootfs",
     "//src/devices/thermal/bin/temperature-cli:bootfs",
     "//src/devices/thermal/bin/thermal-cli:bootfs",
@@ -896,6 +895,8 @@ assembly_input_bundle("bootstrap_eng") {
     "//src/devices/tee/bin:bootfs",
     "//src/zircon/tests/evil:bootfs",
   ]
+
+  bootfs_packages = [ "//src/devices/power/bin/vreg-ctl:vreg_ctl_pkg" ]
 
   # Do not automatically include these tools, but build them to keep them from
   # bit-rotting.

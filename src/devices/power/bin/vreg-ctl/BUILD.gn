@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 import("//build/assembly/bootfs_files_for_assembly.gni")
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/components.gni")
-import("//build/drivers/fuchsia_driver_package.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("vreg-ctl") {
@@ -19,12 +19,7 @@ rustc_binary("vreg-ctl") {
   ]
 }
 
-bootfs_files_for_assembly("bootfs") {
-  deps = [ ":vreg-ctl" ]
-}
-
-fuchsia_driver_package("vreg_ctl_pkg") {
+fuchsia_package("vreg_ctl_pkg") {
   package_name = "vreg_ctl_pkg"
-  driver_components = [ ":vreg-ctl" ]
-  export_to_bazel = true
+  deps = [ ":vreg-ctl" ]
 }
