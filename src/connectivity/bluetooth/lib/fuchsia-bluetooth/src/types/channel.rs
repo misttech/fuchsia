@@ -9,7 +9,7 @@ use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::sink::Sink;
 use futures::stream::{FusedStream, Stream};
-use futures::{Future, TryFutureExt, io, ready};
+use futures::{Future, TryFutureExt, ready};
 use log::{error, warn};
 use std::collections::VecDeque;
 use std::fmt;
@@ -346,35 +346,7 @@ impl FusedStream for Channel {
     }
 }
 
-// TODO(b/4144101870): remove once starnix side is migrated to use Stream instead of AsyncRead.
-impl io::AsyncRead for Channel {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<usize, futures::io::Error>> {
-        Pin::new(&mut self.socket).as_mut().poll_read(cx, buf)
-    }
-}
-
-// TODO(b/4144101870): remove once starnix side is migrated to use Sink instead of AsyncWrite.
-impl io::AsyncWrite for Channel {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, io::Error>> {
-        Pin::new(&mut self.socket).as_mut().poll_write(cx, buf)
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Pin::new(&mut self.socket).as_mut().poll_flush(cx)
-    }
-
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        Pin::new(&mut self.socket).as_mut().poll_close(cx)
-    }
-}
+// Trait implementations for Channel.
 
 impl Sink<Vec<u8>> for Channel {
     type Error = zx::Status;
@@ -432,7 +404,7 @@ impl Sink<Vec<u8>> for Channel {
 mod tests {
     use super::*;
     use fidl::endpoints::create_request_stream;
-    use futures::{AsyncReadExt, SinkExt, StreamExt};
+    use futures::{SinkExt, StreamExt};
     use std::pin::pin;
 
     #[test]
@@ -698,54 +670,6 @@ mod tests {
         // And with dropping
         drop(offload_ext);
         assert!(channel.audio_offload().is_some());
-    }
-
-    // TODO(b/4144101870): remove once starnix side is migrated to use Stream instead of AsyncRead.
-    #[test]
-    fn channel_async_read() {
-        let mut exec = fasync::TestExecutor::new();
-        let (mut recv, send) = Channel::create();
-
-        // Test `read` with a datagram smaller than the read buffer.
-        let max_tx_size = recv.max_tx_size();
-        let mut read_buf = vec![0; max_tx_size];
-        let mut read_fut = recv.read(&mut read_buf[..]);
-
-        assert!(exec.run_until_stalled(&mut read_fut).is_pending());
-
-        let data = &[0x01, 0x02, 0x03, 0x04];
-        assert_eq!(data.len(), send.write(data).expect("should write successfully"));
-
-        // The read should complete, with the length of the datagram.
-        let read_len = match exec.run_until_stalled(&mut read_fut) {
-            Poll::Ready(Ok(read_len)) => read_len,
-            x => panic!("Expected successful read, got {x:?}"),
-        };
-        assert_eq!(read_len, data.len());
-        assert_eq!(&data[..], &read_buf[..data.len()]);
-
-        // Test `read` with a datagram that is larger than the read buffer.
-        let mut read_buf = [0; 4]; // buffer too small
-        let mut read_fut = recv.read(&mut read_buf);
-
-        let oversized_data = &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
-        assert_eq!(
-            oversized_data.len(),
-            send.write(oversized_data).expect("should write successfully")
-        );
-
-        // The read should complete, filling the buffer.
-        let read_len = match exec.run_until_stalled(&mut read_fut) {
-            Poll::Ready(Ok(read_len)) => read_len,
-            x => panic!("Expected successful read, got {x:?}"),
-        };
-        assert_eq!(read_len, read_buf.len());
-        assert_eq!(&oversized_data[..read_buf.len()], &read_buf[..]);
-
-        // The rest of the datagram should be discarded. A subsequent read should be pending.
-        let mut leftover_buf = [0; 1];
-        let mut leftover_fut = recv.read(&mut leftover_buf);
-        assert!(exec.run_until_stalled(&mut leftover_fut).is_pending());
     }
 
     #[test]
