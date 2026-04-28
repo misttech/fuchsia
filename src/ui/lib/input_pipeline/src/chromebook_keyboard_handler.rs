@@ -26,10 +26,9 @@ use fidl_fuchsia_ui_input3::KeyEventType;
 use fuchsia_inspect::health::Reporter;
 use fuchsia_trace as ftrace;
 use keymaps::KeyState;
-use maplit::hashmap;
 use metrics_registry::InputPipelineErrorMetricDimensionEvent;
+use sorted_vec_map::SortedVecMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::LazyLock;
 
@@ -53,25 +52,25 @@ struct KeyPair {
 // Map key is the original key code produced by the keyboard.  The map value
 // are the possible remapped keys, depending on whether Search key is
 // actuated.
-static REMAPPED_KEYS: LazyLock<HashMap<Key, KeyPair>> = LazyLock::new(|| {
-    hashmap! {
-        Key::F1 => KeyPair{ without_search: Key::AcBack, with_search: Key::F1 },
-        Key::F2 => KeyPair{ without_search: Key::AcRefresh, with_search: Key::F2},
-        Key::F3 => KeyPair{ without_search: Key::AcFullScreenView, with_search: Key::F3 },
-        Key::F4 => KeyPair{ without_search: Key::AcSelectTaskApplication, with_search:  Key::F4 },
-        Key::F5 => KeyPair{ without_search: Key::BrightnessDown, with_search: Key::F5 },
-        Key::F6 => KeyPair{ without_search: Key::BrightnessUp, with_search: Key::F6 },
-        Key::F7 => KeyPair{ without_search: Key::PlayPause, with_search: Key::F7 },
-        Key::F8 => KeyPair{ without_search: Key::Mute, with_search: Key::F8 },
-        Key::F9 => KeyPair{ without_search: Key::VolumeDown, with_search: Key::F9 },
-        Key::F10 => KeyPair{ without_search: Key::VolumeUp, with_search: Key::F10 },
-        Key::Left => KeyPair{ without_search: Key::Left, with_search: Key::Home },
-        Key::Right => KeyPair{ without_search: Key::Right, with_search: Key::End },
-        Key::Up => KeyPair{ without_search: Key::Up, with_search: Key::PageUp },
-        Key::Down => KeyPair{ without_search: Key::Down, with_search: Key::PageDown },
-        Key::Dot => KeyPair{ without_search: Key::Dot, with_search: Key::Insert },
-        Key::Backspace => KeyPair{ without_search: Key::Backspace, with_search: Key::Delete },
-    }
+static REMAPPED_KEYS: LazyLock<SortedVecMap<Key, KeyPair>> = LazyLock::new(|| {
+    SortedVecMap::from_iter([
+        (Key::F1, KeyPair { without_search: Key::AcBack, with_search: Key::F1 }),
+        (Key::F2, KeyPair { without_search: Key::AcRefresh, with_search: Key::F2 }),
+        (Key::F3, KeyPair { without_search: Key::AcFullScreenView, with_search: Key::F3 }),
+        (Key::F4, KeyPair { without_search: Key::AcSelectTaskApplication, with_search: Key::F4 }),
+        (Key::F5, KeyPair { without_search: Key::BrightnessDown, with_search: Key::F5 }),
+        (Key::F6, KeyPair { without_search: Key::BrightnessUp, with_search: Key::F6 }),
+        (Key::F7, KeyPair { without_search: Key::PlayPause, with_search: Key::F7 }),
+        (Key::F8, KeyPair { without_search: Key::Mute, with_search: Key::F8 }),
+        (Key::F9, KeyPair { without_search: Key::VolumeDown, with_search: Key::F9 }),
+        (Key::F10, KeyPair { without_search: Key::VolumeUp, with_search: Key::F10 }),
+        (Key::Left, KeyPair { without_search: Key::Left, with_search: Key::Home }),
+        (Key::Right, KeyPair { without_search: Key::Right, with_search: Key::End }),
+        (Key::Up, KeyPair { without_search: Key::Up, with_search: Key::PageUp }),
+        (Key::Down, KeyPair { without_search: Key::Down, with_search: Key::PageDown }),
+        (Key::Dot, KeyPair { without_search: Key::Dot, with_search: Key::Insert }),
+        (Key::Backspace, KeyPair { without_search: Key::Backspace, with_search: Key::Delete }),
+    ])
 });
 
 /// A Chromebook dedicated keyboard handler.
