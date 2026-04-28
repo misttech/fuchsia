@@ -2383,6 +2383,9 @@ assembly_input_bundle("bluetooth_snoop_eager") {
 # Basic Bluetooth workflows for automated testing and tooling.
 assembly_input_bundle("bluetooth_affordances") {
   allowed_in = [ "eng" ]
+  flexible_packages = [
+    "//src/connectivity/bluetooth/testing/bt-affordances:bt-affordances-server",
+  ]
   core_shards = [ "//src/connectivity/bluetooth/testing/bt-affordances/meta/bt-affordances-server.core_shard.cml" ]
 }
 
