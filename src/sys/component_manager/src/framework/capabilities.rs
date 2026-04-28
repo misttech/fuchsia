@@ -6,6 +6,7 @@ use crate::model::component::WeakComponentInstance;
 use crate::sandbox_util::take_handle_as_stream;
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use capability_source::{CapabilitySource, RemotedAtSource};
 use cm_rust::CapabilityTypeName;
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::ServerEnd;
@@ -19,7 +20,6 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select};
 use moniker::Moniker;
 use router_error::{Explain, RouterError};
-use routing::capability_source::{CapabilitySource, RemotedAtSource};
 use routing::error::RoutingError;
 use runtime_capabilities::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dictionary, DirConnectable,

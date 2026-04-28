@@ -824,11 +824,11 @@ struct RemoteError(fresolution::ResolverError);
 mod tests {
     use super::*;
     use crate::bedrock::sandbox_construction::ComponentSandbox;
-    use crate::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
     use crate::component_instance::{ResolvedInstanceInterface, TopInstanceInterface};
     use crate::policy::GlobalPolicyChecker;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
+    use capability_source::{BuiltinCapabilities, NamespaceCapabilities};
     use cm_rust::offer::OfferDecl;
     use cm_rust::{CapabilityDecl, CollectionDecl, ExposeDecl, UseDecl};
     use cm_rust_testing::new_decl_from_json;

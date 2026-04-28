@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::bedrock::sandbox_construction::ComponentSandbox;
-use crate::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use crate::error::ComponentInstanceError;
 use crate::policy::GlobalPolicyChecker;
 use crate::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
 use async_trait::async_trait;
+use capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use cm_rust::offer::{OfferDecl, OfferSource};
 use cm_rust::{CapabilityDecl, CollectionDecl, ExposeDecl, UseDecl};
 use cm_types::{Name, Url};

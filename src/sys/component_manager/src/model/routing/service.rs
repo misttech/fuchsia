@@ -5,6 +5,7 @@
 use crate::model::component::WeakComponentInstance;
 use crate::model::component::instance::InstanceState;
 use async_trait::async_trait;
+use capability_source::{AggregateInstance, AggregateMember, CapabilitySource, ComponentSource};
 use cm_rust::{CapabilityTypeName, ChildRef};
 use cm_types::{IterablePath, Name, RelativePath};
 use errors::{ModelError, VfsError};
@@ -20,9 +21,6 @@ use futures::stream::TryStreamExt;
 use hooks::{Event, EventPayload, EventType, Hook, HooksRegistration};
 use log::{error, warn};
 use moniker::{ExtendedMoniker, Moniker};
-use routing::capability_source::{
-    AggregateInstance, AggregateMember, CapabilitySource, ComponentSource,
-};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
 use runtime_capabilities::{DirConnector, Router};
@@ -898,9 +896,9 @@ mod tests {
     use crate::model::testing::routing_test_helpers::{RoutingTest, RoutingTestBuilder};
     use ::routing::bedrock::dict_ext::DictExt;
     use ::routing::bedrock::request_metadata::service_metadata;
-    use ::routing::capability_source::ComponentCapability;
     use ::routing::component_instance::ComponentInstanceInterface;
     use ::routing::error::RoutingError;
+    use capability_source::ComponentCapability;
     use cm_rust::offer::*;
     use cm_rust::*;
     use cm_rust_testing::*;

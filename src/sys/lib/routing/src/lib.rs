@@ -4,7 +4,6 @@
 
 pub mod availability;
 pub mod bedrock;
-pub mod capability_source;
 pub mod component_instance;
 pub mod config;
 pub mod error;
@@ -14,9 +13,9 @@ pub mod rights;
 pub mod subdir;
 
 use crate::bedrock::request_metadata::directory_metadata;
-use crate::capability_source::CapabilitySource;
 use crate::component_instance::{ComponentInstanceInterface, ResolvedInstanceInterface};
 use crate::error::RoutingError;
+use capability_source::CapabilitySource;
 use cm_rust::{
     Availability, ExposeDecl, ExposeDeclCommon, ExposeTarget, OfferDecl, OfferDeclCommon,
     OfferTarget, StorageDecl, StorageDirectorySource, UseDecl,

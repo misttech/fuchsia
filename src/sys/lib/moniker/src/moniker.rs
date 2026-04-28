@@ -202,7 +202,7 @@ impl Moniker {
 
 impl FidlIntoNative<Moniker> for String {
     fn fidl_into_native(self) -> Moniker {
-        // This is used in routing::capability_source::CapabilitySource, and the FIDL version of
+        // This is used in capability_source::CapabilitySource, and the FIDL version of
         // this should only be generated in-process from already valid monikers.
         self.parse().unwrap()
     }

@@ -6,6 +6,9 @@ use crate::component_instance::{ComponentInstanceForAnalyzer, TopInstanceForAnal
 use crate::route::{TargetDecl, VerifyRouteResult};
 use crate::{PkgUrlMatch, match_absolute_component_urls};
 use anyhow::{Context, Result, anyhow};
+use capability_source::{
+    CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
+};
 use cm_config::RuntimeConfig;
 use cm_rust::{
     Availability, CapabilityTypeName, ComponentDecl, ExposeDecl, OfferDecl, OfferDeclCommon,
@@ -19,9 +22,6 @@ use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::FutureExt;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
-use routing::capability_source::{
-    CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
-};
 use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
 use routing::error::{ComponentInstanceError, RoutingError};
 use routing::policy::GlobalPolicyChecker;
@@ -985,6 +985,7 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use assert_matches::assert_matches;
+    use capability_source::CapabilitySource;
     use cm_config::RuntimeConfig;
     use cm_rust::{ComponentDecl, RegistrationSource, ResolverRegistration, RunnerRegistration};
     use cm_rust_testing::{
@@ -997,7 +998,6 @@ mod tests {
     use maplit::hashmap;
     use moniker::{ChildName, ExtendedMoniker, Moniker};
     use routing::bedrock::request_metadata::{resolver_metadata, runner_metadata};
-    use routing::capability_source::CapabilitySource;
     use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
     use routing::error::ComponentInstanceError;
     use runtime_capabilities::Capability;

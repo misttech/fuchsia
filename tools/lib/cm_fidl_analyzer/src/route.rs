@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::component_model::AnalyzerModelError;
+use capability_source::CapabilitySource;
 use cm_rust::offer::OfferDeclCommon;
 use cm_rust::{Availability, CapabilityTypeName, ExposeDeclCommon, SourceName, UseDeclCommon};
 use cm_types::Name;
@@ -12,7 +13,6 @@ use routing::bedrock::request_metadata::{
     config_metadata, dictionary_metadata, directory_metadata, event_stream_metadata,
     protocol_metadata, resolver_metadata, runner_metadata, service_metadata, storage_metadata,
 };
-use routing::capability_source::CapabilitySource;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, PartialEq, Debug, Serialize)]

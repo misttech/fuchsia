@@ -30,9 +30,6 @@ use ::routing::bedrock::sandbox_construction::{
     ComponentSandbox, build_component_sandbox, extend_dict_with_offers,
 };
 use ::routing::bedrock::structured_dict::{ComponentInput, StructuredDictMap};
-use ::routing::capability_source::{
-    CapabilitySource, ComponentCapability, ComponentSource, StorageBackingDirectorySource,
-};
 use ::routing::component_instance::{
     ComponentInstanceInterface, ResolvedInstanceInterface, ResolvedInstanceInterfaceExt,
     WeakComponentInstanceInterface,
@@ -43,6 +40,9 @@ use ::routing::subdir::SubDir;
 use ::routing::{DictExt, WeakInstanceTokenExt, WithPorcelain};
 use async_trait::async_trait;
 use async_utils::async_once::Once;
+use capability_source::{
+    CapabilitySource, ComponentCapability, ComponentSource, StorageBackingDirectorySource,
+};
 use clonable_error::ClonableError;
 use cm_fidl_validator::error::{DeclType, Error as ValidatorError};
 use cm_graph::DependencyNode;

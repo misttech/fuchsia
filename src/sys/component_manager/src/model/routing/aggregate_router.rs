@@ -7,6 +7,10 @@ use crate::model::routing::service::{
     AnonymizedAggregateCapabilityProvider, AnonymizedAggregateServiceDir, AnonymizedServiceRoute,
 };
 use async_trait::async_trait;
+use capability_source::{
+    AggregateInstance, AnonymizedAggregateSource, CapabilitySource,
+    FilteredAggregateProviderSource, ServiceInstance,
+};
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_component_runtime::RouteRequest;
@@ -18,10 +22,6 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::stream::FuturesUnordered;
 use router_error::RouterError;
 use routing::bedrock::aggregate_router::AggregateSource;
-use routing::capability_source::{
-    AggregateInstance, AnonymizedAggregateSource, CapabilitySource,
-    FilteredAggregateProviderSource, ServiceInstance,
-};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use runtime_capabilities::{

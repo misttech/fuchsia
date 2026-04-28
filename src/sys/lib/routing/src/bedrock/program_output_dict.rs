@@ -4,7 +4,6 @@
 
 use crate::bedrock::structured_dict::ComponentInput;
 use crate::bedrock::with_policy_check::WithPolicyCheck;
-use crate::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
 use crate::component_instance::{
     ComponentInstanceInterface, ExtendedInstanceInterface, WeakComponentInstanceInterface,
     WeakExtendedInstanceInterface,
@@ -12,6 +11,7 @@ use crate::component_instance::{
 use crate::error::RoutingError;
 use crate::{DictExt, LazyGet, WeakInstanceTokenExt};
 use async_trait::async_trait;
+use capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
 use cm_rust::{CapabilityTypeName, NativeIntoFidl};
 use cm_types::{Path, RelativePath};
 use component_id_index::InstanceId;

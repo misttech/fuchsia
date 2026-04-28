@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::builtin::dispatcher::Dispatcher;
-use ::routing::capability_source::InternalCapability;
 use async_trait::async_trait;
+use capability_source::{BuiltinSource, CapabilitySource, InternalCapability};
 use cm_config::SecurityPolicy;
 use cm_types::Name;
 use cm_util::{AbortHandle, AbortableScope};
@@ -25,7 +25,6 @@ use futures::future::{BoxFuture, Shared};
 use futures::{Future, FutureExt, TryStreamExt};
 use log::{error, warn};
 use namespace::{Namespace, NamespaceError};
-use routing::capability_source::{BuiltinSource, CapabilitySource};
 use routing::policy::ScopedPolicyChecker;
 use runner::component::{Controllable, Controller, StopInfo};
 use runtime_capabilities::{Capability, Dictionary, RemotableCapability, WeakInstanceToken};

@@ -14,6 +14,11 @@ use ::component_id_index::InstanceId;
 use assert_matches::assert_matches;
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
+use capability_source::{
+    AggregateCapability, AggregateMember, AnonymizedAggregateSource, BuiltinSource,
+    CapabilitySource, ComponentCapability, ComponentSource, FilteredAggregateProviderSource,
+    InternalCapability,
+};
 use cm_config::{
     AllowlistEntry, AllowlistEntryBuilder, CapabilityAllowlistKey, CapabilityAllowlistSource,
     DebugCapabilityAllowlistEntry, DebugCapabilityKey,
@@ -27,11 +32,6 @@ use fidl_fuchsia_component_runner as fcrunner;
 use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_io as fio;
 use moniker::{ExtendedMoniker, Moniker};
-use routing::capability_source::{
-    AggregateCapability, AggregateMember, AnonymizedAggregateSource, BuiltinSource,
-    CapabilitySource, ComponentCapability, ComponentSource, FilteredAggregateProviderSource,
-    InternalCapability,
-};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::debug_route_sandbox_path;
 use routing::error::RoutingError;

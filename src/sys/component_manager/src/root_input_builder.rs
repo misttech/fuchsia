@@ -11,15 +11,15 @@ use crate::sandbox_util::{LaunchTaskOnReceive, take_handle_as_stream};
 use ::routing::bedrock::dict_ext::DictExt;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_porcelain::WithPorcelain;
-use ::routing::capability_source::{
-    BuiltinSource, CapabilitySource, ComponentCapability, InternalCapability,
-    InternalEventStreamCapability, NamespaceSource,
-};
 use ::routing::error::{ErrorReporter, RouteRequestErrorInfo};
 use ::routing::policy::{GlobalPolicyChecker, ScopedPolicyChecker};
 use ::routing::resolving::ComponentAddress;
 use anyhow::format_err;
 use async_trait::async_trait;
+use capability_source::{
+    BuiltinSource, CapabilitySource, ComponentCapability, InternalCapability,
+    InternalEventStreamCapability, NamespaceSource,
+};
 use cm_config::{RuntimeConfig, SecurityPolicy};
 use cm_rust::{Availability, CapabilityTypeName, FidlIntoNative};
 use cm_types::{Name, RelativePath, Url};

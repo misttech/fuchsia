@@ -7,6 +7,7 @@ use crate::sandbox_util::LaunchTaskOnReceive;
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
 use async_trait::async_trait;
+use capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_internal as finternal;
@@ -18,7 +19,6 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use moniker::Moniker;
 use router_error::RouterError;
-use routing::capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
 use runtime_capabilities::{Data, Dictionary, Routable, Router, WeakInstanceToken};
 use std::sync::Arc;
 

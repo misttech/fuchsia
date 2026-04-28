@@ -12,12 +12,12 @@ use crate::model::testing::mocks::*;
 use crate::model::testing::out_dir::OutDir;
 use crate::model::testing::test_helpers::*;
 use crate::sandbox_util::LaunchTaskOnReceive;
-use ::routing::capability_source::{BuiltinSource, CapabilitySource, InternalCapability};
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing_test_helpers::{RoutingTestModel, RoutingTestModelBuilder, generate_storage_path};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
+use capability_source::{BuiltinSource, CapabilitySource, InternalCapability};
 use cm_config::{
     AllowlistEntry, CapabilityAllowlistKey, ChildPolicyAllowlists, DebugCapabilityAllowlistEntry,
     DebugCapabilityKey, RuntimeConfig, SecurityPolicy,

@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow};
+use capability_source::CapabilitySource;
 use cm_fidl_analyzer::component_instance::ComponentInstanceForAnalyzer;
 use cm_fidl_analyzer::{BreadthFirstModelWalker, ComponentInstanceVisitor, ComponentModelWalker};
 use cm_rust::UseDecl;
 use futures::FutureExt;
 use moniker::ExtendedMoniker;
 use routing::bedrock::request_metadata::resolver_metadata;
-use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
 use runtime_capabilities::Capability;
 use scrutiny_collection::model::DataModel;

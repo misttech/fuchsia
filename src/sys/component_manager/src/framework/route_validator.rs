@@ -5,8 +5,8 @@
 use crate::model::component::WeakComponentInstance;
 use crate::sandbox_util::take_handle_as_stream;
 use ::routing::bedrock::sandbox_construction::ComponentSandbox;
-use ::routing::capability_source::CapabilitySource;
 use ::routing::component_instance::ComponentInstanceInterface;
+use capability_source::CapabilitySource;
 use cm_rust::NativeIntoFidl;
 use cm_types::RelativePath;
 use fidl_fuchsia_component as fcomponent;

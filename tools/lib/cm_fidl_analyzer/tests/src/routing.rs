@@ -6,6 +6,10 @@ use anyhow::anyhow;
 use assert_matches::assert_matches;
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
+use capability_source::{
+    BuiltinSource, CapabilitySource, ComponentCapability, ComponentSource, FrameworkSource,
+    InternalCapability, InternalEventStreamCapability, NamespaceSource,
+};
 use cm_config::{
     AllowlistEntry, CapabilityAllowlistKey, DebugCapabilityAllowlistEntry, DebugCapabilityKey,
     RuntimeConfig, SecurityPolicy,
@@ -28,10 +32,6 @@ use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use moniker::Moniker;
 use router_error::Explain;
-use routing::capability_source::{
-    BuiltinSource, CapabilitySource, ComponentCapability, ComponentSource, FrameworkSource,
-    InternalCapability, InternalEventStreamCapability, NamespaceSource,
-};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::debug_route_sandbox_path;
 use routing::error::RoutingError;

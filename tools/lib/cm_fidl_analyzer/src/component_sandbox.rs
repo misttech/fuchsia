@@ -11,11 +11,6 @@ use ::routing::bedrock::sandbox_construction::EventStreamSourceRouter;
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::bedrock::with_policy_check::WithPolicyCheck;
 use ::routing::bedrock::with_porcelain::WithPorcelain;
-use ::routing::capability_source::{
-    BuiltinSource, CapabilitySource, CapabilityToCapabilitySource, ComponentCapability,
-    ComponentSource, FrameworkSource, InternalCapability, InternalEventStreamCapability,
-    NamespaceSource,
-};
 use ::routing::component_instance::{
     WeakComponentInstanceInterface, WeakExtendedInstanceInterface,
 };
@@ -24,6 +19,11 @@ use ::routing::error::{
 };
 use ::routing::policy::GlobalPolicyChecker;
 use async_trait::async_trait;
+use capability_source::{
+    BuiltinSource, CapabilitySource, CapabilityToCapabilitySource, ComponentCapability,
+    ComponentSource, FrameworkSource, InternalCapability, InternalEventStreamCapability,
+    NamespaceSource,
+};
 use cm_config::RuntimeConfig;
 use cm_rust::{
     CapabilityDecl, CapabilityTypeName, ComponentDecl, ConfigSingleValue, ConfigValue,

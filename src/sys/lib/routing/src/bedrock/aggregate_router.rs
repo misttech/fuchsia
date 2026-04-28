@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability_source::{AggregateInstance, CapabilitySource};
+use capability_source::{AggregateInstance, CapabilitySource};
 use cm_types::Name;
 use runtime_capabilities::{DirConnector, Router};
 use std::sync::Arc;

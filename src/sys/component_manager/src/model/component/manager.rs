@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use crate::model::component::{ComponentInstance, RouterError};
-use ::routing::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use ::routing::component_instance::TopInstanceInterface;
 use anyhow::format_err;
 use async_trait::async_trait;
+use capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use clonable_error::ClonableError;
 use errors::RebootError;
 use fidl::endpoints::{self};

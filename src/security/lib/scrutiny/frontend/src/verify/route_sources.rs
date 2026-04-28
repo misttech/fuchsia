@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, Result, anyhow};
+use capability_source::CapabilitySource;
 use cm_fidl_analyzer::component_model::{AnalyzerModelError, ComponentModelForAnalyzer};
 use cm_fidl_analyzer::route::VerifyRouteResult;
 use cm_rust::{CapabilityDecl, CapabilityTypeName, ComponentDecl, SourceName as _, UseDecl};
 use cm_types::{HandleType, Name, Path};
 use futures::FutureExt;
 use moniker::Moniker;
-use routing::capability_source::CapabilitySource;
 use routing::component_instance::ComponentInstanceInterface;
 use scrutiny_collection::core::{Component, ComponentSource, Components};
 use scrutiny_collection::model::DataModel;
@@ -378,7 +378,7 @@ fn process_verify_result<'a>(
             check_pkg_source(&verify_result.using_node, component_model, components)?;
 
             let source = verify_result.source.ok_or(RouteSourceError::MissingSourceCapability)?;
-            if let CapabilitySource::Component(routing::capability_source::ComponentSource {
+            if let CapabilitySource::Component(capability_source::ComponentSource {
                 capability,
                 moniker,
             }) = source

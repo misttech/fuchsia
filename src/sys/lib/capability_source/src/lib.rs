@@ -1,17 +1,16 @@
-// Copyright 2021 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::error::RoutingError;
 use cm_rust::{
     CapabilityDecl, CapabilityTypeName, ChildRef, ConfigurationDecl, DictionaryDecl, DirectoryDecl,
     EventStreamDecl, ExposeConfigurationDecl, ExposeDecl, ExposeDeclCommon, ExposeDictionaryDecl,
     ExposeDirectoryDecl, ExposeProtocolDecl, ExposeResolverDecl, ExposeRunnerDecl,
-    ExposeServiceDecl, ExposeSource, FidlIntoNative, NameMapping, NativeIntoFidl,
-    OfferConfigurationDecl, OfferDecl, OfferDeclCommon, OfferDictionaryDecl, OfferProtocolDecl,
-    OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource, OfferStorageDecl,
-    ProtocolDecl, RegistrationSource, ResolverDecl, RunnerDecl, ServiceDecl, StorageDecl, UseDecl,
-    UseDeclCommon, UseDirectoryDecl, UseProtocolDecl, UseServiceDecl, UseSource, UseStorageDecl,
+    ExposeServiceDecl, ExposeSource, FidlIntoNative, NativeIntoFidl, OfferConfigurationDecl,
+    OfferDecl, OfferDeclCommon, OfferDictionaryDecl, OfferProtocolDecl, OfferResolverDecl,
+    OfferRunnerDecl, OfferServiceDecl, OfferSource, OfferStorageDecl, ProtocolDecl,
+    RegistrationSource, ResolverDecl, RunnerDecl, ServiceDecl, StorageDecl, UseDecl, UseDeclCommon,
+    UseDirectoryDecl, UseProtocolDecl, UseServiceDecl, UseSource, UseStorageDecl,
 };
 use cm_rust_derive::FidlDecl;
 use cm_types::{Name, Path, RelativePath};
@@ -21,7 +20,6 @@ use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_sys2 as fsys;
 use from_enum::FromEnum;
-use futures::future::BoxFuture;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use runtime_capabilities::{Capability, Data};
 use std::fmt;
@@ -483,45 +481,6 @@ impl fmt::Display for AggregateInstance {
                 write!(f, "self")
             }
         }
-    }
-}
-
-/// The return value of the routing future returned by
-/// `FilteredAggregateCapabilityProvider::route_instances`, which contains information about the
-/// source of the route.
-#[derive(Debug)]
-pub struct FilteredAggregateCapabilityRouteData {
-    /// The source of the capability.
-    pub capability_source: CapabilitySource,
-    /// The filter to apply to service instances, as defined by
-    /// [`fuchsia.component.decl/OfferService.renamed_instances`](https://fuchsia.dev/reference/fidl/fuchsia.component.decl#OfferService).
-    pub instance_filter: Vec<NameMapping>,
-}
-
-/// A provider of a capability from an aggregation of zero or more offered instances of a
-/// capability, with filters.
-///
-/// This trait type-erases the capability type, so it can be handled and hosted generically.
-pub trait FilteredAggregateCapabilityProvider: Send + Sync {
-    /// Return a list of futures to route every instance in the aggregate to its source. Each
-    /// result is paired with the list of instances to include in the source.
-    fn route_instances(
-        &self,
-    ) -> Vec<BoxFuture<'_, Result<FilteredAggregateCapabilityRouteData, RoutingError>>>;
-
-    /// Trait-object compatible clone.
-    fn clone_boxed(&self) -> Box<dyn FilteredAggregateCapabilityProvider>;
-}
-
-impl Clone for Box<dyn FilteredAggregateCapabilityProvider> {
-    fn clone(&self) -> Self {
-        self.clone_boxed()
-    }
-}
-
-impl fmt::Debug for Box<dyn FilteredAggregateCapabilityProvider> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Box<dyn FilteredAggregateCapabilityProvider>").finish()
     }
 }
 

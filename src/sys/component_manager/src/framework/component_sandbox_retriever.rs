@@ -5,9 +5,9 @@
 use crate::model::component::WeakComponentInstance;
 use ::routing::bedrock::sandbox_construction::{ComponentSandbox, ProgramInput};
 use ::routing::bedrock::structured_dict::ComponentInput;
-use ::routing::capability_source::CapabilitySource;
 use ::routing::component_instance::ComponentInstanceInterface;
 use anyhow::{Error, format_err};
+use capability_source::CapabilitySource;
 use cm_types::Name;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component_internal as finternal;
@@ -101,7 +101,7 @@ async fn is_builtin_runner(program_input: &ProgramInput, target: WeakInstanceTok
     let Ok(source_data) = runner_router.route_debug(RouteRequest::default(), target).await else {
         return false;
     };
-    let source: ::routing::capability_source::CapabilitySource =
+    let source: CapabilitySource =
         source_data.try_into().expect("failed to convert into capability source");
     let CapabilitySource::Builtin(_) = source else {
         return false;

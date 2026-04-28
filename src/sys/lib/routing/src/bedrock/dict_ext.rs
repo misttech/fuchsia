@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability_source::{CapabilitySource, RemotedAtSource};
 use crate::error::RoutingError;
 use async_trait::async_trait;
+use capability_source::{CapabilitySource, RemotedAtSource};
 use cm_rust::CapabilityTypeName;
 use cm_types::{IterablePath, RelativePath};
 use fidl_fuchsia_component_runtime::RouteRequest;

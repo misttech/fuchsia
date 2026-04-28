@@ -8,12 +8,12 @@ use crate::model::start::Start;
 use crate::model::storage::admin_protocol::StorageAdmin;
 use crate::sandbox_util::LaunchTaskOnReceive;
 use ::routing::bedrock::dict_ext::DictExt;
-use ::routing::capability_source::{
-    CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
-    NamespaceSource,
-};
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
+use capability_source::{
+    CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
+    NamespaceSource, StorageBackingDirectorySource,
+};
 use cm_rust::StorageDirectorySource;
 use cm_types::RelativePath;
 use component_id_index::InstanceId;
@@ -24,7 +24,6 @@ use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
 use moniker::{ChildName, Moniker};
-use routing::capability_source::StorageBackingDirectorySource;
 use runtime_capabilities::{Dictionary, DirConnector, Router};
 use std::path::PathBuf;
 use std::sync::Arc;

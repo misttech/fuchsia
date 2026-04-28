@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability_source::CapabilitySource;
 use crate::component_instance::{ComponentInstanceInterface, WeakExtendedInstanceInterface};
 use crate::error::{ComponentInstanceError, RoutingError};
 use crate::policy::GlobalPolicyChecker;
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;

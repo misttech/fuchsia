@@ -9,6 +9,7 @@ use crate::component_sandbox::{
     new_event_stream_multiplexing_router, static_children_component_output_dictionary_routers,
 };
 use async_trait::async_trait;
+use capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use cm_config::RuntimeConfig;
 use cm_rust::offer::OfferDecl;
 use cm_rust::{CapabilityDecl, CollectionDecl, ComponentDecl, ExposeDecl, UseDecl};
@@ -20,7 +21,6 @@ use router_error::RouterError;
 use routing::bedrock::program_output_dict::build_program_output_dictionary;
 use routing::bedrock::sandbox_construction::{ComponentSandbox, build_component_sandbox};
 use routing::bedrock::structured_dict::ComponentInput;
-use routing::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use routing::component_instance::{
     ComponentInstanceInterface, ExtendedInstanceInterface, ResolvedInstanceInterface,
     TopInstanceInterface, WeakExtendedInstanceInterface,

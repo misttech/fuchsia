@@ -1981,12 +1981,10 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
         .expect("failed to route runner");
 
         match source {
-            routing::capability_source::CapabilitySource::Component(
-                routing::capability_source::ComponentSource {
+            capability_source::CapabilitySource::Component(
+                capability_source::ComponentSource {
                     capability:
-                        routing::capability_source::ComponentCapability::Runner(RunnerDecl {
-                            name, ..
-                        }),
+                        capability_source::ComponentCapability::Runner(RunnerDecl { name, .. }),
                     moniker,
                 },
             ) => {
@@ -2059,12 +2057,10 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
         .expect("failed to route runner");
 
         match source {
-            routing::capability_source::CapabilitySource::Component(
-                routing::capability_source::ComponentSource {
+            capability_source::CapabilitySource::Component(
+                capability_source::ComponentSource {
                     capability:
-                        routing::capability_source::ComponentCapability::Runner(RunnerDecl {
-                            name, ..
-                        }),
+                        capability_source::ComponentCapability::Runner(RunnerDecl { name, .. }),
                     moniker,
                 },
             ) => {
@@ -2133,12 +2129,11 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
             .expect("failed to route resolver");
 
         match source {
-            routing::capability_source::CapabilitySource::StorageBackingDirectory(
-                routing::capability_source::StorageBackingDirectorySource {
+            capability_source::CapabilitySource::StorageBackingDirectory(
+                capability_source::StorageBackingDirectorySource {
                     capability:
-                        routing::capability_source::ComponentCapability::Directory(DirectoryDecl {
-                            name,
-                            ..
+                        capability_source::ComponentCapability::Directory(DirectoryDecl {
+                            name, ..
                         }),
                     moniker,
                     ..
@@ -2206,9 +2201,9 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
         .expect("failed to route config");
 
         match source {
-            routing::capability_source::CapabilitySource::Component(
-                routing::capability_source::ComponentSource {
-                    capability: routing::capability_source::ComponentCapability::Config(_),
+            capability_source::CapabilitySource::Component(
+                capability_source::ComponentSource {
+                    capability: capability_source::ComponentCapability::Config(_),
                     moniker,
                 },
             ) => {
@@ -2284,9 +2279,9 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
         .expect("failed to route config");
 
         match source {
-            routing::capability_source::CapabilitySource::Component(
-                routing::capability_source::ComponentSource {
-                    capability: routing::capability_source::ComponentCapability::Config(_),
+            capability_source::CapabilitySource::Component(
+                capability_source::ComponentSource {
+                    capability: capability_source::ComponentCapability::Config(_),
                     moniker,
                 },
             ) => {

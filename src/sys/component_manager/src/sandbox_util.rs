@@ -6,11 +6,11 @@ use crate::model::component::{
     ComponentInstance, ExtendedInstance, WeakComponentInstance, WeakExtendedInstance,
 };
 use ::routing::WeakInstanceTokenExt;
-use ::routing::capability_source::CapabilitySource;
 use ::routing::error::{ComponentInstanceError, RoutingError};
 use ::routing::policy::GlobalPolicyChecker;
 use ::routing::rights::Rights;
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use cm_rust::CapabilityTypeName;
 use cm_types::RelativePath;
 use fidl::AsyncChannel;

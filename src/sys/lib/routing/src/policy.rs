@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability_source::{
+use capability_source::{
     AnonymizedAggregateSource, BuiltinSource, CapabilitySource, CapabilityToCapabilitySource,
     ComponentSource, EnvironmentSource, FilteredAggregateProviderSource, FilteredProviderSource,
     FrameworkSource, NamespaceSource, RemotedAtSource, StorageBackingDirectorySource, VoidSource,

@@ -7,9 +7,9 @@
 
 use crate::capability::{CapabilityProvider, FrameworkCapability};
 use crate::model::component::WeakComponentInstance;
-use ::routing::capability_source::InternalCapability;
 use ::routing::error::ComponentInstanceError;
 use async_trait::async_trait;
+use capability_source::InternalCapability;
 use errors::{CapabilityProviderError, PkgDirError};
 use vfs::ExecutionScope;
 use vfs::directory::entry::OpenRequest;

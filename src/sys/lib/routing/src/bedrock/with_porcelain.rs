@@ -464,11 +464,11 @@ mod tests {
     use super::*;
     use crate::ResolvedInstanceInterface;
     use crate::bedrock::sandbox_construction::ComponentSandbox;
-    use crate::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
     use crate::component_instance::{ExtendedInstanceInterface, TopInstanceInterface};
     use crate::error::ComponentInstanceError;
     use crate::policy::GlobalPolicyChecker;
     use assert_matches::assert_matches;
+    use capability_source::{BuiltinCapabilities, NamespaceCapabilities};
     use cm_rust_testing::UseBuilder;
     use cm_types::Url;
     use fuchsia_sync::Mutex;

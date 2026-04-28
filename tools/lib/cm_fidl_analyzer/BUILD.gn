@@ -18,6 +18,7 @@ rustc_library("cm_fidl_analyzer") {
     "//src/lib/fuchsia-sync",
     "//src/lib/fuchsia-url",
     "//src/sys/component_manager/lib/router_error",
+    "//src/sys/lib/capability_source",
     "//src/sys/lib/cm_config",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_types",

@@ -8,15 +8,15 @@ use crate::bedrock::structured_dict::{
 };
 use crate::bedrock::use_dictionary_router::UseDictionaryRouter;
 use crate::bedrock::with_service_renames_and_filter::WithServiceRenamesAndFilter;
-use crate::capability_source::{
-    AggregateCapability, AggregateInstance, AggregateMember, AnonymizedAggregateSource,
-    CapabilitySource, ComponentCapability, ComponentSource, FilteredAggregateProviderSource,
-    InternalCapability, InternalEventStreamCapability, VoidSource,
-};
 use crate::component_instance::{ComponentInstanceInterface, WeakComponentInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
 use crate::{DictExt, LazyGet, WithPorcelain};
 use async_trait::async_trait;
+use capability_source::{
+    AggregateCapability, AggregateInstance, AggregateMember, AnonymizedAggregateSource,
+    CapabilitySource, ComponentCapability, ComponentSource, FilteredAggregateProviderSource,
+    InternalCapability, InternalEventStreamCapability, VoidSource,
+};
 use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
     CapabilityTypeName, DictionaryValue, ExposeDecl, ExposeDeclCommon, FidlIntoNative, SourceName,

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability_source::{AggregateCapability, CapabilitySource, FilteredProviderSource};
 use async_trait::async_trait;
+use capability_source::{AggregateCapability, CapabilitySource, FilteredProviderSource};
 use cm_rust::NameMapping;
 use cm_rust::offer::{OfferDecl, OfferServiceDecl};
 use fidl_fuchsia_component_runtime::RouteRequest;

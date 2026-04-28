@@ -8,12 +8,12 @@ pub mod pre_signing;
 pub mod route_sources;
 pub mod structured_config;
 
+use capability_source::CapabilitySource;
 use cm_fidl_analyzer::component_model::AnalyzerModelError;
 use cm_fidl_analyzer::route::TargetDecl;
 use cm_rust::CapabilityTypeName;
 use cm_types::Name;
 use moniker::Moniker;
-use routing::capability_source::CapabilitySource;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;

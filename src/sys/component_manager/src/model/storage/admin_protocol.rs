@@ -13,12 +13,12 @@
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::routing::RoutingFailureErrorReporter;
 use crate::model::storage;
-use ::routing::capability_source::{
-    CapabilitySource, ComponentCapability, ComponentSource, StorageBackingDirectorySource,
-};
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RouteRequestErrorInfo;
 use anyhow::{Context, Error, format_err};
+use capability_source::{
+    CapabilitySource, ComponentCapability, ComponentSource, StorageBackingDirectorySource,
+};
 use cm_rust::{CapabilityDecl, CapabilityTypeName, StorageDecl, StorageDirectorySource, UseDecl};
 use cm_types::RelativePath;
 use component_id_index::InstanceId;

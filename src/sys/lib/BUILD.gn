@@ -7,6 +7,7 @@ group("tests") {
 
   deps = [
     "bitflags-serde-legacy:tests",
+    "capability_source:tests",
     "cm_config:tests",
     "cm_fidl_validator:tests",
     "cm_rust:tests",

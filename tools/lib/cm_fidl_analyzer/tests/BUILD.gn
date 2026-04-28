@@ -24,6 +24,7 @@ rustc_test("tests") {
 
     # Depend on zx-status crate instead of zx so that this builds for host.
     "//sdk/rust/zx-status",
+    "//src/sys/lib/capability_source",
     "//src/sys/lib/cm_config",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_rust/testing",

@@ -5,12 +5,12 @@
 use crate::framework::capabilities;
 use crate::model::testing::out_dir::OutDir;
 use crate::model::testing::routing_test_helpers::RoutingTestBuilder;
-use ::routing::capability_source::{CapabilitySource, InternalCapability, VoidSource};
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::debug_route_sandbox_path;
 use ::routing_test_helpers::dictionary::CommonDictionaryTest;
 use ::routing_test_helpers::{CheckUse, ExpectedResult};
 use assert_matches::assert_matches;
+use capability_source::{CapabilitySource, InternalCapability, VoidSource};
 use cm_rust::offer::*;
 use cm_rust::*;
 use cm_rust_testing::*;

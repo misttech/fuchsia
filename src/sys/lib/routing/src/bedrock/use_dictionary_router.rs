@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::capability_source::CapabilitySource;
 use crate::error::RoutingError;
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use futures::StreamExt;
 use futures::channel::oneshot;
@@ -160,7 +160,7 @@ async fn try_get_router_source(
     capability: &Capability,
     target: WeakInstanceToken,
 ) -> Option<String> {
-    let source: crate::capability_source::CapabilitySource = match capability {
+    let source: CapabilitySource = match capability {
         Capability::DictionaryRouter(router) => {
             match router.route_debug(RouteRequest::default(), target).await {
                 Ok(data) => data.try_into().ok()?,

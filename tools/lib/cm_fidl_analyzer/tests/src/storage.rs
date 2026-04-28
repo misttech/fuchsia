@@ -4,6 +4,7 @@
 
 mod tests {
     use crate::routing::RoutingTestBuilderForAnalyzer;
+    use capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
     use cm_fidl_analyzer::route::TargetDecl;
     use cm_rust::{CapabilityDecl, CapabilityTypeName, OfferSource, StorageDirectorySource};
     use cm_rust_testing::*;
@@ -11,7 +12,6 @@ mod tests {
     use fidl_fuchsia_component_decl as fdecl;
     use fidl_fuchsia_io as fio;
     use moniker::Moniker;
-    use routing::capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
     use routing::component_instance::ComponentInstanceInterface;
     use routing_test_helpers::component_id_index::make_index_file;
     use routing_test_helpers::storage::CommonStorageTest;

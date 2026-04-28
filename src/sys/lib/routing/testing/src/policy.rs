@@ -5,6 +5,10 @@
 use anyhow::Error;
 use assert_matches::assert_matches;
 use async_trait::async_trait;
+use capability_source::{
+    BuiltinSource, CapabilitySource, CapabilityToCapabilitySource, ComponentCapability,
+    ComponentSource, FrameworkSource, InternalCapability, NamespaceSource,
+};
 use cm_config::{
     AllowlistEntry, AllowlistEntryBuilder, CapabilityAllowlistKey, CapabilityAllowlistSource,
     ChildPolicyAllowlists, DebugCapabilityAllowlistEntry, DebugCapabilityKey, JobPolicyAllowlists,
@@ -14,10 +18,6 @@ use cm_rust::{CapabilityTypeName, ProtocolDecl, StorageDecl, StorageDirectorySou
 use cm_types::Name;
 use fidl_fuchsia_component_decl as fdecl;
 use moniker::{ExtendedMoniker, Moniker};
-use routing::capability_source::{
-    BuiltinSource, CapabilitySource, CapabilityToCapabilitySource, ComponentCapability,
-    ComponentSource, FrameworkSource, InternalCapability, NamespaceSource,
-};
 use routing::component_instance::ComponentInstanceInterface;
 use routing::policy::GlobalPolicyChecker;
 use std::collections::{HashMap, HashSet};
