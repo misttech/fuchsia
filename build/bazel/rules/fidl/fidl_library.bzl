@@ -8,7 +8,6 @@ load("@fuchsia_build_info//:args.bzl", "runtime_supported_api_levels")
 load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
 load(
     "//build/bazel/bazel_idk/private:idk_common.bzl",
-    "get_allowlist_target",
     "get_api_file_path",
     "get_atom_visibility",
     "get_idk_deps",
@@ -248,17 +247,10 @@ def _fidl_library_impl(
         enable_zither,
         additional_cpp_configs,
         non_fidl_deps,  # buildifier: disable=unused-variable - For GN conversion only.
-        atom_type,
-        allowlist,
         hlcpp_lib_deps,
         testonly,
         visibility):
     """Implementation of the fidl_library() macro."""
-
-    # The atom type is passed in because the wrapper macro uses it to determine
-    # `allowlist`. Verify that it is correct.
-    if atom_type != "fidl_library":
-        fail("Atom type '%s' is incorrect for this macro." % atom_type)
 
     if available and not testonly:
         fail("`available` is only allowed for `testonly` libraries.")
@@ -397,6 +389,8 @@ def _fidl_library_impl(
     # TODO(https://fxbug.dev/442637596): Implement host test data or similar in the proper conditions.
 
     if category:
+        atom_type = "fidl_library"
+
         # Verify the allowlist here to catch cases where this macro is used but
         # there is no dependency on the atom target.
         verify_target_is_in_allowlist(name, atom_type, category, stable, testonly)
@@ -446,7 +440,6 @@ def _fidl_library_impl(
             deps = get_idk_deps(deps),
             atom_build_deps = idk_atom_build_deps,
             additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
-            allowlist = allowlist,
             testonly = testonly,
             visibility = get_atom_visibility(visibility, is_fidl_library = True),
         )
@@ -629,16 +622,6 @@ If not specified, appropriate values will be determined based on the target API 
             default = [],
             configurable = False,
         ),
-        "atom_type": attr.string(
-            doc = "The type of IDK atom. Must be 'fidl_library'. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
-        "allowlist": attr.label(
-            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
         "hlcpp_lib_deps": attr.label_list(
             doc = "Additional dependencies for HLCPP bindings. Set by the wrapper macro.",
             default = [],
@@ -657,18 +640,12 @@ def fidl_library(name, library_name = "", category = "", stable = False, api_fil
     if not library_name:
         library_name = name
 
-    atom_type = "fidl_library"
-
     _fidl_library(
         name = name,
         library_name = library_name,
         category = category,
         stable = stable,
         api_file_path = get_api_file_path(library_name, stable, api_file_path),
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable),
-        # This must be set here because they have an allowlist that must be evaluated where the
-        # target is defined.
         hlcpp_lib_deps = select({
             "@platforms//os:fuchsia": ["//sdk/lib/fidl/hlcpp"],
             "//conditions:default": ["//sdk/lib/fidl/hlcpp:hlcpp_base"],

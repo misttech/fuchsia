@@ -15,7 +15,6 @@ load(
 load(":idk_atom.bzl", "ConfigurableInfo", "idk_atom")
 load(
     ":idk_common.bzl",
-    "get_allowlist_target",
     "get_api_file_path",
     "get_atom_visibility",
     "get_idk_deps",
@@ -102,8 +101,6 @@ def _idk_cc_source_library_impl(
         implementation_deps,
         include_base,
         api_file_path,
-        atom_type,
-        allowlist,
         testonly,
         visibility,
         build_as_static,  # buildifier: disable=unused-variable - For GN conversion only.
@@ -112,12 +109,6 @@ def _idk_cc_source_library_impl(
         configs,  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
     """Implementation for the idk_cc_source_library() macro."""
-
-    # The atom type is passed in because the wrapper macro uses it to determine
-    # `allowlist`. Verify that it is correct.
-    if atom_type != "cc_source_library":
-        fail("Atom type '%s' is incorrect for this macro." % atom_type)
-
     if "data" in kwargs:
         fail("Rumtime dependencies are not supported for source libraries.")
 
@@ -166,9 +157,6 @@ def _idk_cc_source_library_impl(
     cc_library(
         name = name,
         srcs = srcs_for_bazel_library,
-        # Add a deps on the allowlist to catch cases where the macro is used but
-        # there is no dependency on the atom target.
-        data = [allowlist],
         hdrs = hdrs_for_bazel_library,
         deps = deps + select_for_fuchsia(fuchsia_deps, non_fuchsia_deps),
         # TODO(https://fxbug.dev/428229472): If we must support
@@ -248,6 +236,8 @@ def _idk_cc_source_library_impl(
         srcs = srcs_for_idk,
     )
 
+    atom_type = "cc_source_library"
+
     # Verify the allowlist here to catch cases where this macro is used but
     # there is no dependency on the atom target.
     verify_target_is_in_allowlist(name, atom_type, category, stable, testonly)
@@ -266,7 +256,6 @@ def _idk_cc_source_library_impl(
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         configurable_info = ":" + configurable_info_name,
-        allowlist = allowlist,
         testonly = testonly,
         visibility = get_atom_visibility(visibility),
     )
@@ -405,16 +394,6 @@ GN equivalent: `api`""",
             allow_single_file = True,
             configurable = False,
         ),
-        "atom_type": attr.string(
-            doc = "The type of IDK atom. Must be 'cc_source_library'. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
-        "allowlist": attr.label(
-            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
         # TODO(https://fxbug.dev/425931839): Remove these when no longer converting to GN.
         # TODO(https://fxbug.dev/421888626): Use this argument if there is a
         # way to tell Bazel to not always compile the source set.
@@ -449,15 +428,11 @@ def idk_cc_source_library(idk_name, category, stable, api_file_path = None, **kw
 
     See `_idk_cc_source_library()` for documentation.
     """
-    atom_type = "cc_source_library"
-
     _idk_cc_source_library(
         idk_name = idk_name,
         category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable),
         **kwargs
     )
 
@@ -528,14 +503,10 @@ def idk_cc_source_library_zx(idk_name, category, stable, api_file_path = None, *
 
     See `_idk_cc_source_library_zx()` for documentation.
     """
-    atom_type = "cc_source_library"
-
     _idk_cc_source_library_zx(
         idk_name = idk_name,
         category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable),
         **kwargs
     )

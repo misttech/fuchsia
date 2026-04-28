@@ -42,7 +42,6 @@ def analysis_test_suite(name):
         meta_dest = "/pkg/test_not_in_allowlist",
         stable = True,
         type = "data",
-        allowlist = "//build/bazel/bazel_idk:partner_idk_data_allowlist",
         tags = ["manual"],
     )
 
@@ -53,31 +52,26 @@ def analysis_test_suite(name):
         size = "small",
     )
 
-    # This test fails during loading due to the `get_allowlist_target()` call
-    # being in a macro.
-    # TODO(https://fxbug.dev/496597510): Enable this test after removing the
-    # deps-based allowlist.
-    # # An atom configuration for which there is no corresponding allowlist.
-    # idk_atom(
-    #     name = "test_atom_no_allowlist_idk",
-    #     testonly = False,
-    #     api_area = "Developer",
-    #     category = "prebuilt",  # There is no allowlist for prebuilt data atoms.
-    #     id = "sdk://pkg/test_no_allowlist",
-    #     idk_name = "test_no_allowlist",
-    #     meta_dest = "/pkg/test_no_allowlist",
-    #     stable = True,
-    #     type = "data",
-    #     allowlist = "//build/bazel/bazel_idk:partner_idk_data_allowlist",
-    #     tags = ["manual"],
-    # )
+    # An atom configuration for which there is no corresponding allowlist.
+    idk_atom(
+        name = "test_atom_no_allowlist_idk",
+        testonly = False,
+        api_area = "Developer",
+        category = "prebuilt",  # There is no allowlist for prebuilt data atoms.
+        id = "sdk://pkg/test_no_allowlist",
+        idk_name = "test_no_allowlist",
+        meta_dest = "/pkg/test_no_allowlist",
+        stable = True,
+        type = "data",
+        tags = ["manual"],
+    )
 
-    # failure_test(
-    #     name = "no_allowlist_failure_test",
-    #     target_under_test = ":test_atom_no_allowlist_idk",
-    #     expected_message = "No allowlist for type='data', category='prebuilt', stable='True'. Does target `//build/bazel/bazel_idk/tests:test_atom_no_allowlist_idk` have the correct values? Add a new allowlist when adding support for other categories or stability.",
-    #     size = "small",
-    # )
+    failure_test(
+        name = "no_allowlist_failure_test",
+        target_under_test = ":test_atom_no_allowlist_idk",
+        expected_message = "No allowlist for type='data', category='prebuilt', stable='True'. Does target `//build/bazel/bazel_idk/tests:test_atom_no_allowlist_idk` have the correct values? Add a new allowlist when adding support for other categories or stability.",
+        size = "small",
+    )
 
     # NOTE: We cannot test cases of attribute combinations that do not have an
     # allowlist for most atom types because their macros call
@@ -87,6 +81,6 @@ def analysis_test_suite(name):
         name = name,
         tests = [
             ":not_in_allowlist_failure_test",
-            # ":no_allowlist_failure_test",
+            ":no_allowlist_failure_test",
         ],
     )

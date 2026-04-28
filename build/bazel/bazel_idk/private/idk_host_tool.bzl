@@ -9,7 +9,6 @@ load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool", "go_binary_host
 load(":idk_atom.bzl", "idk_atom")
 load(
     ":idk_common.bzl",
-    "get_allowlist_target",
     "get_atom_visibility",
     "json_encode_dict_values",
     "verify_target_is_in_allowlist",
@@ -25,16 +24,9 @@ def _idk_host_tool_impl(
         tool,
         output_name,
         target_compatible_with,
-        atom_type,
-        allowlist,
         visibility):
     if target_compatible_with != HOST_CONSTRAINTS:
         fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
-
-    # The atom type is passed in because the wrapper macros use it to determine
-    # `allowlist`. Verify that it is correct.
-    if atom_type != "host_tool":
-        fail("Atom type '%s' is incorrect for this macro." % atom_type)
 
     if not output_name:
         output_name = idk_name
@@ -45,6 +37,8 @@ def _idk_host_tool_impl(
     additional_prebuild_info_values = {
         "file_base": file_base,
     }
+
+    atom_type = "host_tool"
 
     # Verify the allowlist here to catch cases where this macro is used but
     # there is no dependency on the atom target.
@@ -69,7 +63,6 @@ def _idk_host_tool_impl(
         files_map = {idk_path: tool},
         atom_build_deps = [],
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
-        allowlist = allowlist,
         visibility = get_atom_visibility(visibility),
         target_compatible_with = HOST_CONSTRAINTS,
     )
@@ -122,16 +115,6 @@ GN note: The default relationship to `idk_name` is different from GN.""",
             configurable = False,
             default = HOST_CONSTRAINTS,
         ),
-        "atom_type": attr.string(
-            doc = "The type of IDK atom. Must be 'host_tool'. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
-        "allowlist": attr.label(
-            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
     },
 )
 
@@ -150,13 +133,10 @@ def idk_host_tool(name, category, tool, **kwargs):
         tool: A list containing a single label of the tool binary.
         **kwargs: See `_idk_host_tool()` for details.
     """
-    atom_type = "host_tool"
     _idk_host_tool(
         name = name + "_idk",
         category = category,
         tool = tool[0],
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable = True),
         **kwargs
     )
 
@@ -165,8 +145,6 @@ def _idk_cc_binary_host_tool_impl(
         idk_name,
         category,
         api_area,
-        atom_type,
-        allowlist,
         target_compatible_with,
         **kwargs):
     if target_compatible_with != HOST_CONSTRAINTS:
@@ -187,11 +165,9 @@ def _idk_cc_binary_host_tool_impl(
         api_area = api_area,
         tool = binary_name + "_tool",
         target_compatible_with = HOST_CONSTRAINTS,
-        atom_type = atom_type,
-        allowlist = allowlist,
     )
 
-_idk_cc_binary_host_tool = macro(
+idk_cc_binary_host_tool = macro(
     doc = """Defines a `cc_binary()` host tool in the IDK.
 
     Use the `idk_cc_binary_host_tool()` wrapper instead.
@@ -215,16 +191,6 @@ _idk_cc_binary_host_tool = macro(
             doc = "The API area responsible for maintaining this tool.",
             mandatory = True,
         ),
-        "atom_type": attr.string(
-            doc = "The type of IDK atom. Must be 'host_tool'. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
-        "allowlist": attr.label(
-            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
         # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
         # being used for host tools.
         "target_compatible_with": attr.string_list(
@@ -234,22 +200,6 @@ _idk_cc_binary_host_tool = macro(
         ),
     },
 )
-
-def idk_cc_binary_host_tool(idk_name, category, **kwargs):
-    """Defines a `cc_binary()` host tool in the IDK.
-
-    This is a wrapper around `_idk_cc_binary_host_tool()` that sets the allowlist.
-
-    See `_idk_cc_binary_host_tool()` for documentation.
-    """
-    atom_type = "host_tool"
-    _idk_cc_binary_host_tool(
-        idk_name = idk_name,
-        category = category,
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable = True),
-        **kwargs
-    )
 
 # This must be a legacy macro with `**kwargs` because go_binary_host_tool is a
 # legacy macro, which cannot be used with `inherit_attrs` in a symbolic macro.
@@ -285,7 +235,6 @@ def idk_go_binary_host_tool(
         **kwargs
     )
 
-    atom_type = "host_tool"
     _idk_host_tool(
         name = name + "_idk",
         idk_name = idk_name,
@@ -293,6 +242,4 @@ def idk_go_binary_host_tool(
         api_area = api_area,
         tool = binary_name + "_tool",
         target_compatible_with = HOST_CONSTRAINTS,
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable = True),
     )

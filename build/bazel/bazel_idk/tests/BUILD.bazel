@@ -53,7 +53,7 @@ create_test_atom_info(
     api_area = "Developer",
     api_contents_map = {},
     api_file_path = None,
-    atom_build_deps = ["//build/bazel/bazel_idk:partner_idk_data_allowlist"],
+    atom_build_deps = [],
     atom_files_map_generated_files = {},
     atom_files_map_source_files = {
         "data/config/test_data_idk_name/config.json": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
@@ -131,7 +131,6 @@ create_test_atom_info(
     atom_build_deps = [
         "//build/bazel/bazel_idk/tests:test-source-library.verify_no_duplicate_files",
         "//build/bazel/bazel_idk/tests:test-source-library.verify_pragma_once",
-        "//build/bazel/bazel_idk:partner_idk_cc_source_library_allowlist",
         "//build/bazel/bazel_idk/tests:test-source-library_idk_verify_api",
     ],
     atom_files_map_generated_files = {},
@@ -231,7 +230,6 @@ create_test_atom_info(
         "//build/bazel/bazel_idk/tests:test-shared-library.verify_no_duplicate_files",
         "//build/bazel/bazel_idk/tests:test-shared-library.verify_pragma_once",
         "//build/bazel/bazel_idk/tests:test-shared-library.verify_public_symbols",
-        "//build/bazel/bazel_idk:partner_idk_cc_prebuilt_shared_library_allowlist",
         "//build/bazel/bazel_idk/tests:test-shared-library_idk_verify_api",
     ],
     atom_files_map_generated_files = {
@@ -395,7 +393,6 @@ create_test_atom_info(
     atom_build_deps = [
         "//build/bazel/bazel_idk/tests:test-static-library.verify_no_duplicate_files",
         "//build/bazel/bazel_idk/tests:test-static-library.verify_pragma_once",
-        "//build/bazel/bazel_idk:partner_idk_cc_prebuilt_static_library_allowlist",
         "//build/bazel/bazel_idk/tests:test-static-library_idk_verify_api",
     ],
     atom_files_map_generated_files = {
@@ -513,7 +510,6 @@ create_test_atom_info(
     atom_build_deps = [
         "//build/bazel/bazel_idk/tests:platform_dependent_source_library.verify_no_duplicate_files",
         "//build/bazel/bazel_idk/tests:platform_dependent_source_library.verify_pragma_once",
-        "//build/bazel/bazel_idk:partner_idk_cc_source_library_allowlist",
         "//build/bazel/bazel_idk/tests:platform_dependent_source_library_idk_verify_api",
     ],
     atom_files_map_generated_files = {},

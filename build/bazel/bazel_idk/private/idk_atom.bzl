@@ -12,7 +12,6 @@ load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 load(
     ":idk_common.bzl",
-    "get_allowlist_target",
     "get_atom_visibility",
     "verify_atom_is_in_allowlist",
 )
@@ -295,15 +294,6 @@ def _create_idk_atom_impl(ctx):
     if not ctx.attr.name.endswith("_idk"):
         fail("IDK atom `name`s must end with `_idk`.")
 
-    verify_atom_is_in_allowlist(
-        label = ctx.label,
-        type = ctx.attr.type,
-        category = ctx.attr.category,
-        stable = ctx.attr.stable,
-        testonly = ctx.attr.testonly,
-        prebuilt_library_format = ctx.attr.prebuilt_library_format,
-    )
-
     # Merge additional prebuild info dictionaries if necessary.
     additional_prebuild_info = ctx.attr.additional_prebuild_info
     if ctx.attr.configurable_info:
@@ -327,6 +317,26 @@ def _create_idk_atom_impl(ctx):
     # Though the `files_map` has been modified, there can be no new dependencies
     # so `all_deps_depset` is still correct.
     additional_prebuild_info, files_map = _get_additional_info(ctx, files_map, additional_prebuild_info)
+
+    prebuilt_library_format = ctx.attr.prebuilt_library_format
+    if bool(prebuilt_library_format) != (ctx.attr.type == "cc_prebuilt_library"):
+        fail("`prebuilt_library_format` must be set if and only if `type` is 'cc_prebuilt_library'.")
+    if prebuilt_library_format:
+        prebuild_info_format = json.decode(additional_prebuild_info["format"])
+        if prebuilt_library_format != prebuild_info_format:
+            fail("`prebuilt_library_format` `%s` does not match `%s` in `additional_prebuild_info`." %
+                 (prebuilt_library_format, prebuild_info_format))
+    elif "format" in additional_prebuild_info:
+        fail("`additional_prebuild_info` must not contain `format` when `prebuilt_library_format` is not specified.")
+
+    verify_atom_is_in_allowlist(
+        label = ctx.label,
+        type = ctx.attr.type,
+        category = ctx.attr.category,
+        stable = ctx.attr.stable,
+        testonly = ctx.attr.testonly,
+        prebuilt_library_format = prebuilt_library_format,
+    )
 
     return [
         DefaultInfo(files = all_deps_depset),
@@ -496,27 +506,9 @@ def _idk_atom_impl(
         api_file_path,
         api_contents_map,
         atom_build_deps,
-        additional_prebuild_info,
         configurable_info,
-        prebuilt_library_format,
-        allowlist,
         testonly,
         **kwargs):
-    if prebuilt_library_format:
-        prebuild_info_format = json.decode(additional_prebuild_info["format"])
-        if prebuilt_library_format != prebuild_info_format:
-            fail("`prebuilt_library_format` `%s` does not match `%s` in `additional_prebuild_info`." %
-                 (prebuilt_library_format, prebuild_info_format))
-    elif "format" in additional_prebuild_info:
-        fail("`additional_prebuild_info` must not contain `format` when `prebuilt_library_format` is not specified.")
-
-    # The allowlist must be passed as a label attribute due to
-    # https://fxbug.dev/446911800. Verify that the correct allowlist is passed.
-    allowlist_string = "//%s:%s" % (allowlist.package, allowlist.name)
-    expected_allowlist = get_allowlist_target(type, category, stable, prebuilt_library_format)
-    if allowlist_string != expected_allowlist:
-        fail("`allowlist` must be `%s`, but was `%s`." % (expected_allowlist, allowlist_string))
-
     if type not in _TYPES_SUPPORTING_UNSTABLE_ATOMS and not stable:
         fail("`stable` must be true unless the type ('%s') is one of %s." % (type, _TYPES_SUPPORTING_UNSTABLE_ATOMS))
 
@@ -526,11 +518,6 @@ def _idk_atom_impl(
     is_type_not_requiring_compatibility = type in _TYPES_NOT_REQUIRING_COMPATIBILITY
     if stable and not api_file_path and not is_type_not_requiring_compatibility:
         fail("All atoms with types ('%s') requiring compatibility must specify an `api_file_path` unless explicitly unstable." % type)
-
-    # Ensure the atom is in the appropriate allowlist.
-    # The attribute is immutable, so create a mutable copy.
-    atom_build_deps = list(atom_build_deps)
-    atom_build_deps.append(allowlist)
 
     _verify_api = bool(api_file_path)
     if _verify_api:
@@ -560,6 +547,8 @@ def _idk_atom_impl(
             visibility = ["//build/bazel/bazel_idk/tests:__subpackages__"],
         )
 
+        # The attribute is immutable, so create a mutable copy.
+        atom_build_deps = list(atom_build_deps)
         atom_build_deps.append(":%s" % verify_api_target_name)
 
     _create_idk_atom(
@@ -570,9 +559,7 @@ def _idk_atom_impl(
         api_file_path = api_file_path,
         api_contents_map = api_contents_map,
         atom_build_deps = atom_build_deps,
-        additional_prebuild_info = additional_prebuild_info,
         configurable_info = configurable_info,
-        prebuilt_library_format = prebuilt_library_format,
         testonly = testonly,
         **kwargs
     )
@@ -620,23 +607,6 @@ Atoms will be checked for category and API area violations when generating the I
         "atom_build_deps": attr.label_list(
             doc = "See _create_idk_atom().",
             mandatory = False,
-            configurable = False,
-        ),
-        "additional_prebuild_info": attr.string_dict(
-            doc = "A dictionary of type-specific prebuild info for the atom, with values encoded as JSON strings.",
-            mandatory = False,
-            default = {},
-            configurable = False,
-        ),
-        "prebuilt_library_format": attr.string(
-            doc = "The format of a prebuilt library. Only applies to 'cc_prebuilt_library' type atoms.",
-            default = "",
-            configurable = False,
-        ),
-        # Non-inherited attributes.
-        "allowlist": attr.label(
-            doc = "The allowlist to check for this target configuration. Set by a wrapper macro.",
-            mandatory = True,
             configurable = False,
         ),
     },

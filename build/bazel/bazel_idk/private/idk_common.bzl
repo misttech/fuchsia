@@ -55,53 +55,6 @@ def _get_idk_label(label_str):
 def get_idk_deps(underlying_deps):
     return [_get_idk_label(dep) for dep in underlying_deps]
 
-def get_allowlist_target(type, category, stable, prebuilt_library_format = None):
-    """Returns the allowlist target for the combination of parameters.
-
-    All atoms must be in an allowlist.
-    """
-    if bool(prebuilt_library_format) != (type == "cc_prebuilt_library"):
-        fail("`prebuilt_library_format` must be set if and only if `type` is 'cc_prebuilt_library'.")
-
-    if type == "cc_source_library":
-        if category == "partner":
-            if stable:
-                return "//build/bazel/bazel_idk:partner_idk_cc_source_library_allowlist"
-            else:
-                return "//build/bazel/bazel_idk:partner_idk_unstable_cc_source_library_allowlist"
-    elif type == "cc_prebuilt_library":
-        if category == "partner" and stable:
-            if prebuilt_library_format == "shared":
-                return "//build/bazel/bazel_idk:partner_idk_cc_prebuilt_shared_library_allowlist"
-            elif prebuilt_library_format == "static":
-                return "//build/bazel/bazel_idk:partner_idk_cc_prebuilt_static_library_allowlist"
-            else:
-                fail("Unrecognized prebuilt library format: '%s'" % prebuilt_library_format)
-    elif type == "data":
-        if category == "partner" and stable:
-            return "//build/bazel/bazel_idk:partner_idk_data_allowlist"
-    elif type == "fidl_library":
-        if category == "partner":
-            if stable:
-                return "//sdk/fidl:partner_idk_fidl_library_allowlist"
-            else:
-                return "//sdk/fidl:partner_idk_unstable_fidl_library_allowlist"
-        elif category == "prebuilt" and stable:
-            return "//sdk/fidl:prebuilt_fidl_library_allowlist"
-        elif category == "host_tool" and stable:
-            return "//sdk/fidl:host_tool_fidl_library_allowlist"
-        elif category == "compat_test" and stable:
-            return "//sdk/fidl:compat_test_fidl_library_allowlist"
-        elif category == "" and not stable:
-            return "//sdk/fidl:no_category_fidl_library_allowlist"
-    elif type == "host_tool":
-        if category == "partner" and stable:
-            return "//build/bazel/bazel_idk:partner_idk_host_tool_allowlist"
-    else:
-        fail("Unhandled atom type: %s" % type)
-
-    fail("Create a separate allowlist when adding support for other categories or stability.")
-
 def verify_target_is_in_allowlist(
         name,
         type,

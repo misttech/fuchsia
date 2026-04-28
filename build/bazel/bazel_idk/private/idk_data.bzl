@@ -18,7 +18,6 @@ def _idk_data_impl(
         api_area,
         type,
         file,
-        allowlist,
         testonly,
         visibility):
     """Implementation for the `idk_data()` macro."""
@@ -65,12 +64,11 @@ def _idk_data_impl(
         api_area = api_area,
         files_map = files_map,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
-        allowlist = allowlist,
         testonly = testonly,
         visibility = get_atom_visibility(visibility),
     )
 
-_idk_data = macro(
+idk_data = macro(
     doc = "Defines a data file to be included in an IDK.",
     implementation = _idk_data_impl,
     attrs = {
@@ -104,11 +102,6 @@ Currently only 'config' data types are supported.""",
             allow_single_file = True,
             configurable = False,
         ),
-        "allowlist": attr.label(
-            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
         "testonly": attr.bool(
             doc = "Standard meaning.",
             default = False,
@@ -116,18 +109,4 @@ Currently only 'config' data types are supported.""",
         ),
     },
 )
-
-def idk_data(name, **kwargs):
-    """Defines a data file to be included in an IDK.
-
-    This is a wrapper around `_idk_data()` that sets the allowlist.
-
-    See `_idk_data()` for documentation.
-    """
-    _idk_data(
-        name = name,
-        allowlist = "//build/bazel/bazel_idk:partner_idk_data_allowlist",
-        **kwargs
-    )
-
 # LINT.ThenChange(//build/sdk/sdk_atom.gni:sdk_data)

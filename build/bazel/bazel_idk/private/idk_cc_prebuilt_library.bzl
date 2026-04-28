@@ -22,7 +22,6 @@ load(
 load(":idk_atom.bzl", "idk_atom")
 load(
     ":idk_common.bzl",
-    "get_allowlist_target",
     "get_api_file_path",
     "get_atom_visibility",
     "get_golden_file",
@@ -66,8 +65,6 @@ def _idk_cc_prebuilt_library_impl(
         output_name,
         no_headers,
         libcxx_linkage,
-        atom_type,
-        allowlist,
         ifs_golden_file,
         testonly,
         visibility,
@@ -78,11 +75,6 @@ def _idk_cc_prebuilt_library_impl(
         version_script = "",
         **kwargs):
     """Implementation for the _idk_cc_prebuilt_library() macro."""
-
-    # The atom type is passed in because the wrapper macro uses it to determine
-    # `allowlist`. Verify that it is correct.
-    if atom_type != "cc_prebuilt_library":
-        fail("Atom type '%s' is incorrect for this macro." % atom_type)
 
     if "data" in kwargs:
         fail("Use `runtime_deps` instead of `data` for atoms that are runtime dependencies.")
@@ -217,9 +209,6 @@ def _idk_cc_prebuilt_library_impl(
     cc_library(
         name = cc_library_name,
         srcs = srcs_for_bazel_library,
-        # Add a deps on the allowlist to catch cases where the macro is used but
-        # there is no dependency on the atom target.
-        data = [allowlist],
         hdrs = hdrs_for_bazel_library,
         deps = deps + select_for_fuchsia(fuchsia_deps),
         implementation_deps = implementation_deps,
@@ -402,6 +391,8 @@ def _idk_cc_prebuilt_library_impl(
     if no_headers and (api_path or api_contents_map or idk_header_files_map):
         fail("Internal error: Unexpected populated variables when `no_headers` is True.")
 
+    atom_type = "cc_prebuilt_library"
+
     # Verify the allowlist here to catch cases where this macro is used but
     # there is no dependency on the atom target.
     verify_target_is_in_allowlist(
@@ -429,7 +420,6 @@ def _idk_cc_prebuilt_library_impl(
         underlying_library = ":%s" % underlying_library_info_target_name,
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
-        allowlist = allowlist,
         prebuilt_library_format = prebuilt_library_type,
         testonly = testonly,
         visibility = get_atom_visibility(visibility),
@@ -598,16 +588,6 @@ not have a stable ABI. Can be either "none" or "static".""",
             default = "none",
             configurable = False,
         ),
-        "atom_type": attr.string(
-            doc = "The type of IDK atom. Must be 'cc_prebuilt_library'. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
-        "allowlist": attr.label(
-            doc = "The allowlist to check for this target configuration. Set by the wrapper macro.",
-            mandatory = True,
-            configurable = False,
-        ),
         "ifs_golden_file": attr.label(
             doc = "The golden IFS file for shared libraries only. Set by the wrapper macro.",
             mandatory = False,
@@ -680,7 +660,6 @@ def idk_cc_shared_library(name, idk_name, category, api_file_path = None, output
     See `_idk_cc_shared_library()` for documentation.
     """
     stable = True
-    atom_type = "cc_prebuilt_library"
     output_name = _get_shared_library_output_name(name, output_name)
 
     _idk_cc_shared_library(
@@ -690,8 +669,6 @@ def idk_cc_shared_library(name, idk_name, category, api_file_path = None, output
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
         output_name = output_name,
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "shared"),
         ifs_golden_file = get_golden_file(_get_ifs_golden_file_name(output_name), support_platform = True),
         **kwargs
     )
@@ -737,15 +714,12 @@ def idk_cc_static_library(idk_name, category, api_file_path = None, **kwargs):
     See `_idk_cc_static_library()` for documentation.
     """
     stable = True
-    atom_type = "cc_prebuilt_library"
 
     _idk_cc_static_library(
         idk_name = idk_name,
         category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "static"),
         **kwargs
     )
 
@@ -821,7 +795,6 @@ def idk_cc_shared_library_zx(name, idk_name, category, api_file_path = None, out
     See `_idk_cc_shared_library_zx()` for documentation.
     """
     stable = True
-    atom_type = "cc_prebuilt_library"
     output_name = _get_shared_library_output_name(name, output_name)
 
     _idk_cc_shared_library_zx(
@@ -831,8 +804,6 @@ def idk_cc_shared_library_zx(name, idk_name, category, api_file_path = None, out
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
         output_name = output_name,
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "shared"),
         ifs_golden_file = get_golden_file(_get_ifs_golden_file_name(output_name), support_platform = True),
         **kwargs
     )
@@ -909,14 +880,11 @@ def idk_cc_static_library_zx(idk_name, category, api_file_path = None, **kwargs)
     See `_idk_cc_static_library_zx()` for documentation.
     """
     stable = True
-    atom_type = "cc_prebuilt_library"
 
     _idk_cc_static_library_zx(
         idk_name = idk_name,
         category = category,
         stable = stable,
         api_file_path = get_api_file_path(idk_name, stable, api_file_path),
-        atom_type = atom_type,
-        allowlist = get_allowlist_target(atom_type, category, stable, prebuilt_library_format = "static"),
         **kwargs
     )
