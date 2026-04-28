@@ -104,7 +104,7 @@ async def send_command(req: BaseRequest) -> int:
 
         response_line = await reader.readline()
         if response_line:
-            print(f"Response: {response_line.decode('utf-8').strip()}")
+            print(response_line.decode("utf-8").strip())
         else:
             print("No response received from daemon.")
 
