@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 
 #include "src/devices/serial/drivers/aml-uart/aml-uart.h"
@@ -15,29 +16,20 @@
 
 namespace serial {
 
-class AmlUartV2 : public fdf::DriverBase {
+class AmlUartV2 : public fdf::DriverBase2 {
  public:
-  explicit AmlUartV2(fdf::DriverStartArgs start_args,
-                     fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit AmlUartV2() : fdf::DriverBase2("aml-uart") {}
 
-  void Start(fdf::StartCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Used by the unit test to access the device.
   AmlUart& aml_uart_for_testing();
 
  private:
-  void OnAddChildResult(
-      fidl::WireUnownedResult<fuchsia_driver_framework::Node::AddChild>& add_child_result);
-
-  void CompleteStart(zx::result<> result);
-
-  std::optional<fdf::StartCompleter> start_completer_;
-  fidl::WireClient<fuchsia_driver_framework::Node> parent_node_client_;
   fuchsia_hardware_serial::wire::SerialPortInfo serial_port_info_;
   std::optional<AmlUart> aml_uart_;
-  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
   fdf::ServerBindingGroup<fuchsia_hardware_serialimpl::Device> serial_impl_bindings_;
 
   aml_uart_config::Config driver_config_;

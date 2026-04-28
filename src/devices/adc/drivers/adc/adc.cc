@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.hardware.adcimpl/cpp/driver/fidl.h>
 #include <lib/ddk/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
@@ -108,44 +108,36 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
   }
 
   // Create node.
-  fidl::Arena arena;
   zx::result connector =
       dev->devfs_connector_.Bind(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   if (connector.is_error()) {
     return connector.take_error();
   }
-  auto devfs = fuchsia_driver_framework::wire::DevfsAddArgs::Builder(arena)
-                   .connector(std::move(connector.value()))
-                   .class_name("adc");
 
-  auto offers = std::vector{fdf::MakeOffer2<fuchsia_hardware_adc::Service>(arena, dev->name_)};
+  auto offers = std::vector{fdf::MakeOffer2<fuchsia_hardware_adc::Service>(dev->name_)};
   auto properties = std::vector{
-      fdf::MakeProperty2(arena, bind_fuchsia_adc::CHANNEL, dev->channel_),
+      fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, dev->channel_),
   };
 
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                  .name(arena, dev->name_)
-                  .offers2(arena, std::move(offers))
-                  .properties2(arena, std::move(properties))
-                  .devfs_args(devfs.Build())
-                  .Build();
+  auto devfs_args = fuchsia_driver_framework::DevfsAddArgs{{
+      .connector = std::move(connector.value()),
+      .class_name = "adc",
+  }};
 
-  auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-
-  fidl::WireResult result =
-      fidl::WireCall(adc->node())->AddChild(args, std::move(controller_endpoints.server), {});
-  if (!result.ok()) {
-    fdf::error("Failed to add child {}", result.status_string());
-    return zx::error(result.status());
+  auto result = adc->AddChild(dev->name_, devfs_args, properties, offers);
+  if (result.is_error()) {
+    fdf::error("Failed to add child {}", result);
+    return zx::error(result.status_value());
   }
-  dev->controller_.Bind(std::move(controller_endpoints.client));
+  dev->controller_.Bind(std::move(result.value()));
 
   return zx::ok(std::move(dev));
 }
 
-zx::result<> Adc::Start() {
+zx::result<> Adc::Start(fdf::DriverContext context) {
   // Get metadata.
-  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_hardware_adcimpl::Metadata>(incoming());
+  zx::result metadata =
+      fdf_metadata::GetMetadata<fuchsia_hardware_adcimpl::Metadata>(context.incoming());
   if (metadata.is_error()) {
     FDF_SLOG(ERROR, "Failed to get metadata.", KV("status", metadata.status_string()));
     return metadata.take_error();
@@ -174,7 +166,7 @@ zx::result<> Adc::Start() {
 
   // Create a device per channel.
   for (auto channel : channels) {
-    auto adcimpl = incoming()->Connect<fuchsia_hardware_adcimpl::Service::Device>();
+    auto adcimpl = context.incoming().Connect<fuchsia_hardware_adcimpl::Service::Device>();
     if (adcimpl.is_error()) {
       fdf::error("Failed to open adcimpl service: {}", adcimpl);
       return adcimpl.take_error();
@@ -191,15 +183,16 @@ zx::result<> Adc::Start() {
   return zx::ok();
 }
 
-void Adc::Stop() {
+void Adc::Stop(fdf::StopCompleter completer) {
   for (auto& dev : devices_) {
     auto result = dev->controller()->Remove();
     if (!result.ok()) {
       fdf::error("Could not remove child: {}", result.status_string());
     }
   }
+  completer(zx::ok());
 }
 
 }  // namespace adc
 
-FUCHSIA_DRIVER_EXPORT(adc::Adc);
+FUCHSIA_DRIVER_EXPORT2(adc::Adc);

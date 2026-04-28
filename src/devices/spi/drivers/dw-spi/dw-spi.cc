@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <fidl/fuchsia.hardware.powerdomain/cpp/wire.h>
 #include <fidl/fuchsia.hardware.reset/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/interrupt.h>
@@ -113,11 +113,13 @@ void DwSpi::ExchangeVector(fuchsia_hardware_spiimpl::wire::SpiImplExchangeVector
       fidl::VectorView<uint8_t>::FromExternal(rxdata.data(), rxdata.size()));
 }
 
-zx::result<> DwSpiDriver::Start() {
+zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
   fdf::info("Starting dw-spi driver");
 
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
   // Connect to platform device
-  zx::result<fdf::PDev> pdev = fdf::PDev::Connect(incoming());
+  zx::result<fdf::PDev> pdev = fdf::PDev::Connect(incoming_);
   if (pdev.is_error()) {
     fdf::error("Failed to connect to pdev: {}", pdev.status_string());
     return pdev.take_error();
@@ -213,4 +215,4 @@ zx::result<> DwSpiDriver::Start() {
 
 }  // namespace dw_spi
 
-FUCHSIA_DRIVER_EXPORT(dw_spi::DwSpiDriver);
+FUCHSIA_DRIVER_EXPORT2(dw_spi::DwSpiDriver);

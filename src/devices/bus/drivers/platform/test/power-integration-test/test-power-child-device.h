@@ -6,18 +6,17 @@
 #define SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_POWER_INTEGRATION_TEST_TEST_POWER_CHILD_DEVICE_H_
 
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace fake_child_device {
 
-class FakeChild : public fdf::DriverBase {
+class FakeChild : public fdf::DriverBase2 {
  public:
-  FakeChild(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("fake-child", std::move(start_args), std::move(dispatcher)) {}
+  FakeChild() : fdf::DriverBase2("fake-child") {}
 
   ~FakeChild() override = default;
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;

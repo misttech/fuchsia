@@ -2,32 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/virtio/driver_utils.h>
 
 #include "socket.h"
 
 namespace virtio {
 
-class SocketDriver : public fdf::DriverBase {
+class SocketDriver : public fdf::DriverBase2 {
  public:
   static constexpr char kDriverName[] = "virtio-socket";
 
-  SocketDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher);
+  SocketDriver() : fdf::DriverBase2(kDriverName) {}
   ~SocketDriver() override = default;
 
-  zx::result<> Start() final;
+  zx::result<> Start(fdf::DriverContext context) final;
 
  private:
   std::unique_ptr<SocketDevice> device_;
 };
 
-SocketDriver::SocketDriver(fdf::DriverStartArgs start_args,
-                           fdf::UnownedSynchronizedDispatcher dispatcher)
-    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
-
-zx::result<> SocketDriver::Start() {
-  zx::result pci_client_result = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+zx::result<> SocketDriver::Start(fdf::DriverContext context) {
+  zx::result pci_client_result =
+      context.incoming().Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
     fdf::error("Failed to get pci client: {}", pci_client_result);
     return pci_client_result.take_error();
@@ -63,4 +60,4 @@ zx::result<> SocketDriver::Start() {
 
 }  // namespace virtio
 
-FUCHSIA_DRIVER_EXPORT(virtio::SocketDriver);
+FUCHSIA_DRIVER_EXPORT2(virtio::SocketDriver);

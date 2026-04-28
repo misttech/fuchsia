@@ -228,7 +228,7 @@ zx::result<> PlatformBus::NodeAddInternal(fhpb::Node& node) {
     return result.take_error();
   }
 
-  zx::result dev = PlatformDevice::Create(std::move(node), this, inspector());
+  zx::result dev = PlatformDevice::Create(std::move(node), this, *component_inspector_);
   if (dev.is_error()) {
     fdf::error("Failed to create platform device: {}", dev);
     return dev.take_error();
@@ -410,7 +410,7 @@ void PlatformBus::AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request, 
     return;
   }
 
-  zx::result dev = PlatformDevice::Create(std::move(natural), this, inspector());
+  zx::result dev = PlatformDevice::Create(std::move(natural), this, *component_inspector_);
   if (dev.is_error()) {
     fdf::error("Failed to create platform device: {}", dev);
     completer.buffer(arena).ReplyError(dev.status_value());
@@ -582,11 +582,9 @@ zx::result<fbl::Array<uint8_t>> PlatformBus::GetBootItemArray(uint32_t type,
   return zx::ok(std::move(data));
 }
 
-PlatformBus::PlatformBus(fdf::DriverStartArgs start_args,
-                         fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("platform-bus", std::move(start_args), std::move(driver_dispatcher)) {}
-
-zx::result<> PlatformBus::Start() {
+zx::result<> PlatformBus::Start(fdf::DriverContext context) {
+  component_inspector_.emplace(context.CreateInspector(this));
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result sys = AddOwnedChild("sys");
   if (sys.is_error()) {
     fdf::error("Failed to create sys with error {}", sys);
@@ -720,7 +718,7 @@ zx::result<> PlatformBus::Start() {
     pt_node_ = std::move(pt_node.value());
   }
 
-  auto config = take_config<platform_bus_config::Config>();
+  auto config = context.take_config<platform_bus_config::Config>();
   if (config.software_device_ids().size() != config.software_device_names().size()) {
     fdf::error(
         "Invalid config. software_device_ids and software_device_names must have same length");
@@ -756,7 +754,7 @@ zx::result<> PlatformBus::Start() {
   return zx::ok();
 }
 
-void PlatformBus::PrepareStop(fdf::PrepareStopCompleter completer) {
+void PlatformBus::Stop(fdf::StopCompleter completer) {
   if (suspend_cb().is_valid()) {
     auto client = incoming()->Connect<fss::SystemStateTransition>();
     if (client.is_error()) {
@@ -811,4 +809,4 @@ zx::result<zbi_board_info_t> PlatformBus::GetBoardInfo() {
 
 }  // namespace platform_bus
 
-FUCHSIA_DRIVER_EXPORT(platform_bus::PlatformBus);
+FUCHSIA_DRIVER_EXPORT2(platform_bus::PlatformBus);

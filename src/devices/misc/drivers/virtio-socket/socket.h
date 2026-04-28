@@ -10,7 +10,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/fit/function.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
@@ -430,8 +430,6 @@ class SocketDevice : public Device, public fidl::WireServer<vsock::Device> {
 
   fidl::ServerBindingGroup<fuchsia_hardware_vsock::Device> bindings_;
 };
-
-
 
 }  // namespace virtio
 

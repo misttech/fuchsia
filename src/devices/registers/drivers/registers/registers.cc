@@ -4,7 +4,7 @@
 
 #include "registers.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -168,8 +168,7 @@ zx::result<> RegistersDevice::CreateNode(Register<T>& reg) {
 
   // Initialize our compat server.
   {
-    zx::result result =
-        reg.compat_server_.Initialize(incoming(), outgoing(), node_name(), reg.id());
+    zx::result result = reg.compat_server_.Initialize(incoming_, outgoing(), node_name_, reg.id());
     if (result.is_error()) {
       return result.take_error();
     }
@@ -229,7 +228,7 @@ zx::result<> RegistersDevice::Create(
 }
 
 zx::result<> RegistersDevice::MapMmio(fuchsia_hardware_registers::Mask::Tag& tag) {
-  zx::result result = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  zx::result result = incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (result.is_error()) {
     fdf::error("Failed to open pdev service: {}", result);
     return result.take_error();
@@ -279,9 +278,12 @@ zx::result<> RegistersDevice::MapMmio(fuchsia_hardware_registers::Mask::Tag& tag
   return zx::ok();
 }
 
-zx::result<> RegistersDevice::Start() {
+zx::result<> RegistersDevice::Start(fdf::DriverContext context) {
+  node_name_ = context.node_name().value_or("");
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
   // Get metadata.
-  zx::result pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  zx::result pdev_client = incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
@@ -327,4 +329,4 @@ zx::result<> RegistersDevice::Start() {
 
 }  // namespace registers
 
-FUCHSIA_DRIVER_EXPORT(registers::RegistersDevice);
+FUCHSIA_DRIVER_EXPORT2(registers::RegistersDevice);

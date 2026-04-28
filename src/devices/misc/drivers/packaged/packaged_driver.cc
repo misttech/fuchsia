@@ -2,28 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.driver.framework/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
+
+#include <optional>
 
 namespace {
 
-class PackagedDriver : public fdf::DriverBase {
+class PackagedDriver final : public fdf::DriverBase2 {
  public:
-  PackagedDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("packaged", std::move(start_args), std::move(driver_dispatcher)) {}
+  PackagedDriver() : fdf::DriverBase2("packaged") {}
 
-  zx::result<> Start() override {
-    inspector().root().RecordString("hello", "world");
+  zx::result<> Start(fdf::DriverContext context) override {
+    inspector_.emplace(context.CreateInspector(this));
+    inspector_->root().RecordString("hello", "world");
 
     FDF_SLOG(DEBUG, "Debug world");
     FDF_SLOG(INFO, "Hello world", KV("The answer is", 42));
     return zx::ok();
   }
+
+ private:
+  std::optional<inspect::ComponentInspector> inspector_;
 };
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(PackagedDriver);
+FUCHSIA_DRIVER_EXPORT2(PackagedDriver);

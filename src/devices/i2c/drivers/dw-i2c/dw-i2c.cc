@@ -502,9 +502,10 @@ void DwI2c::SetBitrate(SetBitrateRequestView request, fdf::Arena& arena,
 
 zx::result<fdf::MmioBuffer> DwI2c::MapMmio(fdf::PDev& pdev) { return pdev.MapMmio(0); }
 
-zx::result<> DwI2c::Start() {
+zx::result<> DwI2c::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to pdev protocol: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -559,7 +560,7 @@ zx::result<> DwI2c::Start() {
   return zx::ok();
 }
 
-void DwI2c::PrepareStop(fdf::PrepareStopCompleter completer) { completer(zx::ok()); }
+void DwI2c::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
 zx::result<> DwI2c::ServeI2cImpl() {
   auto handler = fuchsia_hardware_i2cimpl::Service::InstanceHandler(
@@ -601,4 +602,4 @@ zx::result<> DwI2c::CreateChildNode() {
 
 }  // namespace dw_i2c
 
-FUCHSIA_DRIVER_EXPORT(dw_i2c::DwI2c);
+FUCHSIA_DRIVER_EXPORT2(dw_i2c::DwI2c);

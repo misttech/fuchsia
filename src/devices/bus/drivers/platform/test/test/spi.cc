@@ -6,8 +6,8 @@
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
@@ -16,20 +16,20 @@
 
 namespace spi {
 
-class TestSpiDriver : public fdf::DriverBase,
+class TestSpiDriver : public fdf::DriverBase2,
                       public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
  public:
   static constexpr std::string_view kChildNodeName = "test-spi";
   static constexpr std::string_view kDriverName = "test-spi";
 
-  TestSpiDriver(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  TestSpiDriver() : DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
+    auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
     {
-      zx::result<> result = compat_server_.Initialize(
-          incoming(), outgoing(), node_name(), kChildNodeName, compat::ForwardMetadata::None());
+      zx::result<> result =
+          compat_server_.Initialize(incoming_ptr, outgoing(), context.node_name(), kChildNodeName,
+                                    compat::ForwardMetadata::None());
       if (result.is_error()) {
         return result.take_error();
       }
@@ -41,7 +41,7 @@ class TestSpiDriver : public fdf::DriverBase,
       return zx::error(status);
     }
 
-    zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+    zx::result pdev = incoming_ptr->Connect<fuchsia_hardware_platform_device::Service::Device>();
     if (zx::result result = spi_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
         result.is_error()) {
       fdf::error("Failed to set SPI metadata from platform device: {}", result);
@@ -55,7 +55,7 @@ class TestSpiDriver : public fdf::DriverBase,
 
     {
       fuchsia_hardware_spiimpl::Service::InstanceHandler handler({
-          .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->get(),
+          .device = bindings_.CreateHandler(this, driver_dispatcher()->get(),
                                             fidl::kIgnoreBindingClosure),
       });
       auto result = outgoing()->AddService<fuchsia_hardware_spiimpl::Service>(std::move(handler));
@@ -145,7 +145,6 @@ class TestSpiDriver : public fdf::DriverBase,
 
  private:
   uint32_t bus_id_ = 0;
-  fdf::OutgoingDirectory outgoing_;
   fdf::ServerBindingGroup<fuchsia_hardware_spiimpl::SpiImpl> bindings_;
   compat::SyncInitializedDeviceServer compat_server_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
@@ -154,4 +153,4 @@ class TestSpiDriver : public fdf::DriverBase,
 
 }  // namespace spi
 
-FUCHSIA_DRIVER_EXPORT(spi::TestSpiDriver);
+FUCHSIA_DRIVER_EXPORT2(spi::TestSpiDriver);

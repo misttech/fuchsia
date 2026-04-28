@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -83,14 +83,17 @@ class DwSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
   zx::interrupt interrupt_;
 };
 
-class DwSpiDriver : public fdf::DriverBase {
+class DwSpiDriver : public fdf::DriverBase2 {
  public:
-  DwSpiDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("dw-spi", std::move(start_args), std::move(dispatcher)) {}
+  DwSpiDriver() : fdf::DriverBase2("dw-spi") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+
+ protected:
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 
  private:
+  std::shared_ptr<fdf::Namespace> incoming_;
   std::unique_ptr<DwSpi> device_;
 };
 

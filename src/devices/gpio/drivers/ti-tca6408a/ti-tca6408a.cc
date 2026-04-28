@@ -19,11 +19,12 @@ constexpr zx::duration kI2cRetryDelay = zx::usec(1);
 
 namespace gpio {
 
-zx::result<> TiTca6408aDevice::Start() {
+zx::result<> TiTca6408aDevice::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   // Get I2C.
   ddk::I2cChannel i2c;
   {
-    zx::result result = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
+    zx::result result = incoming->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
     if (result.is_error()) {
       fdf::error("Failed to open i2c service: {}", result);
       return result.take_error();
@@ -48,7 +49,7 @@ zx::result<> TiTca6408aDevice::Start() {
     return result.take_error();
   }
 
-  zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  zx::result pdev = incoming->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev);
     return pdev.take_error();
@@ -80,7 +81,7 @@ zx::result<> TiTca6408aDevice::Start() {
   return CreateNode();
 }
 
-void TiTca6408aDevice::Stop() {
+TiTca6408aDevice::~TiTca6408aDevice() {
   auto status = controller_->Remove();
   if (!status.ok()) {
     fdf::error("Could not remove child: {}", status.status_string());
@@ -227,4 +228,4 @@ zx::result<> TiTca6408a::ClearBit(Register reg, uint32_t index) {
 
 }  // namespace gpio
 
-FUCHSIA_DRIVER_EXPORT(gpio::TiTca6408aDevice);
+FUCHSIA_DRIVER_EXPORT2(gpio::TiTca6408aDevice);

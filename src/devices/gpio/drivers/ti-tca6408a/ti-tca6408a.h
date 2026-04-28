@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.hardware.pinimpl/cpp/driver/fidl.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/zx/result.h>
 
@@ -61,17 +62,16 @@ class TiTca6408a : public fdf::Server<fuchsia_hardware_pinimpl::PinImpl> {
   ddk::I2cChannel i2c_;
 };
 
-class TiTca6408aDevice : public fdf::DriverBase {
+class TiTca6408aDevice : public fdf::DriverBase2 {
  private:
   static constexpr char kDeviceName[] = "ti-tca6408a";
 
  public:
-  TiTca6408aDevice(fdf::DriverStartArgs start_args,
-                   fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)) {}
-  zx::result<> Start() override;
-  void Stop() override;
+  explicit TiTca6408aDevice() : fdf::DriverBase2(kDeviceName) {}
+  ~TiTca6408aDevice() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
+ protected:
  private:
   zx::result<> CreateNode();
 

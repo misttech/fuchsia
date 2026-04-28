@@ -265,9 +265,8 @@ void ClockDevice::handle_unknown_method(
 
 zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
                               const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
-                              const std::optional<std::string>& node_name,
                               std::optional<int32_t> node_id,
-                              fidl::ClientEnd<fuchsia_driver_framework::Node>& parent_node,
+                              const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent_node,
                               bool report_initial_conditions) {
   zx::result clock_impl = incoming->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
@@ -376,8 +375,10 @@ void ClockDevice::WaitForDriverCompleted(
   }
 }
 
-zx::result<> ClockDriver::Start() {
-  zx::result clock_impl = incoming()->Connect<fuchsia_hardware_clockimpl::Service::Device>();
+zx::result<> ClockDriver::Start(fdf::DriverContext context) {
+  component_inspector_.emplace(context.CreateInspector(this));
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result clock_impl = incoming->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
     fdf::error("Failed to connect to the clock-impl FIDL protocol: {}", clock_impl);
     return clock_impl.take_error();
@@ -388,7 +389,7 @@ zx::result<> ClockDriver::Start() {
   std::optional<fuchsia_hardware_clockimpl::InitMetadata> metadata;
   {
     zx::result result =
-        fdf_metadata::GetMetadataIfExists<fuchsia_hardware_clockimpl::InitMetadata>(incoming());
+        fdf_metadata::GetMetadataIfExists<fuchsia_hardware_clockimpl::InitMetadata>(incoming);
     if (result.is_error()) {
       fdf::error("Failed to get metadata: {}", result);
       return result.take_error();
@@ -403,26 +404,26 @@ zx::result<> ClockDriver::Start() {
       return zx::error(status);
     }
 
-    const std::vector<fuchsia_driver_framework::NodeProperty2> node_properties{
+    auto props = std::vector{
         fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK)};
 
-    zx::result node = AddChild("clock-init", node_properties, {});
-    if (node.is_error()) {
-      fdf::error("Failed to create child node: {}", node);
-      return node.take_error();
+    auto result = AddChild("clock-init", props, {});
+    if (result.is_error()) {
+      fdf::error("Failed to add child: {}", result);
+      return result.take_error();
     }
-    clock_init_child_node_ = std::move(node.value());
+    clock_init_child_node_ = std::move(result.value());
   } else {
     fdf::info("No init metadata provided");
   }
 
-  zx_status_t status = CreateClockDevices(reported_initial_conditions);
+  zx_status_t status = CreateClockDevices(reported_initial_conditions, incoming);
   if (status != ZX_OK) {
     fdf::error("Failed to create clock devices: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
-  inspector().root().RecordLazyNode(
+  component_inspector_->root().RecordLazyNode(
       "power_observability_state_recorders",
       fit::bind_member<&ClockDriver::PowerObservabilityInspectCallback>(this));
 
@@ -611,9 +612,10 @@ uint64_t ClockDriver::GetRateForData(uint8_t data) {
 }
 
 zx_status_t ClockDriver::CreateClockDevices(
-    std::unordered_set<uint32_t>& reported_initial_conditions) {
+    std::unordered_set<uint32_t>& reported_initial_conditions,
+    const std::shared_ptr<fdf::Namespace>& incoming) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  zx::result clock_impl = incoming()->Connect<fuchsia_hardware_clockimpl::Service::Device>();
+  zx::result clock_impl = incoming->Connect<fuchsia_hardware_clockimpl::Service::Device>();
   if (clock_impl.is_error()) {
     fdf::error("Failed to connect to the clock-impl FIDL protocol: {}", clock_impl);
     return clock_impl.error_value();
@@ -633,7 +635,7 @@ zx_status_t ClockDriver::CreateClockDevices(
   }
 
   zx::result clock_nodes_metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_clockimpl::ClockIdsMetadata>(incoming());
+      fdf_metadata::GetMetadata<fuchsia_hardware_clockimpl::ClockIdsMetadata>(incoming);
   if (clock_nodes_metadata.is_error()) {
     fdf::error("Failed to get clock IDs: {}", clock_nodes_metadata);
     return clock_nodes_metadata.status_value();
@@ -668,9 +670,8 @@ zx_status_t ClockDriver::CreateClockDevices(
     // server property which cannot be moved.
     auto clock_device = std::make_unique<ClockDevice>(
         GetOrCreateRateBuffer(clock_id), GetOrCreateEnableBuffer(clock_id), this, clock_id, name);
-    zx_status_t status =
-        clock_device->Init(incoming(), outgoing(), node_name(), node.node_id(), this->node(),
-                           !reported_initial_conditions.contains(clock_id));
+    zx_status_t status = clock_device->Init(incoming, outgoing(), node.node_id(), this->node(),
+                                            !reported_initial_conditions.contains(clock_id));
     if (status != ZX_OK) {
       fdf::error("Failed to initialize clock device: {}", zx_status_get_string(status));
       return status;
@@ -820,4 +821,4 @@ zx_status_t ClockDriver::ConfigureClocks(
   return ZX_OK;
 }
 
-FUCHSIA_DRIVER_EXPORT(ClockDriver);
+FUCHSIA_DRIVER_EXPORT2(ClockDriver);

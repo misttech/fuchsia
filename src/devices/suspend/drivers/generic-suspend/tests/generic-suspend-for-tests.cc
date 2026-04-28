@@ -4,7 +4,7 @@
 
 #include "generic-suspend-for-tests.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fdf/cpp/dispatcher.h>
 
 #include <memory>
@@ -22,4 +22,4 @@ void GenericSuspendForTests::AtStart() {
 
 }  // namespace suspend
 
-FUCHSIA_DRIVER_EXPORT(suspend::GenericSuspendForTests);
+FUCHSIA_DRIVER_EXPORT2(suspend::GenericSuspendForTests);

@@ -4,6 +4,7 @@
 
 #include "registers.h"
 
+#include <lib/driver/component/cpp/internal/driver_server2.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/mock-mmio/cpp/region.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -24,9 +25,7 @@ constexpr size_t kRegSize = 0x00000100;
 
 class TestRegistersDevice : public RegistersDevice {
  public:
-  TestRegistersDevice(fdf::DriverStartArgs start_args,
-                      fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : RegistersDevice(std::move(start_args), std::move(driver_dispatcher)) {}
+  TestRegistersDevice() = default;
   ~TestRegistersDevice() override {
     for (const auto& i : mock_mmio_) {
       i->VerifyAll();
@@ -35,8 +34,8 @@ class TestRegistersDevice : public RegistersDevice {
 
   static DriverRegistration GetDriverRegistration() {
     return FUCHSIA_DRIVER_REGISTRATION_V1(
-        fdf_internal::DriverServer<TestRegistersDevice>::initialize,
-        fdf_internal::DriverServer<TestRegistersDevice>::destroy);
+        ::fdf_internal::DriverServer2<TestRegistersDevice>::initialize,
+        ::fdf_internal::DriverServer2<TestRegistersDevice>::destroy);
   }
 
   zx::result<> MapMmio(fuchsia_hardware_registers::Mask::Tag& tag) override {

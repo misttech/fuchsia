@@ -5,7 +5,7 @@
 #define SRC_DEVICES_MISC_DRIVERS_VIRTIO_RNG_RNG_H_
 
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
 #include <stdlib.h>
@@ -53,14 +53,14 @@ class RngDevice : public Device {
   std::unique_ptr<dma_buffer::ContiguousBuffer> buf_;
 };
 
-class RngDriver : public fdf::DriverBase {
+class RngDriver : public fdf::DriverBase2 {
  public:
   static constexpr char kDriverName[] = "virtio-rng";
 
-  RngDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher);
+  RngDriver();
   ~RngDriver() override = default;
 
-  zx::result<> Start() final;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   std::unique_ptr<RngDevice> device_;

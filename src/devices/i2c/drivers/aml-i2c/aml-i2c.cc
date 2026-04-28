@@ -318,9 +318,10 @@ void AmlI2c::Transact(TransactRequestView request, fdf::Arena& arena,
   }
 }
 
-zx::result<> AmlI2c::Start() {
+zx::result<> AmlI2c::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to pdev protocol: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -391,7 +392,7 @@ zx::result<> AmlI2c::Start() {
   return zx::ok();
 }
 
-void AmlI2c::PrepareStop(fdf::PrepareStopCompleter completer) {
+void AmlI2c::Stop(fdf::StopCompleter completer) {
   if (!irq_dispatcher_.has_value()) {
     completer(zx::ok());
     return;
@@ -447,4 +448,4 @@ const fdf::MmioBuffer& AmlI2c::regs_iobuff() const {
 
 }  // namespace aml_i2c
 
-FUCHSIA_DRIVER_EXPORT(aml_i2c::AmlI2c);
+FUCHSIA_DRIVER_EXPORT2(aml_i2c::AmlI2c);

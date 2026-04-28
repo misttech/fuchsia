@@ -387,8 +387,9 @@ zx_status_t AmlPower::PowerImplGetCurrentVoltage(uint32_t index, uint32_t* curre
   return ZX_OK;
 }
 
-zx::result<> AmlPower::Start() {
-  zx::result pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+zx::result<> AmlPower::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result pdev_client = incoming->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
@@ -404,7 +405,7 @@ zx::result<> AmlPower::Start() {
   compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_POWER_IMPL};
   banjo_config.callbacks[ZX_PROTOCOL_POWER_IMPL] = banjo_server_.callback();
   zx::result<> result =
-      compat_server_.Initialize(incoming(), outgoing(), node_name(), kChildNodeName,
+      compat_server_.Initialize(incoming, outgoing(), context.node_name(), kChildNodeName,
                                 compat::ForwardMetadata::None(), std::move(banjo_config));
   if (result.is_error()) {
     fdf::error("Failed to initialize compat server: {}", result);
@@ -436,7 +437,7 @@ zx::result<> AmlPower::Start() {
   }
 
   zx::result client_end =
-      incoming()->Connect<fuchsia_hardware_pwm::Service::Pwm>(kPwmPrimaryParentName);
+      incoming->Connect<fuchsia_hardware_pwm::Service::Pwm>(kPwmPrimaryParentName);
   fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm> primary_cluster_pwm;
   // The fragment may be optional, so we do not return on error.
   if (client_end.is_ok()) {
@@ -450,10 +451,10 @@ zx::result<> AmlPower::Start() {
   }
 
   zx::result little_cluster_vreg =
-      incoming()->Connect<fuchsia_hardware_vreg::Service::Vreg>(kVregPwmLittleParentName);
+      incoming->Connect<fuchsia_hardware_vreg::Service::Vreg>(kVregPwmLittleParentName);
 
   zx::result big_cluster_vreg =
-      incoming()->Connect<fuchsia_hardware_vreg::Service::Vreg>(kVregPwmBigParentName);
+      incoming->Connect<fuchsia_hardware_vreg::Service::Vreg>(kVregPwmBigParentName);
 
   if (primary_cluster_pwm.is_valid() && metadata.is_ok()) {
     // For Astro.
@@ -496,4 +497,4 @@ zx::result<> AmlPower::Start() {
 
 }  // namespace power
 
-FUCHSIA_DRIVER_EXPORT(power::AmlPower);
+FUCHSIA_DRIVER_EXPORT2(power::AmlPower);

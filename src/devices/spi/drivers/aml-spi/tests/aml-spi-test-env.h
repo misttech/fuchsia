@@ -30,15 +30,20 @@ namespace spi {
 
 class TestAmlSpiDriver : public AmlSpiDriver {
  public:
-  TestAmlSpiDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : AmlSpiDriver(std::move(start_args), std::move(dispatcher)),
-        mmio_region_(sizeof(uint32_t), 17) {}
+  TestAmlSpiDriver() : mmio_region_(sizeof(uint32_t), 17) {}
+
+  ~TestAmlSpiDriver() override {
+    if (device_) {
+      device_->Stop();
+    }
+    device_.reset();
+  }
 
   static DriverRegistration GetDriverRegistration() {
     // Use a custom DriverRegistration to create the DUT. Without this, the non-test
     // implementation will be used by default.
-    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestAmlSpiDriver>::initialize,
-                                          fdf_internal::DriverServer<TestAmlSpiDriver>::destroy);
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<TestAmlSpiDriver>::initialize,
+                                          fdf_internal::DriverServer2<TestAmlSpiDriver>::destroy);
   }
 
   fake_mmio::FakeMmioRegRegion& mmio() { return mmio_region_; }

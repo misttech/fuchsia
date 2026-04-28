@@ -10,7 +10,8 @@
 #include <fidl/fuchsia.hardware.powersource/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/inspect/cpp/inspector.h>
 #include <lib/zx/interrupt.h>
@@ -135,15 +136,15 @@ class Fusb302 : public fidl::WireServer<fuchsia_hardware_powersource::Source> {
 
 constexpr char kDeviceName[] = "fusb302";
 
-class Fusb302Device : public fdf::DriverBase {
+class Fusb302Device : public fdf::DriverBase2 {
  public:
-  Fusb302Device(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)),
+  explicit Fusb302Device()
+      : fdf::DriverBase2(kDeviceName),
         devfs_connector_(fit::bind_member<&Fusb302Device::Serve>(this)) {}
 
-  zx::result<> Start() override;
-  void Stop() override;
+  ~Fusb302Device() override;
+
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   zx::result<> CreateDevfsNode();

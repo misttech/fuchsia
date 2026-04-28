@@ -4,7 +4,7 @@
 
 #include "aml-pwm.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <zircon/assert.h>
@@ -508,12 +508,13 @@ void AmlPwm::SetTimers(uint32_t idx, uint8_t timer1, uint8_t timer2) {
   time_reg.WriteTo(&mmio_);
 }
 
-zx::result<> AmlPwmDriver::Start() {
+zx::result<> AmlPwmDriver::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   {
     compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_PWM_IMPL};
     banjo_config.callbacks[ZX_PROTOCOL_PWM_IMPL] = banjo_server_.callback();
     zx::result<> result =
-        compat_server_.Initialize(incoming(), outgoing(), node_name(), kChildNodeName,
+        compat_server_.Initialize(incoming, outgoing(), context.node_name(), kChildNodeName,
                                   compat::ForwardMetadata::None(), std::move(banjo_config));
     if (result.is_error()) {
       fdf::error("Failed to initialize compat server: {}", result);
@@ -522,7 +523,7 @@ zx::result<> AmlPwmDriver::Start() {
   }
 
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end.status_string());
     return pdev_client_end.take_error();
@@ -645,4 +646,4 @@ zx_status_t AmlPwmDriver::PwmImplDisable(uint32_t idx) {
 
 }  // namespace pwm
 
-FUCHSIA_DRIVER_EXPORT(pwm::AmlPwmDriver);
+FUCHSIA_DRIVER_EXPORT2(pwm::AmlPwmDriver);

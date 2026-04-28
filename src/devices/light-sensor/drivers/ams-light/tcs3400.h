@@ -9,13 +9,19 @@
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/task.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/input_report_reader/reader.h>
+#include <lib/inspect/cpp/bounded_list_node.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/result.h>
 #include <time.h>
+
+#include <memory>
+#include <optional>
 
 #include <fbl/mutex.h>
 
@@ -62,18 +68,18 @@ struct InspectTcs3400FeatureReport {
   explicit InspectTcs3400FeatureReport(inspect::Node n, const Tcs3400FeatureReport& report);
 };
 
-class Tcs3400 : public fdf::DriverBase, public fidl::WireServer<fuchsia_input_report::InputDevice> {
+class Tcs3400 : public fdf::DriverBase2,
+                public fidl::WireServer<fuchsia_input_report::InputDevice> {
  public:
   static constexpr std::string_view kDriverName = "tcs3400_light";
   static constexpr std::string_view kChildNodeName = "tcs-3400";
 
-  Tcs3400(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  Tcs3400() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  zx::result<> InitMetadata();
+  zx::result<> InitMetadata(fdf::Namespace& incoming);
 
   // fidl::WireServer<fuchsia_input_report::InputDevice> implementation.
   void GetInputReportsReader(GetInputReportsReaderRequestView request,
@@ -96,6 +102,9 @@ class Tcs3400 : public fdf::DriverBase, public fidl::WireServer<fuchsia_input_re
  protected:
   // Used by tests.
   virtual void OnNextReader() {}
+
+  std::optional<inspect::ComponentInspector> component_inspector_;
+  std::optional<inspect::BoundedListNode> inspect_reports_;
 
  private:
   static constexpr size_t kMaxFeatureReports = 10;
@@ -127,8 +136,6 @@ class Tcs3400 : public fdf::DriverBase, public fidl::WireServer<fuchsia_input_re
   input_report_reader::InputReportReaderManager<Tcs3400InputReport,
                                                 fuchsia_input_report::wire::kMaxDeviceReportCount>
       readers_;
-  inspect::BoundedListNode inspect_reports_{
-      inspector().inspector().GetRoot().CreateChild("feature_reports"), kMaxFeatureReports};
 
   zx::result<Tcs3400InputReport> ReadInputRpt();
   zx_status_t InitGain(uint8_t gain);

@@ -458,7 +458,7 @@ TEST_F(AmlCpuTest, TestCpuInfo) {
   driver_test().RunInDriverContext([](AmlCpuDriver& driver) {
     auto& dut = driver.performance_domains().front();
 
-    auto hierarchy = inspect::ReadFromVmo(dut->Inspector().inspector().DuplicateVmo());
+    auto hierarchy = inspect::ReadFromVmo(dut->Inspector().DuplicateVmo());
     EXPECT_TRUE(hierarchy.is_ok());
     auto* cpu_info = hierarchy.value().GetByPath({"cpu_info_service"});
     EXPECT_TRUE(cpu_info);

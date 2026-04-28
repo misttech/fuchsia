@@ -8,48 +8,50 @@
 #include <fidl/fuchsia.hardware.spi.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.spi/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fdf/cpp/dispatcher.h>
 
 #include <optional>
 #include <vector>
 
 #include "spi-child.h"
+#include "src/devices/spi/drivers/spi/spi_config.h"
 
 namespace spi {
 
-class SpiDriver : public fdf::DriverBase {
+class SpiDriver : public fdf::DriverBase2 {
  public:
   static constexpr std::string_view kDriverName = "spi";
   static constexpr std::string_view kChildNodeName = "spi";
 
-  SpiDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher);
+  SpiDriver() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   zx::result<> AddChildren(const fuchsia_hardware_spi_businfo::SpiBusMetadata& metadata,
-                           fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> client);
+                           fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> client,
+                           const spi_config::Config& config);
 
-  fdf::UnownedSynchronizedDispatcher fidl_dispatcher() const {
+  fdf::UnownedSynchronizedDispatcher fidl_dispatcher() {
     if (fidl_dispatcher_) {
       return fidl_dispatcher_->borrow();
     }
-    return driver_dispatcher()->borrow();
+    return fdf::UnownedSynchronizedDispatcher(fdf::Dispatcher::GetCurrent()->get());
   }
 
+  const std::unique_ptr<fdf::Namespace>& incoming() const { return incoming_; }
+
   uint32_t bus_id_ = 0;
-  fdf::UnownedDispatcher driver_dispatcher_;
   std::optional<fdf::SynchronizedDispatcher> fidl_dispatcher_;
 
   std::vector<std::unique_ptr<SpiChild>> children_;
 
   fdf::OwnedChildNode child_;
-};
 
-inline SpiDriver::SpiDriver(fdf::DriverStartArgs start_args,
-                            fdf::UnownedSynchronizedDispatcher dispatcher)
-    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  std::unique_ptr<fdf::Namespace> incoming_;
+};
 
 }  // namespace spi
 

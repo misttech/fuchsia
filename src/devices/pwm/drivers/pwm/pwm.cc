@@ -4,7 +4,7 @@
 
 #include "pwm.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -13,15 +13,16 @@ namespace pwm {
 
 constexpr size_t kMaxConfigBufferSize = 256;
 
-zx::result<> Pwm::Start() {
-  zx::result pwm_impl = compat::ConnectBanjo<ddk::PwmImplProtocolClient>(incoming());
+zx::result<> Pwm::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result pwm_impl = compat::ConnectBanjo<ddk::PwmImplProtocolClient>(incoming);
   if (pwm_impl.is_error()) {
     fdf::error("Failed to connect to pwm-impl: {}", pwm_impl);
     return pwm_impl.take_error();
   }
 
   zx::result metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>(incoming());
+      fdf_metadata::GetMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>(*incoming);
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();
@@ -42,7 +43,7 @@ zx::result<> Pwm::Start() {
 
     auto& pwm_channel = *pwm_channels_.emplace_back(
         std::make_unique<PwmChannel>(pwm_channel_id, dispatcher(), pwm_impl.value()));
-    zx::result result = pwm_channel.Init(incoming(), outgoing(), node());
+    zx::result result = pwm_channel.Init(outgoing(), node());
     if (result.is_error()) {
       fdf::error("Failed to initialize pwm channel {}: {}", i, result);
       return result.take_error();
@@ -52,8 +53,7 @@ zx::result<> Pwm::Start() {
   return zx::ok();
 }
 
-zx::result<> PwmChannel::Init(const std::shared_ptr<fdf::Namespace>& incoming,
-                              std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
+zx::result<> PwmChannel::Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
                               fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent) {
   std::string child_node_name = std::format("pwm-{}", id_);
 
@@ -166,4 +166,4 @@ void PwmChannel::Connect(fidl::ServerEnd<fuchsia_hardware_pwm::Pwm> request) {
 
 }  // namespace pwm
 
-FUCHSIA_DRIVER_EXPORT(pwm::Pwm);
+FUCHSIA_DRIVER_EXPORT2(pwm::Pwm);

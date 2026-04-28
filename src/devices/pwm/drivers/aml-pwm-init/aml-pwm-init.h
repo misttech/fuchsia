@@ -8,7 +8,8 @@
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pwm/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 // For compatibility with wrapped DFv1 drivers:
 #include <lib/driver/compat/cpp/device_server.h>
 
@@ -31,16 +32,16 @@ class PwmInitDevice {
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> bt_gpio_;
 };
 
-class PwmInitDriver : public fdf::DriverBase {
+class PwmInitDriver : public fdf::DriverBase2 {
  public:
-  PwmInitDriver(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit PwmInitDriver() : fdf::DriverBase2("aml-pwm-init") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
+ protected:
  private:
   std::unique_ptr<PwmInitDevice> initer_;
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_client_;
+
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
 
   // For compatibility with wrapped DFv1 drivers:

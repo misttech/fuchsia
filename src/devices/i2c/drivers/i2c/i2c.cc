@@ -14,8 +14,9 @@
 
 namespace i2c {
 
-zx::result<> I2cDriver::Start() {
-  auto i2cimpl_result = incoming()->Connect<fuchsia_hardware_i2cimpl::Service::Device>();
+zx::result<> I2cDriver::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  auto i2cimpl_result = incoming->Connect<fuchsia_hardware_i2cimpl::Service::Device>();
   if (i2cimpl_result.is_error()) {
     fdf::error("Failed to connect to fuchsia.hardware.i2cimpl service: {}", i2cimpl_result);
     return i2cimpl_result.take_error();
@@ -24,7 +25,7 @@ zx::result<> I2cDriver::Start() {
 
   fidl::Arena arena;
   zx::result i2c_bus_metadata =
-      fdf_metadata::GetMetadata<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(incoming());
+      fdf_metadata::GetMetadata<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(incoming);
   if (i2c_bus_metadata.is_error()) {
     fdf::error("Failed to get i2c_bus_metadata  {}", i2c_bus_metadata);
     return i2c_bus_metadata.take_error();
@@ -57,7 +58,10 @@ zx::result<> I2cDriver::Start() {
 
   i2c_node_ = std::move(child->node_);
 
-  if (zx::result<> result = AddI2cChildren(i2c_bus_metadata.value()); result.is_error()) {
+  const auto config = context.take_config<i2c_config::Config>();
+  if (zx::result<> result =
+          AddI2cChildren(i2c_bus_metadata.value(), config, context.node_name(), incoming);
+      result.is_error()) {
     return result;
   }
 
@@ -70,27 +74,27 @@ zx::result<> I2cDriver::Start() {
   return zx::ok();
 }
 
-void I2cDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void I2cDriver::Stop(fdf::StopCompleter completer) {
   shutdown_ = true;
   completer(zx::ok());
 }
 
-void I2cDriver::Stop() {
+I2cDriver::~I2cDriver() {
   // The dispatcher has been stopped, meaning the current request must have already been completed.
   ZX_DEBUG_ASSERT(!current_request_.has_value());
   std::ranges::for_each(pending_requests_.begin(), pending_requests_.end(),
                         [](Request& request) { request.Complete(ZX_ERR_CANCELED); });
 }
 
-zx::result<> I2cDriver::AddI2cChildren(
-    const fuchsia_hardware_i2c_businfo::I2CBusMetadata& metadata) {
+zx::result<> I2cDriver::AddI2cChildren(const fuchsia_hardware_i2c_businfo::I2CBusMetadata& metadata,
+                                       i2c_config::Config config,
+                                       const std::optional<std::string>& node_name,
+                                       const std::shared_ptr<fdf::Namespace>& incoming) {
   if (!metadata.channels()) {
     fdf::error("Failed to find number of channels in metadata: {}",
                zx_status_get_string(ZX_ERR_NOT_FOUND));
     return zx::error(ZX_ERR_NOT_FOUND);
   }
-
-  const auto config = take_config<i2c_config::Config>();
 
   fdf::debug("Number of i2c channels supplied: {}", metadata.channels()->size());
   const uint32_t bus_id = metadata.bus_id().value_or(0);
@@ -98,7 +102,7 @@ zx::result<> I2cDriver::AddI2cChildren(
     // Add an i2c child to the owned i2c node.
     auto i2c_child_server = I2cChildServer::CreateAndAddChild(
         fit::bind_member(this, &I2cDriver::Transact), i2c_node_, logger(), bus_id, channel,
-        incoming(), outgoing(), node_name(), config);
+        incoming, outgoing(), node_name, config);
     if (i2c_child_server.is_error()) {
       fdf::error("Failed to create child server: {}",
                  zx_status_get_string(i2c_child_server.error_value()));
@@ -211,4 +215,4 @@ void I2cDriver::CompleteRequest(
 
 }  // namespace i2c
 
-FUCHSIA_DRIVER_EXPORT(i2c::I2cDriver);
+FUCHSIA_DRIVER_EXPORT2(i2c::I2cDriver);

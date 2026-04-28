@@ -2,20 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/test/platform/cpp/bind.h>
 
-class Child1Driver : public fdf::DriverBase {
+class Child1Driver : public fdf::DriverBase2 {
  public:
-  Child1Driver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("test-child-1", std::move(start_args), std::move(driver_dispatcher)) {}
+  Child1Driver() : fdf::DriverBase2("test-child-1") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     auto child_2_properties =
         std::vector{fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                                        bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST),
@@ -44,4 +42,4 @@ class Child1Driver : public fdf::DriverBase {
   }
 };
 
-FUCHSIA_DRIVER_EXPORT(Child1Driver);
+FUCHSIA_DRIVER_EXPORT2(Child1Driver);

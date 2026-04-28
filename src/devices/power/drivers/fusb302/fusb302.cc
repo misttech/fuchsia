@@ -128,13 +128,14 @@ zx::result<> Fusb302::WaitAsyncForTimer(zx::timer& timer) {
   return zx::make_result(status);
 }
 
-zx::result<> Fusb302Device::Start() {
+zx::result<> Fusb302Device::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   // Map hardware resources.
   fidl::ClientEnd<fuchsia_hardware_i2c::Device> i2c;
   fidl::ClientEnd<fuchsia_hardware_gpio::Gpio> gpio;
   zx::interrupt irq;
   {
-    zx::result result = incoming()->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
+    zx::result result = incoming->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
     if (result.is_error()) {
       fdf::error("Failed to open i2c service: {}", result);
       return result.take_error();
@@ -142,7 +143,7 @@ zx::result<> Fusb302Device::Start() {
     i2c = std::move(result.value());
   }
   {
-    zx::result result = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio");
+    zx::result result = incoming->Connect<fuchsia_hardware_gpio::Service::Device>("gpio");
     if (result.is_error()) {
       fdf::error("Failed to open gpio service: {}", result);
       return result.take_error();
@@ -199,41 +200,29 @@ zx::result<> Fusb302Device::Start() {
   return zx::ok();
 }
 
-void Fusb302Device::Stop() { device_.reset(); }
+Fusb302Device::~Fusb302Device() { device_.reset(); }
 
 zx::result<> Fusb302Device::CreateDevfsNode() {
-  fidl::Arena arena;
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
     return connector.take_error();
   }
 
-  auto devfs = fuchsia_driver_framework::wire::DevfsAddArgs::Builder(arena)
-                   .connector(std::move(connector.value()))
-                   .class_name("power");
+  fuchsia_driver_framework::DevfsAddArgs devfs_args(
+      {.connector = std::move(connector.value()), .class_name = "power"});
 
-  auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                  .name(arena, kDeviceName)
-                  .devfs_args(devfs.Build())
-                  .Build();
-
-  auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-
-  zx::result node_endpoints = fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
-  ZX_ASSERT_MSG(node_endpoints.is_ok(), "Failed to create endpoints: %s",
-                node_endpoints.status_string());
-
-  fidl::WireResult result = fidl::WireCall(node())->AddChild(
-      args, std::move(controller_endpoints.server), std::move(node_endpoints->server));
-  if (!result.ok()) {
-    fdf::error("Failed to add child {}", result.status_string());
-    return zx::error(result.status());
+  zx::result child = AddOwnedChild(kDeviceName, devfs_args);
+  if (child.is_error()) {
+    fdf::error("Failed to add child: {}", child.status_string());
+    return child.take_error();
   }
-  controller_.Bind(std::move(controller_endpoints.client));
-  node_.Bind(std::move(node_endpoints->client));
+
+  controller_.Bind(std::move(child->node_controller_));
+  node_.Bind(std::move(child->node_));
+
   return zx::ok();
 }
 
 }  // namespace fusb302
 
-FUCHSIA_DRIVER_EXPORT(fusb302::Fusb302Device);
+FUCHSIA_DRIVER_EXPORT2(fusb302::Fusb302Device);

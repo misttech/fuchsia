@@ -5,7 +5,7 @@
 #include "src/devices/bus/drivers/platform/test/power-integration-test/test-power-parent-device.h"
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
@@ -17,12 +17,13 @@
 
 namespace fake_parent_device {
 
-zx::result<> FakeParent::Start() {
-  node_.Bind(std::move(node()));
+zx::result<> FakeParent::Start(fdf::DriverContext context) {
+  node_.Bind(take_node());
   fdf::Arena arena('TEST');
 
   auto device_service =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("platform-device");
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>(
+          "platform-device");
   if (!device_service.is_ok()) {
     return zx::error(ZX_ERR_INTERNAL);
   }
@@ -51,14 +52,14 @@ zx::result<> FakeParent::Start() {
   }
 
   // connect to power broker
-  auto power_broker_req = incoming()->Connect<fuchsia_power_broker::Topology>();
+  auto power_broker_req = context.incoming().Connect<fuchsia_power_broker::Topology>();
   {
     if (power_broker_req.is_error()) {
       return zx::error(ZX_ERR_INTERNAL);
     }
 
     fit::result<fdf_power::Error, fdf_power::TokenMap> token_result =
-        fdf_power::GetDependencyTokens(*incoming(), power_config);
+        fdf_power::GetDependencyTokens(context.incoming(), power_config);
     if (token_result.is_error()) {
       return zx::error(ZX_ERR_INTERNAL);
     }
@@ -181,4 +182,4 @@ void FakeParentServer::handle_unknown_method(
 
 }  // namespace fake_parent_device
 
-FUCHSIA_DRIVER_EXPORT(fake_parent_device::FakeParent);
+FUCHSIA_DRIVER_EXPORT2(fake_parent_device::FakeParent);

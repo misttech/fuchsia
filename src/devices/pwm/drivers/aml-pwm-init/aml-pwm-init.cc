@@ -19,13 +19,10 @@ namespace pwm_init {
 const char* kWifiClkFragName = "wifi-32k768-clk";
 const char* kDeviceName = "aml-pwm-init";
 
-PwmInitDriver::PwmInitDriver(fdf::DriverStartArgs start_args,
-                             fdf::UnownedSynchronizedDispatcher dispatcher)
-    : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(dispatcher)) {}
-
-zx::result<> PwmInitDriver::Start() {
+zx::result<> PwmInitDriver::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx_status_t status;
-  zx::result init_result = compat_server_.Initialize(incoming(), outgoing(), node_name(),
+  zx::result init_result = compat_server_.Initialize(incoming, outgoing(), context.node_name(),
                                                      kDeviceName, compat::ForwardMetadata::All());
   if (init_result.is_error()) {
     fdf::error("Failed to initialize compat server, st = {}", init_result);
@@ -33,13 +30,13 @@ zx::result<> PwmInitDriver::Start() {
   }
 
   zx::result clock_result =
-      incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(kWifiClkFragName);
+      incoming->Connect<fuchsia_hardware_clock::Service::Clock>(kWifiClkFragName);
   if (clock_result.is_error()) {
     fdf::error("Failed to initialize Clock Client, st = {}", clock_result);
     return clock_result.take_error();
   }
 
-  zx::result client_end = incoming()->Connect<fuchsia_hardware_pwm::Service::Pwm>("pwm");
+  zx::result client_end = incoming->Connect<fuchsia_hardware_pwm::Service::Pwm>("pwm");
   if (client_end.is_error()) {
     fdf::error("Failed to initialize PWM Client, st = {}", client_end);
     return client_end.take_error();
@@ -48,7 +45,7 @@ zx::result<> PwmInitDriver::Start() {
 
   const char* kBtGpioFragmentName = "gpio-bt";
   zx::result bt_gpio =
-      incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(kBtGpioFragmentName);
+      incoming->Connect<fuchsia_hardware_gpio::Service::Device>(kBtGpioFragmentName);
   if (bt_gpio.is_error()) {
     fdf::error("Failed to get gpio FIDL protocol from fragment {}: {}", kBtGpioFragmentName,
                bt_gpio);
@@ -64,33 +61,17 @@ zx::result<> PwmInitDriver::Start() {
     return zx::error(status);
   }
 
-  node_client_.Bind(std::move(node()));
-
-  fidl::Arena arena;
   auto properties = std::vector{
-      fdf::MakeProperty2(arena, bind_fuchsia::INIT_STEP, bind_fuchsia_pwm::BIND_INIT_STEP_PWM),
+      fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_pwm::BIND_INIT_STEP_PWM),
   };
 
-  zx::result controller_endpoints =
-      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
-  if (!controller_endpoints.is_ok()) {
-    fdf::error("Failed to create controller endpoints: {}", controller_endpoints);
-    return controller_endpoints.take_error();
+  auto result = AddChild(name(), properties, compat_server_.CreateOffers2());
+  if (result.is_error()) {
+    fdf::error("Failed to add child: {}", result.status_string());
+    return result.take_error();
   }
 
-  controller_.Bind(std::move(controller_endpoints->client));
-
-  const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                        .name(arena, name())
-                        .offers2(compat_server_.CreateOffers2(arena))
-                        .properties2(arena, std::move(properties))
-                        .Build();
-  fidl::WireResult result =
-      node_client_->AddChild(args, std::move(controller_endpoints->server), {});
-  if (!result.ok()) {
-    fdf::error("Failed to send request to add child: {}", result.status_string());
-    return zx::error(result.status());
-  }
+  controller_.Bind(std::move(result.value()));
   return zx::ok();
 }
 
@@ -181,4 +162,4 @@ zx_status_t PwmInitDevice::Init() {
 
 }  // namespace pwm_init
 
-FUCHSIA_DRIVER_EXPORT(pwm_init::PwmInitDriver);
+FUCHSIA_DRIVER_EXPORT2(pwm_init::PwmInitDriver);

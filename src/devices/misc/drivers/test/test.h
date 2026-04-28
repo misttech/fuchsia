@@ -5,14 +5,13 @@
 #ifndef SRC_DEVICES_MISC_DRIVERS_TEST_TEST_H_
 #define SRC_DEVICES_MISC_DRIVERS_TEST_TEST_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
-class TestDriver : public fdf::DriverBase {
+class TestDriver : public fdf::DriverBase2 {
  public:
-  TestDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("test_driver", std::move(start_args), std::move(driver_dispatcher)) {}
+  TestDriver() : DriverBase2("test_driver") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   fdf::OwnedChildNode child_;

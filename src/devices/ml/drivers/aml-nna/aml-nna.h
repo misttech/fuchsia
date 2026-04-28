@@ -8,7 +8,8 @@
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
 #include <fidl/fuchsia.hardware.vsi/cpp/wire.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <zircon/fidl.h>
@@ -21,7 +22,7 @@ constexpr uint32_t kNnaPowerDomain = 1;
 
 namespace aml_nna {
 
-class AmlNnaDriver : public fdf::DriverBase,
+class AmlNnaDriver : public fdf::DriverBase2,
                      public fidl::WireServer<fuchsia_hardware_vsi::PowerParent> {
  public:
   struct NnaPowerDomainBlock {
@@ -64,12 +65,10 @@ class AmlNnaDriver : public fdf::DriverBase,
   static constexpr uint32_t kPowerDomainMmioIndex = 2;
   static constexpr uint32_t kMemoryDomainMmioIndex = 3;
 
-  AmlNnaDriver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit AmlNnaDriver() : fdf::DriverBase2(kDriverName) {}
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   zx_status_t PowerDomainControl(bool turn_on);
 

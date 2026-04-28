@@ -29,12 +29,11 @@ namespace aml_i2c {
 
 class TestAmlI2c : public AmlI2c {
  public:
-  TestAmlI2c(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : AmlI2c(std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit TestAmlI2c() : AmlI2c() {}
 
   static DriverRegistration GetDriverRegistration() {
-    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestAmlI2c>::initialize,
-                                          fdf_internal::DriverServer<TestAmlI2c>::destroy);
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<TestAmlI2c>::initialize,
+                                          fdf_internal::DriverServer2<TestAmlI2c>::destroy);
   }
 
   static void set_mmio(fdf::MmioBuffer mmio) { mmio_.emplace(std::move(mmio)); }

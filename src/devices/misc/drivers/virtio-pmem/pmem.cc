@@ -93,12 +93,10 @@ zx::result<zx::vmo> PmemDevice::clone_vmo() {
   return zx::ok(std::move(vmo));
 }
 
-PmemDriver::PmemDriver(fdf::DriverStartArgs start_args,
-                       fdf::UnownedSynchronizedDispatcher dispatcher)
-    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+zx::result<> PmemDriver::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 
-zx::result<> PmemDriver::Start() {
-  zx::result device = CreatePmemDevice();
+  zx::result device = CreatePmemDevice(incoming);
 
   if (device.is_error()) {
     return device.take_error();
@@ -143,14 +141,15 @@ void PmemDriver::handle_unknown_method(
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
-zx::result<std::unique_ptr<PmemDevice>> PmemDriver::CreatePmemDevice() {
-  zx::result pci_client_result = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+zx::result<std::unique_ptr<PmemDevice>> PmemDriver::CreatePmemDevice(
+    const std::shared_ptr<fdf::Namespace>& incoming) {
+  zx::result pci_client_result = incoming->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
     fdf::error("Failed to get pci client: {}", pci_client_result);
     return pci_client_result.take_error();
   }
 
-  zx::result mmio_result = incoming()->Connect<fuchsia_kernel::MmioResource>();
+  zx::result mmio_result = incoming->Connect<fuchsia_kernel::MmioResource>();
   if (mmio_result.is_error()) {
     fdf::error("Failed to connect to MmioResource: {}", mmio_result);
     return mmio_result.take_error();

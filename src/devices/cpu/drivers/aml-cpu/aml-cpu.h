@@ -48,7 +48,7 @@ class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
  public:
   explicit AmlCpu(std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> operating_points,
                   fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain,
-                  inspect::ComponentInspector& inspect)
+                  inspect::Inspector& inspect)
       : current_operating_point_(
             static_cast<uint32_t>(operating_points.size() -
                                   1))  // Assume the core is running at the slowest clock to begin.
@@ -118,7 +118,7 @@ class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
   void GetDomainId(GetDomainIdCompleter::Sync& completer) override;
   void GetRelativePerformance(GetRelativePerformanceCompleter::Sync& completer) override;
 
-  inspect::ComponentInspector& Inspector() { return inspect_; }
+  inspect::Inspector& Inspector() { return inspect_; }
 
  private:
   fidl::WireSyncClient<fuchsia_hardware_clock::Clock> plldiv16_;
@@ -134,8 +134,8 @@ class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
 
   fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain_;
 
-  inspect::ComponentInspector& inspect_;
-  inspect::Node cpu_info_ = inspect_.root().CreateChild("cpu_info_service");
+  inspect::Inspector& inspect_;
+  inspect::Node cpu_info_ = inspect_.GetRoot().CreateChild("cpu_info_service");
 
   inspect::UintProperty inspect_major_revision_;
   inspect::UintProperty inspect_minor_revision_;

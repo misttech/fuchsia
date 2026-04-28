@@ -21,40 +21,30 @@ namespace {
 
 constexpr std::string_view kPdevName = "pdev";
 constexpr std::string_view kChildName = "aml-uart";
-constexpr std::string_view kDriverName = "aml-uart";
 
 }  // namespace
 
-AmlUartV2::AmlUartV2(fdf::DriverStartArgs start_args,
-                     fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)),
-      driver_config_(take_config<aml_uart_config::Config>()) {}
-
-void AmlUartV2::Start(fdf::StartCompleter completer) {
-  start_completer_.emplace(std::move(completer));
-
-  parent_node_client_.Bind(std::move(node()), dispatcher());
+zx::result<> AmlUartV2::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  driver_config_ = context.take_config<aml_uart_config::Config>();
 
   auto pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>(kPdevName);
+      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>(kPdevName);
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
-    CompleteStart(pdev_client_end.take_error());
-    return;
+    return pdev_client_end.take_error();
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
-  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming());
+  if (zx::result result = mac_address_metadata_server_.ForwardMetadataIfExists(incoming);
       result.is_error()) {
     fdf::error("Failed to forward mac address metadata: {}", result);
-    CompleteStart(result.take_error());
-    return;
+    return result.take_error();
   }
   if (zx::result result = mac_address_metadata_server_.Serve(*outgoing(), dispatcher());
       result.is_error()) {
     fdf::error("Failed to serve mac address metadata: {}", result);
-    CompleteStart(result.take_error());
-    return;
+    return result.take_error();
   }
 
   zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_serial::SerialPortInfo>(
@@ -64,8 +54,7 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
       fdf::debug("Serial port info metadata not found.");
     } else {
       fdf::error("Failed to get metadata: {}", metadata);
-      CompleteStart(metadata.take_error());
-      return;
+      return metadata.take_error();
     }
   } else {
     serial_port_info_ = {
@@ -78,16 +67,15 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
   zx::result mmio = pdev.MapMmio(0);
   if (mmio.is_error()) {
     FDF_SLOG(ERROR, "Failed to map mmio.", KV("status", mmio.status_string()));
-    CompleteStart(mmio.take_error());
-    return;
+    return mmio.take_error();
   }
 
   fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag;
   if (driver_config_.enable_suspend()) {
-    zx::result result = incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
+    zx::result result = incoming->Connect<fuchsia_power_system::ActivityGovernor>();
     if (result.is_error() || !result->is_valid()) {
       fdf::warn("Failed to connect to activity governor: {}", result);
-      CompleteStart(result.take_error());
+      return result.take_error();
     }
     sag = std::move(result.value());
   }
@@ -101,15 +89,6 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
                                       fuchsia_hardware_serialimpl::kSerialParityNone;
   aml_uart_->Config(kDefaultBaudRate, kDefaultConfig);
 
-  zx::result node_controller_endpoints =
-      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
-  if (node_controller_endpoints.is_error()) {
-    fdf::error("Failed to create NodeController endpoints {}",
-               node_controller_endpoints.status_string());
-    CompleteStart(node_controller_endpoints.take_error());
-    return;
-  }
-
   fuchsia_hardware_serialimpl::Service::InstanceHandler handler({
       .device =
           [this](fdf::ServerEnd<fuchsia_hardware_serialimpl::Device> server_end) {
@@ -121,8 +100,7 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
       outgoing()->AddService<fuchsia_hardware_serialimpl::Service>(std::move(handler), kChildName);
   if (add_result.is_error()) {
     fdf::error("Failed to add fuchsia_hardware_serialimpl::Service {}", add_result.status_string());
-    CompleteStart(add_result.take_error());
-    return;
+    return add_result.take_error();
   }
 
   std::vector<fuchsia_driver_framework::Offer> offers = {
@@ -130,26 +108,22 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
       mac_address_metadata_server_.MakeOffer(),
   };
 
-  fuchsia_driver_framework::NodeAddArgs args{
-      {
-          .name = std::string(kChildName),
+  std::vector<fuchsia_driver_framework::NodeProperty2> properties = {{
+      fdf::MakeProperty2(bind_fuchsia::SERIAL_CLASS,
+                         static_cast<uint32_t>(aml_uart_->serial_port_info().serial_class)),
+  }};
 
-          .offers2 = std::move(offers),
-          .properties2 = {{
-              fdf::MakeProperty2(bind_fuchsia::SERIAL_CLASS,
-                                 static_cast<uint32_t>(aml_uart_->serial_port_info().serial_class)),
-          }},
-      },
-  };
+  auto result = AddChild(std::string(kChildName), properties, offers);
+  if (result.is_error()) {
+    fdf::error("Failed to add child: {}", result.status_string());
+    return result.take_error();
+  }
 
-  fidl::Arena arena;
-  parent_node_client_
-      ->AddChild(fidl::ToWire(arena, std::move(args)), std::move(node_controller_endpoints->server),
-                 {})
-      .Then(fit::bind_member<&AmlUartV2::OnAddChildResult>(this));
+  fdf::info("Successfully started aml-uart-dfv2 driver.");
+  return zx::ok();
 }
 
-void AmlUartV2::PrepareStop(fdf::PrepareStopCompleter completer) {
+void AmlUartV2::Stop(fdf::StopCompleter completer) {
   if (aml_uart_.has_value()) {
     aml_uart_->Enable(false);
   }
@@ -162,31 +136,6 @@ AmlUart& AmlUartV2::aml_uart_for_testing() {
   return aml_uart_.value();
 }
 
-void AmlUartV2::OnAddChildResult(
-    fidl::WireUnownedResult<fuchsia_driver_framework::Node::AddChild>& add_child_result) {
-  if (!add_child_result.ok()) {
-    fdf::error("Failed to add child {}", add_child_result.status_string());
-    CompleteStart(zx::error(add_child_result.status()));
-    return;
-  }
-
-  if (add_child_result.value().is_error()) {
-    fdf::error("Failed to add child. NodeError: {}",
-               static_cast<uint32_t>(add_child_result.value().error_value()));
-    CompleteStart(zx::error(ZX_ERR_INTERNAL));
-    return;
-  }
-
-  fdf::info("Successfully started aml-uart-dfv2 driver.");
-  CompleteStart(zx::ok());
-}
-
-void AmlUartV2::CompleteStart(zx::result<> result) {
-  ZX_ASSERT(start_completer_.has_value());
-  start_completer_.value()(result);
-  start_completer_.reset();
-}
-
 }  // namespace serial
 
-FUCHSIA_DRIVER_EXPORT(serial::AmlUartV2);
+FUCHSIA_DRIVER_EXPORT2(serial::AmlUartV2);

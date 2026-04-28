@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_FAKE_PARENT_DEVICE_H_
-#define SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_FAKE_PARENT_DEVICE_H_
+#ifndef SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_POWER_INTEGRATION_TEST_TEST_POWER_PARENT_DEVICE_H_
+#define SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_POWER_INTEGRATION_TEST_TEST_POWER_PARENT_DEVICE_H_
 
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 
 namespace fake_parent_device {
 
@@ -23,12 +23,11 @@ class FakeParentServer : public fidl::WireServer<fuchsia_hardware_power::PowerTo
   std::string element_name_;
 };
 
-class FakeParent : public fdf::DriverBase {
+class FakeParent : public fdf::DriverBase2 {
  public:
-  FakeParent(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("fake-parent", std::move(start_args), std::move(dispatcher)) {}
+  FakeParent() : fdf::DriverBase2("fake-parent") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   fidl::ServerBindingGroup<fuchsia_hardware_power::PowerTokenProvider> bindings_;
@@ -42,4 +41,4 @@ class FakeParent : public fdf::DriverBase {
 
 }  // namespace fake_parent_device
 
-#endif /* SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_FAKE_PARENT_DEVICE_H_ */
+#endif  // SRC_DEVICES_BUS_DRIVERS_PLATFORM_TEST_POWER_INTEGRATION_TEST_TEST_POWER_PARENT_DEVICE_H_

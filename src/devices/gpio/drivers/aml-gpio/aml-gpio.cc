@@ -102,8 +102,10 @@ enum {
   MMIO_COUNT,
 };
 
-void AmlGpioDriver::Start(fdf::StartCompleter completer) {
-  parent_.Bind(std::move(node()), dispatcher());
+void AmlGpioDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
+  executor_.emplace(dispatcher());
 
   {
     zx::result result = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
@@ -125,7 +127,8 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
                         fpromise::result<void, zx_status_t>>>& results) mutable {
             if (results.is_error()) {
               fdf::error("One of the promises abandoned its completer");
-              return completer(zx::error(ZX_ERR_INTERNAL));
+              completer(zx::error(ZX_ERR_INTERNAL));
+              return;
             }
 
             {
@@ -133,7 +136,8 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
               if (result.is_error()) {
                 fdf::error("Failed to initialize resources: {}",
                            zx_status_get_string(result.error()));
-                return completer(zx::error(result.error()));
+                completer(zx::error(result.error()));
+                return;
               }
             }
 
@@ -142,7 +146,8 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
               if (result.is_error()) {
                 fdf::error("Failed to initialize pin metadata server: {}",
                            zx_status_get_string(result.error()));
-                return completer(zx::error(result.error()));
+                completer(zx::error(result.error()));
+                return;
               }
             }
 
@@ -151,13 +156,14 @@ void AmlGpioDriver::Start(fdf::StartCompleter completer) {
               if (result.is_error()) {
                 fdf::error("Failed to initialize scheduler role name metadata server: {}",
                            zx_status_get_string(result.error()));
-                return completer(zx::error(result.error()));
+                completer(zx::error(result.error()));
+                return;
               }
             }
 
-            AddNode(std::move(completer));
+            completer(AddNode());
           });
-  executor_.schedule_task(std::move(task));
+  executor_->schedule_task(std::move(task));
 }
 
 fpromise::promise<void, zx_status_t> AmlGpioDriver::InitResources() {
@@ -275,7 +281,7 @@ void AmlGpioDriver::MapMmios(uint32_t pid, uint32_t irq_count,
             }
             InitDevice(pid, irq_count, std::move(mmios), std::move(completer));
           });
-  executor_.schedule_task(std::move(task));
+  executor_->schedule_task(std::move(task));
 }
 
 void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf::MmioBuffer> mmios,
@@ -350,47 +356,34 @@ void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf
   completer.complete_ok();
 }
 
-void AmlGpioDriver::AddNode(fdf::StartCompleter completer) {
-  zx::result controller_endpoints =
-      fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
-  if (!controller_endpoints.is_ok()) {
-    fdf::error("Failed to create controller endpoints: {}", controller_endpoints);
-    return completer(controller_endpoints.take_error());
+zx::result<> AmlGpioDriver::AddNode() {
+  auto props =
+      std::vector{fdf::MakeProperty2(bind_fuchsia_hardware_pinimpl::SERVICE,
+                                     bind_fuchsia_hardware_pinimpl::SERVICE_DRIVERTRANSPORT)};
+
+  std::vector<fuchsia_driver_framework::Offer> offers;
+  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>(component::kDefaultInstance));
+
+  auto offer1 = pin_metadata_server_.CreateOffer();
+  if (offer1) {
+    offers.push_back(*offer1);
   }
 
-  controller_.Bind(std::move(controller_endpoints->client), dispatcher());
+  auto offer2 = scheduler_role_name_metadata_server_.CreateOffer();
+  if (offer2) {
+    offers.push_back(*offer2);
+  }
 
-  fidl::Arena arena;
+  auto result = AddChild(name(), props, offers);
+  if (result.is_error()) {
+    fdf::error("Failed to add child: {}", result);
+    return result.take_error();
+  }
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 1);
-  properties[0] = fdf::MakeProperty2(arena, bind_fuchsia_hardware_pinimpl::SERVICE,
-                                     bind_fuchsia_hardware_pinimpl::SERVICE_DRIVERTRANSPORT);
+  controller_.Bind(std::move(result.value()), dispatcher());
 
-  fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers(arena, 3);
-  offers[0] =
-      fdf::MakeOffer2<fuchsia_hardware_pinimpl::Service>(arena, component::kDefaultInstance);
-  offers[1] = pin_metadata_server_.MakeOffer(arena);
-  offers[2] = scheduler_role_name_metadata_server_.MakeOffer(arena);
-
-  const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                        .name(arena, name())
-                        .offers2(arena, std::move(offers))
-                        .properties2(properties)
-                        .Build();
-
-  parent_->AddChild(args, std::move(controller_endpoints->server), {})
-      .Then([completer = std::move(completer)](auto& result) mutable {
-        if (!result.ok()) {
-          fdf::error("Call to add child failed: {}", result.status_string());
-          return completer(zx::error(result.status()));
-        }
-        if (result->is_error()) {
-          fdf::error("Failed to add child");
-          return completer(zx::error(ZX_ERR_INTERNAL));
-        }
-
-        completer(zx::ok());
-      });
+  fdf::info("Node added successfully");
+  return zx::ok();
 }
 
 uint32_t AmlGpio::GetUnusedIrqIndex(uint32_t pin) const {
@@ -902,4 +895,4 @@ fpromise::promise<fdf::MmioBuffer, zx_status_t> AmlGpioDriver::MapMmio(
 
 }  // namespace gpio
 
-FUCHSIA_DRIVER_EXPORT(gpio::AmlGpioDriver);
+FUCHSIA_DRIVER_EXPORT2(gpio::AmlGpioDriver);

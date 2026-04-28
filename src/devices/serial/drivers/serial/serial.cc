@@ -198,22 +198,25 @@ void SerialDevice::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_serial::DeviceP
                              this, fidl::kIgnoreBindingClosure);
 }
 
-void SerialDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
-  logger().log(fdf::TRACE, "SerialDevice::PrepareStop");
+void SerialDevice::Stop(fdf::StopCompleter completer) {
+  logger().log(fdf::TRACE, "SerialDevice::Stop");
   ResetSerialImplConnectionAndThen([this, completer = std::move(completer)]() mutable {
-    logger().log(fdf::TRACE, "SerialDevice::PrepareStop - completed");
+    logger().log(fdf::TRACE, "SerialDevice::Stop - completed");
     completer(zx::ok());
   });
 }
 
-zx::result<> SerialDevice::Start() {
+zx::result<> SerialDevice::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
   logger().log(fdf::TRACE, "SerialDevice::Start");
 
   if (zx_status_t status = Init(); status != ZX_OK) {
     return zx::error(status);
   }
 
-  if (zx_status_t status = Bind(); status != ZX_OK) {
+  const auto config = context.take_config<serial_config::Config>();
+  if (zx_status_t status = Bind(config); status != ZX_OK) {
     logger().log(fdf::ERROR, "SerialDevice::Create: Bind failed {}", zx_status_get_string(status));
     return zx::error(status);
   }
@@ -248,7 +251,7 @@ zx_status_t SerialDevice::Init() {
   return status;
 }
 
-zx_status_t SerialDevice::Bind() {
+zx_status_t SerialDevice::Bind(serial_config::Config config) {
   {
     fuchsia_hardware_serial::Service::InstanceHandler handler({
         .device =
@@ -290,7 +293,7 @@ zx_status_t SerialDevice::Bind() {
       fdf::MakeOffer2<fuchsia_hardware_serialimpl::Service>(),
   };
 
-  if (take_config<serial_config::Config>().enable_suspend()) {
+  if (config.enable_suspend()) {
     // Forward PowerTokenProvider to the parent if suspend is enabled.
     fuchsia_hardware_power::PowerTokenService::InstanceHandler handler({
         .token_provider =
@@ -363,4 +366,4 @@ zx_status_t SerialDevice::Bind() {
 
 }  // namespace serial
 
-FUCHSIA_DRIVER_EXPORT(serial::SerialDevice);
+FUCHSIA_DRIVER_EXPORT2(serial::SerialDevice);

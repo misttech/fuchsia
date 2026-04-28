@@ -6,4 +6,4 @@
 
 #include "src/devices/misc/drivers/virtio-pmem/pmem.h"
 
-FUCHSIA_DRIVER_EXPORT(virtio::PmemDriver);
+FUCHSIA_DRIVER_EXPORT2(virtio::PmemDriver);

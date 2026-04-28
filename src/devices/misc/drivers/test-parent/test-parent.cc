@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <zircon/assert.h>
 #include <zircon/types.h>
@@ -14,16 +14,15 @@
 
 namespace {
 
-class TestParent : public fdf::DriverBase {
+class TestParent : public fdf::DriverBase2 {
  public:
   static constexpr std::string_view kDriverName = "test-parent";
   static constexpr std::string_view kChildNodeName = "sys";
   static constexpr std::string_view kGrandchildNodeName = "test";
 
-  TestParent(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  TestParent() : DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   fdf::OwnedChildNode child_;
@@ -31,9 +30,11 @@ class TestParent : public fdf::DriverBase {
   compat::SyncInitializedDeviceServer compat_server_;
 };
 
-zx::result<> TestParent::Start() {
-  zx::result<> result = compat_server_.Initialize(
-      incoming(), outgoing(), node_name(), kGrandchildNodeName, compat::ForwardMetadata::None());
+zx::result<> TestParent::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result<> result =
+      compat_server_.Initialize(incoming, outgoing(), context.node_name(), kGrandchildNodeName,
+                                compat::ForwardMetadata::None());
   if (result.is_error()) {
     fdf::error("Failed to initialize compat server: {}", result);
     return result.take_error();
@@ -65,4 +66,4 @@ zx::result<> TestParent::Start() {
 
 }  // namespace
 
-FUCHSIA_DRIVER_EXPORT(TestParent);
+FUCHSIA_DRIVER_EXPORT2(TestParent);

@@ -772,6 +772,20 @@ TEST_F(GpioTest, SchedulerRole) {
                   })
                   .is_ok());
 
+  // Wait for children to be added.
+  bool node_added = false;
+  for (int i = 0; i < 100 && !node_added; ++i) {
+    node_added = driver_test().RunInNodeContext(
+        fit::callback<bool(fdf_testing::TestNode&)>([&](fdf_testing::TestNode& node) {
+          return node.children().contains("gpio") &&
+                 node.children().at("gpio").children().contains("gpio-0");
+        }));
+    if (!node_added) {
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
+  }
+  ASSERT_TRUE(node_added);
+
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     ASSERT_EQ(node.children().count("gpio"), 1ul);
     EXPECT_EQ(node.children().at("gpio").children().count("gpio-0"), 1ul);

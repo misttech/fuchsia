@@ -127,13 +127,14 @@ class AmlGpio : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
   fdf::ServerBindingGroup<fuchsia_hardware_pinimpl::PinImpl> bindings_;
 };
 
-class AmlGpioDriver : public fdf::DriverBase {
+class AmlGpioDriver : public fdf::DriverBase2 {
  public:
-  AmlGpioDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("aml-gpio", std::move(start_args), std::move(dispatcher)),
-        executor_(fdf::DriverBase::dispatcher()) {}
+  explicit AmlGpioDriver() : fdf::DriverBase2("aml-gpio") {}
 
-  void Start(fdf::StartCompleter completer) override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
+
+ protected:
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 
  protected:
   // MapMmio can be overridden by a test in order to provide an fdf::MmioBuffer backed by a fake.
@@ -149,13 +150,14 @@ class AmlGpioDriver : public fdf::DriverBase {
   void MapMmios(uint32_t pid, uint32_t irq_count, fpromise::completer<void, zx_status_t> completer);
   void InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf::MmioBuffer> mmios,
                   fpromise::completer<void, zx_status_t> completer);
-  void AddNode(fdf::StartCompleter completer);
+  zx::result<> AddNode();
 
-  fidl::WireClient<fuchsia_driver_framework::Node> parent_;
+  std::shared_ptr<fdf::Namespace> incoming_;
+
   fidl::WireClient<fuchsia_driver_framework::NodeController> controller_;
   fidl::WireClient<fuchsia_hardware_platform_device::Device> pdev_;
   std::unique_ptr<AmlGpio> device_;
-  async::Executor executor_;
+  std::optional<async::Executor> executor_;
   fdf_metadata::MetadataServer<fuchsia_hardware_pinimpl::Metadata> pin_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_scheduler::RoleName> scheduler_role_name_metadata_server_;
 };

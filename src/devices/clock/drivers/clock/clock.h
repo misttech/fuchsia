@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <fidl/fuchsia.hardware.clockimpl/cpp/driver/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/power/state_recorder/cpp/inspect_buffer.h>
 
 using ByteBuffer = power_observability::internal::TimestampedBuffer<uint8_t>;
@@ -32,8 +33,8 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
 
   zx_status_t Init(const std::shared_ptr<fdf::Namespace>& incoming,
                    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
-                   const std::optional<std::string>& node_name, std::optional<int32_t> node_id,
-                   fidl::ClientEnd<fuchsia_driver_framework::Node>& parent,
+                   std::optional<int32_t> node_id,
+                   const fidl::ClientEnd<fuchsia_driver_framework::Node>& parent,
                    bool report_initial_conditions);
 
   bool pending_driver() const;
@@ -72,16 +73,15 @@ class ClockDevice : public fidl::WireServer<fuchsia_hardware_clock::Clock> {
   bool pending_driver_ = true;
 };
 
-class ClockDriver : public fdf::DriverBase {
+class ClockDriver : public fdf::DriverBase2 {
  public:
   static constexpr char kDriverName[] = "clock";
 
-  using fdf::DriverBase::AddChild;
+  using fdf::DriverBase2::AddChild;
 
-  ClockDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  explicit ClockDriver() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   void CheckIfReady();
 
@@ -91,12 +91,14 @@ class ClockDriver : public fdf::DriverBase {
 
   uint64_t GetRateForData(uint8_t data);
 
+ protected:
  private:
   zx_status_t ConfigureClocks(const fuchsia_hardware_clockimpl::InitMetadata& metadata,
                               fdf::ClientEnd<fuchsia_hardware_clockimpl::ClockImpl> clock_impl,
                               std::unordered_set<uint32_t>& reported_initial_conditions);
 
-  zx_status_t CreateClockDevices(std::unordered_set<uint32_t>& reported_initial_conditions);
+  zx_status_t CreateClockDevices(std::unordered_set<uint32_t>& reported_initial_conditions,
+                                 const std::shared_ptr<fdf::Namespace>& incoming);
 
   const std::shared_ptr<ByteBuffer>& GetOrCreateRateBuffer(uint32_t clock_id);
 
@@ -107,6 +109,7 @@ class ClockDriver : public fdf::DriverBase {
   std::unordered_map<uint32_t, std::string> id_to_name_;
 
   std::vector<std::unique_ptr<ClockDevice>> clock_devices_;
+  std::optional<inspect::ComponentInspector> component_inspector_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> clock_init_child_node_;
   std::unordered_map<uint64_t, uint8_t> rate_to_index_table_;
 };

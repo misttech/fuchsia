@@ -34,11 +34,12 @@
 
 namespace temperature {
 
-zx::result<> AmlTrip::Start() {
+zx::result<> AmlTrip::Start(fdf::DriverContext context) {
   fidl::Arena arena;
   std::optional<TemperatureCelsius> critical_temperature = std::nullopt;
 
-  zx::result pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  zx::result pdev_client =
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client.is_error() || !pdev_client->is_valid()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
@@ -122,13 +123,11 @@ zx::result<> AmlTrip::Start() {
   return zx::ok();
 }
 
-void AmlTrip::Stop() {}
-
-void AmlTrip::PrepareStop(fdf::PrepareStopCompleter completer) {
+void AmlTrip::Stop(fdf::StopCompleter completer) {
   device_->Shutdown();
   completer(zx::ok());
 }
 
 }  // namespace temperature
 
-FUCHSIA_DRIVER_EXPORT(temperature::AmlTrip);
+FUCHSIA_DRIVER_EXPORT2(temperature::AmlTrip);

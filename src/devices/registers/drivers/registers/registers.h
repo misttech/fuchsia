@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.hardware.registers/cpp/fidl.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <zircon/types.h>
@@ -205,16 +205,14 @@ bool Register<T>::VerifyMask(T mask, const uint64_t offset) {
           ((mask | reg_mask) == reg_mask));
 }
 
-class RegistersDevice : public fdf::DriverBase {
+class RegistersDevice : public fdf::DriverBase2 {
  private:
   static constexpr char kDeviceName[] = "registers-device";
 
  public:
-  RegistersDevice(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)) {}
+  RegistersDevice() : fdf::DriverBase2(kDeviceName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   friend class TestRegistersDevice;
@@ -232,6 +230,9 @@ class RegistersDevice : public fdf::DriverBase {
       std::variant<Register<uint8_t>, Register<uint16_t>, Register<uint32_t>, Register<uint64_t>>;
   std::list<RegisterType> registers_;
   std::map<uint32_t, std::shared_ptr<MmioInfo>> mmios_;  // MMIO ID to MmioInfo
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::string node_name_;
 };
 
 }  // namespace registers

@@ -79,8 +79,9 @@ void TiIna231::GetSensorName(GetSensorNameCompleter::Sync& completer) {
   completer.Reply(fidl::StringView::FromExternal(name_));
 }
 
-zx::result<> TiIna231::Start() {
-  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming(), "i2c");
+zx::result<> TiIna231::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming, "i2c");
   if (i2c.is_error()) {
     fdf::error("Failed to create i2c channel: {}", i2c);
     return i2c.take_error();
@@ -93,7 +94,7 @@ zx::result<> TiIna231::Start() {
   }
 
   zx::result pdev_client =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
@@ -263,4 +264,4 @@ void TiIna231::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_power_sensor::Devic
 
 }  // namespace power_sensor
 
-FUCHSIA_DRIVER_EXPORT(power_sensor::TiIna231);
+FUCHSIA_DRIVER_EXPORT2(power_sensor::TiIna231);

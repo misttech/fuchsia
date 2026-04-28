@@ -6,7 +6,7 @@
 #define SRC_DEVICES_SUSPEND_DRIVERS_GENERIC_SUSPEND_GENERIC_SUSPEND_H_
 
 #include <fidl/fuchsia.hardware.power.suspend/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -36,14 +36,13 @@ struct WakeSourceReport {
   zx_wake_source_report_entry_t entries[kMaxWakeSourceEntriesCount];
 };
 
-class GenericSuspend : public fdf::DriverBase,
+class GenericSuspend : public fdf::DriverBase2,
                        public fidl::WireServer<fuchsia_hardware_power_suspend::Suspender> {
  public:
-  GenericSuspend(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher);
+  GenericSuspend();
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_power_suspend::Suspender> metadata,
@@ -57,7 +56,7 @@ class GenericSuspend : public fdf::DriverBase,
                             ForceLowestPowerModeCompleter::Sync& completer) override;
 
  protected:
-  virtual zx::result<zx::resource> GetCpuResource();
+  virtual zx::result<zx::resource> GetCpuResource(fdf::Namespace& incoming);
   virtual zx::result<WakeSourceReport> SystemSuspendEnter();
 
   // Called just at Start(). Used in testing, otherwise a no-op.
@@ -67,7 +66,8 @@ class GenericSuspend : public fdf::DriverBase,
   void Serve(fidl::ServerEnd<fuchsia_hardware_power_suspend::Suspender> request);
   zx::result<> CreateDevfsNode();
 
-  inspect::BoundedListNode inspect_events_;
+  std::optional<inspect::BoundedListNode> inspect_events_;
+  std::optional<inspect::ComponentInspector> exposed_inspector_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_power_suspend::Suspender> suspend_bindings_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> parent_;

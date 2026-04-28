@@ -5,15 +5,17 @@
 #include "src/devices/hrtimer/drivers/aml-hrtimer/aml-hrtimer.h"
 
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <zircon/syscalls-next.h>
 
 namespace hrtimer {
 
-zx::result<> AmlHrtimer::Start() {
-  zx::result pdev_result = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+zx::result<> AmlHrtimer::Start(fdf::DriverContext context) {
+  config_ = context.take_config<aml_hrtimer_config::Config>();
+  zx::result pdev_result =
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_result.is_error()) {
     fdf::error("Failed to connect to pdev protocol: {}", pdev_result);
     return pdev_result.take_error();
@@ -61,7 +63,7 @@ zx::result<> AmlHrtimer::Start() {
 
   std::optional<fidl::SyncClient<fuchsia_power_system::ActivityGovernor>> sag;
 
-  auto sag_connect = incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
+  auto sag_connect = context.incoming().Connect<fuchsia_power_system::ActivityGovernor>();
   if (!config_.enable_suspend()) {
     fdf::warn("fuchsia.power.SuspendEnabled config disabled, continue without power support");
   } else if (sag_connect.is_error() || !sag_connect->is_valid()) {
@@ -70,10 +72,11 @@ zx::result<> AmlHrtimer::Start() {
     fidl::SyncClient<fuchsia_power_system::ActivityGovernor> local_sag(std::move(*sag_connect));
     sag.emplace(std::move(local_sag));
   }
+  exposed_inspector_.emplace(context.CreateInspector(this));
   server_ = std::make_unique<hrtimer::AmlHrtimerServer>(
       dispatcher(), std::move(*mmio_buffer), std::move(sag), std::move(irqs[0]), std::move(irqs[1]),
       std::move(irqs[2]), std::move(irqs[3]), std::move(irqs[4]), std::move(irqs[5]),
-      std::move(irqs[6]), std::move(irqs[7]), inspector());
+      std::move(irqs[6]), std::move(irqs[7]), *exposed_inspector_);
 
   auto result_dev = outgoing()->component().AddUnmanagedProtocol<fuchsia_hardware_hrtimer::Device>(
       bindings_.CreateHandler(server_.get(), dispatcher(), fidl::kIgnoreBindingClosure),
@@ -91,7 +94,7 @@ zx::result<> AmlHrtimer::Start() {
   return zx::ok();
 }
 
-void AmlHrtimer::PrepareStop(fdf::PrepareStopCompleter completer) {
+void AmlHrtimer::Stop(fdf::StopCompleter completer) {
   server_->ShutDown();
   completer(zx::ok());
 }
@@ -131,4 +134,4 @@ zx::result<> AmlHrtimer::CreateDevfsNode() {
 
 }  // namespace hrtimer
 
-FUCHSIA_DRIVER_EXPORT(hrtimer::AmlHrtimer);
+FUCHSIA_DRIVER_EXPORT2(hrtimer::AmlHrtimer);

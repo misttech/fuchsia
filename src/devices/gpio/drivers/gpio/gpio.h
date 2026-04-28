@@ -39,7 +39,7 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
 
   zx::result<> AddServices(const std::shared_ptr<fdf::Namespace>& incoming,
                            const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
-                           const std::optional<std::string>& node_name, gpio_config::Config config);
+                           gpio_config::Config config);
 
   zx::result<> AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> root_node,
                          fdf::Logger& logger, gpio_config::Config config);
@@ -158,14 +158,16 @@ class GpioInitDevice {
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
 };
 
-class GpioRootDevice : public fdf::DriverBase {
+class GpioRootDevice : public fdf::DriverBase2 {
  public:
-  GpioRootDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("gpio", std::move(start_args), std::move(dispatcher)) {}
+  explicit GpioRootDevice() : fdf::DriverBase2("gpio") {}
 
-  void Start(fdf::StartCompleter completer) override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
+
+ protected:
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 
  private:
   // GpioDevice instances live on fidl_dispatcher_ so that they can run with a certain scheduler
@@ -200,6 +202,8 @@ class GpioRootDevice : public fdf::DriverBase {
   fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl_;
   std::vector<std::unique_ptr<GpioDevice>> children_;
   std::unique_ptr<GpioInitDevice> init_device_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
 
   fdf::OwnedChildNode node_;
 };

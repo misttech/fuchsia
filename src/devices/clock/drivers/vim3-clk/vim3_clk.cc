@@ -4,7 +4,7 @@
 
 #include "vim3_clk.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
@@ -25,15 +25,11 @@
 
 namespace vim3_clock {
 
-Vim3Clock::Vim3Clock(fdf::DriverStartArgs start_args,
-                     fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("vim3_clk", std::move(start_args), std::move(driver_dispatcher)) {}
-
-zx::result<> Vim3Clock::Start() {
+zx::result<> Vim3Clock::Start(fdf::DriverContext context) {
   fdf::info("Vim3Clock::Start()");
 
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -361,4 +357,4 @@ void Vim3Clock::InitCpuClks() {
 
 }  // namespace vim3_clock
 
-FUCHSIA_DRIVER_EXPORT(vim3_clock::Vim3Clock);
+FUCHSIA_DRIVER_EXPORT2(vim3_clock::Vim3Clock);

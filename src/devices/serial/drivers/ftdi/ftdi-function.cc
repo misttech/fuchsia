@@ -25,21 +25,19 @@
 #define BULK_MAX_PACKET 512
 #define FTDI_STATUS_SIZE 2
 
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace fake_ftdi_function {
 
-class FakeFtdiFunction : public fdf::DriverBase,
+class FakeFtdiFunction : public fdf::DriverBase2,
                          public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
-  FakeFtdiFunction(fdf::DriverStartArgs start_args,
-                   fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("ftdi-fake-usb", std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit FakeFtdiFunction() : fdf::DriverBase2("ftdi-fake-usb") {}
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface>
   void Control(fuchsia_hardware_usb_function::UsbFunctionInterfaceControlRequest& request,
@@ -56,7 +54,6 @@ class FakeFtdiFunction : public fdf::DriverBase,
  private:
   void InComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void OutComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
-
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
 
   struct fake_ftdi_descriptor_t {
@@ -213,7 +210,7 @@ void FakeFtdiFunction::handle_unknown_method(
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
-zx::result<> FakeFtdiFunction::Start() {
+zx::result<> FakeFtdiFunction::Start(fdf::DriverContext context) {
   descriptor_size_ = sizeof(descriptor_);
   descriptor_.interface = {
       .b_length = sizeof(usb_interface_descriptor_t),
@@ -246,7 +243,7 @@ zx::result<> FakeFtdiFunction::Start() {
   active_ = true;
 
   zx::result client_end =
-      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (client_end.is_error()) {
     logger().log(fdf::ERROR, "FakeFtdiFunction: Failed to connect FIDL protocol: {}", client_end);
     return client_end.take_error();
@@ -348,8 +345,8 @@ zx::result<> FakeFtdiFunction::Start() {
   return zx::ok();
 }
 
-void FakeFtdiFunction::PrepareStop(fdf::PrepareStopCompleter completer) { completer(zx::ok()); }
+void FakeFtdiFunction::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
 }  // namespace fake_ftdi_function
 
-FUCHSIA_DRIVER_EXPORT(fake_ftdi_function::FakeFtdiFunction);
+FUCHSIA_DRIVER_EXPORT2(fake_ftdi_function::FakeFtdiFunction);

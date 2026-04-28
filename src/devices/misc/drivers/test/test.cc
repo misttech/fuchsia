@@ -4,9 +4,9 @@
 
 #include "test.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
-zx::result<> TestDriver::Start() {
+zx::result<> TestDriver::Start(fdf::DriverContext context) {
   fuchsia_driver_framework::DevfsAddArgs devfs_args(
       {.connector_supports{fuchsia_device_fs::ConnectionType::kController}});
 
@@ -21,4 +21,4 @@ zx::result<> TestDriver::Start() {
   return zx::ok();
 }
 
-FUCHSIA_DRIVER_EXPORT(TestDriver);
+FUCHSIA_DRIVER_EXPORT2(TestDriver);

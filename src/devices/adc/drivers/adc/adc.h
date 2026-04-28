@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.hardware.adc/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.adcimpl/cpp/driver/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/interrupt.h>
@@ -56,16 +57,15 @@ class AdcDevice : public fidl::Server<fuchsia_hardware_adc::Device> {
   driver_devfs::Connector<fuchsia_hardware_adc::Device> devfs_connector_;
 };
 
-class Adc : public fdf::DriverBase {
+class Adc : public fdf::DriverBase2 {
  private:
   static constexpr char kDeviceName[] = "adc";
 
  public:
-  Adc(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDeviceName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit Adc() : fdf::DriverBase2(kDeviceName) {}
 
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   friend class AdcDevice;

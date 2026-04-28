@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
 #include <bind/fuchsia/cpp/bind.h>
@@ -18,9 +18,9 @@
 
 namespace power_integration_board {
 
-zx::result<> PowerIntegrationBoard::Start() {
+zx::result<> PowerIntegrationBoard::Start(fdf::DriverContext context) {
   zx::result<fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>> client =
-      incoming()->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
+      context.incoming().Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
 
   if (client.is_error()) {
     return zx::error_result(ZX_ERR_ACCESS_DENIED);
@@ -37,8 +37,8 @@ zx::result<> PowerIntegrationBoard::Start() {
 
   {
     // Load our power config.
-    zx::result open_result = incoming()->Open<fuchsia_io::File>("/pkg/data/power_config.fidl",
-                                                                fuchsia_io::Flags::kPermReadBytes);
+    zx::result open_result = context.incoming().Open<fuchsia_io::File>(
+        "/pkg/data/power_config.fidl", fuchsia_io::Flags::kPermReadBytes);
     if (!open_result.is_ok() || !open_result->is_valid()) {
       return zx::error(ZX_ERR_INTERNAL);
     }
@@ -193,4 +193,4 @@ zx::result<> PowerIntegrationBoard::Start() {
 
 }  // namespace power_integration_board
 
-FUCHSIA_DRIVER_EXPORT(power_integration_board::PowerIntegrationBoard);
+FUCHSIA_DRIVER_EXPORT2(power_integration_board::PowerIntegrationBoard);

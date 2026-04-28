@@ -22,9 +22,11 @@
 
 namespace spi {
 
-zx::result<> SpiDriver::Start() {
+zx::result<> SpiDriver::Start(fdf::DriverContext context) {
+  incoming_ = context.take_incoming();
+
   zx::result metadata_result =
-      fdf_metadata::GetMetadata<fuchsia_hardware_spi_businfo::SpiBusMetadata>(incoming());
+      fdf_metadata::GetMetadata<fuchsia_hardware_spi_businfo::SpiBusMetadata>(*incoming_);
   if (metadata_result.is_error()) {
     fdf::error("Failed to get SPI metadata: {}", metadata_result);
     return metadata_result.take_error();
@@ -39,7 +41,7 @@ zx::result<> SpiDriver::Start() {
   bus_id_ = *metadata.bus_id();
 
   zx::result scheduler_role_name_result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_scheduler::RoleName>(incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_scheduler::RoleName>(*incoming_);
   if (scheduler_role_name_result.is_error()) {
     fdf::error("Failed to get scheduler role name: {}", scheduler_role_name_result);
     return scheduler_role_name_result.take_error();
@@ -75,8 +77,10 @@ zx::result<> SpiDriver::Start() {
   }
   child_ = std::move(child.value());
 
+  const auto config = context.take_config<spi_config::Config>();
+
   if (metadata.channels()) {
-    if (zx::result result = AddChildren(metadata, std::move(spi_impl)); result.is_error()) {
+    if (zx::result result = AddChildren(metadata, std::move(spi_impl), config); result.is_error()) {
       return result.take_error();
     }
   } else {
@@ -86,11 +90,9 @@ zx::result<> SpiDriver::Start() {
   return zx::ok();
 }
 
-zx::result<> SpiDriver::AddChildren(
-    const fuchsia_hardware_spi_businfo::SpiBusMetadata& metadata,
-    fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> client) {
-  const auto config = take_config<spi_config::Config>();
-
+zx::result<> SpiDriver::AddChildren(const fuchsia_hardware_spi_businfo::SpiBusMetadata& metadata,
+                                    fdf::WireSharedClient<fuchsia_hardware_spiimpl::SpiImpl> client,
+                                    const spi_config::Config& config) {
   bool has_siblings = metadata.channels()->size() > 1;
   for (auto& channel : *metadata.channels()) {
     const auto cs = channel.cs().value_or(0);
@@ -197,4 +199,4 @@ zx::result<> SpiDriver::AddChildren(
 
 }  // namespace spi
 
-FUCHSIA_DRIVER_EXPORT(spi::SpiDriver);
+FUCHSIA_DRIVER_EXPORT2(spi::SpiDriver);

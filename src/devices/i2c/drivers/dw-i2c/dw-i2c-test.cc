@@ -16,12 +16,11 @@ namespace dw_i2c {
 
 class TestDwI2c : public DwI2c {
  public:
-  TestDwI2c(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DwI2c(std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit TestDwI2c() : DwI2c() {}
 
   static DriverRegistration GetDriverRegistration() {
-    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestDwI2c>::initialize,
-                                          fdf_internal::DriverServer<TestDwI2c>::destroy);
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<TestDwI2c>::initialize,
+                                          fdf_internal::DriverServer2<TestDwI2c>::destroy);
   }
 
   static void set_mmio(fdf::MmioBuffer mmio) { mmio_.emplace(std::move(mmio)); }

@@ -5,7 +5,8 @@
 #define SRC_DEVICES_MISC_DRIVERS_VIRTIO_PMEM_PMEM_H_
 
 #include <fidl/fuchsia.hardware.virtio.pmem/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/virtio/backends/backend.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
@@ -41,16 +42,16 @@ class PmemDevice final : public virtio::Device {
   zx::resource mmio_resource_;
 };
 
-class PmemDriver : public fdf::DriverBase,
+class PmemDriver : public fdf::DriverBase2,
                    public fidl::Server<fuchsia_hardware_virtio_pmem::Device> {
  public:
   static constexpr char kDriverName[] = "virtio-pmem";
 
-  PmemDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher);
+  PmemDriver() : fdf::DriverBase2(kDriverName) {}
   ~PmemDriver() override = default;
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() final;
+  zx::result<> Start(fdf::DriverContext context) final;
 
  private:
   // fidl::Server<fuchsia_hardware_virtiopmem::VirtioPmem> implementation.
@@ -59,7 +60,8 @@ class PmemDriver : public fdf::DriverBase,
                              fidl::UnknownMethodCompleter::Sync& completer) final;
 
   // Overridden in tests.
-  virtual zx::result<std::unique_ptr<PmemDevice>> CreatePmemDevice();
+  virtual zx::result<std::unique_ptr<PmemDevice>> CreatePmemDevice(
+      const std::shared_ptr<fdf::Namespace>& incoming);
 
   std::unique_ptr<PmemDevice> device_;
 

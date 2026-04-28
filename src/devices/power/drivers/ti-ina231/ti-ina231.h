@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.hardware.power.sensor/cpp/wire.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/zx/result.h>
 
@@ -17,23 +18,23 @@
 
 namespace power_sensor {
 
-class TiIna231 : public fdf::DriverBase,
+class TiIna231 : public fdf::DriverBase2,
                  public fidl::WireServer<fuchsia_hardware_power_sensor::Device> {
  public:
   static constexpr std::string_view kDriverName = "ti_ina231";
   static constexpr std::string_view kChildNodeName = "ti-ina231";
 
-  TiIna231(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit TiIna231() : fdf::DriverBase2(kDriverName) {}
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // fidl::WireServer<fuchsia_hardware_power_sensor::Device> implementation.
   void GetPowerWatts(GetPowerWattsCompleter::Sync& completer) override;
   void GetVoltageVolts(GetVoltageVoltsCompleter::Sync& completer) override;
   void GetSensorName(GetSensorNameCompleter::Sync& completer) override;
 
+ protected:
  private:
   enum class Register : uint8_t;
 

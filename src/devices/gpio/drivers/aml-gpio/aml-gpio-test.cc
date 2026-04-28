@@ -110,14 +110,14 @@ class FakePlatformDevice final
 
 class TestAmlGpioDriver : public AmlGpioDriver {
  public:
-  TestAmlGpioDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : AmlGpioDriver(std::move(start_args), std::move(dispatcher)) {}
+  explicit TestAmlGpioDriver() : AmlGpioDriver() {}
 
   static DriverRegistration GetDriverRegistration() {
     // Use a custom DriverRegistration to create the DUT. Without this, the non-test implementation
     // will be used by default.
-    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestAmlGpioDriver>::initialize,
-                                          fdf_internal::DriverServer<TestAmlGpioDriver>::destroy);
+    return FUCHSIA_DRIVER_REGISTRATION_V1(
+        fdf_internal::DriverServer2<TestAmlGpioDriver>::initialize,
+        fdf_internal::DriverServer2<TestAmlGpioDriver>::destroy);
   }
 
  protected:
@@ -183,6 +183,13 @@ class AmlGpioTest : public testing::Test {
  public:
   void SetUp() override {
     ASSERT_OK(driver_test_.StartDriver());
+
+    // Wait for initialization to complete in background.
+    driver_test_.runtime().RunUntil([&]() {
+      return driver_test_.RunInNodeContext(fit::callback<bool(fdf_testing::TestNode&)>(
+          [&](fdf_testing::TestNode& node) { return node.children().contains("aml-gpio"); }));
+    });
+
     zx::result client = driver_test_.template Connect<fuchsia_hardware_pinimpl::Service::Device>();
     ASSERT_OK(client);
     client_.Bind(std::move(client.value()));

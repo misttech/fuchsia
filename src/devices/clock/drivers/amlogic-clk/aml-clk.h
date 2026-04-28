@@ -10,7 +10,7 @@
 #include <fidl/fuchsia.hardware.clockimpl/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.clockimpl/cpp/natural_types.h>
 #include <lib/ddk/io-buffer.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
@@ -32,7 +32,7 @@
 
 namespace amlogic_clock {
 
-class AmlClock : public fdf::DriverBase,
+class AmlClock : public fdf::DriverBase2,
                  public fdf::WireServer<fuchsia_hardware_clockimpl::ClockImpl>,
                  public fidl::WireServer<fuchsia_hardware_clock_measure::Measurer> {
  public:
@@ -45,12 +45,10 @@ class AmlClock : public fdf::DriverBase,
   static constexpr uint32_t kCpuCtrlMmio = 3;
 
   DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(AmlClock);
-  AmlClock(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
-  ~AmlClock() override = default;
+  AmlClock() : fdf::DriverBase2(kDriverName) {}
+  ~AmlClock() override;
 
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // CLK protocol implementation.
   void Enable(EnableRequestView request, fdf::Arena& arena,

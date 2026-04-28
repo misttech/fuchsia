@@ -8,7 +8,7 @@
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/compat/cpp/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fpromise/bridge.h>
@@ -819,7 +819,7 @@ fbl::Array<AmlSpi::ChipInfo> AmlSpiDriver::InitChips(
 
     char fragment_name[32] = {};
     snprintf(fragment_name, 32, "gpio-cs-%u", index);
-    zx::result client = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(fragment_name);
+    zx::result client = incoming().Connect<fuchsia_hardware_gpio::Service::Device>(fragment_name);
     if (client.is_error()) {
       fdf::error("Failed to connect to GPIO device: {}", client);
       return fbl::Array<AmlSpi::ChipInfo>();
@@ -830,12 +830,15 @@ fbl::Array<AmlSpi::ChipInfo> AmlSpiDriver::InitChips(
   return chips;
 }
 
-void AmlSpiDriver::Start(fdf::StartCompleter completer) {
-  parent_.Bind(std::move(node()), dispatcher());
+void AmlSpiDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  incoming_ = context.take_incoming();
+  executor_.emplace(dispatcher());
+
+  parent_.Bind(take_node(), dispatcher());
 
   {
     zx::result pdev_client =
-        incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+        incoming().Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
     if (pdev_client.is_error()) {
       fdf::error("Failed to connect to platform device: {}", pdev_client);
       return completer(pdev_client.take_error());
@@ -845,7 +848,7 @@ void AmlSpiDriver::Start(fdf::StartCompleter completer) {
   }
 
   {
-    zx::result compat_client = incoming()->Connect<fuchsia_driver_compat::Service::Device>("pdev");
+    zx::result compat_client = incoming().Connect<fuchsia_driver_compat::Service::Device>("pdev");
     if (compat_client.is_error()) {
       fdf::error("Failed to connect to compat: {}", compat_client);
       return completer(compat_client.take_error());
@@ -924,7 +927,7 @@ void AmlSpiDriver::Start(fdf::StartCompleter completer) {
                 AddNode(std::move(mmio), config.value().value(), std::move(interrupt),
                         std::move(bti), spi_bus_metadata.value(), std::move(completer));
               });
-  executor_.schedule_task(std::move(task));
+  executor_->schedule_task(std::move(task));
 }
 
 zx::result<> AmlSpiDriver::ServeRoleName(
@@ -977,7 +980,7 @@ void AmlSpiDriver::AddNode(
   }
 
   zx::result reset_register_client =
-      incoming()->Connect<fuchsia_hardware_registers::Service::Device>("reset");
+      incoming().Connect<fuchsia_hardware_registers::Service::Device>("reset");
   if (reset_register_client.is_error()) {
     fdf::warn("Did not bind the reset register client.");
   }
@@ -1138,7 +1141,7 @@ zx_status_t AmlSpi::DmaBuffer::Create(const zx::bti& bti, size_t size, DmaBuffer
   return ZX_OK;
 }
 
-void AmlSpi::PrepareStop(fdf::PrepareStopCompleter completer) {
+void AmlSpi::PrepareStop(fdf::StopCompleter completer) {
   ZX_DEBUG_ASSERT_MSG(!prepare_stop_completer_, "Prepare stop completer already set");
 
   // Prevent new connections and requests.
@@ -1240,4 +1243,4 @@ fpromise::promise<fdf::MmioBuffer, zx_status_t> AmlSpiDriver::MapMmio(
 
 }  // namespace spi
 
-FUCHSIA_DRIVER_EXPORT(spi::AmlSpiDriver);
+FUCHSIA_DRIVER_EXPORT2(spi::AmlSpiDriver);

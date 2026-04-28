@@ -135,11 +135,11 @@ zx_status_t RngDevice::Request() {
   return ZX_OK;
 }
 
-RngDriver::RngDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+RngDriver::RngDriver() : fdf::DriverBase2(kDriverName) {}
 
-zx::result<> RngDriver::Start() {
-  zx::result pci_client_result = incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+zx::result<> RngDriver::Start(fdf::DriverContext context) {
+  zx::result pci_client_result =
+      context.incoming().Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
     fdf::error("Failed to get pci client: {}", pci_client_result);
     return pci_client_result.take_error();

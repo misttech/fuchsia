@@ -75,17 +75,20 @@ zx::result<> AmlNnaDriver::Reset() {
 
 void AmlNnaDriver::Reset(ResetCompleter::Sync& completer) { completer.Reply(Reset()); }
 
-zx::result<> AmlNnaDriver::Start() {
+zx::result<> AmlNnaDriver::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
   {
-    zx::result<> result = compat_server_.Initialize(
-        incoming(), outgoing(), node_name(), kChildNodeName, compat::ForwardMetadata::Some({0}));
+    zx::result<> result =
+        compat_server_.Initialize(incoming, outgoing(), context.node_name(), kChildNodeName,
+                                  compat::ForwardMetadata::Some({0}));
     if (result.is_error()) {
       return result.take_error();
     }
   }
 
   zx::result reset_register_client_end =
-      incoming()->Connect<fuchsia_hardware_registers::Service::Device>(kResetRegisterParentName);
+      incoming->Connect<fuchsia_hardware_registers::Service::Device>(kResetRegisterParentName);
   if (reset_register_client_end.is_error()) {
     fdf::error("Failed to connect to reset register: {}", reset_register_client_end);
     return reset_register_client_end.take_error();
@@ -94,9 +97,8 @@ zx::result<> AmlNnaDriver::Start() {
   reset_register_ = fidl::WireSyncClient<fuchsia_hardware_registers::Device>(
       std::move(reset_register_client_end.value()));
 
-  zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>(
-          kPlatformDeviceParentName);
+  zx::result pdev_client_end = incoming->Connect<fuchsia_hardware_platform_device::Service::Device>(
+      kPlatformDeviceParentName);
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -241,8 +243,7 @@ zx::result<> AmlNnaDriver::Start() {
   zx::result result = outgoing()->AddService<fuchsia_hardware_platform_device::Service>(
       fuchsia_hardware_platform_device::Service::InstanceHandler({
           .device =
-              [incoming = incoming()](
-                  fidl::ServerEnd<fuchsia_hardware_platform_device::Device> server_end) {
+              [incoming](fidl::ServerEnd<fuchsia_hardware_platform_device::Device> server_end) {
                 zx::result result =
                     incoming->Connect<fuchsia_hardware_platform_device::Service::Device>(
                         std::move(server_end), "pdev");
@@ -294,4 +295,4 @@ zx::result<> AmlNnaDriver::Start() {
 
 }  // namespace aml_nna
 
-FUCHSIA_DRIVER_EXPORT(aml_nna::AmlNnaDriver);
+FUCHSIA_DRIVER_EXPORT2(aml_nna::AmlNnaDriver);

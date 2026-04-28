@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.hardware.lightsensor/cpp/fidl.h>
 #include <fidl/fuchsia.input.report/cpp/wire.h>
 #include <lib/async/cpp/task.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/clock.h>
 #include <unistd.h>
@@ -501,7 +501,7 @@ void Tcs3400::SetFeatureReport(SetFeatureReportRequestView request,
     feature_rpt_.integration_time_us = atime * kIntegrationTimeStepSize.to_usecs();
     feature_report = feature_rpt_;
   }
-  inspect_reports_.CreateEntry(
+  inspect_reports_->CreateEntry(
       [feature_report](inspect::Node& n) { RecordReport(n, feature_report); });
 
   Configure();
@@ -568,9 +568,9 @@ zx_status_t Tcs3400::InitGain(uint8_t gain) {
   return ZX_OK;
 }
 
-zx::result<> Tcs3400::InitMetadata() {
+zx::result<> Tcs3400::InitMetadata(fdf::Namespace& incoming) {
   zx::result pdev_client =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming.Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
@@ -632,7 +632,7 @@ zx::result<> Tcs3400::InitMetadata() {
     feature_rpt_.integration_time_us = atime * kIntegrationTimeStepSize.to_usecs();
     feature_report = feature_rpt_;
   }
-  inspect_reports_.CreateEntry(
+  inspect_reports_->CreateEntry(
       [feature_report](inspect::Node& n) { RecordReport(n, feature_report); });
 
   Configure();
@@ -664,15 +664,21 @@ zx::result<> Tcs3400::WriteReg(uint8_t reg, uint8_t value) {
   return zx::ok();
 }
 
-zx::result<> Tcs3400::Start() {
-  zx::result gpio = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio");
+zx::result<> Tcs3400::Start(fdf::DriverContext context) {
+  component_inspector_ = context.CreateInspector(this);
+  auto incoming = context.take_incoming();
+  inspect_reports_.emplace(
+      component_inspector_->inspector().GetRoot().CreateChild("feature_reports"),
+      kMaxFeatureReports);
+
+  zx::result gpio = incoming->Connect<fuchsia_hardware_gpio::Service::Device>("gpio");
   if (gpio.is_error()) {
     fdf::error("Failed to connect to gpio protocol: {}", gpio);
     return gpio.take_error();
   }
   gpio_.Bind(std::move(gpio.value()));
 
-  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming(), "i2c");
+  zx::result i2c = i2c::I2cChannel::FromIncoming(*incoming, "i2c");
   if (i2c.is_error()) {
     fdf::error("Failed to create i2c channel: {}", i2c);
     return i2c.take_error();
@@ -709,7 +715,7 @@ zx::result<> Tcs3400::Start() {
   irq_handler_.set_object(irq_.get());
   irq_handler_.Begin(dispatcher());
 
-  if (zx::result result = InitMetadata(); result.is_error()) {
+  if (zx::result result = InitMetadata(*incoming); result.is_error()) {
     return result.take_error();
     ;
   }
@@ -739,4 +745,4 @@ void Tcs3400::DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> re
 
 }  // namespace tcs
 
-FUCHSIA_DRIVER_EXPORT(tcs::Tcs3400);
+FUCHSIA_DRIVER_EXPORT2(tcs::Tcs3400);

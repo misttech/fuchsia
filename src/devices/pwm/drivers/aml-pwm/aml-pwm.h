@@ -8,7 +8,8 @@
 #include <fidl/fuchsia.hardware.pwm/cpp/fidl.h>
 #include <fuchsia/hardware/pwm/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <zircon/types.h>
@@ -90,17 +91,15 @@ class AmlPwm {
   fdf::MmioBuffer mmio_;
 };
 
-class AmlPwmDriver : public fdf::DriverBase, public ddk::PwmImplProtocol<AmlPwmDriver> {
+class AmlPwmDriver : public fdf::DriverBase2, public ddk::PwmImplProtocol<AmlPwmDriver> {
  public:
   static constexpr std::string_view kDriverName = "pwm";
   static constexpr std::string_view kChildNodeName = "aml-pwm-device";
 
-  AmlPwmDriver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit AmlPwmDriver() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
 
   zx_status_t PwmImplGetConfig(uint32_t idx, pwm_config_t* out_config);
   zx_status_t PwmImplSetConfig(uint32_t idx, const pwm_config_t* config);

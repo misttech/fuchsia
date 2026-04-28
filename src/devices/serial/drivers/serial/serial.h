@@ -8,31 +8,37 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.serial/cpp/wire.h>
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <zircon/types.h>
 
+#include "src/devices/serial/drivers/serial/serial_config.h"
+
 namespace serial {
 
-class SerialDevice : public fdf::DriverBase,
+class SerialDevice : public fdf::DriverBase2,
                      public fidl::WireServer<fuchsia_hardware_serial::DeviceProxy>,
                      public fidl::WireServer<fuchsia_hardware_serial::Device> {
  public:
-  SerialDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("serial", std::move(start_args), std::move(dispatcher)),
+  explicit SerialDevice()
+      : fdf::DriverBase2("serial"),
         devfs_connector_(fit::bind_member<&SerialDevice::DevfsConnect>(this)) {}
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
-  zx_status_t Bind();
+  zx_status_t Bind(serial_config::Config config);
   zx_status_t Init();
 
   void GetChannel(GetChannelRequestView request, GetChannelCompleter::Sync& completer) override;
 
   void Read(ReadCompleter::Sync& completer) override;
   void Write(WriteRequestView request, WriteCompleter::Sync& completer) override;
+
+ protected:
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 
  private:
   // Fidl protocol implementation.
@@ -50,6 +56,9 @@ class SerialDevice : public fdf::DriverBase,
 
   uint32_t serial_class_;
   driver_devfs::Connector<fuchsia_hardware_serial::DeviceProxy> devfs_connector_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_serial::DeviceProxy> proxy_bindings_;

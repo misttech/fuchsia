@@ -4,8 +4,8 @@
 
 #include <fidl/fuchsia.hardware.pinimpl/cpp/driver/fidl.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
@@ -17,17 +17,15 @@
 
 namespace gpio {
 
-class TestGpioDriver : public fdf::DriverBase,
+class TestGpioDriver : public fdf::DriverBase2,
                        public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
  public:
   static constexpr std::string_view kChildNodeName = "test-gpio";
   static constexpr std::string_view kDriverName = "test-gpio";
 
-  TestGpioDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  TestGpioDriver() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   static constexpr uint32_t PIN_COUNT = 10;
@@ -58,16 +56,17 @@ class TestGpioDriver : public fdf::DriverBase,
   fdf_metadata::MetadataServer<fuchsia_hardware_pinimpl::Metadata> pin_metadata_server_;
 };
 
-zx::result<> TestGpioDriver::Start() {
+zx::result<> TestGpioDriver::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   {
     zx::result<> result = compat_server_.Initialize(
-        incoming(), outgoing(), node_name(), kChildNodeName, compat::ForwardMetadata::None());
+        incoming, outgoing(), context.node_name(), kChildNodeName, compat::ForwardMetadata::None());
     if (result.is_error()) {
       return result.take_error();
     }
   }
 
-  zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  zx::result pdev = incoming->Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (zx::result result = pin_metadata_server_.SetMetadataFromPDevIfExists(pdev.value());
       result.is_error()) {
     fdf::error("Failed to set SPI metadata from platform device: {}", result);
@@ -175,4 +174,4 @@ void TestGpioDriver::Configure(fuchsia_hardware_pinimpl::wire::PinImplConfigureR
 
 }  // namespace gpio
 
-FUCHSIA_DRIVER_EXPORT(gpio::TestGpioDriver);
+FUCHSIA_DRIVER_EXPORT2(gpio::TestGpioDriver);

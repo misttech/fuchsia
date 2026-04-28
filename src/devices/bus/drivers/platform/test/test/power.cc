@@ -6,8 +6,8 @@
 #include <fuchsia/hardware/powerimpl/cpp/banjo.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <zircon/errors.h>
 
@@ -15,17 +15,15 @@
 
 namespace power {
 
-class TestPowerDriver : public fdf::DriverBase, public ddk::PowerImplProtocol<TestPowerDriver> {
+class TestPowerDriver : public fdf::DriverBase2, public ddk::PowerImplProtocol<TestPowerDriver> {
  public:
   static constexpr std::string_view kChildNodeName = "test-power";
   static constexpr std::string_view kDriverName = "test-power";
 
-  TestPowerDriver(fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  TestPowerDriver() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
 
   zx_status_t PowerImplEnablePowerDomain(uint32_t index);
   zx_status_t PowerImplDisablePowerDomain(uint32_t index);
@@ -56,18 +54,20 @@ class TestPowerDriver : public fdf::DriverBase, public ddk::PowerImplProtocol<Te
   fdf_metadata::MetadataServer<fuchsia_hardware_power::DomainMetadata> metadata_server_;
 };
 
-zx::result<> TestPowerDriver::Start() {
+zx::result<> TestPowerDriver::Start(fdf::DriverContext context) {
   compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_POWER_IMPL};
   banjo_config.callbacks[ZX_PROTOCOL_POWER_IMPL] = banjo_server_.callback();
+
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result<> result =
-      compat_server_.Initialize(incoming(), outgoing(), node_name(), kChildNodeName,
+      compat_server_.Initialize(incoming, outgoing(), context.node_name(), kChildNodeName,
                                 compat::ForwardMetadata::None(), std::move(banjo_config));
   if (result.is_error()) {
     fdf::error("Failed to initialize compat server: {}", result);
     return result.take_error();
   }
 
-  zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Device>();
+  zx::result pdev = incoming->Connect<fuchsia_hardware_platform_device::Device>();
   if (pdev.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev);
     return pdev.take_error();
@@ -181,4 +181,4 @@ zx_status_t TestPowerDriver::PowerImplReadPmicCtrlReg(uint32_t index, uint32_t a
 
 }  // namespace power
 
-FUCHSIA_DRIVER_EXPORT(power::TestPowerDriver);
+FUCHSIA_DRIVER_EXPORT2(power::TestPowerDriver);

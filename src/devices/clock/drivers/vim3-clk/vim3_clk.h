@@ -7,7 +7,7 @@
 
 #include <fidl/fuchsia.hardware.clockimpl/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -23,13 +23,13 @@ namespace vim3_clock {
 constexpr size_t kHiuMmioIndex = 0;
 constexpr size_t kDosMmioIndex = 1;
 
-class Vim3Clock final : public fdf::DriverBase,
+class Vim3Clock final : public fdf::DriverBase2,
                         public fdf::WireServer<fuchsia_hardware_clockimpl::ClockImpl> {
  public:
-  Vim3Clock(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  Vim3Clock() : fdf::DriverBase2("vim3_clk") {}
 
   // Called by the Driver Framework to initialize the driver instance.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_clockimpl::ClockImpl> metadata,

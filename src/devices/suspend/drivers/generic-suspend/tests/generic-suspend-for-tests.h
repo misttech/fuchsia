@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_SUSPEND_DRIVERS_GENERIC_SUSPEND_TESTS_GENERIC_SUSPEND_FOR_TESTS_H_
 #define SRC_DEVICES_SUSPEND_DRIVERS_GENERIC_SUSPEND_TESTS_GENERIC_SUSPEND_FOR_TESTS_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>

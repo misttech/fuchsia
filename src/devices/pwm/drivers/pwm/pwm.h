@@ -9,7 +9,8 @@
 #include <fidl/fuchsia.hardware.pwm/cpp/wire.h>
 #include <fuchsia/hardware/pwm/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include <mutex>
@@ -24,8 +25,7 @@ class PwmChannel : public fidl::WireServer<fuchsia_hardware_pwm::Pwm> {
                       ddk::PwmImplProtocolClient pwm_impl)
       : id_(id), pwm_impl_(pwm_impl), dispatcher_(dispatcher) {}
 
-  zx::result<> Init(const std::shared_ptr<fdf::Namespace>& incoming,
-                    std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
+  zx::result<> Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
                     fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent);
 
   // fidl::WireServer<fuchsia_hardware_pwm::Pwm> implementation.
@@ -49,15 +49,14 @@ class PwmChannel : public fidl::WireServer<fuchsia_hardware_pwm::Pwm> {
       fit::bind_member<&PwmChannel::Connect>(this)};
 };
 
-class Pwm : public fdf::DriverBase {
+class Pwm : public fdf::DriverBase2 {
  public:
   static constexpr std::string_view kDriverName = "pwm";
 
-  Pwm(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit Pwm() : fdf::DriverBase2(kDriverName) {}
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   std::vector<std::unique_ptr<PwmChannel>> pwm_channels_;

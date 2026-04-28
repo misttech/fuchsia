@@ -37,15 +37,12 @@ constexpr char kDeviceName[] = "generic-suspend-device";
 constexpr uint64_t kInspectHistorySize = 128;
 }  // namespace
 
-GenericSuspend::GenericSuspend(fdf::DriverStartArgs start_args,
-                               fdf::UnownedSynchronizedDispatcher dispatcher)
-    : fdf::DriverBase("generic-suspend", std::move(start_args), std::move(dispatcher)),
-      inspect_events_(inspector().root().CreateChild(fobs::kSuspendEventsNode),
-                      kInspectHistorySize),
+GenericSuspend::GenericSuspend()
+    : fdf::DriverBase2("generic-suspend"),
       devfs_connector_(fit::bind_member<&GenericSuspend::Serve>(this)) {}
 
-zx::result<zx::resource> GenericSuspend::GetCpuResource() {
-  zx::result resource = incoming()->Connect<fuchsia_kernel::CpuResource>();
+zx::result<zx::resource> GenericSuspend::GetCpuResource(fdf::Namespace& incoming) {
+  zx::result resource = incoming.Connect<fuchsia_kernel::CpuResource>();
   if (resource.is_error()) {
     return resource.take_error();
   }
@@ -91,7 +88,11 @@ zx::result<> GenericSuspend::CreateDevfsNode() {
   return zx::ok();
 }
 
-zx::result<> GenericSuspend::Start() {
+zx::result<> GenericSuspend::Start(fdf::DriverContext context) {
+  exposed_inspector_.emplace(context.CreateInspector(this));
+  inspect_events_.emplace(exposed_inspector_->root().CreateChild(fobs::kSuspendEventsNode),
+                          kInspectHistorySize);
+
   fuchsia_hardware_power_suspend::SuspendService::InstanceHandler handler({
       .suspender = suspend_bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
   });
@@ -105,7 +106,7 @@ zx::result<> GenericSuspend::Start() {
 
   AtStart();
 
-  zx::result resource = GetCpuResource();
+  zx::result resource = GetCpuResource(context.incoming());
   if (!resource.is_ok()) {
     fdf::error("Failed to get CPU Resource: {}", resource);
     return resource.take_error();
@@ -124,9 +125,7 @@ zx::result<> GenericSuspend::Start() {
   return zx::ok();
 }
 
-void GenericSuspend::Stop() {}
-
-void GenericSuspend::PrepareStop(fdf::PrepareStopCompleter completer) { completer(zx::ok()); }
+void GenericSuspend::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
 void GenericSuspend::GetSuspendStates(GetSuspendStatesCompleter::Sync& completer) {
   fidl::Arena arena;
@@ -172,7 +171,7 @@ void GenericSuspend::Suspend(SuspendRequestView request, SuspendCompleter::Sync&
     return;
   }
 
-  inspect_events_.CreateEntry([function_start](inspect::Node& n) {
+  inspect_events_->CreateEntry([function_start](inspect::Node& n) {
     n.RecordInt(fobs::kSuspendAttemptedAt, function_start);
   });
 
@@ -185,13 +184,13 @@ void GenericSuspend::Suspend(SuspendRequestView request, SuspendCompleter::Sync&
   if (result.is_error()) {
     auto error_value = result.error_value();
     fdf::error("zx_system_suspend_enter failed: {}", zx_status_get_string(error_value));
-    inspect_events_.CreateEntry([suspend_return](inspect::Node& n) {
+    inspect_events_->CreateEntry([suspend_return](inspect::Node& n) {
       n.RecordInt(fobs::kSuspendFailedAt, suspend_return);
     });
     completer.ReplyError(error_value);
   } else {
     const auto& header = result.value().header;
-    inspect_events_.CreateEntry([suspend_return, &header](inspect::Node& n) {
+    inspect_events_->CreateEntry([suspend_return, &header](inspect::Node& n) {
       n.RecordInt(fobs::kSuspendResumedAt, suspend_return);
       n.RecordInt(fobs::kWakeReasonReportTime, header.report_time);
       n.RecordInt(fobs::kWakeReasonWakeSourcesCount, header.total_wake_sources);

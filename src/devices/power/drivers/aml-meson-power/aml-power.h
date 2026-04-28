@@ -11,7 +11,8 @@
 #include <fidl/fuchsia.hardware.vreg/cpp/wire.h>
 #include <fuchsia/hardware/powerimpl/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/zx/result.h>
 #include <threads.h>
@@ -21,7 +22,7 @@
 
 namespace power {
 
-class AmlPower : public fdf::DriverBase, public ddk::PowerImplProtocol<AmlPower> {
+class AmlPower : public fdf::DriverBase2, public ddk::PowerImplProtocol<AmlPower> {
  public:
   class DomainInfo {
    public:
@@ -49,11 +50,10 @@ class AmlPower : public fdf::DriverBase, public ddk::PowerImplProtocol<AmlPower>
   static constexpr std::string_view kVregPwmLittleParentName = "vreg-pwm-little";
   static constexpr std::string_view kVregPwmBigParentName = "vreg-pwm-big";
 
-  AmlPower(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit AmlPower() : fdf::DriverBase2(kDriverName) {}
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   zx_status_t PowerImplGetPowerDomainStatus(uint32_t index, power_domain_status_t* out_status);
   zx_status_t PowerImplEnablePowerDomain(uint32_t index);
@@ -65,6 +65,7 @@ class AmlPower : public fdf::DriverBase, public ddk::PowerImplProtocol<AmlPower>
   zx_status_t PowerImplWritePmicCtrlReg(uint32_t index, uint32_t addr, uint32_t value);
   zx_status_t PowerImplReadPmicCtrlReg(uint32_t index, uint32_t addr, uint32_t* value);
 
+ protected:
  private:
   zx_status_t GetTargetIndex(const fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm>& pwm,
                              uint32_t u_volts, const DomainInfo& domain, uint32_t* target_index);

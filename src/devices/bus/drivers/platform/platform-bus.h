@@ -10,7 +10,8 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <fidl/fuchsia.sysinfo/cpp/wire.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/node/cpp/add_child.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fidl/cpp/wire/internal/transport_channel.h>
@@ -30,24 +31,22 @@ namespace platform_bus {
 class PlatformBus;
 
 // This is the main class for the platform bus driver.
-class PlatformBus : public fdf::DriverBase,
+class PlatformBus : public fdf::DriverBase2,
                     public fdf::WireServer<fuchsia_hardware_platform_bus::PlatformBus>,
                     public fdf::WireServer<fuchsia_hardware_platform_bus::Firmware>,
                     public fidl::Server<fuchsia_hardware_platform_bus::InterruptAttributor>,
                     public fidl::WireServer<fuchsia_sysinfo::SysInfo> {
  public:
-  PlatformBus(fdf::DriverStartArgs start_args,
-              fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit PlatformBus() : fdf::DriverBase2("platform-bus") {}
 
   ~PlatformBus() { fdf::info("~PlatformBus()"); }
-  void Stop() override { fdf::info("Stop()"); }
 
-  using fdf::DriverBase::dispatcher;
-  using fdf::DriverBase::driver_dispatcher;
-  using fdf::DriverBase::outgoing;
+  using fdf::DriverBase2::dispatcher;
+  using fdf::DriverBase2::driver_dispatcher;
+  using fdf::DriverBase2::outgoing;
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // fuchsia.hardware.platform.bus.PlatformBus implementation.
   void NodeAdd(NodeAddRequestView request, fdf::Arena& arena,
@@ -126,6 +125,9 @@ class PlatformBus : public fdf::DriverBase,
     return platform_node_.node_.borrow();
   }
 
+ protected:
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
+
  private:
   template <typename Protocol>
   zx::unowned_resource GetResource() const {
@@ -172,6 +174,9 @@ class PlatformBus : public fdf::DriverBase,
   fdf::OwnedChildNode platform_node_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> pt_node_;
 
+  std::shared_ptr<fdf::Namespace> incoming_;
+
+  std::optional<inspect::ComponentInspector> component_inspector_;
   std::vector<std::unique_ptr<PlatformDevice>> devices_;
 
   compat::DeviceServer device_server_;

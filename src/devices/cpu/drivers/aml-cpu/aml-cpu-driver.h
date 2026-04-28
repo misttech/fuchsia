@@ -6,7 +6,8 @@
 #define SRC_DEVICES_CPU_DRIVERS_AML_CPU_AML_CPU_DRIVER_H_
 
 #include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fit/function.h>
 
 #include "src/devices/cpu/drivers/aml-cpu/aml-cpu.h"
@@ -18,8 +19,7 @@ class AmlCpuPerformanceDomain : public AmlCpu {
   AmlCpuPerformanceDomain(
       async_dispatcher_t* dispatcher,
       std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> operating_points,
-      fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain,
-      inspect::ComponentInspector& inspect)
+      fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain, inspect::Inspector& inspect)
       : AmlCpu(std::move(operating_points), std::move(perf_domain), inspect) {}
 
   fidl::ProtocolHandler<fuchsia_hardware_cpu_ctrl::Device> GetHandler(
@@ -31,24 +31,24 @@ class AmlCpuPerformanceDomain : public AmlCpu {
   fidl::ServerBindingGroup<fuchsia_hardware_cpu_ctrl::Device> bindings_;
 };
 
-class AmlCpuDriver : public fdf::DriverBase {
+class AmlCpuDriver : public fdf::DriverBase2 {
  public:
-  AmlCpuDriver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit AmlCpuDriver() : fdf::DriverBase2("aml-cpu") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> BuildPerformanceDomain(
       fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain,
       std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> pd_op_points,
-      const AmlCpuConfiguration& config);
+      const AmlCpuConfiguration& config, const std::shared_ptr<fdf::Namespace>& incoming);
   std::vector<std::unique_ptr<AmlCpuPerformanceDomain>>& performance_domains() {
     return performance_domains_;
   }
 
+ protected:
  private:
+  std::optional<inspect::ComponentInspector> component_inspector_;
   std::vector<std::unique_ptr<AmlCpuPerformanceDomain>> performance_domains_;
-  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
 };
 
 }  // namespace amlogic_cpu

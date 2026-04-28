@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <string.h>
 
@@ -172,10 +172,10 @@ zx_status_t AmlClock::PopulateRegisterBlocks(uint32_t device_id, fdf::PDev& pdev
   return ZX_OK;
 }
 
-zx::result<> AmlClock::Start() {
+zx::result<> AmlClock::Start(fdf::DriverContext context) {
   // Get the platform device protocol and try to map all the MMIO regions.
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>();
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -732,7 +732,7 @@ void AmlClock::GetCount(GetCountCompleter::Sync& completer) {
   completer.Reply(static_cast<uint32_t>(clk_table_count_));
 }
 
-void AmlClock::Stop() {
+AmlClock::~AmlClock() {
   hiu_mmio_.reset();
 
   if (msr_mmio_) {
@@ -800,4 +800,4 @@ void AmlClock::InitHiuA1() {
 
 }  // namespace amlogic_clock
 
-FUCHSIA_DRIVER_EXPORT(amlogic_clock::AmlClock);
+FUCHSIA_DRIVER_EXPORT2(amlogic_clock::AmlClock);

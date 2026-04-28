@@ -21,6 +21,7 @@
 #include <zircon/availability.h>
 
 #include <memory>
+#include <string_view>
 
 namespace fdf_internal {
 template <typename DriverBaseImpl>

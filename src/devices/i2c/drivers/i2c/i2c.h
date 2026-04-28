@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 #include <deque>
 #include <optional>
@@ -17,25 +18,25 @@
 
 namespace i2c {
 
-class I2cDriver : public fdf::DriverBase {
+class I2cDriver : public fdf::DriverBase2 {
   using TransferRequestView = fidl::WireServer<fuchsia_hardware_i2c::Device>::TransferRequestView;
   using TransferCompleter = fidl::WireServer<fuchsia_hardware_i2c::Device>::TransferCompleter;
 
   static constexpr std::string_view kDriverName = "i2c";
 
  public:
-  I2cDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {
+  explicit I2cDriver() : fdf::DriverBase2(kDriverName) {
     impl_ops_.resize(kInitialOpCount);
     read_vectors_.resize(kInitialOpCount);
   }
+  ~I2cDriver() override;
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   void Transact(uint16_t address, TransferRequestView request, TransferCompleter::Sync& completer);
 
+ protected:
  private:
   static constexpr size_t kInitialOpCount = 16;
   // An arbitrary limit on the size of the request queue.
@@ -53,7 +54,10 @@ class I2cDriver : public fdf::DriverBase {
 
   void CompleteRequest(fdf::WireUnownedResult<fuchsia_hardware_i2cimpl::Device::Transact>& result);
 
-  zx::result<> AddI2cChildren(const fuchsia_hardware_i2c_businfo::I2CBusMetadata& metadata);
+  zx::result<> AddI2cChildren(const fuchsia_hardware_i2c_businfo::I2CBusMetadata& metadata,
+                              i2c_config::Config config,
+                              const std::optional<std::string>& node_name,
+                              const std::shared_ptr<fdf::Namespace>& incoming);
 
   uint64_t max_transfer_;
 

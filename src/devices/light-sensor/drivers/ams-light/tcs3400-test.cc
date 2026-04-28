@@ -135,15 +135,14 @@ class Tcs3400TestEnvironment : public fdf_testing::Environment {
 // Wrapper around `Tcs3400` needed in order to expose the driver's inspect data.
 class TestTcs3400 : public Tcs3400 {
  public:
-  TestTcs3400(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : Tcs3400(std::move(start_args), std::move(driver_dispatcher)) {}
+  TestTcs3400() = default;
 
   static DriverRegistration GetDriverRegistration() {
-    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestTcs3400>::initialize,
-                                          fdf_internal::DriverServer<TestTcs3400>::destroy);
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<TestTcs3400>::initialize,
+                                          fdf_internal::DriverServer2<TestTcs3400>::destroy);
   }
 
-  inspect::ComponentInspector& inspector() { return Tcs3400::inspector(); }
+  inspect::ComponentInspector& inspector() { return *component_inspector_; }
   std::shared_ptr<sync_completion_t> next_reader_wait() { return next_reader_wait_; }
 
  protected:

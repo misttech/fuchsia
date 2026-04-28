@@ -94,11 +94,11 @@ TEST(PmemDevice, Init) {
 
 class TestPmemDriver : public virtio::PmemDriver {
  public:
-  TestPmemDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : virtio::PmemDriver(std::move(start_args), std::move(dispatcher)) {}
+  TestPmemDriver() = default;
 
  private:
-  zx::result<std::unique_ptr<virtio::PmemDevice>> CreatePmemDevice() final {
+  zx::result<std::unique_ptr<virtio::PmemDevice>> CreatePmemDevice(
+      const std::shared_ptr<fdf::Namespace>& incoming) final {
     zx::bti fake_bti;
     zx_status_t status = fake_bti_create(fake_bti.reset_and_get_address());
     if (status != ZX_OK) {
@@ -164,6 +164,6 @@ TEST_F(PmemTestDriver, CachePolicy) {
   ASSERT_OK(run_result.status_value());
 }
 
-FUCHSIA_DRIVER_EXPORT(TestPmemDriver);
+FUCHSIA_DRIVER_EXPORT2(TestPmemDriver);
 
 }  // namespace

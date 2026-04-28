@@ -6,16 +6,17 @@
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
 #include <lib/driver/power/cpp/power-support.h>
 
 namespace fake_child_device {
-zx::result<> FakeChild::Start() {
+zx::result<> FakeChild::Start(fdf::DriverContext context) {
   // Connect to the Device from our platform device parent and get our power
   // configuration.
   auto device_connection =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("platform-device");
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>(
+          "platform-device");
   if (!device_connection.is_ok()) {
     return device_connection.take_error();
   }
@@ -40,7 +41,7 @@ zx::result<> FakeChild::Start() {
   }
 
   // Ask the library to get our dependency tokens.
-  auto res = fdf_power::GetDependencyTokens(*incoming(), power_config);
+  auto res = fdf_power::GetDependencyTokens(context.incoming(), power_config);
   if (res.is_error()) {
     return zx::error(ZX_ERR_INTERNAL);
   }
@@ -49,7 +50,7 @@ zx::result<> FakeChild::Start() {
   // Add our power element.
   {
     // Get a connection to the Topology capability.
-    auto pb_open = incoming()->Connect<fuchsia_power_broker::Topology>();
+    auto pb_open = context.incoming().Connect<fuchsia_power_broker::Topology>();
     if (pb_open.is_error()) {
       return pb_open.take_error();
     }
@@ -69,4 +70,4 @@ zx::result<> FakeChild::Start() {
 }
 }  // namespace fake_child_device
 
-FUCHSIA_DRIVER_EXPORT(fake_child_device::FakeChild);
+FUCHSIA_DRIVER_EXPORT2(fake_child_device::FakeChild);

@@ -14,7 +14,7 @@
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/wire.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
@@ -150,7 +150,7 @@ class AmlSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
 
   void Serve(fdf::ServerEnd<fuchsia_hardware_spiimpl::SpiImpl> request);
 
-  void PrepareStop(fdf::PrepareStopCompleter completer);
+  void PrepareStop(fdf::StopCompleter completer);
   void Stop();
 
  private:
@@ -236,7 +236,7 @@ class AmlSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
   bool shutdown_ = false;
   fdf::OutgoingDirectory outgoing_;
   fdf::ServerBindingGroup<fuchsia_hardware_spiimpl::SpiImpl> bindings_;
-  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
+  std::optional<fdf::StopCompleter> prepare_stop_completer_;
 
   // When a spiimpl request is received, its completer is moved into a fit::callback which is then
   // used to create a SpiRequest. If there is no other request currently executing (i.e.
@@ -266,28 +266,28 @@ class AmlSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
 // AmlSpiDriver is a helper class that is responsible for acquiring resources on behalf of AmlSpi so
 // that it can support RAII in DFv2. It implements the driver Start hook, and forwards Stop to the
 // AmlSpi instance.
-class AmlSpiDriver : public fdf::DriverBase {
+class AmlSpiDriver : public fdf::DriverBase2 {
  public:
-  AmlSpiDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("aml-spi", std::move(start_args), std::move(dispatcher)),
-        executor_(fdf::DriverBase::dispatcher()) {}
+  AmlSpiDriver() : fdf::DriverBase2("aml-spi") {}
 
-  void Start(fdf::StartCompleter completer) override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override {
+  void Stop(fdf::StopCompleter completer) override {
     if (device_) {
       device_->PrepareStop(std::move(completer));
     } else {
       completer(zx::ok());
     }
   }
-  void Stop() override {
+
+  ~AmlSpiDriver() override {
     if (device_) {
       device_->Stop();
     }
   }
 
  protected:
+  std::unique_ptr<AmlSpi> device_;
   // MapMmio can be overridden by a test in order to provide an fdf::MmioBuffer backed by a fake.
   virtual fpromise::promise<fdf::MmioBuffer, zx_status_t> MapMmio(
       fidl::WireClient<fuchsia_hardware_platform_device::Device>& pdev, uint32_t mmio_id);
@@ -346,12 +346,15 @@ class AmlSpiDriver : public fdf::DriverBase {
   fbl::Array<AmlSpi::ChipInfo> InitChips(
       const fuchsia_hardware_amlogic_metadata::SpiConfig& config);
 
+  const fdf::Namespace& incoming() const { return *incoming_; }
+  fdf::Namespace& incoming() { return *incoming_; }
+
   fidl::WireClient<fuchsia_driver_framework::Node> parent_;
   fidl::WireClient<fuchsia_driver_framework::NodeController> controller_;
   fidl::WireClient<fuchsia_hardware_platform_device::Device> pdev_;
   fidl::WireClient<fuchsia_driver_compat::Device> compat_;
-  std::unique_ptr<AmlSpi> device_;
-  async::Executor executor_;
+  std::optional<async::Executor> executor_;
+  std::unique_ptr<fdf::Namespace> incoming_;
   fdf_metadata::MetadataServer<fuchsia_hardware_spi_businfo::SpiBusMetadata> spi_metadata_server_;
   fdf_metadata::MetadataServer<fuchsia_scheduler::RoleName> scheduler_role_name_metadata_server_;
 };

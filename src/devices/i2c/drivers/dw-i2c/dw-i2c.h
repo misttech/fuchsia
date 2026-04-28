@@ -8,7 +8,8 @@
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
 #include <lib/async/cpp/irq.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -26,20 +27,19 @@
 
 namespace dw_i2c {
 
-class DwI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
+class DwI2c : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
  public:
   static constexpr std::string_view kDriverName = "dw-i2c";
   static constexpr std::string_view kChildNodeName = "dw-i2c";
   static constexpr uint32_t kDwCompTypeNum = 0x44570140;
 
-  DwI2c(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit DwI2c() : fdf::DriverBase2(kDriverName) {}
 
   ~DwI2c() override = default;
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // fdf::WireServer<fuchsia_hardware_i2cimpl::Device> implementation.
   void GetMaxTransferSize(fdf::Arena& arena, GetMaxTransferSizeCompleter::Sync& completer) override;
@@ -50,6 +50,7 @@ class DwI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i2
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_i2cimpl::Device> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
+ protected:
  private:
   struct ReadOp {
     std::span<uint8_t> data;
@@ -153,7 +154,8 @@ class DwI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i2
 
   fdf::ServerBindingGroup<fuchsia_hardware_i2cimpl::Device> i2cimpl_bindings_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_controller_;
-  std::optional<fdf::PrepareStopCompleter> completer_;
+
+  std::optional<fdf::StopCompleter> completer_;
   fdf_metadata::MetadataServer<fuchsia_hardware_i2c_businfo::I2CBusMetadata> metadata_server_;
   bool send_restart_ = false;
 };

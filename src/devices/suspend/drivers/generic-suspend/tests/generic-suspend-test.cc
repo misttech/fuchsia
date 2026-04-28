@@ -20,13 +20,12 @@ namespace suspend {
 
 class GenericSuspendTest : public GenericSuspend {
  public:
-  GenericSuspendTest(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : GenericSuspend(std::move(start_args), std::move(dispatcher)) {
+  GenericSuspendTest() : GenericSuspend() {
     zx_status_t result = zx::vmo::create(1, 0, &fake_resource_);
     ZX_ASSERT(result == ZX_OK);
   }
 
-  zx::result<zx::resource> GetCpuResource() override {
+  zx::result<zx::resource> GetCpuResource(fdf::Namespace& incoming) override {
     zx::vmo dupe;
     zx_status_t st = fake_resource_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
     if (st != ZX_OK) {
@@ -51,8 +50,8 @@ class GenericSuspendTest : public GenericSuspend {
     // Use a custom DriverRegistration to create the DUT. Without this, the non-test implementation
     // will be used by default.
     return FUCHSIA_DRIVER_REGISTRATION_V1(
-        fdf_internal::DriverServer<GenericSuspendTest>::initialize,
-        fdf_internal::DriverServer<GenericSuspendTest>::destroy);
+        fdf_internal::DriverServer2<GenericSuspendTest>::initialize,
+        fdf_internal::DriverServer2<GenericSuspendTest>::destroy);
   }
 
  private:

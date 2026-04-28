@@ -4,8 +4,9 @@
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 
@@ -30,14 +31,12 @@ class FakeUsbCdcAcmFunction;
 constexpr int kBulkMaxPacket = 512;
 
 class FakeUsbCdcAcmFunction
-    : public fdf::DriverBase,
+    : public fdf::DriverBase2,
       public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
-  FakeUsbCdcAcmFunction(fdf::DriverStartArgs start_args,
-                        fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("fake-usb-cdc-acm", std::move(start_args), std::move(dispatcher)) {}
+  explicit FakeUsbCdcAcmFunction() : fdf::DriverBase2("fake-usb-cdc-acm") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // UsbFunctionInterface:
   void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
@@ -51,7 +50,6 @@ class FakeUsbCdcAcmFunction
  private:
   void InComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void OutComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
-
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
 
   usb::EndpointClient<FakeUsbCdcAcmFunction> bulk_in_ep_{
@@ -189,10 +187,11 @@ void FakeUsbCdcAcmFunction::OutComplete(
   }
 }
 
-zx::result<> FakeUsbCdcAcmFunction::Start() {
+zx::result<> FakeUsbCdcAcmFunction::Start(fdf::DriverContext context) {
   fbl::AutoLock lock(&mtx_);
 
-  auto svc = incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  auto svc =
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (svc.is_error()) {
     return svc.take_error();
   }
@@ -303,6 +302,6 @@ zx::result<> FakeUsbCdcAcmFunction::Start() {
   return zx::ok();
 }
 
-FUCHSIA_DRIVER_EXPORT(FakeUsbCdcAcmFunction);
+FUCHSIA_DRIVER_EXPORT2(FakeUsbCdcAcmFunction);
 
 }  // namespace fake_usb_cdc_acm_function

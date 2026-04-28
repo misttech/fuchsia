@@ -99,9 +99,10 @@ void AmlPwmRegulator::Disable(DisableCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
-zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(
-    const VregMetadata& metadata, AmlPwmRegulatorDriver& driver) {
-  auto connect_result = driver.incoming()->Connect<fuchsia_hardware_pwm::Service::Pwm>("pwm");
+zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(const VregMetadata& metadata,
+                                                                     AmlPwmRegulatorDriver& driver,
+                                                                     fdf::Namespace& incoming) {
+  auto connect_result = incoming.Connect<fuchsia_hardware_pwm::Service::Pwm>("pwm");
   if (connect_result.is_error()) {
     fdf::error("Unable to connect to fidl protocol - status: {}", connect_result.status_string());
     return connect_result.take_error();
@@ -153,9 +154,9 @@ zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(
   return zx::ok(std::move(device));
 }
 
-zx::result<> AmlPwmRegulatorDriver::Start() {
+zx::result<> AmlPwmRegulatorDriver::Start(fdf::DriverContext context) {
   zx::result pdev_client =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client);
     return pdev_client.take_error();
@@ -187,7 +188,7 @@ zx::result<> AmlPwmRegulatorDriver::Start() {
   }
 
   // Build Voltage Regulator
-  auto regulator = AmlPwmRegulator::Create(metadata, *this);
+  auto regulator = AmlPwmRegulator::Create(metadata, *this, context.incoming());
   if (regulator.is_error()) {
     return regulator.take_error();
   }
@@ -197,4 +198,4 @@ zx::result<> AmlPwmRegulatorDriver::Start() {
 
 }  // namespace aml_pwm_regulator
 
-FUCHSIA_DRIVER_EXPORT(aml_pwm_regulator::AmlPwmRegulatorDriver);
+FUCHSIA_DRIVER_EXPORT2(aml_pwm_regulator::AmlPwmRegulatorDriver);

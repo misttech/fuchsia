@@ -8,7 +8,8 @@
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
 #include <lib/async/cpp/irq.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -18,17 +19,16 @@
 
 namespace aml_i2c {
 
-class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
+class AmlI2c : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
  public:
   static constexpr std::string_view kDriverName = "aml-i2c";
   static constexpr std::string_view kChildNodeName = "aml-i2c";
 
-  AmlI2c(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit AmlI2c() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // fdf::WireServer<fuchsia_hardware_i2cimpl::Device> implementation.
   void GetMaxTransferSize(fdf::Arena& arena, GetMaxTransferSizeCompleter::Sync& completer) override;
@@ -70,7 +70,8 @@ class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_controller_;
   // Only needed in order to set the role name for the code that waits for irq's.
   std::optional<fdf::Dispatcher> irq_dispatcher_;
-  std::optional<fdf::PrepareStopCompleter> completer_;
+
+  std::optional<fdf::StopCompleter> completer_;
   async::IrqMethod<AmlI2c, &AmlI2c::HandleIrq> irq_handler_{this};
   fdf_metadata::MetadataServer<fuchsia_hardware_i2c_businfo::I2CBusMetadata> metadata_server_;
 };

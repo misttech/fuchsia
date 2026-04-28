@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.hardware.pwm/cpp/wire.h>
 #include <fidl/fuchsia.hardware.vreg/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 #include <fbl/alloc_checker.h>
 #include <soc/aml-common/aml-pwm-regs.h>
@@ -23,7 +24,8 @@ class AmlPwmRegulator : public fidl::WireServer<fuchsia_hardware_vreg::Vreg> {
   explicit AmlPwmRegulator(const VregMetadata& metadata,
                            fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm> pwm_proto_client);
   static zx::result<std::unique_ptr<AmlPwmRegulator>> Create(const VregMetadata& metadata,
-                                                             AmlPwmRegulatorDriver& driver);
+                                                             AmlPwmRegulatorDriver& driver,
+                                                             fdf::Namespace& incoming);
 
   // Vreg Implementation.
   void SetVoltageStep(SetVoltageStepRequestView request,
@@ -48,16 +50,15 @@ class AmlPwmRegulator : public fidl::WireServer<fuchsia_hardware_vreg::Vreg> {
   fidl::ServerBindingGroup<fuchsia_hardware_vreg::Vreg> bindings_;
 };
 
-class AmlPwmRegulatorDriver : public fdf::DriverBase {
+class AmlPwmRegulatorDriver : public fdf::DriverBase2 {
  public:
   static constexpr std::string_view kDriverName = "aml-pwm-regulator";
 
-  AmlPwmRegulatorDriver(fdf::DriverStartArgs start_args,
-                        fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit AmlPwmRegulatorDriver() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
+ protected:
  private:
   friend class AmlPwmRegulator;
 
