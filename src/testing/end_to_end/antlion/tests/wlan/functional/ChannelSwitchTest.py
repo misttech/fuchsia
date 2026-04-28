@@ -70,7 +70,6 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         self.fuchsia_device, self.dut = self.get_dut_type(
             FuchsiaDevice, AssociationMode.POLICY
         )
-        self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop_all()
 
     def setup_class(self) -> None:
         super().setup_class()
@@ -80,6 +79,11 @@ class ChannelSwitchTest(base_test.WifiBaseTest):
         self.dut.reset_wifi()
         self.download_logs()
         self.access_point.stop_all_aps()
+        try:
+            self.fuchsia_device.honeydew_fd.wlan_policy_ap_deprecated_sync.stop_all()
+        except HoneydewWlanError as e:
+            # This is expected for devices without soft-AP support.
+            self.log.info("Failed to stop soft APs: %s", e)
         super().teardown_test()
 
     def channel_switch(
