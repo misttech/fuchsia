@@ -65,6 +65,8 @@ pub use traits::{Version, Versioned, VersionedLatest};
 #[cfg(test)]
 pub mod test_traits;
 
+pub mod varint;
+
 #[cfg(test)]
 mod tests;
 
