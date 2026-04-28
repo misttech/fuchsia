@@ -28,7 +28,7 @@ pub struct FvmEnvironment {
     args: Args,
     vmo: Vmo,
     instance_actor: Arc<Mutex<InstanceActor>>,
-    volume_actors: Vec<(FvmVolume, Arc<Mutex<VolumeActor>>)>,
+    volume_actors: Vec<(String, FvmVolume, Arc<Mutex<VolumeActor>>)>,
 }
 
 impl FvmEnvironment {
@@ -65,7 +65,7 @@ impl FvmEnvironment {
                     .await,
             ));
 
-            volume_actors.push((fvm_volume, volume_actor));
+            volume_actors.push((volume_name, fvm_volume, volume_actor));
         }
 
         let instance_actor = Arc::new(Mutex::new(InstanceActor::new(fvm)));
@@ -93,7 +93,7 @@ impl Environment for FvmEnvironment {
     async fn actor_runners(&mut self) -> Vec<ActorRunner> {
         let mut runners = vec![];
 
-        for (volume, actor) in &self.volume_actors {
+        for (_name, volume, actor) in &self.volume_actors {
             let actor_name = format!("volume_actor_{}", volume.guid()[0]);
             runners.push(ActorRunner::new(actor_name, None, actor.clone()));
         }
@@ -112,29 +112,24 @@ impl Environment for FvmEnvironment {
     }
 
     async fn reset(&mut self) {
-        {
-            let mut actor = self.instance_actor.lock().await;
+        // Start isolated-devmgr and FVM
+        let fvm = FvmInstance::new(&self.vmo, self.args.ramdisk_block_size, None).await;
 
-            // The environment is only reset when the instance is killed.
-            // TODO(72385): Pass the actor error here, so it can be printed out on assert failure.
-            assert!(actor.instance.is_none());
-
-            // Start isolated-devmgr and FVM
-            let fvm = FvmInstance::new(&self.vmo, self.args.ramdisk_block_size, None).await;
-
-            // Replace the FVM instance
-            actor.instance = Some(fvm);
-        }
-
-        for (volume, actor) in &self.volume_actors {
-            let mut actor = actor.lock().await;
+        for (name, volume, actor) in &mut self.volume_actors {
+            let new_volume = fvm.open_volume(name).await;
+            *volume = new_volume;
 
             // Connect to the volume
             let volume =
                 VolumeConnection::new(volume.block_connector(), self.args.fvm_slice_size).await;
 
             // Replace the volume
-            actor.volume = volume;
+            actor.lock().await.volume = volume;
         }
+
+        // The environment is only reset when the instance is killed.
+        // TODO(https://fxbug.dev/42151840): Pass the actor error here, so it can be printed out
+        // on assert failure.
+        assert!(self.instance_actor.lock().await.instance.replace(fvm).is_none());
     }
 }
