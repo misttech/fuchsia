@@ -13,7 +13,7 @@ mod register;
 
 pub mod prelude;
 pub mod testing;
-pub use context::{Context, DaemonProtocolProvider};
+pub use context::{Context, DaemonProtocolProvider, OvernetNodeError};
 pub use core_protocol_macros::ffx_protocol;
 pub use protocols::{FidlInstancedStreamHandler, FidlProtocol, FidlStreamHandler, StreamHandler};
 pub use register::{NameToStreamHandlerMap, ProtocolError, ProtocolRegister};

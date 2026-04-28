@@ -89,13 +89,13 @@ impl Eq for RcsConnection {}
 impl RcsConnection {
     pub fn new(node: Arc<overnet_core::Router>, id: &mut NodeId) -> Result<Self> {
         let (s, p) = fidl::Channel::create();
-        let _result = RcsConnection::connect_to_service(Arc::clone(&node), id, s)?;
+        RcsConnection::connect_to_service(Arc::clone(&node), id, s);
         let proxy = RemoteControlProxy::new(fidl::AsyncChannel::from_channel(p));
 
         Ok(Self { node, proxy, overnet_id: id.clone() })
     }
 
-    pub fn copy_to_channel(&mut self, channel: fidl::Channel) -> Result<()> {
+    pub fn copy_to_channel(&mut self, channel: fidl::Channel) {
         RcsConnection::connect_to_service(Arc::clone(&self.node), &mut self.overnet_id, channel)
     }
 
@@ -103,7 +103,7 @@ impl RcsConnection {
         node: Arc<overnet_core::Router>,
         overnet_id: &mut NodeId,
         channel: fidl::Channel,
-    ) -> Result<()> {
+    ) {
         let overnet_id = (*overnet_id).into();
         // TODO(b/302394849): If this method were async we could return the
         // error instead of just logging it. This task used to be managed by
@@ -118,7 +118,6 @@ impl RcsConnection {
             }
         })
         .detach();
-        Ok(())
     }
 
     // Primarily For testing.

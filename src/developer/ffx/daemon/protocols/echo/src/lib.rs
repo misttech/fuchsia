@@ -2,10 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
 use async_trait::async_trait;
 use fidl_fuchsia_developer_ffx as ffx;
 use protocols::prelude::*;
+
+#[derive(Debug, thiserror::Error)]
+pub enum EchoError {
+    #[error("FIDL error: {0}")]
+    Fidl(#[from] fidl::Error),
+}
 
 #[ffx_protocol]
 #[derive(Default)]
@@ -15,22 +20,26 @@ pub struct Echo;
 impl FidlProtocol for Echo {
     type Protocol = ffx::EchoMarker;
     type StreamHandler = FidlInstancedStreamHandler<Self>;
-    type Error = anyhow::Error;
+    type Error = EchoError;
 
-    async fn handle(&self, _cx: &Context, req: ffx::EchoRequest) -> Result<()> {
+    async fn handle(
+        &self,
+        _cx: &Context,
+        req: ffx::EchoRequest,
+    ) -> std::result::Result<(), EchoError> {
         match req {
             ffx::EchoRequest::EchoString { value, responder } => {
-                responder.send(&String::from(value)).map_err(Into::into)
+                responder.send(&String::from(value)).map_err(EchoError::from)
             }
         }
     }
 
-    async fn start(&mut self, _cx: &Context) -> Result<()> {
+    async fn start(&mut self, _cx: &Context) -> std::result::Result<(), EchoError> {
         log::debug!("started echo protocol");
         Ok(())
     }
 
-    async fn stop(&mut self, _cx: &Context) -> Result<()> {
+    async fn stop(&mut self, _cx: &Context) -> std::result::Result<(), EchoError> {
         log::debug!("stopped echo protocol");
         Ok(())
     }

@@ -15,7 +15,6 @@ rustc_library("ffx_daemon_protocol_testing") {
   deps = [
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/protocols:lib",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
   ]

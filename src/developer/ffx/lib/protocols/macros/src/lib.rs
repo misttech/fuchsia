@@ -86,7 +86,7 @@ pub fn ffx_protocol(attr: TokenStream, item: TokenStream) -> TokenStream {
         q.extend(quote! {
             impl #struct_name {
                 #(
-                    pub async fn #func_names(&self, cx: &Context) -> Result<#proxies>
+                    pub async fn #func_names(&self, cx: &protocols::Context) -> std::result::Result<#proxies, protocols::ProtocolError>
                     {
                         cx.open_protocol::<#deps>().await
                     }

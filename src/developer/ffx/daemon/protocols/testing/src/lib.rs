@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
 use async_trait::async_trait;
 use fidl_fuchsia_developer_ffx as ffx;
 use protocols::prelude::*;
+use std::convert::Infallible;
 
 #[ffx_protocol]
 #[derive(Default)]
@@ -15,9 +15,13 @@ pub struct Testing;
 impl FidlProtocol for Testing {
     type Protocol = ffx::TestingMarker;
     type StreamHandler = FidlStreamHandler<Self>;
-    type Error = anyhow::Error;
+    type Error = Infallible;
 
-    async fn handle(&self, _cx: &Context, req: ffx::TestingRequest) -> Result<()> {
+    async fn handle(
+        &self,
+        _cx: &Context,
+        req: ffx::TestingRequest,
+    ) -> std::result::Result<(), Infallible> {
         match req {
             // Hang intends to block the reactor indefinitely, however
             // that's a little tricky to do exactly. This approximation

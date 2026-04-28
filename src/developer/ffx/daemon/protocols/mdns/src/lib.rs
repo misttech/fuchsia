@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use ffx_config::{EnvironmentContext, keys};
 use ffx_stream_util::TryStreamUtilExt;
@@ -16,10 +15,20 @@ use mdns_discovery::{
 };
 use protocols::prelude::*;
 use std::sync::Arc;
+use thiserror::Error;
 
 // Default port to listen on for MDNS queries
 const MDNS_PORT: u16 = 5353;
 const CONFIG_ENABLE_MDNS: &str = "discovery.mdns.enabled";
+
+#[derive(Debug, Error)]
+pub enum MdnsError {
+    #[error("FIDL error: {0}")]
+    Fidl(#[from] fidl::Error),
+
+    #[error("Task never started")]
+    TaskNeverStarted,
+}
 
 #[ffx_protocol]
 #[derive(Default)]
@@ -50,9 +59,13 @@ impl MdnsEnabledChecker for ConfigLoader {
 impl FidlProtocol for Mdns {
     type Protocol = ffx::MdnsMarker;
     type StreamHandler = FidlStreamHandler<Self>;
-    type Error = anyhow::Error;
+    type Error = MdnsError;
 
-    async fn handle(&self, _cx: &Context, req: ffx::MdnsRequest) -> Result<()> {
+    async fn handle(
+        &self,
+        _cx: &Context,
+        req: ffx::MdnsRequest,
+    ) -> std::result::Result<(), MdnsError> {
         match req {
             ffx::MdnsRequest::GetTargets { responder } => responder
                 .send(
@@ -63,7 +76,7 @@ impl FidlProtocol for Mdns {
                         .target_cache()
                         .await,
                 )
-                .map_err(Into::into),
+                .map_err(MdnsError::from),
             ffx::MdnsRequest::GetNextEvent { responder } => responder
                 .send(
                     self.receiver
@@ -74,11 +87,11 @@ impl FidlProtocol for Mdns {
                         .ok()
                         .as_ref(),
                 )
-                .map_err(Into::into),
+                .map_err(MdnsError::from),
         }
     }
 
-    async fn start(&mut self, cx: &Context) -> Result<()> {
+    async fn start(&mut self, cx: &Context) -> std::result::Result<(), MdnsError> {
         let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
         let inner = Arc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
         self.inner.replace(inner.clone());
@@ -99,8 +112,8 @@ impl FidlProtocol for Mdns {
         Ok(())
     }
 
-    async fn stop(&mut self, _cx: &Context) -> Result<()> {
-        self.mdns_task.take().ok_or_else(|| anyhow!("mdns_task never started"))?;
+    async fn stop(&mut self, _cx: &Context) -> std::result::Result<(), MdnsError> {
+        self.mdns_task.take().ok_or_else(|| MdnsError::TaskNeverStarted)?;
         Ok(())
     }
 
@@ -108,11 +121,11 @@ impl FidlProtocol for Mdns {
         &'a self,
         cx: &'a Context,
         stream: <Self::Protocol as ProtocolMarker>::RequestStream,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), MdnsError> {
         // This is necessary as we'll be hanging forever waiting on incoming
         // traffic. This will exit early if the stream is closed at any point.
         stream
-            .map_err(|err| anyhow!("{}", err))
+            .map_err(MdnsError::from)
             .try_for_each_concurrent_while_connected(None, |req| self.handle(cx, req))
             .await
     }

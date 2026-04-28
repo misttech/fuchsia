@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use ffx_config::ConfigLevel;
 use ffx_target_net::port_forwarder_overnet::PortForwarder;
@@ -14,7 +14,17 @@ use protocols::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::net::TcpListener;
+
+#[derive(Debug, Error)]
+pub enum ForwardError {
+    #[error("FIDL error: {0}")]
+    Fidl(#[from] fidl::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
 
 #[ffx_protocol]
 #[derive(Default)]
@@ -77,10 +87,13 @@ impl Forward {
 impl FidlProtocol for Forward {
     type Protocol = ffx::TunnelMarker;
     type StreamHandler = FidlInstancedStreamHandler<Self>;
+    type Error = ForwardError;
 
-    type Error = anyhow::Error;
-
-    async fn handle(&self, cx: &Context, req: ffx::TunnelRequest) -> Result<()> {
+    async fn handle(
+        &self,
+        cx: &Context,
+        req: ffx::TunnelRequest,
+    ) -> std::result::Result<(), ForwardError> {
         let cx = cx.clone();
         let cx_clone = cx.clone();
 
@@ -95,7 +108,7 @@ impl FidlProtocol for Forward {
                     Err(_) => {
                         return responder
                             .send(Err(ffx::TunnelError::CouldNotListen))
-                            .context("error sending response");
+                            .map_err(ForwardError::from);
                     }
                 };
 
@@ -114,7 +127,7 @@ impl FidlProtocol for Forward {
                     log::warn!("Failed to persist tunnel configuration: {:?}", e);
                 }
 
-                responder.send(Ok(())).context("error sending response")?;
+                responder.send(Ok(())).map_err(ForwardError::from)?;
                 Ok(())
             }
             ffx::TunnelRequest::ReversePort { target, host_address, target_address, responder } => {
@@ -124,7 +137,7 @@ impl FidlProtocol for Forward {
                         log::error!("Could not connect to proxy for TCP forwarding: {:?}", e);
                         return responder
                             .send(Err(ffx::TunnelError::TargetConnectFailed))
-                            .context("error sending response");
+                            .map_err(ForwardError::from);
                     }
                 };
 
@@ -136,7 +149,7 @@ impl FidlProtocol for Forward {
                         log::error!("Error connecting to forwarding protocol from RCS: {:?}", e);
                         return responder
                             .send(Err(ffx::TunnelError::TargetConnectFailed))
-                            .context("error sending response");
+                            .map_err(ForwardError::from);
                     }
                 };
 
@@ -150,7 +163,7 @@ impl FidlProtocol for Forward {
                         log::error!("Error creating target-side listener: {:?}", e);
                         return responder
                             .send(Err(ffx::TunnelError::TargetConnectFailed))
-                            .context("error sending response");
+                            .map_err(ForwardError::from);
                     }
                 };
                 let task =
@@ -160,13 +173,13 @@ impl FidlProtocol for Forward {
                         r.unwrap_or_else(|e| log::error!("Error during forwarding {e:?}"))
                     }),
                 );
-                responder.send(Ok(())).context("error sending response")?;
+                responder.send(Ok(())).map_err(ForwardError::from)?;
                 Ok(())
             }
         }
     }
 
-    async fn start(&mut self, cx: &Context) -> Result<()> {
+    async fn start(&mut self, cx: &Context) -> std::result::Result<(), ForwardError> {
         log::info!("started port forwarding protocol");
 
         let tunnels: Vec<Value> = cx.environment().get(TUNNEL_CFG).unwrap_or_else(|_| Vec::new());
@@ -199,7 +212,7 @@ impl FidlProtocol for Forward {
         Ok(())
     }
 
-    async fn stop(&mut self, _cx: &Context) -> Result<()> {
+    async fn stop(&mut self, _cx: &Context) -> std::result::Result<(), ForwardError> {
         log::info!("stopped port forwarding protocol");
         Ok(())
     }
@@ -319,7 +332,10 @@ mod tests {
             Ok(client.into_proxy())
         }
 
-        async fn open_protocol(&self, _name: String) -> Result<fidl::Channel> {
+        async fn open_protocol(
+            &self,
+            _name: String,
+        ) -> std::result::Result<fidl::Channel, protocols::ProtocolError> {
             unimplemented!()
         }
 

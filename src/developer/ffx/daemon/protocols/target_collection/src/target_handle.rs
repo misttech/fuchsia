@@ -4,7 +4,7 @@
 
 use crate::reboot;
 use anyhow::{Context as _, Result, anyhow};
-use ffx_daemon_core::events::StreamClosedExt;
+use ffx_daemon_core::events::{StreamClosedError, StreamClosedExt};
 use ffx_daemon_events::TargetEvent;
 use ffx_daemon_target::target::Target;
 use ffx_daemon_target::target_collection::TargetCollection;
@@ -19,6 +19,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::time::Duration;
+use thiserror::Error;
 
 // TODO(awdavies): Abstract this to use similar utilities to an actual protocol.
 // This functionally behaves the same with the only caveat being that some
@@ -32,7 +33,7 @@ impl TargetHandle {
         cx: Context,
         handle: ServerEnd<ffx::TargetMarker>,
         target_collection: Rc<TargetCollection>,
-    ) -> Result<Pin<Box<dyn Future<Output = ()>>>> {
+    ) -> std::result::Result<Pin<Box<dyn Future<Output = ()>>>, protocols::OvernetNodeError> {
         let reboot_controller =
             reboot::RebootController::new(&cx.environment(), target.clone(), cx.overnet_node()?);
         let keep_alive = target.keep_alive();
@@ -131,7 +132,7 @@ impl TargetHandleInner {
                     Ok(mut c) => {
                         // TODO(awdavies): Return this as a specific error to
                         // the client with map_err.
-                        c.copy_to_channel(remote_control.into_channel())?;
+                        c.copy_to_channel(remote_control.into_channel());
                         responder.send(Ok(())).map_err(Into::into)
                     }
                     Err(e) => {
@@ -177,10 +178,19 @@ impl TargetHandleInner {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum WaitForRcsError {
+    #[error("Stream error: {0}")]
+    Stream(#[from] StreamClosedError),
+}
+
 pub(crate) async fn wait_for_rcs(
     t: &Rc<Target>,
     cx: &Context,
-) -> Result<Result<rcs::RcsConnection, ffx::TargetConnectionError>> {
+) -> std::result::Result<
+    std::result::Result<rcs::RcsConnection, ffx::TargetConnectionError>,
+    WaitForRcsError,
+> {
     // This setup here is due to the events not having a proper streaming implementation. The
     // closure is intended to have a static lifetime, which forces this to happen to extract an
     // event.
@@ -251,6 +261,8 @@ mod tests {
     use ffx_daemon_events::TargetConnectionState;
     use ffx_daemon_target::target::{TargetAddrEntry, TargetAddrStatus, TargetUpdateBuilder};
     use fidl::prelude::*;
+    use fidl_fuchsia_developer_remotecontrol as fidl_rcs;
+    use fidl_fuchsia_sys2 as fsys;
     use fuchsia_async::Task;
     use futures::StreamExt;
     use protocols::testing::FakeDaemonBuilder;
@@ -258,7 +270,6 @@ mod tests {
     use std::net::{IpAddr, SocketAddr};
     use std::str::FromStr;
     use std::sync::Arc;
-    use {fidl_fuchsia_developer_remotecontrol as fidl_rcs, fidl_fuchsia_sys2 as fsys};
 
     #[test]
     fn test_host_pipe_err_to_fidl_conversion() {

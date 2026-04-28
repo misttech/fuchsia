@@ -169,7 +169,10 @@ impl DaemonEventHandler {
 
 #[async_trait(?Send)]
 impl DaemonProtocolProvider for Daemon {
-    async fn open_protocol(&self, protocol_name: String) -> Result<fidl::Channel> {
+    async fn open_protocol(
+        &self,
+        protocol_name: String,
+    ) -> std::result::Result<fidl::Channel, protocols::ProtocolError> {
         let (server, client) = fidl::Channel::create();
         self.protocol_register
             .open(
@@ -181,10 +184,10 @@ impl DaemonProtocolProvider for Daemon {
         Ok(client)
     }
 
-    fn overnet_node(&self) -> Result<Arc<overnet_core::Router>> {
-        self.overnet_node.clone().ok_or_else(|| {
-            anyhow!("Attempting to get overnet node for protocol when daemon is not started")
-        })
+    fn overnet_node(
+        &self,
+    ) -> std::result::Result<Arc<overnet_core::Router>, protocols::OvernetNodeError> {
+        self.overnet_node.clone().ok_or(protocols::OvernetNodeError::DaemonNotStarted)
     }
 
     async fn open_target_proxy(
@@ -256,7 +259,7 @@ impl DaemonProtocolProvider for Daemon {
             .ok_or_else(|| anyhow!("rcs disconnected after event fired"))
             .context("getting rcs instance")?;
         let (proxy, remote) = fidl::endpoints::create_proxy::<RemoteControlMarker>();
-        rcs.copy_to_channel(remote.into_channel())?;
+        rcs.copy_to_channel(remote.into_channel());
         Ok(proxy)
     }
 
@@ -264,8 +267,8 @@ impl DaemonProtocolProvider for Daemon {
         self.event_queue.clone()
     }
 
-    async fn get_target_collection(&self) -> Result<Rc<TargetCollection>> {
-        Ok(self.target_collection.clone())
+    fn get_target_collection(&self) -> Rc<TargetCollection> {
+        self.target_collection.clone()
     }
 }
 

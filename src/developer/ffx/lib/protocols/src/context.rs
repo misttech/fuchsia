@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::ProtocolError;
 use anyhow::Result;
 use async_trait::async_trait;
 use ffx::DaemonError;
@@ -15,11 +16,21 @@ use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use std::rc::Rc;
 use std::sync::Arc;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum OvernetNodeError {
+    #[error("Attempting to get overnet node for protocol when daemon is not started")]
+    DaemonNotStarted,
+}
 
 #[async_trait(?Send)]
 pub trait DaemonProtocolProvider {
     /// Opens a proxy for the given protocol. Returns a channel to the proxy.
-    async fn open_protocol(&self, protocol_name: String) -> Result<fidl::Channel>;
+    async fn open_protocol(
+        &self,
+        protocol_name: String,
+    ) -> std::result::Result<fidl::Channel, ProtocolError>;
 
     async fn open_target_proxy(
         &self,
@@ -28,7 +39,7 @@ pub trait DaemonProtocolProvider {
         capability_name: &str,
     ) -> Result<fidl::Channel>;
 
-    fn overnet_node(&self) -> Result<Arc<overnet_core::Router>> {
+    fn overnet_node(&self) -> std::result::Result<Arc<overnet_core::Router>, OvernetNodeError> {
         unimplemented!()
     }
 
@@ -65,7 +76,7 @@ pub trait DaemonProtocolProvider {
     }
 
     /// Returns a copy of the daemon target collection.
-    async fn get_target_collection(&self) -> Result<Rc<TargetCollection>> {
+    fn get_target_collection(&self) -> Rc<TargetCollection> {
         unimplemented!()
     }
 }
@@ -93,7 +104,7 @@ impl Context {
         self.environment.clone()
     }
 
-    pub fn overnet_node(&self) -> Result<Arc<overnet_core::Router>> {
+    pub fn overnet_node(&self) -> std::result::Result<Arc<overnet_core::Router>, OvernetNodeError> {
         self.inner.overnet_node()
     }
 
@@ -184,7 +195,7 @@ impl Context {
     /// }
     ///
     /// ```
-    pub async fn open_protocol<S>(&self) -> Result<S::Proxy>
+    pub async fn open_protocol<S>(&self) -> std::result::Result<S::Proxy, ProtocolError>
     where
         S: fidl::endpoints::DiscoverableProtocolMarker,
     {
@@ -198,7 +209,7 @@ impl Context {
         Ok(proxy)
     }
 
-    pub async fn get_target_collection(&self) -> Result<Rc<TargetCollection>> {
-        self.inner.get_target_collection().await
+    pub fn get_target_collection(&self) -> Rc<TargetCollection> {
+        self.inner.get_target_collection()
     }
 }

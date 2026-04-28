@@ -19,6 +19,7 @@ rustc_library("ffx_daemon_protocol_forward") {
     "//src/developer/ffx/lib/protocols:lib",
     "//src/developer/ffx/lib/target_net:lib",
     "//src/developer/ffx/lib/tasks:lib",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
@@ -26,6 +27,7 @@ rustc_library("ffx_daemon_protocol_forward") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:tokio",
   ]
 

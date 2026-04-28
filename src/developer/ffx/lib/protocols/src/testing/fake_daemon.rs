@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{
-    Context, DaemonProtocolProvider, FidlProtocol, NameToStreamHandlerMap, ProtocolRegister,
-    StreamHandler,
+    Context, DaemonProtocolProvider, FidlProtocol, NameToStreamHandlerMap, OvernetNodeError,
+    ProtocolError, ProtocolRegister, StreamHandler,
 };
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
@@ -142,7 +142,10 @@ impl FakeDaemon {
 
 #[async_trait(?Send)]
 impl DaemonProtocolProvider for FakeDaemon {
-    async fn open_protocol(&self, protocol_name: String) -> Result<fidl::Channel> {
+    async fn open_protocol(
+        &self,
+        protocol_name: String,
+    ) -> std::result::Result<fidl::Channel, ProtocolError> {
         let (server, client) = fidl::Channel::create();
         self.register
             .as_ref()
@@ -156,7 +159,7 @@ impl DaemonProtocolProvider for FakeDaemon {
         Ok(client)
     }
 
-    fn overnet_node(&self) -> Result<Arc<overnet_core::Router>> {
+    fn overnet_node(&self) -> std::result::Result<Arc<overnet_core::Router>, OvernetNodeError> {
         Ok(Arc::clone(&self.overnet_node))
     }
 
@@ -225,8 +228,8 @@ impl DaemonProtocolProvider for FakeDaemon {
         ))
     }
 
-    async fn get_target_collection(&self) -> Result<Rc<TargetCollection>> {
-        Ok(self.target_collection.clone())
+    fn get_target_collection(&self) -> Rc<TargetCollection> {
+        self.target_collection.clone()
     }
 }
 

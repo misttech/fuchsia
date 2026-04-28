@@ -205,7 +205,7 @@ impl TargetCollectionProtocol {
                 IpAddr::V6(i) => std::net::SocketAddr::V6(SocketAddrV6::new(i, port, 0, scope_id)),
             };
 
-            let tc = cx.get_target_collection().await?;
+            let tc = cx.get_target_collection();
             let overnet_node = cx.overnet_node()?;
             log::info!("Adding manual target with address: {:?}", sa);
             add_manual_target(manual_targets.clone(), &tc, sa, &overnet_node).await;
@@ -277,22 +277,61 @@ impl TargetCollectionProtocol {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum OpenMdnsProxyError {
+    #[error("Protocol error: {0}")]
+    Protocol(#[from] protocols::ProtocolError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum OpenFastbootTargetStreamProxyError {
+    #[error("Protocol error: {0}")]
+    Protocol(#[from] protocols::ProtocolError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TargetCollectionError {
+    #[error("FIDL error: {0}")]
+    Fidl(#[from] fidl::Error),
+
+    #[error("Failed to get overnet node: {0}")]
+    GetOvernetNode(#[from] protocols::OvernetNodeError),
+
+    #[error("Failed to create target handle: {0}")]
+    CreateTargetHandle(protocols::OvernetNodeError),
+
+    #[error("Failed to wait for RCS: {0}")]
+    WaitForRcs(#[from] crate::target_handle::WaitForRcsError),
+
+    #[error("Manual targets not initialized")]
+    ManualTargetsNotInitialized,
+
+    #[error("Failed to open mdns proxy: {0}")]
+    OpenMdnsProxy(#[from] OpenMdnsProxyError),
+
+    #[error("Failed to open fastboot target stream proxy: {0}")]
+    OpenFastbootTargetStreamProxy(#[from] OpenFastbootTargetStreamProxyError),
+}
+
 #[async_trait(?Send)]
 impl FidlProtocol for TargetCollectionProtocol {
     type Protocol = ffx::TargetCollectionMarker;
     type StreamHandler = FidlStreamHandler<Self>;
+    type Error = TargetCollectionError;
 
-    type Error = anyhow::Error;
-
-    async fn handle(&self, cx: &Context, req: ffx::TargetCollectionRequest) -> Result<()> {
+    async fn handle(
+        &self,
+        cx: &Context,
+        req: ffx::TargetCollectionRequest,
+    ) -> std::result::Result<(), TargetCollectionError> {
         log::debug!("handling request {req:?}");
-        let target_collection = cx.get_target_collection().await?;
+        let target_collection = cx.get_target_collection();
 
         if self.manual_targets.is_none() {
             log::warn!(
                 "In handle manual_targets was not initialized. This should have happened in start"
             );
-            return Err(anyhow!("Manual targets not initialized before calling handle"));
+            return Err(TargetCollectionError::ManualTargetsNotInitialized);
         }
         let manual_targets = match &self.manual_targets {
             None => unreachable!(),
@@ -381,18 +420,16 @@ impl FidlProtocol for TargetCollectionProtocol {
                     Ok(target) => target,
                     Err(e) => {
                         log::debug!("OpenTarget: got err {e:?}");
-                        return responder.send(Err(e)).map_err(Into::into);
+                        return responder.send(Err(e)).map_err(TargetCollectionError::from);
                     }
                 };
 
                 log::trace!("Found target: {target:?}");
-                self.tasks.spawn(TargetHandle::new(
-                    target,
-                    cx.clone(),
-                    target_handle,
-                    target_collection.clone(),
-                )?);
-                responder.send(Ok(())).map_err(Into::into)
+                self.tasks.spawn(
+                    TargetHandle::new(target, cx.clone(), target_handle, target_collection.clone())
+                        .map_err(TargetCollectionError::CreateTargetHandle)?,
+                );
+                responder.send(Ok(())).map_err(TargetCollectionError::from)
             }
             ffx::TargetCollectionRequest::AddTarget {
                 ip, config, add_target_responder, ..
@@ -406,7 +443,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                             connection_error_logs: Some(vec!["Wrong address type!".to_owned()]),
                             ..Default::default()
                         })
-                        .map_err(Into::into);
+                        .map_err(TargetCollectionError::from);
                 };
                 let addr = target_addr_info_to_socketaddr(ip);
                 let node = cx.overnet_node()?;
@@ -416,7 +453,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     Some(true) => {}
                     _ => {
                         let _ = do_add_target().await;
-                        return add_target_responder.success().map_err(Into::into);
+                        return add_target_responder.success().map_err(TargetCollectionError::from);
                     }
                 };
                 // The drop guard is here for the impatient user: if the user closes their channel
@@ -452,7 +489,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     TargetConnectionState::Fastboot(_) => {
                         log::info!("skipping rcs verfication as the target is in fastboot ");
                         let _ = drop_guard.0.take();
-                        return add_target_responder.success().map_err(Into::into);
+                        return add_target_responder.success().map_err(TargetCollectionError::from);
                     }
                     _ => {
                         log::error!(
@@ -466,7 +503,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                     Ok(mut rcs) => {
                         let (rcs_proxy, server) =
                             fidl::endpoints::create_proxy::<RemoteControlMarker>();
-                        rcs.copy_to_channel(server.into_channel())?;
+                        rcs.copy_to_channel(server.into_channel());
                         match rcs::knock_rcs(&rcs_proxy).await {
                             Ok(_) => {
                                 let _ = drop_guard.0.take();
@@ -484,7 +521,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                                         },
                                         ..Default::default()
                                     })
-                                    .map_err(Into::into);
+                                    .map_err(TargetCollectionError::from);
                             }
                         }
                     }
@@ -503,16 +540,16 @@ impl FidlProtocol for TargetCollectionProtocol {
                                 connection_error_logs: Some(logs),
                                 ..Default::default()
                             })
-                            .map_err(Into::into);
+                            .map_err(TargetCollectionError::from);
                     }
                 }
-                add_target_responder.success().map_err(Into::into)
+                add_target_responder.success().map_err(TargetCollectionError::from)
             }
             ffx::TargetCollectionRequest::RemoveTarget { target_id, responder } => {
                 let result =
                     remove_manual_target(manual_targets.clone(), &target_collection, target_id)
                         .await;
-                responder.send(result).map_err(Into::into)
+                responder.send(result).map_err(TargetCollectionError::from)
             }
         }
     }
@@ -521,21 +558,21 @@ impl FidlProtocol for TargetCollectionProtocol {
         &'a self,
         cx: &'a Context,
         stream: <Self::Protocol as ProtocolMarker>::RequestStream,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), TargetCollectionError> {
         // Necessary to avoid hanging forever when a client drops a connection
         // during a call to OpenTarget.
         stream
-            .map_err(|err| anyhow!("{}", err))
+            .map_err(TargetCollectionError::from)
             .try_for_each_concurrent_while_connected(None, |req| self.handle(cx, req))
             .await
     }
 
-    async fn stop(&mut self, _cx: &Context) -> Result<()> {
+    async fn stop(&mut self, _cx: &Context) -> std::result::Result<(), TargetCollectionError> {
         drop(self.tasks.drain());
         Ok(())
     }
 
-    async fn start(&mut self, cx: &Context) -> Result<()> {
+    async fn start(&mut self, cx: &Context) -> std::result::Result<(), TargetCollectionError> {
         let node = cx.overnet_node()?;
         let load_manual_cx = cx.clone();
         if self.manual_targets.is_none() {
@@ -569,9 +606,12 @@ impl FidlProtocol for TargetCollectionProtocol {
                 let _ = s.send(());
             }
         });
-        let mdns = self.open_mdns_proxy(cx).await?;
-        let fastboot = self.open_fastboot_target_stream_proxy(cx).await?;
-        let tc = cx.get_target_collection().await?;
+        let mdns = self.open_mdns_proxy(cx).await.map_err(OpenMdnsProxyError::from)?;
+        let fastboot = self
+            .open_fastboot_target_stream_proxy(cx)
+            .await
+            .map_err(OpenFastbootTargetStreamProxyError::from)?;
+        let tc = cx.get_target_collection();
         let env = cx.environment();
         let tc_clone = tc.clone();
         let node_clone = Arc::clone(&node);
@@ -595,7 +635,7 @@ impl FidlProtocol for TargetCollectionProtocol {
             }
         });
 
-        let tc2 = cx.get_target_collection().await?;
+        let tc2 = cx.get_target_collection();
         let context = cx.environment();
         let node_clone = Arc::clone(&node);
         self.tasks.spawn(async move {
@@ -653,7 +693,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                 .await
                 .map_err(|error| log::warn!(error:?; "Could not listen for devices"))
         {
-            let tc = cx.get_target_collection().await?;
+            let tc = cx.get_target_collection();
             self.tasks.spawn(async move {
                 let mut usb_events = std::pin::pin!(usb_events);
                 while let Some(event) = usb_events.next().await {
@@ -1109,7 +1149,7 @@ mod tests {
         };
 
         {
-            let tc = fake_daemon.get_target_collection().await.unwrap();
+            let tc = fake_daemon.get_target_collection();
 
             tc.update_target(
                 &[TargetUpdateFilter::LegacyNodeName(NAME)],
@@ -1320,7 +1360,7 @@ mod tests {
         proxy.add_target(&target_addr.into(), &ffx::AddTargetConfig::default(), client).unwrap();
         target_add_fut.await.unwrap();
         let target_collection =
-            Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
+            Context::new(fake_daemon, env.context.clone()).get_target_collection();
         let target = target_collection
             .query_single_enabled_target(&TargetInfoQuery::Addr(target_addr.into()))
             .unwrap()
@@ -1348,7 +1388,7 @@ mod tests {
         proxy.add_target(&target_addr.into(), &ffx::AddTargetConfig::default(), client).unwrap();
         target_add_fut.await.unwrap();
         let target_collection =
-            Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
+            Context::new(fake_daemon, env.context.clone()).get_target_collection();
         let target = target_collection
             .query_single_enabled_target(&TargetInfoQuery::Addr(target_addr.into()))
             .unwrap()
@@ -1388,7 +1428,7 @@ mod tests {
             .unwrap();
         target_add_fut.await.unwrap();
         let target_collection =
-            Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
+            Context::new(fake_daemon, env.context.clone()).get_target_collection();
         assert_eq!(1, target_collection.targets(None).len());
         let mut map = Map::<String, Value>::new();
         map.insert("[fe80::1%1]:8022".to_string(), Value::Null);
@@ -1417,7 +1457,7 @@ mod tests {
             .build();
 
         let cx = Context::new(fake_daemon, env.context.clone());
-        let target_collection = cx.get_target_collection().await.unwrap();
+        let target_collection = cx.get_target_collection();
         // This happens in FidlProtocol::start(), but we want to avoid binding the
         // network sockets in unit tests, thus not calling start.
         let manual_targets_collection = Rc::new(Config::new_from_context(&env.context));
@@ -1458,7 +1498,7 @@ mod tests {
         .await
         .unwrap();
         let target_collection =
-            Context::new(fake_daemon, env.context.clone()).get_target_collection().await.unwrap();
+            Context::new(fake_daemon, env.context.clone()).get_target_collection();
         assert_eq!(1, target_collection.targets(None).len());
     }
 
@@ -1503,7 +1543,7 @@ mod tests {
             .register_fidl_protocol::<TargetCollectionProtocol>()
             .build();
 
-        let tc = fake_daemon.get_target_collection().await.unwrap();
+        let tc = fake_daemon.get_target_collection();
 
         // Add two distinct targets directly to the collection to trigger ambiguity
         let t1 = Target::new_named(&env.context, "foo");

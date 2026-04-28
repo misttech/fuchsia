@@ -234,7 +234,10 @@ mod test {
 
     #[async_trait(?Send)]
     impl DaemonProtocolProvider for TestDaemon {
-        async fn open_protocol(&self, _name: String) -> Result<fidl::Channel> {
+        async fn open_protocol(
+            &self,
+            _name: String,
+        ) -> std::result::Result<fidl::Channel, ProtocolError> {
             unimplemented!()
         }
 
