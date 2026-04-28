@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::package::{deserialize_pkg_index, serialize_pkg_index, PackageIndexContents};
+use crate::package::{PackageIndexContents, deserialize_pkg_index, serialize_pkg_index};
 use anyhow::{Error, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::trace;
@@ -13,11 +13,13 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use thiserror::Error;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub(crate) const BOOTFS_MAGIC: u32 = 0xa56d3ff9;
 
 #[allow(dead_code)]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[repr(C)]
 pub(crate) struct BootfsHeader {
     magic: u32,
     dir_size: u32,
@@ -206,7 +208,7 @@ pub mod test {
     pub fn empty_bootfs_bytes() -> Vec<u8> {
         let bootfs_header =
             BootfsHeader { magic: BOOTFS_MAGIC, dir_size: 0, reserved_0: 0, reserved_1: 0 };
-        bincode::serialize(&bootfs_header).unwrap()
+        bootfs_header.as_bytes().to_vec()
     }
 }
 
@@ -246,7 +248,7 @@ mod tests {
             reserved_0: 0,
             reserved_1: 0,
         };
-        let mut bytes = bincode::serialize(&bootfs_header).unwrap();
+        let mut bytes = bootfs_header.as_bytes().to_vec();
 
         // Update the bootfs files to calculate its offset from the header + dir.
         data_offset = u32::try_from(bytes.len() + meta_bytes.len()).unwrap();

@@ -9,6 +9,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use thiserror::Error;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// ZBIs must start with a container type that contains all of the sections in
 /// the ZBI. It is largely there to verify the binary blob is actually a ZBI and
@@ -81,7 +82,8 @@ pub struct ZbiSection {
 
 /// Rust clone of sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
 #[allow(dead_code)]
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[repr(C)]
 struct ZbiHeader {
     zbi_type: u32,
     length: u32,
@@ -276,7 +278,7 @@ pub mod test {
             crc32: 0,
         };
 
-        bincode::serialize(&container_header).unwrap()
+        container_header.as_bytes().to_vec()
     }
 
     /// Returns raw bytes for a zbi container has exactly one section: a bootfs section containing no file entries.
@@ -294,7 +296,7 @@ pub mod test {
             crc32: 0,
         };
 
-        let mut section_bytes: Vec<u8> = bincode::serialize(&section_header).unwrap();
+        let mut section_bytes: Vec<u8> = section_header.as_bytes().to_vec();
         section_bytes.extend(&section_data);
 
         let container_header = ZbiHeader {
@@ -308,7 +310,7 @@ pub mod test {
             crc32: 0,
         };
 
-        let mut zbi_bytes: Vec<u8> = bincode::serialize(&container_header).unwrap();
+        let mut zbi_bytes: Vec<u8> = container_header.as_bytes().to_vec();
         zbi_bytes.extend(&section_bytes);
 
         zbi_bytes
@@ -363,10 +365,10 @@ mod tests {
         };
         let section_data: Vec<u8> = vec![0; 10];
 
-        let mut section_bytes: Vec<u8> = bincode::serialize(&section_header).unwrap();
+        let mut section_bytes: Vec<u8> = section_header.as_bytes().to_vec();
         section_bytes.extend(&section_data);
         container_header.length = u32::try_from(section_bytes.len()).unwrap();
-        let mut zbi_bytes: Vec<u8> = bincode::serialize(&container_header).unwrap();
+        let mut zbi_bytes: Vec<u8> = container_header.as_bytes().to_vec();
         zbi_bytes.extend(&section_bytes);
 
         let mut reader = ZbiReader::new(zbi_bytes);
@@ -402,10 +404,10 @@ mod tests {
             crc32: 0,
         };
 
-        let mut section_bytes: Vec<u8> = bincode::serialize(&section_header).unwrap();
+        let mut section_bytes: Vec<u8> = section_header.as_bytes().to_vec();
         section_bytes.extend(&section_data);
         container_header.length = u32::try_from(section_bytes.len()).unwrap();
-        let mut zbi_bytes: Vec<u8> = bincode::serialize(&container_header).unwrap();
+        let mut zbi_bytes: Vec<u8> = container_header.as_bytes().to_vec();
         zbi_bytes.extend(&section_bytes);
 
         let mut reader = ZbiReader::new(zbi_bytes);
@@ -450,16 +452,16 @@ mod tests {
         };
         let section_data_two: Vec<u8> = vec![0; 10];
 
-        let mut section_bytes: Vec<u8> = bincode::serialize(&section_header).unwrap();
+        let mut section_bytes: Vec<u8> = section_header.as_bytes().to_vec();
         section_bytes.extend(&section_data);
         let padding_len = 8 - (section_bytes.len() % 8);
         let padding = vec![0; padding_len];
         section_bytes.extend(&padding);
-        section_bytes.extend(bincode::serialize(&section_header_two).unwrap());
+        section_bytes.extend(section_header_two.as_bytes());
         section_bytes.extend(&section_data_two);
 
         container_header.length = u32::try_from(section_bytes.len()).unwrap();
-        let mut zbi_bytes: Vec<u8> = bincode::serialize(&container_header).unwrap();
+        let mut zbi_bytes: Vec<u8> = container_header.as_bytes().to_vec();
         zbi_bytes.extend(&section_bytes);
 
         let mut reader = ZbiReader::new(zbi_bytes);

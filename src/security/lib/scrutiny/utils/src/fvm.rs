@@ -5,11 +5,12 @@
 use anyhow::{Error, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
 use log::info;
-use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::{fmt, str};
 use thiserror::Error;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 const FVM_MAGIC: u64 = 0x54524150204d5646;
 const FVM_VERSION: u64 = 0x00000001;
@@ -72,7 +73,8 @@ pub struct FvmPartition {
 /// Defines the FvmHeader for a particular partition. In this case we are
 /// parsing the structure using a cursor so this structure doesn't have to
 /// directly match the underlying type.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout, PartialEq, Eq)]
+#[repr(C)]
 struct FvmHeader {
     magic: u64,
     version: u64,
@@ -82,7 +84,7 @@ struct FvmHeader {
     vpartition_table_size: u64,
     allocation_table_size: u64,
     generation: u64,
-    hash: Vec<u8>,
+    hash: [u8; 32],
 }
 
 impl FvmHeader {
@@ -105,8 +107,8 @@ impl FvmHeader {
         let vpartition_table_size: u64 = cursor.read_u64::<LittleEndian>()?;
         let allocation_table_size: u64 = cursor.read_u64::<LittleEndian>()?;
         let generation: u64 = cursor.read_u64::<LittleEndian>()?;
-        let mut hash = vec![0u8; SHA256_BYTE_LEN];
-        cursor.read_exact(&mut hash)?;
+        let mut hash = [0u8; SHA256_BYTE_LEN];
+        cursor.read_exact(&mut hash[..])?;
 
         // The FVM Header sits in a superblock so is padded for FVM_BLOCK_SIZE
         // at the end of the structure.
@@ -322,9 +324,9 @@ mod tests {
             vpartition_table_size: FVM_BLOCK_SIZE,
             allocation_table_size: FVM_BLOCK_SIZE,
             generation: 0,
-            hash: vec![0u8; GPT_GUID_LEN],
+            hash: [0u8; 32],
         };
-        let fvm_bytes = bincode::serialize(&header_invalid_magic).unwrap();
+        let fvm_bytes = header_invalid_magic.as_bytes().to_vec();
         let mut reader = FvmReader::new(fvm_bytes);
         let result = reader.parse();
         assert_eq!(
@@ -344,9 +346,9 @@ mod tests {
             vpartition_table_size: FVM_BLOCK_SIZE,
             allocation_table_size: FVM_BLOCK_SIZE,
             generation: 0,
-            hash: vec![0u8; GPT_GUID_LEN],
+            hash: [0u8; 32],
         };
-        let fvm_bytes = bincode::serialize(&header_invalid_magic).unwrap();
+        let fvm_bytes = header_invalid_magic.as_bytes().to_vec();
         let mut reader = FvmReader::new(fvm_bytes);
         let result = reader.parse();
         assert_eq!(
@@ -366,9 +368,9 @@ mod tests {
             vpartition_table_size: FVM_BLOCK_SIZE,
             allocation_table_size: FVM_BLOCK_SIZE,
             generation: 0,
-            hash: vec![0u8; GPT_GUID_LEN],
+            hash: [0u8; 32],
         };
-        let mut fvm_bytes = bincode::serialize(&header_invalid_magic).unwrap();
+        let mut fvm_bytes = header_invalid_magic.as_bytes().to_vec();
         fvm_bytes.pop();
         let mut reader = FvmReader::new(fvm_bytes);
         let result = reader.parse();
@@ -386,13 +388,36 @@ mod tests {
             vpartition_table_size: FVM_BLOCK_SIZE,
             allocation_table_size: FVM_BLOCK_SIZE,
             generation: 0,
-            hash: vec![0u8; GPT_GUID_LEN],
+            hash: [0u8; 32],
         };
-        let mut fvm_bytes = bincode::serialize(&header_invalid_magic).unwrap();
+        let mut fvm_bytes = header_invalid_magic.as_bytes().to_vec();
         let mut padding = vec![0u8; usize::try_from(FVM_BLOCK_SIZE * 32).unwrap()];
         fvm_bytes.append(&mut padding);
         let mut reader = FvmReader::new(fvm_bytes);
         let result = reader.parse();
         assert_eq!(result.is_ok(), true);
+    }
+
+    #[test]
+    fn test_fvm_header_hash() {
+        let expected_hash = [0xABu8; 32];
+        let header = FvmHeader {
+            magic: FVM_MAGIC,
+            version: FVM_VERSION,
+            pslice_count: 1,
+            slice_size: FVM_BLOCK_SIZE,
+            fvm_partition_size: FVM_BLOCK_SIZE,
+            vpartition_table_size: FVM_BLOCK_SIZE,
+            allocation_table_size: FVM_BLOCK_SIZE,
+            generation: 0,
+            hash: expected_hash,
+        };
+        let mut fvm_bytes = header.as_bytes().to_vec();
+        let mut padding = vec![0u8; usize::try_from(FVM_BLOCK_SIZE).unwrap() - fvm_bytes.len()];
+        fvm_bytes.append(&mut padding);
+
+        let mut cursor = Cursor::new(fvm_bytes);
+        let parsed_header = FvmHeader::parse(&mut cursor).unwrap();
+        assert_eq!(parsed_header.hash, expected_hash);
     }
 }
