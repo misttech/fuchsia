@@ -24,7 +24,7 @@ use log::warn;
 use router_error::{Explain, RouterError};
 use routing::subdir::SubDir;
 use runtime_capabilities::{
-    Connectable, Connector, Data, DirConnectable, DirConnector, Message, Routable, Router,
+    Connectable, Connector, DirConnectable, DirConnector, Message, Routable, Router,
     WeakInstanceToken,
 };
 use std::fmt::Debug;
@@ -191,14 +191,8 @@ impl LaunchTaskOnReceive {
                 &self,
                 _request: RouteRequest,
                 _target: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
-                let data = self
-                    .inner
-                    .capability_source
-                    .clone()
-                    .try_into()
-                    .expect("failed to convert capability source to Data");
-                Ok(data)
+            ) -> Result<CapabilitySource, RouterError> {
+                Ok(self.inner.capability_source.clone())
             }
         }
         Router::<Connector>::new(LaunchTaskRouter { inner: Arc::new(self) })
@@ -230,14 +224,8 @@ impl LaunchTaskOnReceive {
                 &self,
                 _request: RouteRequest,
                 _target: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
-                let data = self
-                    .inner
-                    .capability_source
-                    .clone()
-                    .try_into()
-                    .expect("failed to convert capability source to Data");
-                Ok(data)
+            ) -> Result<CapabilitySource, RouterError> {
+                Ok(self.inner.capability_source.clone())
             }
         }
         Router::<DirConnector>::new(LaunchTaskRouter { inner: Arc::new(self) })
@@ -323,7 +311,7 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                         &self,
                         request: RouteRequest,
                         target: WeakInstanceToken,
-                    ) -> Result<Data, RouterError> {
+                    ) -> Result<CapabilitySource, RouterError> {
                         let request = if request != RouteRequest::default() {
                             request
                         } else {
@@ -426,7 +414,7 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                 &self,
                 request: RouteRequest,
                 target_token: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
+            ) -> Result<CapabilitySource, RouterError> {
                 return self.router.route_debug(request, target_token).await;
             }
         }
@@ -442,14 +430,15 @@ pub mod tests {
     use super::*;
     use ::routing::component_instance::ComponentInstanceInterface;
     use assert_matches::assert_matches;
+    use capability_source::{InternalCapability, VoidSource};
     use cm_rust::{Availability, NativeIntoFidl};
-    use cm_types::RelativePath;
+    use cm_types::{Name, RelativePath};
     use fuchsia_async::TestExecutor;
     use futures::FutureExt;
     use moniker::Moniker;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::{DictExt, GenericRouterResponse, LazyGet, test_invalid_instance_token};
-    use runtime_capabilities::{Capability, Dictionary, RemotableCapability, RouterResponse};
+    use runtime_capabilities::{Capability, Data, Dictionary, RemotableCapability, RouterResponse};
     use std::pin::pin;
     use std::sync::Weak;
     use std::task::Poll;
@@ -676,7 +665,7 @@ pub mod tests {
             &self,
             _: RouteRequest,
             _: WeakInstanceToken,
-        ) -> Result<Data, RouterError> {
+        ) -> Result<CapabilitySource, RouterError> {
             unimplemented!("should not be called during tests");
         }
     }
@@ -794,7 +783,12 @@ pub mod tests {
                 async move {
                     assert!(debug);
                     let res: Result<RouterResponse<Connector>, RouterError> =
-                        Ok(RouterResponse::<Connector>::Debug(Data::String("debug".into())));
+                        Ok(RouterResponse::<Connector>::Debug(Box::new(CapabilitySource::Void(
+                            VoidSource {
+                                capability: InternalCapability::Protocol(Name::new("a").unwrap()),
+                                moniker: Moniker::root(),
+                            },
+                        ))));
                     res
                 }
                 .boxed()
@@ -813,10 +807,7 @@ pub mod tests {
             ..Default::default()
         };
         let resp = router.route_debug(request, target.as_weak().into()).await.unwrap();
-        assert_matches!(
-            resp,
-            Data::String(s) if &*s == "debug"
-        );
+        assert_matches!(resp, CapabilitySource::Void(_));
     }
 
     #[fuchsia::test]

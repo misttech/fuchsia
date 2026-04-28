@@ -7,7 +7,6 @@ use crate::sandbox_util::take_handle_as_stream;
 use ::routing::bedrock::sandbox_construction::ComponentSandbox;
 use ::routing::component_instance::ComponentInstanceInterface;
 use capability_source::CapabilitySource;
-use cm_rust::NativeIntoFidl;
 use cm_types::RelativePath;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runtime::RouteRequest;
@@ -17,7 +16,7 @@ use futures::{FutureExt, TryStreamExt};
 use log::warn;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
-use runtime_capabilities::{Capability, Data, Dictionary, WeakInstanceToken};
+use runtime_capabilities::{Capability, Dictionary, WeakInstanceToken};
 
 pub fn serve(
     server_end: zx::Channel,
@@ -206,12 +205,10 @@ async fn validate_sandbox(
 
 fn fill_in_report_with_route_result(
     report: &mut fsys::RouteReport,
-    result: Result<Data, RouterError>,
+    result: Result<CapabilitySource, RouterError>,
 ) {
     match result {
-        Ok(source_data) => {
-            let source: CapabilitySource =
-                source_data.try_into().expect("failed to deserialize capability source");
+        Ok(source) => {
             let outcome = match &source {
                 CapabilitySource::Void(_) => fsys::RouteOutcome::Void,
                 _ => fsys::RouteOutcome::Success,
@@ -223,7 +220,7 @@ fn fill_in_report_with_route_result(
                         .instances
                         .clone()
                         .into_iter()
-                        .map(NativeIntoFidl::native_into_fidl)
+                        .map(fsys::ServiceInstance::from)
                         .collect(),
                 ),
                 _ => None,

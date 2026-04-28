@@ -592,7 +592,7 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             expected_res,
             router.route_debug(RouteRequest::default(), target.as_weak().into()).await,
         ) {
-            (ExpectedResult::Ok, Ok(_debug_data)) => {}
+            (ExpectedResult::Ok, Ok(_source)) => {}
             (ExpectedResult::Err(status), Err(err)) => {
                 if status != err.as_zx_status() {
                     panic!(
@@ -606,10 +606,10 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             (ExpectedResult::Ok, Err(err)) => {
                 panic!("failed to route when we expected to succeed: {:?}", err);
             }
-            (ExpectedResult::Err(_status), Ok(debug_data)) => {
+            (ExpectedResult::Err(_status), Ok(source)) => {
                 panic!(
                     "routing succeeded when we expected an error, the capability was provided by {:?}",
-                    CapabilitySource::try_from(debug_data)
+                    source
                 );
             }
             (ExpectedResult::ErrWithNoEpitaph, _) => unimplemented!(),

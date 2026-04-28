@@ -6,6 +6,7 @@ use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::events::hook_observer::HookObserver;
 use crate::model::events::{forward_capability_requested_events, names_from_filter};
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use cm_rust::FidlIntoNative;
 use cm_types::Name;
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
@@ -78,7 +79,7 @@ impl Routable<Connector> for EventStreamUseRouter {
         &self,
         request: RouteRequest,
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         let mut routing_tasks = FuturesUnordered::new();
         for source_route in self.sources.iter() {
             routing_tasks.push(source_route.router.route_debug(request.clone(), target.clone()));

@@ -1409,13 +1409,11 @@ impl Routable<Connector> for CapabilityRequestedHook {
         &self,
         _request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         Ok(CapabilitySource::Component(ComponentSource {
             capability: self.capability_decl.clone().into(),
             moniker: self.source.moniker.clone(),
-        })
-        .try_into()
-        .expect("failed to convert capability source to Data"))
+        }))
     }
 }
 
@@ -1546,7 +1544,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
         &self,
         request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         let subdir = request
             .sub_directory_path
             .map(|s| SubDir::new(s).expect("invalid subdir"))
@@ -1580,7 +1578,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             } else {
                 self.capability_source.clone()
             };
-        Ok(capability_source.try_into().expect("failed to convert capability source to Data"))
+        Ok(capability_source)
     }
 }
 
@@ -1658,13 +1656,10 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
         &self,
         _request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
-        let source = CapabilitySource::Component(ComponentSource {
+    ) -> Result<CapabilitySource, RouterError> {
+        Ok(CapabilitySource::Component(ComponentSource {
             capability: self.capability.clone(),
             moniker: self.component.moniker.clone(),
-        });
-        let data =
-            Data::try_from(source).expect("failed to convert capability source to capability");
-        Ok(data)
+        }))
     }
 }

@@ -12,8 +12,7 @@ use fidl_fuchsia_component_sandbox as fsandbox;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Data, Dictionary, Routable, Router, RouterResponse,
-    WeakInstanceToken,
+    Capability, CapabilityBound, Dictionary, Routable, Router, RouterResponse, WeakInstanceToken,
 };
 use std::fmt::Debug;
 
@@ -78,7 +77,7 @@ pub enum GenericRouterResponse {
     Unavailable,
 
     /// Routing succeeded in debug mode, `Data` contains the debug data.
-    Debug(Data),
+    Debug(Box<CapabilitySource>),
 }
 
 impl<T: CapabilityBound> TryFrom<GenericRouterResponse> for RouterResponse<T> {
@@ -166,7 +165,7 @@ impl DictExt for Dictionary {
                 &self,
                 _request: RouteRequest,
                 _target: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
+            ) -> Result<CapabilitySource, RouterError> {
                 Err(self.not_found_error.clone())
             }
         }
@@ -216,7 +215,7 @@ impl DictExt for Dictionary {
                 &self,
                 request: RouteRequest,
                 target: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
+            ) -> Result<CapabilitySource, RouterError> {
                 let get_init_request = || request_with_dictionary_replacement(&request);
 
                 // When performing a debug route, we only want to call `route_debug` on the
@@ -232,7 +231,7 @@ impl DictExt for Dictionary {
                         let resp =
                             resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
                         match resp {
-                            GenericRouterResponse::Debug(data) => Ok(data),
+                            GenericRouterResponse::Debug(source) => Ok(*source),
                             _other => {
                                 panic!("non-debug value from debug route")
                             }
@@ -397,8 +396,10 @@ impl DictExt for Dictionary {
                                     // to be [`CapabilitySource::Void`]).
                                     let dict_request =
                                         request_with_dictionary_replacement(&request)?;
-                                    let data = r.route_debug(dict_request, target).await?;
-                                    return Ok(Some(GenericRouterResponse::Debug(data)));
+                                    let source = r.route_debug(dict_request, target).await?;
+                                    return Ok(Some(GenericRouterResponse::Debug(Box::new(
+                                        source,
+                                    ))));
                                 }
                             }
                         }
@@ -426,8 +427,8 @@ impl DictExt for Dictionary {
                         }
                     }
                     (Capability::DictionaryRouter(r), true) => {
-                        let data = r.route_debug(request, target).await?;
-                        Ok(Some(GenericRouterResponse::Debug(data)))
+                        let source = r.route_debug(request, target).await?;
+                        Ok(Some(GenericRouterResponse::Debug(Box::new(source))))
                     }
                     (Capability::ConnectorRouter(r), false) => {
                         match r.route(request, target).await? {
@@ -436,16 +437,16 @@ impl DictExt for Dictionary {
                         }
                     }
                     (Capability::ConnectorRouter(r), true) => {
-                        let data = r.route_debug(request, target).await?;
-                        Ok(Some(GenericRouterResponse::Debug(data)))
+                        let source = r.route_debug(request, target).await?;
+                        Ok(Some(GenericRouterResponse::Debug(Box::new(source))))
                     }
                     (Capability::DataRouter(r), false) => match r.route(request, target).await? {
                         Some(c) => Ok(Some(GenericRouterResponse::Capability(c.into()))),
                         None => Ok(Some(GenericRouterResponse::Unavailable)),
                     },
                     (Capability::DataRouter(r), true) => {
-                        let data = r.route_debug(request, target).await?;
-                        Ok(Some(GenericRouterResponse::Debug(data)))
+                        let source = r.route_debug(request, target).await?;
+                        Ok(Some(GenericRouterResponse::Debug(Box::new(source))))
                     }
                     (Capability::DirConnectorRouter(r), false) => {
                         match r.route(request, target).await? {
@@ -454,8 +455,8 @@ impl DictExt for Dictionary {
                         }
                     }
                     (Capability::DirConnectorRouter(r), true) => {
-                        let data = r.route_debug(request, target).await?;
-                        Ok(Some(GenericRouterResponse::Debug(data)))
+                        let source = r.route_debug(request, target).await?;
+                        Ok(Some(GenericRouterResponse::Debug(Box::new(source))))
                     }
                     (_other, true) => {
                         // This is a debug route, and we've found a non-router capability. We must
@@ -536,7 +537,7 @@ impl Routable<Dictionary> for AdditiveDictionaryRouter {
         &self,
         request: RouteRequest,
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         self.preexisting_router.route_debug(request, target).await
     }
 }

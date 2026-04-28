@@ -985,7 +985,6 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use assert_matches::assert_matches;
-    use capability_source::CapabilitySource;
     use cm_config::RuntimeConfig;
     use cm_rust::{ComponentDecl, RegistrationSource, ResolverRegistration, RunnerRegistration};
     use cm_rust_testing::{
@@ -1452,11 +1451,10 @@ mod tests {
             panic!("unexpected capability for runner");
         };
         let request = runner_metadata(cm_rust::Availability::Required);
-        let res = runner_router.route_debug(request, child_instance.as_weak().into()).await;
-        let source: CapabilitySource = match res {
-            Ok(data) => data.try_into().unwrap(),
-            other_response => panic!("unexpected response: {other_response:?}"),
-        };
+        let source = runner_router
+            .route_debug(request, child_instance.as_weak().into())
+            .await
+            .expect("unexpected response");
         assert_eq!(source.source_moniker(), Moniker::root().into());
 
         let resolver_router_capability = environment
@@ -1467,11 +1465,10 @@ mod tests {
             panic!("unexpected capability for resolver");
         };
         let request = resolver_metadata(cm_rust::Availability::Required);
-        let res = resolver_router.route_debug(request, child_instance.as_weak().into()).await;
-        let source: CapabilitySource = match res {
-            Ok(data) => data.try_into().unwrap(),
-            other_response => panic!("unexpected response: {other_response:?}"),
-        };
+        let source = resolver_router
+            .route_debug(request, child_instance.as_weak().into())
+            .await
+            .expect("unexpected response");
         assert_eq!(source.source_moniker(), Moniker::root().into());
 
         let runner_router_capability =
@@ -1480,11 +1477,10 @@ mod tests {
             panic!("unexpected capability for runner");
         };
         let request = runner_metadata(cm_rust::Availability::Required);
-        let res = runner_router.route_debug(request, child_instance.as_weak().into()).await;
-        let source: CapabilitySource = match res {
-            Ok(data) => data.try_into().unwrap(),
-            other_response => panic!("unexpected response: {other_response:?}"),
-        };
+        let source = runner_router
+            .route_debug(request, child_instance.as_weak().into())
+            .await
+            .expect("unexpected response");
         assert_eq!(source.source_moniker(), Moniker::root().into());
 
         let runner_router_capability = environment.runners().get(&builtin_runner_name).unwrap();
@@ -1492,11 +1488,10 @@ mod tests {
             panic!("unexpected capability for runner");
         };
         let request = runner_metadata(cm_rust::Availability::Required);
-        let res = runner_router.route_debug(request, child_instance.as_weak().into()).await;
-        let source: CapabilitySource = match res {
-            Ok(data) => data.try_into().unwrap(),
-            other_response => panic!("unexpected response: {other_response:?}"),
-        };
+        let source = runner_router
+            .route_debug(request, child_instance.as_weak().into())
+            .await
+            .expect("unexpected response");
         assert_eq!(source.source_moniker(), ExtendedMoniker::ComponentManager);
 
         let scheme_name = Name::new(&*BOOT_SCHEME).unwrap();
@@ -1505,11 +1500,10 @@ mod tests {
             panic!("unexpected capability for resolver");
         };
         let request = resolver_metadata(cm_rust::Availability::Required);
-        let res = resolver_router.route_debug(request, child_instance.as_weak().into()).await;
-        let source: CapabilitySource = match res {
-            Ok(data) => data.try_into().unwrap(),
-            other_response => panic!("unexpected response: {other_response:?}"),
-        };
+        let source = resolver_router
+            .route_debug(request, child_instance.as_weak().into())
+            .await
+            .expect("unexpected response");
         assert_eq!(source.source_moniker(), ExtendedMoniker::ComponentManager);
 
         Ok(())

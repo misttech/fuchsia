@@ -982,9 +982,9 @@ mod tests {
                             None => Ok(RouterResponse::Unavailable),
                         }
                     } else {
-                        Ok(RouterResponse::Debug(
+                        Ok(RouterResponse::Debug(Box::new(
                             service_router.route_debug(request, target).await?,
-                        ))
+                        )))
                     }
                 }
                 .boxed()

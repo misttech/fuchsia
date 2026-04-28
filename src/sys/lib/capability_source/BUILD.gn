@@ -12,19 +12,16 @@ rustc_library("capability_source") {
   edition = "2024"
 
   deps = [
-    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-    "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/from-enum",
     "//src/sys/lib/cm_rust",
-    "//src/sys/lib/cm_rust:cm_rust_derive",
     "//src/sys/lib/cm_types",
     "//src/sys/lib/moniker",
-    "//src/sys/lib/runtime_capabilities",
-    "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:thiserror",
   ]
+
+  test_deps =
+      [ "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust" ]
 
   sources = [ "src/lib.rs" ]
 

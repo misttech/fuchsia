@@ -25,8 +25,7 @@ use routing::bedrock::aggregate_router::AggregateSource;
 use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use runtime_capabilities::{
-    Capability, Data, Dictionary, DirConnector, RemotableCapability, Routable, Router,
-    WeakInstanceToken,
+    Capability, Dictionary, DirConnector, RemotableCapability, Routable, Router, WeakInstanceToken,
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -79,13 +78,9 @@ impl Routable<DirConnector> for AggregateRouter {
         &self,
         request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         let _aggregate_dir = self.get_aggregate_dir(request).await?;
-        let data: Data = self
-            .get_capability_source_with_instances()
-            .try_into()
-            .expect("failed to persist capability source");
-        Ok(data)
+        Ok(self.get_capability_source_with_instances())
     }
 }
 
@@ -397,10 +392,10 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                 }
             }
         };
-        let data = router
+        let source = router
             .route_debug(RouteRequest::default(), self.component.clone().into())
             .await
             .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?;
-        Ok((router, data.try_into().expect("failed to convert capability source data to struct")))
+        Ok((router, source))
     }
 }

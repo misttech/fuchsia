@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{CapabilityBound, Data, WeakInstanceToken};
+use crate::{CapabilityBound, WeakInstanceToken};
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -21,8 +22,8 @@ pub enum RouterResponse<T: CapabilityBound> {
     /// Routing succeeded, but the capability was marked unavailable.
     Unavailable,
 
-    /// Routing succeeded in debug mode, `Data` contains the debug data.
-    Debug(Data),
+    /// Routing succeeded in debug mode.
+    Debug(Box<CapabilitySource>),
 }
 
 /// Types that implement [`Routable`] let the holder asynchronously request capabilities
@@ -46,7 +47,7 @@ where
         request: RouteRequest,
         // A reference to the requesting component.
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError>;
+    ) -> Result<CapabilitySource, RouterError>;
 }
 
 /// A [`Router`] is a capability that lets the holder obtain other capabilities
@@ -133,7 +134,7 @@ where
         &'a self,
         request: RouteRequest,
         target: WeakInstanceToken,
-    ) -> BoxFuture<'b, Result<Data, RouterError>>
+    ) -> BoxFuture<'b, Result<CapabilitySource, RouterError>>
     where
         'a: 'b,
         Self: 'b,
@@ -143,7 +144,7 @@ where
                 RouterResponse::Capability(_) | RouterResponse::Unavailable => {
                     panic!("router returned non-debug info for debug route")
                 }
-                RouterResponse::Debug(d) => Ok(d),
+                RouterResponse::Debug(source) => Ok(*source),
             }
         }
         .boxed()
@@ -164,7 +165,7 @@ impl<T: CapabilityBound> Routable<T> for Router<T> {
         &self,
         request: RouteRequest,
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         Router::route_debug(self, request, target).await
     }
 }
@@ -182,9 +183,8 @@ impl<T: CapabilityBound> Router<T> {
     }
 
     /// Creates a router that will always return the given debug info.
-    pub fn new_debug(data: impl Into<Data>) -> Self {
-        let v: Data = data.into();
-        Self::new(DebugRouter { v })
+    pub fn new_debug(source: CapabilitySource) -> Self {
+        Self::new(DebugRouter { source })
     }
 
     /// Obtain a capability from this router, following the description in `request`.
@@ -201,7 +201,7 @@ impl<T: CapabilityBound> Router<T> {
         &self,
         request: RouteRequest,
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         self.routable.route_debug(request, target).await
     }
 }
@@ -234,14 +234,14 @@ impl<T: Clone + CapabilityBound> Routable<T> for OkRouter<T> {
         &self,
         _request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         panic!("OkRouter does not handle debug routes");
     }
 }
 
 #[derive(Clone)]
 struct DebugRouter {
-    v: Data,
+    source: CapabilitySource,
 }
 
 #[async_trait]
@@ -258,8 +258,8 @@ impl<T: CapabilityBound> Routable<T> for DebugRouter {
         &self,
         _request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
-        Ok(self.v.clone())
+    ) -> Result<CapabilitySource, RouterError> {
+        Ok(self.source.clone())
     }
 }
 
@@ -282,7 +282,7 @@ impl<T: CapabilityBound> Routable<T> for ErrRouter {
         &self,
         _request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         Err(self.v.clone())
     }
 }

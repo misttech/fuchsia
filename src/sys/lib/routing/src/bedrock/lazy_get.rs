@@ -5,13 +5,12 @@
 use crate::bedrock::dict_ext::{GenericRouterResponse, request_with_dictionary_replacement};
 use crate::{DictExt, RoutingError};
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use cm_types::IterablePath;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use runtime_capabilities::{
-    CapabilityBound, Data, Dictionary, Routable, Router, WeakInstanceToken,
-};
+use runtime_capabilities::{CapabilityBound, Dictionary, Routable, Router, WeakInstanceToken};
 use std::fmt::Debug;
 
 /// Implements the `lazy_get` function for [`Routable<Dictionary>`].
@@ -71,7 +70,7 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
                 &self,
                 request: RouteRequest,
                 target: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
+            ) -> Result<CapabilitySource, RouterError> {
                 let get_init_request = || request_with_dictionary_replacement(&request);
 
                 // When performing a debug route, we only want to call `route_debug` on the
@@ -87,7 +86,7 @@ impl<R: Routable<Dictionary> + 'static, T: CapabilityBound> LazyGet<T> for R {
                         let resp =
                             resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
                         match resp {
-                            GenericRouterResponse::Debug(data) => Ok(data),
+                            GenericRouterResponse::Debug(source) => Ok(*source),
                             _other => {
                                 panic!("non-debug value from debug route")
                             }

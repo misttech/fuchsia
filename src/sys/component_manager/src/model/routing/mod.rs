@@ -41,11 +41,8 @@ pub(super) async fn route_storage(
     let Capability::DirConnectorRouter(router) = storage_router_capability else {
         panic!("wrong type for used storage capability");
     };
-    let storage_source: CapabilitySource = router
-        .route_debug(RouteRequest::default(), target.as_weak().into())
-        .await?
-        .try_into()
-        .expect("failed to deserialize capability source");
+    let storage_source: CapabilitySource =
+        router.route_debug(RouteRequest::default(), target.as_weak().into()).await?;
     let backing_dir_info = storage::route_backing_directory(target, storage_source).await?;
     Ok(RoutedStorage { backing_dir_info, target: WeakComponentInstance::new(target) })
 }

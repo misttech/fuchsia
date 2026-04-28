@@ -7,6 +7,7 @@ use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
 use crate::rights::Rights;
 use crate::subdir::SubDir;
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use cm_rust::{CapabilityTypeName, EventScope, FidlIntoNative, NativeIntoFidl};
 use cm_types::Availability;
 use fidl_fuchsia_component_runtime::RouteRequest;
@@ -15,7 +16,7 @@ use fidl_fuchsia_io as fio;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, CapabilityBound, Data, Dictionary, Routable, Router, WeakInstanceToken,
+    Capability, CapabilityBound, Dictionary, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -58,7 +59,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         &self,
         request: RouteRequest,
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         match self.route_debug_inner(request, D, target).await {
             Ok(res) => Ok(res),
             Err(err) => {
@@ -89,7 +90,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         request: RouteRequest,
         supply_default: bool,
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         let request = self.check_and_compute_request(request, supply_default)?;
         self.router.route_debug(request, target).await
     }

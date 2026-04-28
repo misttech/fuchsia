@@ -5,11 +5,12 @@
 use crate::error::RoutingError;
 use crate::rights::Rights;
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use runtime_capabilities::{CapabilityBound, Data, Routable, Router, WeakInstanceToken};
+use runtime_capabilities::{CapabilityBound, Routable, Router, WeakInstanceToken};
 
 struct RightsRouter<T: CapabilityBound> {
     router: Router<T>,
@@ -70,7 +71,7 @@ impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
         &self,
         request: RouteRequest,
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         let request = self.check_and_compute_rights(request)?;
         self.router.route_debug(request, target).await
     }

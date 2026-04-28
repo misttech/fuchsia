@@ -85,7 +85,7 @@ impl ComponentResolversVisitor {
                 .now_or_never()
                 .expect("now or never did not return a result")
             {
-                Ok(data) => data.try_into().expect("failed to deserialize debug data"),
+                Ok(source) => source,
                 Err(e) => {
                     eprintln!(
                         "Ignoring invalid resolver configuration for {}: {:#}",

@@ -31,6 +31,7 @@ use ::routing::resolving::{
 };
 use anyhow::format_err;
 use async_trait::async_trait;
+use capability_source::CapabilitySource;
 use clonable_error::ClonableError;
 use cm_graph::DependencyNode;
 use cm_rust::{
@@ -1130,7 +1131,7 @@ impl ComponentInstance {
                 &self,
                 _request: RouteRequest,
                 _target: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
+            ) -> Result<CapabilitySource, RouterError> {
                 panic!("ComponentOutput router does not support debug routes");
             }
         }

@@ -295,7 +295,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                     &self,
                     request: RouteRequest,
                     target: WeakInstanceToken,
-                ) -> Result<Data, RouterError> {
+                ) -> Result<CapabilitySource, RouterError> {
                     let request = self.prepare_route(request, target)?;
                     self.backing_dir_router
                         .route_debug(request, self.backing_dir_target.clone())
@@ -374,12 +374,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                     &self,
                     _request: RouteRequest,
                     _target: WeakInstanceToken,
-                ) -> Result<Data, RouterError> {
-                    Ok(self
-                        .source
-                        .clone()
-                        .try_into()
-                        .expect("failed to convert capability source to dictionary"))
+                ) -> Result<CapabilitySource, RouterError> {
+                    Ok(self.source.clone())
                 }
             }
             let source = CapabilitySource::Component(ComponentSource {
@@ -460,12 +456,8 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
             &self,
             _request: RouteRequest,
             _target: WeakInstanceToken,
-        ) -> Result<Data, RouterError> {
-            Ok(self
-                .source
-                .clone()
-                .try_into()
-                .expect("failed to convert capability source to dictionary"))
+        ) -> Result<CapabilitySource, RouterError> {
+            Ok(self.source.clone())
         }
     }
     let source = CapabilitySource::Component(ComponentSource {

@@ -98,11 +98,9 @@ async fn is_builtin_runner(program_input: &ProgramInput, target: WeakInstanceTok
     let Some(runner_router) = program_input.runner() else {
         return false;
     };
-    let Ok(source_data) = runner_router.route_debug(RouteRequest::default(), target).await else {
+    let Ok(source) = runner_router.route_debug(RouteRequest::default(), target).await else {
         return false;
     };
-    let source: CapabilitySource =
-        source_data.try_into().expect("failed to convert into capability source");
     let CapabilitySource::Builtin(_) = source else {
         return false;
     };

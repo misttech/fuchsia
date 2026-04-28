@@ -35,24 +35,17 @@ if (is_host) {
 
 fidl("fuchsia.component.internal") {
   sources = [
-    "capability_source.fidl",
-    "component_capability.fidl",
     "component_id_index.fidl",
     "config.fidl",
     "event_stream_route_metadata.fidl",
     "injection.fidl",
-    "internal_capability.fidl",
     "sandbox.fidl",
   ]
-  excluded_checks = [
-    "invalid-case-for-decl-name",
-    "vector-bounds-not-specified",
-  ]
+  excluded_checks = [ "vector-bounds-not-specified" ]
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.component",
     "//sdk/fidl/fuchsia.component.decl",
     "//sdk/fidl/fuchsia.component.sandbox",
-    "//sdk/fidl/fuchsia.sys2",
   ]
 }

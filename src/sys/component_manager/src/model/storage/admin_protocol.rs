@@ -184,15 +184,13 @@ impl StorageAdmin {
         &self,
         target: &Arc<ComponentInstance>,
     ) -> Result<CapabilitySource, fcomponent::Error> {
-        let data = self
-            .get_storage_router(target)
+        self.get_storage_router(target)
             .route_debug(RouteRequest::default(), target.as_weak().into())
             .await
             .map_err(|e| {
                 log::error!("failed to route storage: {e:?}");
                 fcomponent::Error::Internal
-            })?;
-        Ok(data.try_into().expect("failed to deserialize capability source"))
+            })
     }
 
     async fn open_storage_as(
@@ -711,12 +709,11 @@ impl StorageAdmin {
                     Some(Capability::DirConnectorRouter(router)) => router,
                     _ => continue,
                 };
-                let storage_source =
-                    match router.route_debug(RouteRequest::default(), component_weak).await {
-                        Ok(data) => CapabilitySource::try_from(data)
-                            .expect("failed to convert Data to capability source"),
-                        _ => continue,
-                    };
+                let Ok(storage_source) =
+                    router.route_debug(RouteRequest::default(), component_weak).await
+                else {
+                    continue;
+                };
 
                 if storage_source
                     == CapabilitySource::StorageBackingDirectory(storage_source_info.clone())

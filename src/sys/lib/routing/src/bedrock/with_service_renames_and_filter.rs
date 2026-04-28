@@ -66,20 +66,16 @@ impl Routable<DirConnector> for ServiceRenameRouter {
         &self,
         request: RouteRequest,
         target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
-        let data = self.router.route_debug(request, target).await?;
-        Ok(self.wrap_debug_response(data))
+    ) -> Result<CapabilitySource, RouterError> {
+        let source = self.router.route_debug(request, target).await?;
+        Ok(self.wrap_debug_response(source))
     }
 }
 
 impl ServiceRenameRouter {
     /// Converts a capability source into `CapabilitySource::FilteredProvider`
-    fn wrap_debug_response(&self, capability_source_data: Data) -> Data {
-        log::warn!("wrapping debug response with a filtered provider");
-        let capability_source: CapabilitySource = Capability::Data(capability_source_data)
-            .try_into()
-            .expect("failed to unpersist capability source");
-        let capability_source = match capability_source {
+    fn wrap_debug_response(&self, capability_source: CapabilitySource) -> CapabilitySource {
+        match capability_source {
             CapabilitySource::Component(source) => {
                 CapabilitySource::FilteredProvider(FilteredProviderSource {
                     capability: AggregateCapability::Service(
@@ -101,8 +97,7 @@ impl ServiceRenameRouter {
                 })
             }
             other_source => panic!("unexpected source? {:?}", other_source),
-        };
-        capability_source.try_into().expect("failed to persist capability source")
+        }
     }
 }
 

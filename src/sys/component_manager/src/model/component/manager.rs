@@ -6,7 +6,7 @@ use crate::model::component::{ComponentInstance, RouterError};
 use ::routing::component_instance::TopInstanceInterface;
 use anyhow::format_err;
 use async_trait::async_trait;
-use capability_source::{BuiltinCapabilities, NamespaceCapabilities};
+use capability_source::{BuiltinCapabilities, CapabilitySource, NamespaceCapabilities};
 use clonable_error::ClonableError;
 use errors::RebootError;
 use fidl::endpoints::{self};
@@ -19,7 +19,7 @@ use fuchsia_sync::Mutex;
 use log::warn;
 use moniker::Moniker;
 use routing::error::{ComponentInstanceError, RoutingError};
-use runtime_capabilities::{Connector, Data, Routable, Router, WeakInstanceToken};
+use runtime_capabilities::{Connector, Routable, Router, WeakInstanceToken};
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
@@ -133,7 +133,7 @@ impl ComponentManagerInstance {
                 &self,
                 request: RouteRequest,
                 target: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
+            ) -> Result<CapabilitySource, RouterError> {
                 let router = self.get_router().await?;
                 router.route_debug(request, target).await
             }

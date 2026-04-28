@@ -11,7 +11,7 @@ use futures::channel::oneshot;
 use futures::stream::FuturesUnordered;
 use router_error::RouterError;
 use runtime_capabilities::{
-    Capability, Data, Dictionary, EntryUpdate, Routable, Router, UpdateNotifierRetention,
+    Capability, Dictionary, EntryUpdate, Routable, Router, UpdateNotifierRetention,
     WeakInstanceToken,
 };
 
@@ -147,12 +147,8 @@ impl Routable<Dictionary> for UseDictionaryRouter {
         &self,
         _request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
-        Ok(self
-            .capability_source
-            .clone()
-            .try_into()
-            .expect("failed to serialize capability source"))
+    ) -> Result<CapabilitySource, RouterError> {
+        Ok(self.capability_source.clone())
     }
 }
 
@@ -162,28 +158,16 @@ async fn try_get_router_source(
 ) -> Option<String> {
     let source: CapabilitySource = match capability {
         Capability::DictionaryRouter(router) => {
-            match router.route_debug(RouteRequest::default(), target).await {
-                Ok(data) => data.try_into().ok()?,
-                _ => return None,
-            }
+            router.route_debug(RouteRequest::default(), target).await.ok()?
         }
         Capability::ConnectorRouter(router) => {
-            match router.route_debug(RouteRequest::default(), target).await {
-                Ok(data) => data.try_into().ok()?,
-                _ => return None,
-            }
+            router.route_debug(RouteRequest::default(), target).await.ok()?
         }
         Capability::DirConnectorRouter(router) => {
-            match router.route_debug(RouteRequest::default(), target).await {
-                Ok(data) => data.try_into().ok()?,
-                _ => return None,
-            }
+            router.route_debug(RouteRequest::default(), target).await.ok()?
         }
         Capability::DataRouter(router) => {
-            match router.route_debug(RouteRequest::default(), target).await {
-                Ok(data) => data.try_into().ok()?,
-                _ => return None,
-            }
+            router.route_debug(RouteRequest::default(), target).await.ok()?
         }
         _ => return None,
     };

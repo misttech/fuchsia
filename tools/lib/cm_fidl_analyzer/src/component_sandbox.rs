@@ -53,7 +53,6 @@ where
     T: CapabilityBound,
 {
     let moniker = source.source_moniker();
-    let data: Data = source.try_into().expect("failed to convert capability source to Data");
     Router::<T>::new(move |_request: RouteRequest, debug: bool, _target: WeakInstanceToken| {
         if !debug {
             future::ready(Err(RouterError::NotFound(Arc::new(
@@ -61,7 +60,7 @@ where
             ))))
             .boxed()
         } else {
-            future::ready(Ok(RouterResponse::<T>::Debug(data.clone()))).boxed()
+            future::ready(Ok(RouterResponse::<T>::Debug(Box::new(source.clone())))).boxed()
         }
     })
 }
@@ -107,19 +106,15 @@ pub fn build_root_component_input(
     for (name, capability_source, capability_type, route_request_info) in
         names_and_capability_sources
     {
-        let data: runtime_capabilities::Data = capability_source
-            .clone()
-            .try_into()
-            .expect("failed to convert capability source to Data");
         let router_capability: Capability = match capability_type {
             CapabilityTypeName::Protocol
             | CapabilityTypeName::Runner
             | CapabilityTypeName::Resolver => {
-                let router = Router::<Connector>::new_debug(data)
+                let router = Router::<Connector>::new_debug(capability_source.clone())
                     .with_policy_check::<ComponentInstanceForAnalyzer>(
-                        capability_source,
-                        policy.clone(),
-                    );
+                    capability_source,
+                    policy.clone(),
+                );
                 WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
                     router,
                     capability_type,
@@ -139,11 +134,11 @@ pub fn build_root_component_input(
                     },
                     _ => panic!("unsupported capability source type"),
                 };
-                let router = Router::<DirConnector>::new_debug(data)
+                let router = Router::<DirConnector>::new_debug(capability_source.clone())
                     .with_policy_check::<ComponentInstanceForAnalyzer>(
-                        capability_source,
-                        policy.clone(),
-                    );
+                    capability_source,
+                    policy.clone(),
+                );
                 WithPorcelain::<_, _, ComponentInstanceForAnalyzer>::with_porcelain_no_default(
                     router,
                     capability_type,
@@ -317,7 +312,7 @@ impl Routable<Dictionary> for FrameworkRouter {
         &self,
         _request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         panic!("should never be debug routed");
     }
 }
@@ -536,7 +531,7 @@ pub(crate) fn static_children_component_output_dictionary_routers(
             &self,
             _request: RouteRequest,
             _target: WeakInstanceToken,
-        ) -> Result<Data, RouterError> {
+        ) -> Result<CapabilitySource, RouterError> {
             panic!("this should never be debug routed");
         }
     }
@@ -583,7 +578,9 @@ pub fn new_event_stream_multiplexing_router(
                     Err(e) => return Err(e),
                 }
             }
-            Ok(RouterResponse::Debug(any_result.expect("no result produced, is sources empty?")))
+            Ok(RouterResponse::Debug(Box::new(
+                any_result.expect("no result produced, is sources empty?"),
+            )))
         }
         .boxed()
     })

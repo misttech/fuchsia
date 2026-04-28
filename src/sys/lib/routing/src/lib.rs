@@ -145,9 +145,7 @@ pub async fn debug_route_sandbox_path_with_request<C: ComponentInstanceInterface
         .await
         .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?;
     match maybe_response {
-        Some(GenericRouterResponse::Debug(data)) => {
-            Ok(data.try_into().expect("failed to deserialize capability source"))
-        }
+        Some(GenericRouterResponse::Debug(data)) => Ok(*data),
         None => Err(RoutingError::BedrockNotPresentInDictionary {
             name: sandbox_path.path,
             moniker: component.moniker().clone().into(),
@@ -219,9 +217,8 @@ where
     T: CapabilityBound + Debug,
     Router<T>: TryFrom<Capability>,
 {
-    let data = router
+    router
         .route_debug(request, target.as_weak().into())
         .await
-        .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?;
-    Ok(data.try_into().unwrap())
+        .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))
 }

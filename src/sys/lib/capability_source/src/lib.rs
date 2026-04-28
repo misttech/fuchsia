@@ -6,22 +6,16 @@ use cm_rust::{
     CapabilityDecl, CapabilityTypeName, ChildRef, ConfigurationDecl, DictionaryDecl, DirectoryDecl,
     EventStreamDecl, ExposeConfigurationDecl, ExposeDecl, ExposeDeclCommon, ExposeDictionaryDecl,
     ExposeDirectoryDecl, ExposeProtocolDecl, ExposeResolverDecl, ExposeRunnerDecl,
-    ExposeServiceDecl, ExposeSource, FidlIntoNative, NativeIntoFidl, OfferConfigurationDecl,
-    OfferDecl, OfferDeclCommon, OfferDictionaryDecl, OfferProtocolDecl, OfferResolverDecl,
-    OfferRunnerDecl, OfferServiceDecl, OfferSource, OfferStorageDecl, ProtocolDecl,
-    RegistrationSource, ResolverDecl, RunnerDecl, ServiceDecl, StorageDecl, UseDecl, UseDeclCommon,
-    UseDirectoryDecl, UseProtocolDecl, UseServiceDecl, UseSource, UseStorageDecl,
+    ExposeServiceDecl, ExposeSource, OfferConfigurationDecl, OfferDecl, OfferDeclCommon,
+    OfferDictionaryDecl, OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl,
+    OfferSource, OfferStorageDecl, ProtocolDecl, RegistrationSource, ResolverDecl, RunnerDecl,
+    ServiceDecl, StorageDecl, UseDecl, UseDeclCommon, UseDirectoryDecl, UseProtocolDecl,
+    UseServiceDecl, UseSource, UseStorageDecl,
 };
-use cm_rust_derive::FidlDecl;
 use cm_types::{Name, Path, RelativePath};
-use derivative::Derivative;
-use fidl::{persist, unpersist};
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_internal as finternal;
 use fidl_fuchsia_sys2 as fsys;
 use from_enum::FromEnum;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
-use runtime_capabilities::{Capability, Data};
 use std::fmt;
 use thiserror::Error;
 
@@ -121,45 +115,13 @@ impl fmt::Display for AggregateMember {
     }
 }
 
-impl FidlIntoNative<AggregateMember> for finternal::AggregateMember {
-    fn fidl_into_native(self) -> AggregateMember {
-        match self {
-            finternal::AggregateMember::Self_(_) => AggregateMember::Self_,
-            finternal::AggregateMember::Parent(_) => AggregateMember::Parent,
-            finternal::AggregateMember::Collection(name) => {
-                AggregateMember::Collection(Name::new(name).unwrap())
-            }
-            finternal::AggregateMember::Child(child_ref) => {
-                AggregateMember::Child(child_ref.fidl_into_native())
-            }
-        }
-    }
-}
-
-impl NativeIntoFidl<finternal::AggregateMember> for AggregateMember {
-    fn native_into_fidl(self) -> finternal::AggregateMember {
-        match self {
-            AggregateMember::Self_ => finternal::AggregateMember::Self_(fdecl::SelfRef {}),
-            AggregateMember::Parent => finternal::AggregateMember::Parent(fdecl::ParentRef {}),
-            AggregateMember::Collection(name) => {
-                finternal::AggregateMember::Collection(name.to_string())
-            }
-            AggregateMember::Child(child_ref) => {
-                finternal::AggregateMember::Child(child_ref.native_into_fidl())
-            }
-        }
-    }
-}
-
 /// Describes the source of a capability, as determined by `find_capability_source`
 #[cfg_attr(
     feature = "serde",
     derive(Deserialize, Serialize),
     serde(tag = "type", rename_all = "snake_case")
 )]
-#[derive(FidlDecl, Debug, Derivative)]
-#[derivative(Clone(bound = ""), PartialEq)]
-#[fidl_decl(fidl_union = "finternal::CapabilitySource")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CapabilitySource {
     /// This capability originates from the component instance for the given Realm.
     /// point.
@@ -201,41 +163,35 @@ pub enum CapabilitySource {
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::Component")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ComponentSource {
     pub capability: ComponentCapability,
     pub moniker: Moniker,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::Framework")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FrameworkSource {
     pub capability: InternalCapability,
     pub moniker: Moniker,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::Builtin")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct BuiltinSource {
     pub capability: InternalCapability,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::Namespace")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct NamespaceSource {
     pub capability: ComponentCapability,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::Capability")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CapabilityToCapabilitySource {
     pub source_capability: ComponentCapability,
     pub moniker: Moniker,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::AnonymizedAggregate")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct AnonymizedAggregateSource {
     pub capability: AggregateCapability,
     pub moniker: Moniker,
@@ -243,16 +199,26 @@ pub struct AnonymizedAggregateSource {
     pub instances: Vec<ServiceInstance>,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "fsys::ServiceInstance")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ServiceInstance {
     pub instance_name: Name,
     pub child_name: String,
     pub child_instance_name: Name,
 }
+
+impl From<ServiceInstance> for fsys::ServiceInstance {
+    fn from(service_instance: ServiceInstance) -> Self {
+        Self {
+            instance_name: Some(service_instance.instance_name.to_string()),
+            child_name: Some(service_instance.child_name),
+            child_instance_name: Some(service_instance.child_instance_name.to_string()),
+            ..Default::default()
+        }
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::FilteredProvider")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FilteredProviderSource {
     pub capability: AggregateCapability,
     pub moniker: Moniker,
@@ -260,38 +226,33 @@ pub struct FilteredProviderSource {
     pub offer_service_decl: OfferServiceDecl,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::FilteredAggregateProvider")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FilteredAggregateProviderSource {
     pub capability: AggregateCapability,
     pub moniker: Moniker,
     pub offer_service_decls: Vec<OfferServiceDecl>,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::Environment")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct EnvironmentSource {
     pub capability: ComponentCapability,
     pub moniker: Moniker,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::Void")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct VoidSource {
     pub capability: InternalCapability,
     pub moniker: Moniker,
 }
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::RemotedAt")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RemotedAtSource {
     pub moniker: Moniker,
     pub type_name: Option<CapabilityTypeName>,
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone)]
-#[fidl_decl(fidl_table = "finternal::StorageBackingDirectory")]
+#[derive(Debug, PartialEq, Clone)]
 pub struct StorageBackingDirectorySource {
     pub capability: ComponentCapability,
     pub moniker: Moniker,
@@ -422,44 +383,6 @@ impl fmt::Display for CapabilitySource {
     }
 }
 
-impl TryFrom<CapabilitySource> for Capability {
-    type Error = fidl::Error;
-
-    fn try_from(capability_source: CapabilitySource) -> Result<Self, Self::Error> {
-        Ok(Data::try_from(capability_source)?.into())
-    }
-}
-
-impl TryFrom<CapabilitySource> for Data {
-    type Error = fidl::Error;
-
-    fn try_from(capability_source: CapabilitySource) -> Result<Self, Self::Error> {
-        Ok(Data::Bytes(persist(&capability_source.native_into_fidl())?.into()))
-    }
-}
-
-impl TryFrom<Capability> for CapabilitySource {
-    type Error = fidl::Error;
-
-    fn try_from(capability: Capability) -> Result<Self, Self::Error> {
-        let Capability::Data(data) = capability else {
-            return Err(fidl::Error::InvalidEnumValue);
-        };
-        Self::try_from(data)
-    }
-}
-
-impl TryFrom<Data> for CapabilitySource {
-    type Error = fidl::Error;
-
-    fn try_from(data: Data) -> Result<Self, Self::Error> {
-        let Data::Bytes(bytes) = data else {
-            return Err(fidl::Error::InvalidEnumValue);
-        };
-        Ok(unpersist::<finternal::CapabilitySource>(&bytes)?.fidl_into_native())
-    }
-}
-
 /// An individual instance in an aggregate.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AggregateInstance {
@@ -488,8 +411,7 @@ impl fmt::Display for AggregateInstance {
 /// scoped to a realm, a built-in global capability, or a capability from component manager's own
 /// namespace.
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
-#[derive(FidlDecl, Clone, Debug, PartialEq, Eq)]
-#[fidl_decl(fidl_union = "finternal::InternalCapability")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InternalCapability {
     Service(Name),
     Protocol(Name),
@@ -503,8 +425,7 @@ pub enum InternalCapability {
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Debug, PartialEq, Clone, Eq)]
-#[fidl_decl(fidl_table = "finternal::InternalEventStreamCapability")]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub struct InternalEventStreamCapability {
     pub name: Name,
     pub scope_moniker: Option<String>,
@@ -650,8 +571,7 @@ impl From<DictionaryDecl> for InternalCapability {
     derive(Deserialize, Serialize),
     serde(tag = "type", rename_all = "snake_case")
 )]
-#[derive(FidlDecl, FromEnum, Clone, Debug, PartialEq, Eq)]
-#[fidl_decl(fidl_union = "finternal::ComponentCapability")]
+#[derive(FromEnum, Clone, Debug, PartialEq, Eq)]
 pub enum ComponentCapability {
     Use_(UseDecl),
     /// Models a capability used from the environment.
@@ -837,8 +757,7 @@ impl fmt::Display for ComponentCapability {
     derive(Deserialize, Serialize),
     serde(tag = "type", rename_all = "snake_case")
 )]
-#[derive(FidlDecl, Clone, Debug, PartialEq, Eq)]
-#[fidl_decl(fidl_union = "finternal::EnvironmentCapability")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EnvironmentCapability {
     Runner(EnvironmentCapabilityData),
     Resolver(EnvironmentCapabilityData),
@@ -856,8 +775,7 @@ impl EnvironmentCapability {
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-#[derive(FidlDecl, Clone, Debug, PartialEq, Eq)]
-#[fidl_decl(fidl_table = "finternal::EnvironmentSource")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EnvironmentCapabilityData {
     source_name: Name,
     source: RegistrationSource,
@@ -870,8 +788,7 @@ pub struct EnvironmentCapabilityData {
     derive(Deserialize, Serialize),
     serde(tag = "type", rename_all = "snake_case")
 )]
-#[derive(FidlDecl, Debug, Clone, PartialEq, Eq, Hash)]
-#[fidl_decl(fidl_union = "finternal::AggregateCapability")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AggregateCapability {
     Service(Name),
 }
@@ -913,6 +830,7 @@ pub type BuiltinCapabilities = Vec<CapabilityDecl>;
 mod tests {
     use super::*;
     use cm_rust::StorageDirectorySource;
+    use fidl_fuchsia_component_decl as fdecl;
 
     #[test]
     fn capability_type_name() {

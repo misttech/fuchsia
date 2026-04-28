@@ -7,18 +7,14 @@ load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 fidl_library(
     name = "fuchsia.component.internal",
     srcs = [
-        "capability_source.fidl",
-        "component_capability.fidl",
         "component_id_index.fidl",
         "config.fidl",
         "event_stream_route_metadata.fidl",
         "injection.fidl",
-        "internal_capability.fidl",
         "sandbox.fidl",
     ],
     # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
     excluded_checks = [
-        "invalid-case-for-decl-name",
         "vector-bounds-not-specified",
     ],
     visibility = ["//visibility:public"],
@@ -26,6 +22,5 @@ fidl_library(
         "//sdk/fidl/fuchsia.component",
         "//sdk/fidl/fuchsia.component.decl",
         "//sdk/fidl/fuchsia.component.sandbox",
-        "//sdk/fidl/fuchsia.sys2",
     ],
 )

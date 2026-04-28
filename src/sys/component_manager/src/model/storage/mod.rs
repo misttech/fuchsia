@@ -202,7 +202,7 @@ pub async fn route_backing_directory(
             name: storage_decl.backing_dir.to_string(),
         },
     );
-    let source: CapabilitySource = backing_dir_router
+    let source = backing_dir_router
         .route_debug(
             routing::bedrock::request_metadata::directory_metadata(
                 cm_types::Availability::Transitional,
@@ -212,9 +212,7 @@ pub async fn route_backing_directory(
             storage_component.as_weak().into(),
         )
         .await
-        .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?
-        .try_into()
-        .expect("failed to deserialize capability source");
+        .map_err(|e| RoutingError::try_from(e).expect("invalid routing error"))?;
 
     let (dir_source_path, dir_source_instance, dir_subdir) = match source {
         CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {

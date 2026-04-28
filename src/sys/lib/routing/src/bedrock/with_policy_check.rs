@@ -10,7 +10,7 @@ use capability_source::CapabilitySource;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use runtime_capabilities::{CapabilityBound, Data, Routable, Router, WeakInstanceToken};
+use runtime_capabilities::{CapabilityBound, Routable, Router, WeakInstanceToken};
 
 /// If the metadata for a route contains a Data::Uint64 value under this key with a value greater
 /// than 0, then no policy checks will be performed. This behavior is limited to non-fuchsia
@@ -116,7 +116,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
         &self,
         request: RouteRequest,
         target_token: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         self.check_policy(&request, target_token.clone())?;
         self.router.route_debug(request, target_token).await
     }

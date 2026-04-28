@@ -610,7 +610,7 @@ where
         &self,
         request: fruntime::RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
+    ) -> Result<CapabilitySource, RouterError> {
         let type_name: Option<CapabilityTypeName> =
             request.build_type_name.and_then(|s| CapabilityTypeName::from_str(s.as_str()).ok());
         Ok(CapabilitySource::RemotedAt(RemotedAtSource {
@@ -1129,13 +1129,10 @@ mod tests {
 
         let router: Router<Connector> = remote_capabilities.get(router).unwrap();
 
-        let capability_source = match router
+        let capability_source = router
             .route_debug(fruntime::RouteRequest::default(), WeakInstanceToken::new_invalid())
             .await
-        {
-            Ok(data) => CapabilitySource::try_from(data).unwrap(),
-            other_value => panic!("unexpected response from router: {other_value:?}"),
-        };
+            .expect("unexpected response from router");
         assert_eq!(
             capability_source,
             CapabilitySource::RemotedAt(RemotedAtSource {

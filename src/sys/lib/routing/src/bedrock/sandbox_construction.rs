@@ -207,7 +207,7 @@ impl Default for ComponentSandbox {
                 &self,
                 _request: RouteRequest,
                 _target: WeakInstanceToken,
-            ) -> Result<Data, RouterError> {
+            ) -> Result<CapabilitySource, RouterError> {
                 panic!("null router invoked");
             }
         }
@@ -1987,13 +1987,10 @@ impl<T: CapabilityBound, C: ComponentInstanceInterface + 'static> Routable<T>
         &self,
         _request: RouteRequest,
         _target: WeakInstanceToken,
-    ) -> Result<Data, RouterError> {
-        let data = CapabilitySource::Void(VoidSource {
+    ) -> Result<CapabilitySource, RouterError> {
+        Ok(CapabilitySource::Void(VoidSource {
             capability: self.capability.clone(),
             moniker: self.component.moniker.clone(),
-        })
-        .try_into()
-        .expect("failed to convert capability source to Data");
-        return Ok(data);
+        }))
     }
 }

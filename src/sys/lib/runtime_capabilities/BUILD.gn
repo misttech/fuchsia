@@ -23,6 +23,7 @@ rustc_library("runtime_capabilities") {
     "//src/lib/from-enum",
     "//src/lib/fuchsia-sync",
     "//src/sys/component_manager/lib/router_error",
+    "//src/sys/lib/capability_source",
     "//src/sys/lib/cm_types",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:derivative",
