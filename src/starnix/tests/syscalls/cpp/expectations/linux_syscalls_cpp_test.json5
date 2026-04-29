@@ -15,6 +15,9 @@
                 // TODO(https://fxbug.dev/437153843): Flaking, albeit very infrequently.
                 "FuseTest.Stats",
 
+                // TODO(https://fxbug.dev/493672905): Flaking on Machina, failing on Starnix.
+                "FuseServerTest.InvalidateMountDir",
+
                 // TODO(https://fxbug.dev/437167254)
                 "IoctlTest.SIOCSIFADDR_Success",
                 "IoctlTest.EVIOCGNAME_Success",
