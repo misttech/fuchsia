@@ -76,7 +76,6 @@ type ColorRgba = struct {
 
 /// The set of possible image flip functions to choose from when determining how the image texture
 /// should be displayed.
-@available(added=10)
 @strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type ImageFlip = strict enum {
     NONE = 0;
@@ -111,25 +110,16 @@ type LayoutInfo = table {
     /// pixels, as determined by this scale.  Clients should not necessarily re-layout their content
     /// when this value changes.
     ///
-    /// # Removed
-    ///
-    /// This arg is deprecated at API version 9 with addition of |device_pixel_ratio| and is
-    /// removed at API version 11.
-    @available(deprecated=9, removed=11)
-    2: pixel_scale fuchsia.math.SizeU;
-
     /// The ratio of display's physical pixels to device independent pixels. Each logical pixel of a
     /// View is displayed on-screen by one or more physical pixels, as determined by this scale.
     /// Clients should not necessarily re-layout their content when this value changes, but
     /// accommodate by reallocating their Image buffers to avoid sampling artifacts. The HiDPI-aware
     /// client should allocate buffers that are sized (`logical_size`*`device_pixel_ratio`).
-    @available(added=9)
     3: device_pixel_ratio fuchsia.math.VecF;
     /// The offsets between the edges and the visible rectangle of the View. The clients can assume
     /// that the boundary region between the inset and the View edge is occluded, and should adjust
     /// content layout to avoid this region. This inset is described in the view's logical
     /// coordinate system. The HiDPI-aware clients should scale this by `device_pixel_ratio`.
-    @available(added=9)
     4: inset fuchsia.math.Inset;
 };
 
@@ -252,7 +242,6 @@ type ViewportProperties = table {
     /// The offsets between the edges and the visible rectangle of the Viewport. This maps directly
     /// to the `inset` field in LayoutInfo. The valid inset must have all components greater than or
     /// equal to 0.
-    @available(added=9)
     2: inset fuchsia.math.Inset;
 };
 
@@ -271,7 +260,6 @@ type TransformId = struct {
 
 /// A maximum of 64 child transforms is enough for the expected usage of these APIs. Callers may
 /// beyond this limit using [`AddChild`].
-@available(added=26)
 const MAX_CHILD_TRANSFORMS int32 = 64;
 
 /// A user-defined identifier for a particular piece of Content. See Content creation functions
@@ -374,14 +362,6 @@ type PresentArgs = resource table {
     /// The default `present_fences` value is the empty vector.
     @available(added=HEAD)
     7: present_fences vector<zx.Handle:COUNTER>:MAX_PRESENT_ARGS_FENCE_COUNT;
-
-    /// Removed.  Originally intended to be a renaming of `acquire_fences`, but was never hooked up.
-    @available(removed=24)
-    5: server_wait_fences vector<zx.Handle:EVENT>:MAX_PRESENT_ARGS_FENCE_COUNT;
-
-    /// Removed.  Originally intended to be a renaming of `release_fences`, but was never hooked up.
-    @available(removed=24)
-    6: server_signal_fences vector<zx.Handle:EVENT>:MAX_PRESENT_ARGS_FENCE_COUNT;
 };
 
 /// A user-defined identifier for future presentation info. A maximum of 8
@@ -706,7 +686,6 @@ closed protocol Flatland {
     /// The caller must ensure that `child_transform_id` is valid and that there
     /// are no repetitions.  Sending a repeated `child_transform_id` over
     /// multiple calls will result in session closure.
-    @available(added=26)
     strict AddChild(struct {
         parent_transform_id TransformId;
         child_transform_id TransformId;
@@ -724,7 +703,6 @@ closed protocol Flatland {
     /// are valid and that there are no repetitions.  Sending a repeated
     /// `TransformId` in `new_child_transform_ids` will result in session
     /// closure.
-    @available(added=26)
     strict ReplaceChildren(struct {
         parent_transform_id TransformId;
         new_child_transform_ids vector<TransformId>:MAX_CHILD_TRANSFORMS;
@@ -821,7 +799,6 @@ closed protocol Flatland {
     ///
     /// Calling this function replaces any previous values set on this Transform. To reset a
     /// Transform to "no hit testing": send an empty vector with [`SetHitRegions`].
-    @available(added=10)
     strict SetInfiniteHitRegion(struct {
         transform_id TransformId;
         hit_test HitTestInteraction;
@@ -949,7 +926,6 @@ closed protocol Flatland {
     /// closed due to FlatlandError::BAD_OPERATION. This flip will be applied to the Image before
     /// parent Transform Orientations. If this function is not called, then the default flip value
     /// is ImageFlip::NONE.
-    @available(added=10)
     strict SetImageFlip(struct {
         image_id ContentId;
         flip ImageFlip;
@@ -1109,7 +1085,6 @@ closed protocol FlatlandDisplay {
     /// [`LayoutInfo.device_pixel_ratio`] for details.
     ///
     /// The default value is (1.0, 1.0). The valid values are 1.0 and above.
-    @available(added=9)
     strict SetDevicePixelRatio(struct {
         device_pixel_ratio fuchsia.math.VecF;
     });

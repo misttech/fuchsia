@@ -39,7 +39,6 @@ type RegisterBufferCollectionUsage = strict enum {
 };
 
 /// The possible usages for a registered buffer collection. Can be a combination of options.
-@available(added=9)
 type RegisterBufferCollectionUsages = flexible bits : uint16 {
     /// The specified buffer collection can be used for Flatland and GFX image creation.
     ///
@@ -101,7 +100,6 @@ type RegisterBufferCollectionArgs = resource table {
     ///
     /// This field is OPTIONAL. If `usages` is omitted it will be treated as if
     /// it has only the DEFAULT option.
-    @available(added=9)
     4: usages RegisterBufferCollectionUsages;
 };
 
