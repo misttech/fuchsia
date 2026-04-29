@@ -80,7 +80,7 @@ CRATE_ANNOTATIONS = {
                 selects = {
                     "x86_64-unknown-linux-gnu": [
                         "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
-                        "//third_party/rust_crates/vendor/libc-0.2.184:libc",
+                        "//third_party/rust_crates/vendor/libc-0.2.186:libc",
                         "//third_party/rust_crates/ask2patch/memchr",
                         "//third_party/rust_crates/vendor/mio-0.8.11:mio",
                         "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",
