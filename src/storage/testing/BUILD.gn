@@ -13,7 +13,6 @@ group("storage_drivers") {
   deps = [
     "//src/devices/block/drivers/core",
     "//src/devices/block/drivers/ftl",
-    "//src/devices/block/drivers/gpt",
     "//src/devices/block/drivers/ramdisk",
     "//src/devices/nand/drivers/ram-nand",
     "//src/storage/fvm:fvm-component",

@@ -139,7 +139,6 @@ source_set("ddktl") {
     "//src/devices/acpi/drivers/intel-thermal:*",
     "//src/devices/block/drivers/core:*",
     "//src/devices/block/drivers/ftl:*",
-    "//src/devices/block/drivers/gpt:*",
     "//src/devices/block/drivers/ramdisk:*",
     "//src/devices/block/drivers/virtio:*",
     "//src/devices/board/drivers/astro:*",

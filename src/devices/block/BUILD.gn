@@ -10,7 +10,6 @@ group("drivers") {
     "drivers/core",
     "drivers/cqhci",
     "drivers/ftl",
-    "drivers/gpt",
     "drivers/nvme",
     "drivers/pci-sdhci",
     "drivers/ramdisk",
