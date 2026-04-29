@@ -69,17 +69,18 @@ def _fidl_comment_check(ctx):
         content = str(ctx.io.read_file(path))
         lines = content.split("\n")
 
+        in_allowed_block = False
         for num, line in meta.new_lines():
             idx = num - 1
 
             if not ctx.re.allmatches(r"^\s*//($|[^/])", line):
+                in_allowed_block = False
                 continue
+            elif (ctx.re.allmatches(r"^\s*//\s*Copyright", line) or
+                  ctx.re.allmatches(r"^\s*//\s*TODO", line)):
+                in_allowed_block = True
 
-            # Check exclusions
-            if (ctx.re.allmatches(r"^\s*//\s*Copyright", line) or
-                ctx.re.allmatches(r"^\s*//\s*Use of this source code", line) or
-                ctx.re.allmatches(r"^\s*//\s*found in the LICENSE", line) or
-                ctx.re.allmatches(r"^\s*//\s*TODO", line)):
+            if in_allowed_block:
                 continue
 
             # Find the end of this comment block in the full file
