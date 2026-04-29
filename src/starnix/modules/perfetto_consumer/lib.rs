@@ -9,6 +9,7 @@ use fuchsia_trace::{
     BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state, trace_string_ref_t,
 };
 use fuchsia_trace_observer::TraceObserver;
+use futures::{SinkExt, StreamExt};
 use fxt::blob::{BlobHeader, BlobType};
 use perfetto_protos::perfetto::protos::trace_config::buffer_config::FillPolicy;
 use perfetto_protos::perfetto::protos::trace_config::{BufferConfig, DataSource};
@@ -196,137 +197,135 @@ impl CallbackState {
                 // Once tracing has started, notify the event manager so it can start tracking processes.
                 self.event_manager.start(current_task.kernel());
             }
-            TraceState::Stopping | TraceState::Stopped => {
-                if prev_state == TraceState::Started {
-                    // We want to hold the prolonged context to ensure the trace session doesn't
-                    // exit out from under us, but we also want to ensure we drop the prolonged
-                    // context if we bail for whatever reason below.
-                    let _local_prolonged_context =
-                        std::mem::replace(&mut self.prolonged_context, None);
-                    let start_time = std::time::Instant::now();
-
-                    let connection = self.connection(locked, current_task)?;
-                    let disable_request = connection.disable_tracing(
-                        locked,
-                        current_task,
-                        DisableTracingRequest {},
-                    )?;
-                    loop {
-                        let frame = connection.next_frame_blocking(locked, current_task)?;
-                        if frame.request_id == Some(disable_request) {
-                            break;
-                        } else {
-                            log_error!(
-                                "Ignoring frame while looking for DisableTracingRequest: {frame:?}"
-                            );
-                        }
-                    }
-
-                    let read_buffers_request =
-                        connection.read_buffers(locked, current_task, ReadBuffersRequest {})?;
-
-                    let blob_name_ref = {
-                        let Some(context) = fuchsia_trace::Context::acquire() else {
-                            bail!("Tracing stopped despite holding prolonged context");
-                        };
-                        context.register_string_literal(NAME_PERFETTO_BLOB)
-                    };
-
-                    // IPC responses may be spread across multiple frames, so loop until we get a
-                    // message that indicates it is the last one. Additionally, if there are
-                    // unrelated messages on the socket (e.g. leftover from a previous trace
-                    // session), the loop will read past and ignore them.
-                    loop {
-                        let frame = self
-                            .connection(locked, current_task)?
-                            .next_frame_blocking(locked, current_task)?;
-                        if frame.request_id != Some(read_buffers_request) {
-                            continue;
-                        } else {
-                            log_debug!(
-                                "perfetto_consumer ignoring frame while looking for ReadBuffersRequest {read_buffers_request}: {frame:?}"
-                            );
-                        }
-                        if let Some(ipc_frame::Msg::MsgInvokeMethodReply(reply)) = &frame.msg {
-                            if let Ok(response) = decode_read_buffers_response(
-                                reply.reply_proto.as_deref().unwrap_or(&[]),
-                            ) {
-                                for slice in &response.slices {
-                                    if let Some(data) = &slice.data {
-                                        self.packet_data.extend(data);
-                                    }
-                                    if slice.last_slice_for_packet.unwrap_or(false) {
-                                        let mut blob_data = Vec::new();
-                                        // Packet field number = 1, length delimited type = 2.
-                                        blob_data.push(1 << 3 | 2);
-                                        // Push a varint encoded length.
-                                        // See https://protobuf.dev/programming-guides/encoding/
-                                        const HIGH_BIT: u8 = 0x80;
-                                        const LOW_SEVEN_BITS: usize = 0x7F;
-                                        let mut value = self.packet_data.len();
-                                        while value >= HIGH_BIT as usize {
-                                            blob_data
-                                                .push((value & LOW_SEVEN_BITS) as u8 | HIGH_BIT);
-                                            value >>= 7;
-                                        }
-                                        blob_data.push(value as u8);
-                                        // `append` moves all data out of the passed Vec, so
-                                        // s.packet_data will be empty after this call.
-                                        blob_data.append(&mut self.packet_data);
-
-                                        // At this point blob_data is a full Perfetto Trace protobuf.
-                                        // Parse the data and replace the linux pids with their
-                                        // corresponding koid.
-                                        let rewritten =
-                                            self.rewrite_pids(&blob_data).unwrap_or(blob_data);
-
-                                        // Ignore a failure to write the packet here. We don't
-                                        // return immediately because we want to allow the
-                                        // remaining records to be recorded as dropped.
-                                        //
-                                        // Once we fill a buffer in oneshot mode, we expect to drop
-                                        // the remaining packets here.
-                                        //
-                                        // Rather than logging here, allow the trace system to
-                                        // aggregate the number of records dropped and we can query
-                                        // the trace system later to determine if we dropped
-                                        // records when it's more efficient to do so.
-                                        let _ = self.forward_packet(blob_name_ref, rewritten);
-                                    }
-                                }
-                            } else {
-                                log_error!(
-                                    "perfetto_consumer cannot decode protobuf from {reply:?}"
-                                );
-                            }
-                            if reply.has_more != Some(true) {
-                                break;
-                            }
-                        } else {
-                            log_error!(
-                                "perfetto_consumer ignoring non-MsgInvokeMethodReply message: {frame:?}"
-                            );
-                        }
-                    }
-                    // The response to a free buffers request does not have anything meaningful,
-                    // so we don't need to worry about tracking the request id to match to the
-                    // response.
-                    let _free_buffers_request_id =
-                        self.connection(locked, current_task)?.free_buffers(
-                            locked,
-                            current_task,
-                            FreeBuffersRequest { buffer_ids: vec![0] },
-                        )?;
-                    let elapsed = start_time.elapsed().as_millis();
-                    log_info!(
-                        "Perfetto frames copied, dropping prolonged trace context. Processing took {elapsed} ms"
-                    );
-                } else {
+            TraceState::Stopping => {
+                if prev_state != TraceState::Started {
                     // If we receive a stop request and we don't think we're actually tracing, our
                     // local state likely desynced from the global trace state. Clean up our state
                     // and ensure we're stopped so we re-synchronize.
+                    log_error!("Stopping received in {prev_state:?} state! Cleaning up.");
                     self.handle_stopped();
+                    return Ok(());
                 }
+
+                // We want to hold the prolonged context to ensure the trace session doesn't
+                // exit out from under us, but we also want to ensure we drop the prolonged
+                // context if we bail for whatever reason below.
+                let _local_prolonged_context = std::mem::replace(&mut self.prolonged_context, None);
+                let start_time = std::time::Instant::now();
+
+                let connection = self.connection(locked, current_task)?;
+                let disable_request =
+                    connection.disable_tracing(locked, current_task, DisableTracingRequest {})?;
+                loop {
+                    let frame = connection.next_frame_blocking(locked, current_task)?;
+                    if frame.request_id == Some(disable_request) {
+                        break;
+                    } else {
+                        log_error!(
+                            "Ignoring frame while looking for DisableTracingRequest: {frame:?}"
+                        );
+                    }
+                }
+
+                let read_buffers_request =
+                    connection.read_buffers(locked, current_task, ReadBuffersRequest {})?;
+
+                let blob_name_ref = {
+                    let Some(context) = fuchsia_trace::Context::acquire() else {
+                        bail!("Tracing stopped despite holding prolonged context");
+                    };
+                    context.register_string_literal(NAME_PERFETTO_BLOB)
+                };
+
+                // IPC responses may be spread across multiple frames, so loop until we get a
+                // message that indicates it is the last one. Additionally, if there are
+                // unrelated messages on the socket (e.g. leftover from a previous trace
+                // session), the loop will read past and ignore them.
+                loop {
+                    let frame = self
+                        .connection(locked, current_task)?
+                        .next_frame_blocking(locked, current_task)?;
+                    if frame.request_id != Some(read_buffers_request) {
+                        continue;
+                    } else {
+                        log_debug!(
+                            "perfetto_consumer ignoring frame while looking for ReadBuffersRequest {read_buffers_request}: {frame:?}"
+                        );
+                    }
+                    if let Some(ipc_frame::Msg::MsgInvokeMethodReply(reply)) = &frame.msg {
+                        if let Ok(response) = decode_read_buffers_response(
+                            reply.reply_proto.as_deref().unwrap_or(&[]),
+                        ) {
+                            for slice in &response.slices {
+                                if let Some(data) = &slice.data {
+                                    self.packet_data.extend(data);
+                                }
+                                if slice.last_slice_for_packet.unwrap_or(false) {
+                                    let mut blob_data = Vec::new();
+                                    // Packet field number = 1, length delimited type = 2.
+                                    blob_data.push(1 << 3 | 2);
+                                    // Push a varint encoded length.
+                                    // See https://protobuf.dev/programming-guides/encoding/
+                                    const HIGH_BIT: u8 = 0x80;
+                                    const LOW_SEVEN_BITS: usize = 0x7F;
+                                    let mut value = self.packet_data.len();
+                                    while value >= HIGH_BIT as usize {
+                                        blob_data.push((value & LOW_SEVEN_BITS) as u8 | HIGH_BIT);
+                                        value >>= 7;
+                                    }
+                                    blob_data.push(value as u8);
+                                    // `append` moves all data out of the passed Vec, so
+                                    // s.packet_data will be empty after this call.
+                                    blob_data.append(&mut self.packet_data);
+
+                                    // At this point blob_data is a full Perfetto Trace protobuf.
+                                    // Parse the data and replace the linux pids with their
+                                    // corresponding koid.
+                                    let rewritten =
+                                        self.rewrite_pids(&blob_data).unwrap_or(blob_data);
+
+                                    // Ignore a failure to write the packet here. We don't
+                                    // return immediately because we want to allow the
+                                    // remaining records to be recorded as dropped.
+                                    //
+                                    // Once we fill a buffer in oneshot mode, we expect to drop
+                                    // the remaining packets here.
+                                    //
+                                    // Rather than logging here, allow the trace system to
+                                    // aggregate the number of records dropped and we can query
+                                    // the trace system later to determine if we dropped
+                                    // records when it's more efficient to do so.
+                                    let _ = self.forward_packet(blob_name_ref, rewritten);
+                                }
+                            }
+                        } else {
+                            log_error!("perfetto_consumer cannot decode protobuf from {reply:?}");
+                        }
+                        if reply.has_more != Some(true) {
+                            break;
+                        }
+                    } else {
+                        log_error!(
+                            "perfetto_consumer ignoring non-MsgInvokeMethodReply message: {frame:?}"
+                        );
+                    }
+                }
+                // The response to a free buffers request does not have anything meaningful,
+                // so we don't need to worry about tracking the request id to match to the
+                // response.
+                let _free_buffers_request_id =
+                    self.connection(locked, current_task)?.free_buffers(
+                        locked,
+                        current_task,
+                        FreeBuffersRequest { buffer_ids: vec![0] },
+                    )?;
+                let elapsed = start_time.elapsed().as_millis();
+                log_info!(
+                    "Perfetto frames copied, dropping prolonged trace context. Processing took {elapsed} ms"
+                );
+            }
+            TraceState::Stopped => {
+                self.handle_stopped();
             }
         }
         Ok(())
@@ -506,19 +505,27 @@ impl CallbackState {
 }
 
 pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) -> Result<(), Errno> {
-    // We unfortunately need to spawn a dedicated thread to run our async task.
-    //
-    // While the TraceObserver waits asynchronously, the interactions we do with Perfetto over the
-    // vfs::socket are blocking.
-    //
-    // It blocks in two scenarios:
-    // 1) When we forward a control plane request over the socket and block for a response. This is
-    //    for a few ms. See `perfetto::Consumer::enable_tracing`.
-    // 2) When a trace ends, we repeatedly do blocking reads on the socket until we read and
-    //    forward all the trace data. This servicing of trace data would hold the executor for
-    //    several seconds. See `perfetto::Consumer::next_frame_blocking`.
-    let closure = async move |locked_and_task: LockedAndTask<'_>| {
-        let observer = TraceObserver::new();
+    let (mut tx, mut rx) = futures::channel::mpsc::channel::<TraceState>(32);
+
+    // Listens for trace state changes and sends them to Perfetto consumer thread.
+    // Unlike the perfetto thread, it won't block, so we can spawn it on the main async executor.
+    kernel.kthreads.spawn_future(
+        move || async move {
+            let observer = TraceObserver::new();
+            while let Ok(state) = observer.on_state_changed().await {
+                if let Err(e) = tx.send(state).await {
+                    log_error!("perfetto-trace-observer failed to send trace state change: {:?}. Receiver dropped.", e);
+                    return;
+                }
+            }
+        },
+        "perfetto-trace-observer",
+    );
+
+    // Perfetto consumer task: reads state changes from the channel and handles them.
+    // This task can block, so we spawn it on a dedicated thread to not block the observer or the
+    // main async executor.
+    let worker_closure = async move |locked_and_task: LockedAndTask<'_>| {
         let mut callback_state = CallbackState {
             prev_state: TraceState::Stopped,
             socket_path,
@@ -580,17 +587,17 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
             }
         }
 
-        while let Ok(state) = observer.on_state_changed().await {
+        while let Some(state) = rx.next().await {
             handle_state_change(&mut callback_state, &locked_and_task, state).unwrap_or_else(|e| {
                 log_error!("perfetto_consumer state change callback error: {:?}", e);
             })
         }
     };
-    let req = SpawnRequestBuilder::new()
+    let worker_req = SpawnRequestBuilder::new()
         .with_debug_name("perfetto-consumer")
-        .with_async_closure(closure)
+        .with_async_closure(worker_closure)
         .build();
-    kernel.kthreads.spawner().spawn_from_request(req);
+    kernel.kthreads.spawner().spawn_from_request(worker_req);
 
     Ok(())
 }
