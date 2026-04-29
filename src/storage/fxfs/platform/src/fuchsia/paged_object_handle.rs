@@ -708,7 +708,7 @@ impl PagedObjectHandle {
         &self,
         content_size: u64,
         flush_type: FlushType,
-    ) -> Result<(Vec<FlushBatch>, DirtyPages, DirtyPages), Error> {
+    ) -> Result<BatchCollectionResult, Error> {
         let page_aligned_content_size = round_up(content_size, zx::system_get_page_size()).unwrap();
         let modified_ranges =
             self.collect_modified_ranges().context("collect_modified_ranges failed")?;
@@ -960,8 +960,11 @@ impl PagedObjectHandle {
 
         let content_size = self.vmo().get_stream_size().context("get_stream_size failed")?;
         let previous_content_size = self.handle.get_size();
-        let (flush_batches, dirty_pages_to_flush, dirty_pages_not_to_flush) =
-            self.collect_flush_batches(content_size, flush_type)?;
+        let BatchCollectionResult {
+            batches: flush_batches,
+            pages_to_flush: dirty_pages_to_flush,
+            pages_not_to_flush: dirty_pages_not_to_flush,
+        } = self.collect_flush_batches(content_size, flush_type)?;
 
         #[cfg(test)]
         CALLBACK_AFTER_RANGE_COLLECTION.call();
@@ -1300,6 +1303,13 @@ enum BatchMode {
     Overwrite,
 }
 
+#[derive(Debug)]
+struct BatchCollectionResult {
+    batches: Vec<FlushBatch>,
+    pages_to_flush: DirtyPages,
+    pages_not_to_flush: DirtyPages,
+}
+
 /// Manages the batching of pages to flush per transaction, making sure that each batch stays below
 /// FLUSH_BATCH_SIZE, the number of bytes that should be flushed in a single transaction. This
 /// prevents transactions from growing larger than can be handled at once.
@@ -1366,7 +1376,7 @@ impl FlushBatches {
         self.skipped_dirty_page_count.reserved += page_count(range);
     }
 
-    fn consume(mut self) -> (Vec<FlushBatch>, DirtyPages, DirtyPages) {
+    fn consume(mut self) -> BatchCollectionResult {
         if let Some(batch) = self.working_cow_batch {
             if self.flush_type == FlushType::Background && batch.dirty_byte_count < FLUSH_BATCH_SIZE
             {
@@ -1392,7 +1402,11 @@ impl FlushBatches {
         if let Some(batch) = self.zero_batch {
             self.batches.push(batch)
         }
-        (self.batches, self.dirty_pages, self.skipped_dirty_page_count)
+        BatchCollectionResult {
+            batches: self.batches,
+            pages_to_flush: self.dirty_pages,
+            pages_not_to_flush: self.skipped_dirty_page_count,
+        }
     }
 }
 
@@ -2081,7 +2095,11 @@ mod tests {
     fn test_flush_batches_add_range_huge_range() {
         let mut batches = FlushBatches::default();
         batches.add_range(0..(FLUSH_BATCH_SIZE * 2 + 8192), BatchMode::Cow);
-        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        let BatchCollectionResult {
+            batches,
+            pages_to_flush: dirty_page_count,
+            pages_not_to_flush: skipped_dirty_page_count,
+        } = batches.consume();
         assert_eq!(dirty_page_count.reserved, 258);
         assert_eq!(skipped_dirty_page_count.total(), 0);
         assert_eq!(
@@ -2111,7 +2129,11 @@ mod tests {
         let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::new(FlushType::Background);
         batches.add_range(0..(FLUSH_BATCH_SIZE * 2 + page_size * 2), BatchMode::Cow);
-        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        let BatchCollectionResult {
+            batches,
+            pages_to_flush: dirty_page_count,
+            pages_not_to_flush: skipped_dirty_page_count,
+        } = batches.consume();
         assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE * 2 / page_size);
         assert_eq!(skipped_dirty_page_count.reserved, 2);
         assert_eq!(
@@ -2136,7 +2158,11 @@ mod tests {
         let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::new(FlushType::Background);
         batches.add_range(0..(FLUSH_BATCH_SIZE + page_size), BatchMode::Overwrite);
-        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        let BatchCollectionResult {
+            batches,
+            pages_to_flush: dirty_page_count,
+            pages_not_to_flush: skipped_dirty_page_count,
+        } = batches.consume();
         assert_eq!(dirty_page_count.unreserved, FLUSH_BATCH_SIZE / page_size);
         // We don't count overwrite pages here, they don't need reservations.
         assert_eq!(skipped_dirty_page_count.unreserved, 1);
@@ -2155,7 +2181,11 @@ mod tests {
         let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::new(FlushType::Background);
         batches.add_range(0..FLUSH_BATCH_SIZE, BatchMode::Cow);
-        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        let BatchCollectionResult {
+            batches,
+            pages_to_flush: dirty_page_count,
+            pages_not_to_flush: skipped_dirty_page_count,
+        } = batches.consume();
         assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE / page_size);
         assert_eq!(skipped_dirty_page_count.reserved, 0);
         assert_eq!(
@@ -2176,7 +2206,11 @@ mod tests {
         // This matters since part of the goal is not to get in the way of linear writers.
         batches.add_range(0..(FLUSH_BATCH_SIZE - page_size * 2), BatchMode::Cow);
         batches.add_range(FLUSH_BATCH_SIZE..(FLUSH_BATCH_SIZE * 2), BatchMode::Cow);
-        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        let BatchCollectionResult {
+            batches,
+            pages_to_flush: dirty_page_count,
+            pages_not_to_flush: skipped_dirty_page_count,
+        } = batches.consume();
         assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE / page_size);
         assert_eq!(skipped_dirty_page_count.reserved, (FLUSH_BATCH_SIZE / page_size) - 2);
         assert_eq!(
@@ -2202,7 +2236,11 @@ mod tests {
         batches.add_range((page_size * 200)..(page_size * 500), BatchMode::Zero);
         batches.add_range((page_size * 500)..(page_size * 650), BatchMode::Overwrite);
 
-        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        let BatchCollectionResult {
+            batches,
+            pages_to_flush: dirty_page_count,
+            pages_not_to_flush: skipped_dirty_page_count,
+        } = batches.consume();
         assert_eq!(dirty_page_count.reserved, 144);
         assert_eq!(dirty_page_count.unreserved, 150);
         assert_eq!(skipped_dirty_page_count.total(), 0);
@@ -2242,7 +2280,11 @@ mod tests {
     fn test_flush_batches_skip_range() {
         let mut batches = FlushBatches::default();
         batches.skip_range(0..8192);
-        let (batches, dirty_page_count, skipped_dirty_page_count) = batches.consume();
+        let BatchCollectionResult {
+            batches,
+            pages_to_flush: dirty_page_count,
+            pages_not_to_flush: skipped_dirty_page_count,
+        } = batches.consume();
         assert_eq!(dirty_page_count.reserved, 0);
         assert_eq!(batches, Vec::new());
         assert_eq!(skipped_dirty_page_count.reserved, 2);
