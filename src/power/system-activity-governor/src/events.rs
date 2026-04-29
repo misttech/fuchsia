@@ -6,6 +6,7 @@ use fidl_fuchsia_power_observability as fobs;
 use fuchsia_inspect::{ArrayProperty, LazyNode as ILazyNode, Node as INode};
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
+use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES;
 use state_recorder::{EnumStateRecorder, RecorderOptions};
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -14,7 +15,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use strum_macros::{Display, EnumIter};
 
-const SUSPEND_EVENT_BUFFER_SIZE: usize = 6144;
+const SUSPEND_EVENT_BUFFER_SIZE_EVENTS: usize = 6144;
+const SUSPEND_EVENT_BUFFER_SIZE_BYTES: usize = (2.5f32 * DEFAULT_VMO_SIZE_BYTES as f32) as usize; // 640K buffer
 
 static INSPECT_FIELD_EVENT_CAPACITY: &str = "event_capacity";
 static INSPECT_FIELD_HISTORY_DURATION: &str = "history_duration_seconds";
@@ -111,7 +113,7 @@ pub struct SagEventLogger {
 impl SagEventLogger {
     pub fn new(node: &INode) -> Self {
         let internal_event_log = Arc::new(Mutex::new(
-            VecDeque::<SagWakeLeaseEvent>::with_capacity(SUSPEND_EVENT_BUFFER_SIZE),
+            VecDeque::<SagWakeLeaseEvent>::with_capacity(SUSPEND_EVENT_BUFFER_SIZE_EVENTS),
         ));
 
         let weak_arc_of_internal_event_log = Arc::downgrade(&internal_event_log);
@@ -124,7 +126,9 @@ impl SagEventLogger {
                 let weak_internal_log = value.clone();
 
                 async move {
-                    let inspector = fuchsia_inspect::Inspector::default();
+                    let lazy_inspect_config = fuchsia_inspect::InspectorConfig::default()
+                        .size(SUSPEND_EVENT_BUFFER_SIZE_BYTES);
+                    let inspector = fuchsia_inspect::Inspector::new(lazy_inspect_config);
                     let root = inspector.root();
 
                     // Convert internally-logged events into Inspect nodes
@@ -239,7 +243,10 @@ impl SagEventLogger {
                 let inspector = fuchsia_inspect::Inspector::default();
                 let root = inspector.root();
 
-                root.record_uint(INSPECT_FIELD_EVENT_CAPACITY, SUSPEND_EVENT_BUFFER_SIZE as u64);
+                root.record_uint(
+                    INSPECT_FIELD_EVENT_CAPACITY,
+                    SUSPEND_EVENT_BUFFER_SIZE_EVENTS as u64,
+                );
 
                 if let Some(internal_event_log) = weak_internal_log.upgrade() {
                     let timestamps = internal_event_log.lock();
@@ -251,7 +258,7 @@ impl SagEventLogger {
                             zx::BootDuration::from_nanos(tail_ns - head_ns).into_seconds();
                         root.record_int(INSPECT_FIELD_HISTORY_DURATION, duration);
 
-                        if timestamps.len() == SUSPEND_EVENT_BUFFER_SIZE {
+                        if timestamps.len() == SUSPEND_EVENT_BUFFER_SIZE_EVENTS {
                             root.record_int(INSPECT_FIELD_HISTORY_DURATION_WHEN_FULL, duration);
                         }
                     } else {
@@ -300,7 +307,7 @@ impl SagEventLogger {
             let mut internal_events = self.internal_event_log.lock();
             let mut event_number = self.internal_event_number.lock();
 
-            if internal_events.len() == SUSPEND_EVENT_BUFFER_SIZE {
+            if internal_events.len() == SUSPEND_EVENT_BUFFER_SIZE_EVENTS {
                 internal_events.pop_front();
             }
             internal_events.push_back(SagWakeLeaseEvent {
