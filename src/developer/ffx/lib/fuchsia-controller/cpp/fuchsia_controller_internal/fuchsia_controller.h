@@ -123,6 +123,9 @@ extern fc_status_t ffx_object_signal_peer(ffx_lib_context_t* ctx, zx_handle_t hd
 extern fc_status_t ffx_object_signal_poll(ffx_lib_context_t* ctx, zx_handle_t hdl, uint32_t signals,
                                           uint32_t* signals_out);
 
+/// This is a testing function for SIGINT handling.
+extern fc_status_t _block_forever(ffx_lib_context_t* ctx);
+
 // Opens a file descriptor that delivers zircon handle numbers that are ready to be read.
 // There can only be one file descriptor for the lifetime of a library module, so all calls to this
 // function will return the same file descriptor number.

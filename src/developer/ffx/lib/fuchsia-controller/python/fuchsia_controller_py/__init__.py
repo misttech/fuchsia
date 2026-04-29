@@ -3,7 +3,11 @@
 # found in the LICENSE file.
 
 import fuchsia_controller_internal
-from fuchsia_controller_internal import FcTransportStatus, ZxStatus
+from fuchsia_controller_internal import (
+    FcTransportStatus,
+    ZxStatus,
+    _block_forever,
+)
 
 __all__ = [
     "FcTransportStatus",
@@ -15,6 +19,7 @@ __all__ = [
     "Context",
     "IsolateDir",
     "BaseHandle",
+    "_block_forever",
 ]
 
 from abc import ABC, abstractmethod

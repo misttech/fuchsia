@@ -31,6 +31,9 @@ impl From<FcTransportStatus> for ReadResponse {
 
 pub(crate) enum LibraryCommand {
     ShutdownLib,
+    BlockForever {
+        responder: Responder<()>,
+    },
     GetNotificationDescriptor {
         lib: Arc<LibContext>,
         responder: Responder<i32>,
@@ -149,6 +152,9 @@ impl LibraryCommand {
     pub(crate) async fn run(self) {
         match self {
             Self::ShutdownLib => panic!("unsupported command. exiting thread."),
+            Self::BlockForever { responder: _r } => loop {
+                tokio::time::sleep(std::time::Duration::MAX).await
+            },
             Self::GetNotificationDescriptor { lib, responder } => {
                 match lib.notifier_descriptor().await {
                     Ok(r) => {

@@ -1019,6 +1019,19 @@ PyObject *socket_from_int(PyObject *self, PyObject *args) {
   return MakePyObject<PythonSocket>(handle);
 }
 
+PyObject *block_forever_test_function(PyObject *self, PyObject *args) {
+  auto state = mod::get_module_state();
+  if (state == nullptr) {
+    return nullptr;
+  }
+  fc_status_t status = _block_forever(state->ctx);
+  if (status != FC_OK) {
+    mod::set_python_exception(status);
+    return nullptr;
+  }
+  Py_RETURN_NONE;
+}
+
 PyObject *isolate_dir_create(PyObject *self, PyObject *args) {
   const char *maybe_cstr = nullptr;
   if (!PyArg_ParseTuple(args, "z", &maybe_cstr)) {
@@ -1117,6 +1130,10 @@ PyMethodDef FuchsiaControllerMethods[] = {
     {"isolate_dir_create", reinterpret_cast<PyCFunction>(isolate_dir_create), METH_VARARGS,
      nullptr},
     {"isolate_dir_get_path", reinterpret_cast<PyCFunction>(isolate_dir_get_path), METH_VARARGS,
+     nullptr},
+
+    // Testing.
+    {"_block_forever", reinterpret_cast<PyCFunction>(block_forever_test_function), METH_NOARGS,
      nullptr},
 
     SENTINEL,

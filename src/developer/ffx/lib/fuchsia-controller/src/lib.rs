@@ -502,6 +502,17 @@ pub unsafe extern "C" fn ffx_handle_get_koid(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn _block_forever(ctx: *const LibContext) -> FcTransportStatus {
+    let ctx = unsafe { get_arc(ctx) };
+    let (tx, rx) = mpsc::sync_channel(1);
+    ctx.run(LibraryCommand::BlockForever { responder: tx });
+    match rx.recv() {
+        Ok(_) => panic!("This branch should never be triggered"),
+        Err(_) => FcTransportStatus::INTERRUPTED,
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_config_get_string(
     ctx: *const EnvContext,
     config_key: *const u8,
