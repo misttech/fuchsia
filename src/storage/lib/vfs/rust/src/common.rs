@@ -5,8 +5,9 @@
 //! Common utilities used by both directory and file traits.
 
 use crate::node::Node;
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+use fidl::endpoints::ControlHandle;
 use fidl::endpoints::ServerEnd;
-use fidl::prelude::*;
 use fidl_fuchsia_io as fio;
 use futures::StreamExt as _;
 use std::sync::Arc;
@@ -15,9 +16,11 @@ use zx_status::Status;
 pub use vfs_macros::attribute_query;
 
 /// Set of known rights.
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 const FS_RIGHTS: fio::OpenFlags = fio::OPEN_RIGHTS;
 
 /// Returns true if the rights flags in `flags` do not exceed those in `parent_flags`.
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 pub(crate) fn stricter_or_same_rights(parent_flags: fio::OpenFlags, flags: fio::OpenFlags) -> bool {
     let parent_rights = parent_flags & FS_RIGHTS;
     let rights = flags & FS_RIGHTS;
@@ -36,6 +39,7 @@ pub(crate) fn stricter_or_same_rights(parent_flags: fio::OpenFlags, flags: fio::
 /// # Panics
 /// If `status` is `Status::OK`.  In this case `OnOpen` may need to contain a description of the
 /// object, and server_end should not be dropped.
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 pub fn send_on_open_with_error(
     describe: bool,
     server_end: ServerEnd<fio::NodeMarker>,

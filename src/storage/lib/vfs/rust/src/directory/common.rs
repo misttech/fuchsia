@@ -4,6 +4,7 @@
 
 //! Common utilities used by several directory implementations.
 
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 use crate::common::stricter_or_same_rights;
 use crate::directory::entry::EntryInfo;
 
@@ -12,12 +13,14 @@ use fidl_fuchsia_io as fio;
 use static_assertions::assert_eq_size;
 use std::io::Write as _;
 use std::mem::size_of;
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 use zx_status::Status;
 
 /// Directories need to make sure that connections to child entries do not receive more rights than
 /// the connection to the directory itself.  Plus there is special handling of the OPEN_FLAG_POSIX_*
 /// flags. This function should be called before calling [`new_connection_validate_flags`] if both
 /// are needed.
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 pub(crate) fn check_child_connection_flags(
     parent_flags: fio::OpenFlags,
     mut flags: fio::OpenFlags,

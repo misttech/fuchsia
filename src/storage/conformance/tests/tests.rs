@@ -4,7 +4,6 @@
 
 mod attributes;
 mod clone;
-mod deprecated;
 mod directory;
 mod file;
 mod flags;

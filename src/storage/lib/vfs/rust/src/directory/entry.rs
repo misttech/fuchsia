@@ -104,14 +104,18 @@ pub struct OpenRequest<'a> {
 
 /// Wraps flags used for open requests based on which fuchsia.io/Directory.Open method was used.
 /// Used to delegate [`OpenRequest`] to the corresponding method when the entry is opened.
+// TODO(https://fxbug.dev/324080864): Remove this layer of indirection when we no longer support
+// Open1 at any supported API level.
 #[derive(Debug)]
 pub enum RequestFlags {
     /// fuchsia.io/Directory.Open1 (io1)
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     Open1(fio::OpenFlags),
     /// fuchsia.io/Directory.Open3 (io2)
     Open3(fio::Flags),
 }
 
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 impl From<fio::OpenFlags> for RequestFlags {
     fn from(value: fio::OpenFlags) -> Self {
         RequestFlags::Open1(value)
@@ -169,6 +173,10 @@ impl<'a> OpenRequest<'a> {
     /// Opens a directory.
     pub fn open_dir(self, dir: Arc<impl Directory>) -> Result<(), Status> {
         match self {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             OpenRequest {
                 scope,
                 request_flags: RequestFlags::Open1(flags),
@@ -192,6 +200,10 @@ impl<'a> OpenRequest<'a> {
     /// Opens a file.
     pub fn open_file(self, file: Arc<impl FileLike>) -> Result<(), Status> {
         match self {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             OpenRequest {
                 scope,
                 request_flags: RequestFlags::Open1(flags),
@@ -220,6 +232,10 @@ impl<'a> OpenRequest<'a> {
     /// Opens a symlink.
     pub fn open_symlink(self, service: Arc<impl Symlink>) -> Result<(), Status> {
         match self {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             OpenRequest {
                 scope,
                 request_flags: RequestFlags::Open1(flags),
@@ -248,6 +264,10 @@ impl<'a> OpenRequest<'a> {
     /// Opens a service.
     pub fn open_service(self, service: Arc<impl ServiceLike>) -> Result<(), Status> {
         match self {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             OpenRequest {
                 scope,
                 request_flags: RequestFlags::Open1(flags),
@@ -279,6 +299,10 @@ impl<'a> OpenRequest<'a> {
         remote: Arc<impl crate::remote::RemoteLike + Send + Sync + 'static>,
     ) -> Result<(), Status> {
         match self {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             OpenRequest {
                 scope,
                 request_flags: RequestFlags::Open1(flags),
@@ -337,6 +361,10 @@ impl<'a> OpenRequest<'a> {
         let OpenRequest { scope, request_flags, path, object_request } = self;
         let mut object_request = object_request.take();
         match request_flags {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             RequestFlags::Open1(flags) => {
                 scope.clone().spawn(async move {
                     match entry

@@ -60,7 +60,6 @@ rustc_test("conformance_test") {
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-fs",
     "//src/testing/fidl:placeholders_rust",
     "//third_party/rust_crates:assert_matches",
@@ -70,7 +69,6 @@ rustc_test("conformance_test") {
   sources = [
     "tests/attributes.rs",
     "tests/clone.rs",
-    "tests/deprecated.rs",
     "tests/directory.rs",
     "tests/directory/create.rs",
     "tests/directory/get_token.rs",

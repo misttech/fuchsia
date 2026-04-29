@@ -7,10 +7,13 @@
 #[cfg(test)]
 mod tests;
 
+use crate::ObjectRequestRef;
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+use crate::ToObjectRequest as _;
 use crate::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use crate::execution_scope::ExecutionScope;
 use crate::path::Path;
-use crate::{ObjectRequestRef, ToObjectRequest as _};
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
@@ -34,6 +37,7 @@ pub trait RemoteLike {
         false
     }
 
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     /// DEPRECATED - Do not implement unless required for backwards compatibility. Called when
     /// forwarding fuchsia.io/Directory.DeprecatedOpen requests.
     fn deprecated_open(
@@ -82,6 +86,7 @@ impl<T: GetRemoteDir + Send + Sync + 'static> DirectoryEntry for T {
 }
 
 impl<T: GetRemoteDir> RemoteLike for T {
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn deprecated_open(
         self: Arc<Self>,
         _scope: ExecutionScope,

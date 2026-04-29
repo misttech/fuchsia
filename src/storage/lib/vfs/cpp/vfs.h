@@ -50,7 +50,9 @@ struct VdirCookie {
 // The Vfs object must outlive the Vnodes which it serves. This class is thread-safe.
 class Vfs {
  public:
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   class DeprecatedOpenResult;
+#endif
   class OpenResult;
 
   Vfs();
@@ -61,10 +63,12 @@ class Vfs {
   //
   // The return value will suggest the next action to take. Refer to the variants in
   // |DeprecatedOpenResult| for more information.
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   DeprecatedOpenResult DeprecatedOpen(fbl::RefPtr<Vnode> vn, std::string_view path,
                                       DeprecatedOptions options,
                                       fuchsia_io::Rights connection_rights)
       __TA_EXCLUDES(vfs_lock_);
+#endif
 
   // Traverse the path to the target node, and create or open it.
   zx::result<OpenResult> Open(fbl::RefPtr<Vnode> vndir, std::string_view path,
@@ -121,6 +125,7 @@ class Vfs {
   bool readonly_ = false;
 };
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 class Vfs::DeprecatedOpenResult {
  public:
   // When this variant is active, the indicated error occurred.
@@ -174,6 +179,7 @@ class Vfs::DeprecatedOpenResult {
 
   Variants variants_;
 };
+#endif
 
 // Holds a (possibly opened) Vnode, ensuring that the open count is managed correctly.
 class Vfs::OpenResult {

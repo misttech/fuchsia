@@ -9,7 +9,9 @@ use crate::directory::dirents_sink;
 use crate::directory::traversal_position::TraversalPosition;
 use crate::execution_scope::ExecutionScope;
 use crate::node::Node;
-use crate::object_request::{ObjectRequestRef, ToObjectRequest as _};
+use crate::object_request::ObjectRequestRef;
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+use crate::object_request::ToObjectRequest as _;
 use crate::path::Path;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
@@ -110,6 +112,7 @@ pub trait Directory: Node {
     /// receive events.
     fn unregister_watcher(self: Arc<Self>, key: usize);
 
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     /// DEPRECATED - Do not implement unless required for backwards compatibility. Called when
     /// handling a fuchsia.io/Directory.DeprecatedOpen request.
     fn deprecated_open(

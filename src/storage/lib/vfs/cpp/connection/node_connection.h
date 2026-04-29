@@ -45,8 +45,10 @@ class NodeConnection final : public Connection, public fidl::WireServer<fuchsia_
   zx::result<> WithRepresentation(
       fit::callback<zx::result<>(fuchsia_io::wire::Representation)> handler,
       std::optional<fuchsia_io::NodeAttributesQuery> query) const final;
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   zx_status_t WithNodeInfoDeprecated(
       fit::callback<zx_status_t(fuchsia_io::wire::NodeInfoDeprecated)> handler) const final;
+#endif
 
   //
   // |fuchsia.io/Node| operations.

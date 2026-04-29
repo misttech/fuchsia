@@ -11,7 +11,9 @@ use crate::ProtocolsExt;
 use crate::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use crate::execution_scope::ExecutionScope;
 use crate::node::Node;
-use crate::object_request::{ObjectRequestRef, ObjectRequestSend};
+use crate::object_request::ObjectRequestRef;
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+use crate::object_request::ObjectRequestSend;
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_io as fio;
 use fuchsia_async::Channel;
@@ -91,16 +93,26 @@ impl ServiceLike for Service {
         _options: ServiceOptions,
         object_request: ObjectRequestRef<'_>,
     ) -> Result<(), Status> {
-        if object_request.what_to_send() == ObjectRequestSend::OnOpen {
-            if let Ok(channel) = object_request
+        #[cfg(any(
+            fuchsia_api_level_at_least = "PLATFORM",
+            not(fuchsia_api_level_at_least = "NEXT")
+        ))]
+        let channel = if object_request.what_to_send() == ObjectRequestSend::OnOpen {
+            object_request
                 .take()
                 .into_channel_after_sending_on_open(fio::NodeInfoDeprecated::Service(fio::Service))
                 .map(Channel::from_channel)
-            {
-                (self.open)(scope, channel);
-            }
+                .ok()
         } else {
-            let channel = Channel::from_channel(object_request.take().into_channel());
+            Some(Channel::from_channel(object_request.take().into_channel()))
+        };
+        #[cfg(not(any(
+            fuchsia_api_level_at_least = "PLATFORM",
+            not(fuchsia_api_level_at_least = "NEXT")
+        )))]
+        let channel = Some(Channel::from_channel(object_request.take().into_channel()));
+
+        if let Some(channel) = channel {
             (self.open)(scope, channel);
         }
         Ok(())

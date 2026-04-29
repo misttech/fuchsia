@@ -341,6 +341,7 @@ impl<N: Node> Representation for Connection<N> {
         }))
     }
 
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     async fn node_info(&self) -> Result<fio::NodeInfoDeprecated, Status> {
         Ok(fio::NodeInfoDeprecated::Service(fio::Service))
     }

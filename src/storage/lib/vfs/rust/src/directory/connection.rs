@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
+use crate::common::send_on_open_with_error;
 use crate::common::{
     decode_extended_attribute_value, encode_extended_attribute_value, extended_attributes_sender,
-    send_on_open_with_error,
 };
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 use crate::directory::common::check_child_connection_flags;
 use crate::directory::entry_container::{Directory, DirectoryWatcher};
 use crate::directory::traversal_position::TraversalPosition;
@@ -202,6 +204,10 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 trace::duration!("storage", "Directory::DeprecatedSetFlags");
                 responder.send(Status::NOT_SUPPORTED.into_raw())?;
             }
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             fio::DirectoryRequest::DeprecatedOpen {
                 flags,
                 mode: _,
@@ -315,6 +321,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             .handle(|req| self.directory.clone().open(self.scope.clone(), Path::dot(), flags, req));
     }
 
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn handle_deprecated_open(
         &self,
         mut flags: fio::OpenFlags,
@@ -556,6 +563,7 @@ impl<DirectoryType: Directory> Representation for BaseConnection<DirectoryType> 
         }))
     }
 
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     async fn node_info(&self) -> Result<fio::NodeInfoDeprecated, Status> {
         Ok(fio::NodeInfoDeprecated::Directory(fio::DirectoryObject))
     }

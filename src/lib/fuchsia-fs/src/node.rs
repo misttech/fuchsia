@@ -153,6 +153,7 @@ pub enum Kind {
 }
 
 impl Kind {
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     pub(crate) fn kind_of(info: &fio::NodeInfoDeprecated) -> Kind {
         match info {
             fio::NodeInfoDeprecated::Service(_) => Kind::Service,
@@ -162,6 +163,7 @@ impl Kind {
         }
     }
 
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn expect_file(info: fio::NodeInfoDeprecated) -> Result<(), Kind> {
         match info {
             fio::NodeInfoDeprecated::File(fio::FileObject { .. }) => Ok(()),
@@ -169,6 +171,7 @@ impl Kind {
         }
     }
 
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn expect_directory(info: fio::NodeInfoDeprecated) -> Result<(), Kind> {
         match info {
             fio::NodeInfoDeprecated::Directory(fio::DirectoryObject) => Ok(()),
@@ -212,6 +215,10 @@ pub(crate) async fn verify_node_describe_event(
     node: fio::NodeProxy,
 ) -> Result<fio::NodeProxy, OpenError> {
     match take_on_open_event(&node).await? {
+        #[cfg(any(
+            fuchsia_api_level_at_least = "PLATFORM",
+            not(fuchsia_api_level_at_least = "NEXT")
+        ))]
         fio::NodeEvent::OnOpen_ { s: status, info } => {
             let () = zx_status::Status::ok(status).map_err(OpenError::OpenError)?;
             info.ok_or(OpenError::MissingOnOpenInfo)?;
@@ -231,6 +238,10 @@ pub(crate) async fn verify_directory_describe_event(
     node: fio::DirectoryProxy,
 ) -> Result<fio::DirectoryProxy, OpenError> {
     match take_on_open_event(&node).await? {
+        #[cfg(any(
+            fuchsia_api_level_at_least = "PLATFORM",
+            not(fuchsia_api_level_at_least = "NEXT")
+        ))]
         fio::DirectoryEvent::OnOpen_ { s: status, info } => {
             let () = zx_status::Status::ok(status).map_err(OpenError::OpenError)?;
             let info = info.ok_or(OpenError::MissingOnOpenInfo)?;
@@ -257,6 +268,10 @@ pub(crate) async fn verify_file_describe_event(
     node: fio::FileProxy,
 ) -> Result<fio::FileProxy, OpenError> {
     match take_on_open_event(&node).await? {
+        #[cfg(any(
+            fuchsia_api_level_at_least = "PLATFORM",
+            not(fuchsia_api_level_at_least = "NEXT")
+        ))]
         fio::FileEvent::OnOpen_ { s: status, info } => {
             let () = zx_status::Status::ok(status).map_err(OpenError::OpenError)?;
             let info = info.ok_or(OpenError::MissingOnOpenInfo)?;

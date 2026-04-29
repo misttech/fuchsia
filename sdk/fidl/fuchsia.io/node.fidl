@@ -337,6 +337,7 @@ open protocol Node {
     /// Indicates the success or failure of the open operation, and optionally describes the
     /// object. If the status is `ZX_OK`, `info` contains descriptive information about the object
     /// (the same as would be returned by `Describe`).
+    @available(removed=NEXT)
     @selector("fuchsia.io1/Node.OnOpen")
     flexible -> OnOpen(resource struct {
         s zx.Status;

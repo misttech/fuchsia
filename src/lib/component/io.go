@@ -35,23 +35,7 @@ import (
 )
 
 func respondDeprecated(flags io.OpenFlags, req io.NodeWithCtxInterfaceRequest, err error, node Node) error {
-	if err != nil {
-		defer func() {
-			_ = req.Close()
-		}()
-	}
-	if flags&io.OpenFlagsDescribe != 0 {
-		proxy := io.NodeEventProxy{Channel: req.Channel}
-		switch err := err.(type) {
-		case nil:
-			info := node.DescribeDeprecated()
-			return proxy.OnOpen(int32(zx.ErrOk), &info)
-		case *zx.Error:
-			return proxy.OnOpen(int32(err.Status), nil)
-		default:
-			panic(err)
-		}
-	}
+	_ = req.Close()
 	return nil
 }
 
@@ -374,31 +358,7 @@ func (*directoryState) RemoveExtendedAttribute(fidl.Context, []uint8) (io.NodeRe
 const dot = "."
 
 func (dirState *directoryState) DeprecatedOpen(ctx fidl.Context, flags io.OpenFlags, mode io.ModeType, path string, req io.NodeWithCtxInterfaceRequest) error {
-	if path == dot {
-		return dirState.addConnectionDeprecated(flags, mode, req)
-	}
-	const slash = "/"
-	if strings.HasSuffix(path, slash) {
-		path = path[:len(path)-len(slash)]
-	}
-
-	if i := strings.Index(path, slash); i != -1 {
-		if node, ok := dirState.Directory.Get(path[:i]); ok {
-			proxy, cleanup, err := node.getIO()
-			if err != nil {
-				return err
-			}
-			defer cleanup()
-			if dir, ok := proxy.(io.DirectoryWithCtx); ok {
-				return dir.DeprecatedOpen(ctx, flags, mode, path[i+len(slash):], req)
-			}
-			return respondDeprecated(flags, req, &zx.Error{Status: zx.ErrNotDir}, node)
-		}
-	} else if node, ok := dirState.Directory.Get(path); ok {
-		return node.addConnectionDeprecated(flags, mode, req)
-	}
-
-	return respondDeprecated(flags, req, &zx.Error{Status: zx.ErrNotFound}, dirState)
+	return respondDeprecated(flags, req, &zx.Error{Status: zx.ErrNotSupported}, dirState)
 }
 
 func (dirState *directoryState) Open(ctx fidl.Context, path string, flags io.Flags, options io.Options, channel zx.Channel) error {

@@ -74,10 +74,12 @@ zx_status_t Vnode::GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo* out_vmo) {
   return ZX_ERR_NOT_SUPPORTED;
 }
 
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 void Vnode::DeprecatedOpenRemote(fuchsia_io::OpenFlags, fuchsia_io::ModeType, fidl::StringView,
                                  fidl::ServerEnd<fuchsia_io::Node>) const {
   ZX_PANIC("OpenRemote should only be called on remote nodes!");
 }
+#endif
 
 #if FUCHSIA_API_LEVEL_AT_LEAST(31)
 void Vnode::OpenRemote(fuchsia_io::wire::OpenableOpenRequest request) const {

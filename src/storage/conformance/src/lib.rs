@@ -9,8 +9,9 @@
 
 use async_trait::async_trait;
 use fidl::endpoints::{ClientEnd, ProtocolMarker, Proxy, create_proxy};
-use futures::{StreamExt as _, TryStreamExt as _};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_io_test as io_test};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_io_test as io_test;
+use futures::TryStreamExt as _;
 
 /// Test harness helper struct.
 pub mod test_harness;
@@ -34,24 +35,6 @@ pub const EMPTY_NODE_ATTRS: fio::NodeAttributes = fio::NodeAttributes {
     creation_time: 0,
     modification_time: 0,
 };
-
-/// Wait for [`fio::NodeEvent::OnOpen_`] to be sent via `node_proxy` and returns its [`zx::Status`].
-pub async fn get_open_status(node_proxy: &fio::NodeProxy) -> zx::Status {
-    let mut events = Clone::clone(node_proxy).take_event_stream();
-    if let Some(result) = events.next().await {
-        match result.expect("FIDL error") {
-            fio::NodeEvent::OnOpen_ { s, info: _ } => zx::Status::from_raw(s),
-            fio::NodeEvent::OnRepresentation { .. } => panic!(
-                "This function should only be used with fuchsia.io/Directory.Open, *not* Open3!"
-            ),
-            fio::NodeEvent::_UnknownEvent { .. } => {
-                panic!("This function should only be used with fuchsia.io/Directory.Open")
-            }
-        }
-    } else {
-        zx::Status::PEER_CLOSED
-    }
-}
 
 /// Converts a generic [`fio::NodeProxy`] to either [`fio::FileProxy`] or [`fio::DirectoryProxy`].
 /// **WARNING**: This function does _not_ verify that the conversion is valid.

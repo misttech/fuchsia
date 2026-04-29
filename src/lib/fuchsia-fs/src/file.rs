@@ -191,6 +191,10 @@ mod fuchsia {
         event: fio::FileEvent,
     ) -> Result<Option<zx::Stream>, OpenError> {
         match event {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             fio::FileEvent::OnOpen_ { s: status, info } => {
                 zx::Status::ok(status).map_err(OpenError::OpenError)?;
                 let node_info = info.ok_or(OpenError::MissingOnOpenInfo)?;
@@ -731,6 +735,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn extract_stream_from_on_open_event_with_stream() {
         let vmo = zx::Vmo::create(0).unwrap();
         let stream = zx::Stream::create(zx::StreamOptions::empty(), &vmo, 0).unwrap();
@@ -748,6 +753,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn extract_stream_from_on_open_event_without_stream() {
         let event = fio::FileEvent::OnOpen_ {
             s: 0,
@@ -761,6 +767,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn extract_stream_from_on_open_event_with_open_error() {
         let event = fio::FileEvent::OnOpen_ { s: zx::Status::NOT_FOUND.into_raw(), info: None };
         let result = extract_stream_from_on_open_event(event);
@@ -768,6 +775,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn extract_stream_from_on_open_event_not_a_file() {
         let event = fio::FileEvent::OnOpen_ {
             s: 0,

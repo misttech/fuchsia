@@ -194,8 +194,10 @@ class Vnode : public VnodeRefCounted<Vnode>, public fbl::Recyclable<Vnode> {
   // fuchsia.io/Directory.DeprecatedOpen will be forwarded to this function.
   // TODO(https://fxbug.dev/324080864): This should be removed when we drop support for the
   // fuchsia.io/Directory.DeprecatedOpen method.
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
   virtual void DeprecatedOpenRemote(fuchsia_io::OpenFlags, fuchsia_io::ModeType, fidl::StringView,
                                     fidl::ServerEnd<fuchsia_io::Node>) const;
+#endif
 
   // If |IsRemote()| returns true, requests to open this Vnode via fuchsia.io/Directory.Open will
   // be forwarded to this function.

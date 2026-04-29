@@ -7,11 +7,12 @@ use crate::execution_scope::ExecutionScope;
 use crate::node::{self, Node};
 use fidl::endpoints::{ControlHandle, ProtocolMarker, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::FutureExt;
 use std::future::Future;
 use std::sync::Arc;
 use zx_status::Status;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 /// Wraps the channel provided in the open methods and provide convenience methods for sending
 /// appropriate responses.  It also records actions that should be taken upon successful connection
@@ -94,6 +95,10 @@ impl ObjectRequest {
             self.object_request,
         ));
         match self.what_to_send {
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             ObjectRequestSend::OnOpen => {
                 let control_handle = stream.control_handle();
                 let node_info = connection.node_info().await.map_err(|s| {
@@ -129,6 +134,7 @@ impl ObjectRequest {
     }
 
     /// Extracts the channel after sending on_open.
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     pub fn into_channel_after_sending_on_open(
         self,
         node_info: fio::NodeInfoDeprecated,
@@ -147,12 +153,23 @@ impl ObjectRequest {
         if self.object_request.as_handle_ref().is_invalid() {
             return;
         }
+        #[cfg(any(
+            fuchsia_api_level_at_least = "PLATFORM",
+            not(fuchsia_api_level_at_least = "NEXT")
+        ))]
         if let ObjectRequestSend::OnOpen = self.what_to_send {
             let (_, control_handle) = ServerEnd::<fio::NodeMarker>::new(self.object_request)
                 .into_stream_and_control_handle();
             let _ = control_handle.send_on_open_(status.into_raw(), None);
             control_handle.shutdown_with_epitaph(status);
         } else {
+            let _ = self.object_request.close_with_epitaph(status);
+        }
+        #[cfg(not(any(
+            fuchsia_api_level_at_least = "PLATFORM",
+            not(fuchsia_api_level_at_least = "NEXT")
+        )))]
+        {
             let _ = self.object_request.close_with_epitaph(status);
         }
     }
@@ -281,6 +298,7 @@ pub type ObjectRequestRef<'a> = &'a mut ObjectRequest;
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(dead_code)]
 pub(crate) enum ObjectRequestSend {
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     OnOpen,
     OnRepresentation,
     Nothing,
@@ -299,6 +317,7 @@ pub trait Representation {
     ) -> impl Future<Output = Result<fio::Representation, Status>> + Send;
 
     /// Returns io1's NodeInfoDeprecated.
+    #[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
     fn node_info(&self) -> impl Future<Output = Result<fio::NodeInfoDeprecated, Status>> + Send;
 }
 
@@ -313,11 +332,20 @@ impl ToObjectRequest for fio::OpenFlags {
     fn to_object_request(&self, object_request: impl Into<fidl::NullableHandle>) -> ObjectRequest {
         ObjectRequest::new_deprecated(
             object_request.into().into(),
+            #[cfg(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            ))]
             if self.contains(fio::OpenFlags::DESCRIBE) {
                 ObjectRequestSend::OnOpen
             } else {
                 ObjectRequestSend::Nothing
             },
+            #[cfg(not(any(
+                fuchsia_api_level_at_least = "PLATFORM",
+                not(fuchsia_api_level_at_least = "NEXT")
+            )))]
+            ObjectRequestSend::Nothing,
             fio::NodeAttributesQuery::empty(),
             None,
             self.is_truncate(),
@@ -331,6 +359,7 @@ impl ToObjectRequest for fio::Flags {
     }
 }
 
+#[cfg(any(fuchsia_api_level_at_least = "PLATFORM", not(fuchsia_api_level_at_least = "NEXT")))]
 fn send_on_open(
     control_handle: &fio::NodeControlHandle,
     node_info: fio::NodeInfoDeprecated,
