@@ -1024,7 +1024,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -1032,7 +1032,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -9290,6 +9290,15 @@ affect the availability of the kgsl device within the container.
 **Current value (from the default):** `false`
 
 From //src/starnix/modules/kgsl/BUILD.gn:12
+
+### starnix_sync_detect_lock_dep_cycles
+
+Whether to use lockdep to detect cycles in the lock acquisition graph.
+Enabled by default in balanced and debug modes.
+
+**Current value (from the default):** `false`
+
+From //src/starnix/lib/starnix_sync/build/args.gni:8
 
 ### sysmem_contiguous_guard_page_count
 
