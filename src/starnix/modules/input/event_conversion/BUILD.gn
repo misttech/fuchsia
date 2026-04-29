@@ -30,6 +30,7 @@ rustc_library("event_conversion") {
     "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
     "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
     "//sdk/rust/zx",
+    "//src/lib/collections/sorted-vec-map",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",

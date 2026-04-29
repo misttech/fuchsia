@@ -44,6 +44,7 @@ rustc_library("input") {
     "//sdk/fidl/fuchsia.ui.test.input:fuchsia.ui.test.input_rust",
     "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
     "//sdk/rust/zx",
+    "//src/lib/collections/sorted-vec-map",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",

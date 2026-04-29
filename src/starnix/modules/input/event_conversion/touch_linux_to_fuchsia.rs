@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_input_report as fir;
+use sorted_vec_map::{SortedVecMap, SortedVecSet};
 use starnix_logging::log_warn;
 use starnix_types::time::time_from_timeval;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, uapi};
-use std::collections::{HashMap, HashSet};
 
 type SlotId = usize;
 type TrackingId = u32;
@@ -47,9 +47,9 @@ enum MtPosition {
 pub struct LinuxTouchEventParser {
     /// Store slot id -> tracking id mapping for Type B protocol. Remove the
     /// mapping when contact lifted.
-    slot_id_to_tracking_id: HashMap<SlotId, TrackingId>,
+    slot_id_to_tracking_id: SortedVecMap<SlotId, TrackingId>,
     /// Store slot id -> Contact.
-    slot_id_to_contact: HashMap<SlotId, fir::ContactInputReport>,
+    slot_id_to_contact: SortedVecMap<SlotId, fir::ContactInputReport>,
 
     /// Store received events while conversion still ongoing.
     cached_events: Vec<uapi::input_event>,
@@ -61,7 +61,7 @@ pub struct LinuxTouchEventParser {
     current_slot_id: Option<SlotId>,
     /// This record processed slots' id to check if duplicated slot id appear
     /// in one event sequence.
-    processed_slots: HashSet<SlotId>,
+    processed_slots: SortedVecSet<SlotId>,
 
     /// Allowing single pointer sequence without leading MT_SLOT, will set the
     /// pointer to slot 0.
@@ -72,11 +72,11 @@ impl LinuxTouchEventParser {
     /// Create the LinuxTouchEventParser.
     pub fn create() -> Self {
         Self {
-            slot_id_to_tracking_id: HashMap::new(),
-            slot_id_to_contact: HashMap::new(),
+            slot_id_to_tracking_id: SortedVecMap::new(),
+            slot_id_to_contact: SortedVecMap::new(),
             cached_events: vec![],
             current_slot_id: None,
-            processed_slots: HashSet::new(),
+            processed_slots: SortedVecSet::new(),
             single_pointer_sequence: false,
         }
     }
@@ -84,8 +84,8 @@ impl LinuxTouchEventParser {
     /// Clean states stored in the parser, call when parser got any error.
     fn reset_state(&mut self) {
         self.cached_events = vec![];
-        self.slot_id_to_tracking_id = HashMap::new();
-        self.slot_id_to_contact = HashMap::new();
+        self.slot_id_to_tracking_id = SortedVecMap::new();
+        self.slot_id_to_contact = SortedVecMap::new();
 
         self.reset_sequence_state();
     }
@@ -93,7 +93,7 @@ impl LinuxTouchEventParser {
     /// Clean state for parsing sequence, call for parsing sequence begin and end.
     fn reset_sequence_state(&mut self) {
         self.current_slot_id = None;
-        self.processed_slots = HashSet::new();
+        self.processed_slots = SortedVecSet::new();
         self.single_pointer_sequence = false;
     }
 
@@ -122,10 +122,15 @@ impl LinuxTouchEventParser {
         self.processed_slots.insert(new_slot_id);
         self.current_slot_id = Some(new_slot_id);
 
-        self.slot_id_to_contact.entry(new_slot_id).or_insert_with(|| fir::ContactInputReport {
-            contact_id: Some(new_slot_id as u32),
-            ..fir::ContactInputReport::default()
-        });
+        if !self.slot_id_to_contact.contains_key(&new_slot_id) {
+            self.slot_id_to_contact.insert(
+                new_slot_id,
+                fir::ContactInputReport {
+                    contact_id: Some(new_slot_id as u32),
+                    ..fir::ContactInputReport::default()
+                },
+            );
+        }
 
         Ok(())
     }
@@ -400,7 +405,7 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![e],
-                slot_id_to_tracking_id: HashMap::new(),
+                slot_id_to_tracking_id: SortedVecMap::new(),
                 ..LinuxTouchEventParser::default()
             }
         );
@@ -461,8 +466,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
-                slot_id_to_contact: HashMap::from([(
+                slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
+                slot_id_to_contact: SortedVecMap::from([(
                     0,
                     fir::ContactInputReport {
                         contact_id: Some(0),
@@ -504,8 +509,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
-                slot_id_to_contact: HashMap::from([(
+                slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
+                slot_id_to_contact: SortedVecMap::from([(
                     0,
                     fir::ContactInputReport {
                         contact_id: Some(0),
@@ -540,8 +545,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
-                slot_id_to_contact: HashMap::from([(
+                slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
+                slot_id_to_contact: SortedVecMap::from([(
                     0,
                     fir::ContactInputReport {
                         contact_id: Some(0),
@@ -576,8 +581,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
-                slot_id_to_contact: HashMap::from([(
+                slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
+                slot_id_to_contact: SortedVecMap::from([(
                     0,
                     fir::ContactInputReport {
                         contact_id: Some(0),
@@ -621,8 +626,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
-                slot_id_to_contact: HashMap::from([(
+                slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
+                slot_id_to_contact: SortedVecMap::from([(
                     0,
                     fir::ContactInputReport {
                         contact_id: Some(0),
@@ -658,8 +663,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
-                slot_id_to_contact: HashMap::from([(
+                slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
+                slot_id_to_contact: SortedVecMap::from([(
                     0,
                     fir::ContactInputReport {
                         contact_id: Some(0),
@@ -774,8 +779,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
-                slot_id_to_contact: HashMap::from([(
+                slot_id_to_tracking_id: SortedVecMap::from([(0, 1)]),
+                slot_id_to_contact: SortedVecMap::from([(
                     0,
                     fir::ContactInputReport {
                         contact_id: Some(0),
@@ -832,8 +837,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(0, 1), (1, 2)]),
-                slot_id_to_contact: HashMap::from([
+                slot_id_to_tracking_id: SortedVecMap::from([(0, 1), (1, 2)]),
+                slot_id_to_contact: SortedVecMap::from([
                     (
                         0,
                         fir::ContactInputReport {
@@ -886,8 +891,8 @@ mod touchscreen_linux_fuchsia_tests {
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::from([(1, 2)]),
-                slot_id_to_contact: HashMap::from([(
+                slot_id_to_tracking_id: SortedVecMap::from([(1, 2)]),
+                slot_id_to_contact: SortedVecMap::from([(
                     1,
                     fir::ContactInputReport {
                         contact_id: Some(1),

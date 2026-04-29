@@ -5,10 +5,11 @@
 use fidl_fuchsia_ui_pointer::{
     EventPhase as FidlEventPhase, TouchEvent as FidlTouchEvent, TouchPointerSample,
 };
+use sorted_vec_map::SortedVecMap;
 use starnix_logging::log_warn;
 use starnix_types::time::timeval_from_time;
 use starnix_uapi::uapi;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::VecDeque;
 
 type SlotId = usize;
 type TrackingId = u32;
@@ -70,8 +71,8 @@ impl TryFrom<FidlTouchEvent> for TouchEvent {
 /// and converts them to Linux uapi::input_event in Multi Touch Protocol B.
 #[derive(Debug, Default, PartialEq)]
 pub struct FuchsiaTouchEventToLinuxTouchEventConverter {
-    pointer_id_to_slot_id: HashMap<TrackingId, SlotId>,
-    pointer_id_to_event: HashMap<TrackingId, TouchEvent>,
+    pointer_id_to_slot_id: SortedVecMap<TrackingId, SlotId>,
+    pointer_id_to_event: SortedVecMap<TrackingId, TouchEvent>,
 }
 
 const MAX_TOUCH_CONTACT: usize = 10;
@@ -99,7 +100,10 @@ impl LinuxTouchEventBatch {
 
 impl FuchsiaTouchEventToLinuxTouchEventConverter {
     pub fn create() -> Self {
-        Self { pointer_id_to_slot_id: HashMap::new(), pointer_id_to_event: HashMap::new() }
+        Self {
+            pointer_id_to_slot_id: SortedVecMap::new(),
+            pointer_id_to_event: SortedVecMap::new(),
+        }
     }
 
     /// In Protocol B, the driver should only advertise as many slots as the hardware can report
@@ -125,11 +129,15 @@ impl FuchsiaTouchEventToLinuxTouchEventConverter {
 
         // TODO(https://fxbug.dev/348726475): Group events by timestamp here because events from
         // fuchsia.ui.pointer.touch.Watch may not sorted by timestamp.
-        let mut sequences: BTreeMap<TimeNanos, Vec<TouchEvent>> = BTreeMap::new();
+        let mut sequences: SortedVecMap<TimeNanos, Vec<TouchEvent>> = SortedVecMap::new();
         for event in events.into_iter() {
             match TouchEvent::try_from(event) {
                 Ok(e) => {
-                    sequences.entry(e.time_nanos).or_default().push(e);
+                    if let Some(vec) = sequences.get_mut(&e.time_nanos) {
+                        vec.push(e);
+                    } else {
+                        sequences.insert(e.time_nanos, vec![e]);
+                    }
                 }
                 Err(_) => {
                     batch.count_ignored_fidl_events += 1;
@@ -141,7 +149,7 @@ impl FuchsiaTouchEventToLinuxTouchEventConverter {
             return batch;
         }
 
-        batch.last_event_time_ns = *sequences.last_key_value().unwrap().0;
+        batch.last_event_time_ns = *sequences.iter().next_back().unwrap().0;
 
         for (time_nanos, seq) in sequences.iter() {
             let count_events = seq.len() as u64;
@@ -341,8 +349,8 @@ impl FuchsiaTouchEventToLinuxTouchEventConverter {
     }
 
     fn reset_state(&mut self) {
-        self.pointer_id_to_slot_id = HashMap::new();
-        self.pointer_id_to_event = HashMap::new();
+        self.pointer_id_to_slot_id = SortedVecMap::new();
+        self.pointer_id_to_event = SortedVecMap::new();
     }
 }
 
@@ -610,8 +618,8 @@ mod touchscreen_fuchsia_linux_tests {
         assert_eq!(
             converter,
             FuchsiaTouchEventToLinuxTouchEventConverter {
-                pointer_id_to_slot_id: HashMap::new(),
-                pointer_id_to_event: HashMap::new()
+                pointer_id_to_slot_id: SortedVecMap::new(),
+                pointer_id_to_event: SortedVecMap::new()
             }
         );
     }

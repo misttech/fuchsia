@@ -19,6 +19,7 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot::{self, Sender};
 use futures::executor::block_on;
 use futures::{FutureExt, StreamExt as _};
+use sorted_vec_map::SortedVecMap;
 use starnix_core::power::{
     ContainerWakingProxy, ContainerWakingStream, create_proxy_for_wake_events_counter,
 };
@@ -36,7 +37,7 @@ use starnix_modules_input_event_conversion::touch_fuchsia_to_linux::FuchsiaTouch
 use starnix_sync::Mutex;
 use starnix_uapi::uapi;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
 
@@ -111,7 +112,7 @@ pub fn new_input_relay() -> (InputEventsRelay, Arc<InputEventsRelayHandle>) {
     let (sender, receiver) = unbounded();
 
     (
-        InputEventsRelay { devices: HashMap::new(), receiver },
+        InputEventsRelay { devices: SortedVecMap::new(), receiver },
         Arc::new(InputEventsRelayHandle { sender }),
     )
 }
@@ -165,7 +166,7 @@ impl InputEventsRelayHandle {
 }
 
 pub struct InputEventsRelay {
-    devices: HashMap<DeviceId, DeviceState>,
+    devices: SortedVecMap<DeviceId, DeviceState>,
     receiver: UnboundedReceiver<DeviceStateChange>,
 }
 
@@ -976,8 +977,8 @@ fn make_response_for_fidl_event(fidl_event: &FidlTouchEvent) -> FidlTouchRespons
 
 fn group_touch_events_by_device_id(
     events: Vec<FidlTouchEvent>,
-) -> (HashMap<DeviceId, Vec<FidlTouchEvent>>, u64) {
-    let mut events_by_device: HashMap<u32, Vec<FidlTouchEvent>> = HashMap::new();
+) -> (SortedVecMap<DeviceId, Vec<FidlTouchEvent>>, u64) {
+    let mut events_by_device: SortedVecMap<u32, Vec<FidlTouchEvent>> = SortedVecMap::new();
     let mut ignored_events: u64 = 0;
     for e in events {
         match e {
@@ -985,7 +986,11 @@ fn group_touch_events_by_device_id(
                 pointer_sample: Some(TouchPointerSample { interaction: Some(id), .. }),
                 ..
             } => {
-                events_by_device.entry(id.device_id).or_default().push(e);
+                if let Some(vec) = events_by_device.get_mut(&id.device_id) {
+                    vec.push(e);
+                } else {
+                    events_by_device.insert(id.device_id, vec![e]);
+                }
             }
             _ => {
                 ignored_events += 1;
