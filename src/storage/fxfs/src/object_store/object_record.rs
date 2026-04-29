@@ -337,20 +337,18 @@ impl LayerKey for ObjectKey {
     }
 
     fn next_key(&self) -> Option<Self> {
-        match self.data {
-            ObjectKeyData::Attribute(_, AttributeKey::Extent(_)) => {
-                let mut key = self.clone();
-                if let ObjectKey {
-                    data: ObjectKeyData::Attribute(_, AttributeKey::Extent(ExtentKey { range })),
-                    ..
-                } = &mut key
-                {
-                    // We want a key such that cmp_lower_bound returns Greater for any key which
-                    // starts after end, and a key such that if you search for it, you'll get an
-                    // extent whose end > range.end.
-                    *range = range.end..range.end + 1;
-                }
-                Some(key)
+        match &self.data {
+            ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(ExtentKey { range })) => {
+                // We want a key such that cmp_lower_bound returns Greater for any key which
+                // starts after end, and a key such that if you search for it, you'll get an
+                // extent whose end > range.end.
+                Some(ObjectKey {
+                    object_id: self.object_id,
+                    data: ObjectKeyData::Attribute(
+                        *attr_id,
+                        AttributeKey::Extent(ExtentKey { range: range.end..range.end + 1 }),
+                    ),
+                })
             }
             _ => None,
         }
