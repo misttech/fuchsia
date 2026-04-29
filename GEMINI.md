@@ -39,12 +39,6 @@ Follow these rules regarding user confirmations:
 1. **Destructive Commands (Always Ask):** Always ask for explicit confirmation
    from the user before running `fx clean` (wipes global build cache), `ffx
    target flash` (reboots device), or `fx ota`.
-2. **Build Configuration (`fx set`):**
-   - If changing settings is requested by the user or mandated by a skill
-     being executed, execute it immediately without confirmation.
-   - If exploring autonomously and needing a different build configuration,
-     use a sandboxed directory (e.g., `fx --dir out/agent_sandbox set <args>
-     --no-change-env`) to avoid disrupting the user's default environment.
 
 Documentation for Fuchsia is in the `docs/` subdirectory and the
 `vendor/google/docs/` subdirectory. You should read the documentation if you're
