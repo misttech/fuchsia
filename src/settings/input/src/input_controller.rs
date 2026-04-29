@@ -476,7 +476,6 @@ impl InputController {
             .map_err(InputError::WriteFailure)
     }
 
-    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/42069089)
     /// Pulls the current software state of the camera from the device state.
     fn get_cam_sw_state(&self) -> Result<DeviceState, InputError> {
         self.input_device_state
