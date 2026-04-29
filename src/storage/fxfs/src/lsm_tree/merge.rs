@@ -150,17 +150,12 @@ impl<'a, K, V> MergeLayerIterator<'a, K, V> {
     }
 
     fn take_item(&mut self) -> Option<BoxedItem<K, V>> {
-        if let MergeItem::Item(_) = self.item {
-            let mut item = MergeItem::None;
-            std::mem::swap(&mut self.item, &mut item);
-            if let MergeItem::Item(item) = item {
-                Some(item)
-            } else {
-                unreachable!();
+        if matches!(self.item, MergeItem::Item(_)) {
+            if let MergeItem::Item(item) = std::mem::replace(&mut self.item, MergeItem::None) {
+                return Some(item);
             }
-        } else {
-            None
         }
+        None
     }
 
     async fn advance(&mut self) -> Result<(), Error> {
@@ -219,20 +214,13 @@ enum CurrentItem<'a, 'b, K, V> {
 }
 
 impl<'a, 'b, K, V> CurrentItem<'a, 'b, K, V> {
-    // Takes the iterator if one is present and replaces the current item with None; otherwise,
-    // leaves the current item untouched.
     fn take_iterator(&mut self) -> Option<&'a mut MergeLayerIterator<'b, K, V>> {
-        if let CurrentItem::Iterator(_) = self {
-            let mut result = CurrentItem::None;
-            std::mem::swap(self, &mut result);
-            if let CurrentItem::Iterator(iter) = result {
-                Some(iter)
-            } else {
-                unreachable!();
+        if matches!(self, CurrentItem::Iterator(_)) {
+            if let CurrentItem::Iterator(iter) = std::mem::replace(self, CurrentItem::None) {
+                return Some(iter);
             }
-        } else {
-            None
         }
+        None
     }
 }
 

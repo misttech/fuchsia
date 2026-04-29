@@ -126,7 +126,8 @@ impl<V: FuzzyHash> BloomFilterReader<V> {
         if self.data.is_empty() {
             return 0;
         }
-        (100 * self.data.iter().filter(|x| *x).count()).div_ceil(self.data.len())
+        let count = self.data.blocks().map(|b| b.count_ones() as u64).sum::<u64>();
+        ((100 * count).div_ceil(self.data.len() as u64)) as usize
     }
 
     #[cfg(test)]
