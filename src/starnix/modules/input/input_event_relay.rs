@@ -1258,11 +1258,12 @@ mod test {
     ) -> FileHandle {
         let open_files: OpenedFiles = Arc::new(Mutex::new(vec![]));
         input_relay.add_touch_device(device_id, open_files.clone(), None);
+        let inspector = fuchsia_inspect::Inspector::default();
         let device_file = Arc::new(InputFile::new_touch(
             input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
             1000,
             1000,
-            None,
+            inspector.root(),
         ));
         open_files.lock().push(Arc::downgrade(&device_file));
 
@@ -1517,9 +1518,10 @@ mod test {
         // add a device, mock uinput.
         let open_files: OpenedFiles = Arc::new(Mutex::new(vec![]));
         input_relay.add_keyboard_device(DEVICE_ID, open_files.clone(), None);
+        let inspector = fuchsia_inspect::Inspector::default();
         let device_id_10_file = Arc::new(InputFile::new_keyboard(
             input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
-            None,
+            inspector.root(),
         ));
         open_files.lock().push(Arc::downgrade(&device_id_10_file));
         let root_namespace_node = current_task
@@ -1589,9 +1591,10 @@ mod test {
         // add a device, mock uinput.
         let open_files: OpenedFiles = Arc::new(Mutex::new(vec![]));
         input_relay.add_keyboard_device(DEVICE_ID, open_files.clone(), None);
+        let inspector = fuchsia_inspect::Inspector::default();
         let device_id_10_file = Arc::new(InputFile::new_keyboard(
             input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
-            None,
+            inspector.root(),
         ));
         open_files.lock().push(Arc::downgrade(&device_id_10_file));
         let root_namespace_node = current_task

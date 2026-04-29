@@ -143,7 +143,7 @@ pub struct InputDeviceStatus {
 }
 
 impl InputDeviceStatus {
-    fn new(node: fuchsia_inspect::Node) -> Arc<Self> {
+    pub fn new(node: fuchsia_inspect::Node) -> Arc<Self> {
         let status = Arc::new(Self {
             node,
             file_nodes: Mutex::new(vec![]),
@@ -320,7 +320,7 @@ impl InputDevice {
                     TOUCH_INPUT_ID,
                     display_width,
                     display_height,
-                    Some(&child_node),
+                    &child_node,
                 ));
                 file_nodes.push(child_node);
                 file
@@ -331,7 +331,7 @@ impl InputDevice {
                     .inspect_status
                     .node
                     .create_child(format!("keyboard_file_{}", file_nodes.len()));
-                let file = Arc::new(InputFile::new_keyboard(KEYBOARD_INPUT_ID, Some(&child_node)));
+                let file = Arc::new(InputFile::new_keyboard(KEYBOARD_INPUT_ID, &child_node));
                 file_nodes.push(child_node);
                 file
             }
@@ -341,7 +341,7 @@ impl InputDevice {
                     .inspect_status
                     .node
                     .create_child(format!("mouse_file_{}", file_nodes.len()));
-                let file = Arc::new(InputFile::new_mouse(MOUSE_INPUT_ID, Some(&child_node)));
+                let file = Arc::new(InputFile::new_mouse(MOUSE_INPUT_ID, &child_node));
                 file_nodes.push(child_node);
                 file
             }

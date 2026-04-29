@@ -10,6 +10,7 @@ use fidl_fuchsia_ui_test_input::{
     RegistryRegisterKeyboardAndGetDeviceInfoRequest,
     RegistryRegisterTouchScreenAndGetDeviceInfoRequest,
 };
+use fuchsia_inspect;
 use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::fileops_impl_seekless;
@@ -51,7 +52,8 @@ pub fn register_uinput_device(
     let kernel = system_task.kernel();
     let registry = &kernel.device_registry;
     let misc_class = registry.objects.misc_class();
-    let device = UinputDevice::new(input_event_relay_handle);
+    let inspect_node = Arc::new(kernel.inspect_node.create_child("uinput"));
+    let device = UinputDevice::new(input_event_relay_handle, inspect_node);
     registry.register_device(
         locked,
         system_task,
@@ -94,11 +96,15 @@ where
 #[derive(Clone)]
 struct UinputDevice {
     input_event_relay: Arc<InputEventsRelayHandle>,
+    inspect_node: Arc<fuchsia_inspect::Node>,
 }
 
 impl UinputDevice {
-    pub fn new(input_event_relay: Arc<InputEventsRelayHandle>) -> Self {
-        Self { input_event_relay }
+    pub fn new(
+        input_event_relay: Arc<InputEventsRelayHandle>,
+        inspect_node: Arc<fuchsia_inspect::Node>,
+    ) -> Self {
+        Self { input_event_relay, inspect_node }
     }
 }
 
@@ -111,7 +117,10 @@ impl DeviceOps for UinputDevice {
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        Ok(Box::new(UinputDeviceFile::new(self.input_event_relay.clone())))
+        Ok(Box::new(UinputDeviceFile::new(
+            self.input_event_relay.clone(),
+            self.inspect_node.clone(),
+        )))
     }
 }
 
@@ -169,10 +178,14 @@ impl UinputDeviceMutableState {
 struct UinputDeviceFile {
     input_event_relay: Arc<InputEventsRelayHandle>,
     inner: Mutex<UinputDeviceMutableState>,
+    inspect_node: Arc<fuchsia_inspect::Node>,
 }
 
 impl UinputDeviceFile {
-    pub fn new(input_event_relay: Arc<InputEventsRelayHandle>) -> Self {
+    pub fn new(
+        input_event_relay: Arc<InputEventsRelayHandle>,
+        inspect_node: Arc<fuchsia_inspect::Node>,
+    ) -> Self {
         Self {
             input_event_relay,
             inner: Mutex::new(UinputDeviceMutableState {
@@ -184,6 +197,7 @@ impl UinputDeviceFile {
                 x_range: None,
                 y_range: None,
             }),
+            inspect_node,
         }
     }
 
@@ -296,7 +310,7 @@ impl UinputDeviceFile {
 
                 let open_files: OpenedFiles = Default::default();
 
-                let registered_device_id = match device_type {
+                let (registered_device_id, inspect_status) = match device_type {
                     DeviceId::Keyboard => {
                         let (key_client, key_server) =
                             fidl::endpoints::create_sync_proxy::<futinput::KeyboardMarker>();
@@ -316,12 +330,16 @@ impl UinputDeviceFile {
                             Ok(resp) => match resp.device_id {
                                 Some(device_id) => {
                                     inner.device_id = Some(device_id);
+                                    let node = self
+                                        .inspect_node
+                                        .create_child(format!("uinput_device_{}", device_id));
+                                    let inspect_status = crate::InputDeviceStatus::new(node);
                                     self.input_event_relay.add_keyboard_device(
                                         device_id,
                                         open_files.clone(),
-                                        None,
+                                        Some(inspect_status.clone()),
                                     );
-                                    device_id
+                                    (device_id, inspect_status)
                                 }
                                 None => {
                                     log_warn!(
@@ -375,12 +393,16 @@ impl UinputDeviceFile {
                             Ok(resp) => match resp.device_id {
                                 Some(device_id) => {
                                     inner.device_id = Some(device_id);
+                                    let node = self
+                                        .inspect_node
+                                        .create_child(format!("uinput_device_{}", device_id));
+                                    let inspect_status = crate::InputDeviceStatus::new(node);
                                     self.input_event_relay.add_touch_device(
                                         device_id,
                                         open_files.clone(),
-                                        None,
+                                        Some(inspect_status.clone()),
                                     );
-                                    device_id
+                                    (device_id, inspect_status)
                                 }
                                 None => {
                                     log_warn!(
@@ -403,7 +425,7 @@ impl UinputDeviceFile {
                 let device = add_and_register_input_device(
                     locked,
                     current_task,
-                    VirtualDevice { input_id, devt: device_type, open_files },
+                    VirtualDevice { input_id, devt: device_type, open_files, inspect_status },
                     registered_device_id,
                 )?;
                 inner.k_device = Some(device);
@@ -586,6 +608,7 @@ pub struct VirtualDevice {
     input_id: uapi::input_id,
     devt: DeviceId,
     open_files: OpenedFiles,
+    inspect_status: Arc<crate::InputDeviceStatus>,
 }
 
 impl DeviceOps for VirtualDevice {
@@ -597,13 +620,21 @@ impl DeviceOps for VirtualDevice {
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
+        let mut file_nodes = self.inspect_status.file_nodes.lock();
+        let child_node =
+            self.inspect_status.node.create_child(format!("file_{}", file_nodes.len()));
         let input_file = match &self.devt {
-            DeviceId::Keyboard => Arc::new(InputFile::new_keyboard(self.input_id, None)),
-            DeviceId::Touchscreen(width, height) => {
-                Arc::new(InputFile::new_touch(self.input_id, width.clone(), height.clone(), None))
-            }
+            DeviceId::Keyboard => Arc::new(InputFile::new_keyboard(self.input_id, &child_node)),
+            DeviceId::Touchscreen(width, height) => Arc::new(InputFile::new_touch(
+                self.input_id,
+                width.clone(),
+                height.clone(),
+                &child_node,
+            )),
         };
 
+        file_nodes.push(child_node);
+        input_file.init_inspect_status();
         self.open_files.lock().push(Arc::downgrade(&input_file));
 
         Ok(Box::new(crate::input_file::ArcInputFile(input_file)))
@@ -632,7 +663,11 @@ mod test {
         let (kernel, current_task, locked) = create_kernel_task_and_unlocked();
         let (input_relay_handle, _, _, _, _, _, _, _, _, _, _, _) =
             start_input_relays_for_test(locked, &current_task, EventProxyMode::None).await;
-        let dev = Arc::new(UinputDeviceFile::new(input_relay_handle));
+        let inspector = fuchsia_inspect::Inspector::default();
+        let dev = Arc::new(UinputDeviceFile::new(
+            input_relay_handle,
+            Arc::new(inspector.root().create_child("uinput")),
+        ));
 
         let root_namespace_node = current_task
             .lookup_path_from_root(locked, ".".into())

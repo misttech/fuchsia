@@ -378,7 +378,7 @@ impl InputFile {
         input_id: uapi::input_id,
         width: i32,
         height: i32,
-        node: Option<&fuchsia_inspect::Node>,
+        node: &fuchsia_inspect::Node,
     ) -> Self {
         let device_name = get_device_name("starnix_touch", &input_id);
         // Fuchsia scales the position reported by the touch sensor to fit view coordinates.
@@ -422,7 +422,7 @@ impl InputFile {
             },
             inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
             waiters: WaitQueue::default(),
-            inspect_status: node.map(|n| InputFileStatus::new(n)),
+            inspect_status: Some(InputFileStatus::new(node)),
             device_name,
         }
     }
@@ -432,7 +432,7 @@ impl InputFile {
     /// # Parameters
     /// - `input_id`: device's bustype, vendor id, product id, and version.
     /// - `inspect_status`: The inspect status for the parent device of "keyboard_input_file".
-    pub fn new_keyboard(input_id: uapi::input_id, node: Option<&fuchsia_inspect::Node>) -> Self {
+    pub fn new_keyboard(input_id: uapi::input_id, node: &fuchsia_inspect::Node) -> Self {
         let device_name = get_device_name("starnix_buttons", &input_id);
         Self {
             driver_version: Self::DRIVER_VERSION,
@@ -452,7 +452,7 @@ impl InputFile {
             y_axis_info: uapi::input_absinfo::default(),
             inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
             waiters: WaitQueue::default(),
-            inspect_status: node.map(|n| InputFileStatus::new(n)),
+            inspect_status: Some(InputFileStatus::new(node)),
             device_name,
         }
     }
@@ -462,7 +462,7 @@ impl InputFile {
     /// # Parameters
     /// - `input_id`: device's bustype, vendor id, product id, and version.
     /// - `inspect_status`: The inspect status for the parent device of "mouse_input_file".
-    pub fn new_mouse(input_id: uapi::input_id, node: Option<&fuchsia_inspect::Node>) -> Self {
+    pub fn new_mouse(input_id: uapi::input_id, node: &fuchsia_inspect::Node) -> Self {
         let device_name = get_device_name("starnix_mouse", &input_id);
         Self {
             driver_version: Self::DRIVER_VERSION,
@@ -482,7 +482,7 @@ impl InputFile {
             y_axis_info: uapi::input_absinfo::default(),
             inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
             waiters: WaitQueue::default(),
-            inspect_status: node.map(|n| InputFileStatus::new(n)),
+            inspect_status: Some(InputFileStatus::new(node)),
             device_name,
         }
     }
