@@ -1024,9 +1024,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             if extent_key.range.start > offset {
                 // Zero everything up to the start of the extent.
                 let to_zero = min(extent_key.range.start - offset, buf.len() as u64) as usize;
-                for i in &mut buf.as_mut_slice()[..to_zero] {
-                    *i = 0;
-                }
+                buf.as_mut_slice()[..to_zero].fill(0);
                 buf = buf.subslice_mut(to_zero..);
                 if buf.is_empty() {
                     break;
@@ -1828,17 +1826,15 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             // Skip deleted extended attributes.
             if item.value != &ObjectValue::None {
                 match item.key {
-                    ObjectKey { object_id, data: ObjectKeyData::ExtendedAttribute { name } } => {
-                        if self.object_id() != *object_id {
-                            bail!(
-                                anyhow!(FxfsError::Inconsistent)
-                                    .context("list_extended_attributes: wrong object id")
-                            )
-                        }
+                    ObjectKey { object_id, data: ObjectKeyData::ExtendedAttribute { name } }
+                        if *object_id == self.object_id() =>
+                    {
                         out.push(name.clone());
                     }
-                    // Once we hit something that isn't an extended attribute key, we've gotten to
-                    // the end.
+                    // Once we hit a record belonging to another object, or one that is not an
+                    // extended attribute key, we have reached the end of this object's extended
+                    // attributes. Subsequent objects' records will start with lower variants
+                    // (e.g. ObjectKeyData::Object) which trigger this break.
                     _ => break,
                 }
             }
