@@ -74,7 +74,7 @@ pub(crate) fn encrypt_filename(
     object_id: u64,
     name: &str,
 ) -> Result<Vec<u8>, Error> {
-    let mut name_bytes = name.to_string().into_bytes();
+    let mut name_bytes = name.as_bytes().to_vec();
     key.encrypt_filename(object_id, &mut name_bytes)?;
     Ok(name_bytes)
 }
@@ -83,9 +83,9 @@ pub(crate) fn encrypt_filename(
 pub(crate) fn decrypt_filename(
     key: &dyn Cipher,
     object_id: u64,
-    data: &Vec<u8>,
+    data: &[u8],
 ) -> Result<String, Error> {
-    let mut raw = data.clone();
+    let mut raw = data.to_vec();
     key.decrypt_filename(object_id, &mut raw)?;
     Ok(String::from_utf8(raw)?)
 }
