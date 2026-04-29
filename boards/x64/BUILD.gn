@@ -189,11 +189,6 @@ board_input_bundle("x64_common") {
       driver_components = [ "meta/ahci.cm" ]
     },
     {
-      package_target = "//src/devices/block/drivers/mbr:package"
-      package_set = "bootfs"
-      driver_components = [ "meta/mbr.cm" ]
-    },
-    {
       package_target = "//src/devices/block/drivers/nvme:package"
       package_set = "bootfs"
       driver_components = [ "meta/nvme.cm" ]

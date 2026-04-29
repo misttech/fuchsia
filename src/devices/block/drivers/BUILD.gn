@@ -12,7 +12,6 @@ group("tests") {
     "cqhci:tests",
     "ftl:tests",
     "gpt:tests",
-    "mbr:tests",
     "nvme:tests",
     "pci-sdhci:tests",
     "ramdisk:tests",

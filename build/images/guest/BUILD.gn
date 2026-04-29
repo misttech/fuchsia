@@ -81,11 +81,6 @@ if (labels.images == "//build/images/bringup") {
           driver_components = [ "meta/ahci.cm" ]
         },
         {
-          package_target = "//src/devices/block/drivers/mbr:package"
-          package_set = "bootfs"
-          driver_components = [ "meta/mbr.cm" ]
-        },
-        {
           package_target = "//src/devices/board/drivers/x86:package"
           package_set = "bootfs"
           driver_components = [ "meta/platform-bus-x86.cm" ]
