@@ -2,17 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mailbox-visitor.h"
+#include "lib/driver/devicetree/visitors/drivers/mailbox-controllers/mailbox/mailbox-visitor.h"
 
 #include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/visitors/common-types.h>
 #include <lib/driver/devicetree/visitors/registration.h>
 #include <lib/driver/logging/cpp/logger.h>
 
-#include <bind/fuchsia/hardware/mailbox/cpp/bind.h>
+// TODO(https://fxbug.dev/494450198: Re-add this once the Bazel dependency issue is resoled.
+// #include <bind/fuchsia/hardware/mailbox/cpp/bind.h>
 #include <bind/fuchsia/mailbox/cpp/bind.h>
 
 namespace {
+
+// TODO(https://fxbug.dev/494450198): Remove this once we fix the Bazel dependency issue for FIDL
+// generated bind cpp headers
+namespace bind_fuchsia_hardware_mailbox {
+static const char SERVICE[] = "fuchsia.hardware.mailbox.Service";
+static const char SERVICE_ZIRCONTRANSPORT[] = "fuchsia.hardware.mailbox.Service.ZirconTransport";
+}  // namespace bind_fuchsia_hardware_mailbox
 
 constexpr char kMailboxesProperty[] = "mboxes";
 constexpr char kMailboxNamesProperty[] = "mbox-names";
@@ -167,5 +175,3 @@ zx::result<> MailboxVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 }
 
 }  // namespace mailbox_dt
-
-REGISTER_DEVICETREE_VISITOR(mailbox_dt::MailboxVisitor);

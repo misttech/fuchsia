@@ -13,7 +13,28 @@ group("tests") {
 }
 
 devicetree_visitor("mailbox") {
-  deps = [ ":mailbox-visitor" ]
+  category = "internal"
+
+  # TODO(https://fxbug.dev/494446193): Remove this once all visitors are migrated to
+  # support sdk_source_set.
+  enable_sdk_source_set = true
+  sources = [
+    "mailbox-visitor-registration.cc",
+    "mailbox-visitor.cc",
+    "mailbox-visitor.h",
+  ]
+  deps = [
+    "//sdk/lib/driver/devicetree/manager:node",
+    "//sdk/lib/driver/devicetree/visitors:common-types",
+    "//sdk/lib/driver/devicetree/visitors:registration",
+    "//sdk/lib/driver/logging/cpp",
+    "//src/devices/bind/fuchsia.mailbox",
+  ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.hardware.mailbox:fuchsia.hardware.mailbox_cpp",
+    "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+  ]
+  non_sdk_deps = [ "//src/devices/bind/fuchsia.mailbox:fuchsia.mailbox_cpp" ]
 }
 
 source_set("mailbox-visitor") {

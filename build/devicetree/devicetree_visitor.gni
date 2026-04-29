@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/cpp/sdk_source_set.gni")
 import("//build/sdk/sdk_atom.gni")
 import("//build/sdk/sdk_molecule.gni")
 
@@ -43,7 +44,19 @@ template("devicetree_visitor") {
   # Define the loadable_module target, this target
   # will later be used to define the sdk_atom target
   loadable_module(_loadable_module_target_name) {
-    forward_variables_from(invoker, "*")
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "non_sdk_deps",
+                             "category",
+                             "enable_sdk_source_set",
+                           ])
+    if (defined(invoker.non_sdk_deps)) {
+      if (!defined(deps)) {
+        deps = []
+      }
+      deps += invoker.non_sdk_deps
+    }
     if (!defined(ldflags)) {
       ldflags = []
     }
@@ -65,6 +78,18 @@ template("devicetree_visitor") {
           elf_runtime_dir = "lib/${toolchain_variant.libprefix}"
         },
       ]
+    }
+  }
+
+  # TODO(https://fxbug.dev/494446193): Remove this once all visitors are migrated to
+  # support static libraries.
+  if (defined(invoker.enable_sdk_source_set) && invoker.enable_sdk_source_set) {
+    _visitor_sdk_name = "devicetree-${target_name}-visitor"
+
+    sdk_source_set("${target_name}_visitor") {
+      forward_variables_from(invoker, "*")
+      sdk_name = _visitor_sdk_name
+      include_base = "//sdk"
     }
   }
 
