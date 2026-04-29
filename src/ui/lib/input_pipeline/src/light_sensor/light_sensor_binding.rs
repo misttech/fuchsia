@@ -364,13 +364,14 @@ impl LightSensorBinding {
             trace_id: None,
         };
 
-        if let Err(e) = input_event_sender.unbounded_send(vec![event.clone()]) {
+        let events = vec![event];
+        inspect_status.count_generated_events(&events);
+
+        if let Err(e) = input_event_sender.unbounded_send(events) {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::LightFailedToSendEvent,
                 std::format!("Failed to send LightSensorEvent with error: {e:?}"),
             );
-        } else {
-            inspect_status.count_generated_event(event);
         }
 
         Some(report)

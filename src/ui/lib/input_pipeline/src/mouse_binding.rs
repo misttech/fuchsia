@@ -695,16 +695,14 @@ fn send_mouse_event(
         handled: Handled::No,
         trace_id: Some(trace_id),
     };
-    let events = vec![event.clone_with_wake_lease()];
+    let events = vec![event];
+    inspect_status.count_generated_events(&events);
 
-    match sender.unbounded_send(events.clone()) {
-        Err(e) => {
-            metrics_logger.log_error(
-                InputPipelineErrorMetricDimensionEvent::MouseFailedToSendEvent,
-                std::format!("Failed to send MouseEvent with error: {:?}", e),
-            );
-        }
-        _ => inspect_status.count_generated_events(&events),
+    if let Err(e) = sender.unbounded_send(events) {
+        metrics_logger.log_error(
+            InputPipelineErrorMetricDimensionEvent::MouseFailedToSendEvent,
+            std::format!("Failed to send MouseEvent with error: {:?}", e),
+        );
     }
 }
 

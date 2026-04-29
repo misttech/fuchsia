@@ -691,7 +691,8 @@ fn process_touch_screen_reports(
                 .into_iter()
                 .map(|event| {
                     // Unwrap is safe because trace_id is set when the event is created.
-                    // This unwrap will not move the trace_id out of the event because trace_id has Copy trait.
+                    // This unwrap will not move the trace_id out of the event because trace_id has
+                    // Copy trait.
                     let trace_id: fuchsia_trace::Id = event.trace_id.unwrap();
                     fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
                     event
@@ -987,14 +988,14 @@ fn send_touchpad_event(
         trace_id: Some(trace_id),
     };
 
-    match input_event_sender.unbounded_send(vec![event.clone()]) {
-        Err(e) => {
-            metrics_logger.log_error(
-                InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchpadEvent,
-                std::format!("Failed to send TouchpadEvent with error: {:?}", e),
-            );
-        }
-        _ => inspect_status.count_generated_event(event),
+    let events = vec![event];
+    inspect_status.count_generated_events(&events);
+
+    if let Err(e) = input_event_sender.unbounded_send(events) {
+        metrics_logger.log_error(
+            InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchpadEvent,
+            std::format!("Failed to send TouchpadEvent with error: {:?}", e),
+        );
     }
 }
 
