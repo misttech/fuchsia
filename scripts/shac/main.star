@@ -17,6 +17,7 @@ load("./mirror_blocklists.star", "register_mirror_blocklists_checks")
 load("./owners.star", "register_owners_checks")
 load("./python.star", "register_python_checks")
 load("./rust.star", "register_rust_checks")
+load("./skills.star", "register_skills_checks")
 load("./starlark.star", "register_starlark_checks")
 load("./underscore_vs_dash.star", "register_underscore_vs_dash_checks")
 # keep-sorted end
@@ -132,6 +133,7 @@ def register_all_checks():
     register_owners_checks()
     register_python_checks()
     register_rust_checks()
+    register_skills_checks()
     register_starlark_checks()
     register_underscore_vs_dash_checks()
     # keeps-sorted end
