@@ -20,7 +20,7 @@ use fxfs::object_store::transaction::{
 };
 use fxfs::object_store::{DataObjectHandle, ObjectStore, RangeType, StoreObjectHandle, Timestamp};
 use fxfs::range::RangeExt;
-use fxfs::round::{how_many, round_up};
+use fxfs::round::round_up;
 use scopeguard::defer;
 use std::future::Future;
 use std::ops::Range;
@@ -213,7 +213,7 @@ impl std::convert::From<Option<Timestamp>> for DirtyTimestamp {
 fn reservation_needed(page_count: u64) -> u64 {
     let page_size = zx::system_get_page_size() as u64;
     let pages_per_transaction = FLUSH_BATCH_SIZE / page_size;
-    let transaction_count = how_many(page_count, pages_per_transaction);
+    let transaction_count = page_count.div_ceil(pages_per_transaction);
     transaction_count * TRANSACTION_METADATA_MAX_AMOUNT + page_count * page_size
 }
 
