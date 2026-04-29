@@ -385,7 +385,11 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
         }
         let report_reader = report_reader.spawn();
         loop {
-            match report_reader.read_input_reports().await {
+            let read_result = {
+                fuchsia_trace::duration!("input", "read_input_reports");
+                report_reader.read_input_reports().await
+            };
+            match read_result {
                 Ok(Err(_service_error)) => break,
                 Err(_fidl_error) => break,
                 Ok(Ok(fidl_next_input_report::InputReportsReaderReadInputReportsResponse {
