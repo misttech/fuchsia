@@ -14,8 +14,8 @@ use core::num::{NonZeroU8, NonZeroU16};
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
 use log::{debug, error, trace};
 use net_types::ip::{
-    GenericOverIp, Ip, IpAddress, IpMarked, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr,
-    Ipv6SourceAddr, Mtu, SubnetError,
+    GenericOverIp, Ip, IpMarked, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6, Ipv6Addr, Ipv6SourceAddr,
+    Mtu, SubnetError,
 };
 use net_types::{
     LinkLocalAddress, LinkLocalUnicastAddr, MulticastAddr, MulticastAddress, SpecifiedAddr,
@@ -2496,8 +2496,13 @@ fn send_icmpv6_error_message<B, BC, CC>(
 /// - a packet sent in a link-layer broadcast
 /// - a non-initial fragment
 /// - a packet whose source address does not define a single host (a
-///   zero/unspecified address, a loopback address, a broadcast address, a
-///   multicast address, or a Class E address)
+///   zero/unspecified address, a broadcast address, a multicast address, or a
+///   Class E address)
+///
+/// RFC Non-Compliance: RFC 1122 Section 3.2.2 also considers the loopback
+/// address to be one that "does not define a single host". However, that breaks
+/// error delivery for loopback sockets. This deviation matches the behavior of
+/// Netstack2 and Linux.
 ///
 /// Note that `should_send_icmpv4_error` does NOT check whether the incoming
 /// packet contained an ICMP error message. This is because that check is
@@ -2530,7 +2535,6 @@ fn should_send_icmpv4_error(
     !(dst_ip.is_multicast()
         || dst_ip.is_limited_broadcast()
         || frame_dst.is_some_and(|dst| dst.is_broadcast())
-        || src_ip.is_loopback()
         || src_ip.is_limited_broadcast()
         || src_ip.is_multicast()
         || src_ip.is_class_e())
@@ -2551,7 +2555,10 @@ fn should_send_icmpv4_error(
 /// - a packet sent as a link-layer multicast or broadcast
 ///   - same exceptions apply here as well.
 /// - a packet whose source address does not define a single host (a
-///   zero/unspecified address, a loopback address, or a multicast address)
+///   zero/unspecified address, or a multicast address)
+///
+/// RFC Non-Compliance: We send ICMP errors over loopback. See the comment on
+/// [`should_send_icmpv4_error`] for more information.
 ///
 /// If an ICMP response will be a Packet Too Big Message or a Parameter Problem
 /// Message, Code 2 reporting an unrecognized IPv6 option that has the Option
@@ -2577,7 +2584,7 @@ fn should_send_icmpv6_error(
     if (dst_ip.is_multicast() || multicast_frame_dst) && !allow_dst_multicast {
         return false;
     }
-    if src_ip.is_loopback() || src_ip.is_multicast() {
+    if src_ip.is_multicast() {
         return false;
     }
     true
@@ -2900,6 +2907,13 @@ mod tests {
         assert!(should_send_icmpv4_error(Some(frame_dst), src_ip, dst_ip));
         assert!(should_send_icmpv4_error(None, src_ip, dst_ip));
 
+        // Should send because loopback addresses are allowed
+        assert!(should_send_icmpv4_error(
+            Some(frame_dst),
+            Ipv4::LOOPBACK_ADDRESS,
+            Ipv4::LOOPBACK_ADDRESS,
+        ));
+
         // Should not send because destined for IP broadcast addr
         assert!(!should_send_icmpv4_error(
             Some(frame_dst),
@@ -2912,9 +2926,6 @@ mod tests {
 
         // Should not send because Link Layer Broadcast.
         assert!(!should_send_icmpv4_error(Some(FrameDestination::Broadcast), src_ip, dst_ip,));
-
-        // Should not send because from loopback addr
-        assert!(!should_send_icmpv4_error(Some(frame_dst), Ipv4::LOOPBACK_ADDRESS, dst_ip,));
 
         // Should not send because from limited broadcast addr
         assert!(!should_send_icmpv4_error(
@@ -2961,6 +2972,20 @@ mod tests {
             true /* allow_dst_multicast */
         ));
 
+        // Should send because loopback is allowed
+        assert!(should_send_icmpv6_error(
+            Some(frame_dst),
+            Ipv6::LOOPBACK_ADDRESS,
+            Ipv6::LOOPBACK_ADDRESS,
+            false /* allow_dst_multicast */
+        ));
+        assert!(should_send_icmpv6_error(
+            Some(frame_dst),
+            Ipv6::LOOPBACK_ADDRESS,
+            Ipv6::LOOPBACK_ADDRESS,
+            true /* allow_dst_multicast */
+        ));
+
         // Should not send because destined for multicast addr, unless exception
         // applies.
         assert!(!should_send_icmpv6_error(
@@ -2987,20 +3012,6 @@ mod tests {
         assert!(should_send_icmpv6_error(
             Some(FrameDestination::Broadcast),
             src_ip,
-            dst_ip,
-            true /* allow_dst_multicast */
-        ));
-
-        // Should not send because from loopback addr.
-        assert!(!should_send_icmpv6_error(
-            Some(frame_dst),
-            Ipv6::LOOPBACK_ADDRESS,
-            dst_ip,
-            false /* allow_dst_multicast */
-        ));
-        assert!(!should_send_icmpv6_error(
-            Some(frame_dst),
-            Ipv6::LOOPBACK_ADDRESS,
             dst_ip,
             true /* allow_dst_multicast */
         ));
