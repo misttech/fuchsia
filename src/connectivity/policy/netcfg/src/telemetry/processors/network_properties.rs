@@ -73,6 +73,10 @@ impl NetworkPropertiesProcessor {
         let detailed_mapped_id = self.inspect_metadata_node.network_registry.insert(data);
         self.default_network_detailed_matrix.fold_or_log_error(1u64 << detailed_mapped_id);
     }
+
+    pub fn log_network_changed(&mut self, _metadata: crate::telemetry::NetworkEventMetadata) {
+        // TODO(https://fxbug.dev/486892417): Implement network property tracking here
+    }
 }
 
 #[derive(Unit, PartialEq, Eq, Hash)]
@@ -85,7 +89,7 @@ struct NetworkData {
 
 impl From<NetworkEventMetadata> for NetworkData {
     fn from(metadata: NetworkEventMetadata) -> Self {
-        let NetworkEventMetadata { id, name, transport, is_fuchsia_provisioned } = metadata;
+        let NetworkEventMetadata { id, name, transport, is_fuchsia_provisioned, .. } = metadata;
         Self {
             id: id,
             name: name.unwrap_or_else(|| "unknown".to_string()),
@@ -187,6 +191,7 @@ mod tests {
             name: Some("eth0".to_string()),
             transport: fnp_socketproxy::NetworkType::Ethernet,
             is_fuchsia_provisioned: true,
+            connectivity_state: None,
         };
 
         let wlan_metadata = NetworkEventMetadata {
@@ -194,6 +199,7 @@ mod tests {
             name: Some("wlan0".to_string()),
             transport: fnp_socketproxy::NetworkType::Wifi,
             is_fuchsia_provisioned: false,
+            connectivity_state: None,
         };
 
         processor.log_default_network_changed(eth_metadata);

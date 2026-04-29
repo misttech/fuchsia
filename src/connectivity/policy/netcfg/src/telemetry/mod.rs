@@ -6,6 +6,7 @@ pub mod processors;
 
 use crate::telemetry::processors::network_properties::NetworkPropertiesProcessor;
 use anyhow::Error;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
@@ -18,14 +19,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct NetworkEventMetadata {
     pub id: u64,
     pub name: Option<String>,
-    pub transport: fidl_fuchsia_net_policy_socketproxy::NetworkType,
+    pub transport: fnp_socketproxy::NetworkType,
     pub is_fuchsia_provisioned: bool,
+    pub connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
 }
 
 #[derive(Debug)]
 pub enum TelemetryEvent {
     DefaultNetworkChanged(NetworkEventMetadata),
     DefaultNetworkLost,
+    NetworkChanged(NetworkEventMetadata),
 }
 
 #[derive(Clone, Debug)]
@@ -95,6 +98,9 @@ pub fn serve_telemetry(
                 }
                 TelemetryEvent::DefaultNetworkLost => {
                     processor.log_default_network_lost();
+                }
+                TelemetryEvent::NetworkChanged(metadata) => {
+                    processor.log_network_changed(metadata);
                 }
             }
         }

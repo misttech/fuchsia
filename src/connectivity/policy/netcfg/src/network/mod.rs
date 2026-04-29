@@ -862,6 +862,7 @@ impl NetpolNetworksService {
                                             default_network,
                                             NetworkId::Fuchsia(_)
                                         ),
+                                        connectivity_state: props.connectivity_state,
                                     },
                                 ));
                             } else {
@@ -937,6 +938,22 @@ impl NetpolNetworksService {
             // NetworkRegistry updates.
             UpdateApplied::DnsChanged => {}
             UpdateApplied::None => {}
+        }
+
+        if let UpdateApplied::NetworkChanged { network_id, .. } = update_applied {
+            if let Some(telemetry) = &self.telemetry {
+                if let Some(props) = self.network_registry.networks.get(&network_id) {
+                    telemetry.send(TelemetryEvent::NetworkChanged(NetworkEventMetadata {
+                        id: network_id.get().get(),
+                        name: props.name.clone(),
+                        transport: props
+                            .network_type
+                            .unwrap_or(fnp_socketproxy::NetworkType::Unknown),
+                        is_fuchsia_provisioned: matches!(network_id, NetworkId::Fuchsia(_)),
+                        connectivity_state: props.connectivity_state,
+                    }));
+                }
+            }
         }
 
         for (id, responder) in property_responders {
