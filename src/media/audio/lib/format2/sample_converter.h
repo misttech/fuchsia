@@ -9,7 +9,6 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <type_traits>
 
 namespace media_audio {
 
@@ -41,8 +40,8 @@ inline constexpr int64_t kFloatToInt24In32 = -static_cast<int64_t>(kMinInt24In32
 // Methods are:
 //
 // ```
-// static inline constexpr SampleType FromFloat(float sample);
-// static inline constexpr float ToFloat(SampleType sample);
+// static constexpr SampleType FromFloat(float sample);
+// static constexpr float ToFloat(SampleType sample);
 // ```
 template <typename SampleType>
 struct SampleConverter;
@@ -50,13 +49,13 @@ struct SampleConverter;
 // Sample converter for `SampleType::kUnsigned8`.
 template <>
 struct SampleConverter<uint8_t> {
-  static inline constexpr uint8_t FromFloat(float sample) {
+  static constexpr uint8_t FromFloat(float sample) {
     return static_cast<uint8_t>(
         std::clamp<int16_t>(static_cast<int16_t>(std::round(sample * kFloatToInt8)), kMinInt8,
                             kMaxInt8) +
         kInt8ToUint8);
   }
-  static inline constexpr float ToFloat(uint8_t sample) {
+  static constexpr float ToFloat(uint8_t sample) {
     return static_cast<float>(static_cast<int32_t>(sample) - kInt8ToUint8) * kInt8ToFloat;
   }
 };
@@ -64,11 +63,11 @@ struct SampleConverter<uint8_t> {
 // Sample converter for `SampleType::kSigned16`.
 template <>
 struct SampleConverter<int16_t> {
-  static inline constexpr int16_t FromFloat(float sample) {
+  static constexpr int16_t FromFloat(float sample) {
     return static_cast<int16_t>(std::clamp<int32_t>(
         static_cast<int32_t>(std::round(sample * kFloatToInt16)), kMinInt16, kMaxInt16));
   }
-  static inline constexpr float ToFloat(int16_t sample) {
+  static constexpr float ToFloat(int16_t sample) {
     return static_cast<float>(sample) * kInt16ToFloat;
   }
 };
@@ -76,12 +75,12 @@ struct SampleConverter<int16_t> {
 // Sample converter for `SampleType::kSigned24In32`.
 template <>
 struct SampleConverter<int32_t> {
-  static inline constexpr int32_t FromFloat(float sample) {
+  static constexpr int32_t FromFloat(float sample) {
     return std::clamp(static_cast<int32_t>(std::lroundf(sample * kFloatToInt24)), kMinInt24,
                       kMaxInt24) *
            0x100;
   }
-  static inline constexpr float ToFloat(int32_t sample) {
+  static constexpr float ToFloat(int32_t sample) {
     return static_cast<float>(kInt24ToFloat * static_cast<double>(sample >> 8));
   }
 };
@@ -89,8 +88,8 @@ struct SampleConverter<int32_t> {
 // Sample converter for `SampleType::kFloat`.
 template <>
 struct SampleConverter<float> {
-  static inline constexpr float FromFloat(float sample) { return sample; }
-  static inline constexpr float ToFloat(float sample) { return sample; }
+  static constexpr float FromFloat(float sample) { return sample; }
+  static constexpr float ToFloat(float sample) { return sample; }
 };
 
 }  // namespace media_audio

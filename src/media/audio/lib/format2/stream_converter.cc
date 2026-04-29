@@ -8,8 +8,6 @@
 #include <fidl/fuchsia.audio/cpp/natural_ostream.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include <cmath>
-#include <memory>
 #include <type_traits>
 
 #include "src/media/audio/lib/format2/sample_converter.h"

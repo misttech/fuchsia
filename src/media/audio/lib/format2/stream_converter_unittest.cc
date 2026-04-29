@@ -5,7 +5,6 @@
 #include "src/media/audio/lib/format2/stream_converter.h"
 
 #include <limits>
-#include <type_traits>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -16,7 +15,7 @@
 namespace media_audio {
 namespace {
 
-using SampleType = fuchsia_audio::SampleType;
+using fuchsia_audio::SampleType;
 constexpr auto kUint8 = SampleType::kUint8;
 constexpr auto kInt16 = SampleType::kInt16;
 constexpr auto kInt32 = SampleType::kInt32;
@@ -113,31 +112,36 @@ void TestCopy(const std::vector<DestNumberType>& expected_dest,
   EXPECT_THAT(dest, ::testing::Pointwise(::testing::Eq(), expected_dest));
 }
 
+// With 24 precision bits (including sign), float32 has higher precision than uint8.
 TEST(StreamConverterTest, CopyBetweenFloatUint8) {
-  auto uint8_samples = std::vector<uint8_t>{0x00, 0x00, 0x3F, 0x80, 0x80, 0xC1, 0xFF, 0xFF};
+  // Converting float32 -> uint8: round the 9th bit OUT (not up), clamp to int8 min/max, flip msb.
   auto float_samples_source = std::vector<float>{
-      // clang-format off
-      -0x898989, // clamped to uint8 min 0x00
-      -0x800000, // becomes 0x00, uint8 min
-      -0x408080, // becomes 0x3F, the -0x0.808 rounded out (down)
-      -0x000111, // becomes 0x80, -0x0.0111 rounded in (up)
-              0, // becomes 0x80
-       0x408080, // becomes 0xC1, 0x0.808 rounded out (up)
-       0x7FFFFF, // becomes 0xFF, uint8 max
-       0x898989, // clamped to uint8 max 0xFF
-      // clang-format on
+      //            expected uint8 dest values:
+      -0x898989,  // 0x00 (clamped to uint8 min)
+      -0x800000,  // 0x00 (uint8 min)
+      -0x408080,  // 0x3F (-0x0.808 rounded out / down to -0x41 = 0xBF)
+      -0x000111,  // 0x80 (-0x0.0111 rounded in / up to -0x00)
+      +0x000000,  // 0x80 (zero)
+      +0x408080,  // 0xC1 (0x0.808 rounded out / up to 0x41)
+      +0x7FFFFF,  // 0xFF (uint8 max)
+      +0x898989,  // 0xFF (clamped to uint8 max)
   };
+
+  auto uint8_samples = std::vector<uint8_t>{
+      0x00, 0x00, 0x3F, 0x80, 0x80, 0xC1, 0xFF, 0xFF,
+  };
+
+  // Converting uint8 -> float32 should be bit-for-bit lossless (accounting for msb-toggle).
   auto float_samples_dest = std::vector<float>{
-      // clang-format off
-      -0x800000, // as above, but clamped and rounded to two hex digits precision
-      -0x800000,
-      -0x410000,
-      -0x000000,
-              0,
-       0x410000,
-       0x7F0000, // less range on the upper-end, so this can't round up to 0x8000
-       0x7F0000,
-      // clang-format on
+      //            source uint8 values:
+      -0x800000,  // 0x00
+      -0x800000,  // 0x00
+      -0x410000,  // 0x3F
+      -0x000000,  // 0x80
+      +0x000000,  // 0x80
+      +0x410000,  // 0xC1
+      +0x7F0000,  // 0xFF
+      +0x7F0000,  // 0xFF
   };
 
   // Shift by six hex digits minus the sign bit.
@@ -155,35 +159,39 @@ TEST(StreamConverterTest, CopyBetweenFloatUint8) {
   }
 }
 
+// With 24 precision bits (including sign), float32 has higher precision than int16.
 TEST(StreamConverterTest, CopyBetweenFloatInt16) {
-  auto int16_samples =
-      std::vector<int16_t>{-0x8000, -0x8000, -0x4081, -1, 0, 0x4081, 0x7FFF, 0x7FFF};
+  // Converting float32 -> int16, we round the 17th bit OUT (not up), then clamp to int16 min/max.
   auto float_samples_source = std::vector<float>{
-      // clang-format off
-      -0x898989, // clamped to int16 min -0x8000
-      -0x800000, // becomes -0x8000, int16 min
-      -0x408080, // becomes -0x4081, we round -0x0.80 out (down)
-      -0x000111, // becomes -0x0001, the -0x0.11 rounded in (up)
-              0, // becomes 0x0000
-       0x408080, // becomes 0x4081, we round 0x0.8 out (up)
-       0x7FFFFF, // becomes 0x7FFF, int16 max
-       0x898989, // clamped to int16 max 0x7FFF
-      // clang-format on
-  };
-  auto float_samples_dest = std::vector<float>{
-      // clang-format off
-      -0x800000, // as above, but clamped and rounded to four hex digits precision
-      -0x800000,
-      -0x408100,
-      -0x000100,
-              0,
-       0x408100,
-       0x7FFF00, // less range on the upper-end, so this can't round up to 0x8000
-       0x7FFF00,
-      // clang-format on
+      //            expected int16 dest values:
+      -0x898989,  // -0x8000 (clamped)
+      -0x800000,  // -0x8000 (int16 min)
+      -0x408080,  // -0x4081 (round -0x0.80 out / down)
+      -0x000111,  // -0x0001 (round -0x0.11 in / up)
+      +0x000000,  //  0x0000
+      +0x408080,  //  0x4081 (round 0x0.8 out / up)
+      +0x7FFFFF,  //  0x7FFF (int16 max)
+      +0x898989,  //  0x7FFF (clamped to int16 max)
   };
 
-  // Shift by six hex digits minus the sign bit.
+  auto int16_samples = std::vector<int16_t>{
+      -0x8000, -0x8000, -0x4081, -1, 0, 0x4081, 0x7FFF, 0x7FFF,
+  };
+
+  // Converting int16 -> float32 should be bit-for-bit lossless.
+  auto float_samples_dest = std::vector<float>{
+      //            source int16 values:
+      -0x800000,  // -0x8000
+      -0x800000,  // -0x8000
+      -0x408100,  // -0x4081
+      -0x000100,  // -0x0001
+      +0x000000,  //  0x0000
+      +0x408100,  //  0x4081
+      +0x7FFF00,  //  0x7FFF
+      +0x7FFF00,  //  0x7FFF
+  };
+
+  // Shift by six hex digits, minus the sign bit.
   ShiftRightBy(float_samples_source, 23);
   ShiftRightBy(float_samples_dest, 23);
 
@@ -198,57 +206,48 @@ TEST(StreamConverterTest, CopyBetweenFloatInt16) {
   }
 }
 
+// With 24 precision bits (including sign), float32 has equivalent precision to "int24".
 TEST(StreamConverterTest, CopyBetweenFloatInt24) {
-  auto int24_samples = std::vector<int32_t>{
-      // clang-format off
-      kMinInt24In32,
-      kMinInt24In32,
-        -0x65432100,
-        -0x40808100,
-        -0x02345600,
-                  0,
-         0x01234500,
-         0x02345600,
-         0x40808100,
-         0x65432100,
-      kMaxInt24In32,
-      kMaxInt24In32,
-      // clang-format on
-  };
+  // Converting float32 -> int24, float rounds the 17th bit anyway, then we clamp to int24 min/max.
   auto float_samples_source = std::vector<float>{
-      // clang-format off
-      -0x8000010, // clamped to the int24-in-32 min -0x80000000
-      -0x8000000, // becomes -0x80000000, the int24-in-32 min
-      -0x6543210, // becomes -0x65432100
-      -0x4080808, // becomes -0x40808100, we round -0x0.8 out (down)
-      -0x0234567, // becomes -0x02345600, we round -0x0.7 in  (up)
-               0, // becomes  0x00000000
-       0x0123450, // becomes  0x01234500
-       0x0234567, // becomes  0x02345600, we round 0x0.7 in  (down)
-       0x4080808, // becomes  0x40808100, we round 0x0.8 out (up)
-       0x6543210, // becomes  0x65432100
-       0x7FFFFF0, // becomes  0x7FFFFF00, the int24-in-32 max
-       0x8000000, // clamped to the int24-in-32 max 0x7FFFFF00
-      // clang-format on
-  };
-  auto float_samples_dest = std::vector<float>{
-      // clang-format off
-      -0x8000000, // as above, but clamped and rounded to six hex digits precision
-      -0x8000000,
-      -0x6543210,
-      -0x4080810,
-      -0x0234560,
-               0,
-       0x0123450,
-       0x0234560,
-       0x4080810,
-       0x6543210,
-       0x7FFFFF0, // less range on the upper-end, so this can't round up to 0x8000
-       0x7FFFFF0,
-      // clang-format on
+      //                                 expected "int24-in-32" values:
+      static_cast<float>(-0x8000010),  // -0x80000000 (clamped to int24-in-32 min)
+      static_cast<float>(-0x8000000),  // -0x80000000 (int24-in-32 min)
+      static_cast<float>(-0x6543210),  // -0x65432100
+      static_cast<float>(-0x4080808),  // -0x40808100 (round -0x0.8 out /down)
+      static_cast<float>(-0x0234567),  // -0x02345600 (round -0x0.7 in  / up)
+      static_cast<float>(0),           // +0x00000000
+      static_cast<float>(0x0123450),   // +0x01234500
+      static_cast<float>(0x0234567),   // +0x02345600 (round 0x0.7 in  / down)
+      static_cast<float>(0x4080808),   // +0x40808100 (round 0x0.8 out / up)
+      static_cast<float>(0x6543210),   // +0x65432100
+      static_cast<float>(0x7FFFFF0),   // +0x7FFFFF00 (int24-in-32 max)
+      static_cast<float>(0x7FFFFF0),   // +0x7FFFFF00 (clamped to int24-in-32 max)
   };
 
-  // Shift by seven hex digits minus the sign bit.
+  auto int24_samples = std::vector<int32_t>{
+      kMinInt24In32, kMinInt24In32, -0x65432100, -0x40808100, -0x02345600,   0,
+      0x01234500,    0x02345600,    0x40808100,  0x65432100,  kMaxInt24In32, kMaxInt24In32,
+  };
+
+  // Converting int24-in-32 -> float32 should be bit-for-bit lossless.
+  auto float_samples_dest = std::vector<float>{
+      //                                 source "int24-in-32" values:
+      static_cast<float>(-0x8000000),  // -0x80000000
+      static_cast<float>(-0x8000000),  // -0x80000000
+      static_cast<float>(-0x6543210),  // -0x65432100
+      static_cast<float>(-0x4080810),  // -0x40808100
+      static_cast<float>(-0x0234560),  // -0x02345600
+      static_cast<float>(0),           //  0x00000000
+      static_cast<float>(0x0123450),   //  0x01234500
+      static_cast<float>(0x0234560),   //  0x02345600
+      static_cast<float>(0x4080810),   //  0x40808100
+      static_cast<float>(0x6543210),   //  0x65432100
+      static_cast<float>(0x7FFFFF0),   //  0x7FFFFF00
+      static_cast<float>(0x7FFFFF0),   //  0x7FFFFF00
+  };
+
+  // Shift by seven hex digits, minus the sign bit.
   ShiftRightBy(float_samples_source, 27);
   ShiftRightBy(float_samples_dest, 27);
 
@@ -267,6 +266,7 @@ TEST(StreamConverterTest, CopyBetweenFloatFloat) {
   auto float_samples_source = std::vector<float>{
       -1.1f, 1.1f, -1.0f, 1.0f, -0.503921568f, 0.503921568f, -0.000000119f, 0.000000119f, 0,
   };
+
   auto float_samples_dest = std::vector<float>{
       -1.0f, 1.0f, -1.0f, 1.0f, -0.503921568f, 0.503921568f, -0.000000119f, 0.000000119f, 0,
   };
@@ -292,18 +292,19 @@ TEST(StreamConverterTest, CopyBetweenFloatFloatWith2Chan) {
        1.1f,         -1.1f,
        1.0f,          1.0f,
        0.000000119f,  0,
-          0,         -0.000000119f,
+       0,            -0.000000119f,
       -0.503921568f,  0.503921568f,
        0.0f,          0.0f,
       // clang-format on
   };
+
   auto float_samples_dest = std::vector<float>{
       // clang-format off
       -1.0f,          1.0f,  // clamped
-       1.0f,         -1.0f, // clamped
+       1.0f,         -1.0f,  // clamped
        1.0f,          1.0f,
        0.000000119f,  0,
-          0,         -0.000000119f,
+       0,            -0.000000119f,
       -0.503921568f,  0.503921568f,
        0.0f,          0.0f,
       // clang-format on
@@ -330,13 +331,13 @@ TEST(StreamConverterTest, CopyBetweenFloatFloatWith4Chan) {
   auto float_samples_source = std::vector<float>{
       // clang-format off
       -1.1f,   -1.0f,    1.0f,    1.1f,
-      -0.75f,  -0.25f,   0.25f,   0.75f
+      -0.75f,  -0.25f,   0.25f,   0.75f,
       // clang-format on
   };
   auto float_samples_dest = std::vector<float>{
       // clang-format off
       -1.0f,   -1.0f,    1.0f,    1.0f,  // clamped
-      -0.75f,  -0.25f,   0.25f,   0.75f
+      -0.75f,  -0.25f,   0.25f,   0.75f,
       // clang-format on
   };
 

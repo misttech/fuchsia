@@ -55,24 +55,29 @@ class Format {
 
   // TODO(https://fxbug.dev/42066204): Remove when fuchsia.audio.effects has migrated to the new
   // types.
-  static fpromise::result<Format, std::string> CreateLegacy(fuchsia_mediastreams::AudioFormat msg);
+  static fpromise::result<Format, std::string> CreateLegacy(
+      const fuchsia_mediastreams::AudioFormat& msg);
   static fpromise::result<Format, std::string> CreateLegacy(
       fuchsia_mediastreams::wire::AudioFormat msg);
-  static Format CreateLegacyOrDie(fuchsia_mediastreams::AudioFormat msg);
+  static Format CreateLegacyOrDie(const fuchsia_mediastreams::AudioFormat& msg);
   static Format CreateLegacyOrDie(fuchsia_mediastreams::wire::AudioFormat msg);
 
   // TODO(https://fxbug.dev/42066782): Remove when audio_core/v2 is deleted.
-  static fpromise::result<Format, std::string> CreateLegacy(fuchsia_media::AudioStreamType msg);
+  static fpromise::result<Format, std::string> CreateLegacy(
+      const fuchsia_media::AudioStreamType& msg);
   static fpromise::result<Format, std::string> CreateLegacy(
       fuchsia_media::wire::AudioStreamType msg);
-  static Format CreateLegacyOrDie(fuchsia_media::AudioStreamType msg);
+  static Format CreateLegacyOrDie(const fuchsia_media::AudioStreamType& msg);
   static Format CreateLegacyOrDie(fuchsia_media::wire::AudioStreamType msg);
 
   Format(const Format&) = default;
   Format& operator=(const Format&) = default;
 
   bool operator==(const Format& rhs) const;
-  bool operator!=(const Format& rhs) const { return !(*this == rhs); }
+  bool operator!=(const Format& rhs) const {
+    bool match = *this == rhs;
+    return !match;
+  }
 
   fuchsia_audio::wire::Format ToWireFidl(fidl::AnyArena& arena) const;
   fuchsia_audio::Format ToNaturalFidl() const;

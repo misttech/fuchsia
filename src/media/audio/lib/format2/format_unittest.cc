@@ -9,9 +9,10 @@
 #include "fidl/fuchsia.mediastreams/cpp/wire_types.h"
 #include "src/media/audio/lib/format2/fixed.h"
 
-using SampleType = fuchsia_audio::SampleType;
+using fuchsia_audio::SampleType;
 
 namespace media_audio {
+namespace {
 
 TEST(FormatTest, CreateFromWire) {
   fidl::Arena<> arena;
@@ -319,4 +320,5 @@ TEST(FormatTest, DurationPer) {
   EXPECT_EQ(format.duration_per(frame + Fixed::FromRaw(1), kFloor), zx::nsec(15000));
 }
 
+}  // namespace
 }  // namespace media_audio

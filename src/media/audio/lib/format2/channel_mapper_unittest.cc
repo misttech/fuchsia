@@ -18,7 +18,12 @@ TEST(ChannelMapperTest, SameChannels) {
   ChannelMapper<int16_t, 4, 4> mapper;
 
   const std::vector<int16_t> source_frame = {-0x4000, kMinInt16, 0, 0x4000};
-  const std::vector<float> expected = {-0.5f, -1.0f, 0.0f, 0.5f};
+  const std::vector<float> expected = {
+      -0.5f,
+      -1.0f,
+      0.0f,
+      0.5f,
+  };
   for (size_t channel = 0; channel < expected.size(); ++channel) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), channel), expected[channel]);
   }
@@ -54,15 +59,25 @@ TEST(ChannelMapperTest, MonoToFourChannels) {
 TEST(ChannelMapperTest, StereoToMono) {
   ChannelMapper<int16_t, 2, 1> mapper;
 
-  const std::vector<int16_t> source_frame = {-0x2000, -0x4000};  // {-0.25f, -0.5f}
+  const std::vector<int16_t> source_frame = {
+      -0x2000,
+      -0x4000,
+  };  // {-0.25f, -0.5f}
   EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), 0), -0.375f);
 }
 
 TEST(ChannelMapperTest, StereoToThreeChannels) {
   ChannelMapper<float, 2, 3> mapper;
 
-  const std::vector<float> source_frame = {-0.25f, 0.75f};
-  const std::vector<float> expected = {-0.25f, 0.75f, 0.25f};
+  const std::vector<float> source_frame = {
+      -0.25f,
+      0.75f,
+  };
+  const std::vector<float> expected = {
+      -0.25f,
+      0.75f,
+      0.25f,
+  };
   for (size_t channel = 0; channel < expected.size(); ++channel) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), channel), expected[channel]);
   }
@@ -71,8 +86,16 @@ TEST(ChannelMapperTest, StereoToThreeChannels) {
 TEST(ChannelMapperTest, StereoToFourChannels) {
   ChannelMapper<float, 2, 4> mapper;
 
-  const std::vector<float> source_frame = {-0.25f, 0.75f};
-  const std::vector<float> expected = {-0.25f, 0.75f, -0.25f, 0.75f};
+  const std::vector<float> source_frame = {
+      -0.25f,
+      0.75f,
+  };
+  const std::vector<float> expected = {
+      -0.25f,
+      0.75f,
+      -0.25f,
+      0.75f,
+  };
   for (size_t channel = 0; channel < expected.size(); ++channel) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), channel), expected[channel]);
   }
@@ -81,15 +104,26 @@ TEST(ChannelMapperTest, StereoToFourChannels) {
 TEST(ChannelMapperTest, ThreeChannelsToMono) {
   ChannelMapper<float, 3, 1> mapper;
 
-  const std::vector<float> source_frame = {-1.0f, 0.5f, -0.1f};
+  const std::vector<float> source_frame = {
+      -1.0f,
+      0.5f,
+      -0.1f,
+  };
   EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), 0), -0.2f);
 }
 
 TEST(ChannelMapperTest, ThreeChannelsToStereo) {
   ChannelMapper<float, 3, 2> mapper;
 
-  const std::vector<float> source_frame = {1.0f, -0.5f, -0.5f};
-  const std::vector<float> expected = {0.378679656f, -0.5f};
+  const std::vector<float> source_frame = {
+      1.0f,
+      -0.5f,
+      -0.5f,
+  };
+  const std::vector<float> expected = {
+      0.378679656f,
+      -0.5f,
+  };
   for (size_t channel = 0; channel < expected.size(); ++channel) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), channel), expected[channel]);
   }
@@ -98,8 +132,17 @@ TEST(ChannelMapperTest, ThreeChannelsToStereo) {
 TEST(ChannelMapperTest, ThreeChannelsToFour) {
   ChannelMapper<float, 3, 4> mapper;
 
-  const std::vector<float> source_frame = {-0.4f, 0.0f, 0.7f};
-  const std::vector<float> expected = {-0.4f, 0.0f, 0.7f, 0.1f};
+  const std::vector<float> source_frame = {
+      -0.4f,
+      0.0f,
+      0.7f,
+  };
+  const std::vector<float> expected = {
+      -0.4f,
+      0.0f,
+      0.7f,
+      0.1f,
+  };
   for (size_t channel = 0; channel < expected.size(); ++channel) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), channel), expected[channel]);
   }
@@ -108,7 +151,12 @@ TEST(ChannelMapperTest, ThreeChannelsToFour) {
 TEST(ChannelMapperTest, FourChannelsToMono) {
   ChannelMapper<float, 4, 1> mapper;
 
-  const std::vector<float> source_frame = {1.0f, 2.0f, 3.0f, 4.0f};
+  const std::vector<float> source_frame = {
+      1.0f,
+      2.0f,
+      3.0f,
+      4.0f,
+  };
   if constexpr (kEnable4ChannelWorkaround) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), 0), 1.5f);
   } else {
@@ -119,7 +167,12 @@ TEST(ChannelMapperTest, FourChannelsToMono) {
 TEST(ChannelMapperTest, FourChannelsToStereo) {
   ChannelMapper<float, 4, 2> mapper;
 
-  const std::vector<float> source_frame = {1.0f, 2.0f, 3.0f, 4.0f};
+  const std::vector<float> source_frame = {
+      1.0f,
+      2.0f,
+      3.0f,
+      4.0f,
+  };
   if constexpr (kEnable4ChannelWorkaround) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), 0), 1.0f);
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), 1), 2.0f);
@@ -132,7 +185,12 @@ TEST(ChannelMapperTest, FourChannelsToStereo) {
 TEST(ChannelMapperTest, FourChannelsToThree) {
   ChannelMapper<float, 4, 3> mapper;
 
-  const std::vector<float> source_frame = {-1.0f, -0.5, 0.25f, 0.9f};
+  const std::vector<float> source_frame = {
+      -1.0f,
+      -0.5,
+      0.25f,
+      0.9f,
+  };
   if constexpr (kEnable4ChannelWorkaround) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), 0), -1.0f);
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), 1), -0.5f);
@@ -145,46 +203,110 @@ TEST(ChannelMapperTest, FourChannelsToThree) {
 }
 
 TEST(ChannelMapperTest, CustomizableSameChannels) {
-  ChannelMapper<float, 2, 2, /*Customizable=*/true> mapper({{
-      {-1.0f, 0.0f},
-      {0.5f, 0.5f},
-  }});
+  ChannelMapper<float, 2, 2, /*Customizable=*/true> mapper({
+      {
+          {
+              -1.0f,
+              0.0f,
+          },
+          {
+              0.5f,
+              0.5f,
+          },
+      },
+  });
 
-  const std::vector<float> source_frame = {2.0f, 3.0f};
-  const std::vector<float> expected = {-2.0f, 2.5f};
+  const std::vector<float> source_frame = {
+      2.0f,
+      3.0f,
+  };
+  const std::vector<float> expected = {
+      -2.0f,
+      2.5f,
+  };
   for (size_t channel = 0; channel < expected.size(); ++channel) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), channel), expected[channel]);
   }
 }
 
 TEST(ChannelMapperTest, CustomizableSingleToMulti) {
-  ChannelMapper<float, 1, 3, /*Customizable=*/true> mapper({{{1.0f}, {-2.0f}, {3.0f}}});
+  ChannelMapper<float, 1, 3, /*Customizable=*/true> mapper({
+      {
+          {1.0f},
+          {-2.0f},
+          {3.0f},
+      },
+  });
 
-  const std::vector<float> source_frame = {0.5f};
-  const std::vector<float> expected = {0.5f, -1.0f, 1.5f};
+  const std::vector<float> source_frame = {
+      0.5f,
+  };
+  const std::vector<float> expected = {
+      0.5f,
+      -1.0f,
+      1.5f,
+  };
   for (size_t channel = 0; channel < expected.size(); ++channel) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), channel), expected[channel]);
   }
 }
 
 TEST(ChannelMapperTest, CustomizableMultiToSingle) {
-  ChannelMapper<float, 2, 1, /*Customizable=*/true> mapper({{{1.0f, 0.25f}}});
+  ChannelMapper<float, 2, 1, /*Customizable=*/true> mapper({
+      {
+          {
+              1.0f,
+              0.25f,
+          },
+      },
+  });
 
-  const std::vector<float> source_frame = {2.0f, 4.0f};
+  const std::vector<float> source_frame = {
+      2.0f,
+      4.0f,
+  };
   EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), 0), 3.0f);
 }
 
 TEST(ChannelMapperTest, CustomizableMultiToMulti) {
-  ChannelMapper<float, 3, 5, /*Customizable=*/true> mapper({{
-      {1.0f, 0.0f, 0.0f},
-      {0.0f, 1.0f, 0.0f},
-      {0.0f, 0.0f, 1.0f},
-      {1.0f, 1.0f, 1.0f},
-      {-1.0f, 2.0f, -3.0f},
-  }});
+  ChannelMapper<float, 3, 5, /*Customizable=*/true> mapper({
+      {
+          {
+              1.0f,
+              0.0f,
+              0.0f,
+          },
+          {
+              0.0f,
+              1.0f,
+              0.0f,
+          },
+          {
+              0.0f,
+              0.0f,
+              1.0f,
+          },
+          {
+              1.0f,
+              1.0f,
+              1.0f,
+          },
+          {
+              -1.0f,
+              2.0f,
+              -3.0f,
+          },
+      },
+  });
 
-  const std::vector<float> source_frame = {1.0f, 2.0f, 3.0f};
-  const std::vector<float> expected = {1.0f, 2.0f, 3.0f, 6.0f, -6.0f};
+  const std::vector<float> source_frame = {
+      1.0f,
+      2.0f,
+      3.0f,
+  };
+  const std::vector<float> expected = {
+      1.0f, 2.0f, 3.0f, 6.0f, -6.0f,
+  };
   for (size_t channel = 0; channel < expected.size(); ++channel) {
     EXPECT_FLOAT_EQ(mapper.Map(source_frame.data(), channel), expected[channel]);
   }

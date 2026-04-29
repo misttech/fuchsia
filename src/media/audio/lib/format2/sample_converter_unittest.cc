@@ -4,7 +4,6 @@
 
 #include "src/media/audio/lib/format2/sample_converter.h"
 
-#include <limits>
 #include <vector>
 
 #include <gtest/gtest.h>

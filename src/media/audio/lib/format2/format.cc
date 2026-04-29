@@ -18,8 +18,8 @@
 
 namespace media_audio {
 
-using SampleType = fuchsia_audio::SampleType;
-using TimelineRate = media::TimelineRate;
+using fuchsia_audio::SampleType;
+using media::TimelineRate;
 
 namespace {
 
@@ -32,8 +32,9 @@ std::optional<SampleType> ConvertHardwareFormatToSampleType(
           return SampleType::kInt16;
         case 4:
           return SampleType::kInt32;
+        default:
+          return std::nullopt;
       }
-      return std::nullopt;
 
     case fuchsia_hardware_audio::SampleFormat::kPcmUnsigned:
       if (msg.bytes_per_sample == 1) {
@@ -47,8 +48,9 @@ std::optional<SampleType> ConvertHardwareFormatToSampleType(
           return SampleType::kFloat32;
         case 8:
           return SampleType::kFloat64;
+        default:
+          return std::nullopt;
       }
-      return std::nullopt;
 
     default:
       return std::nullopt;
@@ -235,7 +237,8 @@ Format Format::CreateOrDie(Args args) {
   return result.take_value();
 }
 
-fpromise::result<Format, std::string> Format::CreateLegacy(fuchsia_mediastreams::AudioFormat msg) {
+fpromise::result<Format, std::string> Format::CreateLegacy(
+    const fuchsia_mediastreams::AudioFormat& msg) {
   auto sample_type = ConvertLegacySampleType(msg.sample_format());
   if (!sample_type) {
     return fpromise::error("bad sample_format '" +
@@ -266,7 +269,7 @@ fpromise::result<Format, std::string> Format::CreateLegacy(
                     .Build());
 }
 
-Format Format::CreateLegacyOrDie(fuchsia_mediastreams::AudioFormat msg) {
+Format Format::CreateLegacyOrDie(const fuchsia_mediastreams::AudioFormat& msg) {
   auto result = CreateLegacy(msg);
   if (!result.is_ok()) {
     FX_CHECK(false) << "Format::CreateLegacyOrDie failed: " << result.error();
@@ -282,7 +285,8 @@ Format Format::CreateLegacyOrDie(fuchsia_mediastreams::wire::AudioFormat msg) {
   return result.take_value();
 }
 
-fpromise::result<Format, std::string> Format::CreateLegacy(fuchsia_media::AudioStreamType msg) {
+fpromise::result<Format, std::string> Format::CreateLegacy(
+    const fuchsia_media::AudioStreamType& msg) {
   auto sample_type = ConvertLegacySampleType(msg.sample_format());
   if (!sample_type) {
     return fpromise::error("bad sample_format '" +
@@ -313,7 +317,7 @@ fpromise::result<Format, std::string> Format::CreateLegacy(
                     .Build());
 }
 
-Format Format::CreateLegacyOrDie(fuchsia_media::AudioStreamType msg) {
+Format Format::CreateLegacyOrDie(const fuchsia_media::AudioStreamType& msg) {
   auto result = CreateLegacy(msg);
   if (!result.is_ok()) {
     FX_CHECK(false) << "Format::CreateLegacyOrDie failed: " << result.error();
