@@ -15,7 +15,7 @@
              path="third_party/libc-tests"
              remote="https://fuchsia.googlesource.com/libc-tests"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="f19647824bd63c89ddbcad245f1b8635dbee7138"/>
+             revision="b995ff63d8a427be733e7094e96fbbc67c8ac850"/>
     <project name="third_party/abseil-cpp"
              path="third_party/abseil-cpp/src"
              revision="4c2bfd70d75838de03952932b678645a81824c9a"
