@@ -22,5 +22,5 @@ _.path = [
     "{{ exec(command=\"source $FUCHSIA_DIR/tools/devshell/lib/platform.sh && echo -n $PREBUILT_TOOL_PATHS\") }}",
 ]
 
-[tasks]
+[shell_alias]
 fxf = "fx format-code && fx"
