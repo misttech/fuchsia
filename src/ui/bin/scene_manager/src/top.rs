@@ -160,9 +160,12 @@ pub async fn start(
     // Unicode data is kept in memory.
     let icu_data_loader = icu_data::Loader::new().unwrap();
 
-    let ownership_proxy = incoming.connect_protocol::<fcomp::DisplayOwnershipProxy>()?;
-    let display_ownership =
-        ownership_proxy.get_event().await.expect("Failed to get display ownership.");
+    let ownership_proxy = incoming
+        .connect_protocol::<fcomp::DisplayOwnershipProxy>()
+        .context("while connecting to DisplayOwnership proxy")?;
+    let display_ownership = ownership_proxy.get_event().await.expect(
+        "Failed to get display ownership. This is usually an upstream issue (Scenic and up), not scene_manager.",
+    );
     info!("Instantiating SceneManager");
 
     let Config {
