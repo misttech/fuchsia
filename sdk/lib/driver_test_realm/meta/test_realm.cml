@@ -261,6 +261,38 @@
             from: "#fake-resolver",
             to: "#driver-index",
         },
+        // These protocols are not actually used but exist to increase the lifetime
+        // of components. The capabilities are named after their place in the topology.
+        // We cannot use a single service due to the lack of service merging.
+        {
+            service: [ "dtr.driver-hosts" ],
+            from: "#driver-hosts",
+            to: [
+                "#base-drivers",
+                "#boot-drivers",
+                "#devfs",
+                "#full-drivers",
+            ],
+        },
+        {
+            service: [ "dtr.boot-drivers" ],
+            from: "#boot-drivers",
+            to: [
+                "#base-drivers",
+                "#devfs",
+                "#full-drivers",
+            ],
+        },
+        {
+            service: [ "dtr.base-drivers" ],
+            from: "#base-drivers",
+            to: "#devfs",
+        },
+        {
+            service: [ "dtr.full-drivers" ],
+            from: "#full-drivers",
+            to: "#devfs",
+        },
     ],
     expose: [
         {

@@ -84,7 +84,6 @@ fuchsia_unittest_package("fidl-fuchsia-pkg-ext-tests") {
   deps = [
     ":fidl-fuchsia-pkg-ext_test",
     "//src/storage/fxfs:fxfs_component",
-    "//src/storage/testing:storage_driver_test_realm",
   ]
 }
 
