@@ -8,6 +8,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
 
 def _fuchsia_less_transition_impl(_settings, _attr):
     # Set build settings to their `build_setting_default` value.
@@ -198,3 +199,79 @@ def go_binary_host_tool(
         testonly = testonly,
         visibility = visibility,
     )
+
+def _rustc_binary_host_tool_impl(
+        name,
+        crate_name,
+        target_compatible_with,
+        testonly,
+        visibility,
+        **kwargs):
+    if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
+
+    actual_binary_location = name + ".actual/" + name
+    rustc_binary(
+        name = actual_binary_location,
+        crate_name = crate_name if crate_name else name,
+        target_compatible_with = target_compatible_with,
+        testonly = testonly,
+        # Prevent use of the tool directly without going through the fuchsia-less transition.
+        visibility = ["//visibility:private"],
+        **kwargs
+    )
+
+    _to_fuchsia_less_config(
+        name = name,
+        actual = actual_binary_location,
+        target_compatible_with = target_compatible_with,
+        testonly = testonly,
+        visibility = visibility,
+    )
+
+rustc_binary_host_tool = macro(
+    doc = """A rust_binary to be used as a host tool.
+
+All Rust host tools used during the Fuchsia build should be defined with this
+macro to help ensure they are only built once. Rules using the tool should
+depend on the `name` label and use `cfg = "exec"`.
+
+For example:
+    Define the tool:
+        rustc_binary_host_tool(
+            name = "some_tool_name",
+            srcs = ["path/to/main.rs"],
+            visibility = ["//visibility:public"],
+            deps = [":lib"],
+        )
+
+    Then use the tool in a rule:
+        "_some_tool_name": attr.label(
+            default = "@//path/to:some_tool_name",
+            executable = True,
+            cfg = "exec",
+        ),
+
+This macro works by ensuring the tool is built in a configuration matching the
+default "PLATFORM" build by resetting build settings that may have been changed,
+such as the API level, when building IDK prebuilts.
+
+This only works for the single host configuration represented by "exec". Further
+work would be needed to support cross-compiling for other host configurations.
+""",
+    implementation = _rustc_binary_host_tool_impl,
+    inherit_attrs = rustc_binary,
+    attrs = {
+        "crate_name": attr.string(
+            doc = "Crate name to use for this target. Defaults to `name`.",
+            mandatory = False,
+            configurable = False,
+        ),
+        "target_compatible_with": attr.string_list(
+            doc = "Standard meaning. Must be `HOST_CONSTRAINTS` or `HOST_OS_CONSTRAINTS`.",
+            mandatory = False,
+            configurable = False,
+            default = HOST_CONSTRAINTS,
+        ),
+    },
+)
