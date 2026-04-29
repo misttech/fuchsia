@@ -1284,6 +1284,9 @@
                 // Failing new tests from gvisor.
                 "MountTest.BindMountDirectoryOntoFileFails",
                 "MountTest.BindMountFileOntoDirectoryFails",
+
+                // TODO(https://fxbug.dev/507804638): Flakey, needs investigation.
+                "AffinityTest.SetAffinityOtherUidRequiresCapSysNice",
             ],
         },
     ],
