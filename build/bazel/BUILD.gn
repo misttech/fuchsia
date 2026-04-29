@@ -370,6 +370,20 @@ generated_file("gn_build_variables_for_bazel") {
   ]
 
   # LINT.ThenChange(//build/testing/config.gni)
+
+  # LINT.IfChange
+  declaration = "//build/rust/config.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "rust_cap_lints"
+      value = rust_cap_lints
+      type = "string"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//build/rust/config.gni)
 }
 
 if (current_toolchain == default_toolchain) {

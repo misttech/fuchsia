@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_build_info//:args.bzl", "rust_cap_lints")
+
 def with_fuchsia_rustc_flags(rustc_flags):
     """Add a list of Fuchsia-specific rustc flags to input rustc_flags."""
 
@@ -13,7 +15,5 @@ def with_fuchsia_rustc_flags(rustc_flags):
         #
         # As a result, we avoid setting this on the toolchain directly, which will affect
         # third-party rust-crates.
-        #
-        # This config matches `rust_cap_lints_default` in GN defined in //build/rust/config.gni.
-        "--cap-lints=deny",
+        "--cap-lints={}".format(rust_cap_lints),
     ]

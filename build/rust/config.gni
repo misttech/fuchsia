@@ -58,7 +58,10 @@ declare_args() {
   # Sets the maximum lint level.
   # "deny" will make all warnings into errors, "warn" preserves them as warnings, and "allow" will
   # ignore warnings.
+  # LINT.IfChange
   rust_cap_lints = rust_cap_lints_default
+
+  # LINT.ThenChange(//build/bazel/BUILD.gn)
 
   # Set the lint level for all clippy lints to "warn".
   # Note: setting lint levels in source takes precedence over this.

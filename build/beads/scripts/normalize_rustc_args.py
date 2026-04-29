@@ -31,6 +31,9 @@ _ARGS_TO_IGNORE = (
     "--sysroot=",
     # Bazel sets this for determinism purposes, and GN omits it.
     "--remap-path-prefix=",
+    # Ignore remote-only flags, which are used in GN to maximize RBE cache hits
+    # by utilizing wrapper scripts.
+    "--remote-only",
     # TODO(https://fxbug.dev/477167250): Propagate debug_info to Bazel and
     # remove this.
     "-Cdebug-assertions=",
@@ -71,6 +74,9 @@ _ARGS_PREFIXES_TO_CONVERT = {
     "--allow": "-A",
     "--deny": "-D",
     "--warn": "-W",
+    # Strip `--local-only` to get the actual args used in the build commands
+    # when GN RBE mode is set to "local".
+    "--local-only": "",
 }
 
 
