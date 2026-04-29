@@ -74,6 +74,23 @@
   .cfi.all_vector \op
 .endm
 
+// Add an immediate value to SP, adjusting CFI assuming the CFA rule
+// uses an offset from SP.
+.macro add.sp imm
+  add sp, sp, \imm
+  .cfi_adjust_cfa_offset -(\imm)
+.endm
+
+.macro sd.spill reg, offset
+  sd \reg, \offset(sp)
+  .cfi_rel_offset \reg, \offset
+.endm
+
+.macro ld.reload reg, offset
+  ld \reg, \offset(sp)
+  .cfi_same_value \reg
+.endm
+
 // Standard prologue sequence for FP setup, with CFI.  This emits .stack_sizes
 // metadata unless the optional third argument prevents it, in which case a
 // separate .llvm.stack_size invocation should be used.
@@ -84,14 +101,11 @@
   // fp must point to CFA.
   // ra must reside at fp - XLEN/8.
   // Previous fp must reside at fp - x * XLEN/8.
-  add sp, sp, -(16 + (\frame_extra_size))
+  add.sp -(16 + (\frame_extra_size))
   // The CFA is still computed relative to the SP so code will
   // continue to use .cfi_adjust_cfa_offset for pushes and pops.
-  .cfi_adjust_cfa_offset 16 + (\frame_extra_size)
-  sd fp, (\frame_extra_size)(sp)
-  .cfi_rel_offset fp, \frame_extra_size
-  sd \rareg, (8 + (\frame_extra_size))(sp)
-  .cfi_rel_offset \rareg, 8 + (\frame_extra_size)
+  sd.spill fp, \frame_extra_size
+  sd.spill \rareg, (8 + (\frame_extra_size))
   add fp, sp, (16 + (\frame_extra_size))
 .endm
 
@@ -99,10 +113,8 @@
 .macro .epilogue.fp frame_extra_size=0, rareg=ra
   ld fp, (\frame_extra_size)(sp)
   .cfi_same_value fp
-  ld \rareg, (8 + (\frame_extra_size))(sp)
-  .cfi_same_value \rareg
-  add sp, sp, 16 + (\frame_extra_size)
-  .cfi_adjust_cfa_offset -(16 + (\frame_extra_size))
+  ld.reload \rareg, (8 + (\frame_extra_size))
+  add.sp 16 + (\frame_extra_size)
 .endm
 
 // Helper defining the encoding for setting rules requiring
