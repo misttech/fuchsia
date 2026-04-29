@@ -100,5 +100,6 @@ assoc_values!(FcTransportStatus, [
     BUFFER_TOO_SMALL                   = -77777;
     SHOULD_WAIT                        = -88888;
     INTERNAL                           = -99999;
+    INTERRUPTED                        = -100000;
 ]);
 // LINT.ThenChange(//src/developer/ffx/lib/fuchsia-controller/cpp/fuchsia_controller_internal/fuchsia_controller.h)

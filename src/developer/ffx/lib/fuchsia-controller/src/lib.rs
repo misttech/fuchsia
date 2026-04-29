@@ -85,12 +85,15 @@ pub unsafe extern "C" fn create_ffx_env_context(
         }
     }
     lib.run(LibraryCommand::CreateEnvContext { lib: lib.clone(), responder, config, isolate_dir });
-    match rx.recv().unwrap() {
-        Ok(env) => {
-            unsafe { *env_ctx = Arc::into_raw(env) };
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok(env) => {
+                unsafe { *env_ctx = Arc::into_raw(env) };
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
 }
 
@@ -114,12 +117,15 @@ pub unsafe extern "C" fn ffx_connect_device_proxy(
         capability_name,
         responder,
     });
-    match rx.recv().unwrap() {
-        Ok(h) => {
-            unsafe { *handle = h };
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok(h) => {
+                unsafe { *handle = h };
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
 }
 
@@ -132,7 +138,7 @@ pub unsafe extern "C" fn ffx_target_wait(
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
     ctx.lib_ctx().run(LibraryCommand::TargetWait { env: ctx.clone(), timeout, responder, offline });
-    rx.recv().unwrap().into()
+    rx.recv().unwrap_or(FcTransportStatus::INTERRUPTED).into()
 }
 
 #[unsafe(no_mangle)]
@@ -143,12 +149,15 @@ pub unsafe extern "C" fn ffx_connect_remote_control_proxy(
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
     ctx.lib_ctx().run(LibraryCommand::OpenRemoteControlProxy { env: ctx.clone(), responder });
-    match rx.recv().unwrap() {
-        Ok(h) => {
-            unsafe { *handle = h };
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok(h) => {
+                unsafe { *handle = h };
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
 }
 
@@ -168,11 +177,14 @@ pub unsafe extern "C" fn destroy_ffx_env_context(ctx: *const EnvContext) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ffx_close_handle(ctx: *const LibContext, handle: zx_types::zx_handle_t) {
+pub unsafe extern "C" fn ffx_close_handle(
+    ctx: *const LibContext,
+    handle: zx_types::zx_handle_t,
+) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
     ctx.run(LibraryCommand::HandleClose { lib: ctx.clone(), handle, responder });
-    rx.recv().unwrap();
+    rx.recv().map(|_| FcTransportStatus::OK).unwrap_or(FcTransportStatus::INTERRUPTED)
 }
 
 fn safe_write<T>(dest: *mut T, value: T) {
@@ -198,7 +210,7 @@ pub unsafe extern "C" fn ffx_channel_write(
         handles: unsafe { ExtBuffer::new(hdls, hdls_len as usize) },
         responder,
     });
-    rx.recv().unwrap().into()
+    rx.recv().unwrap_or(FcTransportStatus::INTERRUPTED).into()
 }
 
 #[unsafe(no_mangle)]
@@ -221,7 +233,7 @@ pub unsafe extern "C" fn ffx_channel_write_etc(
         handles: unsafe { ExtBuffer::new(hdls, hdls_len as usize) },
         responder,
     });
-    rx.recv().unwrap().into()
+    rx.recv().unwrap_or(FcTransportStatus::INTERRUPTED).into()
 }
 
 #[unsafe(no_mangle)]
@@ -250,7 +262,10 @@ pub unsafe extern "C" fn ffx_channel_read(
         actual_bytes_count: bytes_count_recv,
         actual_handles_count: handles_count_recv,
         result,
-    } = rx.recv().unwrap();
+    } = match rx.recv() {
+        Ok(r) => r,
+        Err(_) => return FcTransportStatus::INTERRUPTED,
+    };
     safe_write(actual_bytes_count, bytes_count_recv as u64);
     safe_write(actual_hdls_count, handles_count_recv as u64);
     result.into()
@@ -266,13 +281,16 @@ pub unsafe extern "C" fn ffx_socket_create(
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
     ctx.lib_ctx().run(LibraryCommand::SocketCreate { env: ctx.clone(), options, responder: tx });
-    match rx.recv().unwrap() {
-        Ok((ch0, ch1)) => {
-            unsafe { *out0 = ch0 };
-            unsafe { *out1 = ch1 };
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(res) => match res {
+            Ok((ch0, ch1)) => {
+                unsafe { *out0 = ch0 };
+                unsafe { *out1 = ch1 };
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
     .into()
 }
@@ -292,7 +310,7 @@ pub unsafe extern "C" fn ffx_socket_write(
         buf: unsafe { ExtBuffer::new(buf, buf_len as usize) },
         responder,
     });
-    rx.recv().unwrap().into()
+    rx.recv().unwrap_or(FcTransportStatus::INTERRUPTED).into()
 }
 
 #[unsafe(no_mangle)]
@@ -311,7 +329,10 @@ pub unsafe extern "C" fn ffx_socket_read(
         out_buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         responder,
     });
-    let ReadResponse { actual_bytes_count: bytes_count_recv, result, .. } = rx.recv().unwrap();
+    let ReadResponse { actual_bytes_count: bytes_count_recv, result, .. } = match rx.recv() {
+        Ok(r) => r,
+        Err(_) => return FcTransportStatus::INTERRUPTED,
+    };
     safe_write(bytes_read, bytes_count_recv as u64);
     result.into()
 }
@@ -321,7 +342,7 @@ pub unsafe extern "C" fn ffx_connect_handle_notifier(ctx: *const LibContext) -> 
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
     ctx.run(LibraryCommand::GetNotificationDescriptor { lib: ctx.clone(), responder: tx });
-    rx.recv().unwrap()
+    rx.recv().unwrap_or_else(|_| FcTransportStatus::INTERRUPTED.into_raw())
 }
 
 #[unsafe(no_mangle)]
@@ -333,12 +354,15 @@ pub unsafe extern "C" fn ffx_event_create(
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
     ctx.lib_ctx().run(LibraryCommand::EventCreate { env: ctx.clone(), responder: tx });
-    match rx.recv().unwrap() {
-        Ok(hdl) => {
-            unsafe { *out = hdl };
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok(hdl) => {
+                unsafe { *out = hdl };
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
 }
 
@@ -352,13 +376,16 @@ pub unsafe extern "C" fn ffx_eventpair_create(
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
     ctx.lib_ctx().run(LibraryCommand::EventPairCreate { env: ctx.clone(), responder: tx });
-    match rx.recv().unwrap() {
-        Ok((hdl0, hdl1)) => {
-            unsafe { *out0 = hdl0 };
-            unsafe { *out1 = hdl1 };
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok((hdl0, hdl1)) => {
+                unsafe { *out0 = hdl0 };
+                unsafe { *out1 = hdl1 };
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
 }
 
@@ -380,7 +407,7 @@ pub unsafe extern "C" fn ffx_object_signal(
         set_mask,
         responder: tx,
     });
-    rx.recv().unwrap().into()
+    rx.recv().unwrap_or(FcTransportStatus::INTERRUPTED).into()
 }
 
 #[unsafe(no_mangle)]
@@ -401,7 +428,7 @@ pub unsafe extern "C" fn ffx_object_signal_peer(
         set_mask,
         responder: tx,
     });
-    rx.recv().unwrap().into()
+    rx.recv().unwrap_or(FcTransportStatus::INTERRUPTED).into()
 }
 
 #[unsafe(no_mangle)]
@@ -415,12 +442,15 @@ pub unsafe extern "C" fn ffx_object_signal_poll(
     let (tx, rx) = mpsc::sync_channel(1);
     let signals = fidl::Signals::from_bits_retain(signals);
     ctx.run(LibraryCommand::ObjectSignalPoll { lib: ctx.clone(), handle, signals, responder: tx });
-    match rx.recv().unwrap() {
-        Ok(sig) => {
-            safe_write(signals_out, sig.bits());
-            FcTransportStatus::OK
-        }
-        Err(status) => status,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok(sig) => {
+                safe_write(signals_out, sig.bits());
+                FcTransportStatus::OK
+            }
+            Err(status) => status,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
     .into()
 }
@@ -435,13 +465,16 @@ pub unsafe extern "C" fn ffx_channel_create(
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
     ctx.lib_ctx().run(LibraryCommand::ChannelCreate { env: ctx.clone(), responder: tx });
-    match rx.recv().unwrap() {
-        Ok((hdl0, hdl1)) => {
-            unsafe { *out0 = hdl0 };
-            unsafe { *out1 = hdl1 };
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok((hdl0, hdl1)) => {
+                unsafe { *out0 = hdl0 };
+                unsafe { *out1 = hdl1 };
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
     .into()
 }
@@ -455,12 +488,15 @@ pub unsafe extern "C" fn ffx_handle_get_koid(
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
     ctx.run(LibraryCommand::HandleGetKoid { lib: ctx.clone(), handle, responder: tx });
-    match rx.recv().unwrap() {
-        Ok(k) => {
-            unsafe { *out = k };
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok(k) => {
+                unsafe { *out = k };
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
     .into()
 }
@@ -497,12 +533,15 @@ pub unsafe extern "C" fn ffx_config_get_string(
         config_key: config_key_str,
         out_buf: unsafe { ExtBuffer::new(out_buf, out_buf_size) },
     });
-    match rx.recv().unwrap() {
-        Ok(size) => {
-            safe_write(out_buf_len, size as u64);
-            FcTransportStatus::OK
-        }
-        Err(e) => e,
+    match rx.recv() {
+        Ok(r) => match r {
+            Ok(size) => {
+                safe_write(out_buf_len, size as u64);
+                FcTransportStatus::OK
+            }
+            Err(e) => e,
+        },
+        Err(_) => FcTransportStatus::INTERRUPTED,
     }
     .into()
 }
@@ -682,8 +721,12 @@ mod test {
             )
         };
         assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -703,8 +746,12 @@ mod test {
             ffx_socket_read(lib_ctx, a, buf.as_mut_ptr(), buf.len() as u64, std::ptr::null_mut())
         };
         assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -750,10 +797,18 @@ mod test {
         assert_eq!(status, FcTransportStatus::OK);
         assert_eq!(&in_buf, &[1, 2]);
         assert_eq!(&in_handles, &[c, d]);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -797,10 +852,18 @@ mod test {
             std::ptr::null_mut(),
         );
         assert_eq!(status, FcTransportStatus::BUFFER_TOO_SMALL);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -825,8 +888,12 @@ mod test {
         assert_eq!(status, FcTransportStatus::OK);
         assert_eq!(bytes_len, 2);
         assert_eq!(&buf[0..2], &[1, 2]);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -874,10 +941,18 @@ mod test {
         assert_eq!(read_bytes, 2);
         assert_eq!(read_handles, 2);
         assert_eq!(result, FcTransportStatus::BUFFER_TOO_SMALL);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -927,10 +1002,18 @@ mod test {
         assert_eq!(read_handles, 2);
         assert_eq!(&buf, &[1, 2]);
         assert_eq!(&handles, &[c, d]);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -976,10 +1059,18 @@ mod test {
         assert_eq!(status, FcTransportStatus::OK);
         assert_eq!(&in_buf, &[1, 2]);
         assert_eq!(&in_handles, &[c, d]);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1040,10 +1131,18 @@ mod test {
         assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(&buf, &[1, 2]);
         assert_eq!(&handles, &[c, d]);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1091,10 +1190,18 @@ mod test {
             )
         };
         assert_eq!(result, FcTransportStatus::NOT_SUPPORTED);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1142,10 +1249,18 @@ mod test {
             )
         };
         assert_eq!(result, FcTransportStatus::INVALID_ARGS);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1169,8 +1284,12 @@ mod test {
         let result = async_socket_read(lib_ctx, a, &mut buf, &mut out_len);
         assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(&buf, &[1, 2]);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1185,7 +1304,9 @@ mod test {
         let status =
             unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
         assert_eq!(status, FcTransportStatus::OK);
-        unsafe { ffx_close_handle(lib_ctx, b) };
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         let mut buf = [0u8; 2];
         let mut handles = [0u32; 2];
         let result = async_channel_read(
@@ -1202,7 +1323,9 @@ mod test {
         assert_eq!(result, expect);
         let msg = decode_fidl_err::<fdproto::Error>(&lock);
         assert_eq!(msg, expected_inner);
-        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1217,7 +1340,9 @@ mod test {
         let status =
             unsafe { ffx_eventpair_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
         assert_eq!(status, FcTransportStatus::OK);
-        unsafe { ffx_close_handle(lib_ctx, b) };
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         let result = unsafe {
             ffx_object_signal_peer(
                 lib_ctx,
@@ -1232,7 +1357,9 @@ mod test {
         assert_eq!(result, expect.into());
         let msg = decode_fidl_err::<fdproto::Error>(&lock);
         assert_eq!(msg, expected_inner);
-        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1247,7 +1374,9 @@ mod test {
         let status =
             unsafe { ffx_channel_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
         assert_eq!(status, FcTransportStatus::OK);
-        unsafe { ffx_close_handle(lib_ctx, b) };
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         let mut buf = [0u8; 2];
         let mut handles = [0u32; 2];
         let result = unsafe {
@@ -1261,7 +1390,9 @@ mod test {
             )
         };
         assert_eq!(result, FcTransportStatus::INTERNAL);
-        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1276,7 +1407,9 @@ mod test {
         let status =
             unsafe { ffx_socket_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
         assert_eq!(status, FcTransportStatus::OK);
-        unsafe { ffx_close_handle(lib_ctx, b) };
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         let mut buf = [0u8];
         let mut out_len = 0;
         let _result = async_socket_read(lib_ctx, a, &mut buf, &mut out_len);
@@ -1287,7 +1420,9 @@ mod test {
         assert_eq!(result, expect.into());
         let msg = decode_fidl_err::<fdproto::Error>(&lock);
         assert_eq!(msg, expected_inner);
-        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1318,7 +1453,9 @@ mod test {
             )
         };
         assert_eq!(result, FcTransportStatus::SHOULD_WAIT);
-        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe {
+            ffx_close_handle(lib_ctx, event);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1344,7 +1481,9 @@ mod test {
         let result = async_signal_wait(lib_ctx, event, fidl::Signals::USER_0, &mut out);
         assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(out, fidl::Signals::USER_0);
-        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe {
+            ffx_close_handle(lib_ctx, event);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1376,7 +1515,9 @@ mod test {
         let result = async_signal_wait(lib_ctx, event, signals, &mut out);
         assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(out, fidl::Signals::USER_0);
-        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe {
+            ffx_close_handle(lib_ctx, event);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1411,8 +1552,12 @@ mod test {
         let result = async_signal_wait(lib_ctx, event, signals, &mut out);
         assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(out, fidl::Signals::USER_0);
-        unsafe { ffx_close_handle(lib_ctx, event) }
-        unsafe { ffx_close_handle(lib_ctx, other_event) }
+        unsafe {
+            ffx_close_handle(lib_ctx, event);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, other_event);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1446,8 +1591,12 @@ mod test {
         let result = async_signal_wait(lib_ctx, rx, signals, &mut out);
         assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(out, fidl::Signals::USER_0);
-        unsafe { ffx_close_handle(lib_ctx, tx) }
-        unsafe { ffx_close_handle(lib_ctx, rx) }
+        unsafe {
+            ffx_close_handle(lib_ctx, tx);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, rx);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1462,7 +1611,9 @@ mod test {
         let status =
             unsafe { ffx_socket_create(env_ctx, 0, &mut a as *mut u32, &mut b as *mut u32) };
         assert_eq!(status, FcTransportStatus::OK);
-        unsafe { ffx_close_handle(lib_ctx, b) };
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
         let mut buf = [0u8];
         let result = unsafe { ffx_socket_write(lib_ctx, a, buf.as_mut_ptr(), buf.len() as u64) };
         let expected_inner = fdproto::WriteSocketError {
@@ -1474,7 +1625,9 @@ mod test {
         assert_eq!(result, expect);
         let msg = decode_fidl_err::<fdproto::WriteSocketError>(&lock);
         assert_eq!(msg, expected_inner);
-        unsafe { ffx_close_handle(lib_ctx, a) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1531,10 +1684,18 @@ mod test {
         assert_eq!(bytes_read, 4);
         let read_handle = notifier_buf_reader.read_u32::<NativeEndian>().unwrap();
         assert_eq!(read_handle, a);
-        unsafe { ffx_close_handle(lib_ctx, a) }
-        unsafe { ffx_close_handle(lib_ctx, b) }
-        unsafe { ffx_close_handle(lib_ctx, c) }
-        unsafe { ffx_close_handle(lib_ctx, d) }
+        unsafe {
+            ffx_close_handle(lib_ctx, a);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, b);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, c);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, d);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1577,7 +1738,9 @@ mod test {
         let result = unsafe { ffx_object_signal_poll(lib_ctx, event, signals.bits(), &mut out) };
         assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(out, fidl::Signals::USER_0.bits());
-        unsafe { ffx_close_handle(lib_ctx, event) }
+        unsafe {
+            ffx_close_handle(lib_ctx, event);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }
@@ -1622,8 +1785,12 @@ mod test {
         let result = unsafe { ffx_object_signal_poll(lib_ctx, rx, signals.bits(), &mut out) };
         assert_eq!(result, FcTransportStatus::OK);
         assert_eq!(out, fidl::Signals::USER_0.bits());
-        unsafe { ffx_close_handle(lib_ctx, tx) }
-        unsafe { ffx_close_handle(lib_ctx, rx) }
+        unsafe {
+            ffx_close_handle(lib_ctx, tx);
+        }
+        unsafe {
+            ffx_close_handle(lib_ctx, rx);
+        }
         unsafe { destroy_ffx_env_context(env_ctx) }
         unsafe { destroy_ffx_lib_context(lib_ctx) }
     }

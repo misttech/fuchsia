@@ -9,6 +9,7 @@ use anyhow::Result;
 use async_lock::{Mutex as AsyncMutex, MutexGuard};
 use fdomain_client::Error as FDomainInternalError;
 use fuchsia_async::{LocalExecutor, Task};
+use signal_hook::consts::signal;
 use std::ops::DerefMut;
 use std::os::fd::{IntoRawFd, RawFd};
 use std::sync::{Arc, Mutex};
@@ -23,19 +24,42 @@ pub struct LibContext {
     notifier: Notifier,
     cmd_sender: async_channel::Sender<LibraryCommand>,
     thread_ctx: Mutex<Option<std::thread::JoinHandle<()>>>,
+    signal_handler_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
     fdomain_state: AsyncMutex<FDomainState>,
+    signal_handle: signal_hook::iterator::Handle,
 }
 
 impl LibContext {
     pub(crate) fn new(buf: ExtBuffer<u8>) -> Self {
         let notifier = Notifier::default();
         let (cmd_sender, receiver) = async_channel::unbounded::<LibraryCommand>();
+        let (signal_sender, signal_receiver) = async_channel::bounded(1);
+        let mut sig_watcher = signal_hook::iterator::Signals::new(&[signal::SIGINT]).unwrap();
+        let signal_handle = sig_watcher.handle();
+        let signal_handler_thread = std::thread::spawn(move || {
+            // Don't need to match signal as we're only listening for the one: SIGINT.
+            for _s in sig_watcher.forever() {
+                match signal_sender.try_send(()) {
+                    Ok(()) => {}
+                    Err(e) => match e {
+                        async_channel::TrySendError::Full(_) => {}
+                        async_channel::TrySendError::Closed(_) => break,
+                    },
+                }
+            }
+        });
         Self {
             cmd_sender,
             buf: Mutex::new(buf),
             notifier: notifier.clone(),
-            thread_ctx: Mutex::new(Some(new_command_thread(receiver, notifier.clone()))),
+            thread_ctx: Mutex::new(Some(new_command_thread(
+                receiver,
+                signal_receiver,
+                notifier.clone(),
+            ))),
             fdomain_state: AsyncMutex::new(FDomainState::new(notifier)),
+            signal_handler_thread: Mutex::new(Some(signal_handler_thread)),
+            signal_handle,
         }
     }
 
@@ -100,6 +124,22 @@ impl LibContext {
             "thread is being dropped from inside itself"
         );
         thread.join().expect("joining thread");
+
+        // Signal the signal handler thread to exit.
+        self.signal_handle.close();
+
+        let signal_thread = self
+            .signal_handler_thread
+            .lock()
+            .unwrap()
+            .take()
+            .expect("signal handler thread must have been set");
+        assert_ne!(
+            std::thread::current().id(),
+            signal_thread.thread().id(),
+            "thread is being dropped from inside itself"
+        );
+        signal_thread.join().expect("joining signal thread");
     }
 
     pub(crate) async fn fdomain_state<'a>(&'a self) -> MutexGuard<'a, FDomainState> {
@@ -109,18 +149,29 @@ impl LibContext {
 
 fn new_command_thread(
     receiver: async_channel::Receiver<LibraryCommand>,
+    sigint_receiver: async_channel::Receiver<()>,
     notifier: Notifier,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(|| {
         let mut executor = LocalExecutor::default();
         executor.run_singlethreaded(async move {
             while let Ok(cmd) = receiver.recv().await {
+                // If there was a signal from the previous iteration, then clear it out
+                // so it doesn't cause an immediate error. This is mostly to prevent racing with
+                // the REPL, as a user could potentially pre-load some signals before hitting the
+                // command itself. In the event that SIGINT is received by a real program this
+                // section of code won't matter anyway.
+                let _ = sigint_receiver.try_recv();
                 if let LibraryCommand::ShutdownLib = cmd {
                     // Dropping the notifier will cause spawned tasks to be dropped.
                     *notifier.lock().await = None;
                     break;
                 }
-                cmd.run().await;
+                let cmd_fut = cmd.run();
+                let _ = futures_lite::FutureExt::or(cmd_fut, async {
+                    sigint_receiver.recv().await.unwrap()
+                })
+                .await;
             }
         });
     })

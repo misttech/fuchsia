@@ -260,6 +260,10 @@ void set_python_exception(fc_status_t err) {
       ::set_fdomain_exception(state, err);
       break;
     }
+    case FC_ERR_INTERRUPTED: {
+      PyErr_SetNone(PyExc_KeyboardInterrupt);
+      break;
+    }
     default: {
       std::ostringstream ss;
       ss << "Received unrecognized fc_status_t (" << err << ")";

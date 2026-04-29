@@ -161,7 +161,11 @@ class PythonHandle : public PythonObject {
         return;
       }
       auto ctx = state->ctx;
-      ffx_close_handle(ctx, handle_);
+      fc_status_t status = ffx_close_handle(ctx, handle_);
+      if (status != FC_OK) {
+        mod::set_python_exception(status);
+        return;
+      }
       handle_ = 0;
     }
   }
@@ -203,7 +207,11 @@ class PythonChannel : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      ffx_close_handle(state->ctx, channel_);
+      fc_status_t status = ffx_close_handle(state->ctx, channel_);
+      if (status != FC_OK) {
+        mod::set_python_exception(status);
+        return;
+      }
       channel_ = 0;
     }
   }
@@ -232,7 +240,11 @@ class PythonSocket : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      ffx_close_handle(state->ctx, handle());
+      fc_status_t status = ffx_close_handle(state->ctx, handle());
+      if (status != FC_OK) {
+        mod::set_python_exception(status);
+        return;
+      }
       handle_ = 0;
     }
   }
@@ -260,7 +272,11 @@ class PythonEvent : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      ffx_close_handle(state->ctx, handle());
+      fc_status_t status = ffx_close_handle(state->ctx, handle());
+      if (status != FC_OK) {
+        mod::set_python_exception(status);
+        return;
+      }
       handle_ = 0;
     }
   }

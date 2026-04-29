@@ -36,6 +36,7 @@ _Static_assert(sizeof(long) >= sizeof(fc_status_t));  // NOLINT
 #define FC_ERR_BUFFER_TOO_SMALL (-77777)
 #define FC_ERR_SHOULD_WAIT (-88888)
 #define FC_ERR_INTERNAL (-99999)
+#define FC_ERR_INTERRUPTED (-100000)
 
 // FDomain top-level error definitions.
 #define FC_ERR_SOCKET_WRITE (-1)
@@ -68,7 +69,10 @@ extern fc_status_t ffx_connect_device_proxy(ffx_env_context_t* ctx, const char* 
 // amount of time.
 extern fc_status_t ffx_target_wait(ffx_env_context_t* ctx, uint64_t timeout_seconds, bool offline);
 
-extern void ffx_close_handle(ffx_lib_context_t* ctx, zx_handle_t handle);
+// Attempts to close the channel. In the vast majority of cases this will return
+// an FC_OK status. The only other error this can return is FC_ERR_INTERRUPTED
+// in the event that the SIGINT signal was received while closing the channel.
+extern fc_status_t ffx_close_handle(ffx_lib_context_t* ctx, zx_handle_t handle);
 
 extern fc_status_t ffx_channel_create(ffx_env_context_t* ctx, uint32_t options, zx_handle_t* out0,
                                       zx_handle_t* out1);
