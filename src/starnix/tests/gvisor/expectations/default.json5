@@ -945,6 +945,9 @@
                 // TODO(https://fxbug.dev/507795191): Fix and re-enable.
                 "Inotify.RmdirGeneratesDeleteSelfBeforeParentDelete",
                 "Inotify.RmdirWithOpenDirFdDefersDeleteSelfUntilClose",
+
+                // TODO(https://fxbug.dev/507799355): Fix and re-enable.
+                "PtraceTest.GetRegSetPartialRead",
             ],
         },
         {
