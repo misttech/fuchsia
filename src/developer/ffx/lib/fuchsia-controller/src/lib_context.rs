@@ -77,20 +77,20 @@ impl LibContext {
             SocketWrite(s) => self.write_fidl_to_buffer(s.clone()),
             ChannelWrite(c) => self.write_fidl_to_buffer(c.clone()),
             FDomain(f) => self.write_fidl_to_buffer(f.clone()),
-            Protocol(p) => self.write_err(p),
             ProtocolObjectTypeIncompatible
             | ProtocolRightsIncompatible
             | ConnectionMismatch
             | StreamingAborted
             | ProtocolSignalsIncompatible
             | ProtocolStreamEventIncompatible => {}
-            Transport(t) => self.write_err(t),
+            t @ Transport(_) => self.write_err(t),
+            p @ Protocol(_) => self.write_err(p),
         }
     }
 
-    pub(crate) fn write_err<T: std::fmt::Debug>(&self, err: T) {
+    pub(crate) fn write_err<T: std::fmt::Display>(&self, err: T) {
         // LINT.IfChange(no_fdomain_client)
-        let error = format!("FFX Library Error: {err:?}");
+        let error = format!("FFX Library Error: {err}");
         // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:no_fdomain_client)
         let mut guard = self.buf.lock().unwrap();
         let buf = guard.deref_mut();
@@ -213,5 +213,41 @@ impl LibNotifier {
 
     pub fn sender(&self) -> async_channel::Sender<zx_types::zx_handle_t> {
         self.handle_notification_sender.clone()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::sync::Mutex as SyncMutex;
+
+    static SCRATCH_LOCK: Mutex<()> = SyncMutex::new(());
+    static mut SCRATCH: [u8; 1024] = [0; 1024];
+    fn testing_lib_context() -> LibContext {
+        let raw = std::ptr::addr_of_mut!(SCRATCH) as *mut u8;
+        // SAFETY: This is unsafe because multiple threads can read it, so is protected by way of a
+        // mutex.
+        let buf = unsafe { ExtBuffer::new(raw, 1024) };
+        LibContext::new(buf)
+    }
+
+    fn decode_string_error<'a>(_guard: &std::sync::MutexGuard<'a, ()>) -> &'a str {
+        // SAFETY: While it can't be proven this is the right lock, we should at least
+        // be holding the lock here when testing usage of the shared scratch buffer.
+        unsafe {
+            let msg_len = usize::from_ne_bytes(SCRATCH[0..8].try_into().unwrap());
+            std::str::from_utf8(&SCRATCH[8..(8 + msg_len)]).unwrap()
+        }
+    }
+
+    // Tests for a bug in which `Transport(None)` would simply print `None`.
+    #[test]
+    fn test_transport_error_prints_readable_message() {
+        let _lock = SCRATCH_LOCK.lock().unwrap();
+        let ctx = testing_lib_context();
+        let err = FDomainInternalError::Transport(None);
+        ctx.write_fdomain_err(&err);
+        let s = decode_string_error(&_lock);
+        assert!(s.contains(&format!("{err}")), "GOT: '{s}'; WANT: '{err}'");
     }
 }
