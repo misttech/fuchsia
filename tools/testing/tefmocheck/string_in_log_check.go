@@ -530,8 +530,10 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		},
 		// For https://fxbug.dev/504722922
 		&stringInLogCheck{
-			String: "CRASH: process driver-host-#battery",
-			Type:   syslogType,
+			String:                "CRASH: process driver-host-#battery",
+			Type:                  syslogType,
+			SkipAllPassedTests:    true,
+			emitSyntheticTestCase: true,
 		},
 		// For https://fxbug.dev/437357219
 		&stringInLogCheck{
