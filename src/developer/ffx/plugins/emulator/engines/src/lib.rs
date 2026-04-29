@@ -169,10 +169,13 @@ impl EngineBuilder {
     }
 
     /// Returns the EmulatorEngine instance based on the name.
-    /// If name is none, and there is only 1 emulator instance found, that instance is returned, and the
-    ///    name parameter is updated to the name of the instance.
-    /// If the name is some, then return that instance, or an error.
-    /// If there is no name, and not exactly 1 instance running, it is an error.
+    /// If `name` is None:
+    ///    - If no emulator instances are found, returns Ok(None).
+    ///    - If exactly 1 instance is found, returns Ok(Some(engine)) and updates the `name` parameter.
+    ///    - If multiple instances are found, returns an error.
+    /// If `name` is Some:
+    ///    - Returns Ok(Some(engine)) if the instance exists.
+    ///    - Returns Ok(None) if the instance does not exist.
     pub fn get_engine_by_name(
         &self,
         name: &mut Option<String>,
