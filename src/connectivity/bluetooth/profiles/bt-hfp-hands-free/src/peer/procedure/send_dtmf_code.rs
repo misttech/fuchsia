@@ -60,4 +60,60 @@ impl Procedure<ProcedureInput, ProcedureOutput> for SendDtmfCodeProcedure {
     }
 }
 
-// TODO(b/484091228): Add tests.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use assert_matches::assert_matches;
+    use bt_hfp::dtmf::Code as DtmfCode;
+
+    use crate::config::HandsFreeFeatureSupport;
+
+    #[fuchsia::test]
+    fn successful_dtmf_code_procedure() {
+        let mut procedure = SendDtmfCodeProcedure::new();
+        let config = HandsFreeFeatureSupport::default();
+        let mut state = ProcedureManipulatedState::new(config);
+
+        let code = DtmfCode::One;
+        let input = ProcedureInput::CommandFromHf(CommandFromHf::SendDtmfCode { code });
+
+        assert!(!procedure.is_terminated());
+        assert_eq!(procedure, SendDtmfCodeProcedure::Started);
+
+        let outputs = procedure.transition(&mut state, input).expect("successful transition");
+        assert_eq!(outputs[0], at_cmd!(Vts { code: String::from("1") }));
+        assert_eq!(procedure, SendDtmfCodeProcedure::WaitingForOk);
+
+        let outputs = procedure.transition(&mut state, at_ok!()).expect("successful transition");
+        assert!(outputs.is_empty());
+        assert!(procedure.is_terminated());
+    }
+
+    #[fuchsia::test]
+    fn error_on_invalid_input_in_started_state() {
+        let mut procedure = SendDtmfCodeProcedure::new();
+        let config = HandsFreeFeatureSupport::default();
+        let mut state = ProcedureManipulatedState::new(config);
+
+        // Unexpected
+        let result = procedure.transition(&mut state, at_ok!());
+        assert_matches!(result, Err(_));
+    }
+
+    #[fuchsia::test]
+    fn error_on_invalid_input_in_waiting_for_ok_state() {
+        let mut procedure = SendDtmfCodeProcedure::new();
+        let config = HandsFreeFeatureSupport::default();
+        let mut state = ProcedureManipulatedState::new(config);
+
+        let code = DtmfCode::One;
+        let input = ProcedureInput::CommandFromHf(CommandFromHf::SendDtmfCode { code });
+        let _ = procedure.transition(&mut state, input).unwrap();
+
+        // Unexpected
+        let input = ProcedureInput::CommandFromHf(CommandFromHf::SendDtmfCode { code });
+        let result = procedure.transition(&mut state, input);
+        assert_matches!(result, Err(_));
+    }
+}
