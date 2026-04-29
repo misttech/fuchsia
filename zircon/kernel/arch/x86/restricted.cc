@@ -68,6 +68,7 @@ namespace {
 
 // helper routines to read/write user fs and gs base registers using the optimal
 // mechanism. must be called with interrupts disabled around the swapgs sequence.
+[[gnu::target("fsgsbase")]]
 void get_fsgsbase(uint64_t* fsbase, uint64_t* gsbase) {
   DEBUG_ASSERT(arch_ints_disabled());
 
@@ -86,6 +87,7 @@ void get_fsgsbase(uint64_t* fsbase, uint64_t* gsbase) {
   }
 }
 
+[[gnu::target("fsgsbase")]]
 void set_fsgsbase(uint64_t fsbase, uint64_t gsbase) {
   DEBUG_ASSERT(arch_ints_disabled());
 

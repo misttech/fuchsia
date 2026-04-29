@@ -99,7 +99,9 @@ vaddr_t arch_thread_get_blocked_fp(Thread* t) {
   return frame->rbp;
 }
 
-static void x86_context_switch_spec_mitigations(Thread* oldthread, Thread* newthread) {
+namespace {
+
+void x86_context_switch_spec_mitigations(Thread* oldthread, Thread* newthread) {
   // It should always be safe to access a thread's aspace member during a
   // context switch.  The threads must still be alive (even if the old thread is
   // context switching for the very last time, and is just about to disappear),
@@ -134,7 +136,8 @@ static void x86_context_switch_spec_mitigations(Thread* oldthread, Thread* newth
   }
 }
 
-static void x86_segment_selector_save_state(Thread* thread) {
+[[gnu::target("fsgsbase")]]
+void x86_segment_selector_save_state(Thread* thread) {
   // Save the user fs_base and gs_base.  The new rdfsbase instruction is much faster than reading
   // the MSR, so use the former when available.
   if (likely(g_x86_feature_fsgsbase)) {
@@ -150,7 +153,8 @@ static void x86_segment_selector_save_state(Thread* thread) {
   }
 }
 
-static void x86_segment_selector_restore_state(const Thread* thread) {
+[[gnu::target("fsgsbase")]]
+void x86_segment_selector_restore_state(const Thread* thread) {
   set_ds(0);
   set_es(0);
   set_fs(0);
@@ -177,7 +181,8 @@ static void x86_segment_selector_restore_state(const Thread* thread) {
   }
 }
 
-static void x86_segment_selector_context_switch(Thread* oldthread, Thread* newthread) {
+[[gnu::target("fsgsbase")]]
+void x86_segment_selector_context_switch(Thread* oldthread, Thread* newthread) {
   // Save the user fs_base register value.  The new rdfsbase instruction is much faster than reading
   // the MSR, so use the former in preference.
   if (likely(g_x86_feature_fsgsbase)) {
@@ -225,7 +230,7 @@ static void x86_segment_selector_context_switch(Thread* oldthread, Thread* newth
   }
 }
 
-static void x86_debug_context_switch(Thread* old_thread, Thread* new_thread) {
+void x86_debug_context_switch(Thread* old_thread, Thread* new_thread) {
   // If the new thread has debug state, then install it, replacing the current contents.
   if (unlikely(new_thread->arch().track_debug_state)) {
     // NOTE: There is no enable debug state call, as x86 doesn't have a global enable/disable
@@ -246,7 +251,7 @@ static void x86_debug_context_switch(Thread* old_thread, Thread* new_thread) {
   }
 }
 
-static void x86_debug_restore_state(const Thread* thread) {
+void x86_debug_restore_state(const Thread* thread) {
   // If |thread| has debug state, restore it, which enables it.
   if (unlikely(thread->arch().track_debug_state)) {
     x86_write_hw_debug_regs(&thread->arch().debug_state);
@@ -256,6 +261,8 @@ static void x86_debug_restore_state(const Thread* thread) {
     x86_disable_debug_state();
   }
 }
+
+}  // namespace
 
 void arch_context_switch(Thread* oldthread, Thread* newthread)
     TA_REQ(oldthread->get_lock(), newthread->get_lock()) {
