@@ -1029,10 +1029,10 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -1784,7 +1784,7 @@ Makes clippy targets fail to build when any "deny" lints are found
 
 **Current value (from the default):** `true`
 
-From //build/rust/config.gni:73
+From //build/rust/config.gni:76
 
 ### clippy_force_warn_all
 
@@ -1794,7 +1794,7 @@ should only be used to collect stats about clippy lints in our source tree.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:70
+From //build/rust/config.gni:73
 
 ### clippy_ignore_rustc
 
@@ -1807,7 +1807,7 @@ up in ninja's stderr
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:90
+From //build/rust/config.gni:93
 
 ### clippy_warn_all
 
@@ -1816,7 +1816,7 @@ Note: setting lint levels in source takes precedence over this.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:65
+From //build/rust/config.gni:68
 
 ### cobalt_environment
 
@@ -8632,10 +8632,11 @@ From //build/config/riscv64/riscv64.gni:7
 Sets the maximum lint level.
 "deny" will make all warnings into errors, "warn" preserves them as warnings, and "allow" will
 ignore warnings.
+LINT.IfChange
 
 **Current value (from the default):** `"deny"`
 
-From //build/rust/config.gni:61
+From //build/rust/config.gni:62
 
 ### rust_debug_assertions
 
@@ -8835,7 +8836,7 @@ From //build/rust/config.gni:47
 
 **Current value (from the default):** `"https://fuchsia-docs.firebaseapp.com/rust"`
 
-From //build/rust/config.gni:82
+From //build/rust/config.gni:85
 
 ### scenic_enable_vulkan_validation
 
