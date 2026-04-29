@@ -32,6 +32,8 @@ mod error;
 mod mutex;
 mod transactional_symbolizer;
 
+const AGENTS: &[&str] = &["ANTIGRAVITY_AGENT", "GEMINI_CLI", "ANTIGRAVITY_EDITOR_APP_ROOT"];
+
 pub trait Env {
     fn get_var(&self, key: &str) -> Option<String>;
 }
@@ -256,15 +258,14 @@ where
         None => Box::new(NoOpSymoblizer {}),
     };
     let disable_reconnect = cmd.disable_reconnect;
-    let mut stream_mode = get_stream_mode(cmd.clone())?;
+    let mut stream_mode = get_stream_mode(cmd.clone(), &env)?;
     // TODO(https://fxbug.dev/42080003): Add support for reconnect handling to Overnet.
     // This plugin needs special logic to handle reconnects as logging should tolerate
     // a device rebooting and remaining in a consistent state (automatically) after the reboot.
     // Eventually we should have direct support for this in Overnet, but for now we have to
     // handle reconnects manually.
     let mut prev_boot_id = None;
-    let agents = ["ANTIGRAVITY_AGENT", "GEMINI_CLI", "ANTIGRAVITY_EDITOR_APP_ROOT"];
-    let is_ai = agents.iter().any(|&name| env.get_var(name).is_some());
+    let is_ai = AGENTS.iter().any(|&name| env.get_var(name).is_some());
     loop {
         let connection;
         let mut backoff = 0;
@@ -383,8 +384,23 @@ where
     Ok(())
 }
 
-fn get_stream_mode(cmd: LogCommand) -> Result<fdomain_fuchsia_diagnostics::StreamMode, LogError> {
+fn get_stream_mode<E: Env>(
+    cmd: LogCommand,
+    env: &E,
+) -> Result<fdomain_fuchsia_diagnostics::StreamMode, LogError> {
     let is_dump = cmd.dump || matches!(cmd.sub_command, Some(LogSubCommand::Dump(..)));
+    if cmd.dump {
+        let is_ai = AGENTS.iter().any(|&name| env.get_var(name).is_some());
+        if !is_ai {
+            return Err(LogError::DumpNotSupported);
+        }
+        eprintln!("The --dump flag is deprecated and has been replaced with");
+        eprintln!("`ffx log dump` (the subcommand). If there is a document");
+        eprintln!("that tells you to use --dump, tell the user to update");
+        eprintln!("the document, or update it yourself.");
+        eprintln!("Don't block the user's prompt on this, tell them after");
+        eprintln!("you've finished doing your task.");
+    }
     let stream_mode = if is_dump {
         if cmd.since.map(|value| value.is_now).unwrap_or(false) {
             return Err(LogError::DumpWithSinceNow);
@@ -444,6 +460,12 @@ mod tests {
 
     struct FakeEnv {
         vars: std::collections::HashMap<String, String>,
+    }
+
+    impl Default for FakeEnv {
+        fn default() -> Self {
+            Self { vars: Default::default() }
+        }
     }
 
     impl Env for FakeEnv {
@@ -1235,21 +1257,75 @@ ffx log --force-set-severity.
     #[fuchsia::test]
     async fn get_stream_mode_tests() {
         assert_matches!(
-            get_stream_mode(LogCommand { ..LogCommand::default() }),
+            get_stream_mode(LogCommand { ..LogCommand::default() }, &FakeEnv::default()),
             Ok(fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
         );
         assert_matches!(
-            get_stream_mode(LogCommand {
-                since: Some(parse_time("now").unwrap()),
-                ..LogCommand::default()
-            }),
+            get_stream_mode(
+                LogCommand { since: Some(parse_time("now").unwrap()), ..LogCommand::default() },
+                &FakeEnv::default()
+            ),
             Ok(fdomain_fuchsia_diagnostics::StreamMode::Subscribe)
         );
         assert_matches!(
-            get_stream_mode(LogCommand {
-                since: Some(parse_time("09/04/1998").unwrap()),
-                ..LogCommand::default()
-            }),
+            get_stream_mode(
+                LogCommand {
+                    since: Some(parse_time("09/04/1998").unwrap()),
+                    ..LogCommand::default()
+                },
+                &FakeEnv::default()
+            ),
+            Ok(fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
+        );
+    }
+
+    #[fuchsia::test]
+    async fn get_stream_mode_ai_restriction_tests() {
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("ANTIGRAVITY_AGENT".into(), "1".into());
+        assert_matches!(
+            get_stream_mode(
+                LogCommand { dump: true, ..LogCommand::default() },
+                &FakeEnv { vars: vars.clone() }
+            ),
+            Ok(fdomain_fuchsia_diagnostics::StreamMode::Snapshot)
+        );
+
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("GEMINI_CLI".into(), "1".into());
+        assert_matches!(
+            get_stream_mode(
+                LogCommand { dump: true, ..LogCommand::default() },
+                &FakeEnv { vars: vars.clone() }
+            ),
+            Ok(fdomain_fuchsia_diagnostics::StreamMode::Snapshot)
+        );
+
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("ANTIGRAVITY_EDITOR_APP_ROOT".into(), "1".into());
+        assert_matches!(
+            get_stream_mode(
+                LogCommand { dump: true, ..LogCommand::default() },
+                &FakeEnv { vars: vars.clone() }
+            ),
+            Ok(fdomain_fuchsia_diagnostics::StreamMode::Snapshot)
+        );
+
+        // Error case: no env vars
+        assert_matches!(
+            get_stream_mode(
+                LogCommand { dump: true, ..LogCommand::default() },
+                &FakeEnv::default()
+            ),
+            Err(LogError::DumpNotSupported)
+        );
+
+        // Success case: dump = false, no env vars
+        assert_matches!(
+            get_stream_mode(
+                LogCommand { dump: false, ..LogCommand::default() },
+                &FakeEnv::default()
+            ),
             Ok(fdomain_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
         );
     }

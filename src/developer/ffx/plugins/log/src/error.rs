@@ -42,6 +42,8 @@ pub enum LogError {
     AIAgentTimedOut,
     #[error(transparent)]
     LogCommand(fho::Error),
+    #[error("--dump not supported, use dump instead")]
+    DumpNotSupported,
     #[error(transparent)]
     Internal(#[from] fho::Error),
 }
@@ -78,6 +80,7 @@ impl From<LogError> for fho::Error {
             | NoBootTimestamp
             | NoSymbolizerConfig
             | IdentifyHostError { .. }
+            | DumpNotSupported
             | SdkNotAvailable { .. }
             | ConnectCapabilityError { .. }
             | AIAgentTimedOut => fho::Error::User(value.into()),
