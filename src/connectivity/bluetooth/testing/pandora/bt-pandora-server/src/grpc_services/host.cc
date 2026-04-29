@@ -103,9 +103,16 @@ Status HostService::Connect(grpc::ServerContext* context, const pandora::Connect
   if (!peer_id) {
     return Status(StatusCode::NOT_FOUND, "Peer not found");
   }
-  if (connect_peer(peer_id) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+
+  fuchsia_bluetooth_affordances::PeerSelector selector;
+  selector.id() = fuchsia_bluetooth::PeerId{peer_id};
+  auto result = peer_controller_client_->ConnectPeer(selector);
+  if (result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.PeerController/ConnectPeer error: " +
+                      result.error_value().FormatDescription());
   }
+
   response->mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
   return {/*OK*/};
 }

@@ -76,11 +76,6 @@ uint64_t get_peer_id(const char *address);
 /// The caller must ensure that `uuid_str` points to a valid C string.
 UuidBytes uuid_from_string(const char *uuid_str);
 
-/// Connect to peer with given identifier.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-int32_t connect_peer(uint64_t peer_id);
-
 /// Disconnect all logical links (BR/EDR & LE) to peer with given identifier.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
