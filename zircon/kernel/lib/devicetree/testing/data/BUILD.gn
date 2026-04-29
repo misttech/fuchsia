@@ -77,6 +77,11 @@ dts_synthetic = [
   "synthetic/reserved_memory.dts",
   "synthetic/simple_with_properties.dts",
   "synthetic/simple_with_status.dts",
+  "synthetic/smmu_bad_irq.dts",
+  "synthetic/smmu_defaults.dts",
+  "synthetic/smmu_multi.dts",
+  "synthetic/smmu_overflow.dts",
+  "synthetic/smmu_simple.dts",
   "synthetic/qcom_msm_watchdog.dts",
   "synthetic/qcom_msm_watchdog_multiple_regs.dts",
 ]

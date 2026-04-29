@@ -80,6 +80,9 @@ struct ArchPhysHandoff {
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_GENERIC32_WATCHDOG) payload.
   std::optional<zbi_dcfg_generic32_watchdog_t> generic32_watchdog_driver;
 
+  // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_ARM_SMMU) payload.
+  PhysHandoffTemporarySpan<const zbi_dcfg_arm_smmu_driver_t> arm_smmu_drivers;
+
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_MOTMOT_POWER) payload.
   bool motmot_power_driver = false;
 

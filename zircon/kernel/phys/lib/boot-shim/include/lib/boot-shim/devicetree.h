@@ -1230,6 +1230,48 @@ class ArmDevicetreeQcomRngItem
   const DevicetreeBootShimMmioObserver* mmio_observer_ = nullptr;
 };
 
+class ArmDevicetreeSmmuItem : public DevicetreeItemBase<ArmDevicetreeSmmuItem, 2>, public ItemBase {
+ public:
+  static constexpr auto kCompatibleDevices = std::to_array({"qcom,qsmmu-v500"});
+
+  template <typename Shim>
+  void Init(const Shim& shim) {
+    DevicetreeItemBase::Init(shim);
+    allocator_ = &shim.allocator();
+  }
+
+  devicetree::ScanState OnNode(const devicetree::NodePath& path,
+                               const devicetree::PropertyDecoder& decoder);
+  devicetree::ScanState OnScan();
+
+  size_t size_bytes() const { return ItemSize(smmu_cnt_ * sizeof(zbi_dcfg_arm_smmu_driver_t)); }
+  fit::result<DataZbi::Error> AppendItems(DataZbi& zbi) const;
+
+ private:
+  template <typename T>
+  std::span<T> Allocate(size_t count, fbl::AllocChecker& ac,
+                        std::source_location location = std::source_location::current()) const {
+    size_t alloc_size = sizeof(T) * smmu_cnt_;
+    auto* alloc = static_cast<T*>((*allocator_)(alloc_size, alignof(T), ac));
+
+    if (!alloc) {
+      // Log allocation failure. The effect is that the matcher will keep looking and will fail to
+      // make progress. But the error will be logged.
+      auto* self = const_cast<ArmDevicetreeSmmuItem*>(this);
+      self->OnError("Allocation Failed.");
+      self->Log("at %s:%u\n", location.file_name(), static_cast<unsigned int>(location.line()));
+    }
+
+    memset(alloc, 0, alloc_size);
+    return std::span<T>(alloc, smmu_cnt_);
+  }
+
+  const Allocator* allocator_{nullptr};
+  std::span<zbi_dcfg_arm_smmu_driver_t> data_{};
+  uint32_t pass_cnt_{0};
+  uint32_t smmu_cnt_{0};
+};
+
 }  // namespace boot_shim
 
 #endif  // ZIRCON_KERNEL_PHYS_LIB_BOOT_SHIM_INCLUDE_LIB_BOOT_SHIM_DEVICETREE_H_

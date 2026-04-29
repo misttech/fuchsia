@@ -96,6 +96,9 @@ typedef uint32_t zbi_kernel_driver_t;
 // `QRNG`
 #define ZBI_KERNEL_DRIVER_QCOM_RNG ((zbi_kernel_driver_t)(0x474E5251u))
 
+// 'SMMU'
+#define ZBI_KERNEL_DRIVER_ARM_SMMU ((zbi_kernel_driver_t)(0x554D4D51u))
+
 // Kernel driver struct that can be used for simple drivers.
 // Used by ZBI_KERNEL_DRIVER_PL011_UART, ZBI_KERNEL_DRIVER_AMLOGIC_UART, and
 // ZBI_KERNEL_DRIVER_GENI_UART, ZBI_KERNEL_DRIVER_I8250_MMIO_UART.
@@ -352,6 +355,86 @@ typedef struct {
   zbi_qcom_rng_flags_t flags;
   uint8_t reserved[4];
 } zbi_dcfg_qcom_rng_t;
+
+#define ZBI_KERNEL_DRIVER_SMMU_MAX_IRQS ((uint32_t)(128u))
+
+#define ZBI_KERNEL_DRIVER_SMMU_MAX_HANDOFF_SMRS ((uint32_t)(16u))
+
+// The IRQ flags as they would be reported by a device tree description.
+typedef uint32_t zbi_arm_smmu_irq_flags_t;
+
+// A rising edge triggered interrupt.
+#define ZBI_ARM_SMMU_IRQ_FLAGS_RISING_EDGE ((zbi_arm_smmu_irq_flags_t)(1u << 0))
+
+// A falling edge triggered interrupt.
+#define ZBI_ARM_SMMU_IRQ_FLAGS_FALLING_EDGE ((zbi_arm_smmu_irq_flags_t)(1u << 1))
+
+// An active high level triggered interrupt.
+#define ZBI_ARM_SMMU_IRQ_FLAGS_ACTIVE_HIGH ((zbi_arm_smmu_irq_flags_t)(1u << 2))
+
+// An active low level triggered interrupt.
+#define ZBI_ARM_SMMU_IRQ_FLAGS_ACTIVE_LOW ((zbi_arm_smmu_irq_flags_t)(1u << 3))
+
+typedef struct {
+  // The IRQ number reported as an "absolute" GIC interrupt index.  SMMU
+  // interrupts are expected to be SPIs, and the SPI range of a GIC's
+  // interrupt indices starts at 32.  Because of this, it can be assumed that
+  // any interrupt number which is < 32 indicates an invalid interrupt.
+  uint32_t num;
+
+  // The IRQ flags as they would be reported by a device tree description.
+  zbi_arm_smmu_irq_flags_t flags;
+} zbi_dcfg_arm_smmu_irq_t;
+
+typedef struct {
+  // Base physical address of the SMMU address space.  This is also the start of
+  // Global Register Space 0 in the SMMU.  The effective size of these registers
+  // will be determined at runtime from the ID registers present in this first
+  // page, specifically the number of context banks in IDR1.NUMCB.
+  //
+  // See:
+  //
+  // ARM System Memory Management Unit Architecture Specification
+  // SMMU architecture version 2.0
+  // ARM IHI 0062D.c
+  //
+  // for more details.
+  uint64_t mmio_phys;
+
+  // The number of context banks that a driver should limit itself to using,
+  // or 0 if all discovered context banks are available for use.
+  uint32_t num_context_banks_override;
+
+  // The number of stream match registers that a driver should limit itself
+  // to using, or 0 if all discovered SMRs are available for use.
+  uint32_t num_smr_override;
+
+  // An array of context bank interrupt definitions discovered during device
+  // enumeration.  |irq_cnt| reports the total number of valid members while
+  // |irqs|, while |global_irq_cnt| reports the total number of global
+  // interrupts in |irqs|, with the rest of the interrupts being context bank
+  // interrupts.  So:
+  //
+  // + IRQs [0, global_irq_cnt) are global interrupts
+  // + IRQs [global_irq_cnt, irq_cnt) are context bank interrupts
+  //   corresponding to context banks [0, irq_cnt - global_irq_cnt)
+  uint32_t irq_cnt;
+  uint32_t global_irq_cnt;
+  zbi_dcfg_arm_smmu_irq_t irqs[128];
+
+  // An array of stream IDs (defined using SMR value/mask encoding) which are
+  // being "handed off" from the bootloader to the HLOS.  Downstream drivers
+  // should take care to preserve the existing configuration for these stream
+  // ids.  |handoff_smr_cnt| reports the number of members of |handoff_smrs|
+  // which are valid.
+  //
+  // Note:  Stream ID ranges in SMRs are encoded using two 16 bit fields, a
+  // value field and a mask field.  These two fields are packed into a single
+  // 32-bit integer, with the mask packed into the upper 16 bits, and the
+  // value packed into the lower 16 bits.
+  uint32_t handoff_smr_cnt;
+  uint32_t handoff_smrs[16];
+} zbi_dcfg_arm_smmu_driver_t;
 
 #if defined(__cplusplus)
 }
