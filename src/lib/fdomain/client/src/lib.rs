@@ -158,25 +158,37 @@ impl std::fmt::Display for Error {
                 Ok(())
             }
             Self::ProtocolObjectTypeIncompatible => {
-                write!(f, "The FDomain protocol does not recognize an object type")
+                write!(
+                    f,
+                    "The FDomain protocol received an unrecognized or incompatible object type"
+                )
             }
             Self::ProtocolRightsIncompatible => {
-                write!(f, "The FDomain protocol does not recognize some rights")
+                write!(
+                    f,
+                    "The FDomain protocol received unrecognized or incompatible handle rights"
+                )
             }
             Self::ProtocolSignalsIncompatible => {
-                write!(f, "The FDomain protocol does not recognize some signals")
+                write!(f, "The FDomain protocol received unrecognized or incompatible signals")
             }
             Self::ProtocolStreamEventIncompatible => {
-                write!(f, "The FDomain protocol does not recognize a received streaming IO event")
+                write!(
+                    f,
+                    "The FDomain protocol received an unrecognized or incompatible streaming IO event"
+                )
             }
             Self::FDomain(e) => write_fdomain_error(e, f),
             Self::Protocol(e) => write!(f, "Protocol error: {e}"),
-            Self::Transport(Some(e)) => write!(f, "Transport error: {e:?}"),
-            Self::Transport(None) => write!(f, "Transport closed"),
+            Self::Transport(Some(e)) => write!(f, "Transport error: {e}"),
+            Self::Transport(None) => write!(f, "Connection to the device has been lost"),
             Self::ConnectionMismatch => {
-                write!(f, "Tried to use an FDomain handle from a different connection")
+                write!(
+                    f,
+                    "Tried to use an FDomain handle with a different connection than the one it was created on"
+                )
             }
-            Self::StreamingAborted => write!(f, "This channel is no longer streaming"),
+            Self::StreamingAborted => write!(f, "Streaming on this channel has been aborted"),
         }
     }
 }
