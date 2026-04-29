@@ -521,7 +521,6 @@ mod tests {
                 size_checker_maximum_bytes: Some(5678),
                 blob_maximum_bytes: None,
                 data_maximum_bytes: None,
-                compression_enabled: true,
                 blob_format: bfc::FxfsBlobFormat::Zstd,
             },
             fvm: bfc::Fvm {
@@ -572,7 +571,6 @@ mod tests {
                 size_checker_maximum_bytes: Some(5678),
                 blob_maximum_bytes: None,
                 data_maximum_bytes: None,
-                compression_enabled: false,
                 blob_format: bfc::FxfsBlobFormat::Uncompressed,
             },
             fvm: bfc::Fvm {

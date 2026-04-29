@@ -415,12 +415,6 @@ pub struct Fxfs {
     /// Maximum number of bytes that the data volume can consume at runtime.
     pub data_maximum_bytes: Option<FlexibleSize>,
 
-    /// Whether blobs in fxblob should be compressed during assembly. Defaults to true.
-    ///
-    /// *NOTE*: This field is deprecated. Use `blob_format` instead.
-    #[serde(skip_serializing_if = "crate::is_true")]
-    pub compression_enabled: bool,
-
     /// How blobs should be formatted in the base fxfs image during assembly.
     #[serde(skip_serializing_if = "crate::is_default")]
     pub blob_format: FxfsBlobFormat,
@@ -433,7 +427,6 @@ impl Default for Fxfs {
             size_checker_maximum_bytes: None,
             blob_maximum_bytes: None,
             data_maximum_bytes: None,
-            compression_enabled: true,
             blob_format: FxfsBlobFormat::default(),
         }
     }

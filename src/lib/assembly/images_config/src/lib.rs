@@ -30,9 +30,3 @@ pub use product_filesystem_config::{
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
     t == &T::default()
 }
-
-/// Dereferences the bool. This allows for skipping the serialization of boolean fields that default
-/// to true.
-fn is_true(v: &bool) -> bool {
-    *v
-}
