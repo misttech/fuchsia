@@ -9,15 +9,16 @@ use crate::objects::{
     SerializedBinderObject, TransactionData,
 };
 use crate::process::{
-    ActiveTransaction, BinderProcess, BinderProcessState, RequestType, TransientTransactionState,
+    ActiveTransaction, BinderProcess, BinderProcessGuard, BinderProcessState, RequestType,
+    TransientTransactionState,
 };
 use crate::resource_accessor::{
     RemoteIoctl, RemoteMemoryAccessor, RemoteResourceAccessor, ResourceAccessor,
 };
 use crate::shared_memory::{SharedBuffer, SharedMemory, TransactionBuffers};
 use crate::thread::{
-    BinderThread, BinderThreadState, Command, RegistrationState, SchedulerGuard, TransactionError,
-    TransactionRole, TransactionSender, WeakBinderPeer,
+    BinderThread, BinderThreadGuard, BinderThreadState, Command, RegistrationState, SchedulerGuard,
+    TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
 };
 use crate::user_memory_cursor::UserMemoryCursor;
 use fidl::endpoints::ClientEnd;
@@ -406,6 +407,14 @@ pub struct OperationContext<'a> {
 impl<'a> OperationContext<'a> {
     fn resource_accessor(&self) -> &dyn ResourceAccessor {
         self.binder_proc.get_resource_accessor(self.current_task)
+    }
+
+    /// Acquires both the [`BinderProcess::state`] and [`BinderThread::state`] locks in the correct
+    /// order. This ensures that deadlocks are avoided by always locking Process before Thread.
+    fn lock(&self) -> (BinderProcessGuard<'_>, BinderThreadGuard<'_>) {
+        let proc_guard = self.binder_proc.lock();
+        let thread_guard = self.binder_thread.lock();
+        (proc_guard, thread_guard)
     }
 }
 
@@ -864,17 +873,12 @@ impl BinderDriver {
         trace_duration!(CATEGORY_STARNIX, "handle_thread_write", "command" => command);
         let result = match command {
             binder_driver_command_protocol_BC_ENTER_LOOPER => {
-                let mut proc_state = context.binder_proc.lock();
-                context
-                    .binder_thread
-                    .lock()
-                    .handle_looper_registration(&mut proc_state, RegistrationState::Main)
+                let (mut proc_state, mut thread_state) = context.lock();
+                thread_state.handle_looper_registration(&mut proc_state, RegistrationState::Main)
             }
             binder_driver_command_protocol_BC_REGISTER_LOOPER => {
-                let mut proc_state = context.binder_proc.lock();
-                context
-                    .binder_thread
-                    .lock()
+                let (mut proc_state, mut thread_state) = context.lock();
+                thread_state
                     .handle_looper_registration(&mut proc_state, RegistrationState::Auxilliary)
             }
             binder_driver_command_protocol_BC_INCREFS
@@ -1308,10 +1312,7 @@ impl BinderDriver {
                 }
             }
 
-            // THREADING: Always acquire the [`BinderThread::state`] lock before the
-            // [`BinderProcess::state`] lock or else it may lead to deadlock.
-            let mut thread_state = context.binder_thread.lock();
-            let mut proc_state = context.binder_proc.lock();
+            let (mut proc_state, mut thread_state) = context.lock();
 
             if thread_state.request_kick {
                 thread_state.request_kick = false;
