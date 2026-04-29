@@ -93,11 +93,13 @@ void Node::AddIrq(fuchsia_hardware_platform_bus::Irq irq) {
   add_platform_device_ = true;
 }
 
-void Node::AddMetadata(fuchsia_hardware_platform_bus::Metadata metadata) {
+void Node::AddMetadata(fuchsia_hardware_platform_bus::Metadata metadata,
+                       std::optional<std::string> fidl_text) {
   if (!pbus_node_.metadata()) {
     pbus_node_.metadata() = std::vector<fuchsia_hardware_platform_bus::Metadata>();
   }
   pbus_node_.metadata()->emplace_back(std::move(metadata));
+  metadata_text_.emplace_back(std::move(fidl_text));
   add_platform_device_ = true;
 }
 
@@ -121,11 +123,13 @@ void Node::AddSmc(fuchsia_hardware_platform_bus::Smc smc) {
   add_platform_device_ = true;
 }
 
-void Node::AddPowerConfig(fuchsia_hardware_power::PowerElementConfiguration power_config) {
+void Node::AddPowerConfig(fuchsia_hardware_power::PowerElementConfiguration power_config,
+                          std::optional<std::string> fidl_text) {
   if (!pbus_node_.power_config()) {
     pbus_node_.power_config() = std::vector<fuchsia_hardware_power::PowerElementConfiguration>();
   }
   pbus_node_.power_config()->emplace_back(std::move(power_config));
+  power_config_text_.emplace_back(std::move(fidl_text));
   add_platform_device_ = true;
 }
 
@@ -172,7 +176,7 @@ zx::result<> Node::Publish(PublisherInterface &publisher) {
       }
     }
 
-    zx::result<> result = publisher.AddPbusNode(pbus_node_);
+    zx::result<> result = publisher.AddPbusNode(pbus_node_, metadata_text_, power_config_text_);
     if (result.is_error()) {
       return result.take_error();
     }

@@ -10,7 +10,9 @@
 
 namespace fdf_devicetree {
 
-zx::result<> PublisherDev::AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node) {
+zx::result<> PublisherDev::AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node,
+                                       std::vector<std::optional<std::string>> metadata_text,
+                                       std::vector<std::optional<std::string>> power_config_text) {
   fdf::Arena arena('PBUS');
   fidl::Arena fidl_arena;
   auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, pbus_node));

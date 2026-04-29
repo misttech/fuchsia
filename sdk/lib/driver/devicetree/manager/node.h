@@ -82,7 +82,8 @@ class Node {
 
   void AddIrq(fuchsia_hardware_platform_bus::Irq irq);
 
-  void AddMetadata(fuchsia_hardware_platform_bus::Metadata metadata);
+  void AddMetadata(fuchsia_hardware_platform_bus::Metadata metadata,
+                   std::optional<std::string> fidl_text = std::nullopt);
 
   void AddBootMetadata(fuchsia_hardware_platform_bus::BootMetadata boot_metadata);
 
@@ -90,7 +91,8 @@ class Node {
 
   void AddSmc(fuchsia_hardware_platform_bus::Smc smc);
 
-  void AddPowerConfig(fuchsia_hardware_power::PowerElementConfiguration config);
+  void AddPowerConfig(fuchsia_hardware_power::PowerElementConfiguration config,
+                      std::optional<std::string> fidl_text = std::nullopt);
 
   // Registers an iommu with the platform bus.
   zx::result<> RegisterIommu(uint32_t iommu_id, fuchsia_hardware_platform_bus::Iommu iommu) {
@@ -147,6 +149,12 @@ class Node {
 
   // Platform bus node.
   fuchsia_hardware_platform_bus::Node pbus_node_;
+
+  // Stores text representation of metadata for golden file generation.
+  std::vector<std::optional<std::string>> metadata_text_;
+
+  // Stores text representation of power config for golden file generation.
+  std::vector<std::optional<std::string>> power_config_text_;
 
   // Properties of the nodes after they have been transformed in the device group.
   std::vector<fuchsia_driver_framework::NodeProperty2> node_properties_;

@@ -12,9 +12,17 @@
 
 namespace fdf_devicetree {
 
+struct PbusNode {
+  fuchsia_hardware_platform_bus::Node node;
+  std::vector<std::optional<std::string>> metadata_text;
+  std::vector<std::optional<std::string>> power_config_text;
+};
+
 class PublisherHost : public testing::TestPublisher {
  public:
-  zx::result<> AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node) override;
+  zx::result<> AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node,
+                           std::vector<std::optional<std::string>> metadata_text = {},
+                           std::vector<std::optional<std::string>> power_config_text = {}) override;
 
   zx::result<> AddBoardChildNode(BoardChildNode args) override;
 
@@ -25,9 +33,8 @@ class PublisherHost : public testing::TestPublisher {
   zx::result<> RegisterIommu(uint32_t iommu_id,
                              fuchsia_hardware_platform_bus::Iommu iommu) override;
 
-  const std::vector<fuchsia_hardware_platform_bus::Node>& GetPbusNodes() override {
-    return pbus_nodes_;
-  }
+  const std::vector<PbusNode>& GetPbusNodesWithMetadata() { return pbus_nodes_with_metadata_; }
+  const std::vector<fuchsia_hardware_platform_bus::Node>& GetPbusNodes() override;
   const std::vector<BoardChildNode>& GetBoardChildNodes() override;
   const std::vector<fuchsia_driver_framework::CompositeNodeSpec>& GetCompositeNodeSpecs() override {
     return composite_node_specs_;
@@ -37,6 +44,7 @@ class PublisherHost : public testing::TestPublisher {
   }
 
  private:
+  std::vector<PbusNode> pbus_nodes_with_metadata_;
   std::vector<fuchsia_hardware_platform_bus::Node> pbus_nodes_;
   std::vector<BoardChildNode> board_child_nodes_;
   std::vector<fuchsia_driver_framework::CompositeNodeSpec> composite_node_specs_;

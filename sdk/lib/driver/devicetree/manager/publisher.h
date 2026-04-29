@@ -24,7 +24,10 @@ struct BoardChildNode {
 class PublisherInterface {
  public:
   virtual ~PublisherInterface() = default;
-  virtual zx::result<> AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node) = 0;
+  virtual zx::result<> AddPbusNode(
+      fuchsia_hardware_platform_bus::Node& pbus_node,
+      std::vector<std::optional<std::string>> metadata_text = {},
+      std::vector<std::optional<std::string>> power_config_text = {}) = 0;
   virtual zx::result<> AddBoardChildNode(BoardChildNode args) = 0;
   virtual zx::result<> AddCompositeNodeSpec(
       std::string name, std::vector<fuchsia_driver_framework::ParentSpec2> parents,

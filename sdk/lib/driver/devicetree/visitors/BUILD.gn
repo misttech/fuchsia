@@ -42,6 +42,16 @@ sdk_source_set("load-visitors") {
   ]
 }
 
+source_set("load-visitors-host") {
+  sources = [ "load-visitors-host.cc" ]
+  public = [ "load-visitors-host.h" ]
+  deps = [
+    ":registration",
+    "//sdk/lib/driver/logging/cpp",
+  ]
+  public_deps = [ ":registry" ]
+}
+
 sdk_source_set("driver-visitor") {
   sdk_name = "devicetree-driver-visitors"
   category = "internal"

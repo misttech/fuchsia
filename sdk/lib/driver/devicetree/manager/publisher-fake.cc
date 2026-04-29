@@ -133,8 +133,11 @@ PublisherFake::PublisherFake() {
 
 PublisherFake::~PublisherFake() {}
 
-zx::result<> PublisherFake::AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node) {
-  return publisher_dev_->AddPbusNode(pbus_node);
+zx::result<> PublisherFake::AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node,
+                                        std::vector<std::optional<std::string>> metadata_text,
+                                        std::vector<std::optional<std::string>> power_config_text) {
+  return publisher_dev_->AddPbusNode(pbus_node, std::move(metadata_text),
+                                     std::move(power_config_text));
 }
 
 zx::result<> PublisherFake::AddBoardChildNode(BoardChildNode args) {

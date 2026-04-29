@@ -4,13 +4,21 @@
 
 import("//build/components.gni")
 import("//build/devicetree/devicetree.gni")
+import("//build/testing/host_test_data.gni")
 
 group("all-test-dtb") {
+  testonly = true
   deps = [
     ":basic-properties-dtb",
     ":simple-dtb",
     ":status-disabled-dtb",
   ]
+  if (is_host) {
+    deps += [
+      ":basic-properties-dtb-host",
+      ":simple-dtb-host",
+    ]
+  }
 }
 
 devicetree_fragment("simple-include") {
@@ -50,4 +58,18 @@ resource("status-disabled-dtb") {
   sources = get_target_outputs(":status-disabled")
   outputs = [ "test-data/{{source_file_part}}" ]
   deps = [ ":status-disabled" ]
+}
+
+if (is_host) {
+  host_test_data("simple-dtb-host") {
+    sources = get_target_outputs(":simple.dtb")
+    outputs = [ "$root_out_dir/test_data/dtb/{{source_file_part}}" ]
+    deps = [ ":simple" ]
+  }
+
+  host_test_data("basic-properties-dtb-host") {
+    sources = [ "$target_out_dir/basic-properties.dtb" ]
+    outputs = [ "$root_out_dir/test_data/dtb/{{source_file_part}}" ]
+    deps = [ ":basic-properties" ]
+  }
 }

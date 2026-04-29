@@ -6,12 +6,21 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/fidl/cpp/natural_types.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
+
+#include "lib/driver/devicetree/manager/zx-status-host-helper.h"
 
 namespace fdf_devicetree {
 
-zx::result<> PublisherHost::AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node) {
-  pbus_nodes_.push_back(std::move(pbus_node));
+zx::result<> PublisherHost::AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node,
+                                        std::vector<std::optional<std::string>> metadata_text,
+                                        std::vector<std::optional<std::string>> power_config_text) {
+  pbus_nodes_.push_back(pbus_node);
+  pbus_nodes_with_metadata_.push_back({.node = std::move(pbus_node),
+                                       .metadata_text = std::move(metadata_text),
+                                       .power_config_text = std::move(power_config_text)});
   return zx::ok();
 }
 
@@ -22,6 +31,10 @@ zx::result<> PublisherHost::AddBoardChildNode(BoardChildNode args) {
 
 const std::vector<BoardChildNode>& PublisherHost::GetBoardChildNodes() {
   return board_child_nodes_;
+}
+
+const std::vector<fuchsia_hardware_platform_bus::Node>& PublisherHost::GetPbusNodes() {
+  return pbus_nodes_;
 }
 
 zx::result<> PublisherHost::AddCompositeNodeSpec(

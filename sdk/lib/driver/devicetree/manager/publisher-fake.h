@@ -90,7 +90,9 @@ class PublisherFake : public TestPublisher {
   ~PublisherFake();
 
   // PublisherInterface
-  zx::result<> AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node) override;
+  zx::result<> AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node,
+                           std::vector<std::optional<std::string>> metadata_text = {},
+                           std::vector<std::optional<std::string>> power_config_text = {}) override;
   zx::result<> AddBoardChildNode(BoardChildNode args) override;
   zx::result<> AddCompositeNodeSpec(std::string name,
                                     std::vector<fuchsia_driver_framework::ParentSpec2> parents,

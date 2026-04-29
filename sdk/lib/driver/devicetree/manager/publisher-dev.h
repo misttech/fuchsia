@@ -18,7 +18,9 @@ class PublisherDev : public PublisherInterface {
                fidl::SyncClient<fuchsia_driver_framework::Node>& fdf_node)
       : pbus_(pbus), mgr_(mgr), fdf_node_(fdf_node) {}
 
-  zx::result<> AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node) override;
+  zx::result<> AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node,
+                           std::vector<std::optional<std::string>> metadata_text = {},
+                           std::vector<std::optional<std::string>> power_config_text = {}) override;
 
   zx::result<> AddBoardChildNode(BoardChildNode args) override;
 
