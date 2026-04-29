@@ -3,7 +3,7 @@
 This document outlines the plan for migrating the remaining DFv1 drivers to DFv2, organized by logical groups and ranked by estimated difficulty (easiest first).
 
 ## 1. RTC Drivers [Deferred: These drivers are being converted to Rust]
-**Drivers**: `aml-rtc`, `intel-rtc`, `pl031-rtc`
+**Drivers**: `intel-rtc`, `pl031-rtc`
 **Difficulty**: Easy
 **Reasoning**: Real-Time Clock drivers are typically simple, involving reading and writing time values to hardware registers. They usually do not involve complex DMA or high-frequency interrupts. This is a good starting point for learning the migration process.
 
