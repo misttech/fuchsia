@@ -28,7 +28,7 @@ load(
     "//build/bazel/bazel_idk/private:idk_host_tool.bzl",
     _idk_cc_binary_host_tool = "idk_cc_binary_host_tool",
     _idk_go_binary_host_tool = "idk_go_binary_host_tool",
-    _idk_host_tool = "idk_host_tool",
+    _idk_rustc_binary_host_tool = "idk_rustc_binary_host_tool",
 )
 load(
     "//build/bazel/bazel_idk/private:idk_molecule.bzl",
@@ -52,4 +52,4 @@ idk_cc_static_library_zx = _idk_cc_static_library_zx
 
 idk_cc_binary_host_tool = _idk_cc_binary_host_tool
 idk_go_binary_host_tool = _idk_go_binary_host_tool
-idk_host_tool = _idk_host_tool
+idk_rustc_binary_host_tool = _idk_rustc_binary_host_tool

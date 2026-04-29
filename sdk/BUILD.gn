@@ -479,7 +479,7 @@ if (is_host) {
       "//src/developer/ffx/tools/starnix:sdk",
       "//src/performance/trace2json:bin_sdk",
       "//src/sys/pkg/bin/far:bin_sdk",
-      "//src/sys/pkg/testing/fake-omaha-client:bin_sdk",
+      "//src/sys/pkg/testing/fake-omaha-client:fake-omaha-client_sdk",
       "//tools/fidlcat:fidlcat_sdk",
       "//tools/net/device-finder:device-finder_sdk",
     ]

@@ -81,15 +81,15 @@ var bazelRuleToGNTemplate = map[string]string{
 	"install_host_tools":  "install_host_tools",
 
 	// IDK
-	"idk_cc_shared_library":    "sdk_shared_library",
-	"idk_cc_shared_library_zx": "zx_library", // With `sdk="shared"` and `sdk_publishable = "partner"`.
-	"idk_cc_source_library":    "sdk_source_set",
-	"idk_cc_source_library_zx": "zx_library", // With `sdk="source"` and `sdk_publishable = "partner"`.
-	"idk_cc_static_library":    "sdk_static_library",
-	"idk_cc_static_library_zx": "zx_library", // With `sdk="static"` and `sdk_publishable = "partner"`.
-	"idk_host_tool":            "sdk_host_tool",
-	"idk_cc_binary_host_tool":  "sdk_executable_host_tool",
-	"idk_go_binary_host_tool":  "sdk_go_binary_host_tool",
+	"idk_cc_shared_library":      "sdk_shared_library",
+	"idk_cc_shared_library_zx":   "zx_library", // With `sdk="shared"` and `sdk_publishable = "partner"`.
+	"idk_cc_source_library":      "sdk_source_set",
+	"idk_cc_source_library_zx":   "zx_library", // With `sdk="source"` and `sdk_publishable = "partner"`.
+	"idk_cc_static_library":      "sdk_static_library",
+	"idk_cc_static_library_zx":   "zx_library", // With `sdk="static"` and `sdk_publishable = "partner"`.
+	"idk_cc_binary_host_tool":    "sdk_executable_host_tool",
+	"idk_go_binary_host_tool":    "sdk_go_binary_host_tool",
+	"idk_rustc_binary_host_tool": "sdk_rustc_binary_host_tool",
 
 	// Other
 	"fidlgentest_go_test": "fidlgentest_go_test",
@@ -165,9 +165,9 @@ var rustCommonAttrMap = map[string]string{
 	"rustc_flags":          "rustflags",
 }
 
-// rustBinMap maps from attribute name in Bazel Rust binary rules to GN parameter names.
+// rustBinAttrMap maps from attribute name in Bazel Rust binary rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
-var rustBinMap = mustMergeMaps(rustCommonAttrMap, map[string]string{
+var rustBinAttrMap = mustMergeMaps(rustCommonAttrMap, map[string]string{
 	"crate_name": "output_name",
 })
 
@@ -218,11 +218,6 @@ var zxInIDKAttrMap = map[string]string{
 	"category": "sdk_publishable",
 }
 
-// hostToolAttrMap maps from attribute name in Bazel host tool rules to GN parameter names.
-var hostToolAttrMap = map[string]string{
-	"tool": "deps",
-}
-
 // installHostToolAttrMap maps from attribute name in Bazel install host tool rules to GN parameter names.
 var installHostToolAttrMap = map[string]string{
 	"implementation_deps": "deps",
@@ -243,8 +238,8 @@ var idkZxAttrMap = mustMergeMaps(idkCcAttrMap, zxInIDKAttrMap)
 // idkFIDLAttrMap maps from attribute name in Bazel IDK FIDL rules to GN parameter names.
 var idkFIDLAttrMap = mustMergeMaps(idkAttrMap, fidlAttrMap)
 
-// idkHostToolAttrMap maps from attribute name in Bazel IDK host tool rules to GN parameter names.
-var idkHostToolAttrMap = mustMergeMaps(idkAttrMap, hostToolAttrMap)
+// idkRustBinAttrMap maps from attribute name in Bazel IDK Rust binary rules to GN parameter names.
+var idkRustBinAttrMap = mustMergeMaps(idkAttrMap, rustBinAttrMap)
 
 // A mapping from Bazel rule names to attribute mappings.
 // Attribute mappings map from Bazel rule attributes that use different names in GN.
@@ -260,10 +255,10 @@ var attrMapsByRules = map[string]map[string]string{
 	"cc_static_library_zx": ccLibAttrMap,
 
 	// Rust
-	"rust_binary":     rustBinMap,
+	"rust_binary":     rustBinAttrMap,
 	"rust_library":    rustCommonAttrMap,
 	"rust_proc_macro": rustCommonAttrMap,
-	"rustc_binary":    rustBinMap,
+	"rustc_binary":    rustBinAttrMap,
 	"rustc_library":   rustCommonAttrMap,
 	"rustc_test":      rustCommonAttrMap,
 
@@ -272,15 +267,15 @@ var attrMapsByRules = map[string]map[string]string{
 	"zither_fidl_library": fidlAttrMap,
 
 	// IDK
-	"idk_cc_shared_library":    idkCcAttrMap,
-	"idk_cc_shared_library_zx": idkZxAttrMap,
-	"idk_cc_source_library":    idkCcAttrMap,
-	"idk_cc_source_library_zx": idkZxAttrMap,
-	"idk_cc_static_library":    idkCcAttrMap,
-	"idk_cc_static_library_zx": idkZxAttrMap,
-	"idk_host_tool":            idkHostToolAttrMap,
-	"idk_cc_binary_host_tool":  idkAttrMap,
-	"idk_go_binary_host_tool":  idkAttrMap,
+	"idk_cc_shared_library":      idkCcAttrMap,
+	"idk_cc_shared_library_zx":   idkZxAttrMap,
+	"idk_cc_source_library":      idkCcAttrMap,
+	"idk_cc_source_library_zx":   idkZxAttrMap,
+	"idk_cc_static_library":      idkCcAttrMap,
+	"idk_cc_static_library_zx":   idkZxAttrMap,
+	"idk_cc_binary_host_tool":    idkAttrMap,
+	"idk_go_binary_host_tool":    idkAttrMap,
+	"idk_rustc_binary_host_tool": idkRustBinAttrMap,
 
 	// Tools
 	"install_host_tools": installHostToolAttrMap,

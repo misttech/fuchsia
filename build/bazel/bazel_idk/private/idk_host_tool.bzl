@@ -5,7 +5,7 @@
 """Rule for defining IDK host tools."""
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool", "go_binary_host_tool")
+load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool", "go_binary_host_tool", "rustc_binary_host_tool")
 load(":idk_atom.bzl", "idk_atom")
 load(
     ":idk_common.bzl",
@@ -118,27 +118,29 @@ GN note: The default relationship to `idk_name` is different from GN.""",
     },
 )
 
-# A wrapper that appends "_idk" to the name. This avoids duplicate name errors
-# that could occur if using the symbolic macro above directly.
-# TODO(https://fxbug.dev/442025401): Consider removing this or the
-# language-specific versions after migrating all tools to macros like
-# `cc_binary_host_tool()`.
-def idk_host_tool(name, category, tool, **kwargs):
-    """Defines a host tool in the IDK.
-
-    GN note: Unlike the GN template, `name` should not include "_sdk"/"_idk".
-
-    Args:
-        name: The name of the tool binary.
-        tool: A list containing a single label of the tool binary.
-        **kwargs: See `_idk_host_tool()` for details.
-    """
-    _idk_host_tool(
-        name = name + "_idk",
-        category = category,
-        tool = tool[0],
-        **kwargs
-    )
+_BINARY_HOST_TOOL_ATTRS = {
+    "idk_name": attr.string(
+        doc = "The name of the tool in the IDK. Usually matches `name`.",
+        mandatory = True,
+        configurable = False,
+    ),
+    "category": attr.string(
+        doc = "Publication level of the tool in the IDK. See _create_idk_atom().",
+        mandatory = True,
+        configurable = False,
+    ),
+    "api_area": attr.string(
+        doc = "The API area responsible for maintaining this tool.",
+        mandatory = True,
+    ),
+    # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
+    # being used for host tools.
+    "target_compatible_with": attr.string_list(
+        doc = "Standard meaning. Must be `HOST_CONSTRAINTS`.",
+        default = HOST_CONSTRAINTS,
+        configurable = False,
+    ),
+}
 
 def _idk_cc_binary_host_tool_impl(
         name,
@@ -174,29 +176,7 @@ idk_cc_binary_host_tool = macro(
     """,
     implementation = _idk_cc_binary_host_tool_impl,
     inherit_attrs = cc_binary_host_tool,
-    attrs = {
-        "idk_name": attr.string(
-            doc = "The name of the tool in the IDK. Usually matches `name`.",
-            mandatory = True,
-            configurable = False,
-        ),
-        "category": attr.string(
-            doc = "Publication level of the tool in the IDK. See _create_idk_atom().",
-            mandatory = True,
-            configurable = False,
-        ),
-        "api_area": attr.string(
-            doc = "The API area responsible for maintaining this tool.",
-            mandatory = True,
-        ),
-        # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
-        # being used for host tools.
-        "target_compatible_with": attr.string_list(
-            doc = "Standard meaning. Must be `HOST_CONSTRAINTS`.",
-            default = HOST_CONSTRAINTS,
-            configurable = False,
-        ),
-    },
+    attrs = _BINARY_HOST_TOOL_ATTRS,
 )
 
 # This must be a legacy macro with `**kwargs` because go_binary_host_tool is a
@@ -241,3 +221,40 @@ def idk_go_binary_host_tool(
         tool = binary_name,
         target_compatible_with = HOST_CONSTRAINTS,
     )
+
+def _idk_rustc_binary_host_tool_impl(
+        name,
+        idk_name,
+        category,
+        api_area,
+        target_compatible_with,
+        **kwargs):
+    if target_compatible_with != HOST_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+
+    binary_name = name
+
+    rustc_binary_host_tool(
+        name = binary_name,
+        target_compatible_with = HOST_CONSTRAINTS,
+        **kwargs
+    )
+
+    _idk_host_tool(
+        name = name + "_idk",
+        idk_name = idk_name,
+        category = category,
+        api_area = api_area,
+        tool = binary_name,
+        target_compatible_with = HOST_CONSTRAINTS,
+    )
+
+idk_rustc_binary_host_tool = macro(
+    doc = """Defines a `rustc_binary()` host tool in the IDK.
+
+    GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
+    """,
+    implementation = _idk_rustc_binary_host_tool_impl,
+    inherit_attrs = rustc_binary_host_tool,
+    attrs = _BINARY_HOST_TOOL_ATTRS,
+)

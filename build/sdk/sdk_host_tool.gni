@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/go/go_binary.gni")
+import("//build/rust/rustc_binary.gni")
 import("//build/sdk/sdk_atom.gni")
 
 _idk_only_parameters = [
@@ -178,6 +179,41 @@ template("sdk_go_binary_host_tool") {
   }
 
   sdk_host_tool(sdk_target_name) {
+    forward_variables_from(invoker, _idk_only_parameters)
+    deps = [ ":${tool_name}" ]
+  }
+}
+
+# Defines a Rust binary host tool and its IDK atom.
+#
+# Parameters
+#   category (required)
+#     Publication level of the executable in the IDK.
+#     See //build/sdk/sdk_atom.gni.
+#
+#   sdk_area (optional)
+#     [string] The API area responsible for maintaining this host tool.
+#     See //build/sdk/sdk_atom.gni.
+#
+#   sdk_name (optional)
+#     Name of the library in the IDK. Defaults to `output_name`.
+#
+#   output_name (optional)
+#     The tool's name. Defaults to `sdk_name` if specified or target_name.
+#
+#   sources, deps, etc.
+#     Usual GN meaning.
+template("sdk_rustc_binary_host_tool") {
+  assert(defined(invoker.category), "Must define an SDK category")
+  assert(is_host)
+
+  tool_name = target_name
+
+  rustc_binary(tool_name) {
+    forward_variables_from(invoker, "*", _idk_only_parameters)
+  }
+
+  sdk_host_tool(target_name + "_sdk") {
     forward_variables_from(invoker, _idk_only_parameters)
     deps = [ ":${tool_name}" ]
   }
