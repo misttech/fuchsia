@@ -2514,7 +2514,7 @@ impl ObjectStore {
             let proxy_filename =
                 fscrypt::proxy_filename::ProxyFilename::new_with_hash_code(0, &link);
             let proxy_filename_str: String = proxy_filename.into();
-            Ok(proxy_filename_str.as_bytes().to_vec())
+            Ok(proxy_filename_str.into_bytes())
         }
     }
 
