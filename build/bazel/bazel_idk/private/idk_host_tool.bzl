@@ -170,8 +170,6 @@ def _idk_cc_binary_host_tool_impl(
 idk_cc_binary_host_tool = macro(
     doc = """Defines a `cc_binary()` host tool in the IDK.
 
-    Use the `idk_cc_binary_host_tool()` wrapper instead.
-
     GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
     """,
     implementation = _idk_cc_binary_host_tool_impl,
