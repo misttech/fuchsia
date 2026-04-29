@@ -951,6 +951,9 @@
 
                 // TODO(https://fxbug.dev/507799657): Fix and re-enable.
                 "NetlinkRouteTest.ProcNetDevStableAcrossCalls",
+
+                // TODO(https://fxbug.dev/507936011): Fix and re-enable.
+                "AllInetTests/TcpSocketTest.IntegerOptGetsockoptSmallBuffer*",
             ],
         },
         {
