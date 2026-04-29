@@ -339,10 +339,28 @@ struct FlushState {
     /// The type of the flush.
     flush_type: FlushType,
 
+    /// The stage of this flush.
+    flush_step: FlushStep,
+
     /// True when extra pages were taken because of races where after capturing the initial
     /// reservation and dirty page counts more pages got marked dirty while collecting the batches
     /// from the kernel.
     has_extra_reserved: bool,
+}
+
+/// The current step that the flush state has been progressed to.
+#[derive(Debug, PartialEq)]
+enum FlushStep {
+    /// The state has a reservation and taken the dirty pages.
+    HasDirtyPageReservation,
+
+    /// The state knows how many pages were found dirty, so it knows how many to flush, and not to
+    /// flush, but it does not have enough dirty pages to proceed.
+    CollectedBatchesShortDirtyPages,
+
+    /// The state knows how many pages were found dirty, so it knows how many to flush, and not to
+    /// flush. It is ready to proceed flushing pages, but it may not have successfully flushed any.
+    ReadyToFlush,
 }
 
 impl FlushState {
@@ -358,6 +376,7 @@ impl FlushState {
             pages_flushed: Default::default(),
             dirty_pages_not_to_flush: Default::default(),
             flush_type,
+            flush_step: FlushStep::HasDirtyPageReservation,
             has_extra_reserved: false,
         }
     }
@@ -376,6 +395,7 @@ impl FlushState {
         dirty_pages_not_to_flush: DirtyPages,
     ) -> Result<(), ()> {
         assert_eq!(self.pages_to_flush.total(), 0, "This should only be called once.");
+        assert_eq!(self.flush_step, FlushStep::HasDirtyPageReservation);
         self.pages_to_flush = dirty_pages_to_flush;
         self.dirty_pages_not_to_flush = dirty_pages_not_to_flush;
 
@@ -387,8 +407,10 @@ impl FlushState {
             || self.pages_to_flush.unreserved + self.dirty_pages_not_to_flush.unreserved
                 > self.marked_dirty_pages.unreserved
         {
+            self.flush_step = FlushStep::CollectedBatchesShortDirtyPages;
             Err(())
         } else {
+            self.flush_step = FlushStep::ReadyToFlush;
             Ok(())
         }
     }
@@ -398,7 +420,8 @@ impl FlushState {
     /// but such will be put back before the end of the flush. This asserts if the total dirty pages
     /// don't meet or exceed the required amount.
     fn take_extra_dirty_pages(&mut self, inner: &mut Inner) {
-        assert!(!self.has_extra_reserved, "This should only be called once");
+        assert_eq!(self.flush_step, FlushStep::CollectedBatchesShortDirtyPages);
+        self.flush_step = FlushStep::ReadyToFlush;
         self.has_extra_reserved = true;
         self.marked_dirty_pages += inner.move_to(&self.reservation);
 
@@ -416,6 +439,7 @@ impl FlushState {
 
     /// Add batches of pages that have been flushed.
     fn did_flush_pages(&mut self, flushed_pages: DirtyPages) {
+        assert_eq!(self.flush_step, FlushStep::ReadyToFlush);
         self.pages_flushed += flushed_pages;
     }
 
@@ -428,6 +452,17 @@ impl FlushState {
             self.pages_to_flush.total() >= self.pages_flushed.total(),
             "Should not clean more than it planned to clean."
         );
+        if self.flush_step != FlushStep::ReadyToFlush {
+            // If we didn't get this far then we don't have the complete state of the world and we
+            // haven't begun flushing anything. Put everything back where we found it, and report no
+            // progress.
+            if self.marked_dirty_pages.total() > 0 {
+                let mut inner = inner.lock();
+                inner.put_back(self.marked_dirty_pages, &self.reservation);
+            }
+
+            return 0;
+        }
 
         let new_dirty_pages = if self.flush_type == FlushType::LastChance {
             // No more pages can be flushed now. Data loss is possible, but returning reservations.
@@ -897,18 +932,9 @@ impl PagedObjectHandle {
             self.inner.lock().pending_shrink = PendingShrink::None;
         }
 
-        // BEGIN: No early returns.
-        // Once we've taken dirty pages we cannot return early until we've got the current state
-        // inside of FlushState.
-
-        // If the file had several dirty pages and then was truncated to before those dirty pages
-        // then we'll still have space reserved that is no longer needed and should be released as
-        // part of this flush.
-        //
-        // If `reservation` and `dirty_pages` were pulled out of `inner` after calling
-        // `query_dirty_ranges` then we wouldn't be able to tell the difference between pages there
-        // dirtied between those 2 operations and dirty pages that were made irrelevant by the
-        // truncate.
+        // NB: Once the dirty pages are taken, we MUST NOT return without either cleaning them or
+        // putting them back, so a scopeguard is added immediately below to ensure that they are
+        // managed properly regardless of any future early returns or future cancellation.
         let (mtime, crtime, (dirty_pages, reservation)) = {
             let mut inner = self.inner.lock();
             (
@@ -917,14 +943,12 @@ impl PagedObjectHandle {
                 inner.take(self.allocator(), self.store().store_object_id()),
             )
         };
-
         let flush_state = FlushState::new(reservation, dirty_pages, flush_type);
-
-        // Can't use a normal drop on FlushState here without letting it hold a reference to the
-        // FxVolume in order to report the cleaned pages. If we do that then we lose the ability to
-        // isolate the FlushState logic from all the workings of an `FxVolume` and
-        // `VolumesDirectory` during testing.
         let mut flush_state_wrapper = scopeguard::guard(flush_state, |flush_state| {
+            // Can't use a normal drop on FlushState here without letting it hold a reference to the
+            // FxVolume in order to report the cleaned pages. If we do that then we lose the ability
+            // to isolate the FlushState logic from all the workings of an `FxVolume` and
+            // `VolumesDirectory` during testing.
             let cleaned_pages = flush_state.finish(&self.inner);
             if cleaned_pages > 0 {
                 self.owner().report_pager_clean(cleaned_pages * zx::system_get_page_size() as u64);
@@ -947,8 +971,6 @@ impl PagedObjectHandle {
         {
             flush_state_wrapper.take_extra_dirty_pages(&mut *self.inner.lock());
         }
-
-        // End: No early returns.
 
         if flush_batches.is_empty() {
             // If there's no data to flush in a background flush, quit early doing nothing.
@@ -3163,6 +3185,14 @@ mod tests {
         fixture.close().await;
     }
 
+    // If the file had several dirty pages and then was truncated to before those dirty pages
+    // then we'll still have space reserved that is no longer needed and should be released as
+    // part of this flush.
+    //
+    // If `reservation` and `dirty_pages` were pulled out of `inner` after calling
+    // `query_dirty_ranges` then we wouldn't be able to tell the difference between pages there
+    // dirtied between those 2 operations and dirty pages that were made irrelevant by the
+    // truncate.
     #[fuchsia::test(threads = 3)]
     async fn test_truncate_shorter_race() {
         let fixture = TestFixture::new_unencrypted().await;
@@ -4762,5 +4792,137 @@ mod tests {
         }
 
         fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_flush_state_successful_flow() {
+        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let store_object_id = volume.volume().store().store_object_id();
+        let allocator = fs.allocator();
+        let needed = reservation_needed(10);
+        let reservation = allocator.clone().reserve(Some(store_object_id), needed).unwrap();
+
+        let marked_dirty_pages = DirtyPages { reserved: 10, unreserved: 5 };
+
+        let mut flush_state = FlushState::new(reservation, marked_dirty_pages, FlushType::Sync);
+
+        let dirty_pages_to_flush = DirtyPages { reserved: 5, unreserved: 2 };
+        let dirty_pages_not_to_flush = DirtyPages { reserved: 5, unreserved: 3 };
+
+        let result =
+            flush_state.set_flush_batch_count(dirty_pages_to_flush, dirty_pages_not_to_flush);
+        assert!(result.is_ok());
+
+        flush_state.did_flush_pages(dirty_pages_to_flush);
+
+        let inner = Inner::new(false);
+
+        let pages_cleaned = flush_state.finish(&inner);
+
+        assert_eq!(pages_cleaned, 7);
+
+        let mut inner_locked = inner.lock();
+        assert_eq!(inner_locked.dirty_pages.reserved, 5);
+        assert_eq!(inner_locked.dirty_pages.unreserved, 3);
+
+        inner_locked.forget_dirty_pages(allocator, store_object_id);
+        std::mem::drop(inner_locked);
+
+        fs.close().await.expect("close filesystem failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_flush_state_finish_early_puts_back_dirty_pages() {
+        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let store_object_id = volume.volume().store().store_object_id();
+        let allocator = fs.allocator();
+        let needed = reservation_needed(10);
+        let reservation = allocator.clone().reserve(Some(store_object_id), needed).unwrap();
+
+        let marked_dirty_pages = DirtyPages { reserved: 10, unreserved: 5 };
+
+        let flush_state = FlushState::new(reservation, marked_dirty_pages, FlushType::Sync);
+
+        let inner = Inner::new(false);
+
+        let pages_cleaned = flush_state.finish(&inner);
+
+        assert_eq!(pages_cleaned, 0);
+
+        let mut inner_locked = inner.lock();
+        assert_eq!(inner_locked.dirty_pages.reserved, 10);
+        assert_eq!(inner_locked.dirty_pages.unreserved, 5);
+
+        // Clean up reservation to avoid leak panic in allocator.
+        inner_locked.forget_dirty_pages(allocator, store_object_id);
+        std::mem::drop(inner_locked);
+
+        fs.close().await.expect("close filesystem failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_flush_state_finish_early_after_set_flush_batch_count_fails() {
+        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let store_object_id = volume.volume().store().store_object_id();
+        let allocator = fs.allocator();
+        let needed = reservation_needed(10);
+        let reservation = allocator.clone().reserve(Some(store_object_id), needed).unwrap();
+
+        let marked_dirty_pages = DirtyPages { reserved: 10, unreserved: 5 };
+
+        let mut flush_state = FlushState::new(reservation, marked_dirty_pages, FlushType::Sync);
+
+        let dirty_pages_to_flush = DirtyPages { reserved: 15, unreserved: 0 };
+        let dirty_pages_not_to_flush = DirtyPages::default();
+
+        let result =
+            flush_state.set_flush_batch_count(dirty_pages_to_flush, dirty_pages_not_to_flush);
+        assert!(result.is_err());
+
+        let inner = Inner::new(false);
+
+        let pages_cleaned = flush_state.finish(&inner);
+
+        assert_eq!(pages_cleaned, 0);
+
+        let mut inner_locked = inner.lock();
+        assert_eq!(inner_locked.dirty_pages.reserved, 10);
+        assert_eq!(inner_locked.dirty_pages.unreserved, 5);
+
+        inner_locked.forget_dirty_pages(allocator, store_object_id);
+        std::mem::drop(inner_locked);
+
+        fs.close().await.expect("close filesystem failed");
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "ReadyToFlush")]
+    async fn test_flush_state_panic_if_take_extra_dirty_pages_not_called() {
+        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let store_object_id = volume.volume().store().store_object_id();
+        let allocator = fs.allocator();
+        let reservation = allocator.reserve_with(Some(store_object_id), |_| 0);
+
+        let mut flush_state = FlushState::new(reservation, DirtyPages::default(), FlushType::Sync);
+
+        let dirty_pages_to_flush = DirtyPages { reserved: 5, unreserved: 0 };
+        let dirty_pages_not_to_flush = DirtyPages::default();
+
+        let _ = flush_state.set_flush_batch_count(dirty_pages_to_flush, dirty_pages_not_to_flush);
+
+        flush_state.did_flush_pages(DirtyPages::default());
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "ReadyToFlush")]
+    async fn test_flush_state_skipping_steps_panics() {
+        let (fs, volume) = open_filesystem(|_| Ok(())).await;
+        let store_object_id = volume.volume().store().store_object_id();
+        let allocator = fs.allocator();
+        let reservation = allocator.reserve_with(Some(store_object_id), |_| 0);
+
+        let mut flush_state = FlushState::new(reservation, DirtyPages::default(), FlushType::Sync);
+
+        flush_state.did_flush_pages(DirtyPages::default());
     }
 }
