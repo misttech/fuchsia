@@ -224,14 +224,15 @@ void Service::LaunchConsole(fbl::unique_fd conn) {
   }
   auto package = std::move(maybe_package.value());
 
-  if (!developer_console_launcher_.is_valid()) {
-    auto client_end = component::Connect<fuchsia_developer_console::Launcher>();
-    if (client_end.is_error()) {
-      FX_PLOGS(ERROR, client_end.status_value()) << "Failed to connect to console launcher service";
-      return;
-    }
-    developer_console_launcher_.Bind(std::move(*client_end), dispatcher_);
+  auto console_launcher_client_end = component::Connect<fuchsia_developer_console::Launcher>();
+  if (console_launcher_client_end.is_error()) {
+    FX_PLOGS(ERROR, console_launcher_client_end.status_value())
+        << "Failed to connect to console launcher service";
+    return;
   }
+  auto developer_console_launcher =
+      std::make_unique<fidl::Client<fuchsia_developer_console::Launcher>>(
+          std::move(*console_launcher_client_end), dispatcher_);
 
   fuchsia_developer_console::PackageProgram package_program{{
       .package = std::move(package),
@@ -273,7 +274,6 @@ void Service::LaunchConsole(fbl::unique_fd conn) {
     FX_PLOGS(ERROR, status) << "failed to clone /data";
     return;
   }
-
   zx::socket stderr_socket, child_stderr;
   if (zx_status_t status = zx::socket::create(0, &stderr_socket, &child_stderr); status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Failed to create stderr socket";
@@ -307,8 +307,11 @@ void Service::LaunchConsole(fbl::unique_fd conn) {
 
   auto log_redirect =
       std::make_unique<LogRedirect>(dispatcher_, std::move(stderr_socket), child_num);
-  developer_console_launcher_->Launch(std::move(options))
-      .Then([log_redirect = std::move(log_redirect)](
+  auto* launcher_raw = developer_console_launcher.get();
+  (*launcher_raw)
+      ->Launch(std::move(options))
+      .Then([developer_console_launcher = std::move(developer_console_launcher),
+             log_redirect = std::move(log_redirect)](
                 fidl::Result<fuchsia_developer_console::Launcher::Launch>& result) {
         if (result.is_error()) {
           FX_LOGS(ERROR) << "launch failed: " << result.error_value().FormatDescription();

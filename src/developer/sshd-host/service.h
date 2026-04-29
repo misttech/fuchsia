@@ -49,7 +49,6 @@ class Service {
   fbl::unique_fd sock_;
   fsl::FDWaiter waiter_;
   uint64_t next_child_num_ = 0;
-  fidl::Client<fuchsia_developer_console::Launcher> developer_console_launcher_;
   zx::eventpair console_stopper_local_;
   zx::eventpair console_stopper_;
 

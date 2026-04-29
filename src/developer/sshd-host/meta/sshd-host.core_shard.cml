@@ -48,10 +48,5 @@
             from: "#network",
             to: "#sshd-host",
         },
-        {
-            protocol: [ "fuchsia.posix.socket.Provider" ],
-            from: "#network",
-            to: "#sshd-host",
-        },
     ],
 }
