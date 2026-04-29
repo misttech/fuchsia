@@ -11,10 +11,24 @@ import("//build/toolchain/toolchain_environment.gni")
 # This is kept consistent between the kernel proper and phys
 # so (pure PIC) code should be callable from the kernel proper.
 config("abi") {
-  cflags = [
-    "-mno-red-zone",
+  configs = [
+    ":integer-register-abi",
+    ":thread-pointer-abi",
+    ":stack-pointer-abi",
 
-    # Hard disable floating point in the kernel.
+    # These are not part of the ABI contract per se, but they're part of the
+    # "expected resilience of generated code" contract that should be uniform
+    # across all the privileged code.
+    "//build/config/x64:harden_sls",
+    ":retpoline",
+    ":skylake_jcc",
+  ]
+}
+
+# Don't use any FP / vector registers in kernel code.  They usually still
+# hold the user-mode values while running in kernel mode.
+config("integer-register-abi") {
+  cflags = [
     "-msoft-float",
     "-mno-mmx",
     "-mno-sse",
@@ -30,20 +44,45 @@ config("abi") {
       # varargs routines that floating point args are in use.
       "-mskip-rax-setup",
     ]
-  } else if (toolchain_environment != "kernel.phys32") {
-    # Clang needs -mcmodel=kernel to tell it to use the right safe-stack
-    # ABI for the kernel.
-    cflags += [ "-mcmodel=kernel" ]
   }
 
-  # This is not part of the ABI contract per se, but it's part of the
-  # "expected resilience of generated code" contract that should be uniform
-  # across all the privileged code.
-  configs = [
-    "//build/config/x64:harden_sls",
-    ":retpoline",
-    ":skylake_jcc",
-  ]
+  # None of these actually matter in ldflags even for LTO, and the Clang driver
+  # complains about some as unused at link time.
+  asmflags = cflags
+
+  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
+  rustflags = [ "--rust-is-too-dangerous-until-we-plumb-general-regs-only" ]
+}
+
+# Use the right thread-pointer ABI for the kernel (%gs.base, not %fs.base).
+# This affects `__builtin_thread_pointer()`; would affect ELF TLS if it were
+# used; and affects the ABI implicitly used by stack-protector and safe-stack.
+config("thread-pointer-abi") {
+  # Clang needs -mcmodel=kernel to tell it to use the right safe-stack ABI for
+  # the kernel.  It doesn't have any other effects that matter when using -fPIE
+  # as we do; it's not useful to us at all in GCC and doesn't exist for x86-32.
+  if (toolchain_environment != "kernel.phys32" && !is_gcc) {
+    cflags = [ "-mcmodel=kernel" ]
+    asmflags = cflags
+    ldflags = cflags
+
+    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.  As this
+    # only affects stack-protector and safe-stack, a workaround would be
+    # rustflags plumbing to ensure both are disabled in every function.
+    rustflags = [ "--rust-is-too-dangerous-until-we-plumb-stack-protector" ]
+  }
+}
+
+# This tells the compiler not to use any space below the current stack pointer,
+# because in supervisor mode an exception frame could be pushed there by
+# hardware at any time.
+config("stack-pointer-abi") {
+  cflags = [ "-mno-red-zone" ]
+  asmflags = cflags
+  ldflags = cflags
+
+  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
+  rustflags = [ "--rust-is-too-dangerous-until-we-plumb-no-red-zone" ]
 }
 
 config("retpoline") {
@@ -62,6 +101,8 @@ config("retpoline") {
     }
   }
   defines = [ "KERNEL_RETPOLINE=1" ]
+
+  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.
 }
 
 # Mitigate errata in Intel Skylake family of CPUs that cause control transfer instructions to

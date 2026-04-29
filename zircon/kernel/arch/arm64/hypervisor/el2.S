@@ -17,6 +17,10 @@
 
 #define MDCR_EL2_TDOSA                  BIT_32(10)
 
+// The switching code here can use the FP / vector registers, though
+// most kernel code cannot.
+.arch_extension fp
+
 .section .text.el2,"ax",@progbits
 .align 12
 

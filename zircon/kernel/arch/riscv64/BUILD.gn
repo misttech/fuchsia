@@ -12,42 +12,55 @@ if (toolchain_base_environment == "kernel") {
   # This is kept consistent between the kernel proper and phys
   # so (pure PIC) assembly code should be callable from either.
   config("abi") {
-    # This is RV64GC minus F and D.  No FP state should be touched by compiled
-    # code in the kernel.
-    _march = "rv64imac"
-    _features = fuchsia_riscv_profile.u64_mandatory
+    configs = [
+      ":arch-abi",
+      ":percpu-abi",
+    ]
+  }
+
+  # This defines the ISA that the compiler may generate.
+  riscv64_abi_config("arch-abi") {
+    # Override the default calling convention of lp64d: only integer registers.
+    abi = "lp64"
+
+    # Exclude all the kinds of non-integer registers from the ISA the compiler
+    # may generated.  Such registers usually still hold the user-mode values
+    # while running in kernel mode.
+    exclude_letters = [
+      "d",
+      "f",
+      "g",
+      "q",
+      "v",
+    ]
+
+    # This is G minus F and D.
+    extra_letters = [
+      "i",
+      "m",
+      "a",
+    ]
 
     # These are implied by G, which we don't use because it implies F and D.
-    _features += [
+    extra_features = [
       "zicsr",
       "zifencei",
     ]
 
-    foreach(feature, _features) {
-      _march += "_$feature"
-    }
+    # It's only a subset of the userland ISA: avoiding any extension registers
+    # (D/F/Q/V), and not using any other extensions than what userland uses.
+    # extra_letters += and/or extra_features += here would add more.
+  }
 
-    cflags = [
-      "-march=$_march",
-      "-mabi=lp64",  # vs lp64d for userland.
-    ]
-
-    # s11 (x27) is used for percpu pointer, so tell the compiler not to use it.
-    cflags += [ "-ffixed-x27" ]
-
-    if (!is_gcc) {
-      cflags += [
-        # Use shadow-call-stack rather than safe-stack for the kernel,
-        # regardless of the compiler's default.
-        "-fno-sanitize=safe-stack",
-        "-fsanitize=shadow-call-stack",
-      ]
-    }
-
-    # Assembly code needs to use `#if __has_feature(...)` so make sure
-    # it always sees all the same `-fsanitize=...` flags and the like.
+  # Reserve a register (s11 / x27) to be called percpu_ptr in <lib/arch/asm.h>.
+  # The compiler must never touch it except via our inline assembly.
+  config("percpu-abi") {
+    cflags = [ "-ffixed-x27" ]
     asmflags = cflags
     ldflags = cflags
+
+    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
+    rustflags = [ "--rust-is-too-dangerous-until-we-plumb-ffixed-x27" ]
   }
 
   # This is used pervasively throughout the kernel on riscv64.

@@ -24,6 +24,7 @@ config("mitigate_skylake_jcc") {
   } else {
     cflags = [ "-mbranches-within-32B-boundaries" ]
   }
+  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.
 }
 
 # Mitigate Straight Line Speculation (CVE-2021-26341, fxrev.dev/661362) by inserting
@@ -32,6 +33,8 @@ config("mitigate_skylake_jcc") {
 config("harden_sls") {
   defines = [ "HARDEN_SLS" ]
   cflags = [ "-mharden-sls=all" ]
+
+  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.
 }
 
 # Optimize for Intel Haswell

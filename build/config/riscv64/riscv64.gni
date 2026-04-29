@@ -194,9 +194,29 @@ fuchsia_riscv_abi = "lp64d"
 #
 # Parameters:
 #
-#   exclude_letters:
-#     Optional: A list of riscv feature extension letters to exclude from
-#     "-march=..."
+#   * abi
+#     - Optional: Value for `-mabi=...`.
+#     - Type: string
+#     - Default: fuchsia_riscv_abi
+#
+#   * exclude_letters
+#     - Optional: A list of riscv feature extension letters to exclude from
+#     `-march=...`.
+#     - Type: list(string)
+#     - Default: []
+#
+#   * extra_features
+#     - Optional: Additional (non-letter) extension features to enable.  The
+#     profile lists and the fuchsia_riscv_extra_features are always enabled.
+#     - Type: list(string)
+#     - Default: []
+#
+#   * extra_letters
+#     - Optional: Additional feature extension letters to enable.  The profile
+#     lists and the fuchsia_riscv_extra_feature_letters are always enabled,
+#     subject to removal via exclude_letters.
+#     - Type: list(string)
+#     - Default: []
 #
 template("riscv64_abi_config") {
   config(target_name) {
@@ -208,6 +228,11 @@ template("riscv64_abi_config") {
     _features += _extra_features
     _features -= _extra_features
     _features += _extra_features
+    if (defined(invoker.extra_features)) {
+      _features += invoker.extra_features
+      _features -= invoker.extra_features
+      _features += invoker.extra_features
+    }
 
     _extra_feature_letters = fuchsia_riscv_implicit_feature_letters +
                              fuchsia_riscv_extra_feature_letters
@@ -215,10 +240,37 @@ template("riscv64_abi_config") {
     _letters += _extra_feature_letters
     _letters -= _extra_feature_letters
     _letters += _extra_feature_letters
+    if (defined(invoker.extra_letters)) {
+      _letters += invoker.extra_letters
+      _letters -= invoker.extra_letters
+      _letters += invoker.extra_letters
+    }
 
     if (defined(invoker.exclude_letters)) {
       _letters += invoker.exclude_letters
       _letters -= invoker.exclude_letters
+    }
+
+    # These letters are always present in this exact order when they are
+    # present, so normalize their order.  The loop is in the inverse order of
+    # how they will wind up: each iteration makes sure *its* letter is first.
+    # So the last will become first and the first will become last, but all of
+    # them still before all the others outside the elect.
+    foreach(letter,
+            [
+              "c",
+              "a",
+              "m",
+              "i",
+              "g",
+            ]) {
+      letter = [ letter ]
+      if (_letters + letter - letter != _letters) {
+        _letters -= letter
+        letter += _letters
+        _letters = []
+        _letters = letter
+      }
     }
 
     _march = "rv64" + string_join("", _letters)
@@ -226,12 +278,25 @@ template("riscv64_abi_config") {
       _march += "_$feature"
     }
 
+    if (defined(invoker.abi)) {
+      _mabi = invoker.abi
+    } else {
+      _mabi = fuchsia_riscv_abi
+    }
+
     cflags = [
       "-march=$_march",
-      "-mabi=$fuchsia_riscv_abi",
+      "-mabi=$_mabi",
     ]
 
     ldflags = cflags
     asmflags = cflags
+
+    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
+    if (is_kernel) {
+      # TODO(https://fxbug.dev/501183733): See TODO in ./BUILD.gn's
+      # config("riscv64") that can be removed when rustflags is set here.
+      rustflags = [ "--rust-is-too-dangerous-until-we-plumb-march+mabi" ]
+    }
   }
 }
