@@ -55,7 +55,8 @@ func MergeSameVersionProfiles(ctx context.Context, tempDir string, profiles []st
 			// llvm-profdata expects the provided directory to contain a .build-id subdirectory.
 			args = append(args, "--debug-file-directory", filepath.Dir(dir))
 		}
-		args = append(args, "--correlate=binary", "--failure-mode=any")
+		// TODO(https://fxbug.dev/507307138): Switch to --failure-mode=any by default when unable to merge issue is solved in some binaries
+		args = append(args, "--correlate=binary", "--failure-mode=all")
 	} else {
 		args = append(args, "--failure-mode=any")
 	}
