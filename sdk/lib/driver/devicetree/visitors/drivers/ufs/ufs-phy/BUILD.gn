@@ -18,7 +18,6 @@ source_set("ufs-phy-visitor-impl") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.ufs.phy:fuchsia.hardware.ufs.phy_bindlib_cpp",
-    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]

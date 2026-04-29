@@ -22,7 +22,7 @@ source_set("dwc2-visitor-impl") {
     "dwc2-visitor.h",
   ]
   deps = [
-    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/manager:node",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
     "//src/devices/usb/lib/fuchsia.hardware.usb.dwc2:fuchsia.hardware.usb.dwc2_cpp",

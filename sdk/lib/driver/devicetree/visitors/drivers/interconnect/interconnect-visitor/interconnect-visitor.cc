@@ -79,7 +79,7 @@ class InterconnectReferenceProperty : public fdf_devicetree::Property {
       if (cell_count_prop.is_error()) {
         fdf::error("Reference node '{}' does not have'{}' property: {}",
                    reference_node->name().c_str(), kInterconnectCells,
-                   cell_count_prop.status_string());
+                   zx_status_get_string(cell_count_prop.status_value()));
         return cell_count_prop.take_error();
       }
       cell_count = *cell_count_prop;
@@ -284,7 +284,8 @@ zx::result<> InterconnectVisitor::FinalizeNode(fdf_devicetree::Node& node) {
   if (paths.has_value() && !paths.value().empty()) {
     const fit::result encoded_metadata = fidl::Persist(interconnect.metadata);
     if (!encoded_metadata.is_ok()) {
-      fdf::error("Failed to encode interconnect paths: {}", encoded_metadata.error_value());
+      fdf::error("Failed to encode interconnect paths: {}",
+                 encoded_metadata.error_value().FormatDescription());
       return zx::error(encoded_metadata.error_value().status());
     }
     node.AddMetadata(fuchsia_hardware_platform_bus::Metadata{{
