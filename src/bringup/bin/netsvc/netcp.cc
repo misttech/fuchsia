@@ -45,8 +45,13 @@ int netcp_mkdir(const char* filename) {
     if (!ptr) {
       return 0;
     }
-    memcpy(tmp, filename, ptr - filename);
-    tmp[ptr - filename] = '\0';
+    size_t prefix_len = ptr - filename;
+    if (prefix_len >= sizeof(tmp)) {
+      errno = ENAMETOOLONG;
+      return -1;
+    }
+    memcpy(tmp, filename, prefix_len);
+    tmp[prefix_len] = '\0';
     ptr += 1;
     if (stat(tmp, &st) < 0) {
       if (errno == ENOENT) {

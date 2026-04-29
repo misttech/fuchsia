@@ -104,6 +104,7 @@ test("netsvc-test") {
     "test/debuglog-test.cc",
     "test/file-api-test.cc",
     "test/match-test.cc",
+    "test/netcp-test.cc",
   ]
   deps = [
     ":args",
