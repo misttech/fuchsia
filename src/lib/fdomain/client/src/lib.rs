@@ -323,7 +323,6 @@ impl Transport {
                         }
                         Poll::Ready(Err(e)) => {
                             let e = e.map(Arc::new);
-                            *self = Transport::Error(InnerError::Transport(e.clone()));
                             return Poll::Ready(InnerError::Transport(e));
                         }
                         Poll::Pending => return Poll::Pending,
@@ -346,11 +345,7 @@ impl Transport {
             Transport::Error(e) => Poll::Ready(Err(e.clone())),
             Transport::Transport(t, _, _) => match ready!(t.as_mut().poll_next(ctx)) {
                 Some(Ok(x)) => Poll::Ready(Ok(x)),
-                Some(Err(e)) => {
-                    let e = Arc::new(e);
-                    *self = Transport::Error(InnerError::Transport(Some(Arc::clone(&e))));
-                    Poll::Ready(Err(InnerError::Transport(Some(e))))
-                }
+                Some(Err(e)) => Poll::Ready(Err(InnerError::Transport(Some(Arc::new(e))))),
                 Option::None => Poll::Ready(Err(InnerError::Transport(None))),
             },
         }
@@ -467,44 +462,22 @@ impl ClientInner {
 
         loop {
             if let Poll::Ready(e) = self.transport.poll_send_messages(ctx) {
-                for mut state in std::mem::take(&mut self.socket_read_states).into_values() {
-                    state.queued.push_back(Err(Error::from(e.clone())));
-                    self.wakers_to_wake.extend(state.wakers);
-                }
-                for (_, mut state) in self.channel_read_states.drain() {
-                    state.queued.push_back(Err(Error::from(e.clone())));
-                    self.wakers_to_wake.extend(state.wakers);
-                }
                 return Poll::Ready(Err(e));
             }
             let Poll::Ready(result) = self.transport.poll_next(ctx) else {
                 return Poll::Pending;
             };
             let data = result?;
-            let (header, data) = match fidl_message::decode_transaction_header(&data) {
-                Ok(x) => x,
-                Err(e) => {
-                    self.transport = Transport::Error(InnerError::Protocol(e));
-                    continue;
-                }
-            };
+            let (header, data) = fidl_message::decode_transaction_header(&data)?;
 
             let Some(tx_id) = NonZeroU32::new(header.tx_id) else {
-                match self.process_event(header, data) {
-                    Ok(wakers) => self.wakers_to_wake.extend(wakers),
-                    Err(e) => self.transport = Transport::Error(e),
-                }
+                let wakers = self.process_event(header, data)?;
+                self.wakers_to_wake.extend(wakers);
                 continue;
             };
 
             let tx = self.transactions.remove(&tx_id).ok_or(::fidl::Error::InvalidResponseTxid)?;
-            match tx.handle(self, Ok((header, data))) {
-                Ok(x) => x,
-                Err(e) => {
-                    self.transport = Transport::Error(InnerError::Protocol(e));
-                    continue;
-                }
-            }
+            tx.handle(self, Ok((header, data)))?;
         }
     }
 
@@ -582,6 +555,17 @@ impl ClientInner {
         if let Poll::Ready(Err(e)) = self.try_poll_transport(ctx) {
             for (_, v) in std::mem::take(&mut self.transactions) {
                 let _ = v.handle(self, Err(e.clone()));
+            }
+            for mut state in std::mem::take(&mut self.socket_read_states).into_values() {
+                state.queued.push_back(Err(Error::from(e.clone())));
+                self.wakers_to_wake.extend(state.wakers);
+            }
+            for (_, mut state) in self.channel_read_states.drain() {
+                state.queued.push_back(Err(Error::from(e.clone())));
+                self.wakers_to_wake.extend(state.wakers);
+            }
+            if matches!(self.transport, Transport::Transport(_, _, _)) {
+                self.transport = Transport::Error(e);
             }
 
             Poll::Ready(())
@@ -740,6 +724,12 @@ impl Drop for ClientLoop {
 }
 
 impl Client {
+    pub fn transport_status(&self) -> Result<()> {
+        match &self.0.lock().transport {
+            Transport::Error(e) => Err(e.clone().into()),
+            Transport::Transport(_, _, _) => Ok(()),
+        }
+    }
     /// Create a new FDomain client. The `transport` argument should contain the
     /// established connection to the target, ready to communicate the FDomain
     /// protocol.
