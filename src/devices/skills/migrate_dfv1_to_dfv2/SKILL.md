@@ -22,15 +22,11 @@ Before declaring a migration complete, you MUST complete all steps in this check
 
 ## 1. Identify DFv1 Drivers
 
-Before starting a migration, confirm that the driver is indeed a DFv1 driver. Look for the following characteristics:
+Before starting a migration, confirm that the driver is indeed a DFv1 driver.
 
-*   **Macros**: Uses `ZIRCON_DRIVER(...)` to declare the driver.
-*   **Headers**: Includes `<ddktl/device.h>`, `<lib/ddk/driver.h>`, or other headers from `//src/lib/ddk`.
-*   **Classes**: Inherits from `ddk::Device<...>`.
-*   **Dependencies**: Depends on `//src/lib/ddk` or `//src/lib/ddktl` in `BUILD.gn`.
-*   **Functions**: Uses `zxlogf`, `device_get_protocol`, `DdkAdd`, `DdkInit`.
-
-If the driver uses `FUCHSIA_DRIVER_EXPORT` and inherits from `fdf::DriverBase`, it is already a DFv2 driver.
+For a comprehensive guide on distinguishing DFv1 from DFv2 drivers (including
+codebase indicators and runtime checks), see the
+[Driver Version Identification Skill](../driver_version_identification/SKILL.md).
 
 ## 2. Update Build Dependencies
 

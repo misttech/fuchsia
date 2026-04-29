@@ -10,10 +10,12 @@ Your objective is to migrate from the old driver logging mechanisms (`DF_LOG`, `
 **To avoid overwhelming changes, you should process the migration ONE directory inside `src/devices` at a time.**
 
 ## 1. Differentiate DFv1 and DFv2 Drivers (CRITICAL)
-Before you start any migration, determine if the driver is DFv1 or DFv2. **We only want to migrate DFv2 drivers.**
+Before you start any migration, determine if the driver is DFv1 or DFv2. **We
+only want to migrate DFv2 drivers.**
 
-*   **DFv1 Drivers** typically use `zxlogf`, include `<lib/ddk/device.h>`, and employ `zx_driver_ops_t`. If you find a driver using `zxlogf`, it is a DFv1 driver and **MUST NOT** be migrated. Skip it entirely.
-*   **DFv2 Drivers** typically use `FDF_LOG` or `DF_LOG` if they haven't been migrated yet. They will inherit from `fdf::DriverBase`, use `#include <lib/driver/component/cpp/driver_export.h>`, and register themselves via the `FUCHSIA_DRIVER_EXPORT(...)` macro.
+For a comprehensive guide on distinguishing DFv1 from DFv2 drivers (including
+codebase indicators and runtime checks), see the
+[Driver Version Identification Skill](../driver_version_identification/SKILL.md).
 
 ## 2. Identify Target Logs
 Inside your assigned driver directory (and after confirming it is a DFv2 driver), search for old usage:
