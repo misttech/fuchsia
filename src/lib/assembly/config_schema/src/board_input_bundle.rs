@@ -106,6 +106,12 @@ pub struct BoardProvidedConfig {
     #[walk_paths]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sysmem_format_costs: Vec<Utf8PathBuf>,
+
+    /// Triage-detect configs for board-specific drivers.
+    #[serde(default)]
+    #[walk_paths]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub triage_detect_configs: Vec<Utf8PathBuf>,
 }
 
 /// Which build type to include a particular BIB.

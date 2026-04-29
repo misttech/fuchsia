@@ -93,6 +93,24 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             (_, FeatureSetLevel::Standard) => {
                 bind_services.insert("fuchsia.component.DetectBinder");
                 bind_services.insert("fuchsia.component.KernelDebugBrokerBinder");
+
+                // Add board-specific triage-detect configuration for standard, non-user builds.
+                for config_file in &context.board_config.configuration.triage_detect_configs {
+                    let filename = config_file.file_name().ok_or_else(|| {
+                        anyhow!(
+                            "Triage detect config file doesn't have a filename: {}",
+                            config_file
+                        )
+                    })?;
+
+                    builder
+                        .package("triage-detect")
+                        .config_data(assembly_constants::FileEntry {
+                            source: config_file.clone(),
+                            destination: filename.to_string(),
+                        })
+                        .with_context(|| format!("Adding triage detect config: {config_file}"))?;
+                }
             }
         };
 
@@ -436,6 +454,8 @@ where
 mod tests {
     use super::*;
     use crate::common::ConfigurationBuilderImpl;
+    use crate::subsystems::BoardConfig;
+    use assembly_config_schema::BoardProvidedConfig;
     use assembly_config_schema::platform_settings::diagnostics_config::{
         ComponentInitialInterest, PersistenceConfig, SamplerConfig, UrlOrMoniker,
     };
@@ -1171,5 +1191,44 @@ mod tests {
         .expect("defined config");
         let config = builder.build();
         assert!(!config.bundles.contains("console"));
+    }
+
+    #[test]
+    fn test_board_detect_triage_configuration() {
+        let resource_dir = ResourceDir::new();
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::UserDebug,
+            resource_dir: resource_dir.path(),
+            board_config: &BoardConfig {
+                name: "Test Board".into(),
+                configuration: BoardProvidedConfig {
+                    triage_detect_configs: vec![camino::Utf8PathBuf::from(
+                        "src/diagnostics/config/triage/detect/brcmfmac-detect.triage",
+                    )],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..ConfigurationContext::default_for_tests()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        DiagnosticsSubsystem::define_configuration(
+            &context,
+            &DiagnosticsSubsystemConfig {
+                diagnostics: &DiagnosticsConfig::default(),
+                storage: &Default::default(),
+            },
+            &mut builder,
+        )
+        .expect("defined config");
+        let config = builder.build();
+
+        let detect_package_config = config
+            .package_configs
+            .get("triage-detect")
+            .expect("triage-detect package configuration should exist");
+
+        assert!(detect_package_config.config_data.contains_key("brcmfmac-detect.triage"));
     }
 }

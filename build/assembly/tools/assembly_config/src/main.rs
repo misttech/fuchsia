@@ -287,6 +287,10 @@ struct BoardInputBundleArgs {
     #[argh(option)]
     sysmem_format_costs_config: Vec<Utf8PathBuf>,
 
+    /// triage-detect configs for board-specific drivers.
+    #[argh(option)]
+    pub triage_detect_configs: Vec<Utf8PathBuf>,
+
     /// release version that this BIB corresponds to.
     #[argh(option)]
     version: Option<String>,

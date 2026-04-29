@@ -30,6 +30,7 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
         cpu_manager_config,
         thermal_config,
         thread_roles,
+        triage_detect_configs,
         power_metrics_recorder_config,
         sysmem_format_costs_config,
         version,
@@ -77,6 +78,7 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
         || system_power_mode_config.is_some()
         || thermal_config.is_some()
         || !thread_roles.is_empty()
+        || !triage_detect_configs.is_empty()
         || !sysmem_format_costs_config.is_empty()
     {
         Some(BoardProvidedConfig {
@@ -87,6 +89,7 @@ pub fn new(args: &BoardInputBundleArgs) -> Result<()> {
             system_power_mode: system_power_mode_config.as_ref().map(|f| f.into()),
             thermal: thermal_config.as_ref().map(|f| f.into()),
             thread_roles: thread_roles.iter().map(|f| f.into()).collect(),
+            triage_detect_configs: triage_detect_configs.iter().map(|f| f.into()).collect(),
             sysmem_format_costs: sysmem_format_costs_config.iter().map(|f| f.into()).collect(),
         })
     } else {

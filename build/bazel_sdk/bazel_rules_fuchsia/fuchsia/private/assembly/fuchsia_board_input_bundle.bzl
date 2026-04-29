@@ -111,6 +111,7 @@ def _fuchsia_board_input_bundle_impl(ctx):
     for (arg, files) in [
         ("--thread-roles", "thread_roles"),
         ("--sysmem-format-costs-config", "sysmem_format_costs_config"),
+        ("--triage-detect-configs", "triage_detect_configs"),
     ]:
         config_files = getattr(ctx.files, files)
         if config_files:
@@ -248,6 +249,11 @@ fuchsia_board_input_bundle = rule(
         ),
         "thread_roles": attr.label_list(
             doc = "Path to thread role configuration files",
+            default = [],
+            allow_files = True,
+        ),
+        "triage_detect_configs": attr.label_list(
+            doc = "Paths to triage-detect configuration files for board-specific drivers",
             default = [],
             allow_files = True,
         ),
