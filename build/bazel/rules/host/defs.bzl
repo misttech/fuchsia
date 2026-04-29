@@ -34,13 +34,14 @@ fuchsia_less_transition = transition(
 # the build setting is already the default value that the fuchsia-less
 # transition would set it to.
 def _to_fuchsia_less_config_impl(ctx):
-    if ctx.attr.name != ctx.attr.actual[0].label.name + "_tool":
-        fail("By convention, name must be `%s_tool`, got `%s`" % (
-            ctx.attr.actual[0].label.name,
-            ctx.attr.name,
-        ))
+    # The link should be named after the file it links to, which could be
+    # different from the target's label name.
+    output_file_path = ctx.file.actual.basename
 
-    output = ctx.actions.declare_file(ctx.attr.name)
+    if ctx.attr.subdirectory_name != "":
+        output_file_path = ctx.attr.subdirectory_name + "/" + output_file_path
+
+    output = ctx.actions.declare_file(output_file_path)
 
     ctx.actions.symlink(output = output, target_file = ctx.file.actual)
 
@@ -55,6 +56,11 @@ _to_fuchsia_less_config = rule(
             allow_single_file = True,
             cfg = fuchsia_less_transition,
         ),
+        "subdirectory_name": attr.string(
+            doc = "The name of a subdirectory into which the symlink is placed.",
+            mandatory = False,
+            default = "",
+        ),
     },
 )
 
@@ -62,8 +68,9 @@ def _cc_binary_host_tool_impl(name, target_compatible_with, testonly, visibility
     if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
         fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
 
+    actual_binary_location = name + ".actual/" + name
     cc_binary(
-        name = name,
+        name = actual_binary_location,
         target_compatible_with = target_compatible_with,
         testonly = testonly,
         # Prevent use of the tool directly without going through the fuchsia-less transition.
@@ -72,8 +79,8 @@ def _cc_binary_host_tool_impl(name, target_compatible_with, testonly, visibility
     )
 
     _to_fuchsia_less_config(
-        name = name + "_tool",
-        actual = name,
+        name = name,
+        actual = actual_binary_location,
         target_compatible_with = target_compatible_with,
         testonly = testonly,
         visibility = visibility,
@@ -84,7 +91,7 @@ cc_binary_host_tool = macro(
 
 All C++ host tools used during the Fuchsia build should be defined with this
 macro to help ensure they are only built once. Rules using the tool should
-depend on the `name + "_tool"` label and use `cfg = "exec"`.
+depend on the `name` label and use `cfg = "exec"`.
 
 For example:
     Define the tool:
@@ -97,7 +104,7 @@ For example:
 
     Then use the tool in a rule:
         "_fidlc": attr.label(
-            default = "@//tools/fidl/fidlc:fidlc_tool",
+            default = "@//tools/fidl/fidlc:fidlc",
             executable = True,
             cfg = "exec",
         ),
@@ -136,7 +143,7 @@ def go_binary_host_tool(
 
     All Go host tools used during the Fuchsia build should be defined with this
     macro to help ensure they are only built once. Rules using the tool should
-    depend on the `name + "_tool"` label and use `cfg = "exec"`.
+    depend on the `name` label and use `cfg = "exec"`.
 
     For example:
         Define the tool:
@@ -149,7 +156,7 @@ def go_binary_host_tool(
 
         Then use the tool in a rule:
             "_some_tool_name": attr.label(
-                default = "@//path/to:some_tool_name_tool",
+                default = "@//path/to:some_tool_name",
                 executable = True,
                 cfg = "exec",
             ),
@@ -171,8 +178,9 @@ def go_binary_host_tool(
     if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
         fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
 
+    actual_binary_location = name + ".actual/" + name
     go_binary(
-        name = name,
+        name = actual_binary_location,
         target_compatible_with = target_compatible_with,
         testonly = testonly,
         # Prevent use of the tool directly without going through the fuchsia-less transition.
@@ -181,8 +189,11 @@ def go_binary_host_tool(
     )
 
     _to_fuchsia_less_config(
-        name = name + "_tool",
-        actual = name,
+        name = name,
+        actual = actual_binary_location,
+        # `go_binary()` from `rules_go` in Bazel places the executable in a
+        # subdirectory of the output directory. Replicate this for the symlink.
+        subdirectory_name = name + "_",
         target_compatible_with = target_compatible_with,
         testonly = testonly,
         visibility = visibility,

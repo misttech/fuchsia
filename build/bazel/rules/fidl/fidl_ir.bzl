@@ -130,7 +130,7 @@ _fidlc = rule(
         ),
         "_fidlc": attr.label(
             doc = "The FIDL compiler.",
-            default = "@//tools/fidl/fidlc:fidlc_tool",
+            default = "@//tools/fidl/fidlc:fidlc",
             executable = True,
             cfg = "exec",
         ),
@@ -267,7 +267,7 @@ _fidl_lint = rule(
             doc = "A list of experimental fidlc features to enable.",
         ),
         "_fidl_lint": attr.label(
-            default = Label("//tools/fidl/fidlc:fidl-lint_tool"),
+            default = Label("//tools/fidl/fidlc:fidl-lint"),
             executable = True,
             cfg = "exec",
         ),

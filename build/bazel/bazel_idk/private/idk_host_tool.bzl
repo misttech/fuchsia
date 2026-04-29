@@ -163,7 +163,7 @@ def _idk_cc_binary_host_tool_impl(
         idk_name = idk_name,
         category = category,
         api_area = api_area,
-        tool = binary_name + "_tool",
+        tool = binary_name,
         target_compatible_with = HOST_CONSTRAINTS,
     )
 
@@ -238,6 +238,6 @@ def idk_go_binary_host_tool(
         idk_name = idk_name,
         category = category,
         api_area = api_area,
-        tool = binary_name + "_tool",
+        tool = binary_name,
         target_compatible_with = HOST_CONSTRAINTS,
     )

@@ -111,7 +111,7 @@ _fidl_api_compatibility_check = rule(
             cfg = "exec",
         ),
         "_fidl_api_diff": attr.label(
-            default = "//tools/fidl/fidl_api_diff:fidl_api_diff_tool",
+            default = "//tools/fidl/fidl_api_diff:fidl_api_diff",
             executable = True,
             cfg = "exec",
         ),

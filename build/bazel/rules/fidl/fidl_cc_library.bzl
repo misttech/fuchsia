@@ -200,7 +200,7 @@ def fidl_cpp_family(
             generated_source_files = generated_source_files,
             generated_testing_header_files = generated_testing_header_files,
             generated_conversion_header_files = generated_hlcpp_conversion_header_files,
-            fidlgen_tool = "@//tools/fidl/fidlgen_cpp:fidlgen_cpp_tool",
+            fidlgen_tool = "@//tools/fidl/fidlgen_cpp:fidlgen_cpp",
             testonly = testonly,
         )
 
@@ -295,7 +295,7 @@ def fidl_cpp_family(
             generated_files_base = library_name_slashes + "/cpp",
             generated_header_files = generated_header_files,
             generated_source_files = generated_source_files,
-            fidlgen_tool = "@//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp_tool",
+            fidlgen_tool = "@//tools/fidl/fidlgen_hlcpp:fidlgen_hlcpp",
             testonly = testonly,
         )
 
