@@ -543,7 +543,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         self.set_fsverity_state_started()?;
         // If the merkle attribute was tombstoned in the last attempt of `enable_verity`, flushing
         // the graveyard should process the tombstone before we start rewriting the attribute.
-        if let Some(_) = self
+        if self
             .store()
             .tree()
             .find(&ObjectKey::graveyard_attribute_entry(
@@ -552,6 +552,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 FSVERITY_MERKLE_ATTRIBUTE_ID,
             ))
             .await?
+            .is_some()
         {
             self.store().filesystem().graveyard().flush().await;
         }
@@ -566,7 +567,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     self.block_size() as usize,
                 ));
                 let (tree, merkle_tree_data) =
-                    self.build_verity_tree(hasher, hash_alg.clone(), &salt).await?;
+                    self.build_verity_tree(hasher, hash_alg, &salt).await?;
                 let root: [u8; 32] = tree.root().try_into().unwrap();
                 (RootDigest::Sha256(root), merkle_tree_data)
             }
@@ -576,7 +577,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     self.block_size() as usize,
                 ));
                 let (tree, merkle_tree_data) =
-                    self.build_verity_tree(hasher, hash_alg.clone(), &salt).await?;
+                    self.build_verity_tree(hasher, hash_alg, &salt).await?;
                 (RootDigest::Sha512(tree.root().to_vec()), merkle_tree_data)
             }
             _ => {
@@ -607,8 +608,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let descriptor_decoded =
             FsVerityDescriptor::from_bytes(&merkle_tree, self.block_size() as usize)?;
         let descriptor = FsverityStateInner {
-            root_digest: root_digest.clone(),
-            salt: salt.clone(),
+            root_digest,
+            salt,
             merkle_tree: descriptor_decoded.leaf_digests()?.to_vec().into(),
         };
         self.set_fsverity_state_pending(descriptor);
