@@ -18,9 +18,9 @@ use crate::vfs::{
     UserBuffersOutputBuffer,
 };
 use ebpf::{EbpfInstruction, MapFlags, MapSchema};
-use ebpf_api::MapKey;
+use ebpf_api::{MapKey, ProgramType};
 use smallvec::smallvec;
-use starnix_logging::{log_error, log_trace, track_stub};
+use starnix_logging::{log_error, log_trace, log_warn, track_stub};
 use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_types::user_buffer::UserBuffer;
@@ -348,18 +348,26 @@ pub fn sys_bpf(
                 UserBuffersOutputBuffer::unified_new(current_task, smallvec![])?
             };
             let name = validate_bpf_name(prog_attr.prog_name.as_bytes())?;
-            let program = ProgramInfo::try_from(&prog_attr)
-                .and_then(|info| Program::new(locked, current_task, info, &mut log_buffer, code));
-            let program_or_stub = match program {
-                Ok(program) => BpfHandle::Program(program),
-                Err(e) => {
-                    if current_task.kernel().features.bpf_v2 {
-                        return Err(e.into());
-                    }
-                    // if bpf_v2 is not enabled, only log the error and return a stub. In the
-                    // future, return the error unconditionally.
-                    log_error!("Unable to load bpf program {name}: {e:?}");
+            let info = ProgramInfo::try_from(&prog_attr)?;
+            let program_type = info.program_type;
+            let program = Program::new(locked, current_task, info, &mut log_buffer, code);
+            let program_or_stub = match (program, program_type) {
+                (Ok(program), _) => BpfHandle::Program(program),
+
+                // Create a stub only if it's allowed for the `program_type`
+                // and bpf_v2 is not enabled.
+                (Err(e), ProgramType::SockOps | ProgramType::SchedCls | ProgramType::Kprobe)
+                    if !current_task.kernel().features.bpf_v2 =>
+                {
+                    log_warn!(
+                        "Creating a stub for eBPF program {name}, type={program_type:?}: {e:?}"
+                    );
                     BpfHandle::ProgramStub(prog_attr.prog_type)
+                }
+
+                (Err(e), _) => {
+                    log_error!("Unable to load eBPF program {name}, type={program_type:?}: {e:?}");
+                    return Err(e.into());
                 }
             };
             // Ensures the log buffer ends with a 0.
