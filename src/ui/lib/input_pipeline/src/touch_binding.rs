@@ -685,17 +685,19 @@ fn process_touch_screen_reports(
             batch = merged_batch;
         }
 
-        let events_to_send: Vec<InputEvent> = batch
-            .iter()
-            .map(|e| {
-                let event = e.clone_with_wake_lease();
-                // Unwrap is safe because trace_id is set when the event is created.
-                // This unwrap will not move the trace_id out of the event because trace_id has Copy trait.
-                let trace_id: fuchsia_trace::Id = event.trace_id.unwrap();
-                fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
-                event
-            })
-            .collect();
+        let events_to_send: Vec<InputEvent> = {
+            fuchsia_trace::duration!("input", "clone_with_wake_lease_batch");
+            batch
+                .into_iter()
+                .map(|event| {
+                    // Unwrap is safe because trace_id is set when the event is created.
+                    // This unwrap will not move the trace_id out of the event because trace_id has Copy trait.
+                    let trace_id: fuchsia_trace::Id = event.trace_id.unwrap();
+                    fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
+                    event
+                })
+                .collect()
+        };
         fuchsia_trace::instant!(
             "input",
             "events_to_input_handlers",
@@ -703,16 +705,15 @@ fn process_touch_screen_reports(
             "num_reports" => num_reports,
             "num_events_generated" => events_to_send.len()
         );
-        match input_event_sender.unbounded_send(events_to_send) {
-            Err(e) => {
-                metrics_logger.log_error(
-                    InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchScreenEvent,
-                    std::format!("Failed to send TouchScreenEvent with error: {:?}", e),
-                );
-            }
-            _ => {
-                inspect_status.count_generated_events(&batch);
-            }
+
+        // Record inspect data before sending, as unbounded_send consumes the vector.
+        inspect_status.count_generated_events(&events_to_send);
+
+        if let Err(e) = input_event_sender.unbounded_send(events_to_send) {
+            metrics_logger.log_error(
+                InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchScreenEvent,
+                std::format!("Failed to send TouchScreenEvent with error: {:?}", e),
+            );
         }
     }
     (previous_report, None)
