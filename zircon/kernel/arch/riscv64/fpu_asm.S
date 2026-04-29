@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <asm.h>
+#include <lib/arch/asm.h>
 #include <arch/regs.h>
 #include <arch/riscv64.h>
 
@@ -12,144 +12,69 @@
 // of the architecture can be added to allow for floating point instructions
 .option arch, +f, +d
 
+// Invoke `op N` for N in [0,31).
+.macro on_fpu_regs op
+  .irp n,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+    \op \n
+  .endr
+.endm
+
+// Note these functions don't emit any CFI directives for the f<N> registers.
+// Those register values are never part of the kernel's own program state per
+// se, so there is nothing to say about them.  They are just hardware state
+// that's external to the kernel as a program per se, like the CSRs.
+
 // Zero out the FPU single and double precision hardware state
 // void riscv64_fpu_zero();
-FUNCTION(riscv64_fpu_zero)
-.macro ZERO_FPU_REG regnum
-    fmv.d.x f\regnum, zero
-.endm
+.function riscv64_fpu_zero, global
+  .llvm.stack_size 0
 
-    // Enable the fpu so we don't trap while setting it
-    li      a0, RISCV64_CSR_SSTATUS_FS_DIRTY
-    csrs    sstatus, a0
+  // Enable the FPU so we don't trap while setting it.
+  li a0, RISCV64_CSR_SSTATUS_FS_DIRTY
+  csrs sstatus, a0
 
-    csrw    fcsr, zero
-    ZERO_FPU_REG  0
-    ZERO_FPU_REG  1
-    ZERO_FPU_REG  2
-    ZERO_FPU_REG  3
-    ZERO_FPU_REG  4
-    ZERO_FPU_REG  5
-    ZERO_FPU_REG  6
-    ZERO_FPU_REG  7
-    ZERO_FPU_REG  8
-    ZERO_FPU_REG  9
-    ZERO_FPU_REG  10
-    ZERO_FPU_REG  11
-    ZERO_FPU_REG  12
-    ZERO_FPU_REG  13
-    ZERO_FPU_REG  14
-    ZERO_FPU_REG  15
-    ZERO_FPU_REG  16
-    ZERO_FPU_REG  17
-    ZERO_FPU_REG  18
-    ZERO_FPU_REG  19
-    ZERO_FPU_REG  20
-    ZERO_FPU_REG  21
-    ZERO_FPU_REG  22
-    ZERO_FPU_REG  23
-    ZERO_FPU_REG  24
-    ZERO_FPU_REG  25
-    ZERO_FPU_REG  26
-    ZERO_FPU_REG  27
-    ZERO_FPU_REG  28
-    ZERO_FPU_REG  29
-    ZERO_FPU_REG  30
-    ZERO_FPU_REG  31
+  csrw fcsr, zero
 
-    // Set the FPU hardware to the initial state. Clear the top bit
-    // of the two bit field to go from dirty (0b11) to initial (0b01)
-    // via the clean state (0b10)
-    li      a0, RISCV64_CSR_SSTATUS_FS_CLEAN
-    csrc    sstatus, a0
+  .macro fmv.d.zero n
+    fmv.d.x f\n, zero
+  .endm
+  on_fpu_regs fmv.d.zero
 
-    ret
-END_FUNCTION(riscv64_fpu_zero)
+  // Set the FPU hardware to the initial state.  Clear the top bit
+  // of the two bit field to go from dirty (0b11) to initial (0b01)
+  // via the clean state (0b10).
+  li a0, RISCV64_CSR_SSTATUS_FS_CLEAN
+  csrc sstatus, a0
+
+  ret
+.end_function
 
 // void riscv64_fpu_save(riscv64_fpu_state *state)
-FUNCTION(riscv64_fpu_save)
-.macro SAVE_FPU_REG regnum
-    fsd     f\regnum, (8 * \regnum)(a0)
-.endm
+.function riscv64_fpu_save, global
+  .llvm.stack_size 0
 
-    SAVE_FPU_REG 0
-    SAVE_FPU_REG 1
-    SAVE_FPU_REG 2
-    SAVE_FPU_REG 3
-    SAVE_FPU_REG 4
-    SAVE_FPU_REG 5
-    SAVE_FPU_REG 6
-    SAVE_FPU_REG 7
-    SAVE_FPU_REG 8
-    SAVE_FPU_REG 9
-    SAVE_FPU_REG 10
-    SAVE_FPU_REG 11
-    SAVE_FPU_REG 12
-    SAVE_FPU_REG 13
-    SAVE_FPU_REG 14
-    SAVE_FPU_REG 15
-    SAVE_FPU_REG 16
-    SAVE_FPU_REG 17
-    SAVE_FPU_REG 18
-    SAVE_FPU_REG 19
-    SAVE_FPU_REG 20
-    SAVE_FPU_REG 21
-    SAVE_FPU_REG 22
-    SAVE_FPU_REG 23
-    SAVE_FPU_REG 24
-    SAVE_FPU_REG 25
-    SAVE_FPU_REG 26
-    SAVE_FPU_REG 27
-    SAVE_FPU_REG 28
-    SAVE_FPU_REG 29
-    SAVE_FPU_REG 30
-    SAVE_FPU_REG 31
-    csrr    a1, fcsr
-    sw      a1, 32*8(a0)
+  .macro fsd.a0 n
+    fsd f\n, 8*\n(a0)
+  .endm
+  on_fpu_regs fsd.a0
 
-    ret
-END_FUNCTION(riscv64_fpu_save)
+  csrr a1, fcsr
+  sw a1, 8*32(a0)
+
+  ret
+.end_function
 
 // void riscv64_fpu_restore(const riscv64_fpu_state *state)
-FUNCTION(riscv64_fpu_restore)
-.macro LOAD_FPU_REG regnum
-    fld     f\regnum, (8 * \regnum)(a0)
-.endm
+.function riscv64_fpu_restore, global
+  .llvm.stack_size 0
 
-    LOAD_FPU_REG 0
-    LOAD_FPU_REG 1
-    LOAD_FPU_REG 2
-    LOAD_FPU_REG 3
-    LOAD_FPU_REG 4
-    LOAD_FPU_REG 5
-    LOAD_FPU_REG 6
-    LOAD_FPU_REG 7
-    LOAD_FPU_REG 8
-    LOAD_FPU_REG 9
-    LOAD_FPU_REG 10
-    LOAD_FPU_REG 11
-    LOAD_FPU_REG 12
-    LOAD_FPU_REG 13
-    LOAD_FPU_REG 14
-    LOAD_FPU_REG 15
-    LOAD_FPU_REG 16
-    LOAD_FPU_REG 17
-    LOAD_FPU_REG 18
-    LOAD_FPU_REG 19
-    LOAD_FPU_REG 20
-    LOAD_FPU_REG 21
-    LOAD_FPU_REG 22
-    LOAD_FPU_REG 23
-    LOAD_FPU_REG 24
-    LOAD_FPU_REG 25
-    LOAD_FPU_REG 26
-    LOAD_FPU_REG 27
-    LOAD_FPU_REG 28
-    LOAD_FPU_REG 29
-    LOAD_FPU_REG 30
-    LOAD_FPU_REG 31
-    lw      a1, 32*8(a0)
-    csrw    fcsr, a1
+  .macro fld.a0 n
+    fld f\n, 8*\n(a0)
+  .endm
+  on_fpu_regs fld.a0
 
-    ret
-END_FUNCTION(riscv64_fpu_restore)
+  lw a1, 8*32(a0)
+  csrw fcsr, a1
+
+  ret
+.end_function
