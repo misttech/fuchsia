@@ -941,6 +941,10 @@
                 // raw_socket_test
                 "RawSocketNoCapTest.CreationFailsWithEPERM",
                 "RawSocketTest.SolIPSetSockOptOnRawV6SocketFails",
+
+                // TODO(https://fxbug.dev/507795191): Fix and re-enable.
+                "Inotify.RmdirGeneratesDeleteSelfBeforeParentDelete",
+                "Inotify.RmdirWithOpenDirFdDefersDeleteSelfUntilClose",
             ],
         },
         {
