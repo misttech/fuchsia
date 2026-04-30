@@ -220,13 +220,15 @@ class BpfTestBase : public testing::Test {
 
 class BpfMapTest : public BpfTestBase {
  protected:
+  static constexpr uint32_t kArrayMapValueSize = 1024;
+
   void SetUp() override {
     BpfTestBase::SetUp();
 
     if (IsSkipped())
       return;
 
-    array_fd_ = CreateMap(BPF_MAP_TYPE_ARRAY, sizeof(int), 1024, 10);
+    array_fd_ = CreateMap(BPF_MAP_TYPE_ARRAY, sizeof(int), kArrayMapValueSize, 10);
     map_fd_ = CreateMap(BPF_MAP_TYPE_HASH, sizeof(int), sizeof(int), 10);
     ringbuf_fd_ = CreateMap(BPF_MAP_TYPE_RINGBUF, 0, 0, static_cast<uint32_t>(getpagesize()));
 
@@ -579,7 +581,7 @@ TEST_F(BpfMapTest, PinMap) {
 TEST_F(BpfMapTest, FreezeMap) {
   // 1. Write an initial value to the map.
   int key = 0;
-  std::vector<char> value(1024, 'A');
+  std::vector<char> value(kArrayMapValueSize, 'A');
   bpf_attr attr = {
       .map_fd = static_cast<unsigned>(array_fd()),
       .key = reinterpret_cast<uintptr_t>(&key),
@@ -592,7 +594,7 @@ TEST_F(BpfMapTest, FreezeMap) {
   EXPECT_EQ(bpf(BPF_MAP_FREEZE, &attr), 0) << strerror(errno);
 
   // 3. Attempt to write to the map again (this should fail).
-  std::vector<char> new_value(1024, 'B');
+  std::vector<char> new_value(kArrayMapValueSize, 'B');
   attr = {
       .map_fd = static_cast<unsigned>(array_fd()),
       .key = reinterpret_cast<uintptr_t>(&key),
@@ -602,7 +604,7 @@ TEST_F(BpfMapTest, FreezeMap) {
   EXPECT_EQ(errno, EPERM);
 
   // 4. Read the value back to confirm it wasn't changed.
-  std::vector<char> read_value(1024, 0);
+  std::vector<char> read_value(kArrayMapValueSize, 0);
   attr = {
       .map_fd = static_cast<unsigned>(array_fd()),
       .key = reinterpret_cast<uintptr_t>(&key),
@@ -1046,6 +1048,58 @@ TEST_F(BpfMapTest, LpmTrie) {
     EXPECT_EQ(bpf(BPF_MAP_LOOKUP_ELEM, &attr), 0) << strerror(errno);
     EXPECT_EQ(value, test.value);
   }
+}
+
+TEST_F(BpfMapTest, CannotUpdatePinnedMapWithReadOnlyFd) {
+  const char* pin_path = "/sys/fs/bpf/my_map_perms";
+
+  // Pin the array map that was created during test setup.
+  Pin(array_fd(), pin_path);
+
+  // Get a read-only file descriptor for the pinned map via BPF_OBJ_GET using the BPF_F_RDONLY flag.
+  fbl::unique_fd ro_map_fd = MapRetrieveRO(pin_path);
+  ASSERT_TRUE(ro_map_fd.is_valid());
+
+  // Try to update an element in the map using the read-only file descriptor. This should fail with
+  // EPERM.
+  uint32_t key = 0;
+  uint32_t value = 42;
+  union bpf_attr update_attr = {};
+  update_attr.map_fd = static_cast<uint32_t>(ro_map_fd.get());
+  update_attr.key = reinterpret_cast<uint64_t>(&key);
+  update_attr.value = reinterpret_cast<uint64_t>(&value);
+  update_attr.flags = BPF_ANY;
+
+  EXPECT_THAT(bpf(BPF_MAP_UPDATE_ELEM, &update_attr), SyscallFailsWithErrno(EPERM));
+
+  // Clean up.
+  EXPECT_THAT(unlink(pin_path), SyscallSucceeds());
+}
+
+TEST_F(BpfMapTest, CannotLookUpPinnedMapWithWriteOnlyFd) {
+  const char* pin_path = "/sys/fs/bpf/my_map_perms";
+
+  // Pin the array map that was created during test setup.
+  Pin(array_fd(), pin_path);
+
+  // Get a write-only file descriptor for the pinned map via BPF_OBJ_GET using the BPF_F_WRONLY
+  // flag.
+  fbl::unique_fd wo_map_fd = BpfFdGet(pin_path, BPF_F_WRONLY);
+  ASSERT_TRUE(wo_map_fd.is_valid());
+
+  // Try to look up an element in the map using the write-only file descriptor. This should fail
+  // with EPERM.
+  uint32_t key = 0;
+  std::vector<uint8_t> value(kArrayMapValueSize);
+  union bpf_attr lookup_attr = {};
+  lookup_attr.map_fd = static_cast<uint32_t>(wo_map_fd.get());
+  lookup_attr.key = reinterpret_cast<uint64_t>(&key);
+  lookup_attr.value = reinterpret_cast<uint64_t>(value.data());
+
+  EXPECT_THAT(bpf(BPF_MAP_LOOKUP_ELEM, &lookup_attr), SyscallFailsWithErrno(EPERM));
+
+  // Clean up.
+  EXPECT_THAT(unlink(pin_path), SyscallSucceeds());
 }
 
 class BpfMapCapabilityTest

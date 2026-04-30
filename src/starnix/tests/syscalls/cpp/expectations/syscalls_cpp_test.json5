@@ -64,6 +64,10 @@
                 // TODO(https://fxbug.dev/351037863)
                 "AshmemTest.SetNameOverflow",
 
+                // TODO(https://fxbug.dev/507966123): Check fd access mode in BPF_MAP_* subcommands.
+                "BpfMapTest.CannotUpdatePinnedMapWithReadOnlyFd",
+                "BpfMapTest.CannotLookUpPinnedMapWithWriteOnlyFd",
+
                 // TODO(https://fxbug.dev/297438799)
                 "MmapTest.CanMprotectNonExecMmapToExecutable",
 
