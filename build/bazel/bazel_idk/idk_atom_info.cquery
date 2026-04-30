@@ -4,10 +4,11 @@
 
 def _format(target):
     """Returns lines containing formatted information about the atom.
- It is only for debugging and demonstration purposes.
-Example use:
-    fx bazel cquery build/bazel/bazel_idk/tests:test-source-set_idk --output=starlark --starlark:file=build/bazel/bazel_idk/idk_atom_info.cquery
-"""
+    It is only for debugging and demonstration purposes.
+
+    Example use:
+        fx bazel cquery --config=fuchsia_platform build/bazel/bazel_idk/tests:test-source-library_idk --output=starlark --starlark:file=build/bazel/bazel_idk/idk_atom_info.cquery
+    """
 
     atom_info = providers(target)["//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo"]
 
@@ -20,7 +21,7 @@ Example use:
         "category: " + atom_info.category,
         "is_stable: " + str(atom_info.is_stable),
         "api_area: " + atom_info.api_area,
-        "api_file_path: " + atom_info.api_file_path,
+        "api_file_path: " + str(atom_info.api_file_path),
         "api_contents_map: " + str(atom_info.api_contents_map),
         "atom_files_map: " + str(atom_info.atom_files_map),
     ]

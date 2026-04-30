@@ -4,10 +4,10 @@
 
 def format(target):
     """Returns lines containing formatted information about the contents of the
-molecule. It is only for debugging and demonstration purposes.
-Example use:
-    fx bazel cquery build/bazel/bazel_idk/tests:test_molecule --output=starlark --starlark:file=build/bazel/bazel_idk/idk_molecule_info.cquery
-"""
+    molecule. It is only for debugging and demonstration purposes.
+    Example use:
+        fx bazel cquery --config=fuchsia_platform build/bazel/bazel_idk/tests:test_molecule_idk --output=starlark --starlark:file=build/bazel/bazel_idk/idk_molecule_info.cquery
+    """
 
     molecule_info = providers(target)["//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkMoleculeInfo"]
 

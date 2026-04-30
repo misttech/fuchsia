@@ -73,4 +73,9 @@ def _generate_prebuild_info_for_all_atoms(target):
     return infos
 
 def format(target):
+    """Returns a JSON list of prebuild info for all atoms in the IDK dependency graph of the given target.
+
+    Example use:
+        fx bazel cquery --config=fuchsia_platform build/bazel/bazel_idk/tests:test_molecule_idk --output=starlark --starlark:file=build/bazel/bazel_idk/idk_prebuild_info.cquery
+    """
     return "[\n" + ",\n".join(_generate_prebuild_info_for_all_atoms(target)) + "\n]"
