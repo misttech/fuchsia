@@ -126,14 +126,14 @@ func artifactName(file string) string {
 
 // set the TestMetadata on TestResult
 func setTestMetadata(r *sinkpb.TestResult, testDetail runtests.TestDetails, displayName string) {
+	r.TestMetadata = &resultpb.TestMetadata{
+		Name: displayName,
+	}
 	if testDetail.Metadata.ComponentID > 0 {
-		r.TestMetadata = &resultpb.TestMetadata{
-			Name: displayName,
-			BugComponent: &resultpb.BugComponent{
-				System: &resultpb.BugComponent_IssueTracker{
-					IssueTracker: &resultpb.IssueTrackerComponent{
-						ComponentId: int64(testDetail.Metadata.ComponentID),
-					},
+		r.TestMetadata.BugComponent = &resultpb.BugComponent{
+			System: &resultpb.BugComponent_IssueTracker{
+				IssueTracker: &resultpb.IssueTrackerComponent{
+					ComponentId: int64(testDetail.Metadata.ComponentID),
 				},
 			},
 		}
