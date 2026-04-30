@@ -9,7 +9,10 @@
 ## This command attempts to replicate the result of an infra builder by reading
 ## build information and translating to corresponding local 'fx' commands.
 ##
-## usage: fx repro [-h|--help] <BUILD_ID>|<BUILD_URL>|<FINT_PARAMS_FILE>
+## usage: fx repro [-h|--help] [--minimal] <BUILD_ID>|<BUILD_URL>|<FINT_PARAMS_FILE>
+##
+##  --minimal: only set failed test targets instead of the full build configuration.
+##             Requires a BUILD_ID or BUILD_URL.
 ##
 ##  BUILD_ID: the id of a build, prefixed or not by "b". For example:
 ##       b8860637037546448224 or 8860637037546448224
@@ -32,6 +35,12 @@ set -e -o pipefail
 function repro {
   local build_id="$1"
   local fint_params_file_relative="$2"
+  local minimal="$3"
+
+  if $minimal && [[ -z "$build_id" ]]; then
+    fx-error "--minimal requires a BUILD_ID or BUILD_URL to fetch failed tests."
+    return 1
+  fi
 
   local can_sync_to=false
 
@@ -142,11 +151,39 @@ function repro {
 
   print_spacer
   print_comment "Set the build configuration:"
-  print_cmd "fx --dir=${build_dir_name} set --fint-params-path '$fint_params_file_relative' --skip-local-args ${rust_toolchain_set_args}"
+  if $minimal; then
+    local failed_tests
+    failed_tests="$(get_failed_test_gn_labels "$build_id")"
+    if [[ -z "$failed_tests" ]]; then
+      fx-error "No failed test GN labels found. --minimal is only supported when there are failed tests with GN labels."
+      return 1
+    fi
+
+    local fint_params_file="${FUCHSIA_DIR}/${fint_params_file_relative}"
+    local board=$(grep '^board:' "${fint_params_file}" | head -n 1 | cut -d'"' -f2 | sed 's|.*/||;s|\.gni||')
+    local product=$(grep '^product:' "${fint_params_file}" | head -n 1 | cut -d'"' -f2 | sed 's|.*/||;s|\.gni||')
+
+    local compilation_flag=""
+    if grep -q "COMPILATION_MODE_RELEASE" "${fint_params_file}"; then
+      compilation_flag="--release"
+    elif grep -q "COMPILATION_MODE_DEBUG" "${fint_params_file}"; then
+      compilation_flag="--debug"
+    fi
+
+    local failed_tests_commas="${failed_tests// /,}"
+
+    print_cmd "fx --dir=${build_dir_name} set ${product}.${board} ${compilation_flag} --with-test '${failed_tests_commas}' ${rust_toolchain_set_args}"
+  else
+    print_cmd "fx --dir=${build_dir_name} set --fint-params-path '$fint_params_file_relative' --skip-local-args ${rust_toolchain_set_args}"
+  fi
   print_spacer
 
   print_comment "Build:"
-  print_cmd "fx build --fint-params-path '$fint_params_file_relative'"
+  if $minimal; then
+    print_cmd "fx build"
+  else
+    print_cmd "fx build --fint-params-path '$fint_params_file_relative'"
+  fi
   print_spacer
 
   print_comment "If necessary, start an emulator or connect a device"
@@ -241,6 +278,21 @@ function get_failed_tests {
   jq '.output.properties.failed_test_names? // [] | unique | join(" ")' "$build"
 }
 
+# Returns a space-separated list of GN labels for failed tests obtained via ResultDB.
+function get_failed_test_gn_labels {
+  local build_id="$1"
+  local rdb_tool="${FUCHSIA_DIR}/prebuilt/tools/resultdb/rdb"
+
+  if [[ ! -f "$rdb_tool" ]]; then
+    return
+  fi
+
+  # Route stderr to /dev/null to suppress "Use of LUCI is subject to..." warning.
+  # Grab GN labels from the "gn_label" tag of each test result.
+  "$rdb_tool" query -u -json -tr-fields "testId,tags" "build-${build_id}" 2>/dev/null | \
+  fx-command-run jq -s -r '[.[] | select(.testResult != null) | .testResult | .tags[]? | select(.key == "gn_label") | .value | select(. != null and . != "")] | unique | join(" ")'
+}
+
 # Returns the fint params path used by the build. Older builds may not have this
 # property set.
 function get_fint_params_path {
@@ -293,16 +345,31 @@ function get_build {
 }
 
 function main {
+  local minimal=false
+  local args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --minimal)
+        minimal=true
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 0
+        ;;
+      *)
+        args+=("$1")
+        shift
+        ;;
+    esac
+  done
+  set -- "${args[@]}"
+
   # Expect exactly one state.
   if [[ $# -ne 1 ]]; then
     fx-error "BUILD_URL or FINT_PARAMS_FILE missing."
     usage
     return 1
-  fi
-
-  if [[ "$1" =~ ^(-h|--help)$ ]]; then
-    usage
-    return 0
   fi
 
   local arg="$1"
@@ -325,7 +392,7 @@ function main {
     return 1
   fi
 
-  repro "${build_id}" "${fint_params_file_relative}"
+  repro "${build_id}" "${fint_params_file_relative}" "${minimal}"
 }
 
 main "$@"
