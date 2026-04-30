@@ -100,7 +100,12 @@ idk_cc_source_library(
         ":test_source_set_dependency",
     ],
     idk_name = "test_source_set",
-    non_fuchsia_deps = [":test_source_set_dependency"],
+    non_fuchsia_deps = [
+        ":test_source_set_dependency",
+
+        # Necessary for the host configuration to access <zircon/availability.h>.
+        "//src/zircon/lib/zircon",
+    ],
     stable = True,
     deps = [
         ":test_noop_atom",
@@ -366,6 +371,11 @@ idk_cc_static_library(
         # and provide the full label. The first case is covered in `fuchsia_deps`.
         "//build/bazel/bazel_idk/tests",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2",
+
+        # Necessary for the host configuration to access <zircon/availability.h>.
+        # Include in the common deps to demonstrate that the deps is always
+        # valid and because this template does not support `non_fuchsia_deps`.
+        "//src/zircon/lib/zircon",
     ],
 )
 
@@ -404,6 +414,7 @@ create_test_atom_info(
     atoms_depset = depset([
         "//build/bazel/bazel_idk/tests:tests_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//src/zircon/lib/zircon:zircon_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
     ]),
     category = "partner",
@@ -416,6 +427,7 @@ create_test_atom_info(
     deps = [
         "//build/bazel/bazel_idk/tests:tests_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency2_idk",
+        "//src/zircon/lib/zircon:zircon_idk",
         "//build/bazel/bazel_idk/tests:test_source_set_dependency_idk",
     ],
 )
@@ -617,7 +629,12 @@ idk_cc_source_library_zx(
         # Test conversion of `foo:foo.as-needed` to `foo:foo` for atom IDK deps in `implementation_deps`.
         ":test_source_set_dependency2_zx.as-needed",
     ],
-    non_fuchsia_deps = [":test_source_set_dependency_zx"],
+    non_fuchsia_deps = [
+        ":test_source_set_dependency_zx",
+
+        # Necessary for the host configuration to access <zircon/availability.h>.
+        "//src/zircon/lib/zircon",
+    ],
     stable = True,
     deps = [
         # Test conversion of `foo:headers` to `foo:foo` for atom IDK deps in `deps`.
@@ -681,6 +698,11 @@ idk_cc_static_library_zx(
     deps = [
         # Test conversion of `foo:headers` to `foo:foo` for atom IDK deps in `deps`.
         ":headers",
+
+        # Necessary for the host configuration to access <zircon/availability.h>.
+        # Include in the common deps to demonstrate that the deps is always
+        # valid and because this template does not support `non_fuchsia_deps`.
+        "//src/zircon/lib/zircon",
     ],
 )
 
@@ -871,13 +893,13 @@ filegroup(
     testonly = True,
     srcs = [
         ":platform_dependent_source_library",
-        ":test-source-library",
         ":test_source_set_dependency",
         ":tests",
     ] + select({
         # TODO(https://fxbug.dev/505380228): Merge these targets into the main
         # list once sysroots are available for all CPU architectures.
         "//build/bazel/platforms:is_fuchsia_" + target_cpu: [
+            ":test-source-library",
             ":test_source_set_zx",
         ],
         "//conditions:default": [],

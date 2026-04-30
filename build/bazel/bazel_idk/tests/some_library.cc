@@ -4,5 +4,13 @@
 
 #include <dependency.h>
 #include <lib/test_lib/test_header.h>
+#include <zircon/availability.h>
 
-__attribute__((__visibility__("default"))) int SomeFunction() { return RequiredFunction(42); }
+#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_AT_LEAST(NEXT)  // NEVER_REPLACE_NEXT
+__attribute__((__visibility__("default")))
+#endif
+int kAvailableFromApiLevelNext = 42;
+
+__attribute__((__visibility__("default"))) int SomeFunction() {
+  return RequiredFunction(kAvailableFromApiLevelNext);
+}
