@@ -12,7 +12,7 @@ use crate::debugger::offline_debugger::AstLocation;
 use crate::errors::UserError;
 use crate::linter;
 use crate::parser::bind_rules::{self, Condition, ConditionOp, Statement};
-use crate::parser::common::{CompoundIdentifier, Value};
+use crate::parser::common::{BindParserError, CompoundIdentifier, Value};
 use crate::parser::{self, bind_composite};
 use std::collections::HashMap;
 use std::fmt;
@@ -203,14 +203,22 @@ pub fn compile<'a>(
     use_new_bytecode: bool,
     enable_debug: bool,
 ) -> Result<CompiledBindRules<'a>, CompilerError> {
-    if bind_composite::Ast::try_from(rules_str).is_ok() {
-        return Ok(CompiledBindRules::CompositeBind(compile_bind_composite(
-            rules_str,
-            libraries,
-            lint,
-            use_new_bytecode,
-            enable_debug,
-        )?));
+    match bind_composite::Ast::try_from(rules_str) {
+        Ok(_) => {
+            return Ok(CompiledBindRules::CompositeBind(compile_bind_composite(
+                rules_str,
+                libraries,
+                lint,
+                use_new_bytecode,
+                enable_debug,
+            )?));
+        }
+        Err(BindParserError::CompositeKeyword(_)) => {
+            /* Fall through for non-composite bind rules */
+        }
+        Err(e) => {
+            return Err(CompilerError::BindParserError(e));
+        }
     }
 
     Ok(CompiledBindRules::Bind(compile_bind(

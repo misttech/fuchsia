@@ -122,6 +122,7 @@ pub enum BindParserError {
     Eof(String),
     CompositeKeyword(String),
     ParentKeyword(String),
+    DeprecatedNodeKeyword(String),
     PrimaryOrOptionalKeyword(String),
     OnePrimaryParent(String),
     InvalidParentName(String),

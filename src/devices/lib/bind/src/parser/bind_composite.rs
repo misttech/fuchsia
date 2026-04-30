@@ -50,7 +50,15 @@ fn keyword_composite(input: NomSpan) -> IResult<NomSpan, NomSpan, BindParserErro
 }
 
 fn keyword_parent(input: NomSpan) -> IResult<NomSpan, NomSpan, BindParserError> {
-    ws(map_err(alt((tag("node"), tag("parent"))), BindParserError::ParentKeyword)).parse(input)
+    let (input, kw) =
+        ws(map_err(alt((tag("node"), tag("parent"))), BindParserError::ParentKeyword))
+            .parse(input)?;
+    if kw.fragment() == &"node" {
+        return Err(nom::Err::Error(BindParserError::DeprecatedNodeKeyword(
+            kw.fragment().to_string(),
+        )));
+    }
+    Ok((input, kw))
 }
 
 fn keyword_primary(input: NomSpan) -> IResult<NomSpan, NomSpan, BindParserError> {
@@ -223,6 +231,14 @@ mod test {
             assert_eq!(
                 composite(NomSpan::new("")),
                 Err(nom::Err::Error(BindParserError::CompositeKeyword("".to_string())))
+            );
+        }
+
+        #[test]
+        fn node_keyword_error() {
+            assert_eq!(
+                composite(NomSpan::new("composite a; primary node \"bananaquit\" { true; }")),
+                Err(nom::Err::Error(BindParserError::DeprecatedNodeKeyword("node".to_string())))
             );
         }
 

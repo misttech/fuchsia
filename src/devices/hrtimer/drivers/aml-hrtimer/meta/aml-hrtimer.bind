@@ -8,7 +8,7 @@ using fuchsia.amlogic.platform;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "pdev" {
+primary parent "pdev" {
   if fuchsia.devicetree.FIRST_COMPATIBLE == "amlogic,hrtimer" {
     true;
   } else {

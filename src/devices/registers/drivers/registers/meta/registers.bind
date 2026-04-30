@@ -7,7 +7,7 @@ composite registers;
 using fuchsia.platform;
 using fuchsia.devicetree;
 
-primary node "pdev" {
+primary parent "pdev" {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
 
   if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {

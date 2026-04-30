@@ -143,6 +143,12 @@ impl From<BindParserError> for UserError {
             BindParserError::ParentKeyword(span) => {
                 UserError::new("E030", "Expected 'parent' or 'node' keyword.", Some(span), false)
             }
+            BindParserError::DeprecatedNodeKeyword(span) => UserError::new(
+                "E034",
+                "The 'node' keyword is deprecated. Use 'parent' instead.",
+                Some(span),
+                false,
+            ),
             BindParserError::PrimaryOrOptionalKeyword(span) => UserError::new(
                 "E031",
                 "Expected 'primary' or 'optional' keyword.",
