@@ -174,6 +174,7 @@ impl Resolver {
 
     fn on_start_dns_upstream_query<'a>(
         &self,
+        netif_index_backbone: Option<ot::NetifIndex>,
         _instance: &ot::Instance,
         thread_context: &'static ot::PlatDnsUpstreamQuery,
         dns_query: &ot::Message<'_>,
@@ -218,12 +219,31 @@ impl Resolver {
                             }
                         }
                         fidl_fuchsia_net::SocketAddress::Ipv6(ipv6_sock_addr) => {
-                            let sock_addr = SocketAddr::new(
-                                std::net::IpAddr::V6(std::net::Ipv6Addr::from(
-                                    ipv6_sock_addr.address.addr,
-                                )),
+                            let dst_addr = std::net::Ipv6Addr::from(ipv6_sock_addr.address.addr);
+                            let mut scope_id = ipv6_sock_addr.zone_index as u32;
+
+                            // If the upstream DNS server uses an IPv6 link-local address without a
+                            // scope ID, inject the backbone interface index.
+                            if dst_addr.is_unicast_link_local() && scope_id == 0 {
+                                if let Some(backbone_id) = netif_index_backbone {
+                                    scope_id = backbone_id;
+                                } else {
+                                    warn!(
+                                        tag = "resolver";
+                                        "No scope_id present for link-local DNS server {} and \
+                                        backbone interface index is unknown",
+                                        dst_addr
+                                    );
+                                    return;
+                                }
+                            }
+
+                            let sock_addr = std::net::SocketAddr::V6(std::net::SocketAddrV6::new(
+                                dst_addr,
                                 ipv6_sock_addr.port,
-                            );
+                                0, // flowinfo
+                                scope_id,
+                            ));
 
                             info!(
                                 tag = "resolver";
@@ -324,6 +344,7 @@ unsafe extern "C" fn otPlatDnsStartUpstreamQuery(
 ) {
     Resolver::on_start_dns_upstream_query(
         &unsafe { PlatformBacking::as_ref() }.resolver,
+        unsafe { PlatformBacking::as_ref() }.netif_index_backbone,
         // SAFETY: `instance` must be a pointer to a valid `otInstance`,
         //         which is guaranteed by the caller.
         unsafe { ot::Instance::ref_from_ot_ptr(a_instance) }.unwrap(),
