@@ -535,28 +535,46 @@ impl Type {
                 (type1, inner)
             }
 
-            (JumpWidth::W64, JumpType::Lt, Type::ScalarValue(data1), Type::ScalarValue(data2))
-            | (JumpWidth::W64, JumpType::Gt, Type::ScalarValue(data2), Type::ScalarValue(data1)) => {
-                debug_assert!(data1.min() < u64::MAX);
-                debug_assert!(data2.max() > 0);
-                let new_max1 = std::cmp::min(data1.max(), data2.max() - 1);
-                debug_assert!(data1.min() <= new_max1);
-                let new_min2 = std::cmp::max(data2.min(), data1.min() + 1);
-                debug_assert!(new_min2 <= data2.max());
-                let new_range1 = U64Range::new(data1.min(), new_max1);
-                let new_range2 = U64Range::new(new_min2, data2.max());
-                (data1.update_range(new_range1).into(), data2.update_range(new_range2).into())
+            (JumpWidth::W64, JumpType::Lt, Type::ScalarValue(lhs), Type::ScalarValue(rhs)) => {
+                debug_assert!(lhs.min() < u64::MAX);
+                debug_assert!(rhs.max() > 0);
+                let new_max_lhs = std::cmp::min(lhs.max(), rhs.max() - 1);
+                debug_assert!(lhs.min() <= new_max_lhs);
+                let new_min_rhs = std::cmp::max(rhs.min(), lhs.min() + 1);
+                debug_assert!(new_min_rhs <= rhs.max());
+                let new_range_lhs = U64Range::new(lhs.min(), new_max_lhs);
+                let new_range_rhs = U64Range::new(new_min_rhs, rhs.max());
+                (lhs.update_range(new_range_lhs).into(), rhs.update_range(new_range_rhs).into())
+            }
+            (JumpWidth::W64, JumpType::Gt, Type::ScalarValue(lhs), Type::ScalarValue(rhs)) => {
+                debug_assert!(rhs.min() < u64::MAX);
+                debug_assert!(lhs.max() > 0);
+                let new_min_lhs = std::cmp::max(lhs.min(), rhs.min() + 1);
+                debug_assert!(new_min_lhs <= lhs.max());
+                let new_max_rhs = std::cmp::min(rhs.max(), lhs.max() - 1);
+                debug_assert!(rhs.min() <= new_max_rhs);
+                let new_range_lhs = U64Range::new(new_min_lhs, lhs.max());
+                let new_range_rhs = U64Range::new(rhs.min(), new_max_rhs);
+                (lhs.update_range(new_range_lhs).into(), rhs.update_range(new_range_rhs).into())
             }
 
-            (JumpWidth::W64, JumpType::Le, Type::ScalarValue(data1), Type::ScalarValue(data2))
-            | (JumpWidth::W64, JumpType::Ge, Type::ScalarValue(data2), Type::ScalarValue(data1)) => {
-                let new_max1 = std::cmp::min(data1.max(), data2.max());
-                debug_assert!(data1.min() <= new_max1);
-                let new_min2 = std::cmp::max(data2.min(), data1.min());
-                debug_assert!(new_min2 <= data2.max());
-                let new_range1 = U64Range::new(data1.min(), new_max1);
-                let new_range2 = U64Range::new(new_min2, data2.max());
-                (data1.update_range(new_range1).into(), data2.update_range(new_range2).into())
+            (JumpWidth::W64, JumpType::Le, Type::ScalarValue(lhs), Type::ScalarValue(rhs)) => {
+                let new_max_lhs = std::cmp::min(lhs.max(), rhs.max());
+                debug_assert!(lhs.min() <= new_max_lhs);
+                let new_min_rhs = std::cmp::max(rhs.min(), lhs.min());
+                debug_assert!(new_min_rhs <= rhs.max());
+                let new_range_lhs = U64Range::new(lhs.min(), new_max_lhs);
+                let new_range_rhs = U64Range::new(new_min_rhs, rhs.max());
+                (lhs.update_range(new_range_lhs).into(), rhs.update_range(new_range_rhs).into())
+            }
+            (JumpWidth::W64, JumpType::Ge, Type::ScalarValue(lhs), Type::ScalarValue(rhs)) => {
+                let new_min_lhs = std::cmp::max(lhs.min(), rhs.min());
+                debug_assert!(new_min_lhs <= lhs.max());
+                let new_max_rhs = std::cmp::min(rhs.max(), lhs.max());
+                debug_assert!(rhs.min() <= new_max_rhs);
+                let new_range_lhs = U64Range::new(new_min_lhs, lhs.max());
+                let new_range_rhs = U64Range::new(rhs.min(), new_max_rhs);
+                (lhs.update_range(new_range_lhs).into(), rhs.update_range(new_range_rhs).into())
             }
 
             (
@@ -4519,6 +4537,49 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_type_constraint() {
+        let mut context = ComputationContext::default();
+        let (new_lhs, new_rhs) = Type::constraint(
+            &mut context,
+            JumpType::Ge,
+            JumpWidth::W64,
+            Type::UNKNOWN_SCALAR,
+            Type::from(10),
+        )
+        .unwrap();
+
+        if let Type::ScalarValue(data1) = new_lhs {
+            assert_eq!(data1.min(), 10);
+            assert_eq!(data1.max(), u64::MAX);
+        } else {
+            panic!("Expected ScalarValue");
+        }
+
+        if let Type::ScalarValue(data2) = new_rhs {
+            assert_eq!(data2.min(), 10);
+            assert_eq!(data2.max(), 10);
+        } else {
+            panic!("Expected ScalarValue");
+        }
+
+        let (new_lhs, new_rhs) = Type::constraint(
+            &mut context,
+            JumpType::Gt,
+            JumpWidth::W64,
+            Type::UNKNOWN_SCALAR,
+            Type::from(10),
+        )
+        .unwrap();
+
+        if let Type::ScalarValue(data1) = new_lhs {
+            assert_eq!(data1.min(), 11);
+            assert_eq!(data1.max(), u64::MAX);
+        } else {
+            panic!("Expected ScalarValue");
         }
     }
 }
