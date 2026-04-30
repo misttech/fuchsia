@@ -18,6 +18,7 @@
         { protocol: "fuchsia.kernel.MsiResource" },
         { protocol: "fuchsia.kernel.MmioResource" },
         { protocol: "fuchsia.kernel.IoportResource" },
+        { protocol: "fuchsia.kernel.IrqResource" },
         { service: "fuchsia.hardware.platform.bus.Service" },
     ],
 }

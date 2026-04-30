@@ -3,12 +3,18 @@
 // found in the LICENSE file.
 #ifndef SRC_DEVICES_BOARD_DRIVERS_QEMU_ARM64_QEMU_PCIROOT_H_
 #define SRC_DEVICES_BOARD_DRIVERS_QEMU_ARM64_QEMU_PCIROOT_H_
+#include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/pci/pciroot.h>
 #include <lib/zx/bti.h>
+#include <lib/zx/result.h>
 #include <zircon/status.h>
 
+#include <array>
+#include <vector>
+
 #include <ddktl/device.h>
+#include <src/devices/board/drivers/qemu-arm64/qemu-virt.h>
 
 namespace board_qemu_arm64 {
 class QemuArm64Pciroot;
@@ -48,11 +54,16 @@ class QemuArm64Pciroot : public QemuArm64PcirootType,
     return ZX_OK;
   }
 
- private:
-  Context context_;
   QemuArm64Pciroot(PciRootHost* root_host, QemuArm64Pciroot::Context ctx, zx_device_t* parent,
                    const char* name)
       : QemuArm64PcirootType(parent), PcirootBase(root_host), context_(ctx) {}
+
+ private:
+  zx::result<> CreateInterrupts();
+
+  Context context_;
+  std::array<pci_legacy_irq_t, PCIE_INT_COUNT> interrupts_;
+  std::array<pci_irq_routing_entry_t, DEVICES_PER_BUS> irq_routing_entries_;
 };
 
 }  // namespace board_qemu_arm64

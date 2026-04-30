@@ -6,28 +6,86 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/ddk/debug.h>
+#include <lib/ddk/driver.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/zx/interrupt.h>
+#include <lib/zx/resource.h>
+#include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <stdint.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/types.h>
+#include <zircon/types.h>
 
 #include <array>
 #include <limits>
+#include <memory>
 
 #include <fbl/alloc_checker.h>
-
-#include "qemu-bus.h"
-#include "qemu-pciroot.h"
-#include "qemu-virt.h"
+#include <src/devices/board/drivers/qemu-arm64/qemu-bus.h>
+#include <src/devices/board/drivers/qemu-arm64/qemu-pciroot.h>
+#include <src/devices/board/drivers/qemu-arm64/qemu-virt.h>
 
 namespace board_qemu_arm64 {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
 zx_status_t QemuArm64Pciroot::Create(PciRootHost* root_host, QemuArm64Pciroot::Context ctx,
                                      zx_device_t* parent, const char* name) {
-  auto pciroot = new QemuArm64Pciroot(root_host, ctx, parent, name);
-  return pciroot->DdkAdd(ddk::DeviceAddArgs(name).set_proto_id(ZX_PROTOCOL_PCIROOT));
+  auto pciroot = std::make_unique<QemuArm64Pciroot>(root_host, ctx, parent, name);
+  if (zx::result<> result = pciroot->CreateInterrupts(); result.is_error()) {
+    zxlogf(ERROR, "Failed to create legacy PCI interrupts: %s", result.status_string());
+    return result.status_value();
+  }
+
+  zx_status_t status = pciroot->DdkAdd(ddk::DeviceAddArgs(name).set_proto_id(ZX_PROTOCOL_PCIROOT));
+  if (status == ZX_OK) {
+    // Driver Framework owns QemuArm64Pciroot, object is intentionally leaked on success.
+    [[maybe_unused]] auto ptr = pciroot.release();
+  }
+  return status;
+}
+
+// QEMU's hw/arm/virt.c wires each PCIe INTx pin directly to a GIC SPI in a
+// fixed range (PCIE_INT_BASE .. PCIE_INT_BASE + PCIE_INT_COUNT - 1) and then
+// relies on the standard PCI pin swizzle at each device. The values are stable
+// across QEMU versions as long as the machine model does not change, so we
+// hardcode them here instead of parsing the device tree.
+// TODO(b/507938746): In the future, we could consider obtaining this IRQ routing
+// from the devicetree.
+zx::result<> QemuArm64Pciroot::CreateInterrupts() {
+  zx::unowned_resource irq_resource(get_irq_resource(parent()));
+
+  for (uint32_t pin = 0; pin < PCIE_INT_COUNT; pin++) {
+    const uint32_t vector = PCIE_INT_BASE + pin;
+    zx::interrupt interrupt;
+    if (zx_status_t status =
+            zx::interrupt::create(*irq_resource, vector, ZX_INTERRUPT_MODE_LEVEL_HIGH, &interrupt);
+        status != ZX_OK) {
+      zxlogf(ERROR, "Failed to create interrupt for vector %u: %s", vector,
+             zx_status_get_string(status));
+      return zx::error(status);
+    }
+    interrupts_[pin] = pci_legacy_irq_t{
+        .interrupt = interrupt.release(),
+        .vector = vector,
+    };
+  }
+
+  // All devices on the QEMU virt board attach directly to the root complex and
+  // follow the PCI pin swizzle starting at INTA for device 0.
+  for (uint8_t device_id = 0; device_id < DEVICES_PER_BUS; device_id++) {
+    pci_irq_routing_entry_t entry = {
+        .port_device_id = PCI_IRQ_ROUTING_NO_PARENT,
+        .port_function_id = PCI_IRQ_ROUTING_NO_PARENT,
+        .device_id = device_id,
+    };
+    for (uint32_t pin = 0; pin < PINS_PER_FUNCTION; pin++) {
+      entry.pins[pin] = static_cast<uint8_t>(PCIE_INT_BASE + ((pin + device_id) % PCIE_INT_COUNT));
+    }
+    irq_routing_entries_[device_id] = entry;
+  }
+
+  return zx::ok();
 }
 
 zx_status_t QemuArm64Pciroot::PcirootGetBti(uint32_t bdf, uint32_t index, zx::bti* bti) {
@@ -36,6 +94,10 @@ zx_status_t QemuArm64Pciroot::PcirootGetBti(uint32_t bdf, uint32_t index, zx::bt
 
 zx_status_t QemuArm64Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {
   *info = context_.info;
+  info->legacy_irqs_list = interrupts_.data();
+  info->legacy_irqs_count = interrupts_.size();
+  info->irq_routing_list = irq_routing_entries_.data();
+  info->irq_routing_count = irq_routing_entries_.size();
   return ZX_OK;
 }
 
