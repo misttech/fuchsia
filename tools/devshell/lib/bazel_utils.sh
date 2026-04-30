@@ -64,7 +64,7 @@ fx-bazel () {
           esac
       done
       if [[ -z "$has_platform_config" ]]; then
-          fx-error "Use --config=host or --config=fuchsia when invoking Bazel ${bazel_command} commands!"
+          fx-error "Use '--config=fuchsia_platform', '--config=fuchsia', or '--config=host' when invoking Bazel ${bazel_command} commands!"
           return 1
       fi
       ;;
