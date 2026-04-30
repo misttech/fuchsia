@@ -11,7 +11,9 @@ import unittest
 
 
 class TestInterruption(unittest.TestCase):
-    def test_block_forever_interruptible(self) -> None:
+    def _run_test_executable_and_send_signal(
+        self, sig: signal.Signals
+    ) -> subprocess.Popen[str]:
         code = """
 import fuchsia_controller_py
 import sys
@@ -39,9 +41,9 @@ sys.exit(2)
             env=env,
         )
 
-        time.sleep(3)
+        time.sleep(5)
 
-        p.send_signal(signal.SIGINT)
+        p.send_signal(sig)
 
         try:
             stdout, stderr = p.communicate(timeout=5)
@@ -49,11 +51,11 @@ sys.exit(2)
             p.kill()
             stdout, stderr = p.communicate()
             self.fail(
-                f"Subprocess timed out after SIGINT. stderr: {stderr}, stdout: {stdout}"
+                f"Subprocess timed out after {str(sig)}. stderr: {stderr}, stdout: {stdout}"
             )
 
         self.assertTrue(
-            p.returncode == 0 or p.returncode == -signal.SIGINT,
+            p.returncode == 0 or p.returncode == -sig,
             f"Subprocess failed with exit code {p.returncode}. stderr: {stderr}, stdout: {stdout}",
         )
         self.assertTrue(
@@ -61,6 +63,13 @@ sys.exit(2)
             or "KeyboardInterrupt" in stderr,
             f"Expected KeyboardInterrupt in output. stderr: {stderr}, stdout: {stdout}",
         )
+        return p
+
+    def test_block_forever_interruptible_sigint(self) -> None:
+        self._run_test_executable_and_send_signal(signal.SIGINT)
+
+    def test_block_forever_interruptible_sigterm(self) -> None:
+        self._run_test_executable_and_send_signal(signal.SIGTERM)
 
 
 if __name__ == "__main__":

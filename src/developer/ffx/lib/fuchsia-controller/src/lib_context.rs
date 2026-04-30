@@ -34,10 +34,12 @@ impl LibContext {
         let notifier = Notifier::default();
         let (cmd_sender, receiver) = async_channel::unbounded::<LibraryCommand>();
         let (signal_sender, signal_receiver) = async_channel::bounded(1);
-        let mut sig_watcher = signal_hook::iterator::Signals::new(&[signal::SIGINT]).unwrap();
+        let mut sig_watcher =
+            signal_hook::iterator::Signals::new(&[signal::SIGINT, signal::SIGTERM]).unwrap();
         let signal_handle = sig_watcher.handle();
         let signal_handler_thread = std::thread::spawn(move || {
-            // Don't need to match signal as we're only listening for the one: SIGINT.
+            // Signal behavior for both is the same: say we've been interrupted and then let the
+            // above handle that.
             for _s in sig_watcher.forever() {
                 match signal_sender.try_send(()) {
                     Ok(()) => {}
