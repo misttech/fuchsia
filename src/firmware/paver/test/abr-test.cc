@@ -48,8 +48,6 @@ class CurrentSlotUuidTest : public PaverTest {
 
     IsolatedDevmgr::Args args = DevmgrArgs();
     ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr_));
-    ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), "sys/platform/ram-disk/ramctl")
-                  .status_value());
   }
 
   virtual IsolatedDevmgr::Args DevmgrArgs() {

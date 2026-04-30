@@ -67,23 +67,6 @@ storage_driver_test_realm_component("fs-management-rust-tests-component") {
   ]
 }
 
-rustc_test("open_partition_test") {
-  edition = "2024"
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/fuchsia",
-    "//src/storage/lib/fs_management/rust:fs_management",
-    "//src/storage/lib/ramdevice_client/rust:ramdevice_client",
-  ]
-  sources = [ "tests/open_partition_test.rs" ]
-  source_root = "tests/open_partition_test.rs"
-}
-
-storage_driver_test_realm_component("open_partition_test-component") {
-  component_name = "open_partition_test-component"
-  deps = [ ":open_partition_test" ]
-}
-
 rustc_test("static-child-test") {
   edition = "2024"
   deps = [
@@ -116,7 +99,6 @@ fuchsia_test_package("fs-management-rust-tests") {
   }
   test_components = [
     ":fs-management-rust-tests-component",
-    ":open_partition_test-component",
     ":static-child-test-component",
   ]
 }

@@ -23,12 +23,7 @@ __BEGIN_CDECLS
 // TODO(https://446695911): Remove the C interface.  Clients should use `ramdevice_client::Ramdisk`.
 // A client library for creating, configuring and manipulating ramdisks.
 //
-// When creating a ramdisk always wait for the ramctl device to be ready to avoid racing with
-// device start up. The ramctl device is normally located at "sys/platform/ram-disk/ramctl".
-// ```
-// ASSERT_EQ(ZX_OK, device_watcher::RecursiveWaitForFile("/dev/sys/platform/ram-disk/ramctl",
-//   zx::sec(60)).status_value());
-// ```
+// When creating a ramdisk, ensure the fuchsia.hardware.ramdisk.Service is available.
 // Then a ram device can be created and opened.
 // ```
 // ramdisk_client_t* client;
@@ -43,11 +38,8 @@ typedef struct ramdisk_options {
   uint64_t block_count;
   const uint8_t* type_guid;
   zx_handle_t vmo;
-  bool v2;
-  // Only used for v2; set to -1 to open /svc
+  // Set to -1 to open /svc
   int svc_root_fd;
-  // Only used for v1; set to -1 to open /dev
-  int devfs_root_fd;
 } ramdisk_options_t;
 
 // Creates a ramdisk with the specified options.
@@ -119,24 +111,12 @@ class Ramdisk {
                                     std::optional<int> svc_root_fd = std::nullopt,
                                     const Options& options = kDefaultOptions);
 
-  // Creates a legacy ram-disk with |block_count| blocks of |block_size| bytes.
-  // `devfs_root_fd` can be overridden if desired; otherwise, "/dev" is opened.
-  static zx::result<Ramdisk> CreateLegacy(int block_size, uint64_t block_count,
-                                          std::optional<int> devfs_root_fd = std::nullopt,
-                                          const Options& options = kDefaultOptions);
-
   // Creates a ram-disk with the given VMO.  If block_size is zero, a default block size is used.
   // `svc_root_fd` can be overridden if desired; otherwise, "/svc" is opened to find
   // fuchsia.hardware.ramdisk.Service.
   static zx::result<Ramdisk> CreateWithVmo(zx::vmo vmo, uint64_t block_size = 0,
                                            std::optional<int> svc_root_fd = std::nullopt,
                                            const Options& options = kDefaultOptions);
-
-  // Creates a ram-disk with the given VMO.  If block_size is zero, a default block size is used.
-  // `devfs_root_fd` can be overridden if desired; otherwise, "/dev" is opened.
-  static zx::result<Ramdisk> CreateLegacyWithVmo(zx::vmo vmo, uint64_t block_size,
-                                                 std::optional<int> devfs_root_fd = std::nullopt,
-                                                 const Options& options = kDefaultOptions);
 
   Ramdisk() = default;
   Ramdisk(Ramdisk&& other) noexcept : client_(other.client_) { other.client_ = nullptr; }
@@ -171,9 +151,6 @@ class Ramdisk {
 
   // Creates a new connection to the Block protocol served by the ramdisk.
   zx::result<fidl::ClientEnd<fuchsia_storage_block::Block>> ConnectBlock() const;
-
-  // Gets the Controller proxy for the ramdisk (only valid with legacy ramdisks).
-  fidl::UnownedClientEnd<fuchsia_device::Controller> LegacyController() const;
 
   // Reinds the ramdisk (synchronously, so the ramdisk will be ready after this returns).
   zx::result<> Rebind() { return zx::make_result(ramdisk_rebind(client_)); }

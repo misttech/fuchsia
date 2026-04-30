@@ -770,6 +770,7 @@ mod tests {
     use super::*;
     use crate::{Blobfs, F2fs, Fxfs, Minfs};
     use delivery_blob::{CompressionMode, Type1Blob};
+    use fidl::endpoints::DiscoverableProtocolMarker;
     use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobReaderMarker};
     use ramdevice_client::RamdiskClient;
     use std::io::{Read as _, Write as _};
@@ -779,7 +780,10 @@ mod tests {
     }
 
     async fn new_fs<FSC: FSConfig>(ramdisk: &RamdiskClient, config: FSC) -> Filesystem {
-        Filesystem::new(ramdisk.open_controller().unwrap(), config)
+        let block_dir = fuchsia_fs::directory::clone(ramdisk.outgoing()).unwrap();
+        let block_connector =
+            DirBasedBlockConnector::new(block_dir, format!("svc/{}", BlockMarker::PROTOCOL_NAME));
+        Filesystem::new(block_connector, config)
     }
 
     #[fuchsia::test]

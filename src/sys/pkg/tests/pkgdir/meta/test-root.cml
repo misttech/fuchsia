@@ -28,6 +28,11 @@
             to: "#test_realm_factory",
         },
         {
+            service: "fuchsia.hardware.ramdisk.Service",
+            from: "#storage_driver_test_realm",
+            to: "#test_realm_factory",
+        },
+        {
             protocol: "fuchsia.process.Launcher",
             from: "parent",
             to: "#test_realm_factory",

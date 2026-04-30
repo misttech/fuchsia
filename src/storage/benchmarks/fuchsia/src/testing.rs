@@ -52,7 +52,6 @@ pub struct Ramdisk {
 impl Ramdisk {
     async fn new(block_size: u64, block_count: u64, config: &BlockDeviceConfig) -> Self {
         let ramdisk = RamdiskClient::builder(block_size, block_count)
-            .use_v2()
             .build()
             .await
             .expect("Failed to create RamdiskClient");

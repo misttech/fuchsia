@@ -31,20 +31,5 @@ int main(int argc, char** argv) {
   fprintf(stdout, "Starting test with %u\n", gRandSeed);
   srand(gRandSeed);
 
-  // isolated_devmgr loads drivers asynchronously, causing an inherent race here. Wait for the
-  // ramdisk driver to load before proceeding with the test to ensure it's there when we need it.
-  fbl::unique_fd dev(open("/dev", O_RDONLY));
-  if (!dev) {
-    fprintf(stderr, "open(\"/dev\"): %s\n", strerror(errno));
-    return -1;
-  }
-  zx::result channel =
-      device_watcher::RecursiveWaitForFile(dev.get(), "sys/platform/ram-disk/ramctl");
-  if (channel.is_error()) {
-    fprintf(stderr, "RecursiveWaitForFile(dev, \"sys/platform/ram-disk/ramctl\"): %s\n",
-            channel.status_string());
-    return -1;
-  }
-
   return RUN_ALL_TESTS(argc, argv);
 }

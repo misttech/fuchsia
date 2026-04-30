@@ -453,7 +453,6 @@ mod tests {
             // Initialize a new GPT.
             let vmo = init_gpt(BLOCK_SIZE as u32, GPT_BLOCK_COUNT).await;
             let ramdisk = RamdiskClientBuilder::new_with_vmo(vmo, Some(BLOCK_SIZE))
-                .use_v2()
                 .build()
                 .await
                 .expect("Failed to create ramdisk");
@@ -479,7 +478,6 @@ mod tests {
         } else {
             // Initialize a new FVM.
             let ramdisk = RamdiskClientBuilder::new(BLOCK_SIZE, BLOCK_COUNT)
-                .use_v2()
                 .build()
                 .await
                 .expect("Failed to create ramdisk");

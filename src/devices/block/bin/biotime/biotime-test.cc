@@ -19,8 +19,6 @@ namespace {
 // measurement tool).  It runs biotime on a ramdisk and just checks that it
 // returns a success status.
 void run_biotime(fbl::Vector<const char*>&& args) {
-  ASSERT_OK(
-      device_watcher::RecursiveWaitForFile("/dev/sys/platform/ram-disk/ramctl").status_value());
   zx::result ramdisk = ramdevice_client::Ramdisk::Create(1024, 100);
   ASSERT_OK(ramdisk.status_value());
 

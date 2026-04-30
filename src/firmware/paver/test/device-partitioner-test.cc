@@ -174,8 +174,6 @@ class GptDevicePartitionerTests : public PaverTest {
     args.board_name = board_name_;
     ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr_));
 
-    ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), "sys/platform/ram-disk/ramctl")
-                  .status_value());
     ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), "sys/platform").status_value());
   }
 

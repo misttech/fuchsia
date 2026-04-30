@@ -69,17 +69,6 @@ constexpr uint8_t kGuid[ZBI_PARTITION_GUID_LEN] = {0x0, 0x1, 0x2, 0x3, 0x4, 0x5,
                                                    0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF};
 
 static_assert(sizeof(fuchsia_storage_block::wire::Guid) == sizeof kGuid, "Mismatched GUID size");
-// Make sure isolated_devmgr is ready to go before all tests.
-class Environment : public testing::Environment {
- public:
-  void SetUp() override {
-    ASSERT_EQ(
-        device_watcher::RecursiveWaitForFile("/dev/sys/platform/ram-disk/ramctl").status_value(),
-        ZX_OK);
-  }
-};
-
-testing::Environment* const environment = testing::AddGlobalTestEnvironment(new Environment);
 
 void fill_random(uint8_t* buf, uint64_t size) {
   static unsigned int seed = static_cast<unsigned int>(zx_ticks_get());
@@ -94,33 +83,28 @@ void fill_random(uint8_t* buf, uint64_t size) {
 // is removed, even if the test fails.
 class RamdiskTest {
  public:
-  static void Create(bool v2, uint32_t blk_size, uint64_t blk_count,
-                     std::unique_ptr<RamdiskTest>* out) {
-    zx::result ramdisk = v2 ? ramdevice_client::Ramdisk::Create(blk_size, blk_count)
-                            : ramdevice_client::Ramdisk::CreateLegacy(blk_size, blk_count);
+  static void Create(uint32_t blk_size, uint64_t blk_count, std::unique_ptr<RamdiskTest>* out) {
+    zx::result ramdisk = ramdevice_client::Ramdisk::Create(blk_size, blk_count);
 
     ASSERT_EQ(ramdisk.status_value(), ZX_OK);
     *out = std::unique_ptr<RamdiskTest>(new RamdiskTest(std::move(*ramdisk)));
   }
 
-  static void CreateWithGuid(bool v2, uint32_t blk_size, uint64_t blk_count, const uint8_t* guid,
+  static void CreateWithGuid(uint32_t blk_size, uint64_t blk_count, const uint8_t* guid,
                              size_t guid_len, std::unique_ptr<RamdiskTest>* out) {
     ramdevice_client::Ramdisk::Options options;
     std::array<uint8_t, ZBI_PARTITION_GUID_LEN> type_guid;
     memcpy(type_guid.data(), guid, ZBI_PARTITION_GUID_LEN);
     options.type_guid = type_guid;
     zx::result ramdisk =
-        v2 ? ramdevice_client::Ramdisk::Create(blk_size, blk_count, std::nullopt, options)
-           : ramdevice_client::Ramdisk::CreateLegacy(blk_size, blk_count, std::nullopt, options);
+        ramdevice_client::Ramdisk::Create(blk_size, blk_count, std::nullopt, options);
 
     ASSERT_EQ(ramdisk.status_value(), ZX_OK);
     *out = std::unique_ptr<RamdiskTest>(new RamdiskTest(std::move(*ramdisk)));
   }
 
-  static void CreateWithVmo(bool v2, zx::vmo vmo, std::unique_ptr<RamdiskTest>* out) {
-    zx::result ramdisk = v2 ? ramdevice_client::Ramdisk::CreateWithVmo(std::move(vmo))
-                            : ramdevice_client::Ramdisk::CreateLegacyWithVmo(
-                                  std::move(vmo), zx_system_get_page_size());
+  static void CreateWithVmo(zx::vmo vmo, std::unique_ptr<RamdiskTest>* out) {
+    zx::result ramdisk = ramdevice_client::Ramdisk::CreateWithVmo(std::move(vmo));
 
     ASSERT_EQ(ramdisk.status_value(), ZX_OK);
     *out = std::unique_ptr<RamdiskTest>(new RamdiskTest(std::move(*ramdisk)));
@@ -150,15 +134,14 @@ class RamdiskTest {
   ramdevice_client::Ramdisk ramdisk_;
 };
 
-class RamdiskTests : public testing::TestWithParam<bool> {};
+class RamdiskTests : public testing::Test {};
 
-TEST_P(RamdiskTests, RamdiskTestSimple) {
+TEST_F(RamdiskTests, RamdiskTestSimple) {
   std::vector<uint8_t> buf(zx_system_get_page_size());
   std::vector<uint8_t> out(zx_system_get_page_size());
 
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size() / 2, 512, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size() / 2, 512, &ramdisk));
 
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
@@ -196,10 +179,10 @@ zx::result<std::unique_ptr<block_client::Client>> CreateSession(
       std::make_unique<block_client::Client>(std::move(session), std::move(fifo_response->fifo)));
 }
 
-TEST_P(RamdiskTests, RamdiskTestGuid) {
+TEST_F(RamdiskTests, RamdiskTestGuid) {
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::CreateWithGuid(GetParam(), zx_system_get_page_size() / 2,
-                                                      512, kGuid, sizeof(kGuid), &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::CreateWithGuid(zx_system_get_page_size() / 2, 512, kGuid,
+                                                      sizeof(kGuid), &ramdisk));
 
   const fidl::WireResult result = fidl::WireCall(fidl::ClientEnd<fuchsia_storage_block::Block>(
                                                      ramdisk->block_interface().TakeChannel()))
@@ -210,12 +193,12 @@ TEST_P(RamdiskTests, RamdiskTestGuid) {
   ASSERT_TRUE(memcmp(response.guid->value.data(), kGuid, response.guid->value.size()) == 0);
 }
 
-TEST_P(RamdiskTests, RamdiskTestVmo) {
+TEST_F(RamdiskTests, RamdiskTestVmo) {
   zx::vmo vmo;
   ASSERT_EQ(zx::vmo::create(256 * zx_system_get_page_size(), 0, &vmo), ZX_OK);
 
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::CreateWithVmo(GetParam(), std::move(vmo), &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::CreateWithVmo(std::move(vmo), &ramdisk));
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
   std::vector<uint8_t> buf(zx_system_get_page_size() * 2);
@@ -231,7 +214,7 @@ TEST_P(RamdiskTests, RamdiskTestVmo) {
   EXPECT_EQ(memcmp(out.data(), buf.data(), out.size()), 0);
 }
 
-TEST_P(RamdiskTests, RamdiskTestVmoWithParams) {
+TEST_F(RamdiskTests, RamdiskTestVmoWithParams) {
   constexpr uint64_t kBlockSize = 512;
   constexpr uint64_t kBlockCount = 256;
   zx::vmo vmo;
@@ -241,10 +224,8 @@ TEST_P(RamdiskTests, RamdiskTestVmoWithParams) {
   std::array<uint8_t, ZBI_PARTITION_GUID_LEN> type_guid;
   memcpy(type_guid.data(), kGuid, ZBI_PARTITION_GUID_LEN);
   options.type_guid = type_guid;
-  zx::result ramdisk = GetParam() ? ramdevice_client::Ramdisk::CreateWithVmo(
-                                        std::move(vmo), kBlockSize, std::nullopt, options)
-                                  : ramdevice_client::Ramdisk::CreateLegacyWithVmo(
-                                        std::move(vmo), kBlockSize, std::nullopt, options);
+  zx::result ramdisk =
+      ramdevice_client::Ramdisk::CreateWithVmo(std::move(vmo), kBlockSize, std::nullopt, options);
   ASSERT_EQ(ramdisk.status_value(), ZX_OK);
   zx::result result = ramdisk->ConnectBlock();
   ASSERT_EQ(result.status_value(), ZX_OK);
@@ -284,123 +265,11 @@ TEST_P(RamdiskTests, RamdiskTestVmoWithParams) {
   EXPECT_EQ(memcmp(out, buf, sizeof(out)), 0);
 }
 
-// This test creates a ramdisk, verifies it is visible in the filesystem
-// (where we expect it to be!) and verifies that it is removed when we
-// "unplug" the device.
-TEST_P(RamdiskTests, RamdiskTestFilesystem) {
-  if (GetParam())
-    GTEST_SKIP() << "The DFv2 driver doesn't appear in /dev/class";
-
-  fuchsia_storage_block::wire::Guid guid = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-  // Make a ramdisk
-  std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::CreateWithGuid(GetParam(), zx_system_get_page_size() / 2,
-                                                      512, guid.value.data(), guid.value.size(),
-                                                      &ramdisk));
-
-  // Verify the ramdisk type
-  fidl::ClientEnd block_interface = ramdisk->block_interface();
-
-  const fidl::WireResult result =
-      fidl::WireCall(fidl::ClientEnd<fuchsia_storage_block::Block>(block_interface.TakeChannel()))
-          ->GetTypeGuid();
-  ASSERT_TRUE(result.ok()) << result.FormatDescription();
-  const fidl::WireResponse response = result.value();
-  ASSERT_EQ(response.status, ZX_OK);
-  ASSERT_EQ(response.guid.get()->value, guid.value);
-
-  // Find the guid of the ramdisk under "/dev/class/block", since it is a block device.
-  // Be slightly more lenient with errors during this section, since we might be poking
-  // block devices that don't belong to us.
-  char blockpath[PATH_MAX];
-  strncpy(blockpath, "/dev/class/block/", sizeof(blockpath));
-  DIR* dir = opendir(blockpath);
-  ASSERT_NE(dir, nullptr);
-  const auto closer = fit::defer([dir]() { closedir(dir); });
-
-  typedef struct watcher_args {
-    const fidl::Array<uint8_t, 16> expected_guid;
-    char* blockpath;
-    fbl::String filename;
-    bool found;
-  } watcher_args_t;
-
-  watcher_args_t args{
-      .expected_guid = guid.value,
-      .blockpath = blockpath,
-      .found = false,
-  };
-
-  auto cb = [](int dirfd, int event, const char* fn, void* cookie) {
-    watcher_args_t* args = static_cast<watcher_args_t*>(cookie);
-    if (event != WATCH_EVENT_ADD_FILE) {
-      return ZX_OK;
-    }
-    if (std::string_view{fn} == ".") {
-      return ZX_OK;
-    }
-    fdio_cpp::UnownedFdioCaller caller(dirfd);
-    zx::result channel = component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), fn);
-    if (channel.is_error()) {
-      return channel.status_value();
-    }
-
-    const fidl::WireResult result = fidl::WireCall(channel.value())->GetTypeGuid();
-    if (!result.ok()) {
-      return result.status();
-    }
-    const fidl::WireResponse response = result.value();
-    if (zx_status_t status = response.status; status != ZX_OK) {
-      return status;
-    }
-    if (response.guid.get()->value != args->expected_guid) {
-      return ZX_OK;
-    }
-    // Found a device under /dev/class/block/XYZ with the name of the
-    // ramdisk we originally created.
-    strncat(args->blockpath, fn, sizeof(blockpath) - (strlen(args->blockpath) + 1));
-    args->filename = fbl::String(fn);
-    args->found = true;
-    return ZX_ERR_STOP;
-  };
-
-  zx_time_t deadline = zx_deadline_after(ZX_SEC(3));
-  ASSERT_EQ(fdio_watch_directory(dirfd(dir), cb, deadline, &args), ZX_ERR_STOP);
-  ASSERT_TRUE(args.found);
-
-  // Start watching for the block device removal.
-  std::unique_ptr<device_watcher::DirWatcher> watcher;
-  ASSERT_EQ(device_watcher::DirWatcher::Create(dirfd(dir), &watcher), ZX_OK);
-
-  ASSERT_NO_FATAL_FAILURE(ramdisk->Terminate());
-
-  ASSERT_EQ(watcher->WaitForRemoval(args.filename, zx::sec(5)), ZX_OK);
-
-  // Now that we've unlinked the ramdisk, we should notice that it doesn't appear
-  // under /dev/class/block.
-  ASSERT_EQ(open(blockpath, O_RDONLY), -1) << "Ramdisk is visible in /dev after destruction";
-}
-
-TEST_P(RamdiskTests, RamdiskTestRebind) {
-  if (GetParam())
-    GTEST_SKIP() << "The DFv2 driver doesn't support Rebind";
-
-  // Make a ramdisk
-  std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size() / 2, 512, &ramdisk));
-
-  ASSERT_EQ(ramdisk->Rebind(), ZX_OK);
-  std::string path = ramdisk->path();
-  ASSERT_EQ(device_watcher::RecursiveWaitForFile(path.c_str(), zx::sec(3)).status_value(), ZX_OK);
-}
-
-TEST_P(RamdiskTests, RamdiskTestBadRequests) {
+TEST_F(RamdiskTests, RamdiskTestBadRequests) {
   std::vector<uint8_t> buf(zx_system_get_page_size());
 
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size(), 512, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk));
   memset(buf.data(), 'a', buf.size());
 
   // Read / write non-multiples of the block size
@@ -423,10 +292,9 @@ TEST_P(RamdiskTests, RamdiskTestBadRequests) {
             ZX_OK);
 }
 
-TEST_P(RamdiskTests, RamdiskTestReleaseDuringAccess) {
+TEST_F(RamdiskTests, RamdiskTestReleaseDuringAccess) {
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size(), 512, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk));
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
   // Spin up a background thread to repeatedly access
@@ -464,16 +332,14 @@ TEST_P(RamdiskTests, RamdiskTestReleaseDuringAccess) {
   ASSERT_EQ(res, 0) << "Background thread failed";
 }
 
-TEST_P(RamdiskTests, RamdiskTestMultiple) {
+TEST_F(RamdiskTests, RamdiskTestMultiple) {
   std::vector<uint8_t> buf(zx_system_get_page_size());
   std::vector<uint8_t> out(zx_system_get_page_size());
 
   std::unique_ptr<RamdiskTest> ramdisk1;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size(), 512, &ramdisk1));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk1));
   std::unique_ptr<RamdiskTest> ramdisk2;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size(), 512, &ramdisk2));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk2));
 
   // Write 'a' to fd1, write 'b', to fd2
   memset(buf.data(), 'a', buf.size());
@@ -492,11 +358,10 @@ TEST_P(RamdiskTests, RamdiskTestMultiple) {
   ASSERT_NO_FATAL_FAILURE(ramdisk1->Terminate()) << "Could not unlink ramdisk device";
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoNoOp) {
+TEST_F(RamdiskTests, RamdiskTestFifoNoOp) {
   // Get a FIFO connection to a ramdisk and immediately close it
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size() / 2, 512, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size() / 2, 512, &ramdisk));
 
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
@@ -522,11 +387,10 @@ TEST_P(RamdiskTests, RamdiskTestFifoNoOp) {
   ASSERT_NO_FATAL_FAILURE(ramdisk->Terminate()) << "Could not unlink ramdisk device";
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoBasic) {
+TEST_F(RamdiskTests, RamdiskTestFifoBasic) {
   // Set up the initial handshake connection with the ramdisk
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size(), 512, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk));
 
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
@@ -590,11 +454,10 @@ TEST_P(RamdiskTests, RamdiskTestFifoBasic) {
   ASSERT_EQ(client.Transaction(requests, 1), ZX_OK);
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoNoGroup) {
+TEST_F(RamdiskTests, RamdiskTestFifoNoGroup) {
   // Set up the initial handshake connection with the ramdisk
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size(), 512, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk));
 
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
@@ -764,11 +627,11 @@ void CloseVmoHelper(block_client::Client& client, const TestVmoObject& obj, grou
   ASSERT_EQ(client.Transaction(&request, 1), ZX_OK);
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoMultipleVmo) {
+TEST_F(RamdiskTests, RamdiskTestFifoMultipleVmo) {
   // Set up the initial handshake connection with the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, 1 << 18, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, 1 << 18, &ramdisk));
 
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
@@ -799,11 +662,11 @@ TEST_P(RamdiskTests, RamdiskTestFifoMultipleVmo) {
   }
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoMultipleVmoMultithreaded) {
+TEST_F(RamdiskTests, RamdiskTestFifoMultipleVmoMultithreaded) {
   // Set up the initial handshake connection with the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, 1 << 18, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, 1 << 18, &ramdisk));
 
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
@@ -834,11 +697,11 @@ TEST_P(RamdiskTests, RamdiskTestFifoMultipleVmoMultithreaded) {
   }
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoLargeOpsCount) {
+TEST_F(RamdiskTests, RamdiskTestFifoLargeOpsCount) {
   // Set up the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, 1 << 18, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, 1 << 18, &ramdisk));
 
   // Create a connection to the ramdisk
   fidl::ClientEnd block_interface = ramdisk->block_interface();
@@ -869,11 +732,11 @@ TEST_P(RamdiskTests, RamdiskTestFifoLargeOpsCount) {
   }
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoLargeOpsCountShutdown) {
+TEST_F(RamdiskTests, RamdiskTestFifoLargeOpsCountShutdown) {
   // Set up the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, 1 << 18, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, 1 << 18, &ramdisk));
 
   // Create a connection to the ramdisk
   fidl::ClientEnd block_interface = ramdisk->block_interface();
@@ -934,11 +797,11 @@ TEST_P(RamdiskTests, RamdiskTestFifoLargeOpsCountShutdown) {
   usleep(100);
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoIntermediateOpFailure) {
+TEST_F(RamdiskTests, RamdiskTestFifoIntermediateOpFailure) {
   // Set up the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, 1 << 18, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, 1 << 18, &ramdisk));
 
   // Create a connection to the ramdisk
   fidl::ClientEnd block_interface = ramdisk->block_interface();
@@ -997,12 +860,12 @@ TEST_P(RamdiskTests, RamdiskTestFifoIntermediateOpFailure) {
   }
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoBadClientVmoid) {
+TEST_F(RamdiskTests, RamdiskTestFifoBadClientVmoid) {
   // Try to flex the server's error handling by sending 'malicious' client requests.
   // Set up the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, 1 << 18, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, 1 << 18, &ramdisk));
 
   // Create a connection to the ramdisk
   fidl::ClientEnd block_interface = ramdisk->block_interface();
@@ -1028,12 +891,12 @@ TEST_P(RamdiskTests, RamdiskTestFifoBadClientVmoid) {
   ASSERT_EQ(client.Transaction(&request, 1), ZX_ERR_IO) << "Expected IO error with bad vmoid";
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoBadClientUnalignedRequest) {
+TEST_F(RamdiskTests, RamdiskTestFifoBadClientUnalignedRequest) {
   // Try to flex the server's error handling by sending 'malicious' client requests.
   // Set up the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, 1 << 18, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, 1 << 18, &ramdisk));
 
   // Create a connection to the ramdisk
   fidl::ClientEnd block_interface = ramdisk->block_interface();
@@ -1062,13 +925,13 @@ TEST_P(RamdiskTests, RamdiskTestFifoBadClientUnalignedRequest) {
   ASSERT_EQ(client.Transaction(&request, 1), ZX_ERR_INVALID_ARGS);
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoBadClientOverflow) {
+TEST_F(RamdiskTests, RamdiskTestFifoBadClientOverflow) {
   // Try to flex the server's error handling by sending 'malicious' client requests.
   // Set up the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   const uint64_t kBlockCount = 1 << 18;
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, kBlockCount, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, kBlockCount, &ramdisk));
 
   // Create a connection to the ramdisk
   fidl::ClientEnd block_interface = ramdisk->block_interface();
@@ -1121,12 +984,12 @@ TEST_P(RamdiskTests, RamdiskTestFifoBadClientOverflow) {
   ASSERT_EQ(client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoBadClientBadVmo) {
+TEST_F(RamdiskTests, RamdiskTestFifoBadClientBadVmo) {
   // Try to flex the server's error handling by sending 'malicious' client requests.
   // Set up the ramdisk
   const uint32_t kBlockSize = zx_system_get_page_size();
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(GetParam(), kBlockSize, 1 << 18, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(kBlockSize, 1 << 18, &ramdisk));
 
   // Create a connection to the ramdisk
   fidl::ClientEnd block_interface = ramdisk->block_interface();
@@ -1166,11 +1029,10 @@ TEST_P(RamdiskTests, RamdiskTestFifoBadClientBadVmo) {
   ASSERT_EQ(client.Transaction(&request, 1), ZX_ERR_OUT_OF_RANGE);
 }
 
-TEST_P(RamdiskTests, RamdiskTestFifoSleepUnavailable) {
+TEST_F(RamdiskTests, RamdiskTestFifoSleepUnavailable) {
   // Set up the initial handshake connection with the ramdisk
   std::unique_ptr<RamdiskTest> ramdisk;
-  ASSERT_NO_FATAL_FAILURE(
-      RamdiskTest::Create(GetParam(), zx_system_get_page_size(), 512, &ramdisk));
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk));
 
   fidl::ClientEnd block_interface = ramdisk->block_interface();
 
@@ -1330,12 +1192,11 @@ zx_status_t fifo_wake_thread(void* arg) {
   return ZX_OK;
 }
 
-class RamdiskTestWithClient : public testing::TestWithParam<bool> {
+class RamdiskTestWithClient : public testing::Test {
  public:
   void SetUp() override {
     // Set up the initial handshake connection with the ramdisk
-    ASSERT_NO_FATAL_FAILURE(
-        RamdiskTest::Create(GetParam(), zx_system_get_page_size(), 512, &ramdisk_));
+    ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk_));
 
     fidl::ClientEnd block_interface = ramdisk_->block_interface();
 
@@ -1370,7 +1231,7 @@ class RamdiskTestWithClient : public testing::TestWithParam<bool> {
   const uint64_t vmo_size_;
 };
 
-TEST_P(RamdiskTestWithClient, RamdiskTestFifoSleepDeferred) {
+TEST_F(RamdiskTestWithClient, RamdiskTestFifoSleepDeferred) {
   // Create a bunch of requests, some of which are guaranteed to block.
   BlockFifoRequest requests[16];
   for (size_t i = 0; i < std::size(requests); ++i) {
@@ -1442,75 +1303,49 @@ TEST_P(RamdiskTestWithClient, RamdiskTestFifoSleepDeferred) {
   ASSERT_EQ(client_->Transaction(requests, 1), ZX_OK);
 }
 
-TEST_P(RamdiskTests, RamdiskCreateAt) {
+TEST_F(RamdiskTests, RamdiskCreateAt) {
   zx::result<ramdevice_client::Ramdisk> ramdisk;
   std::string path;
-  if (GetParam()) {
-    fbl::unique_fd svc_root_fd(open("/svc", O_RDONLY | O_DIRECTORY));
-    ASSERT_TRUE(svc_root_fd);
-    ramdisk = ramdevice_client::Ramdisk::Create(512, 512, svc_root_fd.get());
-    ASSERT_TRUE(ramdisk.is_ok());
-    path = ramdisk->path();
-  } else {
-    fbl::unique_fd devfs_fd(open("/dev", O_RDONLY | O_DIRECTORY));
-    ASSERT_TRUE(devfs_fd);
-    ramdisk = ramdevice_client::Ramdisk::CreateLegacy(512, 512, devfs_fd.get());
-    ASSERT_TRUE(ramdisk.is_ok());
-    path = std::string("/dev/") + ramdisk->path();
-  }
+  fbl::unique_fd svc_root_fd(open("/svc", O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(svc_root_fd);
+  ramdisk = ramdevice_client::Ramdisk::Create(512, 512, svc_root_fd.get());
+  ASSERT_TRUE(ramdisk.is_ok());
+  path = ramdisk->path();
 
   ASSERT_EQ(device_watcher::RecursiveWaitForFile(path.c_str()).status_value(), ZX_OK);
 }
 
-TEST_P(RamdiskTests, RamdiskCreateAtGuid) {
+TEST_F(RamdiskTests, RamdiskCreateAtGuid) {
   ramdevice_client::Ramdisk::Options options;
   options.type_guid = {{0}};
 
   zx::result<ramdevice_client::Ramdisk> ramdisk;
   std::string path;
-  if (GetParam()) {
-    fbl::unique_fd svc_root_fd(open("/svc", O_RDONLY | O_DIRECTORY));
-    ASSERT_TRUE(svc_root_fd);
-    ramdisk = ramdevice_client::Ramdisk::Create(512, 512, svc_root_fd.get(), options);
-    ASSERT_TRUE(ramdisk.is_ok());
-    path = ramdisk->path();
-  } else {
-    fbl::unique_fd devfs_fd(open("/dev", O_RDONLY | O_DIRECTORY));
-    ASSERT_TRUE(devfs_fd);
-    ramdisk = ramdevice_client::Ramdisk::CreateLegacy(512, 512, devfs_fd.get(), options);
-    ASSERT_TRUE(ramdisk.is_ok());
-    path = std::string("/dev/") + ramdisk->path();
-  }
+  fbl::unique_fd svc_root_fd(open("/svc", O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(svc_root_fd);
+  ramdisk = ramdevice_client::Ramdisk::Create(512, 512, svc_root_fd.get(), options);
+  ASSERT_TRUE(ramdisk.is_ok());
+  path = ramdisk->path();
 
   ASSERT_EQ(device_watcher::RecursiveWaitForFile(path.c_str()).status_value(), ZX_OK);
 }
 
-TEST_P(RamdiskTests, RamdiskCreateAtVmo) {
+TEST_F(RamdiskTests, RamdiskCreateAtVmo) {
   zx::vmo vmo;
   ASSERT_EQ(zx::vmo::create(256 * zx_system_get_page_size(), 0, &vmo), ZX_OK);
 
   zx::result<ramdevice_client::Ramdisk> ramdisk;
   std::string path;
-  if (GetParam()) {
-    fbl::unique_fd svc_root_fd(open("/svc", O_RDONLY | O_DIRECTORY));
-    ASSERT_TRUE(svc_root_fd);
-    ramdisk = ramdevice_client::Ramdisk::CreateWithVmo(std::move(vmo), 0, svc_root_fd.get());
-    ASSERT_TRUE(ramdisk.is_ok());
-    path = ramdisk->path();
-  } else {
-    fbl::unique_fd devfs_fd(open("/dev", O_RDONLY | O_DIRECTORY));
-    ASSERT_TRUE(devfs_fd);
-    ramdisk = ramdevice_client::Ramdisk::CreateLegacyWithVmo(std::move(vmo), 0, devfs_fd.get());
-    ASSERT_TRUE(ramdisk.is_ok());
-    path = std::string("/dev/") + ramdisk->path();
-  }
+  fbl::unique_fd svc_root_fd(open("/svc", O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(svc_root_fd);
+  ramdisk = ramdevice_client::Ramdisk::CreateWithVmo(std::move(vmo), 0, svc_root_fd.get());
+  ASSERT_TRUE(ramdisk.is_ok());
+  path = ramdisk->path();
 
   ASSERT_EQ(device_watcher::RecursiveWaitForFile(path.c_str()).status_value(), ZX_OK);
 }
 
-INSTANTIATE_TEST_SUITE_P(/* no prefix */, RamdiskTests, testing::Values(false, true));
-
-TEST_P(RamdiskTestWithClient, DiscardOnWake) {
+TEST_F(RamdiskTestWithClient, DiscardOnWake) {
   ASSERT_EQ(ramdisk_
                 ->SetFlags(static_cast<uint32_t>(
                     fuchsia_hardware_ramdisk::wire::RamdiskFlag::kDiscardNotFlushedOnWake))
@@ -1561,7 +1396,7 @@ TEST_P(RamdiskTestWithClient, DiscardOnWake) {
   }
 }
 
-TEST_P(RamdiskTestWithClient, DiscardRandomOnWake) {
+TEST_F(RamdiskTestWithClient, DiscardRandomOnWake) {
   ASSERT_EQ(ramdisk_
                 ->SetFlags(static_cast<uint32_t>(
                     fuchsia_hardware_ramdisk::wire::RamdiskFlag::kDiscardNotFlushedOnWake |
@@ -1624,8 +1459,8 @@ TEST_P(RamdiskTestWithClient, DiscardRandomOnWake) {
   } while (found != 0xf);
 }
 
-TEST_P(RamdiskTestWithClient, DiscardRandomOnWakeWithBarriers) {
-  if (GetParam()) {
+TEST_F(RamdiskTestWithClient, DiscardRandomOnWakeWithBarriers) {
+  if (true) {
     ASSERT_EQ(ramdisk_
                   ->SetFlags(static_cast<uint32_t>(
                       fuchsia_hardware_ramdisk::wire::RamdiskFlag::kDiscardNotFlushedOnWake |
@@ -1684,8 +1519,6 @@ TEST_P(RamdiskTestWithClient, DiscardRandomOnWakeWithBarriers) {
     }
   }
 }
-
-INSTANTIATE_TEST_SUITE_P(/* no prefix */, RamdiskTestWithClient, testing::Values(false, true));
 
 }  // namespace
 }  // namespace ramdisk

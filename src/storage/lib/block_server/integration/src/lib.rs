@@ -219,7 +219,6 @@ async fn test_request_splitting_cpp_server() {
     let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
 
     let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
-        .use_v2()
         .max_transfer_blocks(MAX_TRANSFER_BLOCKS)
         .build()
         .await
@@ -231,25 +230,14 @@ async fn test_request_splitting_cpp_server() {
     ramdisk.destroy_and_wait_for_removal().await.unwrap();
 }
 
-enum Ramdisk {
-    V1,
-    V2,
-}
-
-#[test_case(Ramdisk::V1; "v1")]
-#[test_case(Ramdisk::V2; "v2")]
 #[fuchsia::test]
-async fn test_group_with_close(version: Ramdisk) {
+async fn test_group_with_close() {
     let (proxy, server) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
 
-    let builder = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS);
-    let ramdisk = match version {
-        Ramdisk::V1 => builder,
-        Ramdisk::V2 => builder.use_v2(),
-    }
-    .build()
-    .await
-    .expect("Failed to create ramdisk");
+    let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
+        .build()
+        .await
+        .expect("Failed to create ramdisk");
     ramdisk.connect(server.into_channel().into()).expect("Failed to connect to ramdisk");
 
     let (session_proxy, server) = fidl::endpoints::create_proxy();
@@ -339,7 +327,6 @@ async fn test_group_with_close(version: Ramdisk) {
 #[fuchsia::test]
 async fn test_gpt_on_ramdisk() {
     let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
-        .use_v2()
         .max_transfer_blocks(MAX_TRANSFER_BLOCKS)
         .build()
         .await
@@ -472,7 +459,6 @@ async fn test_gpt_on_ramdisk() {
 #[fuchsia::test]
 async fn test_gpt_passthrough_is_enabled() {
     let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
-        .use_v2()
         .max_transfer_blocks(MAX_TRANSFER_BLOCKS)
         .build()
         .await
@@ -740,7 +726,6 @@ async fn test_barriers_and_fua_cpp_server(case: BarrierFuaTestCase) {
         _ => fblock::DeviceFlag::empty(),
     };
     let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
-        .use_v2()
         .max_transfer_blocks(MAX_TRANSFER_BLOCKS)
         .device_flags(device_flags)
         .build()

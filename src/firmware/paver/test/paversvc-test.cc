@@ -243,8 +243,7 @@ class PaverServiceTest : public PaverTest {
 
   void Init(IsolatedDevmgr::Args args) {
     ASSERT_OK(IsolatedDevmgr::Create(&args, &devmgr_));
-    ASSERT_OK(RecursiveWaitForFile(devmgr_.devfs_root().get(), "sys/platform/ram-disk/ramctl")
-                  .status_value());
+
     ASSERT_NO_FATAL_FAILURE(
         StartPaver(devmgr_.devfs_root().duplicate(), devmgr_.RealmExposedDir()));
   }

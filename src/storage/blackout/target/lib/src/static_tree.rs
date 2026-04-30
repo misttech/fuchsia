@@ -274,8 +274,11 @@ mod tests {
         let tree: DirectoryEntry = rng.sample(dist);
 
         let ramdisk = RamdiskClient::create(512, 1 << 16).await.expect("failed to make ramdisk");
-        let controller = ramdisk.open_controller().expect("invalid controller");
-        let mut minfs = Minfs::new(controller);
+        let controller = ramdisk.connector().expect("invalid controller");
+        let mut minfs = fs_management::filesystem::Filesystem::from_boxed_config(
+            controller,
+            Box::new(Minfs::default()),
+        );
 
         minfs.format().await.expect("failed to format minfs");
         let mut minfs = minfs.serve().await.expect("failed to mount minfs");

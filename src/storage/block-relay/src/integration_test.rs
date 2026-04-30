@@ -7,19 +7,21 @@ use std::sync::Arc;
 use anyhow::{Context, Error, Result};
 use block_client::RemoteBlockClient;
 use fidl::endpoints::ServiceMarker as _;
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_hardware_block_volume as fvolume;
+use fidl_fuchsia_hardware_ramdisk as framdisk;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block as fblock;
+use fidl_fuchsia_testing_simple as fsimple;
 use fshost_assembly_config::{BlockDeviceConfig, BlockDeviceIdentifiers, BlockDeviceParent};
+use fuchsia_async as fasync;
 use fuchsia_component_test::{Capability, RealmBuilder, Ref, Route};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::FutureExt as _;
 use ramdevice_client::RamdiskClientBuilder;
 use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
 use zx::HandleBased as _;
-use {
-    fidl_fuchsia_component_test as ftest, fidl_fuchsia_driver_test as fdt,
-    fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_hardware_ramdisk as framdisk,
-    fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock,
-    fidl_fuchsia_testing_simple as fsimple, fuchsia_async as fasync,
-};
 
 const BLOCK_SIZE: u64 = 512;
 const NUM_BLOCKS: u64 = 128;
@@ -171,7 +173,6 @@ async fn integration() {
     .expect("Failed to format GPT");
 
     let ramdisk = RamdiskClientBuilder::new_with_vmo(ramdisk_vmo, Some(BLOCK_SIZE))
-        .use_v2()
         .publish()
         .ramdisk_service(
             fuchsia_fs::directory::open_directory(

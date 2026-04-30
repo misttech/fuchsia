@@ -515,7 +515,6 @@ impl TestFixture {
 
     async fn add_ramdisk(&mut self, vmo: zx::Vmo, type_guid: Option<[u8; 16]>) {
         let mut ramdisk_builder = RamdiskClientBuilder::new_with_vmo(vmo, Some(512))
-            .use_v2()
             .publish()
             .ramdisk_service(self.dir(framdisk::ServiceMarker::SERVICE_NAME, fio::Flags::empty()));
         if let Some(guid) = type_guid {

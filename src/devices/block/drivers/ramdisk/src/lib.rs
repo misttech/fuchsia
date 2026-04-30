@@ -30,6 +30,7 @@ struct RamdiskControllerInner {
     node: Node,
     counter: AtomicI32,
     volume_svc_dir: Arc<Simple>,
+    scope: ExecutionScope,
 }
 
 driver_register!(RamdiskController);
@@ -146,19 +147,20 @@ impl RamdiskControllerInner {
                 return Err(Status::INTERNAL);
             }
         }
+        let guard = scopeguard::guard(node_controller, move |nc| {
+            let _ = nc.remove();
+            scope.shutdown();
+        });
 
         // Watch the eventpair so that when it is dropped, the ramdisk instance is destroyed.
         let inner_clone = self.clone();
-        fasync::Task::spawn(async move {
+        self.scope.spawn(async move {
+            let _guard = guard;
             let _instance = instance;
             let _ = fasync::OnSignals::new(&endpoint1, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
-            if let Err(error) = node_controller.remove() {
-                warn!(id, error:?; "Failed to remove child ramdisk");
-            }
             let _ = inner_clone.volume_svc_dir.remove_entry(id.to_string(), false);
-            scope.shutdown();
-        })
-        .detach();
+            log::info!("Destroyed ramdisk {id}");
+        });
 
         log::info!("Created ramdisk {id} {}", if publish { "" } else { " (unpublished)" });
 
@@ -172,14 +174,15 @@ impl Driver for RamdiskController {
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
         let node = context.take_node()?;
         let volume_svc_dir = Simple::new();
+        let scope = ExecutionScope::new();
         let inner = Arc::new(RamdiskControllerInner {
             node,
             counter: AtomicI32::new(0),
             volume_svc_dir: volume_svc_dir.clone(),
+            scope: scope.clone(),
         });
 
         let mut fs = ServiceFs::new();
-        let scope = ExecutionScope::new();
         let inner_clone = inner.clone();
         let scope_clone = scope.clone();
         let mut svc_dir = fs.dir("svc");

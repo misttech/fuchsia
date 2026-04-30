@@ -9,12 +9,13 @@
 
 use anyhow::{Context as _, Error, anyhow};
 use delivery_blob::{CompressionMode, Type1Blob};
-use fidl::endpoints::ClientEnd;
+use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker};
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
 use fuchsia_merkle::Hash;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
-use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 const RAMDISK_BLOCK_SIZE: u64 = 512;
 static FXFS_BLOB_VOLUME_NAME: &str = "blob";
@@ -127,16 +128,20 @@ impl BlobfsRamdiskBuilder {
             None => (Ramdisk::start().await.context("creating backing ramdisk for blobfs")?, true),
         };
 
-        let ramdisk_controller = ramdisk.client.open_controller()?;
+        let block_dir = fuchsia_fs::directory::clone(ramdisk.client.outgoing())?;
+        let block_connector = fs_management::filesystem::DirBasedBlockConnector::new(
+            block_dir,
+            format!("svc/{}", fidl_fuchsia_storage_block::BlockMarker::PROTOCOL_NAME),
+        );
 
         // Spawn blobfs on top of the ramdisk.
         let mut fs = match implementation {
             Implementation::CppBlobfs => fs_management::filesystem::Filesystem::new(
-                ramdisk_controller,
+                block_connector,
                 fs_management::Blobfs { ..fs_management::Blobfs::dynamic_child() },
             ),
             Implementation::Fxblob => fs_management::filesystem::Filesystem::new(
-                ramdisk_controller,
+                block_connector,
                 fs_management::Fxfs::default(),
             ),
         };

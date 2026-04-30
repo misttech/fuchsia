@@ -20,6 +20,10 @@
             from: "framework",
         },
         {
+            service: "fuchsia.hardware.ramdisk.Service",
+            from: "parent",
+        },
+        {
             protocol: [
                 "fuchsia.blobfs.internal.DecompressorCreator",
                 "fuchsia.process.Launcher",

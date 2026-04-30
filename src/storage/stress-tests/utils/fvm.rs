@@ -108,7 +108,7 @@ impl FvmInstance {
     }
 
     pub fn ramdisk_get_dir(&self) -> Option<&fio::DirectoryProxy> {
-        self.ramdisk.as_dir()
+        Some(self.ramdisk.outgoing())
     }
 
     pub async fn shutdown(self) {
