@@ -77,12 +77,10 @@ config("thread-pointer-abi") {
 # because in supervisor mode an exception frame could be pushed there by
 # hardware at any time.
 config("stack-pointer-abi") {
+  rustflags = [ "-Cno-redzone" ]
   cflags = [ "-mno-red-zone" ]
   asmflags = cflags
   ldflags = cflags
-
-  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
-  rustflags = [ "--rust-is-too-dangerous-until-we-plumb-no-red-zone" ]
 }
 
 config("retpoline") {
