@@ -21,7 +21,7 @@ enum Mode {
 }
 
 fn main() {
-    diagnostics_log::initialize(diagnostics_log::PublishOptions::default()).unwrap();
+    diagnostics_log::initialize_sync(diagnostics_log::PublishOptions::default());
 
     // Attempt to load configuration from file.
     let mode = if let Ok(file) = std::fs::File::open("/data/config.json") {

@@ -335,14 +335,14 @@ impl Pager {
     /// Allows the kernel to dirty the `range` of pages. Sent in response to a `ZX_PAGER_VMO_DIRTY`
     /// page request. See `ZX_PAGER_OP_DIRTY` for more information.
     fn dirty_pages(&self, vmo: &zx::Vmo, range: Range<u64>) -> Result<(), zx::Status> {
-        let result = self.pager.op_range(zx::PagerOp::Dirty, vmo, range);
-        if let Err(e) = &result {
-            // It is possible for `ZX_ERR_NOT_FOUND` to be returned on a clean page that has been
-            // evicted. In this case, the  kernel will retry if necessary.See
+        self.pager.op_range(zx::PagerOp::Dirty, vmo, range).inspect_err(|error| {
+            // It is possible for `ZX_ERR_NOT_FOUND` to be returned on a clean page that has
+            // been evicted.  In this case, the kernel will retry if necessary.  See
             // https://fxbug.dev/42086069 for more information.
-            error!(error:? = e; "dirty_pages failed");
-        }
-        return result;
+            if *error != zx::Status::NOT_FOUND {
+                error!(error:?; "dirty_pages failed");
+            }
+        })
     }
 
     /// Notifies the kernel that the filesystem has started cleaning the `range` of pages. See
