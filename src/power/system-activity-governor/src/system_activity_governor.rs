@@ -1304,23 +1304,32 @@ impl SystemActivityGovernor {
         name: String,
         server_token: fsystem::LeaseToken,
     ) {
-        // TODO(https://fxbug.dev/503324428) Check if the peer closed the other side before making
-        // a wake lease.
-        let client_token_res = if name.is_empty() {
-            log::warn!("Received invalid name while acquiring wake lease");
-            Err(fsystem::AcquireWakeLeaseError::InvalidName)
-        } else {
-            self.lease_manager
-                .create_wake_lease_using_token(name, server_token, false)
-                .await
-                .or_else(|error| {
-                    log::warn!(
-                        error:?;
-                        "Encountered error while registering wake lease"
-                    );
+        // Check if the peer closed the other side before making a wake lease.
+        let client_token_res = match server_token
+            .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+        {
+            zx::WaitResult::Ok(_) => {
+                log::debug!("Token already closed for '{}', skipping wake lease creation", name);
+                Ok(())
+            }
+            _ => {
+                if name.is_empty() {
+                    log::warn!("Received invalid name while acquiring wake lease");
+                    Err(fsystem::AcquireWakeLeaseError::InvalidName)
+                } else {
+                    self.lease_manager
+                        .create_wake_lease_using_token(name, server_token, false)
+                        .await
+                        .or_else(|error| {
+                            log::warn!(
+                                error:?;
+                                "Encountered error while registering wake lease"
+                            );
 
-                    Err(fsystem::AcquireWakeLeaseError::Internal)
-                })
+                            Err(fsystem::AcquireWakeLeaseError::Internal)
+                        })
+                }
+            }
         };
 
         if let Err(error) = responder.send(client_token_res) {
@@ -1411,10 +1420,24 @@ impl SystemActivityGovernor {
     ) {
         log::info!("Processing accumulated requests in SAG...");
 
-        // TODO(https://fxbug.dev/503324428) Check if the peer closed the other side before making
-        // a wake lease.
+        // Check if the peer closed the other side before making a wake lease.
         let mut lease_results = Vec::new();
         for lease in wake_leases {
+            match lease
+                .server_token
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+            {
+                zx::WaitResult::Ok(_) => {
+                    log::debug!(
+                        "Token already closed for accumulated lease '{}', skipping",
+                        lease.name
+                    );
+                    lease_results.push(Ok(()));
+                    continue;
+                }
+                _ => {}
+            }
+
             let res = self
                 .lease_manager
                 .create_wake_lease_using_token(
