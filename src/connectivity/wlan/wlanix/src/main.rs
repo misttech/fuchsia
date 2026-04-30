@@ -1892,7 +1892,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
                         .send(Ok(vec![build_nl80211_ack()]))
                         .context("Failed to ack TriggerScan")?;
                     telemetry_sender.send(TelemetryEvent::ScanStart);
-                    match client_iface.trigger_scan().await {
+                    match client_iface.trigger_scan(vec![]).await {
                         Ok(ScanEnd::Complete) => {
                             info!("Passive scan completed successfully");
                             telemetry_sender.send(TelemetryEvent::ScanResult {

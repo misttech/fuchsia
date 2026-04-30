@@ -28,6 +28,7 @@ use std::pin::pin;
 use std::sync::Arc;
 use strum_macros::{Display, EnumIter, EnumString};
 use wlan_common::bss::BssDescription;
+use wlan_common::channel::primary_channel_from_freq;
 use wlan_common::scan::{Compatibility, CompatibilityExt as _};
 use wlan_telemetry::{TelemetryEvent, TelemetrySender};
 
@@ -371,7 +372,7 @@ pub(crate) struct ConnectedNetwork {
 #[async_trait]
 pub(crate) trait ClientIface: Sync + Send {
     async fn query(&self) -> Result<fidl_device_service::QueryIfaceResponse, Error>;
-    async fn trigger_scan(&self) -> Result<ScanEnd, Error>;
+    async fn trigger_scan(&self, channels: Vec<u8>) -> Result<ScanEnd, Error>;
     async fn abort_scan(&self) -> Result<(), Error>;
     fn get_last_scan_results(&self) -> Vec<fidl_sme::ScanResult>;
     async fn connect_to_network(
@@ -591,9 +592,9 @@ impl ClientIface for SmeClientIface {
         Ok(())
     }
 
-    async fn trigger_scan(&self) -> Result<ScanEnd, Error> {
+    async fn trigger_scan(&self, channels: Vec<u8>) -> Result<ScanEnd, Error> {
         let scan_request =
-            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] });
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels });
         let (abort_sender, mut abort_receiver) = oneshot::channel();
         self.scan_abort_signal.lock().replace(abort_sender);
         let mut fut = pin!(
@@ -657,7 +658,7 @@ impl ClientIface for SmeClientIface {
         };
         if refresh_scan {
             info!("Scan results too old or no results available. Starting a connect scan");
-            match self.trigger_scan().await {
+            match self.trigger_scan(vec![]).await {
                 Ok(ScanEnd::Complete) => info!("Connect scan completed"),
                 Ok(ScanEnd::Cancelled) => bail!("Connect scan was cancelled"),
                 Err(e) => bail!("Connect scan failed: {}", e),
@@ -936,11 +937,30 @@ impl ClientIface for SmeClientIface {
         self.pno_scan_charge_signal.lock().replace(charge_tx);
 
         let mut is_charging = initial_charging_status;
+        let mut invalid_frequencies: Vec<u32> = Vec::new();
+
+        // Convert the frequencies from the attributes to the corresponding channels and log if any
+        // fail to be converted.
+        let channels: Vec<u8> = request
+            .frequencies
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|f| {
+                primary_channel_from_freq(f).or_else(|| {
+                    invalid_frequencies.push(f);
+                    None
+                })
+            })
+            .collect();
+
+        if !invalid_frequencies.is_empty() {
+            warn!("Failed to convert some frequencies to channels: {:?}", invalid_frequencies);
+        }
 
         // Use FuturesUnordered to asynchronously listen for stop signals while scanning or waiting.
         let mut scan_futures = FuturesUnordered::new();
         let mut timer_futures = FuturesUnordered::new();
-        scan_futures.push(self.trigger_scan());
+        scan_futures.push(self.trigger_scan(channels));
         loop {
             futures::select! {
                 // If there is an explicit command to stop the scheduled scan or if the sender is
@@ -956,7 +976,7 @@ impl ClientIface for SmeClientIface {
                         if !was_charging && is_charging {
                             info!("Transitioned to charging. Resuming PNO scans.");
                             if scan_futures.is_empty() && timer_futures.is_empty() {
-                                scan_futures.push(self.trigger_scan());
+                                scan_futures.push(self.trigger_scan(vec![]));
                             }
                         } else if was_charging && !is_charging {
                             info!("Transitioned to not charging. PNO scans will pause after current scan if no results.");
@@ -968,7 +988,7 @@ impl ClientIface for SmeClientIface {
                     // frequent changes in state don't skip the wait between scans.
                     if is_charging {
                         info!("Triggering scheduled PNO scan");
-                        scan_futures.push(self.trigger_scan());
+                        scan_futures.push(self.trigger_scan(vec![]));
                     }
                 }
                 res = scan_futures.select_next_some() => {
@@ -1218,7 +1238,7 @@ pub mod test_utils {
             })
         }
 
-        async fn trigger_scan(&self) -> Result<ScanEnd, Error> {
+        async fn trigger_scan(&self, _channels: Vec<u8>) -> Result<ScanEnd, Error> {
             self.calls.lock().push(ClientIfaceCall::TriggerScan);
             let scan_end_receiver = self.scan_end_receiver.lock().take();
             match scan_end_receiver {
@@ -2247,7 +2267,7 @@ mod tests {
     fn test_trigger_scan_success() {
         let mut test_values = setup_test_manager_with_iface();
         assert!(test_values.iface.get_last_scan_results().is_empty());
-        let mut scan_fut = test_values.iface.trigger_scan();
+        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2265,7 +2285,7 @@ mod tests {
     #[test]
     fn test_trigger_scan_failure() {
         let mut test_values = setup_test_manager_with_iface();
-        let mut scan_fut = test_values.iface.trigger_scan();
+        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2277,7 +2297,7 @@ mod tests {
     #[test]
     fn test_trigger_scan_cancelled() {
         let mut test_values = setup_test_manager_with_iface();
-        let mut scan_fut = test_values.iface.trigger_scan();
+        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2295,7 +2315,7 @@ mod tests {
     fn test_abort_scan() {
         let mut test_values = setup_test_manager_with_iface();
         assert!(test_values.iface.get_last_scan_results().is_empty());
-        let mut scan_fut = test_values.iface.trigger_scan();
+        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, _responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2316,7 +2336,7 @@ mod tests {
     fn test_trigger_scan_timeout() {
         let mut test_values = setup_test_manager_with_iface_and_fake_time();
         assert!(test_values.iface.get_last_scan_results().is_empty());
-        let mut scan_fut = test_values.iface.trigger_scan();
+        let mut scan_fut = test_values.iface.trigger_scan(vec![]);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
         let (_req, _responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2373,6 +2393,35 @@ mod tests {
 
         let found_results = assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
         assert_eq!(found_results.len(), 1);
+    }
+
+    #[test]
+    fn test_start_sched_scan_with_frequencies() {
+        let mut test_values = setup_test_manager_with_iface();
+
+        // Request a scheduled scan with frequencies corresponding to channel 1 and 6, and one
+        // invalid frequency.
+        let request = fidl_common::ScheduledScanRequest {
+            frequencies: Some(vec![2412, 2437, 5180, 9999]),
+            ..Default::default()
+        };
+
+        let mut scan_fut = test_values.iface.start_sched_scan(request, true);
+
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        // Respond to the SME scan request
+        let (req, _responder) = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        // Verify the channels in the request
+        assert_matches!(
+            req,
+            fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels }) => {
+                assert_eq!(channels, vec![1, 6, 36]);
+            }
+        );
     }
 
     #[fuchsia::test]

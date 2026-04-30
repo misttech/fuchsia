@@ -368,6 +368,27 @@ fn abs_sub(v1: u8, v2: u8) -> u8 {
     if v2 >= v1 { v2 - v1 } else { v1 - v2 }
 }
 
+/// Converts a 20MHz primary channel center frequency in MHz to a channel number. Returns an error
+/// if the frequency does not correspond to the center frequency of a valid
+/// standard channel in the 2.4GHz or 5GHz bands.
+pub fn primary_channel_from_freq(freq: u32) -> Option<u8> {
+    // 2.4 GHz: Channels 1-13
+    if (2412..=2472).contains(&freq) && (freq - 2412) % 5 == 0 {
+        Some(((freq - 2407) / 5) as u8)
+    // 2.4 GHz: Channel 14
+    } else if freq == 2484 {
+        Some(14)
+    // 5 GHz: Channels 36-144
+    } else if (5180..=5720).contains(&freq) && (freq - 5180) % 20 == 0 {
+        Some(((freq - 5000) / 5) as u8)
+    // 5 GHz: Channels 149-173
+    } else if (5745..=5865).contains(&freq) && (freq - 5745) % 20 == 0 {
+        Some(((freq - 5000) / 5) as u8)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,6 +482,29 @@ mod tests {
             5210 as MHz,
             Channel::new(36, Cbw::Cbw80P80 { secondary80: 155 }).get_center_freq().unwrap()
         );
+    }
+
+    #[test]
+    fn test_primarychannel_from_freq() {
+        assert_eq!(Some(1), primary_channel_from_freq(2412));
+        // This is between the center frequencies of channel 1 and 2
+        assert_eq!(None, primary_channel_from_freq(2413));
+        assert_eq!(Some(6), primary_channel_from_freq(2437));
+        assert_eq!(Some(13), primary_channel_from_freq(2472));
+        assert_eq!(Some(14), primary_channel_from_freq(2484));
+        // This is below the range of recognized 5GHz channels
+        assert_eq!(None, primary_channel_from_freq(5160));
+        assert_eq!(Some(36), primary_channel_from_freq(5180));
+        // This is between the center frequencies of channel 36 and 40
+        assert_eq!(None, primary_channel_from_freq(5190));
+        assert_eq!(Some(165), primary_channel_from_freq(5825));
+        assert_eq!(Some(173), primary_channel_from_freq(5865));
+        // This is below the range of recognized 2.4GHz channels
+        assert_eq!(None, primary_channel_from_freq(2400));
+        // This is below the range of recognized 5GHz channels
+        assert_eq!(None, primary_channel_from_freq(5000));
+        // This is above the range of recognized channels
+        assert_eq!(None, primary_channel_from_freq(5885));
     }
 
     #[test]
