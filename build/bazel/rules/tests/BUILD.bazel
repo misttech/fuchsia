@@ -57,6 +57,10 @@ filegroup(
     name = "targets_to_build_in_host_configuration",
     testonly = True,
     srcs = [
+        # Host tools not in the IDK
+        "//tools/fidl/fidlgen_rust",
+
+        # Miscellaneous libraries.
         "//sdk/lib/fidl",
         "//sdk/lib/fidl/cpp:cpp_base",
         "//sdk/lib/fidl/cpp/wire",

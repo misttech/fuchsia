@@ -3,16 +3,20 @@
 # found in the LICENSE file.
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/bazel/bazel_idk:defs.bzl", "idk_go_binary_host_tool")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
-idk_go_binary_host_tool(
+go_binary_host_tool(
     name = "fidlgen_rust",
     srcs = ["main.go"],
-    api_area = "FIDL",
-    category = "partner",
-    idk_name = "fidlgen_rust",
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+        # TODO(https://fxbug.dev/454452299): Remove this entry once Rust FIDL
+        # bindings are being exercised by the tests.
+        "//build/bazel/rules/tests:__subpackages__",
+        "//visibility:public",  # For bazel2gn.
+    ],
     deps = [
         "//tools/fidl/fidlgen_rust/codegen",
         "//tools/fidl/lib/fidlgen",
