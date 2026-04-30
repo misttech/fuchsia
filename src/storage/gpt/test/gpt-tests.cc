@@ -1219,6 +1219,84 @@ TEST(GptDeviceLoadEntries, SmallEntryArray) {
           .status_value());
 }
 
+TEST_F(GptDeviceTest, HolesHandling) {
+  auto dev = GetLibGptTest();
+
+  if (!dev->IsGptValid()) {
+    dev->Finalize();
+  }
+
+  dev->RemoveAllPartitions();
+
+  uint8_t type[GPT_GUID_LEN] = {1};
+  uint8_t guid0[GPT_GUID_LEN] = {1};
+  uint8_t guid1[GPT_GUID_LEN] = {2};
+  uint8_t guid2[GPT_GUID_LEN] = {3};
+
+  ASSERT_OK(dev->AddPartition("part0", type, guid0, 40, 10, 0));
+  ASSERT_OK(dev->AddPartition("part1", type, guid1, 60, 10, 0));
+  ASSERT_OK(dev->AddPartition("part2", type, guid2, 80, 10, 0));
+
+  ASSERT_OK(dev->RemovePartition(guid1));
+
+  ASSERT_EQ(nullptr, dev->GetPartition(1));
+
+  uint8_t guid3[GPT_GUID_LEN] = {4};
+  ASSERT_STATUS(ZX_ERR_OUT_OF_RANGE, dev->AddPartition("part3", type, guid3, 85, 10, 0));
+
+  ASSERT_OK(dev->AddPartition("part3", type, guid3, 100, 10, 0));
+
+  ASSERT_NE(nullptr, dev->GetPartition(1));
+}
+
+TEST_F(GptDeviceTest, AddToLoadedSparseTable) {
+  auto dev = GetLibGptTest();
+  dev->PrepDisk(true);
+
+  uint64_t start = dev->GetUsableStartBlock();
+
+  gpt_header_t header = InitializePrimaryHeader(kBlockSize, kBlockCount).value();
+  header.entries_count = 3;
+
+  uint8_t blocks[MinimumBytesPerCopy(kBlockSize).value()];
+  memset(blocks, 0, sizeof(blocks));
+
+  // Use gpt_entry_t for pointer arithmetic!
+  gpt_entry_t* entries = reinterpret_cast<gpt_entry_t*>(&blocks[kBlockSize]);
+
+  uint8_t type[GPT_GUID_LEN] = {1};
+  uint8_t guid0[GPT_GUID_LEN] = {1};
+  memcpy(entries[0].type, type, GPT_GUID_LEN);
+  memcpy(entries[0].guid, guid0, GPT_GUID_LEN);
+  entries[0].first = start;
+  entries[0].last = start + 10;
+
+  uint8_t type2[GPT_GUID_LEN] = {2};
+  uint8_t guid2[GPT_GUID_LEN] = {2};
+  memcpy(entries[2].type, type2, GPT_GUID_LEN);
+  memcpy(entries[2].guid, guid2, GPT_GUID_LEN);
+  entries[2].first = start + 20;
+  entries[2].last = start + 30;
+
+  UpdateHeaderCrcs(&header, &blocks[kBlockSize],
+                   MinimumBytesPerCopy(kBlockSize).value() - kBlockSize);
+  memcpy(blocks, &header, sizeof(header));
+
+  auto dev_res =
+      GptDevice::Load(blocks, MinimumBytesPerCopy(kBlockSize).value(), kBlockSize, kBlockCount);
+  ASSERT_OK(dev_res.status_value());
+  auto loaded_dev = std::move(dev_res.value());
+
+  ASSERT_OK(loaded_dev->GetPartition(0).status_value());
+  ASSERT_STATUS(ZX_ERR_NOT_FOUND, loaded_dev->GetPartition(1).status_value());
+  ASSERT_OK(loaded_dev->GetPartition(2).status_value());
+
+  uint8_t guid3[GPT_GUID_LEN] = {4};
+  ASSERT_OK(loaded_dev->AddPartition("part3", type, guid3, start + 40, 10, 0).status_value());
+
+  ASSERT_OK(loaded_dev->GetPartition(1).status_value());
+}
+
 TEST(GptDeviceLoadEntries, EntryFirstSmallerThanFirstUsable) {
   gpt_header_t header = InitializePrimaryHeader(kBlockSize, kBlockCount).value();
   std::unique_ptr<uint8_t[]> buffer(new uint8_t[MinimumBytesPerCopy(kBlockSize).value()]());

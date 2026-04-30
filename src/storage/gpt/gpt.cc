@@ -53,6 +53,9 @@ void print_array(const gpt_partition_t* const partitions[kPartitionCount], int c
   char name[GPT_NAME_LEN / 2 + 1];
 
   for (int i = 0; i < c; ++i) {
+    if (partitions[i] == nullptr) {
+      continue;
+    }
     uint8_to_guid_string(GUID, partitions[i]->type);
     memset(name, 0, GPT_NAME_LEN / 2 + 1);
     utf16_to_cstring(name, reinterpret_cast<const uint16_t*>(partitions[i]->name),
@@ -520,12 +523,7 @@ zx_status_t GptDevice::FinalizeAndSync(bool persist) {
   return ZX_OK;
 }
 
-void GptDevice::PrintTable() const {
-  int count = 0;
-  for (; partitions_[count] != nullptr; ++count)
-    ;
-  print_array(partitions_, count);
-}
+void GptDevice::PrintTable() const { print_array(partitions_, kPartitionCount); }
 
 bool RangesOverlapsWithOtherRanges(const fbl::Vector<BlockRange>& ranges, const BlockRange& range) {
   return std::any_of(ranges.begin(), ranges.end(),
@@ -850,8 +848,10 @@ zx::result<uint32_t> GptDevice::AddPartition(const char* name, const uint8_t* ty
   std::optional<uint32_t> tail;
   for (i = 0; i < kPartitionCount; i++) {
     if (!partitions_[i]) {
-      tail = i;
-      break;
+      if (!tail.has_value()) {
+        tail = i;
+      }
+      continue;
     }
     if (first <= partitions_[i]->last && last >= partitions_[i]->first) {
       G_PRINTF("partition range overlaps\n");
@@ -919,27 +919,25 @@ zx_status_t GptDevice::ClearPartition(uint64_t offset, uint64_t blocks) {
 }
 
 zx_status_t GptDevice::RemovePartition(const uint8_t* guid) {
-  // look for the entry in the partition list
   uint32_t i;
   for (i = 0; i < kPartitionCount; i++) {
-    if (!memcmp(partitions_[i]->guid, guid, sizeof(partitions_[i]->guid))) {
+    if (partitions_[i] == nullptr) {
+      continue;
+    }
+    if (memcmp(partitions_[i]->guid, guid, sizeof(partitions_[i]->guid)) == 0) {
       break;
     }
   }
+
   if (i == kPartitionCount) {
     G_PRINTF("partition not found\n");
     return ZX_ERR_NOT_FOUND;
   }
+
   // clear the entry
   memset(partitions_[i], 0, kEntrySize);
-  // pack the partition list
-  for (i = i + 1; i < kPartitionCount; i++) {
-    if (partitions_[i] == nullptr) {
-      partitions_[i - 1] = nullptr;
-    } else {
-      partitions_[i - 1] = partitions_[i];
-    }
-  }
+  partitions_[i] = nullptr;  // Leave a hole
+
   return ZX_OK;
 }
 
