@@ -133,8 +133,8 @@ impl [< $t:upper Range>] {
 
     pub fn checked_sub<T: Into<[< $t:upper Range>]>>(self, rhs: T) -> Option<Self> {
         let rhs = rhs.into();
-        let min = self.min.checked_sub(rhs.min)?;
-        let max = self.max.checked_sub(rhs.max)?;
+        let min = self.min.checked_sub(rhs.max)?;
+        let max = self.max.checked_sub(rhs.min)?;
         Some(Self {min, max})
     }
 }
@@ -663,5 +663,32 @@ impl From<U32ScalarValueData> for U64ScalarValueData {
             v.unwritten_mask.into(),
             U64Range::new(v.min().into(), v.max().into()),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_range_checked_sub_interval_arithmetic() {
+        // [8,8] - [0,3] = [8-3, 8-0] = [5,8]
+        let a = U64Range::new(8, 8);
+        let b = U64Range::new(0, 3);
+        let result = a.checked_sub(b).unwrap();
+        assert_eq!(result.min, 5);
+        assert_eq!(result.max, 8);
+
+        // [10,20] - [2,5] = [10-5, 20-2] = [5,18]
+        let a = U64Range::new(10, 20);
+        let b = U64Range::new(2, 5);
+        let result = a.checked_sub(b).unwrap();
+        assert_eq!(result.min, 5);
+        assert_eq!(result.max, 18);
+
+        // [3,3] - [0,5] = None (3-5 underflows)
+        let a = U64Range::new(3, 3);
+        let b = U64Range::new(0, 5);
+        assert!(a.checked_sub(b).is_none());
     }
 }
