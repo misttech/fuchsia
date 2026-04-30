@@ -245,7 +245,7 @@ impl ZxioBackedSocket {
                         iovecs.as_ref().iter().filter(|iovec| iovec.iov_len > 0).map(|iovec| {
                             (UserAddress::from_ptr(iovec.iov_base as usize), Some(iovec.iov_len))
                         });
-                    current_task.mm()?.state.write().ensure_ranges_mapped_in_user_vmar(ranges)?;
+                    current_task.mm()?.ensure_ranges_mapped_in_user_vmar(ranges)?;
 
                     Some(map_errors(self.zxio.sendmsg(&mut addr, &mut iovecs, &cmsgs, flags))?)
                 }
@@ -304,7 +304,7 @@ impl ZxioBackedSocket {
                         iovecs.as_ref().iter().filter(|iovec| iovec.iov_len > 0).map(|iovec| {
                             (UserAddress::from_ptr(iovec.iov_base as usize), Some(iovec.iov_len))
                         });
-                    current_task.mm()?.state.write().ensure_ranges_mapped_in_user_vmar(ranges)?;
+                    current_task.mm()?.ensure_ranges_mapped_in_user_vmar(ranges)?;
 
                     let info = map_errors(self.zxio.recvmsg(&mut iovecs, flags))?;
                     // SAFETY: we successfully read `info.bytes_read` bytes

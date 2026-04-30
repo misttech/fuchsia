@@ -113,8 +113,7 @@ where
         return error!(EINVAL);
     }
 
-    let file =
-        if flags & MAP_ANONYMOUS != 0 { None } else { Some(current_task.get_file(fd)?) };
+    let file = if flags & MAP_ANONYMOUS != 0 { None } else { Some(current_task.get_file(fd)?) };
     if flags & (MAP_PRIVATE | MAP_SHARED) == 0
         || flags & (MAP_PRIVATE | MAP_SHARED) == MAP_PRIVATE | MAP_SHARED
     {
@@ -242,7 +241,7 @@ pub fn sys_madvise(
     length: usize,
     advice: u32,
 ) -> Result<(), Errno> {
-    current_task.mm()?.madvise(current_task, addr, length, advice)?;
+    current_task.mm()?.madvise(addr, length, advice)?;
     Ok(())
 }
 
@@ -387,9 +386,7 @@ pub fn sys_process_mrelease(
         return error!(EINVAL);
     }
 
-    let mm = task.mm()?;
-    let mm_state = mm.state.write();
-    mm_state.mrelease()
+    task.mm()?.mrelease()
 }
 
 pub fn sys_membarrier(
