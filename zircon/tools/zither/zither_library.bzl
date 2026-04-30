@@ -280,8 +280,8 @@ def _zither_rust_library_impl(
         crate_name = output_namespace
         crate_root = paths.join(output_dir, output_namespace, "src", "lib.rs")
         crate_deps = [
-            "//third_party/rust_crates:bitflags",
-            "//third_party/rust_crates:zerocopy",
+            "//third_party/rust_crates/vendor:bitflags",
+            "//third_party/rust_crates/vendor:zerocopy",
         ]
         generated_files.append(crate_root)
 

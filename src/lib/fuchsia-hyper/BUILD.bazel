@@ -54,8 +54,8 @@ rustc_library(
             "//src/lib/network/fidl_fuchsia_net_ext",
             "//src/lib/webpki-roots-fuchsia",
             "//src/sys/lib/fidl-connector",
-            "//third_party/rust_crates:itertools",
-            "//third_party/rust_crates:pin-project",
+            "//third_party/rust_crates/vendor:itertools",
+            "//third_party/rust_crates/vendor:pin-project",
         ],
         "//conditions:default": [
             "//src/developer/ffx/lib/netext:lib",
