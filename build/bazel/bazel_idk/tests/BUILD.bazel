@@ -764,11 +764,6 @@ idk_molecule(
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":test_submolecule_idk",
-        # Tests compatibility testing with different expectations per API level.
-        # As of F30+, this library has elements added at 28, 29, and NEXT.
-        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
-        # This tests direct FIDL library dependencies.
-        "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
         "//sdk/lib/fidl/cpp:cpp_idk",
         "//sdk/lib/magma_common:magma_common_idk",
         "//sdk/lib/media/cpp:no_converters_idk",
@@ -912,6 +907,14 @@ filegroup(
     srcs = [
         # Depends on the IDK atom targets.
         ":test_molecule_idk",
+
+        # FIDL atoms can only be built at "PLATFORM" because the generated
+        # `.api` file may be different at other API levels.
+        # Tests compatibility testing with different expectations per API level.
+        # As of F30+, this library has elements added at 28, 29, and NEXT.
+        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
+        # This tests direct FIDL library dependencies.
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
 
         # Linking executables verifies that all deps are properly specified and
         # that FIDL bindings were generated correctly.
@@ -1074,50 +1077,28 @@ filegroup(
         "//examples/fidl/fuchsia.examples.docs:versioning",
         # This tests indirect FIDL library dependencies.
         "//sdk/fidl/fuchsia.hardware.display.engine",
+        # A FIDL library in a category.
+        # Note that the "..._idk" IDK atom targets are not built in combinations.
+        "//sdk/fidl/fuchsia.feedback",
     ] + select({
         # TODO(https://fxbug.dev/505380228): Merge these targets into the main
         # list once sysroots are available for all CPU architectures.
         "//build/bazel/platforms:is_fuchsia_" + target_cpu: [
-            # TODO(https://fxbug.dev/505806966): Remove these targets and
-            # uncomment the two below once `.ifs` file differences are resolved.
-            ":test-shared-library",
-            ":test_shared_library_zx",
             # Both of these must be built for each API level to ensure that the
             # golden IFS files are populated when creating new API levels.
-            # ":test-shared-library_idk",
-            # ":test_shared_library_zx_idk",
+            ":test-shared-library_idk",
+            ":test_shared_library_zx_idk",
 
             # A shared library that exercises use of the API level-specific
             # golden IFS files.
-            # TODO(https://fxbug.dev/505806966): Uncomment once `.ifs` file
-            # differences are resolved.
-            # "//sdk/lib/async-default:async-default_idk",
-
-            # TODO(https://fxbug.dev/505806966): Append "_idk" to these targets
-            # once the `llvm-ar` issue is resolved.
-            ":test-static-library",
-            ":test_static_library_zx",
+            "//sdk/lib/async-default:async-default_idk",
 
             # Depends on the IDK atom targets.
-            # TODO(https://fxbug.dev/505806966): Uncomment and remove
-            # ":test-static-library*" above once the issues have been resolved.
-            # ":test_molecule_idk",
+            ":test_molecule_idk",
 
             # Linking executables verifies that all deps are properly specified
             # and that FIDL bindings were generated correctly.
-            # TODO(https://fxbug.dev/443762519): Replace the list below with
-            # ":all_test_executables" after uncommenting all targets below.
-            ":test_executable_using_cc_shared_library",
-            ":test_executable_using_cc_source_library",
-            ":test_executable_using_cc_static_library",
-            ":test_executable_using_platform_dependent_source_library",
-            ":test_executable_using_cc_shared_library_zx",
-            ":test_executable_using_cc_source_library_zx",
-            ":test_executable_using_cc_static_library_zx",
-            # TODO(https://fxbug.dev/505806966): Uncomment once the `llvm-ar`
-            # issue is resolved.
-            # ":test_executable_using_imported_cc_static_library",
-            ":test_executable_using_fidl_cc",
+            ":all_test_executables",
 
             # Depend directly on the underlying source libraries since they are
             # not dependencies of the atoms.
