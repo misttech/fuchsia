@@ -1102,6 +1102,41 @@ TEST_F(BpfMapTest, CannotLookUpPinnedMapWithWriteOnlyFd) {
   EXPECT_THAT(unlink(pin_path), SyscallSucceeds());
 }
 
+TEST_F(BpfMapTest, ObjGetInfoByFdOnlyWritesRequestedSize) {
+  // Allocate two pages, and make the second page inaccessible to catch out-of-bounds writes.
+  size_t page_size = getpagesize();
+  void* mem = mmap(NULL, page_size * 2, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(mem, MAP_FAILED);
+  ASSERT_EQ(mprotect((char*)mem + page_size, page_size, PROT_NONE), 0);
+
+  // Create a user struct with byte size 8, smaller than the full info struct.
+  // Place it at the very end of the first page.
+  struct my_bpf_attr {
+    uint32_t bpf_fd;
+    uint32_t info_len;
+  } __attribute__((aligned(8)));
+
+  if (sizeof(struct my_bpf_attr) >= sizeof(((union bpf_attr*)0)->info)) {
+    GTEST_SKIP() << "my_bpf_attr must be smaller than the full info struct to test overflow";
+  }
+
+  struct my_bpf_attr* info_attr =
+      (struct my_bpf_attr*)((char*)mem + page_size - sizeof(struct my_bpf_attr));
+  info_attr->bpf_fd = static_cast<uint32_t>(array_fd());
+  info_attr->info_len = 0;  // Don't need to provide an info buffer
+
+  // Call BPF_OBJ_GET_INFO_BY_FD with size 8. Since the struct is placed at the end of the
+  // first page and the second page is inaccessible, any access beyond the requested 8 bytes will
+  // cause a fault.
+  int ret = static_cast<int>(
+      syscall(SYS_bpf, BPF_OBJ_GET_INFO_BY_FD, info_attr, sizeof(struct my_bpf_attr)));
+
+  EXPECT_THAT(ret, SyscallSucceeds())
+      << "BPF_OBJ_GET_INFO_BY_FD accessed memory beyond the requested size";
+
+  munmap(mem, page_size * 2);
+}
+
 class BpfMapCapabilityTest
     : public BpfTestBase,
       public ::testing::WithParamInterface<std::tuple<uint32_t, bool, bool, bool, bool>> {
