@@ -53,3 +53,4 @@ ffx/target/update/check-now.golden
 ffx/target/update/force-install.golden
 ffx/target/update/wait-for-commit.golden
 ffx/target/wait.golden
+ffx/target/wipe.golden

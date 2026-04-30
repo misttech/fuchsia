@@ -36,6 +36,7 @@ if (is_host) {
       "status:ffx_target_status",
       "update:ffx_update",
       "wait:ffx_wait",
+      "wipe:ffx_wipe",
     ]
 
     args_sources = [ "src/args.rs" ]
@@ -60,6 +61,7 @@ if (is_host) {
     deps = [
       "default:tests",
       "log-message:tests",
+      "wipe:ffx_wipe_tests",
     ]
   }
 
