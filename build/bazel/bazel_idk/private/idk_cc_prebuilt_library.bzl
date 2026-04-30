@@ -227,7 +227,7 @@ def _idk_cc_prebuilt_library_impl(
 
         shared_lib_name = "lib%s.so" % output_name
 
-        user_link_flags = ['-Wl,-soname=\"%s\"' % shared_lib_name]
+        user_link_flags = ["-Wl,-soname=%s" % shared_lib_name]
         additional_linker_inputs = []
         if version_script:
             user_link_flags.append("-Wl,--version-script=$(location %s)" % version_script)
