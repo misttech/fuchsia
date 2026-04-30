@@ -626,7 +626,12 @@ def generate_clang_cc_toolchain(
     all_files = name + "_all_files"
     native.filegroup(
         name = all_files,
-        srcs = common_compiler_files + common_linker_files + sysroot_header_files + sysroot_library_files,
+        srcs = native.glob(["bin/**"]) + (
+            common_compiler_files +
+            common_linker_files +
+            sysroot_header_files +
+            sysroot_library_files
+        ),
     )
 
     cc_toolchain(
