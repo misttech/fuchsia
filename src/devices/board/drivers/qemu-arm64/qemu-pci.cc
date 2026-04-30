@@ -8,12 +8,15 @@
 #include <lib/ddk/debug.h>
 #include <lib/ddk/driver.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/zx/bti.h>
 #include <lib/zx/interrupt.h>
+#include <lib/zx/iommu.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <stdint.h>
 #include <zircon/errors.h>
+#include <zircon/syscalls/iommu.h>
 #include <zircon/syscalls/types.h>
 #include <zircon/types.h>
 
@@ -89,7 +92,17 @@ zx::result<> QemuArm64Pciroot::CreateInterrupts() {
 }
 
 zx_status_t QemuArm64Pciroot::PcirootGetBti(uint32_t bdf, uint32_t index, zx::bti* bti) {
-  return ZX_ERR_NOT_SUPPORTED;
+  // Stub IOMMU: the QEMU virt board has no real IOMMU driver yet, so every
+  // bus-mastering device shares a pass-through iommu keyed by BDF.
+  zx::unowned_resource iommu_resource(get_iommu_resource(parent()));
+  zx_iommu_desc_stub_t desc{};
+  zx::iommu iommu;
+  if (zx_status_t status =
+          zx::iommu::create(*iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu);
+      status != ZX_OK) {
+    return status;
+  }
+  return zx::bti::create(iommu, /*options=*/0, bdf, bti);
 }
 
 zx_status_t QemuArm64Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {
