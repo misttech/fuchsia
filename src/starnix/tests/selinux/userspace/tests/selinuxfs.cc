@@ -17,7 +17,7 @@
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 
-extern std::string DoPrePolicyLoadWork() { return "selinuxfs_policy.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "selinuxfs_policy"; }
 
 namespace {
 

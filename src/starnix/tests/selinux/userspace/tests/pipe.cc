@@ -60,5 +60,5 @@ extern std::string DoPrePolicyLoadWork() {
   EXPECT_THAT(pipe(pipe_before_policy), SyscallSucceeds());
   g_before_policy_pipe = pipe_before_policy[0];
 
-  return "pipe_policy.pp";
+  return "pipe_policy";
 }

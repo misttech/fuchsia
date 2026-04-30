@@ -38,7 +38,7 @@ extern std::string DoPrePolicyLoadWork() {
       fclose(f);
     }
   }
-  return "perf_event.pp";
+  return "perf_event_policy";
 }
 
 namespace {

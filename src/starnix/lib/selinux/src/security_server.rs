@@ -786,9 +786,9 @@ mod tests {
 
     const TESTSUITE_BINARY_POLICY: &[u8] = include_bytes!("../testdata/policies/selinux_testsuite");
     const TESTS_BINARY_POLICY: &[u8] =
-        include_bytes!("../testdata/micro_policies/security_server_tests_policy.pp");
+        include_bytes!("../testdata/micro_policies/security_server_tests_policy");
     const MINIMAL_BINARY_POLICY: &[u8] =
-        include_bytes!("../testdata/composite_policies/compiled/minimal_policy.pp");
+        include_bytes!("../testdata/composite_policies/compiled/minimal_policy");
 
     fn security_server_with_tests_policy() -> Arc<SecurityServer> {
         let policy_bytes = TESTS_BINARY_POLICY.to_vec();
@@ -899,7 +899,7 @@ mod tests {
     fn compute_new_fs_node_sid_no_defaults() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_no_defaults_policy.pp").to_vec();
+            include_bytes!("../testdata/micro_policies/file_no_defaults_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -926,7 +926,7 @@ mod tests {
     fn compute_new_fs_node_sid_source_defaults() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_source_defaults_policy.pp").to_vec();
+            include_bytes!("../testdata/micro_policies/file_source_defaults_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -953,7 +953,7 @@ mod tests {
     fn compute_new_fs_node_sid_target_defaults() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_target_defaults_policy.pp").to_vec();
+            include_bytes!("../testdata/micro_policies/file_target_defaults_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -979,7 +979,7 @@ mod tests {
     fn compute_new_fs_node_sid_range_source_low_default() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_range_source_low_policy.pp").to_vec();
+            include_bytes!("../testdata/micro_policies/file_range_source_low_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -1005,8 +1005,7 @@ mod tests {
     fn compute_new_fs_node_sid_range_source_low_high_default() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_range_source_low_high_policy.pp")
-                .to_vec();
+            include_bytes!("../testdata/micro_policies/file_range_source_low_high_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -1032,7 +1031,7 @@ mod tests {
     fn compute_new_fs_node_sid_range_source_high_default() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_range_source_high_policy.pp").to_vec();
+            include_bytes!("../testdata/micro_policies/file_range_source_high_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -1058,7 +1057,7 @@ mod tests {
     fn compute_new_fs_node_sid_range_target_low_default() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_range_target_low_policy.pp").to_vec();
+            include_bytes!("../testdata/micro_policies/file_range_target_low_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -1084,8 +1083,7 @@ mod tests {
     fn compute_new_fs_node_sid_range_target_low_high_default() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_range_target_low_high_policy.pp")
-                .to_vec();
+            include_bytes!("../testdata/micro_policies/file_range_target_low_high_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -1111,7 +1109,7 @@ mod tests {
     fn compute_new_fs_node_sid_range_target_high_default() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/micro_policies/file_range_target_high_policy.pp").to_vec();
+            include_bytes!("../testdata/micro_policies/file_range_target_high_policy").to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
         let source_sid = security_server
@@ -1137,7 +1135,7 @@ mod tests {
     fn compute_new_fs_node_sid_with_name() {
         let security_server = SecurityServer::new_default();
         let policy_bytes =
-            include_bytes!("../testdata/composite_policies/compiled/type_transition_policy.pp")
+            include_bytes!("../testdata/composite_policies/compiled/type_transition_policy")
                 .to_vec();
         security_server.load_policy(policy_bytes).expect("binary policy loads");
 
@@ -1205,7 +1203,7 @@ mod tests {
     fn permissions_are_fresh_after_different_policy_load() {
         let minimal_bytes = MINIMAL_BINARY_POLICY.to_vec();
         let allow_fork_bytes =
-            include_bytes!("../testdata/composite_policies/compiled/allow_fork.pp").to_vec();
+            include_bytes!("../testdata/composite_policies/compiled/allow_fork_policy").to_vec();
         let context = b"source_u:object_r:source_t:s0:c0";
 
         let security_server = SecurityServer::new_default();
@@ -1240,13 +1238,12 @@ mod tests {
     #[test]
     fn unknown_sids_are_effectively_unlabeled() {
         let with_unlabeled_access_domain_policy_bytes = include_bytes!(
-            "../testdata/composite_policies/compiled/with_unlabeled_access_domain_policy.pp"
+            "../testdata/composite_policies/compiled/with_unlabeled_access_domain_policy"
         )
         .to_vec();
-        let with_additional_domain_policy_bytes = include_bytes!(
-            "../testdata/composite_policies/compiled/with_additional_domain_policy.pp"
-        )
-        .to_vec();
+        let with_additional_domain_policy_bytes =
+            include_bytes!("../testdata/composite_policies/compiled/with_additional_domain_policy")
+                .to_vec();
         let allowed_type_context = b"source_u:object_r:allowed_t:s0:c0";
         let additional_type_context = b"source_u:object_r:additional_t:s0:c0";
 
@@ -1654,7 +1651,7 @@ mod tests {
         security_server.set_enforcing(true);
 
         const EXCEPTIONS_POLICY: &[u8] =
-            include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy.pp");
+            include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy");
         assert!(security_server.load_policy(EXCEPTIONS_POLICY.into()).is_ok());
 
         let source_sid = security_server
@@ -1860,16 +1857,15 @@ mod tests {
         // Load a policy that is missing some elements, and marked handle_unknown=reject.
         // The policy should be rejected, since not all classes/permissions are defined.
         // Rejecting policy is not controlled by permissive vs enforcing.
-        const REJECT_POLICY: &[u8] = include_bytes!(
-            "../testdata/composite_policies/compiled/handle_unknown_policy-reject.pp"
-        );
+        const REJECT_POLICY: &[u8] =
+            include_bytes!("../testdata/composite_policies/compiled/handle_unknown_policy-reject");
         assert!(security_server.load_policy(REJECT_POLICY.to_vec()).is_err());
 
         security_server.set_enforcing(true);
 
         // Load a policy that is missing some elements, and marked handle_unknown=deny.
         const DENY_POLICY: &[u8] =
-            include_bytes!("../testdata/composite_policies/compiled/handle_unknown_policy-deny.pp");
+            include_bytes!("../testdata/composite_policies/compiled/handle_unknown_policy-deny");
         assert!(security_server.load_policy(DENY_POLICY.to_vec()).is_ok());
         let local_cache = Default::default();
         let permission_check = security_server.as_permission_check(&local_cache);
@@ -1923,9 +1919,8 @@ mod tests {
         assert!(!result.permit());
 
         // Load a policy that is missing some elements, and marked handle_unknown=allow.
-        const ALLOW_POLICY: &[u8] = include_bytes!(
-            "../testdata/composite_policies/compiled/handle_unknown_policy-allow.pp"
-        );
+        const ALLOW_POLICY: &[u8] =
+            include_bytes!("../testdata/composite_policies/compiled/handle_unknown_policy-allow");
         assert!(security_server.load_policy(ALLOW_POLICY.to_vec()).is_ok());
         let local_cache2 = Default::default();
         let permission_check = security_server.as_permission_check(&local_cache2);

@@ -21,7 +21,7 @@
 #include "src/starnix/tests/selinux/userspace/util.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
-extern std::string DoPrePolicyLoadWork() { return "socket_policy.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "socket_policy"; }
 
 namespace {
 

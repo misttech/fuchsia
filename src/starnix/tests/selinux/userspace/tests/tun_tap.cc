@@ -219,4 +219,4 @@ TEST_P(TunTapRelabelTest, Relabel) {
 
 }  // namespace
 
-extern std::string DoPrePolicyLoadWork() { return "tun_policy.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "tun_policy"; }

@@ -175,5 +175,5 @@ extern std::string DoPrePolicyLoadWork() {
       << "Failed pre-policy userfaultfd: " << strerror(errno);
   EXPECT_EQ(GetLabel(g_before_policy_userfaultfd), fit::error(ENOTSUP));
 
-  return "anon_inode_policy.pp";
+  return "anon_inode_policy";
 }

@@ -53,7 +53,7 @@ pub(in crate::security) fn create_directory_with_parents(
 /// `hooks_tests_policy.pp` is a compiled policy module.
 /// The path is relative to this rust source file.
 const HOOKS_TESTS_BINARY_POLICY: &[u8] =
-    include_bytes!("../../../../lib/selinux/testdata/micro_policies/hooks_tests_policy.pp");
+    include_bytes!("../../../../lib/selinux/testdata/micro_policies/hooks_tests_policy");
 
 /// Instantiates a kernel with SELinux enabled, switches from permissive to enforcing mode, and
 /// loads the hooks test policy, before delegating to the supplied test `callback`.

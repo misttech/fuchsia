@@ -1022,9 +1022,8 @@ pub(super) mod tests {
 
     #[test]
     fn initial_contexts() {
-        let policy_bytes = include_bytes!(
-            "../../testdata/micro_policies/multiple_levels_and_categories_policy.pp"
-        );
+        let policy_bytes =
+            include_bytes!("../../testdata/micro_policies/multiple_levels_and_categories_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1038,7 +1037,7 @@ pub(super) mod tests {
     #[test]
     fn explicit_allow_type_type() {
         let policy_bytes =
-            include_bytes!("../../testdata/micro_policies/allow_a_t_b_t_class0_perm0_policy.pp");
+            include_bytes!("../../testdata/micro_policies/allow_a_t_b_t_class0_perm0_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1051,7 +1050,7 @@ pub(super) mod tests {
     #[test]
     fn no_explicit_allow_type_type() {
         let policy_bytes =
-            include_bytes!("../../testdata/micro_policies/no_allow_a_t_b_t_class0_perm0_policy.pp");
+            include_bytes!("../../testdata/micro_policies/no_allow_a_t_b_t_class0_perm0_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1064,7 +1063,7 @@ pub(super) mod tests {
     #[test]
     fn explicit_allow_type_attr() {
         let policy_bytes =
-            include_bytes!("../../testdata/micro_policies/allow_a_t_b_attr_class0_perm0_policy.pp");
+            include_bytes!("../../testdata/micro_policies/allow_a_t_b_attr_class0_perm0_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1076,9 +1075,8 @@ pub(super) mod tests {
 
     #[test]
     fn no_explicit_allow_type_attr() {
-        let policy_bytes = include_bytes!(
-            "../../testdata/micro_policies/no_allow_a_t_b_attr_class0_perm0_policy.pp"
-        );
+        let policy_bytes =
+            include_bytes!("../../testdata/micro_policies/no_allow_a_t_b_attr_class0_perm0_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1090,9 +1088,8 @@ pub(super) mod tests {
 
     #[test]
     fn explicit_allow_attr_attr() {
-        let policy_bytes = include_bytes!(
-            "../../testdata/micro_policies/allow_a_attr_b_attr_class0_perm0_policy.pp"
-        );
+        let policy_bytes =
+            include_bytes!("../../testdata/micro_policies/allow_a_attr_b_attr_class0_perm0_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1105,7 +1102,7 @@ pub(super) mod tests {
     #[test]
     fn no_explicit_allow_attr_attr() {
         let policy_bytes = include_bytes!(
-            "../../testdata/micro_policies/no_allow_a_attr_b_attr_class0_perm0_policy.pp"
+            "../../testdata/micro_policies/no_allow_a_attr_b_attr_class0_perm0_policy"
         );
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
@@ -1119,7 +1116,7 @@ pub(super) mod tests {
     #[test]
     fn compute_explicitly_allowed_multiple_attributes() {
         let policy_bytes = include_bytes!(
-            "../../testdata/micro_policies/allow_a_t_a1_attr_class0_perm0_a2_attr_class0_perm1_policy.pp"
+            "../../testdata/micro_policies/allow_a_t_a1_attr_class0_perm0_a2_attr_class0_perm1_policy"
         );
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
@@ -1142,7 +1139,7 @@ pub(super) mod tests {
     #[test]
     fn compute_access_decision_with_constraints() {
         let policy_bytes =
-            include_bytes!("../../testdata/micro_policies/allow_with_constraints_policy.pp");
+            include_bytes!("../../testdata/micro_policies/allow_with_constraints_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1176,7 +1173,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_access_decision_explicitly_allowed() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1238,7 +1235,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_access_decision_denied() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(&unvalidated.0.classes(), "class_one_ioctl")
             .expect("look up class_one_ioctl")
@@ -1270,7 +1267,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_access_decision_unmatched() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1297,7 +1294,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_earlier_redundant_prefixful_not_coalesced_into_prefixless() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
             &unvalidated.0.classes(),
@@ -1343,7 +1340,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_later_redundant_prefixful_not_coalesced_into_prefixless() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
             &unvalidated.0.classes(),
@@ -1389,7 +1386,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
             &unvalidated.0.classes(),
@@ -1436,7 +1433,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_prefixfuls_that_coalesce_to_prefixless() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
             &unvalidated.0.classes(),
@@ -1483,7 +1480,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
             &unvalidated.0.classes(),
@@ -1539,7 +1536,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
             &unvalidated.0.classes(),
@@ -1605,7 +1602,7 @@ pub(super) mod tests {
     // make correct access decisions.
     #[test]
     fn compute_ioctl_ridiculous_permission_ordering() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id =
             find_class_by_name(&unvalidated.0.classes(), "class_ridiculous_permission_ordering")
@@ -1750,7 +1747,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_nlmsg_access_decision_explicitly_allowed() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1812,7 +1809,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_nlmsg_access_decision_unmatched() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
 
@@ -1839,7 +1836,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_ioctl_grant_does_not_cause_nlmsg_deny() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
             &unvalidated.0.classes(),
@@ -1883,7 +1880,7 @@ pub(super) mod tests {
 
     #[test]
     fn compute_nlmsg_grant_does_not_cause_ioctl_deny() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let class_id = find_class_by_name(
             &unvalidated.0.classes(),
@@ -1928,7 +1925,7 @@ pub(super) mod tests {
     #[test]
     fn compute_create_context_minimal() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/minimal_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/minimal_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -1949,7 +1946,7 @@ pub(super) mod tests {
     #[test]
     fn new_security_context_minimal() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/minimal_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/minimal_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -1967,7 +1964,7 @@ pub(super) mod tests {
     #[test]
     fn compute_create_context_class_defaults() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/class_defaults_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/class_defaults_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -1988,7 +1985,7 @@ pub(super) mod tests {
     #[test]
     fn new_security_context_class_defaults() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/class_defaults_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/class_defaults_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -2009,7 +2006,7 @@ pub(super) mod tests {
     #[test]
     fn compute_create_context_role_transition() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -2030,7 +2027,7 @@ pub(super) mod tests {
     #[test]
     fn new_security_context_role_transition() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -2053,7 +2050,7 @@ pub(super) mod tests {
     #[ignore]
     fn compute_create_context_role_transition_not_allowed() {
         let policy_bytes = include_bytes!(
-            "../../testdata/composite_policies/compiled/role_transition_not_allowed_policy.pp"
+            "../../testdata/composite_policies/compiled/role_transition_not_allowed_policy"
         );
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
@@ -2073,7 +2070,7 @@ pub(super) mod tests {
     #[test]
     fn compute_create_context_type_transition() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/type_transition_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/type_transition_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -2094,7 +2091,7 @@ pub(super) mod tests {
     #[test]
     fn new_security_context_type_transition() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/type_transition_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/type_transition_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -2115,7 +2112,7 @@ pub(super) mod tests {
     #[test]
     fn compute_create_context_range_transition() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/range_transition_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/range_transition_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -2136,7 +2133,7 @@ pub(super) mod tests {
     #[test]
     fn new_security_context_range_transition() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/range_transition_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/range_transition_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate policy");
         let source = policy
@@ -2165,7 +2162,7 @@ pub(super) mod tests {
     #[test]
     fn policy_genfscon_root_path() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate selinux policy");
 
@@ -2196,7 +2193,7 @@ pub(super) mod tests {
     #[test]
     fn policy_genfscon_subpaths() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate selinux policy");
 
@@ -2231,7 +2228,7 @@ pub(super) mod tests {
     #[test]
     fn policy_genfscon_mixed_order() {
         let policy_bytes =
-            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy.pp");
+            include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let policy = policy.validate().expect("validate selinux policy");
 

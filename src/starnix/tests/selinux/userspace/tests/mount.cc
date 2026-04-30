@@ -198,5 +198,5 @@ extern std::string DoPrePolicyLoadWork() {
     }
   }
 
-  return "mount_policy.pp";
+  return "mount_policy";
 }

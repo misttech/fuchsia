@@ -34,7 +34,7 @@ extern std::string DoPrePolicyLoadWork() {
   EXPECT_TRUE(fd.is_valid()) << "Failed to create test file:" << strerror(errno);
   EXPECT_EQ(SetLabel(kTestFileWithInvalidXattr, kTestInvalidSecurityXattr), fit::ok());
 
-  return "minimal_policy.pp";
+  return "minimal_policy";
 }
 
 TEST(PolicyLoadTest, TasksUseKernelSid) {

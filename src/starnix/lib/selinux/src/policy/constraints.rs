@@ -487,7 +487,7 @@ mod tests {
 
     #[test]
     fn decode_constraint_expr() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec())
             .expect("parse policy")
             .validate()
@@ -555,7 +555,7 @@ mod tests {
 
     #[test]
     fn evaluate_constraint_expr() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec())
             .expect("parse policy")
             .validate()
@@ -631,7 +631,7 @@ mod tests {
 
     #[test]
     fn evaluate_mls_constraint_expr() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec())
             .expect("parse policy")
             .validate()

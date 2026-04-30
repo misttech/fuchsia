@@ -392,8 +392,8 @@ if (compilation_mode != "release" ||
 }
 
 _starnix_core_inputs = [
-  "//src/starnix/lib/selinux/testdata/micro_policies/hooks_tests_policy.pp",
-  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy.pp",
+  "//src/starnix/lib/selinux/testdata/micro_policies/hooks_tests_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy",
 ]
 
 rustc_library("core") {

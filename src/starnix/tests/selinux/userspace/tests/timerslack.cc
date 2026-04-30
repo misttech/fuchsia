@@ -15,7 +15,7 @@
 #include "src/lib/files/file.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 
-extern std::string DoPrePolicyLoadWork() { return "timerslack.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "timerslack_policy"; }
 
 namespace {
 

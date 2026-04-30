@@ -26,7 +26,7 @@
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
-extern std::string DoPrePolicyLoadWork() { return "netlink_audit.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "netlink_audit_policy"; }
 
 namespace {
 

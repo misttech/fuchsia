@@ -32,7 +32,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/anon_inode_policy.conf",
         ],
-        "anon_inode_policy.pp",
+        "anon_inode_policy",
     ),
     (
         [
@@ -40,7 +40,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/append.conf",
         ],
-        "append.pp",
+        "append_policy",
     ),
     (
         [
@@ -48,14 +48,14 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/binder.conf",
         ],
-        "binder.pp",
+        "binder_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/bounded_transition_policy.conf",
         ],
-        "bounded_transition_policy.pp",
+        "bounded_transition_policy",
     ),
     (
         [
@@ -63,7 +63,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/bpf_policy.conf",
         ],
-        "bpf_policy.pp",
+        "bpf_policy",
     ),
     (
         [
@@ -71,7 +71,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/capabilities_policy.conf",
         ],
-        "capabilities_policy.pp",
+        "capabilities_policy",
     ),
     (
         [
@@ -79,7 +79,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/genfscon_create.conf",
         ],
-        "genfscon_create.pp",
+        "genfscon_create_policy",
     ),
     (
         [
@@ -87,7 +87,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/genfscon_policy.conf",
         ],
-        "genfscon_policy.pp",
+        "genfscon_policy",
     ),
     (
         [
@@ -95,7 +95,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/inherit_policy.conf",
         ],
-        "inherit_policy.pp",
+        "inherit_policy",
     ),
     (
         [
@@ -103,14 +103,14 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/ioctl_policy.conf",
         ],
-        "ioctl_policy.pp",
+        "ioctl_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/minimal_policy.conf",
         ],
-        "minimal_policy.pp",
+        "minimal_policy",
     ),
     (
         [
@@ -118,7 +118,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/mount_policy.conf",
         ],
-        "mount_policy.pp",
+        "mount_policy",
     ),
     (
         [
@@ -126,7 +126,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/mprotect.conf",
         ],
-        "mprotect.pp",
+        "mprotect_policy",
     ),
     (
         [
@@ -134,7 +134,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/netlink_audit.conf",
         ],
-        "netlink_audit.pp",
+        "netlink_audit_policy",
     ),
     (
         [
@@ -142,7 +142,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/perf_event.conf",
         ],
-        "perf_event.pp",
+        "perf_event_policy",
     ),
     (
         [
@@ -150,42 +150,42 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/syslog.conf",
         ],
-        "syslog.pp",
+        "syslog_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/class_defaults_policy.conf",
         ],
-        "class_defaults_policy.pp",
+        "class_defaults_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/exceptions_config_policy.conf",
         ],
-        "exceptions_config_policy.pp",
+        "exceptions_config_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/role_transition_policy.conf",
         ],
-        "role_transition_policy.pp",
+        "role_transition_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/role_transition_not_allowed_policy.conf",
         ],
-        "role_transition_not_allowed_policy.pp",
+        "role_transition_not_allowed_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/selinuxfs_policy.conf",
         ],
-        "selinuxfs_policy.pp",
+        "selinuxfs_policy",
     ),
     (
         [
@@ -193,7 +193,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/memfd_transition.conf",
         ],
-        "memfd_transition.pp",
+        "memfd_transition_policy",
     ),
     (
         [
@@ -201,7 +201,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/memfd_class.conf",
         ],
-        "memfd_class.pp",
+        "memfd_class_policy",
     ),
     (
         [
@@ -209,7 +209,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/pipe_policy.conf",
         ],
-        "pipe_policy.pp",
+        "pipe_policy",
     ),
     (
         [
@@ -217,7 +217,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/ptrace_policy.conf",
         ],
-        "ptrace_policy.pp",
+        "ptrace_policy",
     ),
     (
         [
@@ -225,7 +225,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/socket_policy.conf",
         ],
-        "socket_policy.pp",
+        "socket_policy",
     ),
     (
         [
@@ -233,7 +233,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/netlink_xperms_policy.conf",
         ],
-        "netlink_xperms_policy.pp",
+        "netlink_xperms_policy",
     ),
     (
         [
@@ -242,14 +242,14 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/socket_policy.conf",
             "new_file/tun_policy.conf",
         ],
-        "tun_policy.pp",
+        "tun_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/type_transition_policy.conf",
         ],
-        "type_transition_policy.pp",
+        "type_transition_policy",
     ),
     (
         [
@@ -257,14 +257,14 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/timerslack.conf",
         ],
-        "timerslack.pp",
+        "timerslack_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/range_transition_policy.conf",
         ],
-        "range_transition_policy.pp",
+        "range_transition_policy",
     ),
     (
         [
@@ -272,7 +272,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/minimal_policy.conf",
             "new_file/allow_fork.conf",
         ],
-        "allow_fork.pp",
+        "allow_fork_policy",
     ),
     (
         [
@@ -280,7 +280,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/minimal_policy.conf",
             "new_file/with_unlabeled_access_domain_policy.conf",
         ],
-        "with_unlabeled_access_domain_policy.pp",
+        "with_unlabeled_access_domain_policy",
     ),
     (
         [
@@ -289,14 +289,14 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/with_unlabeled_access_domain_policy.conf",
             "new_file/with_additional_domain_policy.conf",
         ],
-        "with_additional_domain_policy.pp",
+        "with_additional_domain_policy",
     ),
     (
         [
             "base_policy.conf",
             "new_file/file_transition_policy.conf",
         ],
-        "file_transition_policy.pp",
+        "file_transition_policy",
     ),
     (
         [
@@ -304,7 +304,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/audit_access_policy.conf",
         ],
-        "audit_access_policy.pp",
+        "audit_access_policy",
     ),
     (
         [
@@ -312,7 +312,7 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/xattr_access_policy.conf",
         ],
-        "xattr_access_policy.pp",
+        "xattr_access_policy",
     ),
     (
         [
@@ -320,14 +320,14 @@ _COMPOSITE_POLICY_PATHS = [
             "new_file/test_policy.conf",
             "new_file/overlayfs_policy.conf",
         ],
-        "overlayfs_policy.pp",
+        "overlayfs_policy",
     ),
 ]
 
 _HANDLE_UNKNOWN_POLICY_INPUTS = [
     "new_file/handle_unknown_policy.conf",
 ]
-_HANDLE_UNKNOWN_POLICY_OUTPUT = "handle_unknown_policy-%s.pp"
+_HANDLE_UNKNOWN_POLICY_OUTPUT = "handle_unknown_policy-%s"
 
 _LEGACY_POLICIES = [
     # keep-sorted start
@@ -396,7 +396,7 @@ def compile_policies(checkpolicy_executable: str) -> None:
         merge_policies.compile_text_policy_to_binary_policy(
             checkpolicy_executable,
             f"{_LEGACY_POLICY_DIRECTORY}/{name}.conf",
-            f"{_LEGACY_POLICY_DIRECTORY}/{name}.pp",
+            f"{_LEGACY_POLICY_DIRECTORY}/{name}",
             "deny",
         )
     for handle_unknown in ("allow", "deny", "reject"):

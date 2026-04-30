@@ -400,4 +400,4 @@ TEST(XattrTest, RemoveSelinuxNotPermitted) {
 
 }  // namespace
 
-extern std::string DoPrePolicyLoadWork() { return "xattr_access_policy.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "xattr_access_policy"; }

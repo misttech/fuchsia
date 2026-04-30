@@ -105,5 +105,5 @@ TEST(GenfsconCreateTest, FsCreateCon) {
 extern std::string DoPrePolicyLoadWork() {
   EXPECT_THAT(mknod("/dev_fuse", S_IFCHR | 0666, makedev(10, 229)), SyscallSucceeds());
   EXPECT_THAT(mkdir("/fuse", 0755), SyscallSucceeds());
-  return "genfscon_create.pp";
+  return "genfscon_create_policy";
 }

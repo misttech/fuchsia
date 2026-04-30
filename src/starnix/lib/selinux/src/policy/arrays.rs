@@ -1513,7 +1513,7 @@ mod tests {
 
     #[test]
     fn parse_allowxperm_one_ioctl() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1541,7 +1541,7 @@ mod tests {
     // high byte, are stored in the same `AccessVectorRule` in the compiled policy.
     #[test]
     fn parse_allowxperm_two_ioctls_same_range() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1572,7 +1572,7 @@ mod tests {
     // high byte, are stored in the same `AccessVectorRule` in the compiled policy.
     #[test]
     fn parse_allowxperm_two_ioctls_same_range_diff_rules() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1606,7 +1606,7 @@ mod tests {
     // high bytes, are stored in different `AccessVectorRule`s in the compiled policy.
     #[test]
     fn parse_allowxperm_two_ioctls_different_range() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1645,7 +1645,7 @@ mod tests {
     // then it is represented by one `AccessVectorRule`.
     #[test]
     fn parse_allowxperm_one_driver_range() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1676,7 +1676,7 @@ mod tests {
     // two for the smaller subranges at the ends and one for the large subrange in the middle.
     #[test]
     fn parse_allowxperm_most_ioctls() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1728,7 +1728,7 @@ mod tests {
     // four for the smaller subranges at the ends and one for the two large subranges.
     #[test]
     fn parse_allowxperm_most_ioctls_with_hole() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1805,7 +1805,7 @@ mod tests {
     // excludes each 8-bit prefix range.)
     #[test]
     fn parse_allowxperm_all_ioctls() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1831,7 +1831,7 @@ mod tests {
 
     #[test]
     fn parse_allowxperm_one_nlmsg() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1861,7 +1861,7 @@ mod tests {
     // high byte, are stored in the same `AccessVectorRule` in the compiled policy.
     #[test]
     fn parse_allowxperm_two_nlmsg_same_range() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1892,7 +1892,7 @@ mod tests {
     // high bytes, are stored in different `AccessVectorRule`s in the compiled policy.
     #[test]
     fn parse_allowxperm_two_nlmsg_different_range() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1931,7 +1931,7 @@ mod tests {
     // a single `AccessVectorRule` in the compiled policy.
     #[test]
     fn parse_allowxperm_one_nlmsg_range() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -1966,7 +1966,7 @@ mod tests {
     // are not expected to appear in policies.
     #[test]
     fn parse_allowxperm_two_nlmsg_ranges() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -2012,7 +2012,7 @@ mod tests {
     // are not expected to appear in policies.
     #[test]
     fn parse_allowxperm_three_separate_nlmsg_ranges() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -2069,7 +2069,7 @@ mod tests {
     // are not expected to appear in policies.
     #[test]
     fn parse_allowxperm_three_contiguous_nlmsg_ranges() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -2112,7 +2112,7 @@ mod tests {
     // the same as for `allowxperm` rules.
     #[test]
     fn parse_auditallowxperm() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -2155,7 +2155,7 @@ mod tests {
     // policy.)
     #[test]
     fn parse_dontauditxperm() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -2194,7 +2194,7 @@ mod tests {
     // policy.
     #[test]
     fn parse_auditallowxperm_not_coalesced() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");

@@ -1949,7 +1949,8 @@ mod tests {
 
     #[test]
     fn mls_levels_for_user_context() {
-        const TEST_POLICY: &[u8] = include_bytes! {"../../testdata/micro_policies/multiple_levels_and_categories_policy.pp"};
+        const TEST_POLICY: &[u8] =
+            include_bytes! {"../../testdata/micro_policies/multiple_levels_and_categories_policy"};
         let policy = parse_policy_by_value(TEST_POLICY.to_vec()).unwrap();
         let policy = policy.validate().unwrap();
         let parsed_policy = policy.0.parsed_policy();
@@ -1980,7 +1981,7 @@ mod tests {
 
     #[test]
     fn parse_mls_constrain_statement() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");
@@ -2043,7 +2044,7 @@ mod tests {
 
     #[test]
     fn parse_constrain_statement() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy.pp");
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
         let parsed_policy = &policy.0;
         parsed_policy.validate().expect("validate policy");

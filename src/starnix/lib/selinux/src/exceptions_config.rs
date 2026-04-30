@@ -170,7 +170,7 @@ mod tests {
     use std::sync::Arc;
 
     const TEST_POLICY: &[u8] =
-        include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy.pp");
+        include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy");
 
     const EXCEPTION_SOURCE_TYPE: &str = "test_exception_source_t";
     const EXCEPTION_TARGET_TYPE: &str = "test_exception_target_t";

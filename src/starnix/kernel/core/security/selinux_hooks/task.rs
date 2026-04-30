@@ -1976,7 +1976,7 @@ mod tests {
     #[fuchsia::test]
     async fn setcurrent_bounds() {
         const BINARY_POLICY: &[u8] = include_bytes!(
-            "../../../../lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy.pp"
+            "../../../../lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy"
         );
         const BOUNDED_CONTEXT: &[u8] = b"test_u:test_r:bounded_t:s0";
         const UNBOUNDED_CONTEXT: &[u8] = b"test_u:test_r:unbounded_t:s0";

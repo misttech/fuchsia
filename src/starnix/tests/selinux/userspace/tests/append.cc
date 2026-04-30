@@ -51,4 +51,4 @@ TEST(AppendTest, DontRequireGetattrForSeek) {
 
 }  // namespace
 
-extern std::string DoPrePolicyLoadWork() { return "append.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "append_policy"; }

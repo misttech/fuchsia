@@ -16,7 +16,7 @@
 
 extern std::string DoPrePolicyLoadWork() {
   EXPECT_THAT(mknod("/tmp/dev_kmsg", S_IFCHR | 0600, makedev(1, 11)), SyscallSucceeds());
-  return "syslog.pp";
+  return "syslog_policy";
 }
 
 namespace {

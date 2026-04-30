@@ -152,7 +152,7 @@ mod tests {
     use crate::policy::parse_policy_by_value;
 
     const TESTS_BINARY_POLICY: &[u8] =
-        include_bytes!("../testdata/micro_policies/security_server_tests_policy.pp");
+        include_bytes!("../testdata/micro_policies/security_server_tests_policy");
 
     fn test_policy() -> Arc<Policy> {
         let unvalidated = parse_policy_by_value(TESTS_BINARY_POLICY.to_vec()).unwrap();

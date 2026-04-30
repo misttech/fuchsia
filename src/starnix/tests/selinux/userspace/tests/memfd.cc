@@ -52,5 +52,5 @@ extern std::string DoPrePolicyLoadWork() {
   // Until a policy is loaded, no file label is provided.
   EXPECT_EQ(GetLabel(g_before_policy_fd), fit::error(ENODATA));
 
-  return "memfd_transition.pp";
+  return "memfd_transition_policy";
 }

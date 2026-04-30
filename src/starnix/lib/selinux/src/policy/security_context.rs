@@ -586,7 +586,7 @@ mod tests {
     type TestPolicy = Policy;
     fn test_policy() -> TestPolicy {
         const TEST_POLICY: &[u8] =
-            include_bytes!("../../testdata/micro_policies/security_context_tests_policy.pp");
+            include_bytes!("../../testdata/micro_policies/security_context_tests_policy");
         parse_policy_by_value(TEST_POLICY.to_vec()).unwrap().validate().unwrap()
     }
 

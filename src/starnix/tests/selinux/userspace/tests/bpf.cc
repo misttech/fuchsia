@@ -260,4 +260,4 @@ INSTANTIATE_TEST_SUITE_P(
 
 }  // namespace
 
-extern std::string DoPrePolicyLoadWork() { return "bpf_policy.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "bpf_policy"; }

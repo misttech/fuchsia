@@ -20,7 +20,7 @@
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
-extern std::string DoPrePolicyLoadWork() { return "binder.pp"; }
+extern std::string DoPrePolicyLoadWork() { return "binder_policy"; }
 
 namespace starnix_binder {
 
