@@ -74,13 +74,22 @@ pub trait EmulatorEngine: Send + Sync {
 
     /// Takes a screenshot of the emulator's primary display and saves it to the given path.
     ///
-    /// The implementation must ensure:
-    /// 1. Output format: The saved file must always be in PNG format. (e.g. PPM -> PNG conversion
-    ///    must be handled internally if necessary).
-    /// 2. Precise source: The screenshot should be captured from the emulator's first display.
-    /// 3. Path precondition: If the parent directory of the path does not exist, the
-    ///    implementation should attempt to create it.
-    /// 4. State precondition: The emulator must have at least one display attached.
+    /// On success, returns [`Ok(())`] and creates a valid PNG file at `path`.
+    ///
+    /// The output is a PNG file in RGB color space; it has the same resolution
+    /// as the emulator's primary display device.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if:
+    /// * The emulator is not in the [`EngineState::Running`] state.
+    /// * A virtual display is not enabled in the emulator configuration.
+    /// * The `path` already exists.
+    /// * The parent directory of `path` is not writable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying capture, conversion, or file I/O fails.
     async fn screenshot(&mut self, _path: &Path) -> Result<()> {
         let bt = Backtrace::force_capture();
         unimplemented!(
