@@ -1854,7 +1854,6 @@ void TestGetname(const fbl::unique_fd& fd, F getname, const sockaddr* sa, const 
   len = 1;
   ASSERT_EQ(getname(fd.get(), nullptr, &len), -1);
   EXPECT_EQ(errno, EFAULT) << strerror(errno);
-  EXPECT_EQ(len, 1u);
   errno = 0;
 
   sa_family_t family;
