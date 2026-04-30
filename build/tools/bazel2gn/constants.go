@@ -325,7 +325,8 @@ var bazelConstraintsToGNConditions = map[string]string{
 	"@platforms//os:fuchsia": "is_fuchsia",
 }
 var bazelConstraintListVarsToGNConditions = map[string]string{
-	"HOST_CONSTRAINTS": "is_host",
+	"HOST_CONSTRAINTS":    "is_host",
+	"HOST_OS_CONSTRAINTS": "is_host",
 }
 
 // thirdPartyRustCrateVendoredRE matches Bazel third-party Rust crate dependency prefixes for purely

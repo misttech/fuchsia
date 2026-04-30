@@ -240,7 +240,7 @@ func TestTargetCompatibleWith(t *testing.T) {
 		wantGN string
 	}{
 		{
-			name: "success",
+			name: "HOST_CONSTRAINTS",
 			bazel: `
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 
@@ -250,6 +250,26 @@ go_binary(
 		"main.go",
 	],
 	target_compatible_with = HOST_CONSTRAINTS,
+)`,
+			wantGN: `if (is_host) {
+	go_binary("host_tool") {
+		sources = [
+			"main.go",
+		]
+	}
+}`,
+		},
+		{
+			name: "HOST_OS_CONSTRAINTS",
+			bazel: `
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+go_binary(
+	name = "host_tool",
+	srcs = [
+		"main.go",
+	],
+	target_compatible_with = HOST_OS_CONSTRAINTS,
 )`,
 			wantGN: `if (is_host) {
 	go_binary("host_tool") {
