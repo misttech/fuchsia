@@ -27,11 +27,14 @@ use ffx_ssh::SshKeyFiles;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
+use futures::channel::oneshot;
 use futures::try_join;
 use gcs::client::{Client, ProgressResponse};
 use pbms::{AuthFlowChoice, handle_new_access_token};
 use schemars::JsonSchema;
 use serde::Serialize;
+use signal_hook::consts::signal::{SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
 use std::io::{Write, stderr, stdin, stdout};
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -432,62 +435,26 @@ Reboot the Target to the bootloader and re-run this command."
 
         let start_time = Utc::now();
 
-        let res = match handle.state {
-            TargetState::Fastboot(fastboot_state) => match fastboot_state.connection_state {
-                FastbootConnectionState::Usb => {
-                    let serial_num = fastboot_state.serial_number;
-                    let mut proxy =
-                        usb_proxy(serial_num).await.map_err(|e| anyhow::Error::from(e))?;
-                    let (client, server) = mpsc::channel(1);
-                    if writer.is_machine() {
-                        try_join!(
-                            from_manifest(
-                                &self.ctx,
-                                client,
-                                cmd.to_manifest(&self.ctx),
-                                &mut proxy
-                            ),
-                            handle_event_machine(writer, server)
-                        )
-                        .map_err(fho::Error::from)?;
-                    } else {
-                        try_join!(
-                            from_manifest(
-                                &self.ctx,
-                                client,
-                                cmd.to_manifest(&self.ctx),
-                                &mut proxy
-                            ),
-                            handle_event_text(writer, server)
-                        )
-                        .map_err(fho::Error::from)?;
+        let (cancel_sender, cancel_receiver) = oneshot::channel::<()>();
+        let mut signals = Signals::new(&[SIGINT, SIGTERM]).unwrap();
+        let _signal_handle_thread = std::thread::spawn(move || {
+            if let Some(signal) = signals.forever().next() {
+                match signal {
+                    SIGINT | SIGTERM => {
+                        let _ = cancel_sender.send(());
                     }
-                    Ok::<(), fho::Error>(())
+                    _ => unreachable!(),
                 }
-                FastbootConnectionState::Udp(addrs) => {
-                    // We take the first address as when a target is in Fastboot mode and over
-                    // UDP it only exposes one address
-                    if let Some(addr) = addrs.into_iter().take(1).next() {
-                        let target_addr: TargetIpAddr = addr.into();
-                        let socket_addr: SocketAddr = target_addr.into();
+            }
+        });
 
-                        let target_name = if let Some(nodename) = &handle.node_name {
-                            nodename
-                        } else {
-                            &socket_addr.to_string()
-                        };
-                        let config = FastbootNetworkConnectionConfig::new_udp(&self.ctx);
-                        let fastboot_device_file_path: Option<PathBuf> =
-                            self.ctx.get(FASTBOOT_FILE_PATH).ok();
-                        let mut proxy = udp_proxy(
-                            &self.ctx,
-                            target_name.clone(),
-                            fastboot_device_file_path,
-                            &socket_addr,
-                            config,
-                        )
-                        .await
-                        .map_err(|e| anyhow::Error::from(e))?;
+        let flash_fut = async {
+            match handle.state {
+                TargetState::Fastboot(fastboot_state) => match fastboot_state.connection_state {
+                    FastbootConnectionState::Usb => {
+                        let serial_num = fastboot_state.serial_number;
+                        let mut proxy =
+                            usb_proxy(serial_num).await.map_err(|e| anyhow::Error::from(e))?;
                         let (client, server) = mpsc::channel(1);
                         if writer.is_machine() {
                             try_join!(
@@ -512,66 +479,125 @@ Reboot the Target to the bootloader and re-run this command."
                             )
                             .map_err(fho::Error::from)?;
                         }
-                        Ok(())
-                    } else {
-                        ffx_bail!("Could not get a valid address for target");
+                        Ok::<(), fho::Error>(())
                     }
-                }
-                FastbootConnectionState::Tcp(addrs) => {
-                    // We take the first address as when a target is in Fastboot mode and over
-                    // TCP it only exposes one address
-                    if let Some(addr) = addrs.into_iter().take(1).next() {
-                        let target_addr: TargetIpAddr = addr.into();
-                        let socket_addr: SocketAddr = target_addr.into();
-                        let target_name = if let Some(nodename) = &handle.node_name {
-                            nodename
-                        } else {
-                            &socket_addr.to_string()
-                        };
-                        let config = FastbootNetworkConnectionConfig::forever();
-                        let fastboot_device_file_path: Option<PathBuf> =
-                            self.ctx.get(FASTBOOT_FILE_PATH).ok();
-                        let mut proxy = tcp_proxy(
-                            &self.ctx,
-                            target_name.clone(),
-                            fastboot_device_file_path,
-                            &socket_addr,
-                            config,
-                        )
-                        .await
-                        .map_err(|e| anyhow::Error::from(e))?;
-                        let (client, server) = mpsc::channel(1);
-                        if writer.is_machine() {
-                            try_join!(
-                                from_manifest(
-                                    &self.ctx,
-                                    client,
-                                    cmd.to_manifest(&self.ctx),
-                                    &mut proxy
-                                ),
-                                handle_event_machine(writer, server)
+                    FastbootConnectionState::Udp(addrs) => {
+                        // We take the first address as when a target is in Fastboot mode and over
+                        // UDP it only exposes one address
+                        if let Some(addr) = addrs.into_iter().take(1).next() {
+                            let target_addr: TargetIpAddr = addr.into();
+                            let socket_addr: SocketAddr = target_addr.into();
+
+                            let target_name = if let Some(nodename) = &handle.node_name {
+                                nodename
+                            } else {
+                                &socket_addr.to_string()
+                            };
+                            let config = FastbootNetworkConnectionConfig::new_udp(&self.ctx);
+                            let fastboot_device_file_path: Option<PathBuf> =
+                                self.ctx.get(FASTBOOT_FILE_PATH).ok();
+                            let mut proxy = udp_proxy(
+                                &self.ctx,
+                                target_name.clone(),
+                                fastboot_device_file_path,
+                                &socket_addr,
+                                config,
                             )
-                            .map_err(fho::Error::from)?;
+                            .await
+                            .map_err(|e| anyhow::Error::from(e))?;
+                            let (client, server) = mpsc::channel(1);
+                            if writer.is_machine() {
+                                try_join!(
+                                    from_manifest(
+                                        &self.ctx,
+                                        client,
+                                        cmd.to_manifest(&self.ctx),
+                                        &mut proxy
+                                    ),
+                                    handle_event_machine(writer, server)
+                                )
+                                .map_err(fho::Error::from)?;
+                            } else {
+                                try_join!(
+                                    from_manifest(
+                                        &self.ctx,
+                                        client,
+                                        cmd.to_manifest(&self.ctx),
+                                        &mut proxy
+                                    ),
+                                    handle_event_text(writer, server)
+                                )
+                                .map_err(fho::Error::from)?;
+                            }
+                            Ok(())
                         } else {
-                            try_join!(
-                                from_manifest(
-                                    &self.ctx,
-                                    client,
-                                    cmd.to_manifest(&self.ctx),
-                                    &mut proxy
-                                ),
-                                handle_event_text(writer, server)
-                            )
-                            .map_err(fho::Error::from)?;
+                            ffx_bail!("Could not get a valid address for target");
                         }
-                        Ok(())
-                    } else {
-                        ffx_bail!("Could not get a valid address for target");
                     }
+                    FastbootConnectionState::Tcp(addrs) => {
+                        // We take the first address as when a target is in Fastboot mode and over
+                        // TCP it only exposes one address
+                        if let Some(addr) = addrs.into_iter().take(1).next() {
+                            let target_addr: TargetIpAddr = addr.into();
+                            let socket_addr: SocketAddr = target_addr.into();
+                            let target_name = if let Some(nodename) = &handle.node_name {
+                                nodename
+                            } else {
+                                &socket_addr.to_string()
+                            };
+                            let config = FastbootNetworkConnectionConfig::forever();
+                            let fastboot_device_file_path: Option<PathBuf> =
+                                self.ctx.get(FASTBOOT_FILE_PATH).ok();
+                            let mut proxy = tcp_proxy(
+                                &self.ctx,
+                                target_name.clone(),
+                                fastboot_device_file_path,
+                                &socket_addr,
+                                config,
+                            )
+                            .await
+                            .map_err(|e| anyhow::Error::from(e))?;
+                            let (client, server) = mpsc::channel(1);
+                            if writer.is_machine() {
+                                try_join!(
+                                    from_manifest(
+                                        &self.ctx,
+                                        client,
+                                        cmd.to_manifest(&self.ctx),
+                                        &mut proxy
+                                    ),
+                                    handle_event_machine(writer, server)
+                                )
+                                .map_err(fho::Error::from)?;
+                            } else {
+                                try_join!(
+                                    from_manifest(
+                                        &self.ctx,
+                                        client,
+                                        cmd.to_manifest(&self.ctx),
+                                        &mut proxy
+                                    ),
+                                    handle_event_text(writer, server)
+                                )
+                                .map_err(fho::Error::from)?;
+                            }
+                            Ok(())
+                        } else {
+                            ffx_bail!("Could not get a valid address for target");
+                        }
+                    }
+                },
+                _ => {
+                    ffx_bail!("Could not connect. Target not in fastboot: {handle}");
                 }
-            },
-            _ => {
-                ffx_bail!("Could not connect. Target not in fastboot: {handle}");
+            }
+        };
+
+        let res = match futures::future::select(Box::pin(flash_fut), cancel_receiver).await {
+            futures::future::Either::Left((r, _)) => r,
+            futures::future::Either::Right((_, _)) => {
+                log::warn!("Received signal, cancelling flash operation");
+                return_user_error!("Flash operation cancelled by signal")
             }
         };
 
