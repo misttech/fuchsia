@@ -115,11 +115,6 @@ int32_t disconnect_l2cap();
 /// The caller must ensure that `data` points to a valid buffer of `len` bytes.
 int32_t write_l2cap(const uint8_t *data, uintptr_t len);
 
-/// Start or stop general discovery procedure.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-int32_t set_discovery(bool discovery);
-
 /// Start or revoke discoverability.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).

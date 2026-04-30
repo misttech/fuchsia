@@ -267,8 +267,13 @@ Status HostService::Scan(::grpc::ServerContext* context, const ::pandora::ScanRe
 Status HostService::Inquiry(::grpc::ServerContext* context,
                             const ::google::protobuf::Empty* request,
                             ::grpc::ServerWriter<::pandora::InquiryResponse>* writer) {
-  if (set_discovery(true) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Failed to start discovery (check logs)");
+  fuchsia_bluetooth_affordances::PeerControllerSetDiscoveryRequest set_discovery_request;
+  set_discovery_request.discovery() = true;
+  auto set_discovery_result = peer_controller_client_->SetDiscovery(set_discovery_request);
+  if (set_discovery_result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.PeerController/SetDiscovery error: " +
+                      set_discovery_result.error_value().FormatDescription());
   }
 
   // Discover for an arbitrary period of 5 seconds, which passes PTS tests.
@@ -276,15 +281,15 @@ Status HostService::Inquiry(::grpc::ServerContext* context,
   // TODO(https://fxbug.dev/396500079): Adopt a streaming API instead of a scan period with timeout.
   std::this_thread::sleep_for(std::chrono::seconds(5));
 
-  auto result = peer_controller_client_->GetKnownPeers();
-  if (result.is_error()) {
+  auto get_known_peers_result = peer_controller_client_->GetKnownPeers();
+  if (get_known_peers_result.is_error()) {
     return Status(StatusCode::INTERNAL,
                   "fuchsia.bluetooth.affordances.PeerController/GetKnownPeers error: " +
-                      result.error_value().FormatDescription());
+                      get_known_peers_result.error_value().FormatDescription());
   }
 
-  if (result->peers().has_value()) {
-    for (const fuchsia_bluetooth_sys::Peer& peer : result->peers().value()) {
+  if (get_known_peers_result->peers().has_value()) {
+    for (const fuchsia_bluetooth_sys::Peer& peer : get_known_peers_result->peers().value()) {
       pandora::InquiryResponse inquiry_rsp;
       std::array<uint8_t, 6> peer_addr;
       std::ranges::copy(peer.address().value().bytes(), peer_addr.begin());
@@ -299,10 +304,15 @@ Status HostService::Inquiry(::grpc::ServerContext* context,
     }
   }
 
-  if (set_discovery(false) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Failed to stop discovery (check logs)");
+  set_discovery_request.discovery() = false;
+  set_discovery_result = peer_controller_client_->SetDiscovery(set_discovery_request);
+  if (set_discovery_result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.PeerController/SetDiscovery error: " +
+                      set_discovery_result.error_value().FormatDescription());
   }
-  return {/*OK*/};
+
+  return Status::OK;
 }
 
 Status HostService::SetDiscoverabilityMode(::grpc::ServerContext* context,
