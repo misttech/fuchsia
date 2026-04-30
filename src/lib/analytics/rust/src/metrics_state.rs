@@ -309,6 +309,7 @@ impl MetricsState {
     }
 
     fn set_internal_new_user(&mut self) {
+        self.init_uuid();
         self.is_new_internal_user = true;
     }
 }
