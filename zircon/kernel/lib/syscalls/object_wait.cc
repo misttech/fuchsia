@@ -206,8 +206,8 @@ zx_status_t sys_object_wait_async(zx_handle_t handle_value, zx_handle_t port_han
     if (!port_handle) {
       return ZX_ERR_BAD_HANDLE;
     }
-    fbl::RefPtr<Dispatcher> disp = port_handle->dispatcher();
-    fbl::RefPtr<PortDispatcher> port = DownCastDispatcher<PortDispatcher>(&disp);
+    fbl::RefPtr<Dispatcher> port_dispatcher = port_handle->dispatcher();
+    fbl::RefPtr<PortDispatcher> port = DownCastDispatcher<PortDispatcher>(&port_dispatcher);
     if (!port) {
       return ZX_ERR_WRONG_TYPE;
     }
@@ -223,6 +223,8 @@ zx_status_t sys_object_wait_async(zx_handle_t handle_value, zx_handle_t port_han
       return ZX_ERR_ACCESS_DENIED;
     }
 
-    return port->MakeObserver(options, handle, key, signals);
+    fbl::RefPtr<Dispatcher> dispatcher = handle->dispatcher();
+
+    return dispatcher->MakePortObserver(options, handle, signals, key, port.get());
   }
 }

@@ -14,6 +14,7 @@
 #include <kernel/koid.h>
 #include <kernel/mutex.h>
 #include <ktl/atomic.h>
+#include <object/port_dispatcher.h>
 
 #include <ktl/enforce.h>
 
@@ -100,6 +101,44 @@ zx_status_t Dispatcher::AddObserver(SignalObserver* observer, const void* handle
   observer->handle_ = handle;
   observer->triggering_signals_ = signals;
   observers_.push_front(observer);
+
+  return ZX_OK;
+}
+
+zx_status_t Dispatcher::MakePortObserver(uint32_t options, const Handle* handle,
+                                         zx_signals_t signals, uint64_t key, PortDispatcher* port) {
+  canary_.Assert();
+
+  if (!is_waitable()) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  // Hold our lock while initializing the port observer since it has a back reference to us
+  // via |handle|. If the observer is canceled on another thread before registration is complete,
+  // that thread will try to remove the observer from our observers list.
+  Guard<CriticalMutex> guard{get_lock()};
+
+  // First, ask the port to create the observer object and register it on the port.
+  zx::result<SignalObserver*> observer = port->MakeObserver(options, handle, key, signals);
+
+  if (observer.is_error()) {
+    return observer.error_value();
+  }
+
+  if ((options & ZX_WAIT_ASYNC_EDGE) == 0) {
+    // If the currently active signals already match the desired signals,
+    // just execute the match now.
+    const zx_signals_t active_signals = signals_.load(ktl::memory_order_acquire);
+    if ((active_signals & signals) != 0) {
+      observer->OnMatch(active_signals);
+      return ZX_OK;
+    }
+  }
+
+  // Otherwise, enqueue this observer.
+  observer->handle_ = handle;
+  observer->triggering_signals_ = signals;
+  observers_.push_front(observer.value());
 
   return ZX_OK;
 }

@@ -270,8 +270,11 @@ class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PO
   // 3. The observer is left for on_zero_handles to destroyed.
   void MaybeReap(PortObserver* observer, PortPacket* port_packet);
 
-  // Called under the handle table lock.
-  zx_status_t MakeObserver(uint32_t options, Handle* handle, uint64_t key, zx_signals_t signals);
+  // Creates an observer registered with this port.
+  //
+  // Requires that a read lock is held on the handle table containing |handle|.
+  zx::result<SignalObserver*> MakeObserver(uint32_t options, const Handle* handle, uint64_t key,
+                                           zx_signals_t signals);
 
   // Returns true if at least one packet was removed from the queue.
   // Called under the handle table lock when |handle| is not null.

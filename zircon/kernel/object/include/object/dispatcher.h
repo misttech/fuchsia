@@ -156,6 +156,18 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
   zx_status_t AddObserver(SignalObserver* observer, const void* handle, zx_signals_t signals,
                           TriggerMode trigger_mode = TriggerMode::Level);
 
+  // Makes a port observer which will be triggered when any |signals| are asserted
+  // or canceled when |key| is canceled or |handle| is closed.
+  //
+  // Requires that a read lock is held on the handle table containing |handle|.
+  //
+  // |port| must be non-null.
+  //
+  // If |options| does not contain ZX_WAIT_ASYNC_EDGE, the signal state is checked on entry
+  // and the observer may be triggered immediately.
+  zx_status_t MakePortObserver(uint32_t options, const Handle* handle, zx_signals_t signals,
+                               uint64_t key, PortDispatcher* port);
+
   // Remove an observer.
   //
   // Returns true if the method removed |observer|, otherwise returns false. If

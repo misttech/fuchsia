@@ -471,41 +471,30 @@ void PortDispatcher::MaybeReapLocked(PortObserver* observer, PortPacket* port_pa
   }  // else on_zero_handles must have beat us and is responsible for destroying this observer.
 }
 
-zx_status_t PortDispatcher::MakeObserver(uint32_t options, Handle* handle, uint64_t key,
-                                         zx_signals_t signals) {
+zx::result<SignalObserver*> PortDispatcher::MakeObserver(uint32_t options, const Handle* handle,
+                                                         uint64_t key, zx_signals_t signals) {
   canary_.Assert();
 
   // Called under the handle table lock.
-
-  auto dispatcher = handle->dispatcher();
-  if (!dispatcher->is_waitable()) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-
   auto observer_result =
       observer_allocator.Allocate(options, handle, fbl::RefPtr<PortDispatcher>(this), key, signals);
   if (observer_result.is_error()) {
-    return observer_result.error_value();
+    return observer_result.take_error();
   }
 
-  {
-    Guard<CriticalMutex> guard{get_lock()};
-    DEBUG_ASSERT(!zero_handles_);
+  Guard<CriticalMutex> guard{get_lock()};
+  DEBUG_ASSERT(!zero_handles_);
 
-    // If we're over the limit, raise an exception.
-    if (observers_.size() >= BootOptions::Get()->max_port_observers) {
-      // We limit the number of observers to prevent a misbehaving program from impacting system
-      // performance or stability.
-      Thread::Current::SignalPolicyException(ZX_EXCP_POLICY_CODE_PORT_TOO_MANY_OBSERVERS, 0u);
-    }
-
-    observers_.push_front(observer_result.value().get());
+  // If we're over the limit, raise an exception.
+  if (observers_.size() >= BootOptions::Get()->max_port_observers) {
+    // We limit the number of observers to prevent a misbehaving program from impacting system
+    // performance or stability.
+    Thread::Current::SignalPolicyException(ZX_EXCP_POLICY_CODE_PORT_TOO_MANY_OBSERVERS, 0u);
   }
 
-  Dispatcher::TriggerMode trigger_mode =
-      options & ZX_WAIT_ASYNC_EDGE ? Dispatcher::TriggerMode::Edge : Dispatcher::TriggerMode::Level;
+  observers_.push_front(observer_result.value().get());
 
-  return dispatcher->AddObserver(observer_result.value().release(), handle, signals, trigger_mode);
+  return zx::ok(observer_result.value().release());
 }
 
 bool PortDispatcher::CancelQueuedPacketsLocked(const void* const handle, uint64_t key) {

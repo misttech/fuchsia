@@ -1188,4 +1188,48 @@ TEST(PortStressTest, CloseWaitRace) {
   zx_handle_close(port.load());
 }
 
+// This test registers and matches asynchronous waits on an object while simultaneously attempting
+// to cancel the waits by key from another thread.
+// This is a regression test for https://fxbug.dev/504783349
+TEST(PortStressTest, CancelKeyDuringRegistrationRace) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  constexpr uint64_t kKey = 1234u;
+
+  std::atomic<bool> run{true};
+
+  std::thread signaling_thread([&]() {
+    while (run) {
+      event.signal(0, ZX_EVENT_SIGNALED);
+      event.signal(ZX_EVENT_SIGNALED, 0);
+    }
+  });
+
+  std::thread canceling_thread([&]() {
+    while (run) {
+      port.cancel_key(0, kKey);
+    }
+  });
+
+  std::thread waiting_thread([&]() {
+    while (run) {
+      zx_port_packet_t packet;
+      port.wait(zx::deadline_after(zx::msec(5)), &packet);
+    }
+  });
+
+  for (int i = 0; i < 100000; i++) {
+    event.wait_async(port, kKey, ZX_EVENT_SIGNALED, 0);
+  }
+
+  run.store(false);
+  signaling_thread.join();
+  canceling_thread.join();
+  waiting_thread.join();
+}
+
 }  // namespace
