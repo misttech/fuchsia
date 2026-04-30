@@ -226,8 +226,6 @@ async fn test_request_splitting_cpp_server() {
     ramdisk.connect(server.into_channel().into()).expect("Failed to connect to ramdisk");
 
     test_request_splitting_client_fn(proxy, None).await;
-
-    ramdisk.destroy_and_wait_for_removal().await.unwrap();
 }
 
 #[fuchsia::test]
@@ -320,8 +318,6 @@ async fn test_group_with_close() {
         assert_eq!(responses & bit, 0);
         responses |= bit;
     }
-
-    ramdisk.destroy_and_wait_for_removal().await.unwrap();
 }
 
 #[fuchsia::test]
@@ -447,7 +443,6 @@ async fn test_gpt_on_ramdisk() {
     }
 
     runner.shutdown().await;
-    ramdisk.destroy_and_wait_for_removal().await.unwrap();
 }
 
 // The test uses a separate ramdisk for an underlying block device, and runs a local GPT instance on
@@ -539,7 +534,6 @@ async fn test_gpt_passthrough_is_enabled() {
     }
 
     runner.shutdown().await;
-    ramdisk.destroy_and_wait_for_removal().await.unwrap();
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

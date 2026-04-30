@@ -796,8 +796,6 @@ mod tests {
         blobfs.format().await.expect("failed to format blobfs");
         blobfs.fsck().await.expect("failed to fsck blobfs");
         let _ = blobfs.serve().await.expect("failed to serve blobfs");
-
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 
     #[fuchsia::test]
@@ -808,8 +806,6 @@ mod tests {
 
         blobfs.format().await.expect("failed to format blobfs");
         blobfs.fsck().await.expect("failed to fsck blobfs");
-
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 
     #[fuchsia::test]
@@ -872,8 +868,6 @@ mod tests {
         );
 
         serving.shutdown().await.expect("failed to shutdown blobfs the second time");
-
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 
     #[fuchsia::test]
@@ -926,8 +920,6 @@ mod tests {
         minfs.format().await.expect("failed to format minfs");
         minfs.fsck().await.expect("failed to fsck minfs");
         let _ = minfs.serve().await.expect("failed to serve minfs");
-
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 
     #[fuchsia::test]
@@ -938,8 +930,6 @@ mod tests {
 
         minfs.format().await.expect("failed to format minfs");
         minfs.fsck().await.expect("failed to fsck minfs");
-
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 
     #[fuchsia::test]
@@ -1003,8 +993,6 @@ mod tests {
         );
 
         let _ = serving.shutdown().await.expect("failed to shutdown minfs the second time");
-
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 
     #[fuchsia::test]
@@ -1081,8 +1069,6 @@ mod tests {
 
         f2fs.format().await.expect("failed to format f2fs");
         f2fs.fsck().await.expect("failed to fsck f2fs");
-
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 
     #[fuchsia::test]
@@ -1149,8 +1135,6 @@ mod tests {
         serving.shutdown().await.expect("failed to shutdown f2fs the second time");
         let mut f2fs = new_fs(&ramdisk, F2fs::default()).await;
         f2fs.fsck().await.expect("failed to fsck f2fs after shutting down the second time");
-
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 
     #[fuchsia::test]

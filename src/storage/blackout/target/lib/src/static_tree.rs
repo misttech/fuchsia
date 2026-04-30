@@ -303,6 +303,5 @@ mod tests {
         }
 
         minfs.shutdown().await.expect("failed to unmount minfs");
-        ramdisk.destroy().await.expect("failed to destroy ramdisk");
     }
 }

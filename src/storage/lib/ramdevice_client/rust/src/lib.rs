@@ -224,20 +224,6 @@ impl RamdiskClient {
     pub fn into_event(self) -> zx::EventPair {
         self._event
     }
-
-    /// Starts unbinding the underlying ramdisk and returns before the device is removed. This
-    /// deallocates all resources for this ramdisk, which will remove all data written to the
-    /// associated ramdisk.
-    pub async fn destroy(self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    /// Unbinds the underlying ramdisk and waits for the device and all child devices to be removed.
-    /// This deallocates all resources for this ramdisk, which will remove all data written to the
-    /// associated ramdisk.
-    pub async fn destroy_and_wait_for_removal(self) -> Result<(), Error> {
-        Ok(())
-    }
 }
 
 impl BlockConnector for RamdiskClient {
@@ -267,7 +253,6 @@ mod tests {
             RamdiskClient::builder(512, 2048).build().await.expect("failed to create ramdisk");
         let ramdisk_dir = &ramdisk.outgoing;
         fuchsia_fs::directory::readdir(ramdisk_dir).await.expect("failed to readdir");
-        ramdisk.destroy().await.expect("failed to destroy the ramdisk");
     }
 
     #[fuchsia::test]
@@ -279,7 +264,6 @@ mod tests {
             .expect("failed to create ramdisk");
         let ramdisk_dir = &ramdisk.outgoing;
         fuchsia_fs::directory::readdir(ramdisk_dir).await.expect("failed to readdir");
-        ramdisk.destroy().await.expect("failed to destroy the ramdisk");
     }
 
     #[fuchsia::test]
@@ -287,7 +271,6 @@ mod tests {
         let ramdisk = RamdiskClient::create(512, 2048).await.unwrap();
         let client = ramdisk.open().unwrap().into_proxy();
         client.get_info().await.expect("get_info failed").unwrap();
-        ramdisk.destroy().await.expect("failed to destroy the ramdisk");
         // The ramdisk will be scheduled to be unbound, so `client` may be valid for some time.
     }
 

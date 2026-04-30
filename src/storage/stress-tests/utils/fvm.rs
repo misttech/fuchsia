@@ -111,10 +111,6 @@ impl FvmInstance {
         Some(self.ramdisk.outgoing())
     }
 
-    pub async fn shutdown(self) {
-        self.ramdisk.destroy_and_wait_for_removal().await.expect("failed to shutdown ramdisk");
-    }
-
     pub async fn free_space(&self) -> u64 {
         let info = self.fvm_instance.get_info().await.unwrap();
         (info.slice_count - info.assigned_slice_count) * info.slice_size

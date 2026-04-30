@@ -1074,7 +1074,7 @@ mod tests {
         }
         assert!(block_client.is_connected());
         let _ = futures::join!(futures::future::join_all(reads), async {
-            ramdisk.destroy().await.expect("ramdisk.destroy failed")
+            std::mem::drop(ramdisk);
         });
         // Destroying the ramdisk is asynchronous. Keep issuing reads until they start failing.
         while block_client

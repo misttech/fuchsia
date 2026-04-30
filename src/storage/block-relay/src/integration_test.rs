@@ -172,7 +172,7 @@ async fn integration() {
     .await
     .expect("Failed to format GPT");
 
-    let ramdisk = RamdiskClientBuilder::new_with_vmo(ramdisk_vmo, Some(BLOCK_SIZE))
+    let _ramdisk = RamdiskClientBuilder::new_with_vmo(ramdisk_vmo, Some(BLOCK_SIZE))
         .publish()
         .ramdisk_service(
             fuchsia_fs::directory::open_directory(
@@ -199,6 +199,4 @@ async fn integration() {
     };
     let proxy = instance.connect_to_simple().expect("Failed to connect");
     proxy.on_start().await.expect("FIDL error").expect("OnStart failed");
-
-    ramdisk.destroy_and_wait_for_removal().await.expect("failed to destroy ramdisk");
 }

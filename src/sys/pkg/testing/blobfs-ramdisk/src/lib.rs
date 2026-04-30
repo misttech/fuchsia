@@ -362,7 +362,8 @@ impl BlobfsRamdisk {
 
     /// Signals blobfs to unmount and waits for it to exit cleanly, stopping the inner ramdisk.
     pub async fn stop(self) -> Result<(), Error> {
-        self.unmount().await?.stop().await
+        let _ = self.unmount().await?;
+        Ok(())
     }
 
     /// Returns a sorted list of all blobs present in this blobfs instance.
@@ -496,11 +497,6 @@ impl Ramdisk {
     pub async fn start() -> Result<Self, Error> {
         Self::builder().start().await
     }
-
-    /// Shuts down this ramdisk.
-    pub async fn stop(self) -> Result<(), Error> {
-        self.client.destroy().await
-    }
 }
 
 /// A [`Ramdisk`] formatted for use by blobfs.
@@ -511,13 +507,6 @@ impl std::ops::Deref for FormattedRamdisk {
     type Target = Ramdisk;
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-impl FormattedRamdisk {
-    /// Shuts down this ramdisk.
-    pub async fn stop(self) -> Result<(), Error> {
-        self.0.stop().await
     }
 }
 

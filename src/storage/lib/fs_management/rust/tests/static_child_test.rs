@@ -21,8 +21,6 @@ async fn blobfs_static_child() {
     blobfs.fsck().await.unwrap();
     let fs = blobfs.serve().await.unwrap();
     fs.shutdown().await.unwrap();
-
-    ramdisk.destroy().await.unwrap();
 }
 
 #[fuchsia::test]
@@ -36,8 +34,6 @@ async fn minfs_static_child() {
     minfs.fsck().await.unwrap();
     let fs = minfs.serve().await.unwrap();
     fs.shutdown().await.unwrap();
-
-    ramdisk.destroy().await.unwrap();
 }
 
 #[fuchsia::test]
@@ -56,6 +52,4 @@ async fn fxfs_static_child() {
     let _: Box<fio::FilesystemInfo> = volume.query().await.unwrap();
 
     fs.shutdown().await.unwrap();
-
-    ramdisk.destroy().await.unwrap();
 }

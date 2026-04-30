@@ -38,7 +38,7 @@ impl Actor for InstanceActor {
             // We want to kill the ram-disk before the filesystem so that we test the filesystem in
             // a simulated power-fail.
             // Wait for the device to go away.
-            fvm_instance.shutdown().await;
+            std::mem::drop(fvm_instance);
 
             // Ignore errors: we've yanked the underlying device, and filesystems have different
             // ways of handling that, and it doesn't really matter how they handle it i.e. crashing

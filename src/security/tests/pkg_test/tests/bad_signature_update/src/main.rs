@@ -151,7 +151,8 @@ async fn bad_signature_update() {
     let config = load_config(test_config_path);
 
     // Setup storage capabilities.
-    let ramdisk_client = mount_image_as_ramdisk("/pkg/data/assemblies/hello_world_v0/fs.blk").await;
+    let _ramdisk_client =
+        mount_image_as_ramdisk("/pkg/data/assemblies/hello_world_v0/fs.blk").await;
     let pkg_resolver_storage_proxy = get_storage_for_component_instance("pkg-resolver").await;
     // TODO(https://fxbug.dev/42169686): Need a test that confirms assumption: Production
     // configuration is an empty mutable storage directory.
@@ -187,7 +188,4 @@ async fn bad_signature_update() {
             true
         }
     });
-
-    // Clean up ramdisk, not necessary but good practice
-    ramdisk_client.destroy().await.unwrap();
 }
