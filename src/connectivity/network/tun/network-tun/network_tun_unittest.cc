@@ -292,7 +292,13 @@ class SimpleClient {
     if ((status = data_vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &data)) != ZX_OK) {
       return status;
     }
-    session_info.set_data(std::move(data));
+    fuchsia_hardware_network::wire::DataVmo data_vmo(alloc_);
+    data_vmo.set_id(0);
+    data_vmo.set_vmo(std::move(data));
+    data_vmo.set_num_rx_buffers(rx_depth);
+    session_info.set_data(
+        alloc_,
+        fidl::VectorView<fuchsia_hardware_network::wire::DataVmo>::FromExternal(&data_vmo, 1));
 
     zx::vmo descriptors;
     if ((status = descriptors_vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &descriptors)) != ZX_OK) {
@@ -1590,7 +1596,7 @@ TEST_F(TunTest, ReportsInternalTxErrors) {
 
   // Release all VMOs to make copying the buffer fail later.
   DeviceAdapter& adapter = first_adapter();
-  for (uint8_t i = 0; i < fuchsia_hardware_network_driver::wire::kMaxVmos; i++) {
+  for (uint8_t i = 0; i < fuchsia_hardware_network::wire::kMaxDataVmos; i++) {
     fdf::WireSyncClient<fuchsia_hardware_network_driver::NetworkDeviceImpl> cli(
         adapter.BindDriver());
     fdf::Arena arena(0u);

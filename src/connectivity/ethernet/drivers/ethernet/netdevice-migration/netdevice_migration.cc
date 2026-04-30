@@ -149,7 +149,8 @@ zx::result<> NetdeviceMigration::Start() {
   {
     fbl::AutoLock vmo_lock(&vmo_lock_);
     vmo_store_ = std::make_unique<NetdeviceMigrationVmoStore>(opts);
-    if (zx_status_t status = vmo_store_->Reserve(netdev::wire::kMaxVmos); status != ZX_OK) {
+    if (zx_status_t status = vmo_store_->Reserve(fuchsia_hardware_network::wire::kMaxDataVmos);
+        status != ZX_OK) {
       fdf::error("failed to initialize vmo store: {}", zx_status_get_string(status));
       return zx::error(status);
     }

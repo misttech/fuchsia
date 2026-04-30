@@ -4,6 +4,8 @@
 
 #include "test_session.h"
 
+#include "fidl/fuchsia.hardware.network/cpp/wire_types.h"
+
 namespace network::testing {
 
 zx_status_t TestSession::Open(fidl::WireSyncClient<netdev::Device>& netdevice, const char* name,
@@ -69,9 +71,15 @@ zx::result<netdev::wire::SessionInfo> TestSession::GetInfo(
       status != ZX_OK) {
     return zx::error(status);
   }
+  std::vector<netdev::wire::DataVmo> data_vmos;
+  data_vmos.push_back(netdev::wire::DataVmo::Builder(alloc_)
+                          .vmo(std::move(data_vmo))
+                          .id(0)
+                          .num_rx_buffers(descriptors_count_ / 2)
+                          .Build());
   auto builder =
       netdev::wire::SessionInfo::Builder(alloc_)
-          .data(std::move(data_vmo))
+          .data(fidl::VectorView<netdev::wire::DataVmo>(alloc_, data_vmos))
           .descriptors(std::move(descriptors_vmo))
           .descriptor_version(NETWORK_DEVICE_DESCRIPTOR_VERSION)
           .descriptor_length(static_cast<uint8_t>(sizeof(buffer_descriptor_t) / sizeof(uint64_t)))

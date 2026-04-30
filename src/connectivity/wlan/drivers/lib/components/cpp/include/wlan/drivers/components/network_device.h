@@ -252,8 +252,8 @@ class NetworkDevice final
   // This needs to be a shared client because it's going to be used with an unsynchronized
   // dispatcher and it's going to be cloned for each NetworkPort.
   fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> netdev_ifc_;
-  uint8_t* vmo_addrs_[fuchsia_hardware_network_driver::wire::kMaxVmos] = {};
-  uint64_t vmo_lengths_[fuchsia_hardware_network_driver::wire::kMaxVmos] = {};
+  uint8_t* vmo_addrs_[fuchsia_hardware_network::wire::kMaxDataVmos] = {};
+  uint64_t vmo_lengths_[fuchsia_hardware_network::wire::kMaxDataVmos] = {};
   std::vector<Frame> tx_frames_;
 };
 

@@ -85,6 +85,10 @@ type DeviceBaseInfo = table {
     ///
     /// Interpreted as empty if not provided.
     11: tx_accel vector<TxAcceleration>:MAX_ACCEL_FLAGS;
+    /// Minimum amount of Rx buffers the client needs to prepare for the
+    /// network device. Client should use this information to select its
+    /// VMO sizes if using multi-VMO support.
+    12: min_rx_buffers uint16;
 };
 
 /// Network device information.

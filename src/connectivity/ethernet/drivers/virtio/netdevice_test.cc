@@ -272,6 +272,13 @@ class NetworkDeviceTests : public testing::Test, public fdf::WireServer<netdev::
                        fdf::Arena& arena, DelegateRxLeaseCompleter::Sync& completer) override {
     ADD_FAILURE() << "DelegateRxLease should never be called";
   }
+  void UpdateRxBufferParams(netdev::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest* request,
+                            fdf::Arena& arena,
+                            UpdateRxBufferParamsCompleter::Sync& completer) override {
+    completer.buffer(arena).Reply(fit::ok());
+  }
+  void RequestRxSpace(netdev::wire::NetworkDeviceIfcRequestRxSpaceRequest* request,
+                      fdf::Arena& arena, RequestRxSpaceCompleter::Sync& completer) override {}
 
   void WithDevice(fit::callback<void(NetworkDevice&)> callback) {
     driver_test_.RunInDriverContext([&](VirtioNetDriver& driver) {

@@ -21,7 +21,7 @@ zx::result<cpp20::span<uint8_t>> VmoStore::GetMappedVmo(uint8_t id) {
 zx_status_t VmoStore::RegisterVmo(uint8_t id, zx::vmo vmo) {
   // Lazily reserve storage space.
   // Reserve will be a no-op if we already have `kMaxVmos` capacity.
-  zx_status_t status = store_.Reserve(fuchsia_hardware_network_driver::wire::kMaxVmos);
+  zx_status_t status = store_.Reserve(fuchsia_hardware_network::wire::kMaxDataVmos);
   if (status != ZX_OK) {
     return status;
   }

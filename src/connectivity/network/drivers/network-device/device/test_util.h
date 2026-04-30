@@ -387,7 +387,7 @@ class FakeNetworkDeviceImpl
   fbl::Mutex lock_;
   sync_completion_t released_completer_;
   fdf_dispatcher_t* dispatcher_ = nullptr;
-  std::array<zx::vmo, netdriver::wire::kMaxVmos> vmos_;
+  std::array<zx::vmo, fuchsia_hardware_network::wire::kMaxDataVmos> vmos_;
   DeviceInfo info_{};
   fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> device_client_;
   fbl::SizedDoublyLinkedList<std::unique_ptr<RxBuffer>> rx_buffers_ __TA_GUARDED(lock_);

@@ -646,7 +646,8 @@ zx::result<> UsbCdcFunction::Start() {
                          : config_res.error_value().domain_error());
   }
 
-  if (zx_status_t status = vmo_store_.Reserve(fnetdev::wire::kMaxVmos); status != ZX_OK) {
+  if (zx_status_t status = vmo_store_.Reserve(fuchsia_hardware_network::wire::kMaxDataVmos);
+      status != ZX_OK) {
     fdf::error("failed to initialize vmo store: {}", zx_status_get_string(status));
     return zx::error(status);
   }

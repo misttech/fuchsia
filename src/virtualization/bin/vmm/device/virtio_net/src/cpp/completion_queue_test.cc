@@ -79,6 +79,17 @@ class FakeNetDevice : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
       fdf::Arena& arena, DelegateRxLeaseCompleter::Sync& completer) override {
     FAIL() << "Not supported by the FakeNetDevice";
   }
+  void UpdateRxBufferParams(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest* request,
+      fdf::Arena& arena, UpdateRxBufferParamsCompleter::Sync& completer) override {
+    FAIL() << "Not supported by the FakeNetDevice";
+    completer.buffer(arena).Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
+  }
+  void RequestRxSpace(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceIfcRequestRxSpaceRequest* request,
+      fdf::Arena& arena, RequestRxSpaceCompleter::Sync& completer) override {
+    FAIL() << "Not supported by the FakeNetDevice";
+  }
 
   std::vector<std::vector<fuchsia_hardware_network_driver::wire::TxResult>> tx_batches_;
   std::vector<std::vector<fuchsia_hardware_network_driver::wire::RxBufferPart>> rx_batches_;

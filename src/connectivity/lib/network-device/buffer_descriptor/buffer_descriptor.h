@@ -63,8 +63,11 @@ typedef struct buffer_descriptor {
     uint8_t salt;
   } port_id;
 
+  // Data VMO ID where this buffer resides.
+  uint8_t vmo_id;
+
   // Reserved for future expansion. Maintains 64-bit word alignment.
-  uint8_t _reserved[2];
+  uint8_t _reserved;
 
   // Scratch space for the client, the device must not modify this field or
   // depend on its value.

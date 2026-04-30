@@ -121,6 +121,9 @@ impl<K: AllocKind> Descriptor<K> {
                 nxt: _,
                 info_type,
                 port_id: sys::buffer_descriptor_port_id { base, salt },
+                // TODO(https://issues.fuchsia.dev/438527741): Support multiple
+                // VMOs.
+                vmo_id: _,
                 // We shouldn't touch this field as it is reserved.
                 _reserved: _,
                 // We shouldn't touch this field as it is managed by DescRef{Mut}.

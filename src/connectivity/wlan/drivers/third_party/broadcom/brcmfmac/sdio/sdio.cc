@@ -339,7 +339,7 @@ constexpr size_t kInternalVmoBufferSize = BRCMF_DCMD_MAXLEN + 1024;
 
 // The VMO ID used for the internal DMA buffer. The network device implementation seems to start at
 // 0 so if we pick a number from the other end of the spectrum we should be OK.
-constexpr uint32_t kInternalVmoId = fuchsia_hardware_network_driver::kMaxVmos - 1;
+constexpr uint32_t kInternalVmoId = fuchsia_hardware_network::wire::kMaxDataVmos - 1;
 
 #if !defined(NDEBUG)
 struct brcmf_trap_info {

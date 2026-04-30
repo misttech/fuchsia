@@ -56,7 +56,10 @@ func (f *fakeNetworkDeviceImpl) OpenSession(_ fidl.Context, sessionName string, 
 	const elemCount = fakeDepth * 2
 	const elemSize = 2
 
-	f.data = sessionInfo.Data
+	if len(sessionInfo.Data) != 1 {
+		panic(fmt.Sprintf("can only open a session with 1 data VMO"))
+	}
+	f.data = sessionInfo.Data[0].Vmo
 	f.descriptors = sessionInfo.Descriptors
 
 	t := f.t

@@ -123,6 +123,13 @@ class NetworkDeviceIfc : public fdf::WireServer<netdriver::NetworkDeviceIfc> {
   }
   void DelegateRxLease(netdriver::wire::NetworkDeviceIfcDelegateRxLeaseRequest* request,
                        fdf::Arena& arena, DelegateRxLeaseCompleter::Sync& completer) override {}
+  void UpdateRxBufferParams(netdriver::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest* request,
+                            fdf::Arena& arena,
+                            UpdateRxBufferParamsCompleter::Sync& completer) override {
+    completer.buffer(arena).Reply(fit::ok());
+  }
+  void RequestRxSpace(netdriver::wire::NetworkDeviceIfcRequestRxSpaceRequest* request,
+                      fdf::Arena& arena, RequestRxSpaceCompleter::Sync& completer) override {}
 
  private:
   fdf_dispatcher_t* dispatcher_ = nullptr;

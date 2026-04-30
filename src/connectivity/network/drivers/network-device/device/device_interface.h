@@ -88,6 +88,11 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
                   CompleteTxCompleter::Sync& completer) override;
   void DelegateRxLease(netdriver::wire::NetworkDeviceIfcDelegateRxLeaseRequest* request,
                        fdf::Arena& arena, DelegateRxLeaseCompleter::Sync& completer) override;
+  void UpdateRxBufferParams(netdriver::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest* request,
+                            fdf::Arena& arena,
+                            UpdateRxBufferParamsCompleter::Sync& completer) override;
+  void RequestRxSpace(netdriver::wire::NetworkDeviceIfcRequestRxSpaceRequest* request,
+                      fdf::Arena& arena, RequestRxSpaceCompleter::Sync& completer) override;
 
   uint16_t rx_fifo_depth() const;
   uint16_t tx_fifo_depth() const;

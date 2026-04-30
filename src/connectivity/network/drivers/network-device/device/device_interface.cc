@@ -15,6 +15,7 @@
 
 #include <fbl/alloc_checker.h>
 
+#include "definitions.h"
 #include "log.h"
 #include "rx_queue.h"
 #include "session.h"
@@ -292,7 +293,7 @@ zx_status_t DeviceInterface::Init(std::unique_ptr<NetworkDeviceImplBinder>&& bin
 
   {
     fbl::AutoLock lock(&control_lock_);
-    if (zx_status_t status = vmo_store_.Reserve(netdriver::wire::kMaxVmos); status != ZX_OK) {
+    if (zx_status_t status = vmo_store_.Reserve(netdev::wire::kMaxDataVmos); status != ZX_OK) {
       LOGF_ERROR("init: failed to init session identifiers %s", zx_status_get_string(status));
       return status;
     }
@@ -530,6 +531,19 @@ void DeviceInterface::DelegateRxLease(
   TryDelegateRxLease(rx_queue_->rx_completed_frame_index());
 }
 
+void DeviceInterface::UpdateRxBufferParams(
+    netdriver::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest* request, fdf::Arena& arena,
+    UpdateRxBufferParamsCompleter::Sync& completer) {
+  // TODO(https://fxbug.dev/438527741): Implement Rx buffer management.
+  completer.buffer(arena).Reply(fit::ok());
+}
+
+void DeviceInterface::RequestRxSpace(
+    netdriver::wire::NetworkDeviceIfcRequestRxSpaceRequest* request, fdf::Arena& arena,
+    RequestRxSpaceCompleter::Sync&) {
+  // TODO(https://fxbug.dev/438527741): Implement Rx buffer management.
+}
+
 void DeviceInterface::GetInfo(GetInfoCompleter::Sync& completer) {
   LOGF_TRACE("%s", __FUNCTION__);
 
@@ -624,7 +638,10 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
     if (!session_info.has_data()) {
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
-    zx::vmo& vmo = session_info.data();
+    if (session_info.data().size() != 1) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    zx::vmo& vmo = session_info.data()[0].vmo();
     // NB: It's safe to register the VMO after session creation (and thread start) because sessions
     // always start in a paused state, so the tx path can't be running while we hold the control
     // lock.

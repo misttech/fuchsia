@@ -92,7 +92,7 @@ Session::~Session() {
   ZX_ASSERT(!tx_installed_);
   ZX_ASSERT(in_flight_rx_ == 0);
   ZX_ASSERT(in_flight_tx_ == 0);
-  ZX_ASSERT(vmo_id_ == netdriver::wire::kMaxVmos);
+  ZX_ASSERT(vmo_id_ == netdev::wire::kMaxDataVmos);
   for (size_t i = 0; i < attached_ports_.size(); i++) {
     ZX_ASSERT_MSG(!attached_ports_[i].has_value(), "outstanding attached port %ld", i);
   }
@@ -622,6 +622,18 @@ void Session::WatchDelegatedRxLease(WatchDelegatedRxLeaseCompleter::Sync& comple
   completer.Reply(wire);
 }
 
+void Session::RegisterForTx(RegisterForTxRequestView request,
+                            RegisterForTxCompleter::Sync& completer) {
+  // TODO(https://fxbug.dev/438527741): Add support for Tx voting.
+  completer.Reply(0, ZX_ERR_NOT_SUPPORTED);
+}
+
+void Session::UnregisterForTx(UnregisterForTxRequestView request,
+                              UnregisterForTxCompleter::Sync& completer) {
+  // TODO(https://fxbug.dev/438527741): Add support for Tx voting.
+  completer.Reply(0, ZX_ERR_NOT_SUPPORTED);
+}
+
 void Session::MarkTxReturnResult(uint16_t descriptor_index, zx_status_t status) {
   buffer_descriptor_t& desc = descriptor(descriptor_index);
   using netdev::wire::TxReturnFlags;
@@ -897,8 +909,8 @@ bool Session::IsSubscribedToFrameType(uint8_t port, netdev::wire::FrameType fram
 }
 
 void Session::SetDataVmo(uint8_t vmo_id, DataVmoStore::StoredVmo* vmo) {
-  ZX_ASSERT_MSG(vmo_id_ == netdriver::wire::kMaxVmos, "data VMO already set");
-  ZX_ASSERT_MSG(vmo_id < netdriver::wire::kMaxVmos, "invalid vmo_id %d", vmo_id);
+  ZX_ASSERT_MSG(vmo_id_ == netdev::wire::kMaxDataVmos, "data VMO already set");
+  ZX_ASSERT_MSG(vmo_id < netdev::wire::kMaxDataVmos, "invalid vmo_id %d", vmo_id);
   vmo_id_ = vmo_id;
   data_vmo_ = vmo;
 }
@@ -907,7 +919,7 @@ uint8_t Session::ClearDataVmo() {
   uint8_t id = vmo_id_;
   // Reset identifier to the marker value. The destructor will assert that `ReleaseDataVmo` was
   // called by checking the value.
-  vmo_id_ = netdriver::wire::kMaxVmos;
+  vmo_id_ = netdev::wire::kMaxDataVmos;
   data_vmo_ = nullptr;
   return id;
 }

@@ -86,22 +86,6 @@ using zx;
 // buffer for trailer. Rounded up to nearest power of two.
 const MAX_BUFFER_PARTS uint32 = 4;
 
-/// The maximum number of concurrent shared VMOs that may exist.
-// NOTE: The expected number of VMOs in use is going to be between 1 and 3 with
-// common client usage. This value is chosen to be larger than that to account
-// for possible transitions between clients (there may be an overlap of one
-// client shutting of a data session as one comes online) and also not limit too
-// harshly the number of clients.
-const MAX_VMOS uint8 = 32;
-
-/// VMO identifier.
-///
-/// VMO identifiers are always in the range [0, [`MAX_VMOS`]).
-///
-/// VMO identifiers are reported to devices through
-/// [`NetworkDeviceImpl.PrepareVmo`].
-alias VmoId = uint8;
-
 /// Buffer identifier.
 ///
 /// Rx space buffers and tx buffers are identified by these when exchanged
@@ -115,7 +99,7 @@ alias BufferId = uint32;
 /// memory.
 type BufferRegion = struct {
     /// VMO backing this region.
-    vmo VmoId;
+    vmo fuchsia.hardware.network.VmoId;
     /// Offset, in bytes, of data chunk in VMO.
     offset uint64;
     /// Length, in bytes, of data chunk in VMO.
@@ -287,6 +271,38 @@ const MAX_TX_RESULTS uint32 = 8188;
 /// + N * 80 <= 65 KiB.
 const MAX_RX_BUFFERS uint32 = 818;
 
+/// Parameters for Rx buffer management.
+type RxBufferManagement = flexible union {
+    /// No dynamic management, queue everything. The default algorithm.
+    1: static struct {};
+    /// Use Little's Law: Queue size is the product of packet arrival rate and
+    /// the average time each packet spend in the queue (L = lambda * W).
+    2: simple struct {
+        /// This is used to calculate the arrival rate:
+        /// `Rate_n = alpha * Sample_n + (1 - alpha) * Rate_(n-1)`
+        /// The bigger this value, the more sensitive it is to the latest sample.
+        /// Must be in the range [0, 1].
+        alpha float64;
+        /// Wait time budget at the driver.
+        ///
+        /// This is equivalent to W in Little's Law. More practically, this is an
+        /// upper bound for the average time buffers spend waiting in the queue
+        /// of the device impl before they are processed by the device interface.
+        ///
+        /// Guidance for driver implementors:
+        /// 1. If your driver uses a interrupt coalescing timeout, then this W should
+        ///    just be that or slightly larger to account for the processing time.
+        /// 2. If your driver does not use moderation, this value can be tuned:
+        ///    a starting point would be to use (bit rate, MTU, Rx depth) to derive
+        ///    a W under maximum pressure. As a reference (1Gbps, 1500, 256) leads to
+        ///    a W of 3.0 ms (256 / (10**9 / 8 / 1500) seconds). It will make little
+        ///    sense to go any bigger than that and you can decrease it and monitor
+        ///    for packet drops. You can compare the value against common interrupt
+        ///    coalescing configurations for reference.
+        delay_budget zx.Duration;
+    };
+};
+
 @transport("Driver")
 closed protocol NetworkDeviceIfc {
     /// Notifies the interface of status changes on port with `id`.
@@ -382,6 +398,40 @@ closed protocol NetworkDeviceIfc {
     strict DelegateRxLease(resource struct {
         delegated fuchsia.hardware.network.DelegatedRxLease;
     });
+    /// Provides the `NetworkDeviceIfc` with a set of parameters to use for
+    /// buffer management.
+    ///
+    /// + ZX_ERR_INVALID_VALUE if the given parameters are invalid.
+    strict UpdateRxBufferParams(struct {
+        param RxBufferManagement;
+    }) -> () error zx.Status;
+
+    /// Notifies network device of buffer starvation.
+    ///
+    /// The server of this protocol needs to queue more RX buffers into the
+    /// implementation. The network device impl can ask for a number of
+    /// buffers, but it is used as a hint and the server tries its best
+    /// to fulfill the request.
+    ///
+    /// This is a better-effort method, if the network-device is also out of Rx
+    /// space buffers, then there is nothing more we can do.
+    ///
+    /// Note that this is a one-way asynchronous call, this only serves as
+    /// a signaling method to the platform driver, the queue action may not
+    /// happen inline with interrupt handling. Packets may get dropped within
+    /// the time window. The NetworkDeviceImpl can raise this signal when a
+    /// certain threshold is hit instead of waiting for the buffer space to be
+    /// actually empty.
+    strict RequestRxSpace(struct {
+        /// Note: the requested parameter is only a hint and it may not be
+        /// fully fulfilled. The implementation may not make assumptions about
+        /// the number of buffers queued as a result of this call.
+        ///
+        /// The device interface also respects other restraints, e.g.
+        /// rx_depth of the device impl. It never queues more buffers
+        /// than allowed by the device impl.
+        requested uint64;
+    });
 };
 
 /// Static device information.
@@ -468,6 +518,12 @@ type DeviceImplInfo = table {
     /// `n` of `tx_accel` conveys the meaning of the `TX_ACCEL_n` flag.
     /// Required.
     13: tx_accel vector<fuchsia.hardware.network.TxAcceleration>:MAX;
+    /// Minimum amount of Rx buffers to be queued. If unset, rx_threshold
+    /// is assumed to be the minimum.
+    14: min_rx_buffers uint16;
+    /// Initial Rx buffer management parameters.
+    /// If unset, `static` is assumed for Rx buffer managing.
+    15: rx_buffer_management RxBufferManagement;
 };
 
 /// The maximum number of `TxBuffer` structs that could be sent in a single FIDL
@@ -605,7 +661,7 @@ closed protocol NetworkDeviceImpl {
     /// closed.
     @async
     strict PrepareVmo(resource struct {
-        id VmoId;
+        id fuchsia.hardware.network.VmoId;
         vmo zx.Handle:VMO;
     }) -> (struct {
         s zx.Status;
@@ -619,7 +675,7 @@ closed protocol NetworkDeviceImpl {
     ///
     /// + request `id` VMO identifier.
     strict ReleaseVmo(struct {
-        id VmoId;
+        id fuchsia.hardware.network.VmoId;
     }) -> ();
 };
 

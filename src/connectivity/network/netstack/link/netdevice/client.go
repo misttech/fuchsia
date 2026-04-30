@@ -844,6 +844,11 @@ func NewClient(ctx context.Context, dev *network.DeviceWithCtxInterface, session
 		return nil, fmt.Errorf("failed to create data VMO: %w", err)
 	}
 
+	dataVmos := make([]network.DataVmo, 1)
+	dataVmos[0].SetId(0)
+	dataVmos[0].SetVmo(dataVmo)
+	dataVmos[0].SetNumRxBuffers(config.RxDescriptorCount)
+
 	mappedDescVmo, descVmo, err := fifo.NewMappedVMO(totalDescriptors*config.DescriptorLength, "fuchsia.hardware.network.Device/data")
 	if err != nil {
 		_ = mappedDataVmo.Close()
@@ -852,7 +857,7 @@ func NewClient(ctx context.Context, dev *network.DeviceWithCtxInterface, session
 
 	var sessionInfo network.SessionInfo
 	sessionInfo.SetDescriptors(descVmo)
-	sessionInfo.SetData(dataVmo)
+	sessionInfo.SetData(dataVmos)
 	sessionInfo.SetDescriptorVersion(DescriptorVersion)
 	sessionInfo.SetDescriptorLength(uint8(config.DescriptorLength / 8))
 	sessionInfo.SetDescriptorCount(config.RxDescriptorCount + config.TxDescriptorCount)

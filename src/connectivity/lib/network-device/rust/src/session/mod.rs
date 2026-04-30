@@ -223,6 +223,12 @@ impl Inner {
             let descriptor_length =
                 u8::try_from(NETWORK_DEVICE_DESCRIPTOR_LENGTH / std::mem::size_of::<u64>())
                     .expect("descriptor length in 64-bit words not representable by u8");
+            let data = vec![fidl_fuchsia_hardware_network::DataVmo {
+                id: Some(0),
+                vmo: Some(data),
+                num_rx_buffers: Some(config.num_rx_buffers.get()),
+                __source_breaking: fidl::marker::SourceBreaking,
+            }];
             netdev::SessionInfo {
                 descriptors: Some(descriptors),
                 data: Some(data),
@@ -402,6 +408,10 @@ pub struct DeviceBaseInfo {
     pub min_tx_buffer_tail: u16,
     /// Maximum descriptor chain length accepted by the device.
     pub max_buffer_parts: u8,
+    /// Minimum amount of Rx buffers the client needs to prepare for the
+    /// network device.
+    #[fidl_field_type(optional)]
+    pub min_rx_buffers: Option<NonZeroU16>,
     /// Available rx acceleration flags for this device.
     #[fidl_field_type(default)]
     pub rx_accel: Vec<netdev::RxAcceleration>,
@@ -472,6 +482,7 @@ impl DeviceInfo {
                     min_tx_buffer_head,
                     min_tx_buffer_tail,
                     max_buffer_parts: _,
+                    min_rx_buffers: _,
                     rx_accel: _,
                     tx_accel: _,
                 },
@@ -859,6 +870,7 @@ mod tests {
         min_tx_buffer_length: 0,
         min_tx_buffer_tail: 0,
         max_buffer_parts: fidl_fuchsia_hardware_network::MAX_DESCRIPTOR_CHAIN,
+        min_rx_buffers: None,
         rx_accel: Vec::new(),
         tx_accel: Vec::new(),
     };

@@ -125,7 +125,8 @@ zx_status_t NetworkDevice::Init() {
   static_assert(sizeof(config.mac) == sizeof(mac_.octets));
   std::copy(std::begin(config.mac), std::end(config.mac), mac_.octets.begin());
 
-  if (zx_status_t status = vmo_store_.Reserve(netdev::wire::kMaxVmos); status != ZX_OK) {
+  if (zx_status_t status = vmo_store_.Reserve(fuchsia_hardware_network::wire::kMaxDataVmos);
+      status != ZX_OK) {
     fdf::error("failed to initialize vmo store: {}", zx_status_get_string(status));
     return status;
   }

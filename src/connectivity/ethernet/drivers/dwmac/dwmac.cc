@@ -239,7 +239,8 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
 
   {
     fbl::AutoLock lock(&mac_device->state_lock_);
-    if (zx_status_t status = mac_device->vmo_store_.Reserve(netdev::wire::kMaxVmos);
+    if (zx_status_t status =
+            mac_device->vmo_store_.Reserve(fuchsia_hardware_network::wire::kMaxDataVmos);
         status != ZX_OK) {
       zxlogf(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
       return status;

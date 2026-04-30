@@ -81,6 +81,22 @@ class TestNetworkDeviceIfc
     }
   }
 
+  void UpdateRxBufferParams(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest* request,
+      fdf::Arena& arena, UpdateRxBufferParamsCompleter::Sync& completer) override {
+    if (update_rx_buffer_params_) {
+      update_rx_buffer_params_(request, arena, completer);
+    }
+  }
+
+  void RequestRxSpace(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceIfcRequestRxSpaceRequest* request,
+      fdf::Arena& arena, RequestRxSpaceCompleter::Sync& completer) override {
+    if (request_rx_space_) {
+      request_rx_space_(request, arena, completer);
+    }
+  }
+
   std::function<void(
       fuchsia_hardware_network_driver::wire::NetworkDeviceIfcPortStatusChangedRequest*, fdf::Arena&,
       PortStatusChangedCompleter::Sync&)>
@@ -100,6 +116,13 @@ class TestNetworkDeviceIfc
   fit::function<void(fuchsia_hardware_network_driver::wire::NetworkDeviceIfcDelegateRxLeaseRequest*,
                      fdf::Arena&, DelegateRxLeaseCompleter::Sync&)>
       delegate_rx_lease_;
+  std::function<void(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest*,
+      fdf::Arena&, UpdateRxBufferParamsCompleter::Sync&)>
+      update_rx_buffer_params_;
+  std::function<void(fuchsia_hardware_network_driver::wire::NetworkDeviceIfcRequestRxSpaceRequest*,
+                     fdf::Arena&, RequestRxSpaceCompleter::Sync&)>
+      request_rx_space_;
 
  private:
   std::optional<fdf::ServerBindingRef<fuchsia_hardware_network_driver::NetworkDeviceIfc>> binding_;

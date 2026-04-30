@@ -27,8 +27,8 @@ namespace wlan::brcmfmac {
 namespace {
 
 // NOTE: These can't conflict with the vmo id used internally by sim_fw.cc
-constexpr uint8_t kTxVmoId = fuchsia_hardware_network_driver::kMaxVmos - 1;
-constexpr uint8_t kRxVmoId = fuchsia_hardware_network_driver::kMaxVmos - 2;
+constexpr uint8_t kTxVmoId = fuchsia_hardware_network::wire::kMaxDataVmos - 1;
+constexpr uint8_t kRxVmoId = fuchsia_hardware_network::wire::kMaxDataVmos - 2;
 
 zx::result<cpp20::span<uint8_t>> CreateAndMapVmo(zx::vmo& vmo, uint64_t req_size) {
   zx_status_t status = zx::vmo::create(req_size, 0, &vmo);

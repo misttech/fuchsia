@@ -1032,7 +1032,7 @@ zx::result<> RndisFunction::Start() {
   }
   function_.Bind(std::move(*func));
 
-  if (zx_status_t status = vmo_store_.Reserve(fuchsia_hardware_network_driver::wire::kMaxVmos);
+  if (zx_status_t status = vmo_store_.Reserve(fuchsia_hardware_network::wire::kMaxDataVmos);
       status != ZX_OK) {
     fdf::error("failed to initialize vmo store: {}", zx_status_get_string(status));
     return zx::error(status);

@@ -105,7 +105,7 @@ struct TestNetworkDevice : public TestDriver::StopHandler, public NetworkDevice:
 
   std::function<void()> on_release_;
   libsync::Completion release_called_;
-  std::array<uint8_t*, fuchsia_hardware_network_driver::kMaxVmos> vmo_addrs_ = {};
+  std::array<uint8_t*, fuchsia_hardware_network::wire::kMaxDataVmos> vmo_addrs_ = {};
 
   fdf::Dispatcher netdev_dispatcher_;
   libsync::Completion netdev_dispatcher_shutdown_;

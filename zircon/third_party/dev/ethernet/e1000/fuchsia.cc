@@ -664,9 +664,10 @@ zx::result<> Device<RxDescriptor>::Start() {
     // Initialize VmoStore.
     vmo_store_ = std::make_unique<VmoStore>(options);
 
-    if (zx_status_t status = vmo_store_->Reserve(netdriver::wire::kMaxVmos); status != ZX_OK) {
+    if (zx_status_t status = vmo_store_->Reserve(fuchsia_hardware_network::wire::kMaxDataVmos);
+        status != ZX_OK) {
       fdf::error("failed to reserve the capacity of VmoStore to max VMOs ({}): {}",
-                 netdriver::wire::kMaxVmos, zx_status_get_string(status));
+                 fuchsia_hardware_network::wire::kMaxDataVmos, zx_status_get_string(status));
       return zx::error(status);
     }
   }

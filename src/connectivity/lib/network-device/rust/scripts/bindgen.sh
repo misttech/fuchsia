@@ -29,8 +29,8 @@ readonly RAW_LINES="${copyright_line}
 bindgen \
   --raw-line "${RAW_LINES}" \
   --no-layout-tests \
-  --whitelist-type 'buffer_descriptor' \
-  --whitelist-var 'NETWORK_DEVICE_DESCRIPTOR_VERSION' \
-  --whitelist-var '__NETWORK_DEVICE_DESCRIPTOR_VERSION' \
+  --allowlist-type 'buffer_descriptor' \
+  --allowlist-var 'NETWORK_DEVICE_DESCRIPTOR_VERSION' \
+  --allowlist-var '__NETWORK_DEVICE_DESCRIPTOR_VERSION' \
   "${source_file}" | \
   grep -vF 'pub type __uint' > "${target_file}"

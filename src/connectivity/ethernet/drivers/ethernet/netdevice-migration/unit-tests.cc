@@ -112,6 +112,14 @@ class MockNetworkDeviceIfc : public fdf::WireServer<netdev::NetworkDeviceIfc> {
               (netdev::wire::NetworkDeviceIfcDelegateRxLeaseRequest * request, fdf::Arena& arena,
                DelegateRxLeaseCompleter::Sync& completer),
               (override));
+  MOCK_METHOD(void, UpdateRxBufferParams,
+              (netdev::wire::NetworkDeviceIfcUpdateRxBufferParamsRequest * request,
+               fdf::Arena& arena, UpdateRxBufferParamsCompleter::Sync& completer),
+              (override));
+  MOCK_METHOD(void, RequestRxSpace,
+              (netdev::wire::NetworkDeviceIfcRequestRxSpaceRequest * request, fdf::Arena& arena,
+               RequestRxSpaceCompleter::Sync& completer),
+              (override));
 
   void WaitForDispatcher() {
     libsync::Completion completion;

@@ -136,6 +136,10 @@ class Session : public fidl::WireServer<netdev::Session> {
   void Detach(DetachRequestView request, DetachCompleter::Sync& _completer) override;
   void Close(CloseCompleter::Sync& _completer) override;
   void WatchDelegatedRxLease(WatchDelegatedRxLeaseCompleter::Sync& completer) override;
+  void RegisterForTx(RegisterForTxRequestView request,
+                     RegisterForTxCompleter::Sync& completer) override;
+  void UnregisterForTx(UnregisterForTxRequestView request,
+                       UnregisterForTxCompleter::Sync& completer) override;
 
   zx_status_t AttachPort(const netdev::wire::PortId& port_id,
                          cpp20::span<const netdev::wire::FrameType> frame_types);
@@ -254,7 +258,7 @@ class Session : public fidl::WireServer<netdev::Session> {
   // `MAX_VMOS` is used as a marker for invalid VMO identifier.
   // The destructor checks that vmo_id is set to `MAX_VMOS`, which verifies that `ReleaseDataVmo`
   // was called before destruction.
-  uint8_t vmo_id_ = netdriver::wire::kMaxVmos;
+  uint8_t vmo_id_ = netdev::wire::kMaxDataVmos;
   // Unowned pointer to data VMO stored in DeviceInterface.
   // Set by Session::Create.
   DataVmoStore::StoredVmo* data_vmo_ = nullptr;

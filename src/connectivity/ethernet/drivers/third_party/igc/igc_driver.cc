@@ -182,9 +182,9 @@ zx_status_t IgcDriver::Initialize(fdf::DriverContext& context,
     fbl::AutoLock vmo_lock(&vmo_lock_);
     vmo_store_ = std::make_unique<VmoStore>(options);
 
-    if (status = vmo_store_->Reserve(netdriver::wire::kMaxVmos); status != ZX_OK) {
+    if (status = vmo_store_->Reserve(netdev::wire::kMaxDataVmos); status != ZX_OK) {
       fdf::error("failed to reserve the capacity of VmoStore to max VMOs ({}): {}",
-                 netdriver::wire::kMaxVmos, zx_status_get_string(status));
+                 netdev::wire::kMaxDataVmos, zx_status_get_string(status));
       return status;
     }
   }
