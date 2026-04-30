@@ -141,12 +141,7 @@ std::unordered_map<::restricted_machine::MachineType,
 constexpr static std::array<MachineType, 3> kSupportedMachines{
     ::restricted_machine::MachineType::kNone,
     ::restricted_machine::MachineType::kNative,
-// TODO(https://fxbug.dev/382971270) enable lower mem allocations when under asan
-#if defined(__clang__)
-#if !__has_feature(address_sanitizer)
     ::restricted_machine::MachineType::kArm,
-#endif  // !__has_feature(address_sanitizer)
-#endif  // defined(__clang__)
 };
 #else
 constexpr static std::array<MachineType, 2> kSupportedMachines{
