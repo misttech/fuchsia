@@ -38,11 +38,14 @@ fidl("fuchsia.net.debug") {
     "diagnostics.fidl",
     "interfaces.fidl",
     "overview.fidl",
+    "packet_capture.fidl",
   ]
   enable_hlcpp = true
   visibility = [ "*" ]
   public_deps = [
+    "//sdk/fidl/fuchsia.ebpf",
     "//sdk/fidl/fuchsia.hardware.network",
+    "//sdk/fidl/fuchsia.io",
     "//sdk/fidl/fuchsia.net",
   ]
 }
