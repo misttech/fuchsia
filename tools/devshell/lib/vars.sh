@@ -447,6 +447,7 @@ function fx-export-default-target {
 function fx-fail-if-device-specified {
   if [[ -n "${FUCHSIA_NODENAME_SET_BY_FX_FLAG}" ]]; then
     fx-error "The -t flag is not supported when calling this function"
+    fx-error "Please remove the -t or --target flag from your command."
     exit 1
   fi
 }

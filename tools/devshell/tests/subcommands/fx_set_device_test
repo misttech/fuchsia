@@ -59,10 +59,16 @@ EOF
 TEST_fx-set-device-fails-with-target-flag() {
     local out="${BT_TEMP_DIR}/_fx_set_device_output"
 
+    local device_file="${FUCHSIA_DIR}/out/default.device"
+    # Clear state from previous tests (as CI may run tests in a shared directory)
+    rm -f "${device_file}"
+
     BT_EXPECT_FAIL "${fx}" -t foo set-device bar >"$out" 2>&1
 
     # Check that the output has the right message
-    BT_EXPECT_FILE_CONTAINS "${out}" "ERROR: The -t flag is not supported when calling this function"
+    BT_EXPECT_FILE_CONTAINS "${out}" "ERROR: The -t flag is not supported when calling this function
+ERROR: Please remove the -t or --target flag from your command."
+
     BT_EXPECT_FILE_DOES_NOT_EXIST "${device_file}"
 }
 
