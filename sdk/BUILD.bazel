@@ -2,9 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/bazel_idk:defs.bzl", "idk_host_molecule", "idk_molecule")
 load(
-    "//sdk:atom_lists.bzl",
+    "//build/bazel/bazel_idk:defs.bzl",
+    "idk_host_tool_molecule",
+    "idk_molecule",
+)
+load(
+    ":atom_lists.bzl",
     "ALL_CC_PREBUILT_LIBRARY_ATOMS",
     "ALL_CC_SOURCE_LIBRARY_ATOMS",
     "BUILD_HOST_TOOLS_ATOMS",
@@ -17,6 +21,7 @@ load(
 # For now, this contains atoms that may also need to be built in other configurations
 idk_molecule(
     name = "fuchsia_idk_atoms_produced_by_main_platform_build_idk",
+    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//build/bazel/bazel_idk/tests:__subpackages__",
     ],
@@ -36,6 +41,7 @@ idk_molecule(
 # level. Must export symbols with C linkage.
 idk_molecule(
     name = "cc_prebuilt_libraries_idk",
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = ALL_CC_PREBUILT_LIBRARY_ATOMS,
 )
 
@@ -48,26 +54,31 @@ idk_molecule(
 # are complete at all API levels.
 idk_molecule(
     name = "cc_source_libraries_idk",
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = ALL_CC_SOURCE_LIBRARY_ATOMS,
 )
 
 # Data atoms provided in the IDK.
 idk_molecule(
     name = "data_atoms_idk",
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = DATA_ATOMS,
 )
 
 # Tools and data used on a host development machine to build software to run
 # on Fuchsia.
-idk_host_molecule(
+idk_host_tool_molecule(
     name = "build_host_tools_idk",
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = BUILD_HOST_TOOLS_ATOMS,
 )
 
 # Tools and data used on a host development machine to interact with a
 # target device running Fuchsia. These are not needed to build the IDK or SDK.
 # Some tools may depend on tools in peer molecules.
-idk_host_molecule(
+idk_host_tool_molecule(
     name = "non_build_host_tools_idk",
+    # The macro handles transitioning to the host platform.
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = NON_BUILD_HOST_TOOLS_ATOMS,
 )

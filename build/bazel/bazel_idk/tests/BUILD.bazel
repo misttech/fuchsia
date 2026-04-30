@@ -744,6 +744,7 @@ cc_library(
 idk_molecule(
     name = "test_submolecule_idk",
     testonly = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":platform_dependent_source_library_idk",
         ":test-shared-library_idk",
@@ -760,6 +761,7 @@ idk_molecule(
 idk_molecule(
     name = "test_molecule_idk",
     testonly = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":test_submolecule_idk",
         # Tests compatibility testing with different expectations per API level.

@@ -32,11 +32,11 @@ load(
 )
 load(
     "//build/bazel/bazel_idk/private:idk_molecule.bzl",
-    _idk_host_molecule = "idk_host_molecule",
+    _idk_host_tool_molecule = "idk_host_tool_molecule",
     _idk_molecule = "idk_molecule",
 )
 
-idk_host_molecule = _idk_host_molecule
+idk_host_tool_molecule = _idk_host_tool_molecule
 idk_molecule = _idk_molecule
 
 idk_noop_atom = _idk_noop_atom
