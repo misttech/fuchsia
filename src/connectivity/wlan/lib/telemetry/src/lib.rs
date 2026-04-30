@@ -99,12 +99,12 @@ impl ThrottledErrorLogger {
         }
     }
 
-    pub fn throttle_log(&mut self, error: String) {
+    pub fn throttle_log(&mut self, message: String, level: log::Level) {
         let curr_time = fasync::MonotonicInstant::now();
         let time_since_last_log = curr_time - self.time_of_last_log;
 
         if time_since_last_log.into_minutes() > self.minutes_between_reports {
-            error!("{}", error);
+            log::log!(level, "{}", message);
             if !self.suppressed_errors.is_empty() {
                 for (log, count) in self.suppressed_errors.iter() {
                     log::warn!("Suppressed {} instances: {}", count, log);
@@ -113,14 +113,14 @@ impl ThrottledErrorLogger {
             }
             self.time_of_last_log = curr_time;
         } else {
-            let count = self.suppressed_errors.entry(error).or_default();
+            let count = self.suppressed_errors.entry(message).or_default();
             *count += 1;
         }
     }
 
     pub fn throttle_error(&mut self, result: Result<(), Error>) {
         if let Err(e) = result {
-            self.throttle_log(e.to_string());
+            self.throttle_log(e.to_string(), log::Level::Error);
         }
     }
 }

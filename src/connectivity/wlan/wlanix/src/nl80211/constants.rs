@@ -570,8 +570,14 @@ pub const NL80211_FREQUENCY_ATTR_NO_EHT: u16 = 27;
 
 // StaInfo attributes
 pub const NL80211_STA_INFO_SIGNAL: u16 = 7;
+pub const NL80211_STA_INFO_TX_BITRATE: u16 = 8;
+pub const NL80211_STA_INFO_RX_PACKETS: u16 = 9;
 pub const NL80211_STA_INFO_TX_PACKETS: u16 = 10;
 pub const NL80211_STA_INFO_TX_FAILED: u16 = 12;
+pub const NL80211_STA_INFO_RX_BITRATE: u16 = 14;
+
+// RateInfo attributes
+pub const NL80211_RATE_INFO_BITRATE32: u16 = 5;
 
 // DFS state values
 

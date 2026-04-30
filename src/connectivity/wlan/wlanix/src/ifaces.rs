@@ -404,6 +404,7 @@ pub(crate) trait ClientIface: Sync + Send {
     async fn stop_sched_scan(&self) -> Result<(), Error>;
     fn set_charging_status(&self, is_charging: bool) -> Result<(), Error>;
     async fn get_signal_report(&self) -> Result<fidl_stats::SignalReport, Error>;
+    async fn get_iface_stats(&self) -> Result<fidl_stats::IfaceStats, Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -1049,6 +1050,13 @@ impl ClientIface for SmeClientIface {
             .await?
             .map_err(|e| format_err!("Failed to get signal report: {:?}", e))
     }
+
+    async fn get_iface_stats(&self) -> Result<fidl_stats::IfaceStats, Error> {
+        self.telemetry_proxy
+            .get_iface_stats()
+            .await?
+            .map_err(|e| format_err!("Failed to get iface stats: {:?}", e))
+    }
 }
 
 /// Wait until stream returns an OnConnectResult event or None. Ignore other event types.
@@ -1198,6 +1206,7 @@ pub mod test_utils {
         StopSchedScan,
         SetChargingStatus(bool),
         GetSignalReport,
+        GetIfaceStats,
     }
 
     pub struct TestClientIface {
@@ -1208,6 +1217,7 @@ pub mod test_utils {
         pub scan_results: Mutex<Vec<fidl_sme::ScanResult>>,
         pub start_sched_scan_success: Mutex<bool>,
         pub signal_report: Mutex<Option<fidl_stats::SignalReport>>,
+        pub iface_stats: Mutex<Option<fidl_stats::IfaceStats>>,
     }
 
     impl TestClientIface {
@@ -1220,6 +1230,7 @@ pub mod test_utils {
                 scan_results: Mutex::new(vec![fake_scan_result()]),
                 start_sched_scan_success: Mutex::new(true),
                 signal_report: Mutex::new(None),
+                iface_stats: Mutex::new(None),
             }
         }
     }
@@ -1374,6 +1385,15 @@ pub mod test_utils {
                 Ok(report)
             } else {
                 Err(format_err!("get signal report not mocked"))
+            }
+        }
+
+        async fn get_iface_stats(&self) -> Result<fidl_stats::IfaceStats, Error> {
+            self.calls.lock().push(ClientIfaceCall::GetIfaceStats);
+            if let Some(stats) = self.iface_stats.lock().clone() {
+                Ok(stats)
+            } else {
+                Err(format_err!("get iface stats not mocked"))
             }
         }
     }
@@ -1770,13 +1790,13 @@ mod tests {
         let iface = exec.run_singlethreaded(&mut client_fut).expect("Failed to get client iface");
         drop(client_fut);
         TestValuesWithIface {
-            exec,
             monitor_stream,
             sme_stream,
             telemetry_stream,
             telemetry_receiver,
             manager,
             iface,
+            exec,
         }
     }
 
@@ -1833,13 +1853,13 @@ mod tests {
         let iface = assert_matches!(exec.run_until_stalled(&mut client_fut), Poll::Ready(Ok(iface)) => iface);
         drop(client_fut);
         TestValuesWithIface {
-            exec,
             monitor_stream,
             sme_stream,
             telemetry_stream,
             telemetry_receiver,
             manager,
             iface,
+            exec,
         }
     }
 

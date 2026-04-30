@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::nl80211::{Nl80211RateInfoAttr, Nl80211StaInfoAttr};
 use crate::security::Credential;
 use crate::security::wep::WepKeys;
 use anyhow::{Context, Error, bail, format_err};
@@ -54,6 +55,7 @@ use wlan_power_manager::{DevicePowerManager, PowerManager};
 const IFACE_NAME: &str = "wlan";
 /// Time between potentially frequent error logs to prevent cluttering up the syslog.
 const MIN_MINUTES_BETWEEN_FREQUENT_ERRORS: i64 = 60;
+const INVALID_RSSI: i8 = -127;
 
 async fn handle_wifi_sta_iface_request<I: IfaceManager, P: PowerManager>(
     req: fidl_wlanix::WifiStaIfaceRequest,
@@ -1549,7 +1551,11 @@ async fn handle_supplicant_sta_iface_request<I: IfaceManager, P: PowerManager>(
                     })
                 }
                 Err(e) => {
-                    log_throttler.lock().throttle_log(format!("Failed to get signal report {}", e));
+                    // Log an error if RSSI is not available since it is core functionality.
+                    log_throttler.lock().throttle_log(
+                        format!("Failed to get signal report {}", e),
+                        log::Level::Error,
+                    );
                     Err(zx::sys::ZX_ERR_INTERNAL)
                 }
             };
@@ -1775,6 +1781,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) -> Result<(), Error> {
     let payload = match netlink_message {
         fidl_wlanix::Nl80211Message::Message(m) => m.payload,
@@ -1840,30 +1847,78 @@ async fn handle_nl80211_message<I: IfaceManager>(
         }
         Nl80211Cmd::GetStation => {
             debug!("Nl80211Cmd::GetStation");
-            use crate::nl80211::Nl80211StaInfoAttr;
             // GetStation also has a MAC address attribute. We don't check whether it
             // matches the connected network BSSID and simply assume that it does.
             match get_client_iface_and_id(&message.payload.attrs[..], &iface_manager).await {
                 Ok((client_iface, _)) => {
-                    const INVALID_RSSI: i8 = -127;
-                    let rssi = client_iface
-                        .get_connected_network()
-                        .map(|network| network.rssi)
-                        .unwrap_or(INVALID_RSSI);
+                    let (tx_packets, rx_packets, tx_failed) = client_iface
+                        .get_iface_stats()
+                        .await
+                        .ok()
+                        .and_then(|stats| stats.connection_stats)
+                        .map(|conn| (conn.tx_total, conn.rx_unicast_total, conn.tx_drop))
+                        .unwrap_or((None, None, None));
+
+                    let (rssi, tx_rate) = client_iface
+                        .get_signal_report()
+                        .await
+                        .ok()
+                        .and_then(|report| report.connection_signal_report)
+                        .map(|report| (report.rssi_dbm, report.tx_rate_500kbps.map(|r| r * 5)))
+                        .unwrap_or((None, None));
+
+                    // Signal, tx packets, and rx packets are expected to be present, so if they
+                    // are missing use a default value. If the others are not available, do not
+                    // include them.
+                    let mut attrs = vec![
+                        Nl80211StaInfoAttr::TxPackets(tx_packets.unwrap_or_else(|| {
+                            log_throttler.lock().throttle_log(
+                                "TxPackets missing in stats for GetStation".to_string(),
+                                log::Level::Warn,
+                            );
+                            0
+                        }) as u32),
+                        Nl80211StaInfoAttr::RxPackets(rx_packets.unwrap_or_else(|| {
+                            log_throttler.lock().throttle_log(
+                                "RxPackets missing in stats for GetStation".to_string(),
+                                log::Level::Warn,
+                            );
+                            0
+                        }) as u32),
+                        Nl80211StaInfoAttr::Signal(rssi.unwrap_or_else(|| {
+                            log_throttler.lock().throttle_log(
+                                "RSSI missing in signal report for GetStation".to_string(),
+                                log::Level::Error,
+                            );
+                            INVALID_RSSI
+                        })),
+                    ];
+
+                    if let Some(failed) = tx_failed {
+                        attrs.push(Nl80211StaInfoAttr::TxFailed(failed as u32));
+                    } else {
+                        log_throttler.lock().throttle_log(
+                            "TxFailed missing in stats for GetStation".to_string(),
+                            log::Level::Warn,
+                        );
+                    }
+
+                    if let Some(rate) = tx_rate {
+                        attrs.push(Nl80211StaInfoAttr::TxBitrate(vec![
+                            Nl80211RateInfoAttr::Bitrate32(rate),
+                        ]));
+                    } else {
+                        log_throttler.lock().throttle_log(
+                            "Tx rate missing in signal report for GetStation".to_string(),
+                            log::Level::Warn,
+                        );
+                    }
+
                     responder
                         .take()
                         .send(Ok(vec![build_nl80211_message(
                             Nl80211Cmd::NewStation,
-                            vec![Nl80211Attr::StaInfo(vec![
-                                // TX packet counters don't seem to be used, so just set
-                                // them to 0
-                                Nl80211StaInfoAttr::TxPackets(0),
-                                Nl80211StaInfoAttr::TxFailed(0),
-                                Nl80211StaInfoAttr::Signal(rssi),
-                                // NL80211_STA_INFO_TX_BITRATE and NL80211_STA_INFO_RX_BITRATE
-                                // can also be included. We don't have those information, so
-                                // we are not including them here.
-                            ])],
+                            vec![Nl80211Attr::StaInfo(attrs)],
                         )]))
                         .context("Failed to send GetStation")?;
                 }
@@ -2418,6 +2473,7 @@ async fn handle_nl80211_request<I: IfaceManager>(
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) {
     match req {
         fidl_wlanix::Nl80211Request::MessageV2 { message, responder } => {
@@ -2427,6 +2483,7 @@ async fn handle_nl80211_request<I: IfaceManager>(
                 Arc::clone(&state),
                 Arc::clone(&iface_manager),
                 telemetry_sender.clone(),
+                Arc::clone(&log_throttler),
             )
             .await
             {
@@ -2440,6 +2497,7 @@ async fn handle_nl80211_request<I: IfaceManager>(
                 Arc::clone(&state),
                 Arc::clone(&iface_manager),
                 telemetry_sender.clone(),
+                Arc::clone(&log_throttler),
             )
             .await
             {
@@ -2468,6 +2526,7 @@ async fn serve_nl80211<I: IfaceManager>(
     state: Arc<Mutex<WifiState>>,
     iface_manager: Arc<I>,
     telemetry_sender: TelemetrySender,
+    log_throttler: Arc<Mutex<ThrottledErrorLogger>>,
 ) {
     reqs.for_each_concurrent(None, async |req| match req {
         Ok(req) => {
@@ -2476,6 +2535,7 @@ async fn serve_nl80211<I: IfaceManager>(
                 Arc::clone(&state),
                 Arc::clone(&iface_manager),
                 telemetry_sender.clone(),
+                Arc::clone(&log_throttler),
             )
             .await;
         }
@@ -2740,6 +2800,7 @@ async fn handle_wlanix_request<I: IfaceManager, P: PowerManager>(
                     Arc::clone(&state),
                     Arc::clone(&iface_manager),
                     telemetry_sender,
+                    Arc::clone(&log_throttler),
                 )
                 .await;
             }
@@ -3028,6 +3089,9 @@ mod tests {
     use futures::channel::mpsc;
     use futures::task::Poll;
     use ieee80211::Ssid;
+    use netlink_packet_utils::nla::NlasIterator;
+    use netlink_packet_utils::parsers::parse_u32;
+    use std::collections::HashSet;
     use std::pin::{Pin, pin};
     use test_case::test_case;
     use wlan_common::security::wep::WepKey;
@@ -5056,7 +5120,15 @@ mod tests {
         let state = Arc::new(Mutex::new(WifiState::default()));
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, Arc::new(iface_manager), telemetry_sender);
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let nl80211_fut = serve_nl80211(
+            stream,
+            state,
+            Arc::new(iface_manager),
+            telemetry_sender,
+            Arc::clone(&log_throttler),
+        );
         let mut nl80211_fut = Box::pin(nl80211_fut);
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
 
@@ -5196,7 +5268,41 @@ mod tests {
     #[fuchsia::test]
     fn get_station() {
         let mut exec = fasync::TestExecutor::new();
-        let mut test_values = setup_nl80211_test(&mut exec);
+        let iface_manager = TestIfaceManager::new_with_client();
+
+        let tx_packets = 100;
+        let tx_failed = 5;
+        let rx_packets = 200;
+        let rssi = -53;
+        let tx_rate_500kbps = 300;
+        let expected_tx_bitrate = 1500; // 300 * 5 = 1500
+
+        // Build stats and signal report for testing iface to use
+        {
+            let client_iface = iface_manager.client_iface.lock().as_ref().unwrap().clone();
+            let stats = fidl_fuchsia_wlan_stats::IfaceStats {
+                connection_stats: Some(fidl_fuchsia_wlan_stats::ConnectionStats {
+                    tx_total: Some(tx_packets.into()),
+                    tx_drop: Some(tx_failed.into()),
+                    rx_unicast_total: Some(rx_packets.into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            client_iface.iface_stats.lock().replace(stats);
+
+            let signal_report = fidl_fuchsia_wlan_stats::SignalReport {
+                connection_signal_report: Some(fidl_fuchsia_wlan_stats::ConnectionSignalReport {
+                    rssi_dbm: Some(rssi),
+                    tx_rate_500kbps: Some(tx_rate_500kbps),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            client_iface.signal_report.lock().replace(signal_report);
+        }
+
+        let mut test_values = setup_nl80211_test_with_iface_manager(&mut exec, iface_manager);
 
         let get_station_message = build_nl80211_message(
             Nl80211Cmd::GetStation,
@@ -5209,8 +5315,101 @@ mod tests {
         let responses = deserialize(assert_matches!(
             exec.run_until_stalled(&mut get_station_fut),
             Poll::Ready(Ok(Ok(r))) => r));
-        assert_eq!(responses.len(), 1);
-        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Message(_));
+        let message = assert_matches!(
+            &responses[0],
+            fidl_wlanix::Nl80211Message::Message(fidl_wlanix::Message { payload }) => payload
+        );
+
+        verify_get_station_response(
+            message,
+            tx_packets,
+            tx_failed,
+            rx_packets,
+            rssi,
+            expected_tx_bitrate,
+        );
+    }
+
+    fn verify_get_station_response(
+        payload: &[u8],
+        expected_tx_packets: u32,
+        expected_tx_failed: u32,
+        expected_rx_packets: u32,
+        expected_rssi: i8,
+        expected_tx_bitrate: u32,
+    ) {
+        // Constants are from `crate::nl80211::constants`, which isn't exposed
+        // because they aren't meant to be used directly.
+        const NL80211_ATTR_STA_INFO: u16 = 21;
+        const NL80211_STA_INFO_SIGNAL: u16 = 7;
+        const NL80211_STA_INFO_TX_BITRATE: u16 = 8;
+        const NL80211_STA_INFO_RX_PACKETS: u16 = 9;
+        const NL80211_STA_INFO_TX_PACKETS: u16 = 10;
+        const NL80211_STA_INFO_TX_FAILED: u16 = 12;
+        const NL80211_RATE_INFO_BITRATE32: u16 = 5;
+
+        // Verify that the response message type has type STA info.
+        let sta_info = NlasIterator::new(&payload[4..])
+            .find(|nla| nla.clone().expect("Failed to parse NLA").kind() == NL80211_ATTR_STA_INFO)
+            .expect("Failed to find STA info in response")
+            .expect("Failed to parse STA info");
+
+        // Verify that the STA info has the expected values and no unexpected values.
+        for nla in NlasIterator::new(sta_info.value()) {
+            let nla = nla.expect("Failed to parse inner NLA");
+            match nla.kind() {
+                NL80211_STA_INFO_TX_PACKETS => {
+                    assert_eq!(parse_u32(nla.value()).unwrap(), expected_tx_packets);
+                }
+                NL80211_STA_INFO_TX_FAILED => {
+                    assert_eq!(parse_u32(nla.value()).unwrap(), expected_tx_failed);
+                }
+                NL80211_STA_INFO_RX_PACKETS => {
+                    assert_eq!(parse_u32(nla.value()).unwrap(), expected_rx_packets);
+                }
+                NL80211_STA_INFO_SIGNAL => {
+                    assert_eq!(nla.value()[0] as i8, expected_rssi);
+                }
+                NL80211_STA_INFO_TX_BITRATE => {
+                    for rate_nla in NlasIterator::new(nla.value()) {
+                        let rate_nla = rate_nla.unwrap();
+                        if rate_nla.kind() == NL80211_RATE_INFO_BITRATE32 {
+                            assert_eq!(parse_u32(rate_nla.value()).unwrap(), expected_tx_bitrate);
+                        }
+                    }
+                }
+                _ => {
+                    panic!("Unexpected NLA kind: {}", nla.kind());
+                }
+            }
+        }
+
+        // Verify that all attributes are included. The loop above checks the types and values but
+        // would ignore missing values.
+        let attrs = NlasIterator::new(sta_info.value())
+            .collect::<Result<Vec<_>, _>>()
+            .expect("Failed to make attrs iter into vec");
+        assert!(attrs.iter().any(|nla| nla.kind() == NL80211_STA_INFO_TX_PACKETS));
+        assert!(attrs.iter().any(|nla| nla.kind() == NL80211_STA_INFO_TX_FAILED));
+        assert!(attrs.iter().any(|nla| nla.kind() == NL80211_STA_INFO_RX_PACKETS));
+        assert!(attrs.iter().any(|nla| nla.kind() == NL80211_STA_INFO_SIGNAL));
+        assert!(attrs.iter().any(|nla| nla.kind() == NL80211_STA_INFO_TX_BITRATE));
+
+        let attr_kinds: HashSet<u16> = NlasIterator::new(sta_info.value())
+            .map(|nla| nla.expect("Failed to parse NLA").kind())
+            .collect();
+
+        let expected_kinds: HashSet<u16> = [
+            NL80211_STA_INFO_TX_PACKETS,
+            NL80211_STA_INFO_TX_FAILED,
+            NL80211_STA_INFO_RX_PACKETS,
+            NL80211_STA_INFO_SIGNAL,
+            NL80211_STA_INFO_TX_BITRATE,
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(attr_kinds, expected_kinds);
     }
 
     #[fuchsia::test]
@@ -5417,8 +5616,15 @@ mod tests {
 
         let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
 
-        let nl80211_fut =
-            serve_nl80211(stream, Arc::clone(&state), Arc::clone(&iface_manager), telemetry_sender);
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let nl80211_fut = serve_nl80211(
+            stream,
+            Arc::clone(&state),
+            Arc::clone(&iface_manager),
+            telemetry_sender,
+            Arc::clone(&log_throttler),
+        );
         let mut nl80211_fut = Box::pin(nl80211_fut);
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
 
@@ -5521,8 +5727,15 @@ mod tests {
             create_proxy_and_stream::<fidl_wlanix::Nl80211MulticastMarker>();
         state.lock().scan_multicast_proxy = Some(mcast_proxy);
 
-        let nl80211_fut =
-            serve_nl80211(stream, Arc::clone(&state), Arc::clone(&iface_manager), telemetry_sender);
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let nl80211_fut = serve_nl80211(
+            stream,
+            Arc::clone(&state),
+            Arc::clone(&iface_manager),
+            telemetry_sender,
+            Arc::clone(&log_throttler),
+        );
         let mut nl80211_fut = Box::pin(nl80211_fut);
         assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
 
@@ -5865,7 +6078,15 @@ mod tests {
         }
         let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
+        let log_throttler =
+            Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
+        let nl80211_fut = serve_nl80211(
+            stream,
+            state,
+            iface_manager,
+            telemetry_sender,
+            Arc::clone(&log_throttler),
+        );
         let mut nl80211_fut = pin!(nl80211_fut);
 
         let get_reg_message =
