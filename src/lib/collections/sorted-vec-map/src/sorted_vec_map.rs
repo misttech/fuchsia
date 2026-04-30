@@ -11,8 +11,30 @@ use std::{cmp, iter, slice};
 
 /// An ordered map built on a `Vec`.
 ///
-/// This map is optimized for reducing the memory usage of data that rarely or never changes.
-/// Insertions and removals take linear time while lookups take logarithmic time.
+/// `SortedVecMap` provides a memory-efficient alternative to `BTreeMap` when the data
+/// is read-heavy and changes rarely. It stores entries in a single contiguous `Vec`,
+/// eliminating pointer overhead and improving cache locality.
+///
+/// # Complexity
+///
+/// | Operation | Time Complexity | Space Complexity |
+/// |---|---|---|
+/// | `new` / `with_capacity` | `O(1)` | `O(1)` |
+/// | `get` / `contains_key` | `O(log N)` | `O(1)` |
+/// | `insert` | `O(N)` | `O(1)` amortized |
+/// | `remove` | `O(N)` | `O(1)` |
+/// | `Extend::extend` / `FromIterator` | `O(N)` (sorted) / `O(N log N)` (unsorted) | `O(N)` |
+/// | `range` | `O(log N)` setup, `O(1)` per step | `O(1)` |
+///
+/// # When to use
+///
+/// - **Read-heavy workloads**: Lookups are fast (`O(log N)`) and cache-friendly.
+/// - **Memory constraints**: Stores data contiguously without node allocation overhead.
+/// - **Batch construction**: Building from an iterator is efficient using `SortedVecMapBuilder`.
+///
+/// # When to avoid
+///
+/// - **Frequent mutations**: Single insertions and removals take linear time (`O(N)`) due to element shifting.
 #[derive(Eq, PartialEq, PartialOrd, Ord, Hash, Clone)]
 pub struct SortedVecMap<K, V> {
     vec: Vec<(K, V)>,
@@ -68,7 +90,7 @@ impl<K, V> SortedVecMap<K, V> {
 
     /// Returns true if the map contains an entry for the given key.
     ///
-    /// Complexity: O(log n) time.
+    /// Complexity: `O(log n)` time.
     pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q> + Ord,
@@ -79,7 +101,7 @@ impl<K, V> SortedVecMap<K, V> {
 
     /// Returns a reference to the value corresponding to the key.
     ///
-    /// Complexity: O(log n) time.
+    /// Complexity: `O(log n)` time.
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
         K: Borrow<Q> + Ord,
@@ -90,7 +112,7 @@ impl<K, V> SortedVecMap<K, V> {
 
     /// Returns a mutable reference to the value corresponding to the key.
     ///
-    /// Complexity: O(log n) time.
+    /// Complexity: `O(log n)` time.
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
     where
         K: Borrow<Q> + Ord,
@@ -103,8 +125,8 @@ impl<K, V> SortedVecMap<K, V> {
     /// returned. If the map did have this key present, the value is updated, and the old value is
     /// returned. The key is not updated.
     ///
-    /// Complexity: O(log n) search time, plus O(n) time to insert the element if it is not present.
-    /// Note that inserting N elements one by one takes O(N^2) time. Use `SortedVecMapBuilder`
+    /// Complexity: `O(log n)` search time, plus `O(n)` time to insert the element if it is not present.
+    /// Note that inserting N elements one by one takes `O(N^2)` time. Use `SortedVecMapBuilder`
     /// for efficient construction from multiple elements.
     pub fn insert(&mut self, key: K, value: V) -> Option<V>
     where
@@ -124,7 +146,7 @@ impl<K, V> SortedVecMap<K, V> {
 
     /// Removes a key from the map, returning the value at the key if the key was previously in the map.
     ///
-    /// Complexity: O(log n) search time, plus O(n) time to remove the element if it is present.
+    /// Complexity: `O(log n)` search time, plus `O(n)` time to remove the element if it is present.
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
     where
         K: Borrow<Q> + Ord,
@@ -165,7 +187,7 @@ impl<K, V> SortedVecMap<K, V> {
 
     /// Constructs a double-ended iterator over a sub-range of elements in the map.
     ///
-    /// Complexity: O(log n) to find the start and end of the range.
+    /// Complexity: `O(log n)` to find the start and end of the range.
     pub fn range<Q, R>(&self, range: R) -> Iter<'_, K, V>
     where
         K: Borrow<Q> + Ord,
@@ -178,7 +200,7 @@ impl<K, V> SortedVecMap<K, V> {
 
     /// Constructs a mutable double-ended iterator over a sub-range of elements in the map.
     ///
-    /// Complexity: O(log n) to find the start and end of the range.
+    /// Complexity: `O(log n)` to find the start and end of the range.
     pub fn range_mut<Q, R>(&mut self, range: R) -> IterMut<'_, K, V>
     where
         K: Borrow<Q> + Ord,
@@ -270,7 +292,7 @@ impl<K: Ord, V> Extend<(K, V)> for SortedVecMap<K, V> {
     ///
     /// This is more efficient than inserting elements one by one.
     ///
-    /// Complexity: O(n log n) where n is the total number of elements, or O(n) if the
+    /// Complexity: `O(n log n)` where n is the total number of elements, or `O(n)` if the
     /// iterator yields elements in sorted order and they are all greater than the existing
     /// elements.
     fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
@@ -311,8 +333,8 @@ impl<'a, K, V> IntoIterator for &'a mut SortedVecMap<K, V> {
 impl<K: Ord, V> FromIterator<(K, V)> for SortedVecMap<K, V> {
     /// Constructs a `SortedVecMap` from an iterator.
     ///
-    /// Complexity: O(n log n) where n is the number of elements in the iterator,
-    /// or O(n) if the elements are already sorted.
+    /// Complexity: `O(n log n)` where n is the number of elements in the iterator,
+    /// or `O(n)` if the elements are already sorted.
     fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         SortedVecMapBuilder::from_iter(iter).build()
     }
@@ -321,8 +343,8 @@ impl<K: Ord, V> FromIterator<(K, V)> for SortedVecMap<K, V> {
 impl<K: Ord, V, const N: usize> From<[(K, V); N]> for SortedVecMap<K, V> {
     /// Constructs a `SortedVecMap` from an iterator.
     ///
-    /// Complexity: O(n log n) where n is the number of elements in the iterator,
-    /// or O(n) if the elements are already sorted.
+    /// Complexity: `O(n log n)` where n is the number of elements in the iterator,
+    /// or `O(n)` if the elements are already sorted.
     fn from(arr: [(K, V); N]) -> Self {
         SortedVecMapBuilder::from_iter(arr).build()
     }
@@ -400,7 +422,7 @@ impl<K, V> SortedVecMapBuilder<K, V> {
     ///
     /// If the key is the same as the last inserted key, the value is overwritten.
     ///
-    /// Complexity: O(1) time (amortized).
+    /// Complexity: `O(1)` time (amortized).
     pub fn insert(&mut self, key: K, value: V) -> &mut Self
     where
         K: Ord,
@@ -426,7 +448,7 @@ impl<K, V> SortedVecMapBuilder<K, V> {
     /// If the entries were not inserted in strictly increasing order, they will be sorted and
     /// deduplicated.
     ///
-    /// Complexity: O(n) time if already sorted, O(n log n) otherwise, where n is the number of
+    /// Complexity: `O(n)` time if already sorted, `O(n log n)` otherwise, where n is the number of
     /// elements.
     pub fn build(mut self) -> SortedVecMap<K, V>
     where
@@ -442,7 +464,7 @@ impl<K, V> SortedVecMapBuilder<K, V> {
 impl<K: Ord, V> FromIterator<(K, V)> for SortedVecMapBuilder<K, V> {
     /// Constructs a `SortedVecMapBuilder` from an iterator.
     ///
-    /// Complexity: O(n) time where n is the number of elements in the iterator.
+    /// Complexity: `O(n)` time where n is the number of elements in the iterator.
     fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         let iter = iter.into_iter();
         let (lower, upper) = iter.size_hint();
@@ -455,7 +477,7 @@ impl<K: Ord, V> FromIterator<(K, V)> for SortedVecMapBuilder<K, V> {
 impl<K: Ord, V> Extend<(K, V)> for SortedVecMapBuilder<K, V> {
     /// Extends the builder with the contents of an iterator.
     ///
-    /// Complexity: O(n) time where n is the number of elements in the iterator.
+    /// Complexity: `O(n)` time where n is the number of elements in the iterator.
     fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
         let iter = iter.into_iter();
         let (lower, upper) = iter.size_hint();
