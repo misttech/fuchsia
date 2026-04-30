@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "bit-set",
     package_url = "https://github.com/contain-rs/bit-set",
-    package_version = "0.9.1",
+    package_version = "0.10.0",
 )
 
 license(
@@ -76,7 +76,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.9.1",
+    version = "0.10.0",
     deps = [
         "//third_party/rust_crates/vendor/bit-vec-0.9.1:bit_vec",
     ],
