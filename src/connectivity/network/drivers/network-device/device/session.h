@@ -242,7 +242,6 @@ class Session : public fidl::WireServer<netdev::Session> {
   const buffer_descriptor_t* checked_descriptor(uint16_t index) const;
   buffer_descriptor_t& descriptor(uint16_t index);
   const buffer_descriptor_t& descriptor(uint16_t index) const;
-  cpp20::span<uint8_t> data_at(uint64_t offset, uint64_t len) const;
   // Loads a completed rx buffer information back into the descriptor with the provided index.
   zx_status_t LoadRxInfo(const RxFrameInfo& info) __TA_REQUIRES(parent_->rx_lock());
   // Loads all rx descriptors that are already available into the given transaction.

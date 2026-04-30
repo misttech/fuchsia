@@ -484,14 +484,6 @@ const buffer_descriptor_t& Session::descriptor(uint16_t index) const {
   return *desc;
 }
 
-cpp20::span<uint8_t> Session::data_at(uint64_t offset, uint64_t len) const {
-  auto mapped = data_vmo_->data();
-  uint64_t max_len = mapped.size();
-  offset = std::min(offset, max_len);
-  len = std::min(len, max_len - offset);
-  return mapped.subspan(offset, len);
-}
-
 zx_status_t Session::AttachPort(const netdev::wire::PortId& port_id,
                                 cpp20::span<const netdev::wire::FrameType> frame_types) {
   size_t attached_count;
