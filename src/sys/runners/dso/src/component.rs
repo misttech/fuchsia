@@ -306,7 +306,7 @@ impl Component {
                     } else {
                         drop(exit_code_tx);
                     }
-                });
+                }).unwrap();
 
                 exit_wait = async move {
                     let mut shutdown_wait = async move {
