@@ -22,3 +22,12 @@ fidl_library(
         "//zircon/vdso/zx",
     ],
 )
+
+# Unused stub target to satisfy Bazel genquery for correct incremental builds.
+# TODO(https://fxbug.dev/454452299): Remove when Rust FIDL is available in Bazel.
+# @bazel2gn:skip
+filegroup(
+    name = "fuchsia.net.name_rust",
+    srcs = [],
+    visibility = ["//visibility:public"],
+)
