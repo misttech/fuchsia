@@ -25,6 +25,8 @@ def _idk_host_tool_impl(
         output_name,
         target_compatible_with,
         visibility):
+    if not name.endswith("_idk"):
+        fail('IDK atom `name`s must end with "_idk".')
     if target_compatible_with != HOST_CONSTRAINTS:
         fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
 
@@ -70,7 +72,8 @@ def _idk_host_tool_impl(
 _idk_host_tool = macro(
     doc = """Defines a host tool in the IDK.
 
-GN note: Unlike the GN template, `name` should not include "_sdk"/"_idk".""",
+    `name` must end with "_idk".
+    """,
     implementation = _idk_host_tool_impl,
     attrs = {
         "idk_name": attr.string(
