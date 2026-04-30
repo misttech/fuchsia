@@ -156,6 +156,7 @@ std::optional<sockaddr_storage> Parse(const std::string& ip_str,
   }
 
   struct addrinfo hints = {};
+  hints.ai_flags = AI_NUMERICHOST;
   struct addrinfo* result;
   int s = getaddrinfo(
       ip_str.c_str(),
