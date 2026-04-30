@@ -99,7 +99,7 @@ class LocalDriver(base.BaseDriver):
             )
         except (api_ffx.CommandException, api_ffx.OutputFormatException) as e:
             raise common.DriverException(
-                "Failed to enumarate local targets: {e}"
+                f"Failed to enumerate local targets: {e}"
             )
 
         test_targets: List[str] = res.all_nodes
