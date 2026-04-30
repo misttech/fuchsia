@@ -49,12 +49,16 @@ func TestVisibilityConversion(t *testing.T) {
 			bazel: `go_library(
 	name = "test",
 	visibility = [
+		":__pkg__",
+		":__subpackages__",
 		"//path/to/foo:__pkg__",
 		"//path/to/bar:__subpackages__",
 	],
 )`,
 			wantGN: `go_library("test") {
 	visibility = [
+		":*",
+		"./*",
 		"//path/to/foo:*",
 		"//path/to/bar/*",
 	]
