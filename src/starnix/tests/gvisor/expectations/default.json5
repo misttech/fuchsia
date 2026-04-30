@@ -1290,6 +1290,9 @@
 
                 // TODO(https://fxbug.dev/507804638): Flakey, needs investigation.
                 "AffinityTest.SetAffinityOtherUidRequiresCapSysNice",
+
+                // TODO(https://fxbug.dev/508242242): Fails on arm64 only.
+                "SetpriorityTest.OtherUidRequiresCapSysNice",
             ],
         },
     ],
