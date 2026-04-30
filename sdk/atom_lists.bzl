@@ -68,8 +68,7 @@ BUILD_HOST_TOOLS_ATOMS = [
 
 NON_BUILD_HOST_TOOLS_ATOMS = [
     # buildifier: keep sorted
-    # TODO(https://fxbug.dev/426130024): Fix the build and uncomment.
-    # "//src/sys/pkg/testing/fake-omaha-client:bin_idk",
+    "//src/sys/pkg/testing/fake-omaha-client:bin_idk",
     "//tools/net/device-finder:device-finder_idk",
 ]
 
