@@ -1,8 +1,8 @@
 # Owners
 
-Each file in Fuchsia has a set of owners. These are tracked in files
-named `OWNERS`. One of these files is present in the root of the
-repository, and many directories have their own `OWNERS` files too.
+Each file in Fuchsia has a set of owners. These are tracked in files named
+`OWNERS`. One of these files is present in the root of the repository, and many
+directories have their own `OWNERS` files too.
 
 ## Contents
 
@@ -13,7 +13,7 @@ directory.
 ## Responsibilities
 
 Fuchsia requires changes to have an `Code-Review +2` review, which anyone in the
-'OWNERS' file can provide. In addition, many `OWNERS` files
+`OWNERS` file can provide. In addition, many `OWNERS` files
 contain a `*` allowing anyone to provide such a `+2`.
 
 ## Tools
@@ -24,8 +24,7 @@ files modified in a given change. More information on this is available on the
 
 ## Format
 
-Fuchsia uses the [Gerrit file syntax][owners-syntax] for `OWNERS`
-files.
+Fuchsia uses the [Gerrit file syntax][owners-syntax] for `OWNERS` files.
 
 Here's an example `OWNERS` file:
 
@@ -43,10 +42,10 @@ per-file main.c = validuser3@example.com
 
 ## Best practices
 
-* It's important to have at least two individuals in an `OWNERS` file.
-  Having areas of Fuchsia with a single owner leads to single points of failure.
-  Having multiple owners ensures that knowledge and ownership is shared over
-  areas of Fuchsia.
+* It's important to have at least two individuals in an `OWNERS` file. Having
+  areas of Fuchsia with a single owner leads to single points of failure. Having
+  multiple owners ensures that knowledge and ownership is shared over areas of
+  Fuchsia.
 
 * When applicable, `include` owners from another file rather than listing
   individuals. This creates fewer "sources of truth" and makes `OWNERS`
@@ -69,7 +68,7 @@ To request an owners override, follow these steps:
    reviewer list in your Gerrit change.
 
 However, when you need to add or update an `OWNERS` file, it is preferred to
-manage these changes within a dedicated Gerrit change. This approach is
+manage these changes within **a dedicated Gerrit change**. This approach is
 preferred because it enables owner-override and allows the file to be submitted
 on its own. By keeping it separate, you also avoid the need of re-stamping the
 `OWNERS` modification if other parts of the Gerrit change require additional
