@@ -15,5 +15,7 @@
     },
     use: [
         { service: "fuchsia.driver.compat.Service" },
+        { service: "fuchsia.hardware.usb.function.UsbFunctionService" },
+        { protocol: "fuchsia.hardware.usb.endpoint.Endpoint" },
     ],
 }

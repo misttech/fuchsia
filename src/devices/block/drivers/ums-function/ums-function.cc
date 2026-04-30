@@ -5,33 +5,40 @@
 
 #include "src/devices/block/drivers/ums-function/ums-function.h"
 
-#include <assert.h>
+#include <endian.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.request/cpp/fidl.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/controller.h>
+#include <lib/zx/result.h>
 #include <lib/zx/vmar.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <threads.h>
+#include <zircon/assert.h>
 #include <zircon/process.h>
-#include <zircon/syscalls.h>
+#include <zircon/status.h>
+#include <zircon/types.h>
 
+#include <algorithm>
+#include <atomic>
+#include <optional>
 #include <vector>
 
-#include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
-#include <usb/peripheral.h>
-#include <usb/request-cpp.h>
+#include <usb/request-fidl.h>
 #include <usb/ums.h>
-#include <usb/usb-request.h>
 
 namespace ums {
 
+namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace ffdf = fuchsia_driver_framework;
+namespace frequest = fuchsia_hardware_usb_request;
 
 static struct {
   usb_interface_descriptor_t intf;
@@ -70,107 +77,157 @@ static struct {
         },
 };
 
-void UmsFunction::RequestQueue(usb::Request<>* req,
-                               const usb_request_complete_callback_t* completion) {
+void UmsFunction::RequestQueueLocked(usb::FidlRequest* req) {
   const char* name = "unknown";
   bool* in_flight_ptr = nullptr;
+  usb::EndpointClient<UmsFunction>* ep = nullptr;
+
   if (req == &cbw_req_.value()) {
     name = "cbw";
     in_flight_ptr = &cbw_in_flight_;
-  } else if (req == &data_req_.value()) {
-    name = "data";
-    in_flight_ptr = &data_in_flight_;
+    ep = &out_ep_;
   } else if (req == &csw_req_.value()) {
     name = "csw";
     in_flight_ptr = &csw_in_flight_;
+    ep = &in_ep_;
+  } else if (req == &data_in_req_.value()) {
+    name = "data";
+    in_flight_ptr = &data_in_flight_;
+    ep = &in_ep_;
+  } else if (req == &data_out_req_.value()) {
+    name = "data";
+    in_flight_ptr = &data_in_flight_;
+    ep = &out_ep_;
   }
 
-  {
-    fbl::AutoLock l(&mtx_);
-    if (in_flight_ptr && *in_flight_ptr) {
-      fdf::error("UmsFunction: Request {} ({}) already in flight! Skipping re-queue.", name,
-                 static_cast<void*>(req->request()));
-      return;
-    }
-    if (in_flight_ptr) {
-      *in_flight_ptr = true;
-    }
+  if (in_flight_ptr && *in_flight_ptr) {
+    fdf::error("UmsFunction: Request {} (0x{:08x}) already in flight! Skipping re-queue.", name,
+        reinterpret_cast<uintptr_t>(&req->request()));
+    return;
+  }
+  if (in_flight_ptr) {
+    *in_flight_ptr = true;
   }
 
   atomic_fetch_add(&pending_request_count_, 1);
-  function_.RequestQueue(req->request(), completion);
+  std::vector<frequest::Request> reqs;
+  reqs.emplace_back(req->take_request());
+
+  ZX_ASSERT(ep->client()->QueueRequests(std::move(reqs)).is_ok());
 }
 
-void UmsFunction::CompletionCallback(void* ctx, usb_request_t* req) {
-  auto ums = reinterpret_cast<UmsFunction*>(ctx);
-  ums->mtx_.Acquire();
-  if (req == ums->cbw_req_->request()) {
-    ums->cbw_req_complete_ = true;
-    ums->cbw_in_flight_ = false;
-  } else {
-    if (req == ums->data_req_->request()) {
-      ums->data_req_complete_ = true;
-      ums->data_in_flight_ = false;
-    } else {
-      ums->csw_req_complete_ = true;
-      ums->csw_in_flight_ = false;
+void UmsFunction::InEpCallback(std::vector<fendpoint::Completion> completion) {
+  // CSW and in-data.
+  ZX_ASSERT(completion.size() == 1);
+  ZX_ASSERT(completion[0].transfer_size().has_value());
+  ZX_ASSERT(completion[0].request().has_value());
+
+  fbl::AutoLock lock(&mtx_);
+
+  if (completion[0].request()->data()->at(0).buffer()->vmo_id().value() == csw_vmo_id_) {
+    csw_req_.emplace(std::move(*completion[0].request()));
+    csw_req_complete_.emplace(std::move(completion[0]));
+    csw_in_flight_ = false;
+
+    if (!csw_q_.empty()) {
+      QueueCswLocked(csw_q_.front(), false);
+      csw_q_.pop();
     }
+
+  } else {
+    data_in_req_.emplace(std::move(*completion[0].request()));
+    data_req_complete_.emplace(std::move(completion[0]));
+    data_in_flight_ = false;
   }
-  ums->condvar_.Signal();
-  ums->mtx_.Release();
+
+  condvar_.Signal();
 }
 
-void UmsFunction::QueueData(usb::Request<>* req) {
-  data_length_ += req->request()->header.length;
-  req->request()->header.ep_address =
-      current_cbw_.bmCBWFlags & USB_DIR_IN ? bulk_in_addr_ : bulk_out_addr_;
-  RequestQueue(req, &request_complete_);
+void UmsFunction::OutEpCallback(std::vector<fendpoint::Completion> completion) {
+  // CBW and out-data.
+  ZX_ASSERT(completion.size() == 1);
+  ZX_ASSERT(completion[0].transfer_size().has_value());
+  ZX_ASSERT(completion[0].request().has_value());
+
+  fbl::AutoLock lock(&mtx_);
+
+  if (completion[0].request()->data()->at(0).buffer()->vmo_id().value() == cbw_vmo_id_) {
+    cbw_req_.emplace(std::move(*completion[0].request()));
+    cbw_req_complete_.emplace(std::move(completion[0]));
+    cbw_in_flight_ = false;
+  } else {
+    data_out_req_.emplace(std::move(*completion[0].request()));
+    data_req_complete_.emplace(std::move(completion[0]));
+    data_in_flight_ = false;
+  }
+
+  condvar_.Signal();
 }
 
-void UmsFunction::QueueCsw(uint8_t status) {
-  // first queue next cbw so it is ready to go
-  RequestQueue(&cbw_req_.value(), &request_complete_);
+void UmsFunction::QueueDataLocked(usb::FidlRequest* req) {
+  data_length_ += (*req)->data()->at(0).size().value();
+  RequestQueueLocked(req);
+}
 
-  usb::Request<>* req = &csw_req_.value();
-  ums_csw_t* csw;
-  zx_status_t mmap_status = req->Mmap(reinterpret_cast<void**>(&csw));
-  if (mmap_status != ZX_OK) {
-    fdf::error("QueueCsw: Mmap failed: {}", zx_status_get_string(mmap_status));
+void UmsFunction::QueueCswLocked(uint8_t status, bool also_cbw) {
+  if (also_cbw) {
+    // first queue next cbw so it is ready to go
+    RequestQueueLocked(&cbw_req_.value());
+  }
+
+  if (csw_in_flight_) {
+    csw_q_.push(status);
     return;
   }
+
+  ums_csw_t* csw;
+  std::optional<zx_vaddr_t> vaddr = in_ep_.GetMappedAddr(csw_req_->request(), 0);
+  if (!vaddr.has_value()) {
+    fdf::error("QueueCsw: GetMappedAddr failed");
+    return;
+  }
+  csw = reinterpret_cast<ums_csw_t*>(*vaddr);
 
   csw->dCSWSignature = htole32(CSW_SIGNATURE);
   csw->dCSWTag = current_cbw_.dCBWTag;
   csw->dCSWDataResidue = htole32(le32toh(current_cbw_.dCBWDataTransferLength) - data_length_);
   csw->bmCSWStatus = status;
 
-  req->request()->header.length = sizeof(ums_csw_t);
-  RequestQueue(&csw_req_.value(), &request_complete_);
+  std::vector<size_t> actual = csw_req_->CopyTo(0, csw, sizeof(ums_csw_t), in_ep_.GetMapped());
+  ZX_ASSERT(actual.size() == 1);
+  ZX_ASSERT(actual[0] == sizeof(ums_csw_t));
+  (*csw_req_)->data()->at(0).size(sizeof(ums_csw_t));
+
+  csw_req_->CacheFlush(in_ep_.GetMapped());
+  RequestQueueLocked(&csw_req_.value());
 }
 
-void UmsFunction::ContinueTransfer() {
-  usb::Request<>* req = &data_req_.value();
+void UmsFunction::ContinueTransferLocked() {
+  usb::FidlRequest* req = IsInData() ? &data_in_req_.value() : &data_out_req_.value();
 
   size_t length = std::min(data_remaining_, kDataReqSize);
-  req->request()->header.length = length;
+  (*req)->data()->at(0).size(length);
 
   if (data_state_ == DATA_STATE_READ) {
-    size_t result = req->CopyTo(static_cast<char*>(storage_) + data_offset_, length, 0);
-    ZX_ASSERT(result == length);
-    QueueData(req);
+    std::vector<size_t> result =
+        req->CopyTo(0, static_cast<char*>(storage_) + data_offset_, length, in_ep_.GetMapped());
+    ZX_ASSERT(result.size() == 1);
+    ZX_ASSERT(result[0] == length);
+    req->CacheFlush(in_ep_.GetMapped());
+    QueueDataLocked(req);
   } else if (data_state_ == DATA_STATE_WRITE || data_state_ == DATA_STATE_UNMAP) {
-    QueueData(req);
+    QueueDataLocked(req);
   } else {
     fdf::error("ContinueTransfer: bad data state {}", data_state_);
   }
 }
 
-void UmsFunction::StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba) {
+void UmsFunction::StartTransferLocked(DataState state, uint32_t transfer_bytes, uint64_t lba) {
   zx_off_t offset = lba * kBlockSize;
   if (offset + transfer_bytes > kStorageSize) {
     fdf::error("StartTransfer: transfer out of range state: {}, lba: {} transfer_bytes: {}",
                static_cast<uint32_t>(state), lba, transfer_bytes);
-    QueueCsw(CSW_FAILED);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
 
@@ -178,25 +235,39 @@ void UmsFunction::StartTransfer(DataState state, uint32_t transfer_bytes, uint64
   data_offset_ = offset;  // Not applicable for the DATA_STATE_UNMAP case.
   data_remaining_ = transfer_bytes;
 
-  ContinueTransfer();
+  ContinueTransferLocked();
 }
 
-void UmsFunction::HandleInquiry(ums_cbw_t* cbw) {
+zx::result<> UmsFunction::CancelAllLocked(usb::EndpointClient<UmsFunction>& ep) {
+  // For convenience, wrap the various FIDL error cases with a zx::result.
+  fidl::WireResult result = ep.client().wire_sync()->CancelAll();
+  if (!result.ok()) {
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (result->is_error()) {
+    return result->take_error();
+  }
+  return zx::ok();
+}
+
+void UmsFunction::HandleInquiryLocked(ums_cbw_t* cbw) {
   scsi::InquiryCDB cmd;
   memcpy(&cmd, cbw->CBWCB, sizeof(cmd));
 
-  usb::Request<>* req = &data_req_.value();
-  void* data;
-  zx_status_t mmap_status = req->Mmap(&data);
-  if (mmap_status != ZX_OK) {
-    fdf::error("HandleInquiry: Mmap failed: {}", zx_status_get_string(mmap_status));
-    QueueCsw(CSW_FAILED);
+  usb::FidlRequest* req = &data_in_req_.value();
+
+  std::optional<zx_vaddr_t> vaddr = in_ep_.GetMappedAddr(req->request(), 0);
+  if (!vaddr.has_value()) {
+    fdf::error("{} GetMappedAddr failed", __func__);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
+  auto* data = reinterpret_cast<void*>(*vaddr);
+
   uint32_t length = std::min(static_cast<uint32_t>(UMS_INQUIRY_TRANSFER_LENGTH),
                              le32toh(cbw->dCBWDataTransferLength));
   memset(data, 0, length);
-  req->request()->header.length = length;
+  (*req)->data()->at(0).size(length);
 
   // fill in inquiry result
   if (!cmd.reserved_and_evpd) {
@@ -233,45 +304,50 @@ void UmsFunction::HandleInquiry(ums_cbw_t* cbw) {
     }
   }
 
-  QueueData(req);
+  req->CacheFlush(in_ep_.GetMapped());
+  QueueDataLocked(req);
 }
 
-void UmsFunction::HandleTestUnitReady(ums_cbw_t* cbw) {
+void UmsFunction::HandleTestUnitReadyLocked(ums_cbw_t* cbw) {
   // no data phase here. Just return status OK
-  QueueCsw(CSW_SUCCESS);
+  QueueCswLocked(CSW_SUCCESS);
 }
 
-void UmsFunction::HandleRequestSense(ums_cbw_t* cbw) {
-  usb::Request<>* req = &data_req_.value();
-  scsi::SenseDataHeader* data;
-  zx_status_t mmap_status = req->Mmap(reinterpret_cast<void**>(&data));
-  if (mmap_status != ZX_OK) {
-    fdf::error("HandleRequestSense: Mmap failed: {}", zx_status_get_string(mmap_status));
-    QueueCsw(CSW_FAILED);
+void UmsFunction::HandleRequestSenseLocked(ums_cbw_t* cbw) {
+  usb::FidlRequest* req = &data_in_req_.value();
+
+  std::optional<zx_vaddr_t> vaddr = in_ep_.GetMappedAddr(req->request(), 0);
+  if (!vaddr.has_value()) {
+    fdf::error("{} GetMappedAddr failed", __func__);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
+  auto* data = reinterpret_cast<scsi::SenseDataHeader*>(*vaddr);
+
   uint32_t length = std::min(static_cast<uint32_t>(UMS_REQUEST_SENSE_TRANSFER_LENGTH),
                              le32toh(cbw->dCBWDataTransferLength));
   memset(data, 0, length);
-  req->request()->header.length = length;
+  (*req)->data()->at(0).size(length);
 
   data->response_code =
       static_cast<uint8_t>(scsi::SenseDataResponseCodes::kFixedCurrentInformation);
   data->additional_sense_code = 0x20;
   data->additional_sense_length = 10;
 
-  QueueData(req);
+  req->CacheFlush(in_ep_.GetMapped());
+  QueueDataLocked(req);
 }
 
-void UmsFunction::HandleReadCapacity10(ums_cbw_t* cbw) {
-  usb::Request<>* req = &data_req_.value();
-  scsi::ReadCapacity10ParameterData* data;
-  zx_status_t mmap_status = req->Mmap(reinterpret_cast<void**>(&data));
-  if (mmap_status != ZX_OK) {
-    fdf::error("HandleReadCapacity10: Mmap failed: {}", zx_status_get_string(mmap_status));
-    QueueCsw(CSW_FAILED);
+void UmsFunction::HandleReadCapacity10Locked(ums_cbw_t* cbw) {
+  usb::FidlRequest* req = &data_in_req_.value();
+
+  std::optional<zx_vaddr_t> vaddr = in_ep_.GetMappedAddr(req->request(), 0);
+  if (!vaddr.has_value()) {
+    fdf::error("{} GetMappedAddr failed", __func__);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
+  auto* data = reinterpret_cast<scsi::ReadCapacity10ParameterData*>(*vaddr);
 
   uint64_t lba = kBlockCount - 1;
   if (lba > UINT32_MAX) {
@@ -283,43 +359,48 @@ void UmsFunction::HandleReadCapacity10(ums_cbw_t* cbw) {
 
   uint32_t length =
       std::min(static_cast<uint32_t>(sizeof(*data)), le32toh(cbw->dCBWDataTransferLength));
-  req->request()->header.length = length;
-  QueueData(req);
+  (*req)->data()->at(0).size(length);
+  req->CacheFlush(in_ep_.GetMapped());
+  QueueDataLocked(req);
 }
 
-void UmsFunction::HandleReadCapacity16(ums_cbw_t* cbw) {
-  usb::Request<>* req = &data_req_.value();
-  scsi::ReadCapacity16ParameterData* data;
-  zx_status_t mmap_status = req->Mmap(reinterpret_cast<void**>(&data));
-  if (mmap_status != ZX_OK) {
-    fdf::error("HandleReadCapacity16: Mmap failed: {}", zx_status_get_string(mmap_status));
-    QueueCsw(CSW_FAILED);
+void UmsFunction::HandleReadCapacity16Locked(ums_cbw_t* cbw) {
+  usb::FidlRequest* req = &data_in_req_.value();
+
+  std::optional<zx_vaddr_t> vaddr = in_ep_.GetMappedAddr(req->request(), 0);
+  if (!vaddr.has_value()) {
+    fdf::error("{} GetMappedAddr failed", __func__);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
-  memset(data, 0, sizeof(*data));
+  auto* data = reinterpret_cast<scsi::ReadCapacity16ParameterData*>(*vaddr);
 
+  memset(data, 0, sizeof(*data));
   data->returned_logical_block_address = htobe64(kBlockCount - 1);
   data->block_length_in_bytes = htobe32(kBlockSize);
 
   uint32_t length =
       std::min(static_cast<uint32_t>(sizeof(*data)), le32toh(cbw->dCBWDataTransferLength));
-  req->request()->header.length = length;
-  QueueData(req);
+  (*req)->data()->at(0).size(length);
+
+  req->CacheFlush(in_ep_.GetMapped());
+  QueueDataLocked(req);
 }
 
-void UmsFunction::HandleModeSense6(ums_cbw_t* cbw) {
-  usb::Request<>* req = &data_req_.value();
-  scsi::Mode6ParameterHeader* data;
-  zx_status_t mmap_status = req->Mmap(reinterpret_cast<void**>(&data));
-  if (mmap_status != ZX_OK) {
-    fdf::error("HandleModeSense6: Mmap failed: {}", zx_status_get_string(mmap_status));
-    QueueCsw(CSW_FAILED);
+void UmsFunction::HandleModeSense6Locked(ums_cbw_t* cbw) {
+  usb::FidlRequest* req = &data_in_req_.value();
+
+  std::optional<zx_vaddr_t> vaddr = in_ep_.GetMappedAddr(req->request(), 0);
+  if (!vaddr.has_value()) {
+    fdf::error("{} GetMappedAddr failed", __func__);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
+  auto* data = reinterpret_cast<scsi::Mode6ParameterHeader*>(*vaddr);
 
   if (le32toh(cbw->dCBWDataTransferLength) < sizeof(scsi::Mode6ParameterHeader)) {
     fdf::error("HandleModeSense6: buffer too small");
-    QueueCsw(CSW_FAILED);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
 
@@ -328,7 +409,7 @@ void UmsFunction::HandleModeSense6(ums_cbw_t* cbw) {
   uint32_t allocation_length = le32toh(cbw->dCBWDataTransferLength);
   memset(data, 0, sizeof(*data));
 
-  req->request()->header.length = sizeof(scsi::Mode6ParameterHeader);
+  (*req)->data()->at(0).size(sizeof(scsi::Mode6ParameterHeader));
 
   if ((page_code == static_cast<uint8_t>(scsi::PageCode::kCachingPageCode) ||
        page_code == static_cast<uint8_t>(scsi::PageCode::kAllPageCode)) &&
@@ -339,70 +420,71 @@ void UmsFunction::HandleModeSense6(ums_cbw_t* cbw) {
     caching_page->ps_spf_and_page_code = static_cast<uint8_t>(scsi::PageCode::kCachingPageCode);
     caching_page->page_length = sizeof(*caching_page) - 2;
     caching_page->set_write_cache_enabled(true);
-    req->request()->header.length =
-        sizeof(scsi::Mode6ParameterHeader) + sizeof(scsi::CachingModePage);
+    (*req)->data()->at(0).size(sizeof(scsi::Mode6ParameterHeader) + sizeof(scsi::CachingModePage));
   }
-  data->mode_data_length = static_cast<uint8_t>(req->request()->header.length - 1);
-  QueueData(req);
+  data->mode_data_length = static_cast<uint8_t>((*req)->data()->at(0).size().value() - 1);
+
+  req->CacheFlush(in_ep_.GetMapped());
+  QueueDataLocked(req);
 }
 
-void UmsFunction::HandleRead10(ums_cbw_t* cbw) {
+void UmsFunction::HandleRead10Locked(ums_cbw_t* cbw) {
   scsi::Read10CDB* command = reinterpret_cast<scsi::Read10CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
   uint32_t blocks = be16toh(command->transfer_length);
-  StartTransfer(DATA_STATE_READ, blocks * kBlockSize, lba);
+  StartTransferLocked(DATA_STATE_READ, blocks * kBlockSize, lba);
 }
 
-void UmsFunction::HandleRead12(ums_cbw_t* cbw) {
+void UmsFunction::HandleRead12Locked(ums_cbw_t* cbw) {
   scsi::Read12CDB* command = reinterpret_cast<scsi::Read12CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
   uint32_t blocks = be32toh(command->transfer_length);
-  StartTransfer(DATA_STATE_READ, blocks * kBlockSize, lba);
+  StartTransferLocked(DATA_STATE_READ, blocks * kBlockSize, lba);
 }
 
-void UmsFunction::HandleRead16(ums_cbw_t* cbw) {
+void UmsFunction::HandleRead16Locked(ums_cbw_t* cbw) {
   scsi::Read16CDB* command = reinterpret_cast<scsi::Read16CDB*>(cbw->CBWCB);
   uint64_t lba = be64toh(command->logical_block_address);
   uint32_t blocks = be32toh(command->transfer_length);
-  StartTransfer(DATA_STATE_READ, blocks * kBlockSize, lba);
+  StartTransferLocked(DATA_STATE_READ, blocks * kBlockSize, lba);
 }
 
-void UmsFunction::HandleWrite10(ums_cbw_t* cbw) {
+void UmsFunction::HandleWrite10Locked(ums_cbw_t* cbw) {
   scsi::Write10CDB* command = reinterpret_cast<scsi::Write10CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
   uint32_t blocks = be16toh(command->transfer_length);
-  StartTransfer(DATA_STATE_WRITE, blocks * kBlockSize, lba);
+  StartTransferLocked(DATA_STATE_WRITE, blocks * kBlockSize, lba);
 }
 
-void UmsFunction::HandleWrite12(ums_cbw_t* cbw) {
+void UmsFunction::HandleWrite12Locked(ums_cbw_t* cbw) {
   scsi::Write12CDB* command = reinterpret_cast<scsi::Write12CDB*>(cbw->CBWCB);
   uint64_t lba = be32toh(command->logical_block_address);
   uint32_t blocks = be32toh(command->transfer_length);
-  StartTransfer(DATA_STATE_WRITE, blocks * kBlockSize, lba);
+  StartTransferLocked(DATA_STATE_WRITE, blocks * kBlockSize, lba);
 }
 
-void UmsFunction::HandleWrite16(ums_cbw_t* cbw) {
+void UmsFunction::HandleWrite16Locked(ums_cbw_t* cbw) {
   scsi::Write16CDB* command = reinterpret_cast<scsi::Write16CDB*>(cbw->CBWCB);
   uint64_t lba = be64toh(command->logical_block_address);
   uint32_t blocks = be32toh(command->transfer_length);
-  StartTransfer(DATA_STATE_WRITE, blocks * kBlockSize, lba);
+  StartTransferLocked(DATA_STATE_WRITE, blocks * kBlockSize, lba);
 }
 
-void UmsFunction::HandleUnmap(ums_cbw_t* cbw) {
+void UmsFunction::HandleUnmapLocked(ums_cbw_t* cbw) {
   scsi::UnmapCDB* command = reinterpret_cast<scsi::UnmapCDB*>(cbw->CBWCB);
   uint16_t unmap_data_length =
       sizeof(scsi::UnmapParameterListHeader) + sizeof(scsi::UnmapBlockDescriptor);
   if (betoh16(command->parameter_list_length) != unmap_data_length) {
     fdf::error("Command parameter list length is invalid: {} != {}",
                betoh16(command->parameter_list_length), unmap_data_length);
-    QueueCsw(CSW_FAILED);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
 
-  StartTransfer(DATA_STATE_UNMAP, unmap_data_length);
+  StartTransferLocked(DATA_STATE_UNMAP, unmap_data_length);
 }
 
-void UmsFunction::HandleCbw(ums_cbw_t* cbw) {
+void UmsFunction::HandleCbwLocked(ums_cbw_t* cbw) {
   if (le32toh(cbw->dCBWSignature) != CBW_SIGNATURE) {
     fdf::error("HandleCbw: bad dCBWSignature 0x{:x}", le32toh(cbw->dCBWSignature));
     return;
@@ -416,114 +498,131 @@ void UmsFunction::HandleCbw(ums_cbw_t* cbw) {
   auto opcode = static_cast<scsi::Opcode>(cbw->CBWCB[0]);
   switch (opcode) {
     case scsi::Opcode::INQUIRY:
-      HandleInquiry(cbw);
+      HandleInquiryLocked(cbw);
       break;
     case scsi::Opcode::TEST_UNIT_READY:
-      HandleTestUnitReady(cbw);
+      HandleTestUnitReadyLocked(cbw);
       break;
     case scsi::Opcode::REQUEST_SENSE:
-      HandleRequestSense(cbw);
+      HandleRequestSenseLocked(cbw);
       break;
     case scsi::Opcode::READ_CAPACITY_10:
-      HandleReadCapacity10(cbw);
+      HandleReadCapacity10Locked(cbw);
       break;
     case scsi::Opcode::READ_CAPACITY_16:
-      HandleReadCapacity16(cbw);
+      HandleReadCapacity16Locked(cbw);
       break;
     case scsi::Opcode::MODE_SENSE_6:
-      HandleModeSense6(cbw);
+      HandleModeSense6Locked(cbw);
       break;
     case scsi::Opcode::READ_10:
-      HandleRead10(cbw);
+      HandleRead10Locked(cbw);
       break;
     case scsi::Opcode::READ_12:
-      HandleRead12(cbw);
+      HandleRead12Locked(cbw);
       break;
     case scsi::Opcode::READ_16:
-      HandleRead16(cbw);
+      HandleRead16Locked(cbw);
       break;
     case scsi::Opcode::WRITE_10:
-      HandleWrite10(cbw);
+      HandleWrite10Locked(cbw);
       break;
     case scsi::Opcode::WRITE_12:
-      HandleWrite12(cbw);
+      HandleWrite12Locked(cbw);
       break;
     case scsi::Opcode::WRITE_16:
-      HandleWrite16(cbw);
+      HandleWrite16Locked(cbw);
       break;
     case scsi::Opcode::SYNCHRONIZE_CACHE_10:
       // TODO: This is presently untestable.
       // Implement this once we have a means of testing this.
-      QueueCsw(CSW_SUCCESS);
+      QueueCswLocked(CSW_SUCCESS);
       break;
     case scsi::Opcode::UNMAP:
-      HandleUnmap(cbw);
+      HandleUnmapLocked(cbw);
       break;
     default:
       fdf::error("HandleCbw: unsupported opcode {:02X}h", cbw->CBWCB[0]);
       if (cbw->dCBWDataTransferLength) {
         // queue zero length packet to satisfy data phase
-        usb::Request<>* req = &data_req_.value();
-        req->request()->header.length = 0;
+        usb::FidlRequest* req = &data_in_req_.value();
+        (*req)->data()->at(0).size(0);
         data_state_ = DATA_STATE_FAILED;
-        QueueData(req);
+        req->CacheFlush(in_ep_.GetMapped());
+        QueueDataLocked(req);
       }
-      QueueCsw(CSW_FAILED);
+      QueueCswLocked(CSW_FAILED);
       break;
   }
 }
 
-void UmsFunction::CbwComplete(usb::Request<>* req) {
+void UmsFunction::CbwCompleteLocked() {
+  fendpoint::Completion completion = std::move(*cbw_req_complete_);
+  cbw_req_complete_.reset();
+
   bool online = configured_ && active_.load();
   if (!online) {
     fdf::error("UmsFunction: Not online, dropping CBW");
     return;
   }
 
-  if (req->request()->response.status != ZX_OK) {
-    fdf::error("UmsFunction: CBW receive failed: {}",
-               zx_status_get_string(req->request()->response.status));
+  if (*completion.status() != ZX_OK) {
+    fdf::error("UmsFunction: CBW receive failed: {}", zx_status_get_string(*completion.status()));
     return;
   }
 
-  if (req->request()->response.actual != sizeof(ums_cbw_t)) {
+  if (*completion.transfer_size() != sizeof(ums_cbw_t)) {
+    fdf::error("Malformed CBW, size {} != {}", *completion.transfer_size(), sizeof(ums_cbw_t));
     return;
   }
+
+  usb::FidlRequest* req = &cbw_req_.value();
 
   ums_cbw_t* cbw = &current_cbw_;
   memset(cbw, 0, sizeof(*cbw));
-  [[maybe_unused]] size_t result = req->CopyFrom(cbw, sizeof(*cbw), 0);
-  HandleCbw(cbw);
+  [[maybe_unused]] zx_status_t status = req->CacheFlushInvalidate(out_ep_.GetMapped());
+  [[maybe_unused]] std::vector<size_t> result =
+      req->CopyFrom(0, cbw, sizeof(*cbw), out_ep_.GetMapped());
+  HandleCbwLocked(cbw);
 }
 
-void UmsFunction::DataComplete(usb::Request<>* req) {
+void UmsFunction::DataCompleteLocked() {
   bool online = configured_ && active_.load();
   if (!online) {
     return;
   }
 
-  if (req->request()->response.status != ZX_OK) {
-    fdf::error("UmsFunction: Data transfer failed: {}",
-               zx_status_get_string(req->request()->response.status));
+  fendpoint::Completion completion = std::move(*data_req_complete_);
+  data_req_complete_.reset();
+  size_t actual = *completion.transfer_size();
+
+  if (*completion.status() != ZX_OK) {
+    fdf::error("UmsFunction: Data transfer failed: {}", zx_status_get_string(*completion.status()));
     data_state_ = DATA_STATE_NONE;
-    QueueCsw(CSW_FAILED);
+    QueueCswLocked(CSW_FAILED);
     return;
   }
 
+  usb::FidlRequest* req = IsInData() ? &data_in_req_.value() : &data_out_req_.value();
+
   if (data_state_ == DATA_STATE_WRITE) {
-    size_t result = req->CopyFrom(static_cast<char*>(storage_) + data_offset_,
-                                  req->request()->response.actual, 0);
-    ZX_ASSERT(result == req->request()->response.actual);
+    req->CacheFlushInvalidate(out_ep_.GetMapped());
+    std::vector<size_t> result =
+        req->CopyFrom(0, static_cast<char*>(storage_) + data_offset_, actual, out_ep_.GetMapped());
+    ZX_ASSERT(result.size() == 1);
+    ZX_ASSERT(result[0] == *completion.transfer_size());
   } else if (data_state_ == DATA_STATE_UNMAP) {
     // Overwrite the unmapped blocks with zeros.
-    usb::Request<>* req = &data_req_.value();
-    uint8_t* data;
-    zx_status_t mmap_status = req->Mmap(reinterpret_cast<void**>(&data));
-    if (mmap_status != ZX_OK) {
-      fdf::error("DataComplete: Mmap failed: {}", zx_status_get_string(mmap_status));
-      QueueCsw(CSW_FAILED);
+    req->CacheFlushInvalidate(out_ep_.GetMapped());
+
+    std::optional<zx_vaddr_t> vaddr = out_ep_.GetMappedAddr(req->request(), 0);
+    if (!vaddr.has_value()) {
+      fdf::error("DataComplete: GetMappedAddr");
+      QueueCswLocked(CSW_FAILED);
       return;
     }
+    auto* data = reinterpret_cast<uint8_t*>(*vaddr);
+
     scsi::UnmapBlockDescriptor* block_descriptor = reinterpret_cast<scsi::UnmapBlockDescriptor*>(
         data + sizeof(scsi::UnmapParameterListHeader));
     size_t block_count = betoh32(block_descriptor->blocks);
@@ -531,33 +630,34 @@ void UmsFunction::DataComplete(usb::Request<>* req) {
     memset(static_cast<char*>(storage_) + (start_lba * kBlockSize), 0, block_count * kBlockSize);
   } else if (data_state_ == DATA_STATE_FAILED) {
     data_state_ = DATA_STATE_NONE;
-    QueueCsw(CSW_FAILED);
+    QueueCswLocked(CSW_FAILED);
     return;
   } else {
     data_state_ = DATA_STATE_NONE;
-    QueueCsw(CSW_SUCCESS);
+    QueueCswLocked(CSW_SUCCESS);
     return;
   }
 
-  data_offset_ += req->request()->response.actual;
-  if (data_remaining_ > req->request()->response.actual) {
-    data_remaining_ -= req->request()->response.actual;
+  data_offset_ += actual;
+  if (data_remaining_ > actual) {
+    data_remaining_ -= actual;
   } else {
     data_remaining_ = 0;
   }
 
   if (data_remaining_ > 0) {
-    ContinueTransfer();
+    ContinueTransferLocked();
   } else {
     data_state_ = DATA_STATE_NONE;
-    QueueCsw(CSW_SUCCESS);
+    QueueCswLocked(CSW_SUCCESS);
   }
 }
 
-static void CswComplete(usb::Request<>* req) {
-  if (req->request()->response.status != ZX_OK) {
-    fdf::error("UmsFunction: CSW send failed: {}",
-               zx_status_get_string(req->request()->response.status));
+void UmsFunction::CswCompleteLocked() {
+  zx_status_t status = *csw_req_complete_->status();
+  csw_req_complete_.reset();
+  if (status != ZX_OK) {
+    fdf::error("UmsFunction: CSW send failed: {}", zx_status_get_string(status));
   }
 }
 
@@ -586,17 +686,22 @@ zx_status_t UmsFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup,
   if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
       setup->b_request == USB_REQ_RESET && setup->w_value == 0 && setup->w_index == 0 &&
       setup->w_length == 0) {
-    // Cancel all pending requests
-    function_.CancelAll(bulk_out_addr_);
-    function_.CancelAll(bulk_in_addr_);
-
     fbl::AutoLock l(&mtx_);
+
+    // Cancel all pending requests
+    zx::result result = CancelAllLocked(in_ep_);
+    if (result.is_error()) {
+      fdf::error("Error canceling existing in-type requests: {}", result);
+    }
+
+    result = CancelAllLocked(out_ep_);
+    if (result.is_error()) {
+      fdf::error("Error canceling existing out-type requests: {}", result);
+    }
+
     cbw_in_flight_ = false;
     data_in_flight_ = false;
     csw_in_flight_ = false;
-    cbw_req_complete_ = false;
-    data_req_complete_ = false;
-    csw_req_complete_ = false;
     return ZX_OK;
   }
 
@@ -625,14 +730,12 @@ zx_status_t UmsFunction::UsbFunctionInterfaceSetConfigured(bool configured, usb_
     cbw_in_flight_ = false;
     data_in_flight_ = false;
     csw_in_flight_ = false;
-    cbw_req_complete_ = false;
-    data_req_complete_ = false;
-    csw_req_complete_ = false;
   }
 
   if (configured && status == ZX_OK) {
     // queue first read on OUT endpoint
-    RequestQueue(&cbw_req_.value(), &request_complete_);
+    fbl::AutoLock lock(&mtx_);
+    RequestQueueLocked(&cbw_req_.value());
   }
   return status;
 }
@@ -642,12 +745,18 @@ zx_status_t UmsFunction::UsbFunctionInterfaceSetInterface(uint8_t interface, uin
 }
 
 void UmsFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
-  function_.CancelAll(bulk_out_addr_);
-  function_.CancelAll(bulk_in_addr_);
-  function_.CancelAll(descriptors.intf.b_interface_number);
-
   {
     fbl::AutoLock l(&mtx_);
+    zx::result cancel = CancelAllLocked(in_ep_);
+    if (cancel.is_error()) {
+      fdf::error("Error canceling existing in-type requests: {}", cancel);
+    }
+
+    cancel = CancelAllLocked(out_ep_);
+    if (cancel.is_error()) {
+      fdf::error("Error canceling existing out-type requests: {}", cancel);
+    }
+
     active_ = false;
     condvar_.Signal();
   }
@@ -658,15 +767,8 @@ void UmsFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
   if (storage_) {
     zx_vmar_unmap(zx_vmar_root_self(), (uintptr_t)storage_, kStorageSize);
   }
-  if (cbw_req_) {
-    cbw_req_->Release();
-  }
-  if (data_req_) {
-    data_req_->Release();
-  }
-  if (csw_req_) {
-    csw_req_->Release();
-  }
+
+  dispatcher_.ShutdownAsync();
 
   completer(zx::ok());
 }
@@ -675,42 +777,30 @@ zx::vmo UmsFunction::vmo_ = zx::vmo();
 
 int UmsFunction::WorkerLoop() {
   while (active_) {
-    bool cbw_req_complete = false;
-    bool csw_req_complete = false;
-    bool data_req_complete = false;
-
-    {
-      fbl::AutoLock l(&mtx_);
-      // Wait until a request is complete (signaled in CompletionCallback),
-      // unless the driver is shutting down (signaled in DdkUnbind).
-      if (!(cbw_req_complete_ || csw_req_complete_ || data_req_complete_ || IsReadyForShutdown())) {
-        condvar_.Wait(&mtx_);
-      }
-
-      // Exit the thread if the driver is inactive and all pending requests have been processed.
-      if (IsReadyForShutdown()) {
-        return 0;
-      }
-
-      cbw_req_complete = cbw_req_complete_;
-      cbw_req_complete_ = false;
-      csw_req_complete = csw_req_complete_;
-      csw_req_complete_ = false;
-      data_req_complete = data_req_complete_;
-      data_req_complete_ = false;
+    fbl::AutoLock l(&mtx_);
+    // Wait until a request is complete (signaled in CompletionCallback),
+    // unless the driver is shutting down (signaled in DdkUnbind).
+    if (!(cbw_req_complete_.has_value() || csw_req_complete_.has_value() ||
+          data_req_complete_.has_value() || IsReadyForShutdown())) {
+      condvar_.Wait(&mtx_);
     }
 
-    if (cbw_req_complete) {
-      atomic_fetch_add(&pending_request_count_, -1);
-      CbwComplete(&cbw_req_.value());
+    // Exit the thread if the driver is inactive and all pending requests have been processed.
+    if (IsReadyForShutdown()) {
+      return 0;
     }
-    if (csw_req_complete) {
+
+    if (cbw_req_complete_.has_value()) {
       atomic_fetch_add(&pending_request_count_, -1);
-      CswComplete(&csw_req_.value());
+      CbwCompleteLocked();
     }
-    if (data_req_complete) {
+    if (csw_req_complete_.has_value()) {
       atomic_fetch_add(&pending_request_count_, -1);
-      DataComplete(&data_req_.value());
+      CswCompleteLocked();
+    }
+    if (data_req_complete_.has_value()) {
+      atomic_fetch_add(&pending_request_count_, -1);
+      DataCompleteLocked();
     }
   }
   return 0;
@@ -746,15 +836,7 @@ zx_status_t UmsFunction::Init() {
   active_ = true;
   pending_request_count_ = 0;
 
-  request_complete_ = {
-      .callback = CompletionCallback,
-      .ctx = this,
-  };
-
   zx_status_t status = ZX_OK;
-
-  parent_req_size_ = function_.GetRequestSize();
-  ZX_DEBUG_ASSERT(parent_req_size_ != 0);
 
   status = function_.AllocInterface(&descriptors.intf.b_interface_number);
   if (status != ZX_OK) {
@@ -774,20 +856,64 @@ zx_status_t UmsFunction::Init() {
   descriptors.out_ep.b_endpoint_address = bulk_out_addr_;
   descriptors.in_ep.b_endpoint_address = bulk_in_addr_;
 
-  status = usb::Request<>::Alloc(&cbw_req_, kBulkMaxPacket, bulk_out_addr_, parent_req_size_);
+  zx::result func =
+      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (func.is_error()) {
+    fdf::error("Could not connect to UsbFunction service: {}", func);
+    return func.status_value();
+  }
+
+  auto dispatcher = fdf::SynchronizedDispatcher::Create(
+      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ums-fidl-dispatcher",
+      [](fdf_dispatcher_t*) {}, "");
+  if (dispatcher.is_error()) {
+    fdf::error("Failed to create dispatcher: {}", dispatcher.status_string());
+    return dispatcher.error_value();
+  }
+  dispatcher_ = std::move(*dispatcher);
+
+  status = in_ep_.Init(bulk_in_addr_, func.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
+    fdf::error("Failed to init IN endpoint: {}", zx_status_get_string(status));
     return status;
   }
-  // Endpoint for data_req depends on current_cbw.bmCBWFlags,
-  // and will be set in QueueData.
-  status = usb::Request<>::Alloc(&data_req_, kDataReqSize, 0, parent_req_size_);
+
+  status = out_ep_.Init(bulk_out_addr_, func.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
+    fdf::error("Failed to init OUT endpoint: {}", zx_status_get_string(status));
     return status;
   }
-  status = usb::Request<>::Alloc(&csw_req_, kBulkMaxPacket, bulk_in_addr_, parent_req_size_);
-  if (status != ZX_OK) {
-    return status;
+
+  size_t actual = out_ep_.AddRequests(1, kBulkMaxPacket, frequest::Buffer::Tag::kVmoId);
+  if (actual != 1) {
+    fdf::error("Failed to allocate CBW request");
+    return ZX_ERR_INTERNAL;
   }
+  cbw_req_.emplace(*out_ep_.GetRequest());
+  cbw_vmo_id_ = (*cbw_req_)->data()->at(0).buffer()->vmo_id().value();
+
+  actual = in_ep_.AddRequests(1, kDataReqSize, frequest::Buffer::Tag::kVmoId);
+  if (actual != 1) {
+    fdf::error("Failed to allocate in-data request");
+    return ZX_ERR_INTERNAL;
+  }
+  data_in_req_.emplace(*in_ep_.GetRequest());
+
+  actual = out_ep_.AddRequests(1, kDataReqSize, frequest::Buffer::Tag::kVmoId);
+  if (actual != 1) {
+    fdf::error("Failed to allocate out-data request");
+    return ZX_ERR_INTERNAL;
+  }
+  data_out_req_.emplace(*out_ep_.GetRequest());
+
+  actual = in_ep_.AddRequests(1, kBulkMaxPacket, frequest::Buffer::Tag::kVmoId);
+  if (actual != 1) {
+    fdf::error("Failed to allocate CSW request");
+    return ZX_ERR_INTERNAL;
+  }
+  csw_req_.emplace(*in_ep_.GetRequest());
+  csw_vmo_id_ = (*csw_req_)->data()->at(0).buffer()->vmo_id().value();
+
   // create and map a VMO
   if (!vmo_.is_valid()) {
     status = vmo_.create(kStorageSize, 0, &vmo_);
@@ -800,8 +926,6 @@ zx_status_t UmsFunction::Init() {
   if (status != ZX_OK) {
     return status;
   }
-
-  csw_req_->request()->header.length = sizeof(ums_csw_t);
 
   function_.SetInterface(this, &usb_function_interface_protocol_ops_);
   thrd_create_with_name(

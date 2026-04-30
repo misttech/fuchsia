@@ -9,13 +9,19 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/zx/result.h>
 
+#include <atomic>
 #include <format>
+#include <optional>
+#include <queue>
+#include <string>
+#include <utility>
 
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
-#include <usb/request-cpp.h>
+#include <usb-endpoint/usb-endpoint-client.h>
+#include <usb/descriptors.h>
+#include <usb/request-fidl.h>
 #include <usb/ums.h>
-#include <usb/usb-request.h>
 
 namespace ums {
 
@@ -55,53 +61,73 @@ class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProt
   };
   friend struct std::formatter<DataState>;
 
-  void RequestQueue(usb::Request<>* req, const usb_request_complete_callback_t* completion);
-  static void CompletionCallback(void* ctx, usb_request_t* req);
+  void RequestQueueLocked(usb::FidlRequest* req) __TA_REQUIRES(mtx_);
+  void InEpCallback(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
+  void OutEpCallback(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
   bool IsReadyForShutdown() const { return !active_.load() && pending_request_count_.load() == 0; }
 
   // Main driver initialization.
   zx_status_t Init();
 
-  void QueueData(usb::Request<>* req) __TA_EXCLUDES(mtx_);
-  void QueueCsw(uint8_t status) __TA_EXCLUDES(mtx_);
-  void ContinueTransfer() __TA_EXCLUDES(mtx_);
-  void StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba = 0)
-      __TA_EXCLUDES(mtx_);
+  void QueueDataLocked(usb::FidlRequest* req) __TA_REQUIRES(mtx_);
+  void QueueCswLocked(uint8_t status, bool also_cbw = true) __TA_REQUIRES(mtx_);
+  void ContinueTransferLocked() __TA_REQUIRES(mtx_);
+  void StartTransferLocked(DataState state, uint32_t transfer_bytes, uint64_t lba = 0)
+      __TA_REQUIRES(mtx_);
+  zx::result<> CancelAllLocked(usb::EndpointClient<UmsFunction>& ep) __TA_REQUIRES(mtx_);
 
-  void HandleInquiry(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleTestUnitReady(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleRequestSense(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleReadCapacity10(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleReadCapacity16(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleModeSense6(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleRead10(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleRead12(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleRead16(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleWrite10(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleWrite12(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleWrite16(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void HandleUnmap(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
+  void HandleInquiryLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleTestUnitReadyLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleRequestSenseLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleReadCapacity10Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleReadCapacity16Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleModeSense6Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleRead10Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleRead12Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleRead16Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleWrite10Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleWrite12Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleWrite16Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleUnmapLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
 
-  void HandleCbw(ums_cbw_t* cbw) __TA_EXCLUDES(mtx_);
-  void CbwComplete(usb::Request<>* req) __TA_EXCLUDES(mtx_);
-  void DataComplete(usb::Request<>* req) __TA_EXCLUDES(mtx_);
+  void HandleCbwLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void CbwCompleteLocked() __TA_REQUIRES(mtx_);
+  void CswCompleteLocked() __TA_REQUIRES(mtx_);
+  void DataCompleteLocked() __TA_REQUIRES(mtx_);
 
   int WorkerLoop();
+
+  bool IsInData() const { return current_cbw_.bmCBWFlags & USB_DIR_IN; }
+  bool IsOutData() const { return !IsInData(); }
 
   ddk::UsbFunctionProtocolClient function_;
   bool configured_ = false;
 
-  std::optional<usb::Request<>> cbw_req_;
-  bool cbw_req_complete_ __TA_GUARDED(mtx_) = false;
+  std::optional<usb::FidlRequest> cbw_req_;
+  std::optional<fuchsia_hardware_usb_endpoint::Completion> cbw_req_complete_ __TA_GUARDED(mtx_);
   bool cbw_in_flight_ __TA_GUARDED(mtx_) = false;
-  std::optional<usb::Request<>> data_req_;
-  bool data_req_complete_ __TA_GUARDED(mtx_) = false;
-  bool data_in_flight_ __TA_GUARDED(mtx_) = false;
-  std::optional<usb::Request<>> csw_req_;
-  bool csw_req_complete_ __TA_GUARDED(mtx_) = false;
-  bool csw_in_flight_ __TA_GUARDED(mtx_) = false;
+  uint64_t cbw_vmo_id_;
 
-  usb_request_complete_callback_t request_complete_;
+  std::optional<usb::FidlRequest> data_in_req_;
+  std::optional<usb::FidlRequest> data_out_req_;
+  std::optional<fuchsia_hardware_usb_endpoint::Completion> data_req_complete_ __TA_GUARDED(mtx_);
+  bool data_in_flight_ __TA_GUARDED(mtx_) = false;
+
+  std::optional<usb::FidlRequest> csw_req_;
+  std::optional<fuchsia_hardware_usb_endpoint::Completion> csw_req_complete_ __TA_GUARDED(mtx_);
+  bool csw_in_flight_ __TA_GUARDED(mtx_) = false;
+  uint64_t csw_vmo_id_;
+  std::queue<uint8_t> csw_q_ __TA_GUARDED(mtx_);
+
+  // Command status wrapper (csw) and in-data to host.
+  usb::EndpointClient<UmsFunction> in_ep_{usb::EndpointType::BULK, this,
+                                          std::mem_fn(&UmsFunction::InEpCallback)};
+
+  // Command block wrapper (cbw) and out-data from host.
+  usb::EndpointClient<UmsFunction> out_ep_{usb::EndpointType::BULK, this,
+                                           std::mem_fn(&UmsFunction::OutEpCallback)};
+
+  fdf::SynchronizedDispatcher dispatcher_;
 
   // vmo for backing storage
   static zx::vmo vmo_;
@@ -120,7 +146,6 @@ class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProt
 
   uint8_t bulk_out_addr_;
   uint8_t bulk_in_addr_;
-  size_t parent_req_size_;
   thrd_t thread_;
   std::atomic_bool active_;
   fbl::Mutex mtx_;
