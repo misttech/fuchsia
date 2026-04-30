@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <syscall.h>
@@ -218,6 +219,22 @@ class BpfTestBase : public testing::Test {
   }
 };
 
+// Call fcntl syscall directly. It's used instead of `fcntl()` provided by libc
+// because `fcntl()` is not consistent between different versions of libc:
+//   - glibc expects `struct flock` in `fcntl(F_OFD_SETLK)`. Internally it
+//     converts the argument to `flock64` before calling the syscall.
+//   - bionic passes the argument to the syscall directly.
+// The syscall itself expects always expect `struct flock64`.
+int sys_fcntl(int fd, int op, void* arg) {
+  const int NR =
+#if defined(__LP64__)
+      __NR_fcntl;
+#else
+      __NR_fcntl64;
+#endif
+  return static_cast<int>(syscall(NR, fd, op, arg));
+}
+
 class BpfMapTest : public BpfTestBase {
  protected:
   static constexpr uint32_t kArrayMapValueSize = 1024;
@@ -280,7 +297,7 @@ class BpfMapTest : public BpfTestBase {
         .l_len = 1,            // off_t: number of bytes
     };
 
-    int ret = fcntl(fd.get(), F_OFD_SETLK, &fl);
+    int ret = sys_fcntl(fd.get(), F_OFD_SETLK, &fl);
     if (ret != 0) {
       fd.reset();
     }
