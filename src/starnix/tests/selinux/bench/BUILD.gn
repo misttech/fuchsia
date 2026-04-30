@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/rust/rustc_binary.gni")
+import("//build/testing/perf/test.gni")
+
+group("benchmarks") {
+  testonly = true
+  deps = [ ":selinux_bench" ]
+}
+
+rustc_binary("bin") {
+  output_name = "selinux_bench"
+  edition = "2024"
+  testonly = true
+
+  source_root = "src/main.rs"
+  sources = [ "src/main.rs" ]
+
+  deps = [
+    "//src/developer/fuchsia-criterion",
+    "//src/starnix/lib/selinux",
+    "//third_party/rust_crates:criterion",
+  ]
+
+  inputs = [ "//src/starnix/lib/selinux/testdata/policies/emulator" ]
+
+  configs += [ "//src/starnix/build:kernel_library_config" ]
+}
+
+fuchsia_component("selinux_bench_component") {
+  testonly = true
+  component_name = "selinux_bench"
+  manifest = "meta/selinux_bench.cml"
+  deps = [ ":bin" ]
+}
+
+fuchsia_package("selinux_bench_pkg") {
+  testonly = true
+  deps = [ ":selinux_bench_component" ]
+}
+
+fuchsia_component_perf_test("selinux_bench") {
+  package = ":selinux_bench_pkg"
+  component_name = "selinux_bench"
+  test_type = "starnix"
+  expected_metric_names_filepath =
+      "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.sestarnix.txt"
+}
