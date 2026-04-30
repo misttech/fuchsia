@@ -11,8 +11,8 @@
 
 namespace network {
 
-// TODO(https://fxbug.dev/42155349): Get rid of these classes and this file once std::shared_mutex and
-// std::shared_lock have thread analysis annotations.
+// TODO(https://fxbug.dev/42155349): Get rid of these classes and this file once std::shared_mutex
+// and std::shared_lock have thread analysis annotations.
 
 class __TA_CAPABILITY("shared_mutex") SharedLock {
  public:
