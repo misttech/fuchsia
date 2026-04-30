@@ -41,6 +41,7 @@ bazel2gn_verification_targets = [
   "//src/lib/fxl:verify_bazel2gn",
   "//src/lib/testing/expectation/expectations_matcher:verify_bazel2gn",
   "//src/lib/testing/expectation/ser:verify_bazel2gn",
+  "//src/lib/webpki-roots-fuchsia:verify_bazel2gn",
   "//src/sys/pkg/lib/repo:verify_bazel2gn",
   "//src/sys/pkg/testing/fake-omaha-client:verify_bazel2gn",
   "//tools/botanist:verify_bazel2gn",
