@@ -92,7 +92,6 @@ Session::~Session() {
   ZX_ASSERT(!tx_installed_);
   ZX_ASSERT(in_flight_rx_ == 0);
   ZX_ASSERT(in_flight_tx_ == 0);
-  ZX_ASSERT(vmo_id_ == netdev::wire::kMaxDataVmos);
   for (size_t i = 0; i < attached_ports_.size(); i++) {
     ZX_ASSERT_MSG(!attached_ports_[i].has_value(), "outstanding attached port %ld", i);
   }
@@ -139,8 +138,8 @@ zx::result<netdev::wire::Fifos> Session::Init() {
 
   {
     zx_status_t status = [this, &ac]() {
-      // Lie about holding the parent receive lock. This is an initialization function we can't be
-      // racing with anything.
+      // Lie about holding the parent receive lock. This is an initialization
+      // function we can't be racing with anything.
       []() __TA_ASSERT(parent_->rx_lock()) {}();
       rx_return_queue_.reset(new (&ac) uint16_t[parent_->rx_fifo_depth()]);
       if (!ac.check()) {
@@ -300,16 +299,16 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
     }
     std::optional<AttachedPort>& slot = attached_ports_[desc.port_id.base];
     auto return_descriptor = [this, &desc, &desc_idx]() {
-      // Tx on unattached port is a recoverable error; we must handle it gracefully because
-      // detaching a port can race with regular tx.
-      // This is not expected to be part of fast path operation, so it should be
-      // fine to return one of these buffers at a time.
+      // Tx on unattached port is a recoverable error; we must handle it
+      // gracefully because detaching a port can race with regular tx. This is
+      // not expected to be part of fast path operation, so it should be fine to
+      // return one of these buffers at a time.
       desc.return_flags = static_cast<uint32_t>(netdev::wire::TxReturnFlags::kTxRetError |
                                                 netdev::wire::TxReturnFlags::kTxRetNotAvailable);
 
-      // TODO(https://fxbug.dev/42107145): We're assuming that writing to the FIFO
-      // here is a sufficient memory barrier for the other end to access the
-      // data. That is currently true but not really guaranteed by the API.
+      // TODO(https://fxbug.dev/42107145): We're assuming that writing to the
+      // FIFO here is a sufficient memory barrier for the other end to access
+      // the data. That is currently true but not really guaranteed by the API.
       zx_status_t status = fifo_tx_.write(sizeof(desc_idx), &desc_idx, 1, nullptr);
       switch (status) {
         case ZX_OK:
@@ -387,8 +386,8 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
         .tail_length = req_tail_length,
     };
 
-    // chain_length is the number of buffers to follow, so it must be strictly less than the maximum
-    // descriptor chain value.
+    // chain_length is the number of buffers to follow, so it must be strictly
+    // less than the maximum descriptor chain value.
     if (desc.chain_length >= netdev::wire::kMaxDescriptorChain) {
       LOGF_ERROR("%s: received invalid chain length: %d", name(), desc.chain_length);
       return ZX_ERR_IO_INVALID;
@@ -401,16 +400,21 @@ zx_status_t Session::FetchTx(TxQueue::SessionTransaction& transaction) {
     transaction.AssertParentTxLock(*parent_);
     for (;;) {
       buffer_descriptor_t& part_desc = *part_iter;
+      if (!parent_->IsDataVmoPrepared(part_desc.vmo_id)) {
+        LOGF_ERROR("%s: received invalid vmo id %d on descriptor %d", name(), part_desc.vmo_id,
+                   desc_idx);
+        return ZX_ERR_IO_INVALID;
+      }
       auto* cur = &buffer->data.data()[buffer->data.size()];
       if (add_head_space) {
         *cur = {
-            .vmo = vmo_id_,
+            .vmo = part_desc.vmo_id,
             .offset = part_desc.offset + skip_front,
             .length = part_desc.data_length + buffer->head_length,
         };
       } else {
         *cur = {
-            .vmo = vmo_id_,
+            .vmo = part_desc.vmo_id,
             .offset = part_desc.offset + part_desc.head_length,
             .length = part_desc.data_length,
         };
@@ -509,13 +513,13 @@ zx_status_t Session::AttachPort(const netdev::wire::PortId& port_id,
   port.WithPort([](DevicePort& p) { p.SessionAttached(); });
   slot = port;
 
-  // Count how many ports we have attached now so we know if we need to notify the parent of
-  // changes to our state.
+  // Count how many ports we have attached now so we know if we need to notify
+  // the parent of changes to our state.
   attached_count =
       std::count_if(attached_ports_.begin(), attached_ports_.end(),
                     [](const std::optional<AttachedPort>& p) { return p.has_value(); });
-  // The newly attached port is the only port we're attached to, notify the parent that we want to
-  // start up and kick the tx thread.
+  // The newly attached port is the only port we're attached to, notify the
+  // parent that we want to start up and kick the tx thread.
   if (attached_count == 1) {
     paused_.store(false);
     // NB: SessionStarted releases the control lock.
@@ -537,7 +541,8 @@ zx_status_t Session::DetachPort(const netdev::wire::PortId& port_id) {
   }
   bool stop_session = result.value();
 
-  // The newly detached port was the last one standing, notify parent we're a stopped session now.
+  // The newly detached port was the last one standing, notify parent we're a
+  // stopped session now.
   if (stop_session) {
     paused_.store(true);
     // NB: SessionStopped releases the control lock.
@@ -572,7 +577,8 @@ zx::result<bool> Session::DetachPortLocked(uint8_t port_id, std::optional<uint8_
 
 bool Session::OnPortDestroyed(uint8_t port_id) {
   zx::result status = DetachPortLocked(port_id, std::nullopt);
-  // Tolerate errors on port destruction, just means we weren't attached to this port.
+  // Tolerate errors on port destruction, just means we weren't attached to this
+  // port.
   if (status.is_error()) {
     return false;
   }
@@ -654,7 +660,8 @@ void Session::MarkTxReturnResult(uint16_t descriptor_index, zx_status_t status) 
           static_cast<uint32_t>(TxReturnFlags::kTxRetNotAvailable | TxReturnFlags::kTxRetError);
       break;
     case ZX_ERR_INTERNAL:
-      // ZX_ERR_INTERNAL should never assume any flag semantics besides generic error.
+      // ZX_ERR_INTERNAL should never assume any flag semantics besides generic
+      // error.
       __FALLTHROUGH;
     default:
       desc.return_flags = static_cast<uint32_t>(TxReturnFlags::kTxRetError);
@@ -665,9 +672,9 @@ void Session::MarkTxReturnResult(uint16_t descriptor_index, zx_status_t status) 
 void Session::ReturnTxDescriptors(const uint16_t* descriptors, size_t count) {
   size_t actual_count;
 
-  // TODO(https://fxbug.dev/42107145): We're assuming that writing to the FIFO here
-  // is a sufficient memory barrier for the other end to access the data. That
-  // is currently true but not really guaranteed by the API.
+  // TODO(https://fxbug.dev/42107145): We're assuming that writing to the FIFO
+  // here is a sufficient memory barrier for the other end to access the data.
+  // That is currently true but not really guaranteed by the API.
   zx_status_t status = fifo_tx_.write(sizeof(uint16_t), descriptors, count, &actual_count);
   constexpr char kLogFormat[] = "%s: failed to return %ld tx descriptors: %s";
   switch (status) {
@@ -729,16 +736,16 @@ zx_status_t Session::LoadRxDescriptors(RxQueue::SessionTransaction& transact) {
   } else if (!rx_valid_) {
     return ZX_ERR_BAD_STATE;
   }
-  // If we get here, we either have available descriptors or fetching more descriptors succeeded.
-  // Loading from the available pool must succeed.
+  // If we get here, we either have available descriptors or fetching more
+  // descriptors succeeded. Loading from the available pool must succeed.
   ZX_ASSERT(LoadAvailableRxDescriptors(transact));
   return ZX_OK;
 }
 
 void Session::Kill() {
-  // Because of how the driver framework and FIDL interacts this has to be a posted task. Otherwise
-  // the unbind can deadlock waiting for the calling thread to serve a request while it's busy
-  // making this call.
+  // Because of how the driver framework and FIDL interacts this has to be a
+  // posted task. Otherwise the unbind can deadlock waiting for the calling
+  // thread to serve a request while it's busy making this call.
   auto binding = std::move(binding_);
   if (binding.has_value()) {
     async::PostTask(dispatcher_, [binding = std::move(binding)]() mutable { binding->Unbind(); });
@@ -754,21 +761,30 @@ zx_status_t Session::FillRxSpace(uint16_t descriptor_index,
   }
   buffer_descriptor_t& desc = *desc_ptr;
 
-  // chain_length is the number of buffers to follow. Rx buffers are always single buffers.
+  AssertParentControlLockShared(*parent_);
+  if (!parent_->IsDataVmoPrepared(desc.vmo_id)) {
+    LOGF_ERROR("%s: received invalid rx vmo id: %d", name(), desc.vmo_id);
+    return ZX_ERR_IO_INVALID;
+  }
+
+  // chain_length is the number of buffers to follow. Rx buffers are always
+  // single buffers.
   if (desc.chain_length != 0) {
     LOGF_ERROR("%s: received invalid chain length for rx buffer: %d", name(), desc.chain_length);
     return ZX_ERR_INVALID_ARGS;
   }
   if (desc.data_length < parent_->info().min_rx_buffer_length().value_or(0)) {
-    LOGF_ERROR("netwok-device(%s): rx buffer length %d less than required minimum of %d", name(),
-               desc.data_length, parent_->info().min_rx_buffer_length().value_or(0));
+    LOGF_ERROR(
+        "network-device(%s): rx buffer length %d less than required "
+        "minimum of %d",
+        name(), desc.data_length, parent_->info().min_rx_buffer_length().value_or(0));
     return ZX_ERR_INVALID_ARGS;
   }
   *buff = {
       .id = buff->id,
       .region =
           {
-              .vmo = vmo_id_,
+              .vmo = desc.vmo_id,
               .offset = desc.offset + desc.head_length,
               .length = desc.data_length + desc.tail_length,
           },
@@ -824,17 +840,18 @@ zx_status_t Session::LoadRxInfo(const RxFrameInfo& info) {
     const SessionRxBuffer& buffer = *buffers_iterator;
     buffer_descriptor_t& desc = descriptor(buffer.descriptor);
     uint32_t available_len = desc.data_length + desc.head_length + desc.tail_length;
-    // Total consumed length for the descriptor is the offset + length because length is counted
-    // from the offset on fulfilled buffer parts.
+    // Total consumed length for the descriptor is the offset + length because
+    // length is counted from the offset on fulfilled buffer parts.
     uint32_t consumed_part_length = buffer.offset + buffer.length;
     if (consumed_part_length > available_len) {
       LOGF_ERROR("%s: invalid returned buffer length: %d, descriptor fits %d", name(),
                  consumed_part_length, available_len);
       return ZX_ERR_INVALID_ARGS;
     }
-    // NB: Update only the fields that we need to update here instead of using literals; we're
-    // writing into shared memory and we don't want to write over all fields nor trust compiler
-    // optimizations to elide "a = a" statements.
+    // NB: Update only the fields that we need to update here instead of using
+    // literals; we're writing into shared memory and we don't want to write
+    // over all fields nor trust compiler optimizations to elide "a = a"
+    // statements.
     desc.head_length = static_cast<uint16_t>(buffer.offset);
     desc.data_length = buffer.length;
     desc.tail_length = static_cast<uint16_t>(available_len - consumed_part_length);
@@ -844,8 +861,8 @@ zx_status_t Session::LoadRxInfo(const RxFrameInfo& info) {
     next_desc_index = buffer.descriptor;
 
     if (buffers_iterator == info.buffers.begin()) {
-      // The descriptor pointer now points to the first descriptor in the chain, where we store the
-      // metadata.
+      // The descriptor pointer now points to the first descriptor in the chain,
+      // where we store the metadata.
 
       // NB: Info type is currently unused by all drivers and has been removed
       // from the driver API in https://fxbug.dev/369404264. We always report
@@ -870,9 +887,9 @@ void Session::CommitRx() {
   }
   size_t actual;
 
-  // TODO(https://fxbug.dev/42107145): We're assuming that writing to the FIFO here
-  // is a sufficient memory barrier for the other end to access the data. That
-  // is currently true but not really guaranteed by the API.
+  // TODO(https://fxbug.dev/42107145): We're assuming that writing to the FIFO
+  // here is a sufficient memory barrier for the other end to access the data.
+  // That is currently true but not really guaranteed by the API.
   zx_status_t status = fifo_rx_->fifo.write(sizeof(uint16_t), rx_return_queue_.get(),
                                             rx_return_queue_count_, &actual);
   constexpr char kLogFormat[] = "%s: failed to return %ld rx descriptors: %s";
@@ -906,22 +923,6 @@ bool Session::IsSubscribedToFrameType(uint8_t port, netdev::wire::FrameType fram
   cpp20::span subscribed = slot.value().frame_types();
   return std::any_of(subscribed.begin(), subscribed.end(),
                      [frame_type](const netdev::wire::FrameType& t) { return t == frame_type; });
-}
-
-void Session::SetDataVmo(uint8_t vmo_id, DataVmoStore::StoredVmo* vmo) {
-  ZX_ASSERT_MSG(vmo_id_ == netdev::wire::kMaxDataVmos, "data VMO already set");
-  ZX_ASSERT_MSG(vmo_id < netdev::wire::kMaxDataVmos, "invalid vmo_id %d", vmo_id);
-  vmo_id_ = vmo_id;
-  data_vmo_ = vmo;
-}
-
-uint8_t Session::ClearDataVmo() {
-  uint8_t id = vmo_id_;
-  // Reset identifier to the marker value. The destructor will assert that `ReleaseDataVmo` was
-  // called by checking the value.
-  vmo_id_ = netdev::wire::kMaxDataVmos;
-  data_vmo_ = nullptr;
-  return id;
 }
 
 }  // namespace network::internal

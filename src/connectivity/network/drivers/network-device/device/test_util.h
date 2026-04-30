@@ -236,7 +236,7 @@ class FakeNetworkDeviceImpl
     : public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl> {
  public:
   using PrepareVmoHandler =
-      fit::function<void(uint8_t, const zx::vmo&, PrepareVmoCompleter::Sync&)>;
+      fit::function<bool(uint8_t, const zx::vmo&, PrepareVmoCompleter::Sync&)>;
   // |dispatcher| is optional, if it is not provided the impl dispatcher from a call to CreateChild
   // is used instead. This is provided for tests that don't call CreateChild.
   explicit FakeNetworkDeviceImpl(fdf_dispatcher_t* dispatcher = nullptr);

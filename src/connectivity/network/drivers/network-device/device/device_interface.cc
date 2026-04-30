@@ -25,14 +25,16 @@
 // Static sanity assertions from far-away defined buffer_descriptor_t.
 // A buffer descriptor is always described in 64 bit words.
 static_assert(sizeof(buffer_descriptor_t) % 8 == 0);
-// Verify no unseen padding is being added by the compiler and all padding reservation fields are
-// working as expected, check the offset of every 64 bit word in the struct.
+// Verify no unseen padding is being added by the compiler and all padding
+// reservation fields are working as expected, check the offset of every 64 bit
+// word in the struct.
 static_assert(offsetof(buffer_descriptor_t, frame_type) == 0);
 static_assert(offsetof(buffer_descriptor_t, port_id) == 8);
 static_assert(offsetof(buffer_descriptor_t, offset) == 16);
 static_assert(offsetof(buffer_descriptor_t, head_length) == 24);
 static_assert(offsetof(buffer_descriptor_t, inbound_flags) == 32);
-// Descriptor length is reported as uint8 words in session info, make sure that fits.
+// Descriptor length is reported as uint8 words in session info, make sure that
+// fits.
 static_assert(sizeof(buffer_descriptor_t) / sizeof(uint64_t) < std::numeric_limits<uint8_t>::max());
 
 namespace {
@@ -98,14 +100,15 @@ const char* DeviceStatusToString(network::internal::DeviceStatus status) {
 }
 
 void TeardownAndFreeBinder(std::unique_ptr<network::NetworkDeviceImplBinder>&& binder) {
-  // Keep a raw pointer for calling into since we capture by move in the callback which renders the
-  // pointer invalid.
+  // Keep a raw pointer for calling into since we capture by move in the
+  // callback which renders the pointer invalid.
   network::NetworkDeviceImplBinder* binder_ptr = binder.get();
 
-  // It doesn't matter if the teardown is synchronous here. The callback won't be called but since
-  // the callback will then be destroyed that means that the unique pointer it captured will also be
-  // destroyed, thus achieving the same goal. In fact, the callback doesn't even have to call reset
-  // but it's there to explicitly demonstrate the intent of the callback.
+  // It doesn't matter if the teardown is synchronous here. The callback won't
+  // be called but since the callback will then be destroyed that means that the
+  // unique pointer it captured will also be destroyed, thus achieving the same
+  // goal. In fact, the callback doesn't even have to call reset but it's there
+  // to explicitly demonstrate the intent of the callback.
   binder_ptr->Teardown([binder = std::move(binder)]() mutable { binder.reset(); });
 }
 
@@ -187,8 +190,9 @@ zx::result<std::unique_ptr<NetworkDeviceInterface>> NetworkDeviceInterface::Crea
 namespace internal {
 
 uint16_t TransformFifoDepth(uint16_t device_depth) {
-  // We're going to say the depth is twice the depth of the device to account for in-flight
-  // buffers, as long as it doesn't go over the maximum fifo depth.
+  // We're going to say the depth is twice the depth of the device to account
+  // for in-flight buffers, as long as it doesn't go over the maximum fifo
+  // depth.
 
   // Check for overflow.
   if (device_depth > (std::numeric_limits<uint16_t>::max() >> 1)) {
@@ -236,9 +240,9 @@ zx_status_t DeviceInterface::Init(std::unique_ptr<NetworkDeviceImplBinder>&& bin
   }
   binder_ = std::move(binder);
 
-  // If init fails the binder has to be torn down. The DeviceInterface::Teardown method is not
-  // going to be called at that point but the binder might have state that needs to be torn down in
-  // an orderly fashion.
+  // If init fails the binder has to be torn down. The DeviceInterface::Teardown
+  // method is not going to be called at that point but the binder might have
+  // state that needs to be torn down in an orderly fashion.
   auto teardown_and_free_binder = fit::defer([this] { TeardownAndFreeBinder(std::move(binder_)); });
 
   zx::result<fdf::ClientEnd<netdriver::NetworkDeviceImpl>> device = binder_->Bind();
@@ -319,16 +323,17 @@ zx_status_t DeviceInterface::Init(std::unique_ptr<NetworkDeviceImplBinder>&& bin
       sync_client.TakeClientEnd(), dispatchers_.impl_->get(),
       fidl::AnyTeardownObserver::ByCallback([this]() mutable {
         control_lock_.Acquire();
-        // Reset the client to ensure that the teardown process doesn't attempt to tear it down if
-        // the channel is already closed.
+        // Reset the client to ensure that the teardown process doesn't
+        // attempt to tear it down if the channel is already closed.
         device_impl_ = fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceImpl>();
         this->ContinueTeardown(TeardownState::DEVICE_IMPL);
       }));
 
-  // Making this a synchronous call simplifies the creation process of DeviceInterface at the
-  // expense of blocking the calling thread until Init is complete. This requires that netdevice
-  // allows some re-entrant calls as many drivers will call AddPort during initialization. Vendor
-  // drivers need to be cautious with locks to ensure that further re-entrant calls from AddPort
+  // Making this a synchronous call simplifies the creation process of
+  // DeviceInterface at the expense of blocking the calling thread until Init is
+  // complete. This requires that netdevice allows some re-entrant calls as many
+  // drivers will call AddPort during initialization. Vendor drivers need to be
+  // cautious with locks to ensure that further re-entrant calls from AddPort
   // will not cause a deadlock.
   fdf::WireUnownedResult init_status =
       device_impl_.sync().buffer(arena)->Init(std::move(endpoints->client));
@@ -391,8 +396,8 @@ void DeviceInterface::PortStatusChanged(
     netdriver::wire::NetworkDeviceIfcPortStatusChangedRequest* request, fdf::Arena& arena,
     PortStatusChangedCompleter::Sync& completer) {
   SharedAutoLock lock(&control_lock_);
-  // Skip port status changes if tearing down. During teardown ports may disappear and device
-  // implementation may not be aware of it yet.
+  // Skip port status changes if tearing down. During teardown ports may
+  // disappear and device implementation may not be aware of it yet.
   if (teardown_state_ != TeardownState::RUNNING) {
     return;
   }
@@ -423,10 +428,11 @@ void DeviceInterface::AddPort(netdriver::wire::NetworkDeviceIfcAddPortRequest* r
     return;
   }
 
-  // Pre-generate a salted port ID, if another AddPort call comes in while this one is in progress
-  // they will both be allowed to proceed but only one can complete the port construction. The
-  // behavior isn't necessarily fair; it doesn't guarantee that the first caller wins but this
-  // should be infrequent enough to not matter. This behavior allows the DevicePort object to
+  // Pre-generate a salted port ID, if another AddPort call comes in while this
+  // one is in progress they will both be allowed to proceed but only one can
+  // complete the port construction. The behavior isn't necessarily fair; it
+  // doesn't guarantee that the first caller wins but this should be infrequent
+  // enough to not matter. This behavior allows the DevicePort object to
   // maintain a const port id.
   PortSlot& port_slot = ports_[port_id];
   const netdev::wire::PortId salted_id = {
@@ -451,8 +457,8 @@ void DeviceInterface::AddPort(netdriver::wire::NetworkDeviceIfcAddPortRequest* r
         }
 
         fbl::AutoLock lock(&control_lock_);
-        // Check again, another AddPort with the same port ID could potentially have completed
-        // while in the asynchronous creation flow.
+        // Check again, another AddPort with the same port ID could potentially
+        // have completed while in the asynchronous creation flow.
         if (zx_status_t status = CanCreatePortWithId(port_id); status != ZX_OK) {
           completer.buffer(arena).Reply(status);
           return;
@@ -475,7 +481,8 @@ void DeviceInterface::RemovePort(
     RemovePortCompleter::Sync&) {
   LOGF_TRACE("%s(%d)", __FUNCTION__, request->id);
   SharedAutoLock lock(&control_lock_);
-  // Ignore if we're tearing down, all ports will be removed as part of teardown.
+  // Ignore if we're tearing down, all ports will be removed as part of
+  // teardown.
   if (teardown_state_ != TeardownState::RUNNING) {
     return;
   }
@@ -606,8 +613,8 @@ void DeviceInterface::GetInfo(GetInfoCompleter::Sync& completer) {
 
 void DeviceInterface::OpenSession(OpenSessionRequestView request,
                                   OpenSessionCompleter::Sync& completer) {
-  zx::result sync_result = [this, &request]()
-      -> zx::result<std::tuple<netdev::wire::DeviceOpenSessionResponse, uint8_t, zx::vmo>> {
+  zx::result sync_result = [this,
+                            &request]() -> zx::result<netdev::wire::DeviceOpenSessionResponse> {
     fbl::AutoLock rx_lock(&rx_lock_);
     fbl::AutoLock tx_lock(&tx_lock_);
     fbl::AutoLock lock(&control_lock_);
@@ -638,28 +645,35 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
     if (!session_info.has_data()) {
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
-    if (session_info.data().size() != 1) {
-      return zx::error(ZX_ERR_INVALID_ARGS);
-    }
-    zx::vmo& vmo = session_info.data()[0].vmo();
-    // NB: It's safe to register the VMO after session creation (and thread start) because sessions
-    // always start in a paused state, so the tx path can't be running while we hold the control
-    // lock.
-    if (vmo_store_.is_full()) {
-      return zx::error(ZX_ERR_NO_RESOURCES);
-    }
-    // Duplicate the VMO to share with the device implementation.
-    zx::vmo device_vmo;
-    if (zx_status_t status = vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &device_vmo); status != ZX_OK) {
-      return zx::error(status);
+
+    for (netdev::wire::DataVmo& data_vmo : session_info.data()) {
+      if (!data_vmo.has_id()) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      if (!data_vmo.has_vmo()) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      if (!data_vmo.has_num_rx_buffers()) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      if (data_vmo.id() >= fuchsia_hardware_network::wire::kMaxDataVmos) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
     }
 
-    zx::result registration = vmo_store_.Register(std::move(vmo));
-    if (registration.is_error()) {
-      return registration.take_error();
+    // This is safe because we can only get here if session_ is nullptr,
+    // and we always remove all VMOs before setting session_ to nullptr.
+    ZX_ASSERT_MSG(vmo_store_.count() == 0, "Must have no sessions");
+    for (netdev::wire::DataVmo& data_vmo : session_info.data()) {
+      VmoId vmo_id = data_vmo.id();
+      if (zx_status_t status = vmo_store_.RegisterWithKey(
+              vmo_id, std::move(data_vmo.vmo()),
+              DataVmoMeta{.id = vmo_id, .num_rx_buffers = data_vmo.num_rx_buffers()});
+          status != ZX_OK) {
+        return zx::error(status);
+      }
+      all_vmos_.push_front(&vmo_store_.GetVmo(vmo_id)->meta());
     }
-    const uint8_t vmo_id = registration.value();
-    session->SetDataVmo(vmo_id, vmo_store_.GetVmo(vmo_id));
     session->AssertParentTxLock(*this);
     session->InstallTx();
     session->Bind(std::move(endpoints->server));
@@ -669,12 +683,10 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
     rx_queue_->SetSession(session_.get());
     rx_queue_->TriggerSessionChanged();
 
-    return zx::ok(std::make_tuple(
-        netdev::wire::DeviceOpenSessionResponse{
-            .session = std::move(endpoints->client),
-            .fifos = std::move(fifos),
-        },
-        vmo_id, std::move(device_vmo)));
+    return zx::ok(netdev::wire::DeviceOpenSessionResponse{
+        .session = std::move(endpoints->client),
+        .fifos = std::move(fifos),
+    });
   }();
 
   if (sync_result.is_error()) {
@@ -682,26 +694,22 @@ void DeviceInterface::OpenSession(OpenSessionRequestView request,
     return;
   }
 
-  auto [response, vmo_id, device_vmo] = std::move(sync_result.value());
+  auto response = std::move(sync_result.value());
   fdf::Arena arena('NETD');
-  // Use ThenExactlyOnce here to ensure that no matter what the completer is used to respond to the
-  // incoming request. This prevents something in the vendor driver from blocking the FIDL request.
-  device_impl_.buffer(arena)
-      ->PrepareVmo(vmo_id, std::move(device_vmo))
-      .ThenExactlyOnce(
-          [completer = completer.ToAsync(), response = std::move(response)](
-              fdf::WireUnownedResult<
-                  fuchsia_hardware_network_driver::NetworkDeviceImpl::PrepareVmo>& result) mutable {
-            if (!result.ok() || result.value().s != ZX_OK) {
-              LOGF_ERROR("PrepareVmo failed: %s", result.ok()
-                                                      ? zx_status_get_string(result.value().s)
-                                                      : result.FormatDescription().c_str());
-              completer.ReplyError(ZX_ERR_INTERNAL);
-              return;
-            }
-
-            completer.ReplySuccess(std::move(response.session), std::move(response.fifos));
-          });
+  // The `all_vmos_` list will not change, it is safe to just get the begin and
+  // end iterators.
+  control_lock_.Acquire();
+  PrepareVmos(all_vmos_.begin(), all_vmos_.end(), std::move(arena),
+              [response = std::move(response),
+               completer = completer.ToAsync()](zx::result<> result) mutable {
+                if (result.is_error()) {
+                  completer.ReplyError(result.error_value());
+                  // Dropping of the session channel will cause the session to
+                  // be dead and hence undo all the prepared VMOs.
+                  return;
+                }
+                completer.ReplySuccess(std::move(response.session), std::move(response.fifos));
+              });
 }
 
 void DeviceInterface::GetPort(GetPortRequestView request, GetPortCompleter::Sync& _completer) {
@@ -924,26 +932,33 @@ void DeviceInterface::DeviceStopped() {
 }
 
 bool DeviceInterface::ContinueTeardown(network::internal::DeviceInterface::TeardownState state) {
-  // The teardown process goes through different phases, encoded by the TeardownState enumeration.
-  // - RUNNING: no teardown is in process. We move out of the RUNNING state by calling Unbind on all
-  // the DeviceInterface's bindings.
-  // - BINDINGS: Waiting for all bindings to close. Only moves to next state once all bindings are
-  // closed, then calls unbind on all watchers and moves to the WATCHERS state.
-  // - PORTS: Waiting for all ports to teardown. Only moves to the next state once all ports are
-  // destroyed, then proceeds to stop and destroy all sessions.
-  // - SESSIONS: Waiting for all sessions to be closed and destroyed (dead or alive). Once all the
-  // sessions are properly destroyed proceed to tear down the device implementation.
-  // - DEVICE_IMPL: Waiting for the device impl wire client to complete teardown. Only moves to the
-  // next state once the wire client has completed teardown and moves to the IFC_DISPATCHER state.
-  // - FACTORY: Waiting for the network device factory to complete shutdown if an asynchronous
-  // shutdown was indicated.
-  // - IFC_DISPATCHER: Waiting for the the network device interface dispatcher to complete shutdown.
-  // Only moves to the next state once the dispatcher is completely shut down.
-  // - PORT_DISPATCHER: Waiting for the port dispatcher to complete shutdown. This is the final
-  // stage, once the wire client is torn down the teardown_callback_ will be triggered, marking the
-  // end of the teardown process.
-  // To protect the linearity of the teardown process, once it has started (the state is no longer
-  // RUNNING) no more bindings, watchers, or sessions can be created.
+  // The teardown process goes through different phases, encoded by the
+  // TeardownState enumeration.
+  // - RUNNING: no teardown is in process. We move out of the RUNNING state by
+  // calling Unbind on all the DeviceInterface's bindings.
+  // - BINDINGS: Waiting for all bindings to close. Only moves to next state
+  // once all bindings are closed, then calls unbind on all watchers and moves
+  // to the WATCHERS state.
+  // - PORTS: Waiting for all ports to teardown. Only moves to the next state
+  // once all ports are destroyed, then proceeds to stop and destroy all
+  // sessions.
+  // - SESSIONS: Waiting for all sessions to be closed and destroyed (dead or
+  // alive). Once all the sessions are properly destroyed proceed to tear down
+  // the device implementation.
+  // - DEVICE_IMPL: Waiting for the device impl wire client to complete
+  // teardown. Only moves to the next state once the wire client has completed
+  // teardown and moves to the IFC_DISPATCHER state.
+  // - FACTORY: Waiting for the network device factory to complete shutdown if
+  // an asynchronous shutdown was indicated.
+  // - IFC_DISPATCHER: Waiting for the the network device interface dispatcher
+  // to complete shutdown. Only moves to the next state once the dispatcher is
+  // completely shut down.
+  // - PORT_DISPATCHER: Waiting for the port dispatcher to complete shutdown.
+  // This is the final stage, once the wire client is torn down the
+  // teardown_callback_ will be triggered, marking the end of the teardown
+  // process. To protect the linearity of the teardown process, once it has
+  // started (the state is no longer RUNNING) no more bindings, watchers, or
+  // sessions can be created.
 
   fit::callback<void()> teardown_callback =
       [this, state]() __TA_REQUIRES(control_lock_) -> fit::callback<void()> {
@@ -1001,9 +1016,10 @@ bool DeviceInterface::ContinueTeardown(network::internal::DeviceInterface::Teard
         teardown_state_ = TeardownState::SESSION;
         LOGF_TRACE("teardown state is SESSION");
         if (session_) {
-          // If we have any sessions, signal all of them to stop their threads callback. Each
-          // session that finishes operating will go through the `NotifyDeadSession` machinery. The
-          // teardown is only complete when all sessions are destroyed.
+          // If we have any sessions, signal all of them to stop their threads
+          // callback. Each session that finishes operating will go through the
+          // `NotifyDeadSession` machinery. The teardown is only complete when all
+          // sessions are destroyed.
           LOG_TRACE("teardown: sessions are running, scheduling teardown");
           if (session_->AssertParentControlLock(*this), !session_->IsDying()) {
             session_->Kill();
@@ -1014,8 +1030,8 @@ bool DeviceInterface::ContinueTeardown(network::internal::DeviceInterface::Teard
         __FALLTHROUGH;
       }
       case TeardownState::SESSION: {
-        // Condition to finish teardown: no more sessions exists (dead or alive) and the device
-        // state is STOPPED.
+        // Condition to finish teardown: no more sessions exists (dead or alive)
+        // and the device state is STOPPED.
         if (!session_ && device_status_ == DeviceStatus::STOPPED) {
           teardown_state_ = TeardownState::DEVICE_IMPL;
           LOG_TRACE("teardown: async teardown of device");
@@ -1048,14 +1064,15 @@ bool DeviceInterface::ContinueTeardown(network::internal::DeviceInterface::Teard
             ContinueTeardown(TeardownState::BINDER);
           });
           if (synchronicity == NetworkDeviceImplBinder::Synchronicity::Async) {
-            // The teardown of the binder will complete asynchronously, the callback will trigger
-            // the transition to the next state.
+            // The teardown of the binder will complete asynchronously, the
+            // callback will trigger the transition to the next state.
             LOG_TRACE("teardown: async teardown of binder");
             return nullptr;
           }
           // The teardown complete synchronously, continue on to the next state.
         }
-        // There was no binder or teardown is already complete, move immediately to the next step.
+        // There was no binder or teardown is already complete, move immediately
+        // to the next step.
         __FALLTHROUGH;
       case TeardownState::BINDER:
         LOG_TRACE("teardown state is BINDER");
@@ -1118,29 +1135,6 @@ void DeviceInterface::OnPortTeardownComplete(DevicePort& port) {
   } else {
     ContinueTeardown(TeardownState::PORTS);
   }
-}
-
-void DeviceInterface::ReleaseVmo(fit::callback<void()>&& on_complete) {
-  uint8_t vmo;
-  vmo = session_->ClearDataVmo();
-  zx::result result = vmo_store_.Unregister(vmo);
-  if (result.is_error()) {
-    // Avoid notifying the device implementation if unregistration fails.
-    // A non-ok return here means we're either attempting to double-release a VMO or the session
-    // didn't have a registered VMO.
-    LOGF_WARN("%s: Failed to unregister VMO %d: %s", session_->name(), vmo, result.status_string());
-    return;
-  }
-
-  fdf::Arena arena('NETD');
-  device_impl_.buffer(arena)->ReleaseVmo(vmo).Then(
-      [on_complete = std::move(on_complete)](
-          fdf::WireUnownedResult<netdriver::NetworkDeviceImpl::ReleaseVmo>& result) mutable {
-        if (!result.ok()) {
-          LOGF_ERROR("ReleaseVmo failed to release VMO: %s", result.FormatDescription().c_str());
-        }
-        on_complete();
-      });
 }
 
 fbl::RefPtr<RefCountedFifo> DeviceInterface::rx_fifo() {
@@ -1209,8 +1203,9 @@ void DeviceInterface::NotifyDeadSession() {
 
   LOGF_TRACE("%s('%s') session is dead, waiting for buffers to be reclaimed", __FUNCTION__,
              session_name);
-  // The session may also be eligible for immediate destruction if all buffers are already returned.
-  // Let PruneDeadSession do the checking and cleanup work.
+  // The session may also be eligible for immediate destruction if all buffers
+  // are already returned. Let PruneDeadSession do the checking and cleanup
+  // work.
   SharedAutoLock lock(&control_lock_);
   PruneDeadSession();
 }
@@ -1230,23 +1225,34 @@ void DeviceInterface::PruneDeadSession() __TA_REQUIRES_SHARED(control_lock_) {
 
   // Schedule for destruction.
   //
-  // Destruction must happen later because we currently hold shared access to the control lock
-  // and we need an exclusive lock to release the VMO.
+  // Destruction must happen later because we currently hold shared access to
+  // the control lock and we need an exclusive lock to release the VMO.
   //
-  // ShouldDestroy should only return true once in the lifetime of a session, which guarantees
-  // that postponing the destruction on the dispatcher is always safe.
+  // ShouldDestroy should only return true once in the lifetime of a session,
+  // which guarantees that postponing the destruction on the dispatcher is
+  // always safe.
   async::PostTask(dispatchers_.impl_->async_dispatcher(), [this]() {
-    fbl::AutoLock lock(&control_lock_);
+    control_lock_.AcquireShared();
     LOGF_TRACE("destroying %s", session_->name());
-    // The callback for ReleaseVmo is never called inline. Otherwise this would deadlock as the
-    // control lock is held when this is called.
-    ReleaseVmo([this] {
+    auto prepared_vmos_begin = prepared_vmos_.begin();
+    auto prepared_vmos_end = prepared_vmos_.end();
+    control_lock_.ReleaseShared();
+
+    fdf::Arena arena('NETD');
+    ReleaseVmos(prepared_vmos_begin, prepared_vmos_end, std::move(arena), [this]() {
       {
         fbl::AutoLock rx_lock(&rx_lock_);
         rx_queue_->AssertParentRxLocked(*this);
         rx_queue_->SetSession(nullptr);
       }
       control_lock_.Acquire();
+      while (!all_vmos_.is_empty()) {
+        VmoId id = all_vmos_.pop_front()->id;
+        if (zx::result<zx::vmo> result = vmo_store_.Unregister(id); !result.is_ok()) {
+          LOGF_WARN("%s: Failed to unregister VMO %u: %s", session_->name(), id,
+                    result.status_string());
+        }
+      }
       std::string session_name = session_->name();
       session_ = nullptr;
       evt_session_died_.Trigger(session_name.c_str());

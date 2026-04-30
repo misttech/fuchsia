@@ -16,15 +16,24 @@ class TestSession {
  public:
   static constexpr uint16_t kDefaultDescriptorCount = 256;
   static constexpr uint64_t kDefaultBufferLength = 2048;
+  static constexpr uint8_t kRxVmoId = 0;
+  static constexpr uint8_t kTxVmoId = 1;
 
   TestSession() = default;
+
+  struct VmoConfig {
+    zx::vmo vmo;
+    uint16_t num_rx_buffers;
+  };
 
   zx_status_t Open(fidl::WireSyncClient<netdev::Device>& netdevice, const char* name,
                    netdev::wire::SessionFlags flags = netdev::wire::SessionFlags(),
                    uint16_t num_descriptors = kDefaultDescriptorCount,
-                   uint64_t buffer_size = kDefaultBufferLength);
+                   uint64_t buffer_size = kDefaultBufferLength, std::vector<VmoConfig> vmos = {});
 
-  zx_status_t Init(uint16_t descriptor_count, uint64_t buffer_size);
+  zx_status_t Init(uint16_t descriptor_count, uint64_t buffer_size,
+                   std::vector<VmoConfig> vmos = {});
+
   zx::result<netdev::wire::SessionInfo> GetInfo(
       std::optional<netdev::wire::SessionFlags> with_flags = std::nullopt);
   void Setup(fidl::ClientEnd<netdev::Session> session, netdev::wire::Fifos fifos);
@@ -35,9 +44,15 @@ class TestSession {
   zx_status_t Close();
   zx_status_t WaitClosed(zx::time deadline);
   void ZeroVmo();
-  buffer_descriptor_t& ResetDescriptor(uint16_t index);
+  buffer_descriptor_t& ResetDescriptor(uint16_t index, uint8_t vmo_id, uint64_t offset);
+  buffer_descriptor_t& ResetDescriptor(uint16_t index) {
+    uint8_t vmo_id = 0;
+    uint64_t offset = buffer_length_ * index;
+    return ResetDescriptor(index, vmo_id, offset);
+  }
   buffer_descriptor_t& descriptor(uint16_t index);
-  uint8_t* buffer(uint64_t offset);
+  uint8_t* tx_buffer(uint8_t vmo_id, uint64_t offset);
+  uint8_t* buffer(uint64_t offset) { return tx_buffer(0, offset); }
 
   zx_status_t WaitRxAvailable(zx::time deadline = zx::time::infinite()) const;
   zx_status_t FetchRx(uint16_t* descriptors, size_t count, size_t* actual) const;
@@ -45,7 +60,7 @@ class TestSession {
   zx_status_t SendRx(const uint16_t* descriptor, size_t count, size_t* actual) const;
   zx_status_t SendTx(const uint16_t* descriptor, size_t count, size_t* actual) const;
   zx_status_t SendTxData(const netdev::wire::PortId& port_id, uint16_t descriptor_index,
-                         const std::vector<uint8_t>& data);
+                         uint8_t vmo_id, uint64_t offset, const std::vector<uint8_t>& data);
 
   zx_status_t FetchRx(uint16_t* descriptor) const {
     size_t actual;
@@ -80,8 +95,8 @@ class TestSession {
   uint16_t descriptors_count_{};
   uint64_t buffer_length_{};
   fidl::WireSyncClient<netdev::Session> session_;
-  zx::vmo data_vmo_;
-  fzl::VmoMapper data_;
+  std::vector<VmoConfig> vmo_configs_;
+  std::vector<fzl::VmoMapper> data_mappers_;
   zx::vmo descriptors_vmo_;
   fzl::VmoMapper descriptors_;
   netdev::wire::Fifos fifos_;

@@ -10,6 +10,11 @@
 #include <zircon/types.h>
 
 #include <array>
+#include <iterator>
+#include <type_traits>
+
+#include <fbl/intrusive_double_list.h>
+#include <fbl/intrusive_single_list.h>
 
 #include "src/lib/vmo_store/vmo_store.h"
 
@@ -21,7 +26,23 @@ constexpr uint16_t kMaxFifoDepth = ZX_FIFO_MAX_SIZE_BYTES / sizeof(uint16_t);
 namespace internal {
 template <typename T>
 using BufferParts = std::array<T, netdriver::kMaxBufferParts>;
-using DataVmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint8_t>>;
+using netdev::wire::VmoId;
+struct AllVmosTag;
+struct PreparedVmosTag;
+struct DataVmoMeta
+    : public fbl::ContainableBaseClasses<
+          fbl::SinglyLinkedListable<DataVmoMeta*, fbl::NodeOptions::AllowMove, AllVmosTag>,
+          fbl::DoublyLinkedListable<DataVmoMeta*, fbl::NodeOptions::AllowMove, PreparedVmosTag>> {
+  VmoId id;
+  uint16_t num_rx_buffers;
+};
+using DataVmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint8_t, DataVmoMeta>>;
+using AllDataVmos = fbl::SinglyLinkedList<DataVmoStore::Meta*, AllVmosTag>;
+using PreparedDataVmos = fbl::DoublyLinkedList<DataVmoStore::Meta*, PreparedVmosTag>;
+
+template <typename Iter>
+concept DataVmoIter = std::forward_iterator<Iter> &&
+                      std::is_same_v<typename std::iterator_traits<Iter>::value_type, DataVmoMeta>;
 }  // namespace internal
 
 }  // namespace network

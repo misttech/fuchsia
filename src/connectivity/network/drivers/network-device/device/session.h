@@ -34,9 +34,9 @@ namespace network::internal {
 // This class provides safe access to device ports owned by a DeviceInterface.
 class AttachedPort {
  public:
-  // Helper function with TA annotations that bridges the gap between parent's locks and local
-  // locking requirements; TA is not otherwise able to tell that the |parent| and |parent_| are the
-  // same entity.
+  // Helper function with TA annotations that bridges the gap between parent's
+  // locks and local locking requirements; TA is not otherwise able to tell that
+  // the |parent| and |parent_| are the same entity.
   void AssertParentControlLockShared(DeviceInterface& parent)
       __TA_ASSERT_SHARED(parent_->control_lock()) __TA_REQUIRES_SHARED(parent.control_lock()) {
     ZX_DEBUG_ASSERT(parent_ == &parent);
@@ -71,8 +71,8 @@ class AttachedPort {
         frame_type_count_(static_cast<uint32_t>(frame_types.size())) {}
 
  private:
-  // NB: Fields can't be const because we want AttachedPort to allow assignment operator.
-  // Attached parent pointer, not owned;
+  // NB: Fields can't be const because we want AttachedPort to allow assignment
+  // operator. Attached parent pointer, not owned;
   DeviceInterface* parent_ = nullptr;
   // Attached port pointer, not owned;
   DevicePort* port_ = nullptr;
@@ -82,21 +82,23 @@ class AttachedPort {
 
 // A client session with a network device interface.
 //
-// Session will spawn a thread that will handle the fuchsia.hardware.network.Session FIDL control
-// plane calls and service the Tx FIFO associated with the client session.
+// Session will spawn a thread that will handle the
+// fuchsia.hardware.network.Session FIDL control plane calls and service the Tx
+// FIFO associated with the client session.
 //
-// It is invalid to destroy a Session that has outstanding buffers, that is, buffers that are
-// currently owned by the interface's Rx or Tx queues.
+// It is invalid to destroy a Session that has outstanding buffers, that is,
+// buffers that are currently owned by the interface's Rx or Tx queues.
 class Session : public fidl::WireServer<netdev::Session> {
  public:
   ~Session() override;
   // Creates a new session with the provided parameters.
   //
-  // The session will service fuchsia.hardware.network.Session FIDL calls on the provided `control`
-  // channel.
+  // The session will service fuchsia.hardware.network.Session FIDL calls on the
+  // provided `control` channel.
   //
-  // All control plane calls are operated on the provided `dispatcher`, and a dedicated thread will
-  // be spawned to handle data fast path operations (tx data plane).
+  // All control plane calls are operated on the provided `dispatcher`, and a
+  // dedicated thread will be spawned to handle data fast path operations (tx
+  // data plane).
   //
   // Returns the session and its data path FIFOs.
   static zx::result<std::pair<std::unique_ptr<Session>, netdev::wire::Fifos>> Create(
@@ -111,9 +113,9 @@ class Session : public fidl::WireServer<netdev::Session> {
   // |InstallTx| was called. No-op if |InstallTx| was not called.
   void UninstallTx() __TA_REQUIRES(parent_->tx_lock());
 
-  // Helper functions with TA annotations that bridges the gap between parent's locks and local
-  // locking requirements; TA is not otherwise able to tell that the |parent| and |parent_| are the
-  // same entity.
+  // Helper functions with TA annotations that bridges the gap between parent's
+  // locks and local locking requirements; TA is not otherwise able to tell that
+  // the |parent| and |parent_| are the same entity.
   void AssertParentControlLock(DeviceInterface& parent) __TA_ASSERT(parent_->control_lock())
       __TA_REQUIRES(parent.control_lock()) {
     ZX_DEBUG_ASSERT(parent_ == &parent);
@@ -150,23 +152,27 @@ class Session : public fidl::WireServer<netdev::Session> {
   // Returns tx descriptors to the session client.
   void ReturnTxDescriptors(const uint16_t* descriptors, size_t count);
   // Signals the session thread to stop servicing the session channel and FIFOs.
-  // When the session thread is finished, it notifies the DeviceInterface parent through
-  // `NotifyDeadSession`.
+  // When the session thread is finished, it notifies the DeviceInterface parent
+  // through `NotifyDeadSession`.
   void Kill();
 
-  // Loads rx descriptors into the provided session transaction, fetching more from the rx FIFO if
-  // needed.
+  // Loads rx descriptors into the provided session transaction, fetching more
+  // from the rx FIFO if needed.
   zx_status_t LoadRxDescriptors(RxQueue::SessionTransaction& transact);
-  // Sets the data in the space buffer `buff` to region described by `descriptor_index`.
+  // Sets the data in the space buffer `buff` to region described by
+  // `descriptor_index`.
   zx_status_t FillRxSpace(uint16_t descriptor_index,
-                          fuchsia_hardware_network_driver::wire::RxSpaceBuffer* buff);
+                          fuchsia_hardware_network_driver::wire::RxSpaceBuffer* buff)
+      __TA_REQUIRES_SHARED(parent_->control_lock());
   // Completes rx for a single frame described by `frame_info`.
   //
-  // Returns true if the buffers comprising `frame_info` can immediately be reused.
+  // Returns true if the buffers comprising `frame_info` can immediately be
+  // reused.
   bool CompleteRx(const RxFrameInfo& frame_info) __TA_REQUIRES_SHARED(parent_->control_lock())
       __TA_REQUIRES(parent_->rx_lock());
-  // Marks a single rx space buffer as complete, but does not consume it as it was unfulfilled.
-  // Returns true iff the session is active and space buffers can be reused.
+  // Marks a single rx space buffer as complete, but does not consume it as it
+  // was unfulfilled. Returns true iff the session is active and space buffers
+  // can be reused.
   bool CompleteUnfulfilledRx() __TA_REQUIRES(parent_->rx_lock());
   // Commits pending rx buffers, sending them back to the session client.
   void CommitRx() __TA_REQUIRES(parent_->rx_lock());
@@ -180,9 +186,10 @@ class Session : public fidl::WireServer<netdev::Session> {
   [[nodiscard]] inline bool ShouldDestroy() {
     if (in_flight_rx_ == 0 && in_flight_tx_ == 0) {
       bool expect = false;
-      // Only ever return true for ShouldDestroy once so the caller can schedule destruction
-      // asynchronously after ShouldDestroy returns true and have a guarantee that it won't be
-      // possible to schedule destruction for the same object twice.
+      // Only ever return true for ShouldDestroy once so the caller can schedule
+      // destruction asynchronously after ShouldDestroy returns true and have a
+      // guarantee that it won't be possible to schedule destruction for the
+      // same object twice.
       return scheduled_destruction_.compare_exchange_strong(expect, true);
     }
     return false;
@@ -196,17 +203,12 @@ class Session : public fidl::WireServer<netdev::Session> {
 
   // Notifies session of port destruction.
   //
-  // Returns true iff the session should be stopped after detaching from the port.
+  // Returns true iff the session should be stopped after detaching from the
+  // port.
   bool OnPortDestroyed(uint8_t port_id) __TA_REQUIRES(parent_->control_lock());
-  // Sets the internal references to the data VMO.
-  //
-  // Must only be called when the Session hasn't yet been allocated a VMO id, will abort otherwise.
-  void SetDataVmo(uint8_t vmo_id, DataVmoStore::StoredVmo* vmo);
-  // Clears internal references to data VMO, returning the vmo_id that was associated with this
-  // session.
-  uint8_t ClearDataVmo();
 
-  // Fetch tx descriptors from the FIFO and queue them in the parent |DeviceInterface|'s TxQueue.
+  // Fetch tx descriptors from the FIFO and queue them in the parent
+  // |DeviceInterface|'s TxQueue.
   zx_status_t FetchTx(TxQueue::SessionTransaction& transaction)
       __TA_EXCLUDES(parent_->control_lock(), parent_->rx_lock()) __TA_REQUIRES(parent_->tx_lock());
 
@@ -230,13 +232,14 @@ class Session : public fidl::WireServer<netdev::Session> {
 
   // Detaches a port from the session.
   //
-  // If |salt| is provided, only succeeds if |salt| matches currently attached port's value.
+  // If |salt| is provided, only succeeds if |salt| matches currently attached
+  // port's value.
   //
-  // Returns zx::ok(true) if the session was attached to the port and the session transitioned to
-  // paused.
+  // Returns zx::ok(true) if the session was attached to the port and the
+  // session transitioned to paused.
   //
-  // Returns zx::ok(false) if the session was attached to the port but it remains running attached
-  // to other ports.
+  // Returns zx::ok(false) if the session was attached to the port but it
+  // remains running attached to other ports.
   //
   // Returns zx::error otherwise.
   zx::result<bool> DetachPortLocked(uint8_t port_id, std::optional<uint8_t> salt)
@@ -246,28 +249,23 @@ class Session : public fidl::WireServer<netdev::Session> {
   const buffer_descriptor_t* checked_descriptor(uint16_t index) const;
   buffer_descriptor_t& descriptor(uint16_t index);
   const buffer_descriptor_t& descriptor(uint16_t index) const;
-  // Loads a completed rx buffer information back into the descriptor with the provided index.
+  // Loads a completed rx buffer information back into the descriptor with the
+  // provided index.
   zx_status_t LoadRxInfo(const RxFrameInfo& info) __TA_REQUIRES(parent_->rx_lock());
-  // Loads all rx descriptors that are already available into the given transaction.
+  // Loads all rx descriptors that are already available into the given
+  // transaction.
   bool LoadAvailableRxDescriptors(RxQueue::SessionTransaction& transact);
   // Fetches rx descriptors from the rx FIFO.
   zx_status_t FetchRxDescriptors() __TA_REQUIRES(parent_->rx_lock());
 
   async_dispatcher_t* const dispatcher_;
   const std::array<char, netdev::wire::kMaxSessionName + 1> name_;
-  // `MAX_VMOS` is used as a marker for invalid VMO identifier.
-  // The destructor checks that vmo_id is set to `MAX_VMOS`, which verifies that `ReleaseDataVmo`
-  // was called before destruction.
-  uint8_t vmo_id_ = netdev::wire::kMaxDataVmos;
-  // Unowned pointer to data VMO stored in DeviceInterface.
-  // Set by Session::Create.
-  DataVmoStore::StoredVmo* data_vmo_ = nullptr;
   std::optional<WatchDelegatedRxLeaseCompleter::Async> rx_lease_completer_
       __TA_GUARDED(rx_lease_lock_);
   std::optional<fidl::ServerBindingRef<netdev::Session>> binding_;
-  // The control channel is only set by the session teardown process if an epitaph must be sent when
-  // all the buffers are properly reclaimed. It is set to the channel that was previously bound in
-  // the `binding_` Server.
+  // The control channel is only set by the session teardown process if an
+  // epitaph must be sent when all the buffers are properly reclaimed. It is set
+  // to the channel that was previously bound in the `binding_` Server.
   std::optional<fidl::ServerEnd<netdev::Session>> control_channel_;
   const zx::vmo vmo_descriptors_;
   fzl::VmoMapper descriptors_;
@@ -278,8 +276,8 @@ class Session : public fidl::WireServer<netdev::Session> {
   const uint64_t descriptor_length_;
   const netdev::wire::SessionFlags flags_;
 
-  // AttachedPorts information. Parent device is responsible for detaching ports from sessions
-  // before destroying them.
+  // AttachedPorts information. Parent device is responsible for detaching ports
+  // from sessions before destroying them.
   std::array<std::optional<AttachedPort>, netdev::wire::kMaxPorts> attached_ports_
       __TA_GUARDED(parent_->control_lock());
   // Pointer to parent network device, not owned.

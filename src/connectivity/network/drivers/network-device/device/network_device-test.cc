@@ -69,6 +69,8 @@ class NetworkDeviceTest : public ::testing::Test {
   // A nonzero identifier is chosen to avoid default value traps.
   static constexpr uint8_t kPort13 = 13;
 
+  // Start of Tx descriptor.
+  static constexpr uint16_t kTxDescriptorStartIndex = kDefaultDescriptorCount / 2;
   // Common descriptor names, to avoid magic numbers.
   static constexpr uint16_t kDescriptorIndex0 = 0;
   static constexpr uint16_t kDescriptorIndex1 = 1;
@@ -235,6 +237,7 @@ class NetworkDeviceTest : public ::testing::Test {
 
   zx_status_t OpenSession(TestSession* session, uint16_t num_descriptors = kDefaultDescriptorCount,
                           uint64_t buffer_size = kDefaultBufferLength,
+                          std::vector<TestSession::VmoConfig> vmos = {},
                           const char* session_name = nullptr,
                           netdev::wire::SessionFlags flags = netdev::wire::SessionFlags()) {
     // automatically increment to test_session_(a, b, c, etc...)
@@ -247,7 +250,8 @@ class NetworkDeviceTest : public ::testing::Test {
     }
 
     fidl::WireSyncClient connection = OpenConnection();
-    return session->Open(connection, session_name, flags, num_descriptors, buffer_size);
+    return session->Open(connection, session_name, flags, num_descriptors, buffer_size,
+                         std::move(vmos));
   }
 
   zx_status_t AttachSessionPort(TestSession& session, FakeNetworkPortImpl& impl) {
@@ -432,6 +436,7 @@ class PrepareVmoCallbackParamTest : public NetworkDeviceTest,
         fdf::Arena arena('TEST');
         completer.buffer(arena).Reply(status);
       }
+      return status == ZX_OK;
     });
   }
 };
@@ -1156,6 +1161,7 @@ TEST_F(NetworkDeviceTest, SessionNameRespectsStringView) {
 
   TestSession test_session;
   ASSERT_OK(test_session.Init(kDefaultDescriptorCount, kDefaultBufferLength));
+
   zx::result info_status = test_session.GetInfo();
   ASSERT_OK(info_status.status_value());
   netdev::wire::SessionInfo& info = info_status.value();
@@ -1487,6 +1493,41 @@ TEST_F(NetworkDeviceTest, RejectsInvalidPortIds) {
         ZX_ERR_ALREADY_EXISTS);
     ASSERT_FALSE(fake_port.removed());
   }
+}
+
+TEST_F(NetworkDeviceTest, RejectsInvalidVmoIds) {
+  ASSERT_OK(CreateDeviceWithPort13());
+  fidl::WireSyncClient<netdev::Device> device = OpenConnection();
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+
+  fidl::Arena alloc;
+
+  auto invalid_vmo = netdev::wire::DataVmo::Builder(alloc)
+                         .id(fuchsia_hardware_network::wire::kMaxDataVmos)
+                         .vmo(std::move(vmo))
+                         .num_rx_buffers(1)
+                         .Build();
+
+  std::vector<netdev::wire::DataVmo> data_vmos = {invalid_vmo};
+
+  zx::vmo descriptors_vmo;
+  ASSERT_OK(zx::vmo::create(4096, 0, &descriptors_vmo));
+
+  auto session_info =
+      netdev::wire::SessionInfo::Builder(alloc)
+          .data(fidl::VectorView<netdev::wire::DataVmo>(alloc, data_vmos))
+          .descriptors(std::move(descriptors_vmo))
+          .descriptor_version(NETWORK_DEVICE_DESCRIPTOR_VERSION)
+          .descriptor_length(static_cast<uint8_t>(sizeof(buffer_descriptor_t) / sizeof(uint64_t)))
+          .descriptor_count(16)
+          .Build();
+
+  auto res = device->OpenSession(fidl::StringView::FromExternal("test_session"), session_info);
+  ASSERT_OK(res.status());
+  ASSERT_TRUE(res->is_error());
+  ASSERT_EQ(res->error_value(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST_F(NetworkDeviceTest, TxBadPorts) {
@@ -2149,7 +2190,7 @@ TEST_P(BadDescriptorTest, SessionIsKilledOnBadDescriptor) {
   constexpr uint16_t kDescriptorCount = 8;
   constexpr uint16_t kInitialRxDescriptors = kDescriptorCount / 2;
   constexpr uint16_t kGoodTxDescriptor = kDescriptorCount - 1;
-  ASSERT_OK(OpenSession(&session, kDescriptorCount, kDefaultBufferLength, nullptr));
+  ASSERT_OK(OpenSession(&session, kDescriptorCount, kDefaultBufferLength));
   ASSERT_OK(AttachSessionPort(session, port13_));
   uint16_t rx_descriptors[kInitialRxDescriptors];
   const uint16_t descriptor_offset = GetParam() == DescriptorSource::Rx ? kDescriptorCount : 0;
@@ -2199,7 +2240,7 @@ TEST_F(NetworkDeviceTest, SessionClosedOnStartFailure) {
 
   impl_.set_auto_start(ZX_ERR_INTERNAL);
   TestSession session;
-  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, "session"));
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength));
   ASSERT_OK(AttachSessionPort(session, port13_));
   ASSERT_OK(WaitSessionDied());
   ASSERT_NO_FATAL_FAILURE(assert_no_sessions());
@@ -2235,7 +2276,7 @@ TEST_F(NetworkDeviceTest, CanUpdatePortStatusWithinSetActive) {
   }
 
   TestSession session;
-  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, "session"));
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength));
 
   // Port goes online on SetActive callback when session attaches.
   {
@@ -2821,7 +2862,7 @@ TEST_P(SessionLeaseTest, ImmediateReturn) {
   ASSERT_OK(CreateDeviceWithPort13());
 
   TestSession session;
-  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, nullptr,
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, {}, nullptr,
                         netdev::wire::SessionFlags::kReceiveRxPowerLeases));
   ASSERT_OK(AttachSessionPort(session, port13_));
   ASSERT_OK(WaitSessionStarted());
@@ -2849,7 +2890,7 @@ TEST_P(SessionLeaseTest, Delegation) {
   auto cleanup = fit::defer([&port5]() { port5.RemoveSync(); });
 
   TestSession session;
-  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, nullptr,
+  ASSERT_OK(OpenSession(&session, kDefaultDescriptorCount, kDefaultBufferLength, {}, nullptr,
                         netdev::wire::SessionFlags::kReceiveRxPowerLeases));
   ASSERT_OK(AttachSessionPort(session, port13_));
   ASSERT_OK(WaitSessionStarted());
@@ -2966,6 +3007,121 @@ TEST_F(NetworkDeviceTest, SessionNoDualLeaseWatch) {
     // We should observe the epitaph error on both results.
     EXPECT_EQ(r.value().status_value(), ZX_ERR_BAD_STATE);
   }
+}
+
+class MultiVmoSessionTest : public NetworkDeviceTest {
+ protected:
+  static constexpr size_t kRxVmos = 2;
+  static constexpr size_t kTxVmos = 2;
+  static constexpr size_t kVmos = kRxVmos + kTxVmos;
+
+  void SetUp() override {
+    NetworkDeviceTest::SetUp();
+
+    ASSERT_OK(CreateDeviceWithPort13());
+    fidl::WireSyncClient connection = OpenConnection();
+
+    std::vector<TestSession::VmoConfig> vmos;
+    for (size_t i = 0; i < kVmos; ++i) {
+      zx::vmo vmo;
+      ASSERT_OK(zx::vmo::create(kDefaultDescriptorCount * kDefaultBufferLength / kVmos, 0, &vmo));
+      vmos.push_back({.vmo = std::move(vmo), .num_rx_buffers = 0});
+    }
+    ASSERT_OK(
+        OpenSession(&session_, kDefaultDescriptorCount, kDefaultBufferLength, std::move(vmos)));
+    ASSERT_OK(AttachSessionPort(session_, port13_));
+    ASSERT_OK(WaitStart());
+  }
+
+  void TearDown() override {
+    ASSERT_OK(session_.Close());
+    ASSERT_OK(WaitStop());
+
+    NetworkDeviceTest::TearDown();
+  }
+
+  TestSession session_;
+};
+
+TEST_F(MultiVmoSessionTest, SendTx) {
+  for (uint8_t vmo_id = kRxVmos; vmo_id < kVmos; ++vmo_id) {
+    buffer_descriptor_t& desc = session_.ResetDescriptor(kDescriptorIndex0, vmo_id, 0);
+    desc.port_id = {
+        .base = kPort13,
+        .salt = GetSaltedPortId(kPort13).salt,
+    };
+    desc.data_length = 100u;
+    ASSERT_OK(session_.SendTx(kDescriptorIndex0));
+    ASSERT_OK(WaitTx());
+
+    std::unique_ptr tx = impl_.PopTxBuffer();
+    ASSERT_TRUE(tx);
+    ASSERT_EQ(tx->buffer().data.size(), 1u);
+    ASSERT_EQ(tx->buffer().data[0].vmo, vmo_id);
+    ASSERT_EQ(tx->buffer().data[0].offset, 0u);
+    ASSERT_EQ(tx->buffer().data[0].length, 100u);
+    TxFidlReturnTransaction return_session(&impl_);
+    tx->set_status(ZX_OK);
+    return_session.Enqueue(std::move(tx));
+
+    // Return the buffer to the session so it can be reclaimed during teardown.
+    sync_completion_t completion;
+    SetEvtTxCompleteHandler([&completion]() { sync_completion_signal(&completion); });
+    return_session.Commit();
+    ASSERT_OK(sync_completion_wait_deadline(&completion, TEST_DEADLINE.get()));
+    SetEvtTxCompleteHandler(nullptr);
+  }
+}
+
+TEST_F(MultiVmoSessionTest, SendRx) {
+  bool seen_vmo[kRxVmos] = {false};
+
+  for (uint8_t vmo_id = 0; vmo_id < kRxVmos; ++vmo_id) {
+    session_.ResetDescriptor(kDescriptorIndex0, vmo_id, 0);
+
+    ASSERT_OK(session_.SendRx(kDescriptorIndex0));
+    ASSERT_OK(WaitRxAvailable());
+
+    std::unique_ptr rx = impl_.PopRxBuffer();
+    ASSERT_TRUE(rx);
+
+    // Verify VMO ID.
+    uint8_t received_vmo_id = rx->space().region.vmo;
+    ASSERT_EQ(received_vmo_id, vmo_id);
+    seen_vmo[received_vmo_id] = true;
+
+    // Return the buffer to the session.
+    rx->SetReturnLength(100);
+    std::unique_ptr ret = std::make_unique<RxFidlReturn>(std::move(rx), kPort13);
+    RxFidlReturnTransaction rx_transaction(&impl_);
+    rx_transaction.Enqueue(std::move(ret));
+    rx_transaction.Commit();
+    ASSERT_OK(session_.WaitRxAvailable());
+  }
+
+  for (bool seen : seen_vmo) {
+    ASSERT_TRUE(seen);
+  }
+}
+
+TEST_F(MultiVmoSessionTest, RejectsInvalidTxVmoId) {
+  buffer_descriptor_t& desc = session_.ResetDescriptor(kDescriptorIndex0, kVmos, 0);
+  desc.port_id = {
+      .base = kPort13,
+      .salt = GetSaltedPortId(kPort13).salt,
+  };
+  desc.data_length = 100u;
+  ASSERT_OK(session_.SendTx(kDescriptorIndex0));
+  // Session should be killed because of contract breach:
+  ASSERT_OK(session_.WaitClosed(TEST_DEADLINE));
+}
+
+TEST_F(MultiVmoSessionTest, RejectsInvalidRxVmoId) {
+  buffer_descriptor_t& desc = session_.ResetDescriptor(kDescriptorIndex0, kVmos, 0);
+  desc.data_length = 100u;
+  ASSERT_OK(session_.SendRx(kDescriptorIndex0));
+  // Session should be killed because of contract breach:
+  ASSERT_OK(session_.WaitClosed(TEST_DEADLINE));
 }
 
 }  // namespace testing

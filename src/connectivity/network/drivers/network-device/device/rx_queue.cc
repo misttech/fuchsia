@@ -192,6 +192,7 @@ zx_status_t RxQueue::PrepareBuff(fuchsia_hardware_network_driver::wire::RxSpaceB
   }
 
   buff->id = index;
+  session_->AssertParentControlLockShared(*parent_);
   if (zx_status_t status = session_->FillRxSpace(session_buffer->descriptor_index, buff);
       status != ZX_OK) {
     // If the session can't fill Rx for any reason, kill it.

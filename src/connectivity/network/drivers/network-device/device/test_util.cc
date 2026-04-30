@@ -435,10 +435,12 @@ void FakeNetworkDeviceImpl::PrepareVmo(
   zx::vmo& slot = vmos_[request->id];
   EXPECT_FALSE(slot.is_valid()) << "vmo " << static_cast<uint32_t>(request->id)
                                 << " already prepared";
-  slot = std::move(request->vmo);
   if (prepare_vmo_handler_) {
-    prepare_vmo_handler_(request->id, slot, completer);
+    if (prepare_vmo_handler_(request->id, slot, completer)) {
+      slot = std::move(request->vmo);
+    };
   } else {
+    slot = std::move(request->vmo);
     completer.buffer(arena).Reply(ZX_OK);
   }
 }
