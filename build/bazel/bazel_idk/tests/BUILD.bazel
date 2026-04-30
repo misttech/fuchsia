@@ -38,7 +38,7 @@ idk_data(
     api_area = "Developer",
     category = "partner",
     file = "include/lib/test_lib/test_header.h",
-    idk_name = "test_data_idk_name",
+    idk_name = "test_data_public_name",
     type = "config",
 )
 
@@ -46,8 +46,8 @@ create_test_atom_info(
     name = "test_data_atom_golden_info",
     testonly = True,
     additional_prebuild_info = {
-        "data": '["data/config/test_data_idk_name/config.json"]',
-        "name": '"test_data_idk_name"',
+        "data": '["data/config/test_data_public_name/config.json"]',
+        "name": '"test_data_public_name"',
         "type": '"config"',
     },
     api_area = "Developer",
@@ -56,14 +56,14 @@ create_test_atom_info(
     atom_build_deps = [],
     atom_files_map_generated_files = {},
     atom_files_map_source_files = {
-        "data/config/test_data_idk_name/config.json": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
+        "data/config/test_data_public_name/config.json": "//build/bazel/bazel_idk/tests:include/lib/test_lib/test_header.h",
     },
     category = "partner",
-    id = "sdk://data/test_data_idk_name",
-    idk_name = "test_data_idk_name",
+    id = "sdk://data/test_data_public_name",
+    idk_name = "test_data_public_name",
     is_stable = True,
     label = "//build/bazel/bazel_idk/tests:test_data_atom_idk",
-    meta_dest = "data/config/test_data_idk_name/meta.json",
+    meta_dest = "data/config/test_data_public_name/meta.json",
     type = "data",
     deps = [],
 )

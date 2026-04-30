@@ -292,7 +292,12 @@ def _get_file_maps(ctx):
 
 def _create_idk_atom_impl(ctx):
     if not ctx.attr.name.endswith("_idk"):
-        fail("IDK atom `name`s must end with `_idk`.")
+        fail('IDK atom `name`s must end with "_idk".')
+
+    # Prevent "idk" or "sdk" from appearing in the `idk_name`. Generally this is
+    # undesirable. It also prevents mistakenly using the same string as `name`.
+    if "idk" in ctx.attr.idk_name or "sdk" in ctx.attr.idk_name:
+        fail('IDK atom `idk_name`s must not include "idk" or "sdk".')
 
     # Merge additional prebuild info dictionaries if necessary.
     additional_prebuild_info = ctx.attr.additional_prebuild_info
@@ -381,7 +386,10 @@ See the `_replace_placeholders()` function for supported placeholders.
     provides = [FuchsiaIdkAtomInfo],
     attrs = {
         "idk_name": attr.string(
-            doc = "Name of this atom within the IDK.",
+            doc = """Name of this atom within the IDK.
+            Often matches `name` without the `_idk` suffix.
+            Must not include "idk" or "sdk".
+            """,
             mandatory = True,
         ),
         "id": attr.string(
