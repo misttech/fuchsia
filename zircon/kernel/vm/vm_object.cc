@@ -87,10 +87,11 @@ uint64_t VmObject::user_id() const {
   return user_id_;
 }
 
-void VmObject::AddMappingLocked(VmMapping* r) {
+zx_status_t VmObject::AddMappingLocked(VmMapping* r) {
   canary_.Assert();
   mapping_list_.insert(r);
   mapping_list_len_++;
+  return ZX_OK;
 }
 
 void VmObject::RemoveMappingLocked(VmMapping* r) {

@@ -502,31 +502,46 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     }
   }
 
+  // Grab the lock for the vmo. This is acquired here so that it is held continuously over both the
+  // architectural unmap and removing the current mapping from the VMO.
+  DEBUG_ASSERT(object_);
+  Guard<CriticalMutex> guard{object_->lock()};
+
   // With the object allocations done the last action that could fail is insertion into the
-  // subregions_ list. Notionally we want to remove the old mapping, then install our new
-  // mapping(s), but if our installation fails then we cannot necessarily rollback and install the
-  // old mapping. To work around this we instead first install any right mapping, which could fail
-  // and then if there is a left mapping replace the current mapping, which cannot fail.
-  // This approach has the result of temporarily causing the subregions_ list to have an overlapping
-  // entry and for the parent to have unactivated mappings, however we hold both the main and
-  // subregion lock over the entire operation, and so this is never visible.
+  // subregions_ list and object mapping list. Notionally we want to remove the old mapping, then
+  // install our new mapping(s), but if our installation fails then we cannot necessarily rollback
+  // and install the old mapping. To work around this we instead first install any right mapping,
+  // which could fail and then if there is a left mapping replace the current mapping, which cannot
+  // fail. This approach has the result of temporarily causing the subregions_ list to have an
+  // overlapping entry and for the parent to have unactivated mappings, however we hold both the
+  // main and subregion lock over the entire operation, and so this is never visible. Similarly we
+  // hold the object lock over the entire manipulation of mappings, and so the mappings being added
+  // before being in the alive state is never visible.
   if (right) {
     zx_status_t status = parent_->subregions_.InsertRegion(right);
     if (status != ZX_OK) {
       return status;
     }
+    status = object_->AddMappingLocked(right.get());
+    if (status != ZX_OK) {
+      parent_->subregions_.RemoveRegion(right.get());
+      return status;
+    }
   }
   if (left) {
+    zx_status_t status = object_->AddMappingLocked(left.get());
+    if (status != ZX_OK) {
+      if (right) {
+        object_->RemoveMappingLocked(right.get());
+        parent_->subregions_.RemoveRegion(right.get());
+      }
+      return status;
+    }
     // Replace can never fail as it does not need to allocate.
     parent_->subregions_.ReplaceRegion(this, left);
   } else {
     parent_->subregions_.RemoveRegion(this);
   }
-
-  // Grab the lock for the vmo. This is acquired here so that it is held continuously over both the
-  // architectural unmap and removing the current mapping from the VMO.
-  DEBUG_ASSERT(object_);
-  Guard<CriticalMutex> guard{object_->lock()};
 
   zx_status_t status =
       aspace_->arch_aspace().Unmap(base, size / kPageSize, aspace_->EnlargeArchUnmap());
@@ -581,7 +596,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
       AssertHeld(mapping->lock_ref());
       AssertHeld(mapping->object_lock_ref());
       AssertHeld(mapping->region_lock_ref());
-      // We already updated the parent region list.
+      // We already updated the parent region list and object mapping list.
       mapping->ActivateNoInsertLocked();
     }
   };
@@ -1393,24 +1408,27 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLocked(vaddr_t va, const ui
   return PageFault(va, pf_flags, additional_pages, object_.get(), page_request);
 }
 
-zx_status_t VmMapping::ActivateLocked(ActivateInsertParentRegion insert_region) {
+zx_status_t VmMapping::ActivateLocked(ActivateInsertRegions insert_region) {
   DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY);
   DEBUG_ASSERT(parent_);
 
   AssertHeld(parent_->lock_ref());
   AssertHeld(parent_->region_lock_ref());
-  // If inserting into the parent region attempt that first before modifying any state, as it can
-  // fail.
-  if (insert_region == ActivateInsertParentRegion::Yes) {
+  // If inserting into the regions attempt that first before modifying any state, as it can fail.
+  if (insert_region == ActivateInsertRegions::Yes) {
     zx_status_t status =
         parent_->subregions_.InsertRegion(fbl::RefPtr<VmAddressRegionOrMapping>(this));
     if (status != ZX_OK) {
       return status;
     }
+    status = object_->AddMappingLocked(this);
+    if (status != ZX_OK) {
+      parent_->subregions_.RemoveRegion(this);
+      return status;
+    }
   }
 
   state_ = LifeCycleState::ALIVE;
-  object_->AddMappingLocked(this);
 
   // Now that we have added a mapping to the VMO it's cache policy becomes fixed, and we can read it
   // and augment our arch_mmu_flags.
@@ -1441,7 +1459,7 @@ zx_status_t VmMapping::ActivateLocked(ActivateInsertParentRegion insert_region) 
 
 zx_status_t VmMapping::Activate() {
   Guard<CriticalMutex> guard{object_->lock()};
-  return ActivateLocked(ActivateInsertParentRegion::Yes);
+  return ActivateLocked(ActivateInsertRegions::Yes);
 }
 
 fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate)
@@ -1514,42 +1532,47 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
   const MemoryPriority old_priority = memory_priority_;
   // Although it is somewhat awkward and verbose, we use a lambda here instead of just a subscope to
   // prevent the usages of `AssertHeld` from 'leaking' beyond the actual guard scope.
-  const bool failure =
-      [&]() TA_REQ(lock()) TA_REQ(right_candidate->lock()) TA_REQ(new_mapping->lock()) {
-        // Although it was safe to read size_ without holding the object lock, we need to acquire it
-        // to perform changes.
-        Guard<CriticalMutex> guard{AliasedLock, object_->lock(), right_candidate->object_->lock()};
+  const bool failure = [&]() TA_REQ(lock()) TA_REQ(right_candidate->lock()) TA_REQ(
+                           new_mapping->lock()) {
+    // Although it was safe to read size_ without holding the object lock, we need to acquire it
+    // to perform changes.
+    Guard<CriticalMutex> guard{AliasedLock, object_->lock(), right_candidate->object_->lock()};
 
-        // Attempt to copy all the protection ranges first as this might fail due to an allocation.
-        // If it fails we can still abort with a fairly minor roll-back procedure.
-        if (MergeProtectionRangesLocked(*right_candidate) != ZX_OK) {
-          return true;
-        }
+    AssertHeld(new_mapping->object_lock_ref());
+    zx_status_t status = new_mapping->object_->AddMappingLocked(new_mapping.get());
+    if (status != ZX_OK) {
+      return true;
+    }
 
-        AssertHeld(region_lock_ref());
+    // Attempt to copy all the protection ranges first as this might fail due to an allocation.
+    // If it fails we can still abort with a fairly minor roll-back procedure.
+    if (MergeProtectionRangesLocked(*right_candidate) != ZX_OK) {
+      new_mapping->object_->RemoveMappingLocked(new_mapping.get());
+      return true;
+    }
 
-        AssertHeld(new_mapping->object_lock_ref());
-        new_mapping->first_region_arch_mmu_flags_ = first_region_arch_mmu_flags_;
-        new_mapping->rest_protection_ranges_ = ktl::move(rest_protection_ranges_);
+    AssertHeld(region_lock_ref());
 
-        AssertHeld(right_candidate->region_lock_ref());
-        // First destroy the right hand mapping, and remove it from the parent.
-        zx_status_t status =
-            right_candidate->DestroyLockedObject(DestroyUnmap::No, DestroyRemoveFromParent::Yes);
-        ASSERT(status == ZX_OK);
-        AssertHeld(parent_->lock_ref());
-        AssertHeld(parent_->region_lock_ref());
-        // To avoid ActivateLocked from failing we use ReplaceRegion to swap the left mapping for
-        // the new mapping in the subregions_ list. This temporarily results in the subregions_
-        // list having overlapping mappings and an unactivated mapping, but as we hold both the main
-        // lock and subregion lock over the entire operation this state cannot be observed.
-        parent_->subregions_.ReplaceRegion(this, new_mapping);
-        status = DestroyLockedObject(DestroyUnmap::No, DestroyRemoveFromParent::No);
-        ASSERT(status == ZX_OK);
-        AssertHeld(new_mapping->region_lock_ref());
-        new_mapping->ActivateNoInsertLocked();
-        return false;
-      }();
+    new_mapping->first_region_arch_mmu_flags_ = first_region_arch_mmu_flags_;
+    new_mapping->rest_protection_ranges_ = ktl::move(rest_protection_ranges_);
+
+    AssertHeld(right_candidate->region_lock_ref());
+    // First destroy the right hand mapping, and remove it from the parent.
+    status = right_candidate->DestroyLockedObject(DestroyUnmap::No, DestroyRemoveFromParent::Yes);
+    ASSERT(status == ZX_OK);
+    AssertHeld(parent_->lock_ref());
+    AssertHeld(parent_->region_lock_ref());
+    // To avoid ActivateLocked from failing we use ReplaceRegion to swap the left mapping for
+    // the new mapping in the subregions_ list. This temporarily results in the subregions_
+    // list having overlapping mappings and an unactivated mapping, but as we hold both the main
+    // lock and subregion lock over the entire operation this state cannot be observed.
+    parent_->subregions_.ReplaceRegion(this, new_mapping);
+    status = DestroyLockedObject(DestroyUnmap::No, DestroyRemoveFromParent::No);
+    ASSERT(status == ZX_OK);
+    AssertHeld(new_mapping->region_lock_ref());
+    new_mapping->ActivateNoInsertLocked();
+    return false;
+  }();
   if (failure) {
     // On failure roll back any protection ranges that might have been inserted. Erase cannot fail.
     ClearProtectionRangeTransitionsLocked(base_ + size_, base_ + size_ + right_candidate->size_);
@@ -1743,40 +1766,49 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
     if (status != ZX_OK) {
       return zx::error(status);
     }
-    Guard<CriticalMutex> object_guard{object_lock()};
+    // TODO(https://fxbug.dev/503042881) Support a more efficient deep copy.
+    btree::BTree<vaddr_t, arch_mmu_flags_t> protection_ranges;
+    for (auto [key, value] : rest_protection_ranges_locked()) {
+      auto result = protection_ranges.insert(key, value);
+      if (!result) {
+        return zx::error(ZX_ERR_NO_MEMORY);
+      }
+    }
+
     fbl::AllocChecker ac;
     // We created the clone starting at object_offset_ in the old object, so that makes the
     // equivalent start object_offset_ be 0 in the clone.
-    writable = fbl::AdoptRef(new (&ac) VmMapping(*parent_, true, base_, size_, flags_,
-                                                 ktl::move(clone), 0, first_region_arch_mmu_flags_,
-                                                 ktl::move(rest_protection_ranges_), mergeable_));
+    writable = fbl::AdoptRef(new (&ac) VmMapping(
+        *parent_, true, base_, size_, flags_, ktl::move(clone), 0,
+        first_region_arch_mmu_flags_locked(), ktl::move(protection_ranges), mergeable_));
     if (!ac.check()) {
       return zx::error(ZX_ERR_NO_MEMORY);
     }
-  }
-  // First transfer any memory priority from the current mapping to the new mapping.
-  AssertHeld(writable->lock_ref());
-  AssertHeld(writable->region_lock_ref());
-  // Use SplitOnUnmap=true because writable hasn't been activated yet.
-  writable->SetMemoryPriorityLocked</*SplitOnUnmap=*/true>(memory_priority_);
+    // First transfer any memory priority from the current mapping to the new mapping.
+    AssertHeld(writable->lock_ref());
+    AssertHeld(writable->region_lock_ref());
+    // Use SplitOnUnmap=true because writable hasn't been activated yet.
+    writable->SetMemoryPriorityLocked</*SplitOnUnmap=*/true>(memory_priority_);
 
-  // Now destroy the old mapping and then install the new one. As we hold the aspace lock
-  // continuously the temporary gap in a mapping being present cannot be observed.
-  // To ensure ActivateLocked cannot fail we want to use ReplaceRegion to swap the old mapping for
-  // the new one.
-  AssertHeld(parent_->lock_ref());
-  AssertHeld(parent_->region_lock_ref());
-  parent_->subregions_.ReplaceRegion(this, writable);
+    Guard<CriticalMutex> object_guard{writable->object_lock()};
+    status = writable->object_->AddMappingLocked(writable.get());
+    if (status != ZX_OK) {
+      writable->SetMemoryPriorityDefaultLockedObject</*SplitOnUnmap=*/true>();
+      return zx::error(status);
+    }
+
+    AssertHeld(parent_->lock_ref());
+    AssertHeld(parent_->region_lock_ref());
+    parent_->subregions_.ReplaceRegion(this, writable);
+    writable->ActivateNoInsertLocked();
+  }
+  // Now acquire the original object lock and destroy ourself.
   {
     // Keep a refptr to the object_ so we know our lock remains valid.
     fbl::RefPtr<VmObject> object(object_);
     Guard<CriticalMutex> object_guard{object_lock()};
     zx_status_t status = DestroyLockedObject(DestroyUnmap::Yes, DestroyRemoveFromParent::No);
     ASSERT(status == ZX_OK);
-  }
-  {
-    Guard<CriticalMutex> writable_object_guard{writable->object_lock()};
-    writable->ActivateNoInsertLocked();
   }
   return zx::ok(ktl::move(writable));
 }

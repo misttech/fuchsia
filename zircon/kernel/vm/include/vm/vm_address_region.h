@@ -1185,20 +1185,20 @@ class VmMapping final : public VmAddressRegionOrMapping {
   zx_status_t Activate() TA_REQ(region_lock()) TA_REQ(lock()) override;
 
   // Fully locked version of Activate that can additionally control whether the region is installed
-  // into the parent subregion list or not. This control exists to facilitate the fine grained
-  // control needed for splitting, merging and replacing of mappings as when set to |No| this method
-  // is defined as never failing.
-  enum class ActivateInsertParentRegion : bool {
+  // into the parent subregion list and vmo mapping list or not. This control exists to facilitate
+  // the fine grained control needed for splitting, merging and replacing of mappings as when set to
+  // |No| this method is defined as never failing.
+  enum class ActivateInsertRegions : bool {
     No,
     Yes,
   };
-  zx_status_t ActivateLocked(ActivateInsertParentRegion insert_region) TA_REQ(region_lock())
+  zx_status_t ActivateLocked(ActivateInsertRegions insert_region) TA_REQ(region_lock())
       TA_REQ(lock()) TA_REQ(object_->lock());
 
   // Wrapper for ActivateLocked that does not insert into the parent region, and therefore cannot
   // fail.
   void ActivateNoInsertLocked() TA_REQ(region_lock()) TA_REQ(lock()) TA_REQ(object_->lock()) {
-    [[maybe_unused]] zx_status_t status = ActivateLocked(ActivateInsertParentRegion::No);
+    [[maybe_unused]] zx_status_t status = ActivateLocked(ActivateInsertRegions::No);
     ASSERT(status == ZX_OK);
   }
 
@@ -1235,6 +1235,16 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // a resizable VMO or past the page containing the stream size in a FAULT_BEYOND_STREAM_SIZE VMO.
   uint64_t TrimmedObjectRangeLocked(uint64_t offset, uint64_t len) const TA_REQ(lock())
       TA_REQ(object_->lock());
+
+  const btree::BTree<vaddr_t, arch_mmu_flags_t>& rest_protection_ranges_locked() const
+      TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+    return rest_protection_ranges_;
+  }
+
+  arch_mmu_flags_t first_region_arch_mmu_flags_locked() const
+      TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
+    return first_region_arch_mmu_flags_;
+  }
 
   // Whether this mapping may be merged with other adjacent mappings. A mergeable mapping is just a
   // region that can be represented by any VmMapping object, not specifically this one.

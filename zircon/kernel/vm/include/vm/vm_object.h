@@ -608,7 +608,9 @@ class VmObject : public fbl::ContainableBaseClasses<
   zx_status_t GetPageBlocking(uint64_t offset, uint pf_flags, list_node* alloc_list,
                               vm_page_t** page, paddr_t* pa);
 
-  void AddMappingLocked(VmMapping* r) TA_REQ(lock());
+  // Attempt to add a new mapping to the mapping list of this object. Can fail with
+  // ZX_ERR_OUT_OF_MEMORY.
+  zx_status_t AddMappingLocked(VmMapping* r) TA_REQ(lock());
   void RemoveMappingLocked(VmMapping* r) TA_REQ(lock());
   uint32_t num_mappings() const;
   uint32_t num_mappings_locked() const TA_REQ(lock()) { return mapping_list_len_; }
