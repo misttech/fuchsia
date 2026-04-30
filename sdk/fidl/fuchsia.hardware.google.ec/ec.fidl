@@ -4,6 +4,7 @@
 
 /// FIDL definitions used for communicating to the Embedded Controller (EC) used
 /// on ChromeOS devices.
+@available(added=HEAD)
 library fuchsia.hardware.google.ec;
 
 using zx;
