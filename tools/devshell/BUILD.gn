@@ -86,6 +86,7 @@ test_scripts = [
   "tests/fx-internal/vars_test",
   "tests/fx-internal/verify_default_keys_test",
   "tests/subcommands/fx_build_test",
+  "tests/subcommands/fx_config_load_test",
   "tests/subcommands/fx_cp_test",
   "tests/subcommands/fx_flash_fuchsia_test",
   "tests/subcommands/fx_format_code_test",

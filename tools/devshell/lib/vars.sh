@@ -418,7 +418,11 @@ function fx-build-config-load {
   # shellcheck source=/dev/null
   if ! source "${FUCHSIA_BUILD_DIR}/fx.config"; then
     fx-error "Sourcing ${FUCHSIA_BUILD_DIR}/fx.config caused internal error"
-    fx-error "Try running 'fx set' to regenerate your build configuration."
+    if [[ -f "${FUCHSIA_BUILD_DIR}/args.gn" ]]; then
+      fx-error "Try running 'fx gen' to regenerate your build configuration."
+    else
+      fx-error "Try running 'fx set' to generate a new build configuration."
+    fi
     return 1
   fi
 
