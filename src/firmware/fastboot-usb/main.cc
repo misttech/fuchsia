@@ -9,9 +9,58 @@
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fastboot/fastboot.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/clock.h>
+#include <lib/zx/time.h>
 #include <zircon/syscalls.h>
 
 namespace {
+
+/// Helper that suppresses the same error message from being spammed.
+class LogLimiter {
+  static constexpr zx::duration kSuppressionWindow = zx::sec(5);
+
+ public:
+  LogLimiter() { Reset(); }
+  ~LogLimiter() { Flush(); }
+
+  void LogError(zx_status_t status, const char *message) {
+    const zx::time now = zx::clock::get_monotonic();
+    const zx::duration elapsed = now - last_log_time_;
+
+    // Suppress adjacent runs of the same status/message within the suppression window.
+    if (status == last_status_ && message == last_message_ && elapsed < kSuppressionWindow) {
+      ++suppressed_;
+      return;
+    }
+
+    Flush();
+    FX_LOGS(ERROR) << message << ": " << zx_status_get_string(status);
+    last_status_ = status;
+    last_message_ = message;
+    last_log_time_ = now;
+  }
+
+  void Flush() {
+    if (suppressed_ > 0) {
+      FX_LOGS(ERROR) << "Previous error repeated " << suppressed_ << " times: " << last_message_
+                     << ": " << zx_status_get_string(last_status_);
+    }
+    Reset();
+  }
+
+ private:
+  void Reset() {
+    suppressed_ = 0;
+    last_status_ = ZX_OK;
+    last_message_ = nullptr;
+    last_log_time_ = zx::time::infinite_past();
+  }
+
+  zx_status_t last_status_;
+  const char *last_message_;
+  zx::time last_log_time_;
+  size_t suppressed_;
+};
 
 class UsbPacketTransport : public fastboot::Transport {
  public:
@@ -69,6 +118,7 @@ int main(int argc, const char **argv) {
       std::move(connect_device.value()));
 
   fastboot::Fastboot fastboot;
+  LogLimiter log_limiter;
   while (true) {
     // Note: fastboot.remaining_download_size() returns 0 in command stage.
     size_t request_size =
@@ -76,14 +126,14 @@ int main(int argc, const char **argv) {
 
     auto response = device->Receive(request_size);
     if (response.status() != ZX_OK) {
-      FX_LOGS(ERROR) << "Failed to receive packet (transport error): " << response.status_string();
+      log_limiter.LogError(response.status(), "Failed to receive packet (transport error)");
       continue;
     }
     if (response->is_error()) {
-      FX_LOGS(ERROR) << "Failed while receiving packet "
-                     << zx_status_get_string(response->error_value());
+      log_limiter.LogError(response->error_value(), "Failed while receiving packet");
       continue;
     }
+    log_limiter.Flush();
 
     const auto &packet = *response;
     fzl::VmoMapper mapper;
