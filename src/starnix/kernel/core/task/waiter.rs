@@ -539,7 +539,7 @@ impl PortWaiter {
                     WaitEvents::All => FdEvents::all(),
                     WaitEvents::Fd(events) => events,
                     WaitEvents::SignalMask(_) => FdEvents::POLLIN,
-                    _ => panic!("wrong type of handler called: {events:?}"),
+                    WaitEvents::Value(_) => FdEvents::POLLIN,
                 };
                 handler.handle(events)
             }
@@ -1010,6 +1010,24 @@ impl WaitQueue {
         self.wait_async_entry(waiter, waiter.create_wait_entry(WaitEvents::Value(value)))
     }
 
+    /// Establish a wait for the given value event with an associated handler.
+    ///
+    /// The waiter will be notified when an event with the same value occurs, triggering the handler.
+    ///
+    /// This function does not actually block the waiter. To block the waiter,
+    /// call the [`Waiter::wait`] function on the waiter.
+    ///
+    /// Returns a `WaitCanceler` that can be used to cancel the wait.
+    pub fn wait_async_value_with_handler(
+        &self,
+        waiter: &Waiter,
+        value: u64,
+        handler: EventHandler,
+    ) -> WaitCanceler {
+        let entry = waiter.create_wait_entry_with_handler(WaitEvents::Value(value), handler);
+        self.wait_async_entry(waiter, entry)
+    }
+
     /// Establish a wait for the given FdEvents.
     ///
     /// The waiter will be notified when an event matching the `events` occurs.
@@ -1033,7 +1051,7 @@ impl WaitQueue {
     /// The waiter will be notified when a signal in the mask is received.
     ///
     /// This function does not actually block the waiter. To block the waiter,
-    // call the [`Waiter::wait`] function on the waiter.
+    /// call the [`Waiter::wait`] function on the waiter.
     ///
     /// Returns a `WaitCanceler` that can be used to cancel the wait.
     pub fn wait_async_signal_mask(
@@ -1149,6 +1167,15 @@ impl<T: Into<u64>> Default for TypedWaitQueue<T> {
 impl<T: Into<u64>> TypedWaitQueue<T> {
     pub fn wait_async_value(&self, waiter: &Waiter, value: T) -> WaitCanceler {
         self.wait_queue.wait_async_value(waiter, value.into())
+    }
+
+    pub fn wait_async_value_with_handler(
+        &self,
+        waiter: &Waiter,
+        value: T,
+        handler: EventHandler,
+    ) -> WaitCanceler {
+        self.wait_queue.wait_async_value_with_handler(waiter, value.into(), handler)
     }
 
     pub fn notify_value(&self, value: T) {
@@ -1392,6 +1419,41 @@ mod tests {
                     unreachable!("callback should not be called")
                 });
             assert_eq!(output, error!(EINTR));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_async_typed_wait_value_with_handler() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
+            let handler = EventHandler::Enqueue {
+                key: KEY,
+                queue: queue.clone(),
+                sought_events: FdEvents::all(),
+            };
+            let waiter = Waiter::new();
+            let wait_queue = TypedWaitQueue::<u64>::default();
+
+            let test_value = 100u64;
+            let _wait_canceler =
+                wait_queue.wait_async_value_with_handler(&waiter, test_value, handler);
+
+            assert!(queue.lock().is_empty());
+
+            // Notify wrong value
+            wait_queue.notify_value(test_value + 1);
+            assert!(queue.lock().is_empty());
+
+            // Notify right value
+            wait_queue.notify_value(test_value);
+
+            waiter.wait(locked, &current_task).expect("wait failed");
+
+            // Result delivered via POLLIN logic in central dispatcher
+            let ready_items = queue.lock();
+            assert_eq!(ready_items.len(), 1);
+            assert!(ready_items[0].events.contains(FdEvents::POLLIN));
         })
         .await;
     }
