@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use agents::{EnvironmentSource, SystemEnvironment, is_invoked_by_agent};
 use async_trait::async_trait;
 use diagnostics_data::{BuilderArgs, LogsDataBuilder, LogsProperty, Severity};
 use error::LogError;
@@ -31,19 +32,6 @@ mod condition_variable;
 mod error;
 mod mutex;
 mod transactional_symbolizer;
-
-const AGENTS: &[&str] = &["ANTIGRAVITY_AGENT", "GEMINI_CLI", "ANTIGRAVITY_EDITOR_APP_ROOT"];
-
-pub trait Env {
-    fn get_var(&self, key: &str) -> Option<String>;
-}
-
-pub struct RealEnv;
-impl Env for RealEnv {
-    fn get_var(&self, key: &str) -> Option<String> {
-        std::env::var(key).ok()
-    }
-}
 
 trait Clock: Send + Sync {
     async fn sleep(&self, duration: std::time::Duration);
@@ -126,7 +114,7 @@ pub async fn log_impl(
         rcs_connector,
         include_timestamp,
         RealClock,
-        RealEnv,
+        SystemEnvironment,
     )
     .await
 }
@@ -144,7 +132,7 @@ async fn log_main<W, C, E>(
 where
     W: ToolIO<OutputItem = LogEntry> + Write + 'static,
     C: Clock + 'static,
-    E: Env,
+    E: EnvironmentSource,
 {
     let formatter = DefaultLogFormatter::<W>::new_from_args(&cmd, writer);
     let future = log_loop(cmd, formatter, symbolizer, rcs_connector, include_timestamp, clock, env);
@@ -254,7 +242,7 @@ async fn log_loop<W, C, E>(
 where
     W: ToolIO<OutputItem = LogEntry> + Write,
     C: Clock,
-    E: Env,
+    E: EnvironmentSource,
 {
     let symbolizer_channel: Box<dyn Symbolize> = match symbolizer {
         Some(inner) => Box::new(inner),
@@ -268,7 +256,7 @@ where
     // Eventually we should have direct support for this in Overnet, but for now we have to
     // handle reconnects manually.
     let mut prev_boot_id = None;
-    let is_ai = AGENTS.iter().any(|&name| env.get_var(name).is_some());
+    let is_ai = is_invoked_by_agent(&env);
     loop {
         let connection;
         let mut backoff = 0;
@@ -387,14 +375,13 @@ where
     Ok(())
 }
 
-fn get_stream_mode<E: Env>(
+fn get_stream_mode<E: EnvironmentSource>(
     cmd: LogCommand,
     env: &E,
 ) -> Result<fdomain_fuchsia_diagnostics::StreamMode, LogError> {
     let is_dump = cmd.dump || matches!(cmd.sub_command, Some(LogSubCommand::Dump(..)));
     if cmd.dump {
-        let is_ai = AGENTS.iter().any(|&name| env.get_var(name).is_some());
-        if !is_ai {
+        if !is_invoked_by_agent(env) {
             return Err(LogError::DumpNotSupported);
         }
         eprintln!("The --dump flag is deprecated and has been replaced with");
@@ -471,9 +458,9 @@ mod tests {
         }
     }
 
-    impl Env for FakeEnv {
-        fn get_var(&self, key: &str) -> Option<String> {
-            self.vars.get(key).cloned()
+    impl EnvironmentSource for FakeEnv {
+        fn has_var(&self, key: &str) -> bool {
+            self.vars.contains_key(key)
         }
     }
 
@@ -485,7 +472,7 @@ mod tests {
         }
     }
 
-    async fn logger_dump_string_with_env_clock<C: Clock + 'static, E: Env>(
+    async fn logger_dump_string_with_env_clock<C: Clock + 'static, E: EnvironmentSource>(
         config: TestEnvironmentConfig,
         cmd: LogCommand,
         clock: C,
