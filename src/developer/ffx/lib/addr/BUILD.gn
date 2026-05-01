@@ -19,7 +19,6 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/netext:lib",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:thiserror",
   ]
