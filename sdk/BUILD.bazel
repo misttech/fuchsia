@@ -23,9 +23,7 @@ idk_molecule(
     name = "fuchsia_idk_atoms_produced_by_main_platform_build_idk",
     allowed_in_configurations = "once",
     target_compatible_with = ["@platforms//os:fuchsia"],
-    visibility = [
-        "//build/bazel/bazel_idk/tests:__subpackages__",
-    ],
+    visibility = ["//build/bazel/rules/tests:__subpackages__"],
     deps = [
         ":cc_prebuilt_libraries_idk",
         ":cc_source_libraries_idk",

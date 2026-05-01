@@ -19,34 +19,58 @@ stamp_group(
     name = "tests",
     testonly = True,
     stamp = "tests.bazel_stamp",
-    # Individual test groups can transition to host as needed.
+    # This target is only intended to be built in Fuchsia configurations.
+    # Individual test groups can use a transition to build targets in host
+    # configurations if needed.
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
-        ":build_only_tests",
+        # Include all the quick tests.
+        ":quick_tests",
+
+        # Additional long tests.
+        ":long_build_only_tests",
+    ],
+)
+
+# Runs all tests that can be run fairly quickly and writes a stamp file.
+# It covers the rules and macros but not most of the targets that use them.
+# Specifically, it does not build all FIDL atoms or the full IDKs.
+stamp_group(
+    name = "quick_tests",
+    testonly = True,
+    stamp = "quick_tests.bazel_stamp",
+    # This target is only intended to be built in Fuchsia configurations.
+    # Individual test groups can use a transition to build targets in host
+    # configurations if needed.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":quick_build_only_tests",
     ],
 )
 
 # Builds targets for which building successfully is the test.
 filegroup(
-    name = "build_only_tests",
+    name = "quick_build_only_tests",
     testonly = True,
     srcs = [
-        ":build_only_tests_requiring_api_level",
+        ":quick_build_only_tests_requiring_api_level",
         ":build_only_tests_in_host_configuration",
 
         # Fuchsia tests that do not require defining the Clang API level as "PLATFORM".
         "//build/bazel/bazel_idk/tests:build_only_tests_for_combinations",
     ],
-    # Individual test groups can transition to host as needed.
+    # This target is only intended to be built in Fuchsia configurations.
+    # Individual test groups can use a transition to build targets in host
+    # configurations if needed.
     target_compatible_with = ["@platforms//os:fuchsia"],
 )
 
-# A subset of ":build_only_tests" that requires the API level to be defined.
+# A subset of ":quick_build_only_tests" that requires the API level to be defined.
 build_with_platform_api_level(
-    name = "build_only_tests_requiring_api_level",
+    name = "quick_build_only_tests_requiring_api_level",
     testonly = True,
-    stamp = "build_only_tests_requiring_api_level.stamp",
-    # Individual test groups can transition to host as needed.
+    stamp = "quick_build_only_tests_requiring_api_level.stamp",
+    # This target is only intended to be built in Fuchsia configurations.
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         "//build/bazel/bazel_idk/tests:build_only_tests",
@@ -83,4 +107,34 @@ build_for_host(
     # directly.
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [":targets_to_build_in_host_configuration"],
+)
+
+# Builds targets for which building successfully is the test.
+filegroup(
+    name = "long_build_only_tests",
+    testonly = True,
+    srcs = [
+        ":long_build_only_tests_requiring_api_level",
+
+        # Compile, generate the atom, and run compatibility tests for all FIDL
+        # libraries in all categories.
+        "//sdk/fidl:compatibility_tests",
+    ],
+    # This target is only intended to be built in Fuchsia configurations.
+    # Individual test groups can use a transition to build targets in host
+    # configurations if needed.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+# A subset of ":long_build_only_tests" that requires the API level to be defined.
+build_with_platform_api_level(
+    name = "long_build_only_tests_requiring_api_level",
+    testonly = True,
+    stamp = "long_build_only_tests_requiring_api_level.stamp",
+    # This target is only intended to be built in Fuchsia configurations.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        # Build all the migrated atoms for the main platform build.
+        "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build_idk",
+    ],
 )

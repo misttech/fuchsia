@@ -2618,7 +2618,7 @@ group("root_targets") {
     "//build/bazel/bazel_sdk:bazel_sdk_tests",
 
     # Tests of platform Bazel rules, macros, and migrated targets.
-    "//build/bazel/rules/tests",
+    "//build/bazel/rules/tests:all",
 
     # This target is listed explicitly by multiple CI bot build configurations.
     # See https://fxbug.dev/42162374 for context.

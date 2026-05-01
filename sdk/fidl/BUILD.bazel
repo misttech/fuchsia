@@ -68,7 +68,7 @@ filegroup(
         ":all_fidl_libraries_with_categories_idk",
     ],
     visibility = [
-        "//build/bazel/bazel_idk/tests:__subpackages__",
+        "//build/bazel/rules/tests:__subpackages__",
         "//build/fidl:__pkg__",
     ],
 )
