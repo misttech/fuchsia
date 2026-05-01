@@ -7,11 +7,10 @@
 
 #include <endian.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.request/cpp/fidl.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
-#include <lib/driver/compat/cpp/banjo_client.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/controller.h>
@@ -31,23 +30,26 @@
 #include <vector>
 
 #include <fbl/auto_lock.h>
+#include <usb/descriptors.h>
 #include <usb/request-fidl.h>
 #include <usb/ums.h>
 
 namespace ums {
 
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
+namespace ffunction = fuchsia_hardware_usb_function;
 namespace ffdf = fuchsia_driver_framework;
 namespace frequest = fuchsia_hardware_usb_request;
 
 static struct {
-  usb_interface_descriptor_t intf;
-  usb_endpoint_descriptor_t out_ep;
-  usb_endpoint_descriptor_t in_ep;
+  usb_interface_info_descriptor_t intf;
+  usb_endpoint_info_descriptor_t out_ep;
+  usb_endpoint_info_descriptor_t in_ep;
 } descriptors = {
     .intf =
         {
-            .b_length = sizeof(usb_interface_descriptor_t),
+            .b_length = sizeof(usb_interface_info_descriptor_t),
             .b_descriptor_type = USB_DT_INTERFACE,
             //      .b_interface_number set later
             .b_alternate_setting = 0,
@@ -59,7 +61,7 @@ static struct {
         },
     .out_ep =
         {
-            .b_length = sizeof(usb_endpoint_descriptor_t),
+            .b_length = sizeof(usb_endpoint_info_descriptor_t),
             .b_descriptor_type = USB_DT_ENDPOINT,
             //      .b_endpoint_address set later
             .bm_attributes = USB_ENDPOINT_BULK,
@@ -68,7 +70,7 @@ static struct {
         },
     .in_ep =
         {
-            .b_length = sizeof(usb_endpoint_descriptor_t),
+            .b_length = sizeof(usb_endpoint_info_descriptor_t),
             .b_descriptor_type = USB_DT_ENDPOINT,
             //      .b_endpoint_address set later
             .bm_attributes = USB_ENDPOINT_BULK,
@@ -76,6 +78,124 @@ static struct {
             .b_interval = 0,
         },
 };
+
+void UmsFunction::Control(ControlRequest& req, ControlCompleter::Sync& completer) {
+  if (req.setup().bm_request_type() == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
+      req.setup().b_request() == USB_REQ_GET_MAX_LUN && req.setup().w_value() == 0 &&
+      req.setup().w_index() == 0 && req.setup().w_length() >= sizeof(uint8_t)) {
+    completer.Reply(zx::ok(std::vector<uint8_t>{0}));
+    return;
+  }
+
+  if (req.setup().bm_request_type() == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
+      req.setup().b_request() == USB_REQ_RESET && req.setup().w_value() == 0 &&
+      req.setup().w_index() == 0 && req.setup().w_length() == 0) {
+    fbl::AutoLock l(&mtx_);
+
+    // Cancel all pending requests
+    zx::result result = CancelAllLocked(in_ep_);
+    if (result.is_error()) {
+      fdf::error("Error canceling existing in-type requests: {}", result);
+    }
+
+    result = CancelAllLocked(out_ep_);
+    if (result.is_error()) {
+      fdf::error("Error canceling existing out-type requests: {}", result);
+    }
+
+    cbw_in_flight_ = false;
+    data_in_flight_ = false;
+    csw_in_flight_ = false;
+    completer.Reply(zx::ok(std::vector<uint8_t>{}));
+    return;
+  }
+
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
+zx::result<> UmsFunction::ConfigureEndpoint(const usb_endpoint_info_descriptor_t& desc) {
+  ffunction::EndpointConfiguration ep_cfg;
+  ffunction::EndpointDescriptor f_desc;
+  f_desc.b_interval(desc.b_interval);
+  f_desc.bm_attributes(desc.bm_attributes);
+  f_desc.w_max_packet_size(le16toh(desc.w_max_packet_size));
+  ep_cfg.descriptor(std::move(f_desc));
+
+  fidl::Result result = function_->ConfigureEndpoint({{
+      .endpoint_address = desc.b_endpoint_address,
+      .endpoint_configuration = std::move(ep_cfg),
+  }});
+  if (result.is_error()) {
+    fdf::error("Could not configure endpoint: {}", result.error_value().FormatDescription());
+
+    if (result.error_value().is_domain_error()) {
+      return zx::error(result.error_value().domain_error());
+    }
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+
+  return zx::ok();
+}
+
+void UmsFunction::SetConfigured(SetConfiguredRequest& req,
+                                SetConfiguredCompleter::Sync& completer) {
+  zx::result<> result = zx::ok();
+  configured_ = req.configured();
+
+  // TODO(voydanoff) fullspeed and superspeed support
+  if (req.configured()) {
+    result = ConfigureEndpoint(descriptors.in_ep);
+    if (result.is_error()) {
+      fdf::error("SetConfigured: ConfigureEndpoint(in): {}", result);
+    }
+
+    result = ConfigureEndpoint(descriptors.out_ep);
+    if (result.is_error()) {
+      fdf::error("SetConfigured: ConfigureEndpoint(out): {}", result);
+    }
+  } else {
+    fidl::Result disable = function_->DisableEndpoint({{.endpoint_address = bulk_in_addr_}});
+    if (disable.is_error()) {
+      fdf::error("SetConfigured: DisableEndpoint(in) fails: {}",
+                 disable.error_value().FormatDescription());
+      result =
+          zx::error(disable.error_value().is_domain_error() ? disable.error_value().domain_error()
+                                                            : ZX_ERR_INTERNAL);
+    }
+
+    disable = function_->DisableEndpoint({{.endpoint_address = bulk_out_addr_}});
+    if (disable.is_error()) {
+      fdf::error("SetConfigured: DisableEndpoint(out) fails: {}",
+                 disable.error_value().FormatDescription());
+      result =
+          zx::error(disable.error_value().is_domain_error() ? disable.error_value().domain_error()
+                                                            : ZX_ERR_INTERNAL);
+    }
+
+    // Reset state flags on disconnect.
+    fbl::AutoLock l(&mtx_);
+    cbw_in_flight_ = false;
+    data_in_flight_ = false;
+    csw_in_flight_ = false;
+  }
+
+  if (result.is_error()) {
+    fdf::error("SetConfigured fails overall: {}", result.status_value());
+    completer.Reply(result.take_error());
+    return;
+  }
+
+  if (req.configured()) {
+    fbl::AutoLock lock(&mtx_);
+    RequestQueueLocked(&cbw_req_.value());
+  }
+
+  completer.Reply(zx::ok());
+}
+
+void UmsFunction::SetInterface(SetInterfaceRequest& req, SetInterfaceCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
 
 void UmsFunction::RequestQueueLocked(usb::FidlRequest* req) {
   const char* name = "unknown";
@@ -102,7 +222,7 @@ void UmsFunction::RequestQueueLocked(usb::FidlRequest* req) {
 
   if (in_flight_ptr && *in_flight_ptr) {
     fdf::error("UmsFunction: Request {} (0x{:08x}) already in flight! Skipping re-queue.", name,
-        reinterpret_cast<uintptr_t>(&req->request()));
+               reinterpret_cast<uintptr_t>(&req->request()));
     return;
   }
   if (in_flight_ptr) {
@@ -661,89 +781,6 @@ void UmsFunction::CswCompleteLocked() {
   }
 }
 
-size_t UmsFunction::UsbFunctionInterfaceGetDescriptorsSize() { return sizeof(descriptors); }
-
-void UmsFunction::UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer,
-                                                     size_t descriptors_size,
-                                                     size_t* out_descriptors_actual) {
-  const size_t length = std::min(sizeof(descriptors), descriptors_size);
-  memcpy(out_descriptors_buffer, &descriptors, length);
-  *out_descriptors_actual = length;
-}
-
-zx_status_t UmsFunction::UsbFunctionInterfaceControl(const usb_setup_t* setup,
-                                                     const uint8_t* write_buffer, size_t write_size,
-                                                     uint8_t* out_read_buffer, size_t read_size,
-                                                     size_t* out_read_actual) {
-  if (setup->bm_request_type == (USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
-      setup->b_request == USB_REQ_GET_MAX_LUN && setup->w_value == 0 && setup->w_index == 0 &&
-      setup->w_length >= sizeof(uint8_t)) {
-    *((uint8_t*)out_read_buffer) = 0;
-    *out_read_actual = sizeof(uint8_t);
-    return ZX_OK;
-  }
-
-  if (setup->bm_request_type == (USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) &&
-      setup->b_request == USB_REQ_RESET && setup->w_value == 0 && setup->w_index == 0 &&
-      setup->w_length == 0) {
-    fbl::AutoLock l(&mtx_);
-
-    // Cancel all pending requests
-    zx::result result = CancelAllLocked(in_ep_);
-    if (result.is_error()) {
-      fdf::error("Error canceling existing in-type requests: {}", result);
-    }
-
-    result = CancelAllLocked(out_ep_);
-    if (result.is_error()) {
-      fdf::error("Error canceling existing out-type requests: {}", result);
-    }
-
-    cbw_in_flight_ = false;
-    data_in_flight_ = false;
-    csw_in_flight_ = false;
-    return ZX_OK;
-  }
-
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
-zx_status_t UmsFunction::UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed) {
-  zx_status_t status = ZX_OK;
-
-  configured_ = configured;
-
-  // TODO(voydanoff) fullspeed and superspeed support
-  if (configured) {
-    if ((status = function_.ConfigEp(&descriptors.out_ep, NULL)) != ZX_OK ||
-        (status = function_.ConfigEp(&descriptors.in_ep, NULL)) != ZX_OK) {
-      fdf::error("SetConfigured: ConfigEp failed");
-    }
-  } else {
-    if ((status = function_.DisableEp(bulk_out_addr_)) != ZX_OK ||
-        (status = function_.DisableEp(bulk_in_addr_)) != ZX_OK) {
-      fdf::error("SetConfigured: DisableEp failed");
-    }
-
-    // Reset state flags on disconnect.
-    fbl::AutoLock l(&mtx_);
-    cbw_in_flight_ = false;
-    data_in_flight_ = false;
-    csw_in_flight_ = false;
-  }
-
-  if (configured && status == ZX_OK) {
-    // queue first read on OUT endpoint
-    fbl::AutoLock lock(&mtx_);
-    RequestQueueLocked(&cbw_req_.value());
-  }
-  return status;
-}
-
-zx_status_t UmsFunction::UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting) {
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
 void UmsFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
   {
     fbl::AutoLock l(&mtx_);
@@ -772,7 +809,6 @@ void UmsFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
 
   completer(zx::ok());
 }
-
 zx::vmo UmsFunction::vmo_ = zx::vmo();
 
 int UmsFunction::WorkerLoop() {
@@ -807,12 +843,6 @@ int UmsFunction::WorkerLoop() {
 }
 
 zx::result<> UmsFunction::Start() {
-  zx::result function = compat::ConnectBanjo<ddk::UsbFunctionProtocolClient>(incoming());
-  if (function.is_error()) {
-    return function.take_error();
-  }
-  function_ = *function;
-
   zx_status_t status = Init();
   if (status != ZX_OK) {
     return zx::error(status);
@@ -832,36 +862,52 @@ zx::result<> UmsFunction::Start() {
 }
 
 zx_status_t UmsFunction::Init() {
+  zx::result function =
+      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (function.is_error()) {
+    fdf::error("Could not connect to UsbFunction service: {}", function.error_value());
+    return function.error_value();
+  }
+  function_.Bind(std::move(*function));
+
   data_state_ = DATA_STATE_NONE;
   active_ = true;
   pending_request_count_ = 0;
 
-  zx_status_t status = ZX_OK;
+  // Server-end consumed by AllocResources(), client-end consumed by ep client Init().
+  auto [in_client, in_server] = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  auto [out_client, out_server] = fidl::Endpoints<fendpoint::Endpoint>::Create();
 
-  status = function_.AllocInterface(&descriptors.intf.b_interface_number);
-  if (status != ZX_OK) {
-    fdf::error("Init: AllocInterface failed");
-    return status;
+  std::vector<ffunction::EndpointResource> ep_resources;
+  ep_resources.emplace_back(ffunction::EndpointDirection::kIn, std::move(in_server));
+  ep_resources.emplace_back(ffunction::EndpointDirection::kOut, std::move(out_server));
+
+  fidl::Result alloc = function_->AllocResources({{
+      .interface_count = 1,
+      .endpoints = std::move(ep_resources),
+      .strings = std::vector<std::string>{},
+  }});
+  if (alloc.is_error()) {
+    fdf::error("Unable to allocate USB resources: {}", alloc.error_value());
+    return alloc.error_value().is_domain_error() ? alloc.error_value().domain_error()
+                                                 : ZX_ERR_INTERNAL;
   }
-  status = function_.AllocEp(USB_DIR_OUT, &bulk_out_addr_);
-  if (status != ZX_OK) {
-    fdf::error("Init: AllocEp(USB_DIR_OUT, ...) failed");
-    return status;
+
+  if (alloc.value().interface_nums().size() != 1) {
+    fdf::error("Unable to allocate USB interface");
+    return ZX_ERR_INTERNAL;
   }
-  status = function_.AllocEp(USB_DIR_IN, &bulk_in_addr_);
-  if (status != ZX_OK) {
-    fdf::error("Init: AllocEp(USB_DIR_IN, ...) failed");
-    return status;
+
+  if (alloc.value().endpoint_addrs().size() != 2) {
+    fdf::error("Unable to allocate USB endpoints");
+    return ZX_ERR_INTERNAL;
   }
-  descriptors.out_ep.b_endpoint_address = bulk_out_addr_;
+
+  descriptors.intf.b_interface_number = alloc.value().interface_nums()[0];
+  bulk_in_addr_ = alloc.value().endpoint_addrs()[0];
+  bulk_out_addr_ = alloc.value().endpoint_addrs()[1];
   descriptors.in_ep.b_endpoint_address = bulk_in_addr_;
-
-  zx::result func =
-      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
-  if (func.is_error()) {
-    fdf::error("Could not connect to UsbFunction service: {}", func);
-    return func.status_value();
-  }
+  descriptors.out_ep.b_endpoint_address = bulk_out_addr_;
 
   auto dispatcher = fdf::SynchronizedDispatcher::Create(
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ums-fidl-dispatcher",
@@ -872,13 +918,13 @@ zx_status_t UmsFunction::Init() {
   }
   dispatcher_ = std::move(*dispatcher);
 
-  status = in_ep_.Init(bulk_in_addr_, func.value(), dispatcher_.async_dispatcher());
+  zx_status_t status = in_ep_.Init(std::move(in_client), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
     fdf::error("Failed to init IN endpoint: {}", zx_status_get_string(status));
     return status;
   }
 
-  status = out_ep_.Init(bulk_out_addr_, func.value(), dispatcher_.async_dispatcher());
+  status = out_ep_.Init(std::move(out_client), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
     fdf::error("Failed to init OUT endpoint: {}", zx_status_get_string(status));
     return status;
@@ -927,10 +973,27 @@ zx_status_t UmsFunction::Init() {
     return status;
   }
 
-  function_.SetInterface(this, &usb_function_interface_protocol_ops_);
+  const auto* descriptors_ptr = reinterpret_cast<const uint8_t*>(&descriptors);
+  std::vector<uint8_t> config_descriptor(descriptors_ptr, descriptors_ptr + sizeof(descriptors));
+
+  zx::result iface = fidl::CreateEndpoints<ffunction::UsbFunctionInterface>();
+  if (iface.is_error()) {
+    fdf::error("Could not create interface endpoints: {}", iface);
+    return iface.error_value();
+  }
+  bindings_.AddBinding(this->dispatcher(), std::move(iface->server), this, fidl::kIgnoreBindingClosure);
+
+  fidl::Result cfg = function_->Configure(
+      {{.configuration = std::move(config_descriptor), .iface = std::move(iface->client)}});
+  if (cfg.is_error()) {
+    fdf::error("Could not Configure(): {}", cfg.error_value());
+    return cfg.error_value().is_domain_error() ? cfg.error_value().domain_error() : ZX_ERR_INTERNAL;
+  }
+
   thrd_create_with_name(
       &thread_, [](void* ctx) { return reinterpret_cast<UmsFunction*>(ctx)->WorkerLoop(); }, this,
       "ums_worker");
+
   return ZX_OK;
 }
 

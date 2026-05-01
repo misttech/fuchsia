@@ -5,8 +5,9 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UMS_FUNCTION_UMS_FUNCTION_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UMS_FUNCTION_UMS_FUNCTION_H_
 
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/result.h>
 
 #include <atomic>
@@ -25,7 +26,8 @@
 
 namespace ums {
 
-class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProtocol<UmsFunction> {
+class UmsFunction : public fdf::DriverBase,
+                    public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   static constexpr char kDriverName[] = "usb-ums-function";
   static constexpr uint32_t kBlockSize = 512;
@@ -41,15 +43,16 @@ class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProt
   zx::result<> Start() override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
-  // ddk::UsbFunctionInterfaceProtocol implementations.
-  size_t UsbFunctionInterfaceGetDescriptorsSize();
-  void UsbFunctionInterfaceGetDescriptors(uint8_t* out_descriptors_buffer, size_t descriptors_size,
-                                          size_t* out_descriptors_actual);
-  zx_status_t UsbFunctionInterfaceControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                          size_t write_size, uint8_t* out_read_buffer,
-                                          size_t read_size, size_t* out_read_actual);
-  zx_status_t UsbFunctionInterfaceSetConfigured(bool configured, usb_speed_t speed);
-  zx_status_t UsbFunctionInterfaceSetInterface(uint8_t interface, uint8_t alt_setting);
+  // fuchsia_hardware_usb_function::UsbFunctionInterface impl.
+  void Control(ControlRequest& req, ControlCompleter::Sync& completer) override;
+  void SetConfigured(SetConfiguredRequest& req, SetConfiguredCompleter::Sync& completer) override;
+  void SetInterface(SetInterfaceRequest& req, SetInterfaceCompleter::Sync& completer) override;
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    fdf::error("Unknown method %ld", metadata.method_ordinal);
+  }
 
  private:
   enum DataState {
@@ -65,6 +68,8 @@ class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProt
   void InEpCallback(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
   void OutEpCallback(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
   bool IsReadyForShutdown() const { return !active_.load() && pending_request_count_.load() == 0; }
+
+  zx::result<> ConfigureEndpoint(const usb_endpoint_info_descriptor_t& desc);
 
   // Main driver initialization.
   zx_status_t Init();
@@ -100,7 +105,8 @@ class UmsFunction : public fdf::DriverBase, public ddk::UsbFunctionInterfaceProt
   bool IsInData() const { return current_cbw_.bmCBWFlags & USB_DIR_IN; }
   bool IsOutData() const { return !IsInData(); }
 
-  ddk::UsbFunctionProtocolClient function_;
+  fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunctionInterface> bindings_;
   bool configured_ = false;
 
   std::optional<usb::FidlRequest> cbw_req_;
