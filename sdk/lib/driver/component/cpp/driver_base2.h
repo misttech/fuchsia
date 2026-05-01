@@ -51,6 +51,7 @@ class DriverContext {
     return StructuredConfig::CreateFromVmo(std::move(config_vmo.value()));
   }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
   zx::unowned_vmar vmar() {
     auto& vmar = start_args_.vmar();
     if (vmar.has_value()) {
@@ -58,6 +59,7 @@ class DriverContext {
     }
     return zx::vmar::root_self();
   }
+#endif
 
   // Used to access the incoming namespace of the driver. This allows connecting to both zircon and
   // driver transport incoming services.
