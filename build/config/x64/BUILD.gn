@@ -33,8 +33,7 @@ config("mitigate_skylake_jcc") {
 config("harden_sls") {
   defines = [ "HARDEN_SLS" ]
   cflags = [ "-mharden-sls=all" ]
-
-  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.
+  rustflags = [ "-Ctarget-feature=+harden-sls-ijmp,+harden-sls-ret" ]
 }
 
 # Optimize for Intel Haswell
