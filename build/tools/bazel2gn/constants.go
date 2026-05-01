@@ -53,12 +53,13 @@ var bazelRuleToGNTemplate = map[string]string{
 	"go_test":    "go_test",
 
 	// Rust
-	"rust_binary":     "rustc_binary",
-	"rust_library":    "rustc_library",
-	"rustc_binary":    "rustc_binary",
-	"rustc_library":   "rustc_library",
-	"rustc_test":      "rustc_test",
-	"rust_proc_macro": "rustc_macro",
+	"rust_binary":      "rustc_binary",
+	"rust_library":     "rustc_library",
+	"rustc_binary":     "rustc_binary",
+	"rustc_library":    "rustc_library",
+	"rustc_proc_macro": "rustc_macro",
+	"rustc_test":       "rustc_test",
+	"rust_proc_macro":  "rustc_macro",
 
 	// C++
 	"cc_library":         "source_set",
@@ -163,6 +164,7 @@ var rustCommonAttrMap = map[string]string{
 	"crate_features":       "features",
 	"with_host_unit_tests": "with_unit_tests",
 	"rustc_flags":          "rustflags",
+	"crate_root":           "source_root",
 }
 
 // rustBinAttrMap maps from attribute name in Bazel Rust binary rules to GN parameter names.
@@ -255,12 +257,13 @@ var attrMapsByRules = map[string]map[string]string{
 	"cc_static_library_zx": ccLibAttrMap,
 
 	// Rust
-	"rust_binary":     rustBinAttrMap,
-	"rust_library":    rustCommonAttrMap,
-	"rust_proc_macro": rustCommonAttrMap,
-	"rustc_binary":    rustBinAttrMap,
-	"rustc_library":   rustCommonAttrMap,
-	"rustc_test":      rustCommonAttrMap,
+	"rust_binary":      rustBinAttrMap,
+	"rust_library":     rustCommonAttrMap,
+	"rust_proc_macro":  rustCommonAttrMap,
+	"rustc_binary":     rustBinAttrMap,
+	"rustc_library":    rustCommonAttrMap,
+	"rustc_proc_macro": rustCommonAttrMap,
+	"rustc_test":       rustCommonAttrMap,
 
 	// FIDL
 	"fidl_library":        idkFIDLAttrMap,
