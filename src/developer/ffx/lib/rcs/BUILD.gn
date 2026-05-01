@@ -8,7 +8,6 @@ assert(is_host, "rcs is for use with the host toolchain only")
 
 rcs_deps = [
   "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
-  "//src/developer/ffx/lib/errors:lib",
   "//src/developer/ffx/lib/timeout:lib",
   "//src/lib/fidl/rust/fidl",
   "//third_party/rust_crates:anyhow",

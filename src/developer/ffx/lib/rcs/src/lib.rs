@@ -180,6 +180,30 @@ impl std::fmt::Display for RcsConnectionError {
 
 pub const RCS_KNOCK_TIMEOUT: Duration = Duration::from_secs(1);
 
+#[derive(Debug, thiserror::Error)]
+pub enum RcsError {
+    #[error("FIDL error: {0}")]
+    Fidl(#[from] fidl::Error),
+
+    #[error("Timeout error: {0}")]
+    Timeout(#[from] timeout::TimeoutError),
+
+    #[error(
+        "The plugin service did not match any capabilities on the target for moniker '{moniker}' and capability '{capability}'.\n\nIt is possible that the expected component is either not built into the system image, or that the package server has not been setup.\n\nFor users, ensure your Fuchsia device is registered with ffx. To do this you can run:\n\n$ ffx target repository register -r $IMAGE_TYPE --alias fuchsia.com\n\nFor plugin developers, it may be possible that the moniker you're attempting to connect to is incorrect.\nYou can use `ffx component explore '{moniker}'` to explore the component topology of your target device to fix this moniker if this is the case.\n\nIf you believe you have encountered a bug after walking through the above please report it at https://fxbug.dev/new/ffx+User+Bug"
+    )]
+    NoMatchingCapabilities { moniker: String, capability: String },
+
+    #[error(
+        "Service dependency exists but connecting to it failed with error {error:?}. Moniker: {moniker}. Capability name: {capability}"
+    )]
+    ConnectionFailed { moniker: String, capability: String, error: ConnectCapabilityError },
+
+    #[error(
+        "Timed out connecting to capability: '{capability}' with moniker: '{moniker}'.\nThis is likely due to a sudden shutdown or disconnect of the target.\nIf you have encountered what you think is a bug, Please report it at https://fxbug.dev/new/ffx+User+Bug\n\nTo diagnose the issue, use `ffx doctor`."
+    )]
+    TimedOutConnecting { moniker: String, capability: String },
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum KnockRcsError {
     #[error("FIDL error {0:?}")]
@@ -305,7 +329,7 @@ pub async fn open_with_timeout_at<T: ProtocolMarker>(
     capability_set: OpenDirType,
     capability_name: &str,
     rcs_proxy: &RemoteControlProxy,
-) -> Result<T::Proxy> {
+) -> std::result::Result<T::Proxy, RcsError> {
     let connect_capability_fut = async move {
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
         let (proxy, server) = rcs_proxy.domain().create_proxy::<T>();
@@ -316,45 +340,28 @@ pub async fn open_with_timeout_at<T: ProtocolMarker>(
         log::info!("RCS: ConnectCapability response received for '{}'", capability_name);
         res.map(|result| result.map(|_| proxy))
     };
-    if let Ok(result) = timeout::timeout(dur, connect_capability_fut).await {
-        let fidl_result = result.map_err(|e| anyhow::anyhow!(e))?;
-        return fidl_result.map_err(|e| {
-                    match e {
-                        ConnectCapabilityError::NoMatchingCapabilities => {
-                            errors::ffx_error!(format!(
-"The plugin service did not match any capabilities on the target for moniker '{moniker}' and
-capability '{capability_name}'.
+    let result = timeout::timeout(dur, connect_capability_fut).await;
 
-It is possible that the expected component is either not built into the system image, or that the
-package server has not been setup.
+    let result = result.map_err(|_| RcsError::TimedOutConnecting {
+        moniker: moniker.to_string(),
+        capability: capability_name.to_string(),
+    })?;
 
-For users, ensure your Fuchsia device is registered with ffx. To do this you can run:
+    let result = result.map_err(RcsError::Fidl)?;
 
-$ ffx target repository register -r $IMAGE_TYPE --alias fuchsia.com
+    let proxy = result.map_err(|e| match e {
+        ConnectCapabilityError::NoMatchingCapabilities => RcsError::NoMatchingCapabilities {
+            moniker: moniker.to_string(),
+            capability: capability_name.to_string(),
+        },
+        _ => RcsError::ConnectionFailed {
+            moniker: moniker.to_string(),
+            capability: capability_name.to_string(),
+            error: e,
+        },
+    })?;
 
-For plugin developers, it may be possible that the moniker you're attempting to connect to is
-incorrect.
-You can use `ffx component explore '<moniker>'` to explore the component topology
-of your target device to fix this moniker if this is the case.
-
-If you believe you have encountered a bug after walking through the above please report it at
-https://fxbug.dev/new/ffx+User+Bug")).into()
-                        }
-                        _ => {
-                            anyhow::anyhow!(
-                                format!("This service dependency exists but connecting to it failed with error {e:?}. Moniker: {moniker}. Capability name: {capability_name}")
-                            )
-                        }
-                    }
-                });
-    } else {
-        return Err(errors::ffx_error!("Timed out connecting to capability: '{capability_name}'
-with moniker: '{moniker}'.
-This is likely due to a sudden shutdown or disconnect of the target.
-If you have encountered what you think is a bug, Please report it at https://fxbug.dev/new/ffx+User+Bug
-
-To diagnose the issue, use `ffx doctor`.").into());
-    }
+    Ok(proxy)
 }
 
 pub async fn connect_with_timeout_at<T: ProtocolMarker>(
@@ -362,7 +369,7 @@ pub async fn connect_with_timeout_at<T: ProtocolMarker>(
     moniker: &str,
     capability_name: &str,
     rcs_proxy: &RemoteControlProxy,
-) -> Result<T::Proxy> {
+) -> std::result::Result<T::Proxy, RcsError> {
     open_with_timeout_at::<T>(dur, moniker, OpenDirType::ExposedDir, capability_name, rcs_proxy)
         .await
 }
@@ -371,7 +378,7 @@ pub async fn connect_with_timeout<P: ProtocolMarker + DiscoverableProtocolMarker
     dur: Duration,
     moniker: &str,
     rcs_proxy: &RemoteControlProxy,
-) -> Result<P::Proxy> {
+) -> std::result::Result<P::Proxy, RcsError> {
     open_with_timeout_at::<P>(dur, moniker, OpenDirType::ExposedDir, P::PROTOCOL_NAME, rcs_proxy)
         .await
 }
@@ -380,7 +387,7 @@ pub async fn connect_to_protocol<P: DiscoverableProtocolMarker>(
     dur: Duration,
     moniker: &str,
     rcs_proxy: &RemoteControlProxy,
-) -> Result<P::Proxy> {
+) -> std::result::Result<P::Proxy, RcsError> {
     connect_with_timeout::<P>(dur, moniker, rcs_proxy).await
 }
 
@@ -389,14 +396,14 @@ pub async fn open_with_timeout<P: DiscoverableProtocolMarker>(
     moniker: &str,
     capability_set: OpenDirType,
     rcs_proxy: &RemoteControlProxy,
-) -> Result<P::Proxy> {
+) -> std::result::Result<P::Proxy, RcsError> {
     open_with_timeout_at::<P>(dur, moniker, capability_set, P::PROTOCOL_NAME, rcs_proxy).await
 }
 
 async fn get_cf_root_from_namespace<M: DiscoverableProtocolMarker>(
     rcs_proxy: &RemoteControlProxy,
     timeout: Duration,
-) -> Result<M::Proxy> {
+) -> std::result::Result<M::Proxy, RcsError> {
     let start_time = Instant::now();
     let res = open_with_timeout_at::<M>(
         timeout,
@@ -426,7 +433,7 @@ async fn get_cf_root_from_namespace<M: DiscoverableProtocolMarker>(
 pub async fn kernel_stats(
     rcs_proxy: &RemoteControlProxy,
     timeout: Duration,
-) -> Result<proto_fuchsia_kernel::StatsProxy> {
+) -> std::result::Result<proto_fuchsia_kernel::StatsProxy, RcsError> {
     let start_time = Instant::now();
     let res = open_with_timeout_at::<proto_fuchsia_kernel::StatsMarker>(
         timeout,
@@ -456,27 +463,27 @@ pub async fn kernel_stats(
 pub async fn root_config_override(
     rcs_proxy: &RemoteControlProxy,
     timeout: Duration,
-) -> Result<ConfigOverrideProxy> {
+) -> std::result::Result<ConfigOverrideProxy, RcsError> {
     get_cf_root_from_namespace::<ConfigOverrideMarker>(rcs_proxy, timeout).await
 }
 
 pub async fn root_realm_query(
     rcs_proxy: &RemoteControlProxy,
     timeout: Duration,
-) -> Result<RealmQueryProxy> {
+) -> std::result::Result<RealmQueryProxy, RcsError> {
     get_cf_root_from_namespace::<RealmQueryMarker>(rcs_proxy, timeout).await
 }
 
 pub async fn root_lifecycle_controller(
     rcs_proxy: &RemoteControlProxy,
     timeout: Duration,
-) -> Result<LifecycleControllerProxy> {
+) -> std::result::Result<LifecycleControllerProxy, RcsError> {
     get_cf_root_from_namespace::<LifecycleControllerMarker>(rcs_proxy, timeout).await
 }
 
 pub async fn root_route_validator(
     rcs_proxy: &RemoteControlProxy,
     timeout: Duration,
-) -> Result<RouteValidatorProxy> {
+) -> std::result::Result<RouteValidatorProxy, RcsError> {
     get_cf_root_from_namespace::<RouteValidatorMarker>(rcs_proxy, timeout).await
 }

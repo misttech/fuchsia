@@ -16,8 +16,10 @@ const SESSION_CONTAINER: &str = "core/session-manager/session:session/container"
 
 /// Returns the moniker for the container in the session, if there is one.
 async fn find_session_container(rcs_proxy: &rc::RemoteControlProxy) -> Result<String> {
-    let query_proxy =
-        rcs::root_realm_query(&rcs_proxy, TIMEOUT).await.context("opening realm query")?;
+    let query_proxy = rcs::root_realm_query(&rcs_proxy, TIMEOUT)
+        .await
+        .map_err(anyhow::Error::from)
+        .context("opening realm query")?;
     let instances = cli::list::get_instances_matching_filter(None, &query_proxy).await?;
     let container = instances.into_iter().find(|i| i.moniker.to_string() == SESSION_CONTAINER);
 
@@ -57,5 +59,7 @@ pub async fn connect_to_controller(
     moniker: Option<String>,
 ) -> Result<ControllerProxy> {
     let moniker = find_moniker(&rcs_proxy, moniker).await?;
-    rcs::connect_to_protocol::<ControllerMarker>(TIMEOUT, &moniker, &rcs_proxy).await
+    rcs::connect_to_protocol::<ControllerMarker>(TIMEOUT, &moniker, &rcs_proxy)
+        .await
+        .map_err(anyhow::Error::from)
 }

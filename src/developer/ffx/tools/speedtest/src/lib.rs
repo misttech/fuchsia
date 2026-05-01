@@ -139,5 +139,5 @@ async fn start_speedtest_component(
         &remote_control,
     )
     .await
-    .map_err(Into::into)
+    .map_err(|e| fho::bug!(e))
 }

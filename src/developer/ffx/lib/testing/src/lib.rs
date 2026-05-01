@@ -21,34 +21,34 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 pub async fn connect_to_suite_runner(
     remote_control: &fremotecontrol::RemoteControlProxy,
 ) -> Result<ftest_manager::SuiteRunnerProxy> {
-    rcs::connect_to_protocol::<ftest_manager::SuiteRunnerMarker>(
+    Ok(rcs::connect_to_protocol::<ftest_manager::SuiteRunnerMarker>(
         TIMEOUT,
         SUITE_RUNNER_MONIKER,
         remote_control,
     )
-    .await
+    .await?)
 }
 
 /// Connect to `fuchsia.test.manager.TestCaseEnumerator` on a target device using an RCS connection.
 pub async fn connect_to_test_case_enumerator(
     remote_control: &fremotecontrol::RemoteControlProxy,
 ) -> Result<ftest_manager::TestCaseEnumeratorProxy> {
-    rcs::connect_to_protocol::<ftest_manager::TestCaseEnumeratorMarker>(
+    Ok(rcs::connect_to_protocol::<ftest_manager::TestCaseEnumeratorMarker>(
         TIMEOUT,
         TEST_CASE_ENUMERATOR_MONIKER,
         remote_control,
     )
-    .await
+    .await?)
 }
 
 /// Connect to `fuchsia.test.manager.EarlyBootProfile` on a target device using an RCS connection.
 pub async fn connect_to_early_boot_profile(
     remote_control: &fremotecontrol::RemoteControlProxy,
 ) -> Result<ftest_manager::EarlyBootProfileProxy> {
-    rcs::connect_to_protocol::<ftest_manager::EarlyBootProfileMarker>(
+    Ok(rcs::connect_to_protocol::<ftest_manager::EarlyBootProfileMarker>(
         TIMEOUT,
         EARLY_BOOT_PROFILE_MONIKER,
         remote_control,
     )
-    .await
+    .await?)
 }

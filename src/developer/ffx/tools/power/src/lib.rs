@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 use anyhow::{Context, Result};
 use fdomain_client::fidl::DiscoverableProtocolMarker;
+use fdomain_fuchsia_power as fpower;
+use fdomain_fuchsia_power_manager_debug as fdebug;
+use fdomain_fuchsia_power_topology_test as fpt;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
+use rcs_fdomain as rcs;
 use target_holders::fdomain::RemoteControlProxyHolder;
-use {
-    fdomain_fuchsia_power as fpower, fdomain_fuchsia_power_manager_debug as fdebug,
-    fdomain_fuchsia_power_topology_test as fpt, rcs_fdomain as rcs,
-};
 
 mod args;
 
@@ -31,6 +31,7 @@ impl Connector {
         };
         rcs::connect_to_protocol::<S>(std::time::Duration::from_secs(15), moniker, &remote_control)
             .await
+            .map_err(anyhow::Error::from)
     }
 }
 

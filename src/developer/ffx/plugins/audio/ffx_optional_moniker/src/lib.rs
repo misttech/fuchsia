@@ -88,7 +88,8 @@ impl TryFromEnvWith for ExposedDirectoryConnector {
             &self.capability_name,
             &rcs,
         )
-        .await?;
+        .await
+        .map_err(|e| fho::bug!(e))?;
         Ok(proxy)
     }
 }

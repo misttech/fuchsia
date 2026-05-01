@@ -3,16 +3,18 @@
 // found in the LICENSE file.
 use anyhow::{Context, Result};
 use component_debug::capability;
+use component_debug_fdomain as component_debug;
+use driver_connector_fdomain as driver_connector;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, ProtocolMarker};
+use fdomain_fuchsia_driver_development as fdd;
+use fdomain_fuchsia_driver_registrar as fdr;
+use fdomain_fuchsia_sys2 as fsys;
+use fdomain_fuchsia_test_manager as ftm;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
+use fidl as _;
+use rcs_fdomain as rcs;
 use target_holders::fdomain::RemoteControlProxyHolder;
-use {
-    component_debug_fdomain as component_debug, driver_connector_fdomain as driver_connector,
-    fdomain_fuchsia_driver_development as fdd, fdomain_fuchsia_driver_registrar as fdr,
-    fdomain_fuchsia_sys2 as fsys, fdomain_fuchsia_test_manager as ftm, fidl as _,
-    rcs_fdomain as rcs,
-};
 
 mod args;
 
@@ -123,13 +125,13 @@ impl DriverConnector {
             }
             false => (moniker.to_string(), default_capability_name_for_query),
         };
-        rcs::connect_with_timeout_at::<S>(
+        Ok(rcs::connect_with_timeout_at::<S>(
             std::time::Duration::from_secs(15),
             &moniker,
             &capability,
             &remote_control,
         )
-        .await
+        .await?)
     }
 }
 
