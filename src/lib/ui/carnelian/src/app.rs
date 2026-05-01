@@ -394,7 +394,7 @@ pub(crate) enum MessageInternal {
     Render(ViewKey),
     ImageFreed(ViewKey, u64, u32),
     TargetedMessage(MessageTarget, Message),
-    RegisterDevice(DeviceId, hid_input_report::DeviceDescriptor),
+    RegisterDevice(DeviceId, Box<hid_input_report::DeviceDescriptor>),
     InputReport(DeviceId, hid_input_report::InputReport),
     KeyboardAutoRepeat(DeviceId),
     OwnershipChanged(bool),

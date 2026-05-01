@@ -5,6 +5,8 @@ library fuchsia.input.report;
 
 using zx;
 
+@available(added=HEAD)
+const MAX_NAME_LENGTH uint32 = 256;
 
 /// DeviceInformation provides more information about the device and lets a
 /// client distinguish between devices (e.g between two touchscreens that come
@@ -17,6 +19,21 @@ type DeviceInformation = table {
     2: product_id uint32;
     3: version uint32;
     4: polling_rate zx.Duration;
+
+    /// Human-readable name of the manufacturer. Optional.
+    /// Must be non-empty if present.
+    @available(added=HEAD)
+    5: manufacturer_name string:MAX_NAME_LENGTH;
+
+    /// Human-readable name of the product. Optional.
+    /// Must be non-empty if present.
+    @available(added=HEAD)
+    6: product_name string:MAX_NAME_LENGTH;
+
+    /// Serial number of the device. Optional.
+    /// Must be non-empty if present.
+    @available(added=HEAD)
+    7: serial_number string:MAX_NAME_LENGTH;
 };
 
 /// `DeviceDescriptor` describes a physical input device. Some physical devices may

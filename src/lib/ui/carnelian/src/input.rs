@@ -4,7 +4,7 @@
 
 use crate::app::{InternalSender, MessageInternal};
 use crate::geometry::{IntPoint, IntSize};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use euclid::default::Transform2D;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_input_report as hid_input_report;
@@ -55,11 +55,7 @@ impl ButtonSet {
         let buttons: HashSet<u8> = (0..2)
             .filter_map(|index| {
                 let mask = 1 << index;
-                if flags & mask != 0 {
-                    Some(index + 1)
-                } else {
-                    None
-                }
+                if flags & mask != 0 { Some(index + 1) } else { None }
             })
             .collect();
         ButtonSet::new(&buttons)
@@ -411,7 +407,10 @@ async fn listen_to_path(device_path: &Path, internal_sender: &InternalSender) ->
         .await?;
     let device_id = device_path.file_name().expect("file_name").to_string_lossy().to_string();
     internal_sender
-        .unbounded_send(MessageInternal::RegisterDevice(DeviceId(device_id.clone()), descriptor))
+        .unbounded_send(MessageInternal::RegisterDevice(
+            DeviceId(device_id.clone()),
+            Box::new(descriptor),
+        ))
         .expect("unbounded_send");
     let input_report_sender = internal_sender.clone();
     let (input_reports_reader_proxy, input_reports_reader_request) = create_proxy();
