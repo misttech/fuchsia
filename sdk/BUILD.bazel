@@ -21,6 +21,7 @@ load(
 # For now, this contains atoms that may also need to be built in other configurations
 idk_molecule(
     name = "fuchsia_idk_atoms_produced_by_main_platform_build_idk",
+    allowed_in_configurations = "once",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//build/bazel/bazel_idk/tests:__subpackages__",
@@ -41,6 +42,7 @@ idk_molecule(
 # level. Must export symbols with C linkage.
 idk_molecule(
     name = "cc_prebuilt_libraries_idk",
+    allowed_in_configurations = "fuchsia",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = ALL_CC_PREBUILT_LIBRARY_ATOMS,
 )
@@ -54,6 +56,7 @@ idk_molecule(
 # are complete at all API levels.
 idk_molecule(
     name = "cc_source_libraries_idk",
+    allowed_in_configurations = "once",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = ALL_CC_SOURCE_LIBRARY_ATOMS,
 )
@@ -61,6 +64,7 @@ idk_molecule(
 # Data atoms provided in the IDK.
 idk_molecule(
     name = "data_atoms_idk",
+    allowed_in_configurations = "once",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = DATA_ATOMS,
 )

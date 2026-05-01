@@ -25,6 +25,7 @@ load(
 # "prebuilt" or "host_tool" categories.
 idk_molecule(
     name = "fidl_idk",
+    allowed_in_configurations = "once",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//sdk:__pkg__"],
     deps = PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST + PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST,
@@ -33,6 +34,7 @@ idk_molecule(
 idk_molecule(
     name = "all_fidl_libraries_with_categories_idk",
     testonly = True,
+    allowed_in_configurations = "once",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//build/fidl:__pkg__"],
     # The dependency must be on the "_idk" targets because they depend on the

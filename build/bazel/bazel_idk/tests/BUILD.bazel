@@ -767,6 +767,7 @@ cc_library(
 idk_molecule(
     name = "test_submolecule_idk",
     testonly = True,
+    allowed_in_configurations = "fuchsia",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":platform_dependent_source_library_idk",
@@ -784,6 +785,7 @@ idk_molecule(
 idk_molecule(
     name = "test_molecule_idk",
     testonly = True,
+    allowed_in_configurations = "fuchsia",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":test_submolecule_idk",
@@ -802,6 +804,7 @@ idk_molecule(
 idk_molecule(
     name = "main_platform_build_test_molecule_idk",
     testonly = True,
+    allowed_in_configurations = "once",
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":test_data_atom_idk",
