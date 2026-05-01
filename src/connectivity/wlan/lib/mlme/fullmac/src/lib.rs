@@ -76,6 +76,8 @@ enum FullmacDriverEvent {
     Stop,
     OnScanResult { result: fidl_mlme::ScanResult },
     OnScanEnd { end: fidl_mlme::ScanEnd },
+    OnScheduledScanMatchesAvailable { txn_id: u64 },
+    OnScheduledScanStoppedByFirmware { txn_id: u64 },
     ConnectConf { resp: fidl_mlme::ConnectConfirm },
     RoamConf { conf: fidl_mlme::RoamConfirm },
     RoamStartInd { ind: fidl_mlme::RoamStartIndication },

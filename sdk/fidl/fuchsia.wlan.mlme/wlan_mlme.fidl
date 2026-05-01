@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.wlan.mlme;
 
+using fuchsia.wlan.common as common;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using fuchsia.wlan.internal as internal;
 using fuchsia.wlan.stats;
@@ -507,6 +508,33 @@ closed protocol MLME {
     // An event that signals the end of a scan transaction.
     strict -> OnScanEnd(struct {
         end ScanEnd;
+    });
+
+    /// Starts scheduled scanning.
+    strict StartScheduledScan(struct {
+        txn_id uint64;
+        req common.ScheduledScanRequest;
+    }) -> () error zx.Status;
+
+    /// Stops scheduled scanning.
+    strict StopScheduledScan(struct {
+        txn_id uint64;
+    }) -> () error zx.Status;
+
+    /// Returns the transaction IDs of any currently active scheduled scans.
+    strict GetScheduledScanEnabled() -> (struct {
+        active_txn_ids vector<uint64>:MAX;
+    }) error zx.Status;
+
+    /// Indicates that an individual scan within the scheduled scan plan has been completed
+    /// and all results have been sent for that individual scan.
+    strict -> OnScheduledScanMatchesAvailable(struct {
+        txn_id uint64;
+    });
+
+    /// Indicates that scheduled scanning has been stopped by the firmware.
+    strict -> OnScheduledScanStoppedByFirmware(struct {
+        txn_id uint64;
     });
 
     strict ConnectReq(struct {

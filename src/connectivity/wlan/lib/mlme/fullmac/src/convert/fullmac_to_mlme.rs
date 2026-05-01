@@ -411,6 +411,13 @@ pub fn convert_get_apf_packet_filter_enabled_resp(
     })
 }
 
+pub fn convert_get_scheduled_scan_enabled_resp(
+    resp: fidl_fullmac::WlanFullmacImplGetScheduledScanEnabledResponse,
+) -> Result<fidl_mlme::MlmeGetScheduledScanEnabledResponse> {
+    let active_txn_ids = resp.active_txn_ids.context("missing active_txn_ids")?;
+    Ok(fidl_mlme::MlmeGetScheduledScanEnabledResponse { active_txn_ids })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

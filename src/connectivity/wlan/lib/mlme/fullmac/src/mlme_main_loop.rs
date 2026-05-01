@@ -156,6 +156,30 @@ impl<D: DeviceOps> MlmeMainLoop<D> {
                 self.device.start_bss(mlme_to_fullmac::convert_start_bss_request(req)?)?
             }
             Stop(req) => self.device.stop_bss(mlme_to_fullmac::convert_stop_bss_request(req)?)?,
+            StartScheduledScan(req, responder) => {
+                responder.respond(self.device.start_scheduled_scan(
+                    fidl_fullmac::WlanFullmacImplStartScheduledScanRequest {
+                        txn_id: Some(req.txn_id),
+                        req: Some(req.req),
+                        ..Default::default()
+                    },
+                )?)
+            }
+            StopScheduledScan(req, responder) => {
+                responder.respond(self.device.stop_scheduled_scan(
+                    fidl_fullmac::WlanFullmacImplStopScheduledScanRequest {
+                        txn_id: Some(req.txn_id),
+                        ..Default::default()
+                    },
+                )?)
+            }
+            GetScheduledScanEnabled(responder) => {
+                let res = match self.device.get_scheduled_scan_enabled()? {
+                    Ok(res) => Ok(fullmac_to_mlme::convert_get_scheduled_scan_enabled_resp(res)?),
+                    Err(e) => Err(e),
+                };
+                responder.respond(res);
+            }
             SetKeys(req) => self.handle_mlme_set_keys_request(req)?,
             Eapol(req) => self.device.eapol_tx(mlme_to_fullmac::convert_eapol_request(req))?,
             SetCtrlPort(req) => self.set_link_state(req.state)?,
@@ -260,6 +284,14 @@ impl<D: DeviceOps> MlmeMainLoop<D> {
             }
             FullmacDriverEvent::OnScanEnd { end } => {
                 self.mlme_event_sink.send(fidl_mlme::MlmeEvent::OnScanEnd { end });
+            }
+            FullmacDriverEvent::OnScheduledScanMatchesAvailable { txn_id } => {
+                self.mlme_event_sink
+                    .send(fidl_mlme::MlmeEvent::OnScheduledScanMatchesAvailable { txn_id });
+            }
+            FullmacDriverEvent::OnScheduledScanStoppedByFirmware { txn_id } => {
+                self.mlme_event_sink
+                    .send(fidl_mlme::MlmeEvent::OnScheduledScanStoppedByFirmware { txn_id });
             }
             FullmacDriverEvent::ConnectConf { resp } => {
                 // IEEE Std 802.11-2016, 9.4.2.57
@@ -1164,6 +1196,24 @@ mod handle_mlme_request_tests {
         assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::GetApfPacketFilterEnabled)));
         let response = assert_matches!(receiver.try_recv(), Ok(Some(Ok(resp))) => resp);
         assert_eq!(response.enabled, true);
+    }
+
+    #[test]
+    fn test_get_scheduled_scan_enabled() {
+        let mut h = TestHelper::set_up();
+        h.fake_device.lock().get_scheduled_scan_enabled_mock =
+            Some(Ok(fidl_fullmac::WlanFullmacImplGetScheduledScanEnabledResponse {
+                active_txn_ids: Some(vec![1]),
+                ..Default::default()
+            }));
+        let (responder, mut receiver) = wlan_sme::responder::Responder::new();
+        let fidl_req = wlan_sme::MlmeRequest::GetScheduledScanEnabled(responder);
+
+        h.mlme.handle_mlme_request(fidl_req).unwrap();
+
+        assert_matches!(h.driver_calls.try_next(), Ok(Some(DriverCall::GetScheduledScanEnabled)));
+        let response = assert_matches!(receiver.try_recv(), Ok(Some(Ok(resp))) => resp);
+        assert!(!response.active_txn_ids.is_empty());
     }
 
     pub struct TestHelper {

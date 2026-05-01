@@ -4,10 +4,10 @@
 
 use anyhow::{Context, format_err};
 use fidl::endpoints::ClientEnd;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac,
-    fidl_fuchsia_wlan_mlme as fidl_mlme, fidl_fuchsia_wlan_stats as fidl_stats,
-};
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
+use fidl_fuchsia_wlan_mlme as fidl_mlme;
+use fidl_fuchsia_wlan_stats as fidl_stats;
 
 /// This trait abstracts how Device accomplish operations. Test code
 /// can then implement trait methods instead of mocking an underlying DeviceInterface
@@ -75,6 +75,17 @@ pub trait DeviceOps {
     fn get_apf_packet_filter_enabled(
         &self,
     ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse, i32>>;
+    fn start_scheduled_scan(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplStartScheduledScanRequest,
+    ) -> anyhow::Result<Result<(), i32>>;
+    fn stop_scheduled_scan(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplStopScheduledScanRequest,
+    ) -> anyhow::Result<Result<(), i32>>;
+    fn get_scheduled_scan_enabled(
+        &self,
+    ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplGetScheduledScanEnabledResponse, i32>>;
 }
 
 pub struct FullmacDevice {
@@ -343,6 +354,33 @@ impl DeviceOps for FullmacDevice {
             .get_apf_packet_filter_enabled(zx::MonotonicInstant::INFINITE)
             .context("FIDL error on GetApfPacketFilterEnabled")
     }
+
+    fn start_scheduled_scan(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplStartScheduledScanRequest,
+    ) -> anyhow::Result<Result<(), i32>> {
+        self.fullmac_impl_sync_proxy
+            .start_scheduled_scan(&req, zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on StartScheduledScan")
+    }
+
+    fn stop_scheduled_scan(
+        &self,
+        req: fidl_fullmac::WlanFullmacImplStopScheduledScanRequest,
+    ) -> anyhow::Result<Result<(), i32>> {
+        self.fullmac_impl_sync_proxy
+            .stop_scheduled_scan(&req, zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on StopScheduledScan")
+    }
+
+    fn get_scheduled_scan_enabled(
+        &self,
+    ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplGetScheduledScanEnabledResponse, i32>>
+    {
+        self.fullmac_impl_sync_proxy
+            .get_scheduled_scan_enabled(zx::MonotonicInstant::INFINITE)
+            .context("FIDL error on GetScheduledScanEnabled")
+    }
 }
 
 #[cfg(test)]
@@ -359,6 +397,13 @@ pub mod test_utils {
         StartScan {
             req: fidl_fullmac::WlanFullmacImplStartScanRequest,
         },
+        StartScheduledScan {
+            req: fidl_fullmac::WlanFullmacImplStartScheduledScanRequest,
+        },
+        StopScheduledScan {
+            req: fidl_fullmac::WlanFullmacImplStopScheduledScanRequest,
+        },
+        GetScheduledScanEnabled,
         ConnectReq {
             req: fidl_fullmac::WlanFullmacImplConnectRequest,
         },
@@ -445,7 +490,8 @@ pub mod test_utils {
         pub set_apf_packet_filter_enabled_mock: Option<Result<(), i32>>,
         pub get_apf_packet_filter_enabled_mock:
             Option<Result<fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse, i32>>,
-
+        pub get_scheduled_scan_enabled_mock:
+            Option<Result<fidl_fullmac::WlanFullmacImplGetScheduledScanEnabledResponse, i32>>,
         pub fullmac_ifc_client_end: Option<ClientEnd<fidl_fullmac::WlanFullmacImplIfcMarker>>,
     }
 
@@ -537,6 +583,12 @@ pub mod test_utils {
                     get_apf_packet_filter_enabled_mock: Some(Ok(
                         fidl_fullmac::WlanFullmacImplGetApfPacketFilterEnabledResponse {
                             enabled: Some(false),
+                            ..Default::default()
+                        },
+                    )),
+                    get_scheduled_scan_enabled_mock: Some(Ok(
+                        fidl_fullmac::WlanFullmacImplGetScheduledScanEnabledResponse {
+                            active_txn_ids: Some(vec![]),
                             ..Default::default()
                         },
                     )),
@@ -763,6 +815,32 @@ pub mod test_utils {
             self.mocks.lock().get_apf_packet_filter_enabled_mock.clone().ok_or_else(|| {
                 format_err!("get_apf_packet_filter_enabled_mock is None in FakeFullmacDevice")
             })
+        }
+
+        fn get_scheduled_scan_enabled(
+            &self,
+        ) -> anyhow::Result<Result<fidl_fullmac::WlanFullmacImplGetScheduledScanEnabledResponse, i32>>
+        {
+            self.driver_call_sender.send(DriverCall::GetScheduledScanEnabled);
+            self.mocks.lock().get_scheduled_scan_enabled_mock.clone().ok_or_else(|| {
+                format_err!("get_scheduled_scan_enabled_mock is None in FakeFullmacDevice")
+            })
+        }
+
+        fn start_scheduled_scan(
+            &self,
+            req: fidl_fullmac::WlanFullmacImplStartScheduledScanRequest,
+        ) -> anyhow::Result<Result<(), i32>> {
+            self.driver_call_sender.send(DriverCall::StartScheduledScan { req });
+            Ok(Ok(()))
+        }
+
+        fn stop_scheduled_scan(
+            &self,
+            req: fidl_fullmac::WlanFullmacImplStopScheduledScanRequest,
+        ) -> anyhow::Result<Result<(), i32>> {
+            self.driver_call_sender.send(DriverCall::StopScheduledScan { req });
+            Ok(Ok(()))
         }
     }
 }

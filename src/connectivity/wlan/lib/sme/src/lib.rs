@@ -20,15 +20,14 @@ pub mod serve;
 #[cfg(test)]
 pub mod test_utils;
 
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_mlme::{self as fidl_mlme, MlmeEvent};
+use fidl_fuchsia_wlan_stats as fidl_stats;
 use futures::channel::mpsc;
 use thiserror::Error;
 use wlan_common::sink::UnboundedSink;
 use wlan_common::timer;
-use {
-    fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fidl_fuchsia_wlan_stats as fidl_stats,
-};
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Config {
@@ -98,6 +97,17 @@ pub enum MlmeRequest {
     GetApfPacketFilterEnabled(
         responder::Responder<Result<fidl_mlme::MlmeGetApfPacketFilterEnabledResponse, i32>>,
     ),
+    StartScheduledScan(
+        fidl_mlme::MlmeStartScheduledScanRequest,
+        responder::Responder<Result<(), i32>>,
+    ),
+    StopScheduledScan(
+        fidl_mlme::MlmeStopScheduledScanRequest,
+        responder::Responder<Result<(), i32>>,
+    ),
+    GetScheduledScanEnabled(
+        responder::Responder<Result<fidl_mlme::MlmeGetScheduledScanEnabledResponse, i32>>,
+    ),
 }
 
 impl MlmeRequest {
@@ -118,6 +128,9 @@ impl MlmeRequest {
             Self::Stop(_) => "Stop",
             Self::GetIfaceStats(_) => "GetIfaceStats",
             Self::GetIfaceHistogramStats(_) => "GetIfaceHistogramStats",
+            Self::StartScheduledScan(..) => "StartScheduledScan",
+            Self::StopScheduledScan(..) => "StopScheduledScan",
+            Self::GetScheduledScanEnabled(_) => "GetScheduledScanEnabled",
             Self::GetSignalReport(_) => "GetSignalReport",
             Self::ListMinstrelPeers(_) => "ListMinstrelPeers",
             Self::GetMinstrelStats(_, _) => "GetMinstrelStats",
@@ -201,6 +214,8 @@ fn mlme_event_name(event: &MlmeEvent) -> &str {
         MlmeEvent::OnSaeHandshakeInd { .. } => "OnSaeHandshakeInd",
         MlmeEvent::OnSaeFrameRx { .. } => "OnSaeFrameRx",
         MlmeEvent::OnWmmStatusResp { .. } => "OnWmmStatusResp",
+        MlmeEvent::OnScheduledScanMatchesAvailable { .. } => "OnScheduledScanMatchesAvailable",
+        MlmeEvent::OnScheduledScanStoppedByFirmware { .. } => "OnScheduledScanStoppedByFirmware",
     }
 }
 

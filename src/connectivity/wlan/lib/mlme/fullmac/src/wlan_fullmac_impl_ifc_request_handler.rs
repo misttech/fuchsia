@@ -38,13 +38,21 @@ fn handle_one_request(
             });
         }
         fidl_fullmac::WlanFullmacImplIfcRequest::OnScheduledScanMatchesAvailable {
-            payload: _,
+            payload,
             ..
-        } => {}
+        } => {
+            driver_event_sink.0.send(FullmacDriverEvent::OnScheduledScanMatchesAvailable {
+                txn_id: payload.txn_id.context("missing txn_id")?,
+            });
+        }
         fidl_fullmac::WlanFullmacImplIfcRequest::OnScheduledScanStoppedByFirmware {
-            payload: _,
+            payload,
             ..
-        } => {}
+        } => {
+            driver_event_sink.0.send(FullmacDriverEvent::OnScheduledScanStoppedByFirmware {
+                txn_id: payload.txn_id.context("missing txn_id")?,
+            });
+        }
         fidl_fullmac::WlanFullmacImplIfcRequest::ConnectConf { payload, responder } => {
             responder.send().context("Failed to respond to ConnectConf")?;
             driver_event_sink.0.send(FullmacDriverEvent::ConnectConf {
