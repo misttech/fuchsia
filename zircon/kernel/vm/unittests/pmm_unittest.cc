@@ -7,6 +7,8 @@
 #include <lib/fit/defer.h>
 #include <lib/page/size.h>
 
+#include <kernel/thread.h>
+
 #include "test_helper.h"
 
 namespace vm_unittest {
@@ -524,6 +526,122 @@ static bool pmm_node_explicit_should_wait_test() {
   END_TEST;
 }
 
+struct PmmWaiterArgs {
+  PmmNode* node;
+  ktl::atomic<int>* timeout_count;
+  ktl::atomic<int>* no_memory_count;
+};
+
+static int pmm_waiter_thread(void* arg) {
+  PmmWaiterArgs* args = static_cast<PmmWaiterArgs*>(arg);
+  auto result = args->node->WaitForSinglePageAllocation(Deadline::after_mono(ZX_SEC(2)));
+  if (result.status_value() == ZX_ERR_TIMED_OUT) {
+    args->timeout_count->fetch_add(1);
+  } else if (result.status_value() == ZX_ERR_NO_MEMORY) {
+    args->no_memory_count->fetch_add(1);
+  } else if (result.is_ok()) {
+    args->node->FreePage(result.value());
+  }
+  return 0;
+}
+
+// Verifies that once StopReturningShouldWait() is called, WaitForSinglePageAllocation
+// does not block, even if the event was consumed by a previous call.
+static bool pmm_node_stop_returning_should_wait_test() {
+  BEGIN_TEST;
+
+  ManagedPmmNode node;
+
+  // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+  list_node list = LIST_INITIAL_VALUE(list);
+  zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
+  EXPECT_EQ(ZX_OK, status);
+
+  // Place the node directly into a state that forbids allocations.
+  EXPECT_TRUE(node.SetFreeMemorySignal(0, ManagedPmmNode::kNumPages, UINT64_MAX));
+
+  ktl::atomic<int> timeout_count = 0;
+  ktl::atomic<int> no_memory_count = 0;
+  PmmWaiterArgs args{&node.node(), &timeout_count, &no_memory_count};
+
+  // Start a thread that will wait.
+  Thread* thread = Thread::Create("pmm waiter", pmm_waiter_thread, &args, DEFAULT_PRIORITY);
+  thread->Resume();
+
+  // Give the thread time to block.
+  Thread::Current::SleepRelative(ZX_MSEC(100));
+
+  // Stop returning should wait. This should wake up the thread.
+  node.node().StopReturningShouldWait();
+
+  // Wait for the thread to complete.
+  thread->Join(nullptr, ZX_TIME_INFINITE);
+
+  // Verify that the thread did not time out.
+  EXPECT_EQ(timeout_count.load(), 0);
+  // Verify that the thread failed with NO_MEMORY.
+  EXPECT_EQ(no_memory_count.load(), 1);
+
+  // Second call: may_allocate_evt_ might be unsignaled but since should_wait_ is Never, it should
+  // not wait.
+  auto alloc_page2 = node.node().WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10)));
+  EXPECT_EQ(alloc_page2.status_value(), ZX_ERR_NO_MEMORY);
+
+  // Clean up.
+  node.node().FreeList(&list);
+
+  END_TEST;
+}
+
+// Verifies that once StopReturningShouldWait() is called, all threads blocked on
+// WaitForSinglePageAllocation are woken up.
+static bool pmm_node_stop_returning_should_wait_concurrent_test() {
+  BEGIN_TEST;
+
+  ManagedPmmNode node;
+
+  // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+  list_node list = LIST_INITIAL_VALUE(list);
+  zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
+  EXPECT_EQ(ZX_OK, status);
+
+  // Place the node directly into a state that forbids allocations.
+  EXPECT_TRUE(node.SetFreeMemorySignal(0, ManagedPmmNode::kNumPages, UINT64_MAX));
+
+  ktl::atomic<int> timeout_count = 0;
+  ktl::atomic<int> no_memory_count = 0;
+  PmmWaiterArgs args{&node.node(), &timeout_count, &no_memory_count};
+
+  constexpr int kNumWaiters = 3;
+  Thread* threads[kNumWaiters];
+
+  for (int i = 0; i < kNumWaiters; ++i) {
+    threads[i] = Thread::Create("pmm waiter", pmm_waiter_thread, &args, DEFAULT_PRIORITY);
+    threads[i]->Resume();
+  }
+
+  // Give threads time to block.
+  Thread::Current::SleepRelative(ZX_MSEC(100));
+
+  // Stop returning should wait.
+  node.node().StopReturningShouldWait();
+
+  // Wait for all threads to complete.
+  for (auto& t : threads) {
+    t->Join(nullptr, ZX_TIME_INFINITE);
+  }
+
+  // Verify that NO threads timed out.
+  EXPECT_EQ(timeout_count.load(), 0);
+  // Verify that all threads failed with NO_MEMORY.
+  EXPECT_EQ(no_memory_count.load(), kNumWaiters);
+
+  // Clean up.
+  node.node().FreeList(&list);
+
+  END_TEST;
+}
+
 static bool pmm_checker_test_with_fill_size(size_t fill_size) {
   BEGIN_TEST;
 
@@ -823,6 +941,8 @@ VM_UNITTEST(pmm_node_oversized_alloc_test)
 VM_UNITTEST(pmm_node_free_mem_event_test)
 VM_UNITTEST(pmm_node_low_mem_alloc_failure_test)
 VM_UNITTEST(pmm_node_explicit_should_wait_test)
+VM_UNITTEST(pmm_node_stop_returning_should_wait_test)
+VM_UNITTEST(pmm_node_stop_returning_should_wait_concurrent_test)
 VM_UNITTEST(pmm_checker_test)
 VM_UNITTEST(pmm_checker_is_valid_fill_size_test)
 VM_UNITTEST(pmm_get_arena_info_test)

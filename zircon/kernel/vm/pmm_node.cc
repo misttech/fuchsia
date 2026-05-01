@@ -1234,38 +1234,54 @@ const char* PmmNode::AllocFailure::TypeToString(Type type) {
 }
 
 zx::result<vm_page_t*> PmmNode::WaitForSinglePageAllocation(Deadline deadline) {
-  zx_status_t wait_result = may_allocate_evt_.Wait(deadline);
+  bool skip_wait = false;
+  {
+    Guard<Mutex> guard{&lock_};
+    // If we have been instructed to never wait, skip waiting on the event entirely to
+    // prevent blocking. The Never state is final.
+    if (should_wait_ == ShouldWaitState::Never) {
+      skip_wait = true;
+    }
+  }
 
-  // Let the caller handle the error and retry if necessary.
-  // This could be `ZX_ERR_TIMED_OUT`, `ZX_ERR_INTERNAL_INTR_KILLED`(thread killed)
-  // or `ZX_ERR_INTERNAL_INTR_RETRY`(thread suspended).
-  //
-  // TODO(fxbug.dev/443281947): Handle thread suspension.
-  if (wait_result != ZX_OK) {
-    return zx::error(wait_result);
+  if (!skip_wait) {
+    zx_status_t wait_result = may_allocate_evt_.Wait(deadline);
+
+    // Let the caller handle the error and retry if necessary.
+    // This could be `ZX_ERR_TIMED_OUT`, `ZX_ERR_INTERNAL_INTR_KILLED`(thread killed)
+    // or `ZX_ERR_INTERNAL_INTR_RETRY`(thread suspended).
+    //
+    // TODO(https://fxbug.dev/443281947): Handle thread suspension.
+    if (wait_result != ZX_OK) {
+      return zx::error(wait_result);
+    }
   }
 
   // Try to allocate the page now, it may fail sporadically, since there is no guarantee that
   // by the time we attempt to allocate the pages are still available.
   zx::result<vm_page_t*> res = AllocPage(PMM_ALLOC_FLAG_CAN_WAIT);
 
-  // Normally we would only signal in the `ZX_OK` case, but in order to address
-  // `pmm_alloc_random_should_wait` we signal unconditionally, to simplify the logic. This leads to
-  // one extra spurious wake-up.
+  // Normally we would only signal in the `ZX_OK` case, i.e. when we are in an allocation-able
+  // state. Otherwise we would wake up another thread just for it to receive `ZX_ERR_SHOULD_WAIT`
+  // and immediately go back to waiting on the event. However, we also signal in these cases:
   //
-  // This is because, when this random wait mode is active, we may block in a non low memory state,
-  // which will lead to threads getting blocked, and no one kicking them out. The unblocking chain
-  // is triggered by the system moving OUT of a low memory state, which would signal the event.
-  bool may_signal = res.is_ok() || res.status_value() == ZX_ERR_SHOULD_WAIT;
+  // 1) `should_wait_ == Never`: We unconditionally signal to ensure all waiting threads are woken
+  //    up (cascading signal) and no new threads block.
+  //
+  // 2) `pmm_alloc_random_should_wait`: In the random wait mode, we may block in a non low memory
+  //    state, which will lead to threads getting blocked, and no one kicking them out.
+  //    The unblocking chain is triggered by the system moving OUT of a low memory state, which
+  //    would signal the event. To avoid checking the boot option explicitly, we always signal if
+  //    the allocation returned `ZX_ERR_SHOULD_WAIT` and we are not in the `UntilReset` state,
+  //    which leads to one extra spurious wake-up.
   bool should_signal = false;
-  if (may_signal) {
+  {
     Guard<Mutex> g(&lock_);
-    // We may only signal the event, when we are in an allocation-able state, otherwise
-    // we would wake up another thread just for it to receive `ZX_ERR_SHOULD_WAIT` and go back
-    // to waiting on the event, which we would have signalled below before returning.
-    //
-    // We still allow `ZX_ERR_SHOULD_WAIT` to signal threads, to accommodate random waits.
-    should_signal = may_signal && (should_wait_ != ShouldWaitState::UntilReset);
+    if (should_wait_ == ShouldWaitState::Never) {
+      should_signal = true;
+    } else if (should_wait_ != ShouldWaitState::UntilReset) {
+      should_signal = res.is_ok() || res.status_value() == ZX_ERR_SHOULD_WAIT;
+    }
   }
 
   if (should_signal) {
