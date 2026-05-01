@@ -134,7 +134,8 @@ build_with_platform_api_level(
     # This target is only intended to be built in Fuchsia configurations.
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
-        # Build all the migrated atoms for the main platform build.
-        "//sdk:fuchsia_idk_atoms_produced_by_main_platform_build_idk",
+        # Build the IDKs to exercise all the atoms migrated so far.
+        "//sdk:fuchsia_idk_molecule_idk",
+        "//sdk:in_tree_idk_molecule_idk",
     ],
 )

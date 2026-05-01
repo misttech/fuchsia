@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_build_info//:args.bzl", "target_cpu")
 load(
     "//build/bazel/bazel_idk:defs.bzl",
     "idk_host_tool_molecule",
@@ -16,6 +17,49 @@ load(
     "NON_BUILD_HOST_TOOLS_ATOMS",
 )
 
+# Defines the contents of the Fuchsia IDK.
+idk_molecule(
+    name = "fuchsia_idk_molecule_idk",
+    allowed_in_configurations = "once",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//build/bazel/rules/tests:__subpackages__"],
+    # TODO(https://fxbug.dev/507577175): Add all molecules to match the GN definition.
+    deps = [
+        ":fuchsia_idk_atoms_produced_by_main_platform_build_idk",
+
+        # TODO(https://fxbug.dev/507577175): Build these for all API level and
+        # CPU architecture combinations.
+        ":fuchsia_idk_atoms_for_each_api_level_and_cpu_idk",
+
+        # Host tools.
+        # TODO(https://fxbug.dev/507577175): Build these for both x64 and arm64.
+        ":build_host_tools_idk",
+        ":non_build_host_tools_idk",
+    ],
+)
+
+# Defines the contents of the in-tree IDK.
+# It contains a subset of the atoms in the Fuchsia IDK. Notable differences
+# include:
+# * Prebuilt libraries are only built at "PLATFORM" for the target CPU architecture.
+# * Fuchsia packages are not included.
+# * Host tools:
+#   * Only a subset are included.
+#   * Only built for the current host CPU architecture.
+idk_molecule(
+    name = "in_tree_idk_molecule_idk",
+    allowed_in_configurations = "once",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//build/bazel/rules/tests:__subpackages__"],
+    # TODO(https://fxbug.dev/507577175): Add all molecules to match the GN definition.
+    deps = [
+        ":fuchsia_idk_atoms_produced_by_main_platform_build_idk",
+
+        # Host tools.
+        ":build_host_tools_idk",
+    ],
+)
+
 # All atoms to be produced by the main build configuration for inclusion in the Fuchsia IDK.
 # For now, there is no distinction between the in-tree IDK and real Fuchsia IDK.
 # For now, this contains atoms that may also need to be built in other configurations
@@ -23,17 +67,34 @@ idk_molecule(
     name = "fuchsia_idk_atoms_produced_by_main_platform_build_idk",
     allowed_in_configurations = "once",
     target_compatible_with = ["@platforms//os:fuchsia"],
-    visibility = ["//build/bazel/rules/tests:__subpackages__"],
     deps = [
         ":cc_prebuilt_libraries_idk",
         ":cc_source_libraries_idk",
         ":data_atoms_idk",
         "//sdk/fidl:fidl_idk",
-
-        # Host tools.
-        ":build_host_tools_idk",
-        ":non_build_host_tools_idk",
     ],
+)
+
+idk_molecule(
+    name = "fuchsia_idk_atoms_for_each_api_level_and_cpu_idk",
+    allowed_in_configurations = "fuchsia",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    # Building the atoms below requires a sysroot and can currently only be
+    # built for the target CPU architecture because that is the only one for
+    # which a sysroot is available.
+    # TODO(https://fxbug.dev/505380228): Move all targets out of the `select()`
+    # statement into `deps` directly once sysroots are available for all CPU
+    # architectures.
+    deps = select({
+        "//build/bazel/platforms:is_fuchsia_" + target_cpu: [
+            ":cc_prebuilt_libraries_idk",
+
+            # TODO(https://fxbug.dev/507577175): Add the sysroot atom.
+            # TODO(https://fxbug.dev/507577175): Add Fuchsia packages except at
+            # the "PLATFORM" API level.
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 # C/C++ code that must be provided as prebuilt libraries for each supported API
