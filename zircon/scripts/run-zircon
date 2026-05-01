@@ -469,6 +469,11 @@ if (( VIRTIO )); then
     ARGS+=("-device" "virtio-serial-pci")
     ARGS+=("-device" "virtio-mouse-pci")
     ARGS+=("-device" "virtio-keyboard-pci")
+    # Now that we enabled the virtio mouse and keyboard, we can disable
+    # the i8042 (legacy PS/2) device.
+    if [[ "$ARCH" == "x64" ]]; then
+      ARGS+=("-machine" "i8042=off")
+    fi
 fi
 
 if (( DEBUGGER )); then
