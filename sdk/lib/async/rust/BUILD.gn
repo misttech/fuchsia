@@ -15,21 +15,15 @@ rustc_library("rust") {
 
   deps = [
     "//sdk/lib/async",
+    "//sdk/lib/async/rust/dispatcher",
     "//sdk/lib/async/rust/sys",
     "//sdk/rust/zx",
-    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
   ]
 
-  test_deps = [
-    #"//src/lib/fuchsia-async",
-  ]
-
   sources = [
+    "src/after_deadline.rs",
     "src/callback_state.rs",
-    "src/dispatcher.rs",
-    "src/dispatcher/after_deadline.rs",
-    "src/dispatcher/task.rs",
     "src/lib.rs",
   ]
 
@@ -49,6 +43,7 @@ group("tests") {
   testonly = true
   deps = [
     ":libasync_tests",
+    "dispatcher:tests",
     "fidl:tests",
     "sys:tests",
   ]

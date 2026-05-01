@@ -4,7 +4,7 @@
 
 //! Safe bindings for the C libasync async dispatcher library
 
-use zx::sys::ZX_OK;
+use zx_types::ZX_OK;
 
 use core::task::Context;
 use fuchsia_sync::Mutex;
@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::task::{Poll, Wake, Waker};
 
-use zx::Status;
+use zx_status::Status;
 
 use futures::future::{BoxFuture, FutureExt};
 use futures::task::AtomicWaker;

@@ -70,6 +70,8 @@ mod dso {
     #![cfg(feature = "dso")]
 
     pub use super::*;
+    use fdf::OnDriverDispatcher;
+    use libasync::DispatcherTimerExt;
 
     #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
     #[repr(transparent)]
@@ -113,8 +115,6 @@ mod dso {
         handle: Option<::libasync::JoinHandle<T>>,
         detached: bool,
     }
-
-    use fdf::{OnDispatcher, OnDriverDispatcher};
 
     impl<T> Drop for TaskHandle<T> {
         fn drop(&mut self) {

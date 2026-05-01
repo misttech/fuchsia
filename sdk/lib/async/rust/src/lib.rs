@@ -5,7 +5,8 @@
 //! Bindings for the core of the fuchsia driver framework C API
 #![deny(unsafe_op_in_unsafe_fn, missing_docs)]
 
+mod after_deadline;
 pub mod callback_state;
-mod dispatcher;
 
-pub use dispatcher::*;
+pub use after_deadline::*;
+pub use libasync_dispatcher::*;

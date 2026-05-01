@@ -15,9 +15,29 @@ use zx::Status;
 use zx::sys::{ZX_ERR_CANCELED, ZX_OK};
 
 use crate::callback_state::CallbackSharedState;
-use crate::dispatcher::{AsyncDispatcher, OnDispatcher};
+use crate::{AsyncDispatcher, OnDispatcher};
 
 type SharedState = CallbackSharedState<async_task, AfterDeadlineState>;
+
+/// Implements methods used for setting and waiting on timers on a dispatcher.
+pub trait DispatcherTimerExt: OnDispatcher {
+    /// Returns a future that will fire when after the given deadline time.
+    ///
+    /// This can be used instead of the fuchsia-async timer primitives in situations where
+    /// there isn't a currently active fuchsia-async executor running on that dispatcher for some
+    /// reason (ie. the rust code does not own the dispatcher) or for cases where the small overhead
+    /// of fuchsia-async compatibility is too much.
+    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline<Self>;
+}
+
+impl<T> DispatcherTimerExt for T
+where
+    T: OnDispatcher,
+{
+    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline<Self> {
+        AfterDeadline::new(self, deadline)
+    }
+}
 
 struct AfterDeadlineState {
     async_dispatcher: NonNull<async_dispatcher>,
@@ -81,7 +101,7 @@ impl<D: OnDispatcher + Unpin> Future for AfterDeadline<D> {
 
         let now = self.dispatcher.on_maybe_dispatcher(|dispatcher| Ok(dispatcher.now()));
         match now {
-            Ok(now) if deadline < now => {
+            Ok(now) if deadline < zx::MonotonicInstant::from_nanos(now) => {
                 return Poll::Ready(Ok(()));
             }
             Err(err) => {

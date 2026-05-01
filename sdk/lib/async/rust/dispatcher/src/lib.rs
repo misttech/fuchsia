@@ -12,12 +12,11 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 use std::sync::{Arc, Weak};
 
-use zx::Status;
+use zx_status::Status;
+use zx_types::zx_time_t;
 
-mod after_deadline;
 mod task;
 
-pub use after_deadline::*;
 pub use task::*;
 
 /// An unowned reference to a driver runtime dispatcher such as is produced by calling
@@ -86,10 +85,9 @@ pub trait AsyncDispatcher: Send + Sync {
     }
 
     /// Returns the current time on the dispatcher's timeline
-    fn now(&self) -> zx::MonotonicInstant {
+    fn now(&self) -> zx_time_t {
         let async_dispatcher = self.as_async_dispatcher_ref().0.as_ptr();
-        let now_nanos = unsafe { async_now(async_dispatcher) };
-        zx::MonotonicInstant::from_nanos(now_nanos)
+        unsafe { async_now(async_dispatcher) }
     }
 }
 
@@ -157,16 +155,6 @@ pub trait OnDispatcher: Clone + Send + Sync {
         Self: 'static,
     {
         Task::start(future, self.clone())
-    }
-
-    /// Returns a future that will fire when after the given deadline time.
-    ///
-    /// This can be used instead of the fuchsia-async timer primitives in situations where
-    /// there isn't a currently active fuchsia-async executor running on that dispatcher for some
-    /// reason (ie. the rust code does not own the dispatcher) or for cases where the small overhead
-    /// of fuchsia-async compatibility is too much.
-    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline<Self> {
-        AfterDeadline::new(self, deadline)
     }
 }
 
