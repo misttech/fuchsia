@@ -29,7 +29,7 @@
 #include "sdk/lib/fdio/get_client.h"
 #include "sdk/lib/fdio/internal.h"
 #include "sdk/lib/fdio/socket.h"
-#include "src/network/getifaddrs.h"
+#include "zircon/third_party/ulib/musl/src/network/getifaddrs.h"
 
 static zx::event create_sharing_domain_token() {
   zx::event sharing_domain;
