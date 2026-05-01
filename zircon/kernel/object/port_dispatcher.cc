@@ -572,6 +572,21 @@ zx_status_t PortDispatcher::CancelKey(uint64_t key) {
   for (auto it = observers_.begin(); it != observers_.end();) {
     if (static_cast<SignalObserver*>(&*it)->MatchesKey(this, key)) {
       it->Cancel();
+      // At this point, since we're still holding our lock we know that all of the observers in
+      // canceled_observers point to live dispatchers. We can't hold the port dispatcher lock while
+      // calling in to dispatchers in order to remove this observer due to lock ordering. So, we're
+      // about to drop our lock temporarily for each observer.
+      //
+      // Another thread could be trying to destroy a dispatcher instance and close out all of its
+      // registered observers. It will call OnCancel() on each observer in its list which will
+      // acquire the port dispatcher's lock, but will not find any observers that we've moved to our
+      // local canceled_observers list.
+      //
+      // To ensure that all of the dispatchers referenced by the canceled observers are still alive,
+      // we must acquire references while still holding the port dispatcher lock. This ensures that
+      // when we go through the loop below and release and re-acquire the port dispatcher lock we
+      // will always find a live dispatcher.
+      it->AddDispatcherRefLocked();
       canceled_observers.push_front(observers_.erase(it++));
     } else {
       ++it;
@@ -582,9 +597,11 @@ zx_status_t PortDispatcher::CancelKey(uint64_t key) {
 
   while (!canceled_observers.is_empty()) {
     PortObserver* canceled_observer = canceled_observers.pop_front();
-    // Acquire a reference to dispatcher before releasing get_lock().
-    fbl::RefPtr<Dispatcher> dispatcher(canceled_observer->UnlinkDispatcherLocked());
-    guard.CallUnlocked([canceled_observer, dispatcher = ktl::move(dispatcher)] {
+    // We've already incremented the reference count to each dispatcher in the loop above, so here
+    // we can import into a RefPtr instead of creating a new reference.
+    fbl::RefPtr<Dispatcher> dispatcher =
+        fbl::ImportFromRawPtr(canceled_observer->UnlinkDispatcherLocked());
+    guard.CallUnlocked([dispatcher = ktl::move(dispatcher), canceled_observer]() {
       dispatcher->RemoveObserver(canceled_observer);
     });
     object_cache::UniquePtr<PortObserver> destroyer(canceled_observer);

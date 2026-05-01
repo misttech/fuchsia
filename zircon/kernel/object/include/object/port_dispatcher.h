@@ -182,6 +182,13 @@ class PortObserver final : public SignalObserver {
     return dispatcher;
   }
 
+  // Manually increment the reference count of our dispatcher.
+  // May only be called while holding PortDispatcher lock.
+  void AddDispatcherRefLocked() {
+    DEBUG_ASSERT(DispatcherLockIsHeld());
+    dispatcher_->AddRef();
+  }
+
   // May only be called while holding PortDispatcher lock.
   void Cancel() {
     DEBUG_ASSERT(DispatcherLockIsHeld());

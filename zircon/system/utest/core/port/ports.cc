@@ -1232,4 +1232,49 @@ TEST(PortStressTest, CancelKeyDuringRegistrationRace) {
   waiting_thread.join();
 }
 
+// This is another variation of CancelKeyDuringRegistrationRace that focuses on closing handles
+// and canceling waits registered on the same object.
+// This is a regression test for https://fxbug.dev/504783349
+TEST(PortStressTest, CancelKeyCloseRace) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  const uint64_t key = 0x1234;
+
+  constexpr size_t kNumDummies = 10000;
+  std::vector<zx::event> dummy_events(kNumDummies);
+  for (size_t i = 0; i < kNumDummies; i++) {
+    ASSERT_OK(zx::event::create(0u, &dummy_events[i]));
+    ASSERT_OK(dummy_events[i].wait_async(port, key, ZX_EVENT_SIGNALED, ZX_WAIT_ASYNC_ONCE));
+  }
+
+  zx::event event_b;
+  ASSERT_OK(zx::event::create(0u, &event_b));
+  ASSERT_OK(event_b.wait_async(port, key, ZX_EVENT_SIGNALED, ZX_WAIT_ASYNC_ONCE));
+
+  std::atomic<bool> proceed{false};
+
+  std::thread closer_threads[10];
+  for (int t = 0; t < 10; t++) {
+    closer_threads[t] = std::thread([&, t]() {
+      while (!proceed.load()) {
+        std::this_thread::yield();
+      }
+      for (int j = 0; j < t * 100; j++) {
+        __asm__ volatile("" : : : "memory");
+      }
+      event_b.reset();
+    });
+  }
+
+  proceed.store(true);
+  zx_status_t status = port.cancel_key(0u, key);
+
+  for (auto& closer_thread : closer_threads) {
+    closer_thread.join();
+  }
+
+  EXPECT_TRUE(status == ZX_OK || status == ZX_ERR_NOT_FOUND);
+}
+
 }  // namespace
