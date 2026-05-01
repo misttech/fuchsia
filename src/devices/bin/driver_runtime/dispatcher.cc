@@ -301,16 +301,15 @@ void Dispatcher::AsyncIrq::OnSignal(async_dispatcher_t* global_dispatcher, zx_st
 }
 
 Dispatcher::Dispatcher(uint32_t options, std::string_view name, bool unsynchronized,
-                       bool allow_sync_calls, const void* owner, ThreadPool* thread_pool,
-                       async_dispatcher_t* process_shared_dispatcher,
+                       bool allow_sync_calls, const void* owner,
                        fdf_dispatcher_shutdown_observer_t* observer)
     : async_dispatcher_t{&g_dispatcher_ops},
       options_(options),
       unsynchronized_(unsynchronized),
       allow_sync_calls_(allow_sync_calls),
       owner_(owner),
-      thread_pool_(thread_pool),
-      process_shared_dispatcher_(process_shared_dispatcher),
+      thread_pool_(nullptr),
+      process_shared_dispatcher_(nullptr),
       timer_(this),
       shutdown_observer_(observer) {
   name_.Append(name);
@@ -320,33 +319,21 @@ bool g_dynamic_thread_spawning = false;
 
 // static
 zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
-                               std::string_view scheduler_role, const void* owner,
-                               ThreadPool* thread_pool, async_dispatcher_t* parent_dispatcher,
+                               std::string_view scheduler_role,
                                fdf_dispatcher_shutdown_observer_t* observer,
                                Dispatcher** out_dispatcher) {
   ZX_DEBUG_ASSERT(out_dispatcher);
 
-  bool unsynchronized = options & FDF_DISPATCHER_OPTION_UNSYNCHRONIZED;
-  bool allow_sync_calls = options & FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
-  bool no_thread_migration = options & FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION;
-  bool thread_pool_no_sync_calls =
-      thread_pool->scheduler_role_options() & FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS;
-  // don't allow a sync calls dispatcher that is also unsynchronized or running on a no sync calls
-  // thread pool.
-  if (allow_sync_calls && (unsynchronized || thread_pool_no_sync_calls)) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  // only allow limiting thread migration when on a no sync calls dispatcher *and* scheduler role
-  if (no_thread_migration && (!thread_pool_no_sync_calls || allow_sync_calls)) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
+  const void* owner = thread_context::GetCurrentDriver();
   if (!owner) {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  auto dispatcher =
-      fbl::MakeRefCounted<Dispatcher>(options, name, unsynchronized, allow_sync_calls, owner,
-                                      thread_pool, parent_dispatcher, observer);
+  bool unsynchronized = options & FDF_DISPATCHER_OPTION_UNSYNCHRONIZED;
+  bool allow_sync_calls = options & FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
+
+  auto dispatcher = fbl::MakeRefCounted<Dispatcher>(options, name, unsynchronized, allow_sync_calls,
+                                                    owner, observer);
 
   zx::event event;
   if (zx_status_t status = zx::event::create(0, &event); status != ZX_OK) {
@@ -361,36 +348,10 @@ zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
         self->DispatchCallbacks(std::move(event_waiter), std::move(dispatcher_ref));
         ref->thread_pool()->OnThreadWakeup();
       });
-  dispatcher->SetEventWaiter(event_waiter.get());
-  zx_status_t status = EventWaiter::BeginWaitWithRef(std::move(event_waiter), dispatcher);
-  if (status == ZX_ERR_BAD_STATE) {
-    dispatcher->SetEventWaiter(nullptr);
-    return status;
-  }
-  if (scheduler_role != ThreadPool::kNoSchedulerRole) {
-    if (thread_pool->num_dispatchers() == 0) {
-      // Each thread in the thread pool will check whether it needs to set the scheduler
-      // role when it wakes up. If this is the first dispatcher, we might as well
-      // post a task so we can get the scheduler role set ASAP. Otherwise, if there
-      // are multiple dispatchers and threads, it becomes less likely that we would
-      // happen to post the task to a thread that doesn't already have the scheduler role set,
-      // so we'll leave any unset thread to set it's role on next wakeup.
-      status = async::PostTask(thread_pool->loop()->dispatcher(), [dispatcher]() mutable {
-        // This task is intentionally empty, the actual work takes place in the async loop's
-        // prologue function. See |Dispatcher::ThreadPool::ThreadWakeupPrologue|.
-      });
-      if (status != ZX_OK) {
-        // Posting a task would only fail if global loop (and probably process) was shutting down.
-        LOGF(ERROR, "Failed to post task to set scheduler role");
-        return status;
-      }
-    }
-  }
 
-  // This may fail if the entire driver is being shut down by the driver host.
-  status = GetDispatcherCoordinator().AddDispatcher(dispatcher);
+  zx_status_t status =
+      GetDispatcherCoordinator().AddDispatcher(dispatcher, scheduler_role, std::move(event_waiter));
   if (status != ZX_OK) {
-    dispatcher->SetEventWaiter(nullptr);
     return status;
   }
 
@@ -399,32 +360,45 @@ zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
   return ZX_OK;
 }
 
-// fdf_dispatcher_t implementation
-
-// static
-zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
-                               std::string_view scheduler_role,
-                               fdf_dispatcher_shutdown_observer_t* observer,
-                               Dispatcher** out_dispatcher) {
-  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
-  if (scheduler_role != ThreadPool::kNoSchedulerRole) {
-    auto result = GetDispatcherCoordinator().GetOrCreateThreadPool(scheduler_role);
-    if (result.is_error()) {
-      return result.status_value();
-    }
-    thread_pool = *result;
-  }
-  return Create(options, name, scheduler_role, thread_context::GetCurrentDriver(), thread_pool,
-                thread_pool->loop()->dispatcher(), observer, out_dispatcher);
-}
-
 zx_status_t Dispatcher::CreateUnmanagedDispatcher(
     uint32_t options, std::string_view name, fdf_dispatcher_shutdown_observer_t* shutdown_observer,
     Dispatcher** out_dispatcher) {
-  auto unmanaged_thread_pool = GetDispatcherCoordinator().GetOrCreateUnmanagedThreadPool();
-  return Create(options, name, ThreadPool::kNoSchedulerRole, thread_context::GetCurrentDriver(),
-                unmanaged_thread_pool, unmanaged_thread_pool->loop()->dispatcher(),
-                shutdown_observer, out_dispatcher);
+  ZX_DEBUG_ASSERT(out_dispatcher);
+
+  const void* owner = thread_context::GetCurrentDriver();
+  if (!owner) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  bool unsynchronized = options & FDF_DISPATCHER_OPTION_UNSYNCHRONIZED;
+  bool allow_sync_calls = options & FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS;
+
+  auto dispatcher = fbl::MakeRefCounted<Dispatcher>(options, name, unsynchronized, allow_sync_calls,
+                                                    owner, shutdown_observer);
+
+  zx::event event;
+  if (zx_status_t status = zx::event::create(0, &event); status != ZX_OK) {
+    return status;
+  }
+
+  auto self = dispatcher.get();
+  auto event_waiter = std::make_unique<EventWaiter>(
+      std::move(event),
+      [self](std::unique_ptr<EventWaiter> event_waiter, fbl::RefPtr<Dispatcher> dispatcher_ref) {
+        auto ref = dispatcher_ref;
+        self->DispatchCallbacks(std::move(event_waiter), std::move(dispatcher_ref));
+        ref->thread_pool()->OnThreadWakeup();
+      });
+
+  zx_status_t status =
+      GetDispatcherCoordinator().AddUnmanagedDispatcher(dispatcher, std::move(event_waiter));
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  // This reference will be recovered in |Destroy|.
+  *out_dispatcher = fbl::ExportToRawPtr(&dispatcher);
+  return ZX_OK;
 }
 
 // static
@@ -1287,7 +1261,8 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
       // stays alive until the dispatcher is destroyed. This allows |IsIdleLocked| to
       // correctly check the state of the event waiter. |CompleteShutdown| will cancel
       // and drop the event waiter.
-      zx_status_t status = event_waiter->BeginWaitWithRef(std::move(event_waiter), dispatcher_ref);
+      zx_status_t status = event_waiter->BeginWaitWithRef(std::move(event_waiter), dispatcher_ref,
+                                                          process_shared_dispatcher_);
       if (status == ZX_ERR_BAD_STATE) {
         event_waiter_ = nullptr;
       }
@@ -1320,7 +1295,8 @@ void Dispatcher::DispatchCallbacks(std::unique_ptr<EventWaiter> event_waiter,
     // Check if there are callbacks left to process and we should wake up an additional
     // thread. For synchronized dispatchers, parallel callbacks are disallowed.
     if (unsynchronized_ && !callback_queue_.is_empty()) {
-      zx_status_t status = event_waiter->BeginWaitWithRef(std::move(event_waiter), dispatcher_ref);
+      zx_status_t status = event_waiter->BeginWaitWithRef(std::move(event_waiter), dispatcher_ref,
+                                                          process_shared_dispatcher_);
       if (status == ZX_ERR_BAD_STATE) {
         event_waiter_ = nullptr;
       }
@@ -1474,10 +1450,11 @@ void Dispatcher::EventWaiter::HandleEvent(std::unique_ptr<EventWaiter> event_wai
 
 // static
 zx_status_t Dispatcher::EventWaiter::BeginWaitWithRef(std::unique_ptr<EventWaiter> event,
-                                                      fbl::RefPtr<Dispatcher> dispatcher) {
+                                                      fbl::RefPtr<Dispatcher> dispatcher,
+                                                      async_dispatcher_t* async_dispatcher) {
   ZX_ASSERT(dispatcher != nullptr);
   event->dispatcher_ref_ = dispatcher;
-  return BeginWait(std::move(event), dispatcher->process_shared_dispatcher_);
+  return BeginWait(std::move(event), async_dispatcher);
 }
 
 zx::result<zx::event> Dispatcher::CompleteShutdownEventManager::GetEvent() {
@@ -1724,10 +1701,71 @@ zx_status_t DispatcherCoordinator::TokenTransfer(zx_handle_t token, fdf_handle_t
   return coordinator.token_manager_.Transfer(token, handle);
 }
 
-zx_status_t DispatcherCoordinator::AddDispatcher(fbl::RefPtr<Dispatcher> dispatcher) {
+zx_status_t DispatcherCoordinator::AddDispatcher(
+    fbl::RefPtr<Dispatcher> dispatcher, std::string_view scheduler_role,
+    std::unique_ptr<Dispatcher::EventWaiter> event_waiter) {
   fbl::AutoLock lock(&lock_);
 
-  // Check if we already have a driver state object.
+  Dispatcher::ThreadPool* thread_pool = default_thread_pool();
+  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
+    auto result = GetOrCreateThreadPoolLocked(scheduler_role);
+    if (result.is_error()) {
+      return result.status_value();
+    }
+    thread_pool = *result;
+  }
+
+  bool thread_pool_no_sync_calls =
+      thread_pool->scheduler_role_options() & FDF_SCHEDULER_ROLE_OPTION_NO_SYNC_CALLS;
+  // don't allow a sync calls dispatcher that is also unsynchronized or running on a no sync calls
+  // thread pool.
+  if (dispatcher->allow_sync_calls() &&
+      (dispatcher->unsynchronized() || thread_pool_no_sync_calls)) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  bool no_thread_migration = dispatcher->options() & FDF_DISPATCHER_OPTION_NO_THREAD_MIGRATION;
+  // only allow limiting thread migration when on a no sync calls dispatcher *and* scheduler role
+  if (no_thread_migration && (!thread_pool_no_sync_calls || dispatcher->allow_sync_calls())) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  uint32_t dispatchers_before = thread_pool->num_dispatchers();
+
+  // This may fail if the entire driver is being shut down by the driver host.
+  zx_status_t status = RegisterDispatcherLocked(dispatcher, thread_pool, std::move(event_waiter));
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole && dispatchers_before == 0) {
+    status = async::PostTask(thread_pool->loop()->dispatcher(), [dispatcher]() mutable {
+      // Each thread in the thread pool will check whether it needs to set the scheduler
+      // role when it wakes up. If this is the first dispatcher, we might as well
+      // post a task so we can get the scheduler role set ASAP. Otherwise, if there
+      // are multiple dispatchers and threads, it becomes less likely that we would
+      // happen to post the task to a thread that doesn't already have the scheduler role set,
+      // so we'll leave any unset thread to set it's role on next wakeup.
+    });
+    if (status != ZX_OK) {
+      LOGF(ERROR, "Failed to post task to set scheduler role");
+    }
+  }
+
+  return ZX_OK;
+}
+
+zx_status_t DispatcherCoordinator::AddUnmanagedDispatcher(
+    fbl::RefPtr<Dispatcher> dispatcher, std::unique_ptr<Dispatcher::EventWaiter> event_waiter) {
+  fbl::AutoLock lock(&lock_);
+
+  auto* thread_pool = GetOrCreateUnmanagedThreadPool();
+  return RegisterDispatcherLocked(dispatcher, thread_pool, std::move(event_waiter));
+}
+
+zx_status_t DispatcherCoordinator::RegisterDispatcherLocked(
+    fbl::RefPtr<Dispatcher> dispatcher, Dispatcher::ThreadPool* thread_pool,
+    std::unique_ptr<Dispatcher::EventWaiter> event_waiter) {
   auto driver_state = drivers_.find(dispatcher->owner());
   if (driver_state == drivers_.end()) {
     auto new_driver_state = fbl::AdoptRef(new DriverState(dispatcher->owner()));
@@ -1739,22 +1777,42 @@ zx_status_t DispatcherCoordinator::AddDispatcher(fbl::RefPtr<Dispatcher> dispatc
       return ZX_ERR_BAD_STATE;
     }
   }
-  zx_status_t res = dispatcher->thread_pool()->OnDispatcherAdded(*dispatcher);
-  if (res == ZX_OK) {
-    driver_state->AddDispatcher(dispatcher);
+
+  zx_status_t status = thread_pool->OnDispatcherAdded(*dispatcher);
+  if (status != ZX_OK) {
+    return status;
   }
-  return res;
+
+  dispatcher->SetEventWaiter(event_waiter.get());
+  status = Dispatcher::EventWaiter::BeginWaitWithRef(std::move(event_waiter), dispatcher,
+                                                     thread_pool->loop()->dispatcher());
+  if (status != ZX_OK) {
+    thread_pool->OnDispatcherRemoved(*dispatcher);
+    if (thread_pool->num_dispatchers() == 0) {
+      DestroyThreadPool(thread_pool);
+    }
+    dispatcher->SetEventWaiter(nullptr);
+    return status;
+  }
+
+  dispatcher->SetThreadPool(thread_pool, thread_pool->loop()->dispatcher());
+  driver_state->AddDispatcher(std::move(dispatcher));
+
+  return ZX_OK;
 }
 
 // static
 uint32_t DispatcherCoordinator::GetThreadLimit(std::string_view scheduler_role) {
-  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
+  auto& coordinator = GetDispatcherCoordinator();
+  fbl::AutoLock lock(&coordinator.lock_);
+
+  auto thread_pool = coordinator.default_thread_pool();
   if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
-    auto result = GetDispatcherCoordinator().GetThreadPool(scheduler_role);
-    if (!result.has_value()) {
+    auto iter = coordinator.role_to_thread_pool_.find(std::string(scheduler_role));
+    if (iter == coordinator.role_to_thread_pool_.end()) {
       return Dispatcher::ThreadPool::kDefaultThreadLimit;
     }
-    thread_pool = *result;
+    thread_pool = &(*iter);
   }
   return thread_pool->thread_limit();
 }
@@ -1762,9 +1820,12 @@ uint32_t DispatcherCoordinator::GetThreadLimit(std::string_view scheduler_role) 
 // static
 zx_status_t DispatcherCoordinator::SetThreadLimit(std::string_view scheduler_role,
                                                   uint32_t max_threads) {
-  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
+  auto& coordinator = GetDispatcherCoordinator();
+  fbl::AutoLock lock(&coordinator.lock_);
+
+  auto thread_pool = coordinator.default_thread_pool();
   if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
-    auto result = GetDispatcherCoordinator().GetOrCreateThreadPool(scheduler_role);
+    auto result = coordinator.GetOrCreateThreadPoolLocked(scheduler_role);
     if (result.is_error()) {
       return result.error_value();
     }
@@ -1775,13 +1836,16 @@ zx_status_t DispatcherCoordinator::SetThreadLimit(std::string_view scheduler_rol
 
 // static
 uint32_t DispatcherCoordinator::GetSchedulerRoleOpts(std::string_view scheduler_role) {
-  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
+  auto& coordinator = GetDispatcherCoordinator();
+  fbl::AutoLock lock(&coordinator.lock_);
+
+  auto thread_pool = coordinator.default_thread_pool();
   if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
-    auto result = GetDispatcherCoordinator().GetThreadPool(scheduler_role);
-    if (!result.has_value()) {
+    auto iter = coordinator.role_to_thread_pool_.find(std::string(scheduler_role));
+    if (iter == coordinator.role_to_thread_pool_.end()) {
       return 0;
     }
-    thread_pool = *result;
+    thread_pool = &(*iter);
   }
   return thread_pool->scheduler_role_options();
 }
@@ -1789,9 +1853,12 @@ uint32_t DispatcherCoordinator::GetSchedulerRoleOpts(std::string_view scheduler_
 // static
 zx_status_t DispatcherCoordinator::SetSchedulerRoleOpts(std::string_view scheduler_role,
                                                         uint32_t opts) {
-  auto thread_pool = GetDispatcherCoordinator().default_thread_pool();
+  auto& coordinator = GetDispatcherCoordinator();
+  fbl::AutoLock lock(&coordinator.lock_);
+
+  auto thread_pool = coordinator.default_thread_pool();
   if (scheduler_role != Dispatcher::ThreadPool::kNoSchedulerRole) {
-    auto result = GetDispatcherCoordinator().GetOrCreateThreadPool(scheduler_role);
+    auto result = coordinator.GetOrCreateThreadPoolLocked(scheduler_role);
     if (result.is_error()) {
       return result.error_value();
     }
@@ -1971,6 +2038,11 @@ std::optional<Dispatcher::ThreadPool*> DispatcherCoordinator::GetThreadPool(
 zx::result<Dispatcher::ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPool(
     std::string_view scheduler_role) {
   fbl::AutoLock al(&lock_);
+  return GetOrCreateThreadPoolLocked(scheduler_role);
+}
+
+zx::result<Dispatcher::ThreadPool*> DispatcherCoordinator::GetOrCreateThreadPoolLocked(
+    std::string_view scheduler_role) {
   auto iter = role_to_thread_pool_.find(std::string(scheduler_role));
   if (iter != role_to_thread_pool_.end()) {
     return zx::ok(&(*iter));

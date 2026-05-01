@@ -106,6 +106,71 @@ class Dispatcher : public async_dispatcher_t,
     zx_packet_interrupt_t interrupt_packet_ = {};
   };
 
+  // Object which waits on an underlying async loop and triggers the dispatcher to
+  // service its callbacks.
+  // Public so it can be referenced by the DispatcherCoordinator.
+  class EventWaiter : public AsyncLoopOwnedEventHandler<EventWaiter> {
+    using Callback =
+        fit::inline_function<void(std::unique_ptr<EventWaiter>, fbl::RefPtr<Dispatcher>),
+                             sizeof(Dispatcher*)>;
+
+   public:
+    EventWaiter(zx::event event, Callback callback)
+        : AsyncLoopOwnedEventHandler<EventWaiter>(std::move(event)),
+          callback_(std::move(callback)) {}
+
+    static void HandleEvent(std::unique_ptr<EventWaiter> event, async_dispatcher_t* dispatcher,
+                            async::WaitBase* wait, zx_status_t status,
+                            const zx_packet_signal_t* signal);
+
+    // Begins waiting on the provided |async_dispatcher|.
+    // This transfers ownership of |event| and the |dispatcher| reference to the async dispatcher.
+    // The async dispatcher returns ownership when the handler is invoked.
+    static zx_status_t BeginWaitWithRef(std::unique_ptr<EventWaiter> event,
+                                        fbl::RefPtr<Dispatcher> dispatcher,
+                                        async_dispatcher_t* async_dispatcher);
+
+    bool signaled() const { return signaled_; }
+
+    void signal() {
+      ZX_ASSERT(event()->signal(0, ZX_USER_SIGNAL_0) == ZX_OK);
+      signaled_ = true;
+    }
+
+    void designal() {
+      ZX_ASSERT(event()->signal(ZX_USER_SIGNAL_0, 0) == ZX_OK);
+      signaled_ = false;
+    }
+
+    void InvokeCallback(std::unique_ptr<EventWaiter> event_waiter,
+                        fbl::RefPtr<Dispatcher> dispatcher_ref) {
+      callback_(std::move(event_waiter), std::move(dispatcher_ref));
+    }
+
+    std::unique_ptr<EventWaiter> Cancel() {
+      // Cancelling may fail if the callback is happening right now, in which
+      // case the callback will take ownership of the dispatcher reference.
+      auto event = AsyncLoopOwnedEventHandler<EventWaiter>::Cancel();
+      if (event) {
+        event->dispatcher_ref_ = nullptr;
+      }
+      return event;
+    }
+
+   private:
+    bool signaled_ = false;
+    Callback callback_;
+
+    // The EventWaiter is provided ownership of a dispatcher reference when
+    // |BeginWaitWithRef| is called, and returns the reference with the callback.
+    fbl::RefPtr<Dispatcher> dispatcher_ref_;
+  };
+
+  void SetEventWaiter(EventWaiter* event_waiter) __TA_EXCLUDES(&callback_lock_) {
+    fbl::AutoLock lock(&callback_lock_);
+    event_waiter_ = event_waiter;
+  }
+
   class ThreadPool : public fbl::WAVLTreeContainable<std::unique_ptr<ThreadPool>> {
    public:
     // The default pool is for the dispatchers with no specified scheduler role.
@@ -407,9 +472,13 @@ class Dispatcher : public async_dispatcher_t,
   // Public for std::make_unique.
   // Use |Create| instead of calling directly.
   Dispatcher(uint32_t options, std::string_view name, bool unsynchronized, bool allow_sync_calls,
-             const void* owner, ThreadPool* thread_pool,
-             async_dispatcher_t* process_shared_dispatcher,
-             fdf_dispatcher_shutdown_observer_t* observer);
+             const void* owner, fdf_dispatcher_shutdown_observer_t* observer);
+
+  // This must be called before the dispatcher will actually be running.
+  void SetThreadPool(ThreadPool* thread_pool, async_dispatcher_t* process_shared_dispatcher) {
+    thread_pool_ = thread_pool;
+    process_shared_dispatcher_ = process_shared_dispatcher;
+  }
 
   // fdf_dispatcher_t implementation
   // Returns ownership of the dispatcher in |out_dispatcher|. The caller should call
@@ -569,62 +638,6 @@ class Dispatcher : public async_dispatcher_t,
   // TODO(https://fxbug.dev/42168999): determine an appropriate size.
   static constexpr uint32_t kBatchSize = 10;
 
-  class EventWaiter : public AsyncLoopOwnedEventHandler<EventWaiter> {
-    using Callback =
-        fit::inline_function<void(std::unique_ptr<EventWaiter>, fbl::RefPtr<Dispatcher>),
-                             sizeof(Dispatcher*)>;
-
-   public:
-    EventWaiter(zx::event event, Callback callback)
-        : AsyncLoopOwnedEventHandler<EventWaiter>(std::move(event)),
-          callback_(std::move(callback)) {}
-
-    static void HandleEvent(std::unique_ptr<EventWaiter> event, async_dispatcher_t* dispatcher,
-                            async::WaitBase* wait, zx_status_t status,
-                            const zx_packet_signal_t* signal);
-
-    // Begins waiting in the underlying async dispatcher on |event->wait|.
-    // This transfers ownership of |event| and the |dispatcher| reference to the async dispatcher.
-    // The async dispatcher returns ownership when the handler is invoked.
-    static zx_status_t BeginWaitWithRef(std::unique_ptr<EventWaiter> event,
-                                        fbl::RefPtr<Dispatcher> dispatcher);
-
-    bool signaled() const { return signaled_; }
-
-    void signal() {
-      ZX_ASSERT(event()->signal(0, ZX_USER_SIGNAL_0) == ZX_OK);
-      signaled_ = true;
-    }
-
-    void designal() {
-      ZX_ASSERT(event()->signal(ZX_USER_SIGNAL_0, 0) == ZX_OK);
-      signaled_ = false;
-    }
-
-    void InvokeCallback(std::unique_ptr<EventWaiter> event_waiter,
-                        fbl::RefPtr<Dispatcher> dispatcher_ref) {
-      callback_(std::move(event_waiter), std::move(dispatcher_ref));
-    }
-
-    std::unique_ptr<EventWaiter> Cancel() {
-      // Cancelling may fail if the callback is happening right now, in which
-      // case the callback will take ownership of the dispatcher reference.
-      auto event = AsyncLoopOwnedEventHandler<EventWaiter>::Cancel();
-      if (event) {
-        event->dispatcher_ref_ = nullptr;
-      }
-      return event;
-    }
-
-   private:
-    bool signaled_ = false;
-    Callback callback_;
-
-    // The EventWaiter is provided ownership of a dispatcher reference when
-    // |BeginWaitWithRef| is called, and returns the reference with the callback.
-    fbl::RefPtr<Dispatcher> dispatcher_ref_;
-  };
-
   class CompleteShutdownEventManager {
    public:
     // Returns a duplicate of the event that will be signaled when the dispatcher
@@ -752,16 +765,6 @@ class Dispatcher : public async_dispatcher_t,
     Dispatcher* dispatcher_;
   };
 
-  // Creates a dispatcher which is backed by |dispatcher|.
-  //
-  // Returns ownership of the dispatcher in |out_dispatcher|. The caller should call
-  // |Destroy| once they are done using the dispatcher. Once |Destroy| is called,
-  // the dispatcher will be deleted once all callbacks cancelled or completed by the dispatcher.
-  static zx_status_t Create(uint32_t options, std::string_view name,
-                            std::string_view scheduler_role, const void* owner,
-                            ThreadPool* thread_pool, async_dispatcher_t* dispatcher,
-                            fdf_dispatcher_shutdown_observer_t*, Dispatcher** out_dispatcher);
-
   zx::time GetNextTimeoutLocked() const __TA_REQUIRES(&callback_lock_);
   void ResetTimerLocked() __TA_REQUIRES(&callback_lock_);
   void InsertDelayedTaskSortedLocked(std::unique_ptr<DelayedTask> task)
@@ -780,11 +783,6 @@ class Dispatcher : public async_dispatcher_t,
 
   // Cancels the callbacks in |shutdown_queue_|.
   void CompleteShutdown();
-
-  void SetEventWaiter(EventWaiter* event_waiter) __TA_EXCLUDES(&callback_lock_) {
-    fbl::AutoLock lock(&callback_lock_);
-    event_waiter_ = event_waiter;
-  }
 
   // Returns true if the dispatcher has no active threads or queued requests.
   // This does not include unsignaled waits.
@@ -951,7 +949,10 @@ class DispatcherCoordinator {
 
   // Returns ZX_OK if |dispatcher| was added successfully.
   // Returns ZX_ERR_BAD_STATE if the driver is currently shutting down.
-  zx_status_t AddDispatcher(fbl::RefPtr<Dispatcher> dispatcher);
+  zx_status_t AddDispatcher(fbl::RefPtr<Dispatcher> dispatcher, std::string_view scheduler_role,
+                            std::unique_ptr<Dispatcher::EventWaiter> event_waiter);
+  zx_status_t AddUnmanagedDispatcher(fbl::RefPtr<Dispatcher> dispatcher,
+                                     std::unique_ptr<Dispatcher::EventWaiter> event_waiter);
   // Notifies the dispatcher coordinator that a dispatcher has completed shutdown.
   // |dispatcher_shutdown_observer| is the observer to call.
   void NotifyDispatcherShutdown(driver_runtime::Dispatcher& dispatcher,
@@ -1108,6 +1109,14 @@ class DispatcherCoordinator {
   Dispatcher::ThreadPool default_thread_pool_;
   // Thread pool that is not managed.
   std::optional<Dispatcher::ThreadPool> unmanaged_thread_pool_;
+  zx::result<Dispatcher::ThreadPool*> GetOrCreateThreadPoolLocked(std::string_view scheduler_role)
+      __TA_REQUIRES(&lock_);
+
+  zx_status_t RegisterDispatcherLocked(fbl::RefPtr<Dispatcher> dispatcher,
+                                       Dispatcher::ThreadPool* thread_pool,
+                                       std::unique_ptr<Dispatcher::EventWaiter> event_waiter)
+      __TA_REQUIRES(&lock_);
+
   // Number of threads that are in the process of handling |NotifyDispatcherShutdown| events.
   uint32_t num_notify_shutdown_threads_ = 0;
   TokenManager token_manager_;

@@ -3603,3 +3603,34 @@ TEST_F(DispatcherTest, QueueDelayedTaskAfterShutdown) {
                                   },
                                   kDelay));
 }
+
+// This test case was added as a regression test for https://fxbug.dev/508319815. It ensures that
+// dispatchers can be safely created and asynchronously destroyed from multiple threads.
+TEST_F(DispatcherTest, AddDispatcherRace) {
+  constexpr uint32_t kNumThreads = 8;
+  constexpr uint32_t kNumIterations = 100;
+
+  std::array<std::thread, kNumThreads> threads;
+  for (uint32_t i = 0; i < kNumThreads; ++i) {
+    // CreateFakeDriver is not thread-safe, so grab the driver from the main thread.
+    threads[i] = std::thread([driver = CreateFakeDriver()]() {
+      for (uint32_t j = 0; j < kNumIterations; ++j) {
+        thread_context::PushDriver(driver);
+        auto pop_driver = fit::defer([]() { thread_context::PopDriver(); });
+
+        zx::result dispatcher = fdf::SynchronizedDispatcher::Create(
+            {}, "", [&](fdf_dispatcher_t* dispatcher) { dispatcher->Destroy(); }, "role");
+        ASSERT_FALSE(dispatcher.is_error());
+
+        // The dispatcher is destroyed in the shutdown handler.
+        fdf_dispatcher_t* d = dispatcher->release();
+        d->ShutdownAsync();
+      }
+    });
+  }
+
+  for (auto& t : threads) {
+    t.join();
+  }
+  fdf_internal_wait_until_all_dispatchers_destroyed();
+}
