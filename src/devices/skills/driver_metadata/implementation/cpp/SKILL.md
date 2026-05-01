@@ -55,15 +55,18 @@ Include the header
 
 In the driver class, declare a `MetadataServer`:
 ```cpp
-class MyDriver : public fdf::DriverBase {
+#include <lib/driver/component/cpp/driver_base2.h>
+
+class MyDriver : public fdf::DriverBase2 {
  public:
-  // ...
+  MyDriver() : DriverBase2("my-driver") {}
+
  private:
   fdf_metadata::MetadataServer<fuchsia_examples_metadata::Metadata> metadata_server_;
 };
 ```
 
-In the `fdf::DriverBase::Start()` method, serve the metadata and pass the offer
+In the `fdf::DriverBase2::Start()` method, serve the metadata and pass the offer
 to the child node:
 ```cpp
 // Set and serve the metadata
@@ -110,15 +113,22 @@ Include the header [metadata.h](/sdk/lib/driver/metadata/cpp/metadata.h):
 #include <lib/driver/metadata/cpp/metadata.h>
 ```
 
-In the `fdf::DriverBase::Start()` method:
+In the `fdf::DriverBase2::Start()` method, use the incoming namespace from the
+context to retrieve metadata:
+
 ```cpp
-zx::result<fuchsia_examples_metadata::Metadata> metadata =
-    fdf_metadata::GetMetadata<fuchsia_examples_metadata::Metadata>(incoming());
-if (metadata.is_error()) {
-    fdf::error("Failed to get metadata: {}", metadata.status_string());
-    return metadata.take_error();
+zx::result<> Start(fdf::DriverContext context) override {
+  zx::result<fuchsia_examples_metadata::Metadata> metadata =
+      fdf_metadata::GetMetadata<fuchsia_examples_metadata::Metadata>(
+          context.svc());
+  if (metadata.is_error()) {
+      fdf::error("Failed to get metadata: {}", metadata.status_string());
+      return metadata.take_error();
+  }
+  // Use metadata.value()
+
+  return zx::ok();
 }
-// Use metadata.value()
 ```
 
 #### Component Manifest (.cml) Update
@@ -137,13 +147,14 @@ To retrieve metadata from a parent and forward it to a child:
 
 ```cpp
 zx::result is_serving =
-    metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+    metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), context.svc());
 if (is_serving.is_error()) {
     return is_serving.take_error();
 }
 
 std::vector<fuchsia_driver_framework::Offer> offers;
-std::optional<fuchsia_driver_framework::Offer> metadata_offer = metadata_server_.CreateOffer();
+std::optional<fuchsia_driver_framework::Offer> metadata_offer =
+    metadata_server_.CreateOffer();
 if (metadata_offer.has_value()) {
     offers.push_back(metadata_offer.value());
 }
