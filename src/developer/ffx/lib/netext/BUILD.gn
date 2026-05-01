@@ -58,12 +58,12 @@ if (is_host) {
     version = "0.1.0"
     with_unit_tests = true
     deps = [
-      "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:futures",
       "//third_party/rust_crates:itertools",
       "//third_party/rust_crates:libc",
       "//third_party/rust_crates:nix-0.29.0",
       "//third_party/rust_crates:regex",
+      "//third_party/rust_crates:thiserror",
       "//third_party/rust_crates:tokio",
     ]
   }

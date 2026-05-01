@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result, anyhow, bail};
 use futures::Stream;
 use itertools::Itertools;
 use nix::ifaddrs::{InterfaceAddress, getifaddrs};
@@ -19,6 +18,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::task::{Context, Poll};
+use thiserror::Error;
 use tokio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
 
 pub trait IsLocalAddr {
@@ -303,7 +303,7 @@ impl ScopedSocketAddr {
         &self.addr
     }
 
-    pub fn set_scope_id(&mut self, scope_id: u32) -> Result<()> {
+    pub fn set_scope_id(&mut self, scope_id: u32) -> Result<(), NetExtError> {
         match &mut self.addr {
             SocketAddr::V6(inner) => {
                 let scope_id_str = scope_id_to_name_checked(scope_id)?;
@@ -384,9 +384,8 @@ pub struct McastInterface {
 }
 
 impl McastInterface {
-    pub fn id(&self) -> Result<u32> {
-        nix::net::if_::if_nametoindex(self.name.as_str())
-            .context(format!("Interface id for {}", self.name))
+    pub fn id(&self) -> Result<u32, NetExtError> {
+        Ok(nix::net::if_::if_nametoindex(self.name.as_str())?)
     }
 }
 
@@ -467,6 +466,24 @@ impl std::fmt::Display for InvalidInterfaceIdError {
 
 impl std::error::Error for InvalidInterfaceIdError {}
 
+#[derive(Debug, Error)]
+pub enum NetExtError {
+    #[error("Invalid interface ID: {0}")]
+    InvalidInterfaceId(#[from] InvalidInterfaceIdError),
+
+    #[error("Could not parse '{0}'. Invalid address")]
+    ParseAddress(String),
+
+    #[error("'{0}' is not a valid network interface name.")]
+    InvalidInterfaceName(String),
+
+    #[error("Failed to get all interface addresses: {0}")]
+    GetIfAddrs(#[from] nix::Error),
+
+    #[error("CString error: {0}")]
+    CString(#[from] std::ffi::NulError),
+}
+
 pub fn scope_id_to_name_checked(scope_id: u32) -> Result<String, InvalidInterfaceIdError> {
     let mut buf = vec![0; libc::IF_NAMESIZE];
     let res = unsafe { libc::if_indextoname(scope_id, buf.as_mut_ptr() as *mut libc::c_char) };
@@ -484,10 +501,10 @@ pub fn name_to_scope_id(name: &str) -> u32 {
     name_to_scope_id_checked(name).unwrap_or(0)
 }
 
-fn name_to_scope_id_checked(name: &str) -> Result<u32> {
+fn name_to_scope_id_checked(name: &str) -> Result<u32, NetExtError> {
     let s = CString::new(name)?;
     let idx = unsafe { libc::if_nametoindex(s.as_ptr()) };
-    if idx == 0 { bail!("'{name}' is not a valid network interface name.") } else { Ok(idx) }
+    if idx == 0 { Err(NetExtError::InvalidInterfaceName(name.to_string())) } else { Ok(idx) }
 }
 
 /// Takes a string and attempts to parse it into the relevant parts of an address.
@@ -521,7 +538,9 @@ fn name_to_scope_id_checked(name: &str) -> Result<u32> {
 /// furthermore "foobar" may not even exist as a scope, and should be verified.
 ///
 /// The returned scope could also be a stringified integer, and should be verified.
-pub fn parse_address_parts(addr_str: &str) -> Result<(IpAddr, Option<&str>, Option<u16>)> {
+pub fn parse_address_parts(
+    addr_str: &str,
+) -> Result<(IpAddr, Option<&str>, Option<u16>), NetExtError> {
     static V6_BRACKET: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^\[([^\]]+?[:]{1,2}[^\]]+)\](:\d+)?$").unwrap());
     static V4_PORT: LazyLock<Regex> =
@@ -544,9 +563,7 @@ pub fn parse_address_parts(addr_str: &str) -> Result<(IpAddr, Option<&str>, Opti
         (addr, None)
     };
 
-    let addr = addr
-        .parse::<IpAddr>()
-        .map_err(|_| anyhow!("Could not parse '{}'. Invalid address", addr))?;
+    let addr = addr.parse::<IpAddr>().map_err(|_| NetExtError::ParseAddress(addr.to_string()))?;
     // Successfully parsing the address is the most important part. If this doesn't work,
     // then everything else is no longer valid.
     Ok((addr, scope, port))
@@ -569,7 +586,7 @@ pub fn parse_address_parts(addr_str: &str) -> Result<(IpAddr, Option<&str>, Opti
 /// // If "25" is not a scope ID of any interface.
 /// assert!(get_verified_scope_id("25").is_err())
 /// ```
-pub fn get_verified_scope_id(scope: &str) -> Result<u32> {
+pub fn get_verified_scope_id(scope: &str) -> Result<u32, NetExtError> {
     let s = match scope.parse::<u32>() {
         Ok(i) => scope_id_to_name_checked(i)?,
         Err(_e) => scope.to_owned(),
@@ -598,8 +615,8 @@ fn select_mcast_interfaces(
 /// get_mcast_interfaces retrieves all local interfaces that are local
 /// multicast enabled. See McastInterface for more detials.
 // TODO(https://fxbug.dev/42121315): This needs to be e2e tested.
-pub fn get_mcast_interfaces() -> Result<Vec<McastInterface>> {
-    Ok(select_mcast_interfaces(&mut getifaddrs().context("Failed to get all interface addresses")?))
+pub fn get_mcast_interfaces() -> Result<Vec<McastInterface>, NetExtError> {
+    Ok(select_mcast_interfaces(&mut getifaddrs()?))
 }
 
 #[cfg(test)]
