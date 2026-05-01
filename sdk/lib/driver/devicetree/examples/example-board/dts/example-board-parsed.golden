@@ -1,0 +1,99 @@
+platform_bus_nodes {
+  "sample-device-0" {
+    vid = GENERIC (0)
+    did = DEVICETREE (50)
+    instance_id = 1
+    mmios {
+      mmio {
+        base = 0xaaaaaaaa
+        length = 0x2000
+      }
+      mmio {
+        base = 0xfafafafabbbbbbbb
+        length = 0x3000
+      }
+      mmio {
+        base = 0xcccccccc
+        length = 0x1000001000004000
+      }
+    }
+    property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-device" }
+  }
+
+  "sample-bti-device" {
+    vid = GENERIC (0)
+    did = DEVICETREE (50)
+    instance_id = 3
+    bti {
+      iommu_id = 2
+      bti_id = 2
+    }
+    property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-bti-device" }
+  }
+
+}
+
+board_child_nodes {
+  "dt-root" {
+    bus_info = { bus: 3 }
+    property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-dt" }
+  }
+
+}
+
+composite_node_specs {
+  "dt-root" {
+    parent {
+      bind_rules {
+        Accept(fuchsia.devicetree.FIRST_COMPATIBLE, ["fuchsia,sample-dt"])
+      }
+      properties {
+        property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-dt" }
+      }
+    }
+  }
+
+  "sample-device-0" {
+    parent {
+      bind_rules {
+        Accept(fuchsia.BIND_PROTOCOL, [PDEV (85)])
+        Accept(fuchsia.BIND_PLATFORM_DEV_VID, [GENERIC (0)])
+        Accept(fuchsia.BIND_PLATFORM_DEV_DID, [DEVICETREE (50)])
+        Accept(fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID, [1])
+      }
+      properties {
+        property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-device" }
+        property { fuchsia.BIND_PROTOCOL = PDEV (85) }
+        property { fuchsia.BIND_PLATFORM_DEV_VID = GENERIC (0) }
+        property { fuchsia.BIND_PLATFORM_DEV_DID = DEVICETREE (50) }
+        property { fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID = 1 }
+      }
+    }
+  }
+
+  "sample-bti-device" {
+    parent {
+      bind_rules {
+        Accept(fuchsia.BIND_PROTOCOL, [PDEV (85)])
+        Accept(fuchsia.BIND_PLATFORM_DEV_VID, [GENERIC (0)])
+        Accept(fuchsia.BIND_PLATFORM_DEV_DID, [DEVICETREE (50)])
+        Accept(fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID, [3])
+      }
+      properties {
+        property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-bti-device" }
+        property { fuchsia.BIND_PROTOCOL = PDEV (85) }
+        property { fuchsia.BIND_PLATFORM_DEV_VID = GENERIC (0) }
+        property { fuchsia.BIND_PLATFORM_DEV_DID = DEVICETREE (50) }
+        property { fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID = 3 }
+      }
+    }
+  }
+
+}
+
+iommus {
+  iommu {
+    id = 2
+    stub_iommu: {}
+  }
+}

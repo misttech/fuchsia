@@ -79,7 +79,7 @@ class InterconnectReferenceProperty : public fdf_devicetree::Property {
       if (cell_count_prop.is_error()) {
         fdf::error("Reference node '{}' does not have'{}' property: {}",
                    reference_node->name().c_str(), kInterconnectCells,
-                   zx_status_get_string(cell_count_prop.status_value()));
+                   cell_count_prop.status_value());
         return cell_count_prop.take_error();
       }
       cell_count = *cell_count_prop;

@@ -18,6 +18,11 @@ struct PbusNode {
   std::vector<std::optional<std::string>> power_config_text;
 };
 
+struct CompositeNodeSpecInfo {
+  fuchsia_driver_framework::CompositeNodeSpec spec;
+  std::optional<std::string> driver_host;
+};
+
 class PublisherHost : public testing::TestPublisher {
  public:
   zx::result<> AddPbusNode(fuchsia_hardware_platform_bus::Node& pbus_node,
@@ -36,6 +41,9 @@ class PublisherHost : public testing::TestPublisher {
   const std::vector<PbusNode>& GetPbusNodesWithMetadata() { return pbus_nodes_with_metadata_; }
   const std::vector<fuchsia_hardware_platform_bus::Node>& GetPbusNodes() override;
   const std::vector<BoardChildNode>& GetBoardChildNodes() override;
+  const std::vector<CompositeNodeSpecInfo>& GetCompositeNodeSpecInfos() {
+    return composite_node_spec_infos_;
+  }
   const std::vector<fuchsia_driver_framework::CompositeNodeSpec>& GetCompositeNodeSpecs() override {
     return composite_node_specs_;
   }
@@ -48,6 +56,7 @@ class PublisherHost : public testing::TestPublisher {
   std::vector<fuchsia_hardware_platform_bus::Node> pbus_nodes_;
   std::vector<BoardChildNode> board_child_nodes_;
   std::vector<fuchsia_driver_framework::CompositeNodeSpec> composite_node_specs_;
+  std::vector<CompositeNodeSpecInfo> composite_node_spec_infos_;
   std::unordered_map<uint32_t, fuchsia_hardware_platform_bus::Iommu> iommus_;
 };
 

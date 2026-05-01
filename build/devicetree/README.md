@@ -67,6 +67,24 @@ GN templates and scripts for compiling device tree source files and validating a
   }
   ```
 
+* Use "devicetree_parsed" to perform validation of a devicetree using a set of visitors.
+  This runs the `devicetree-parsed-dump` tool on a compiled DTB and compares the dumped output
+  with a golden file.
+  ```
+  import("//build/devicetree/devicetree.gni")
+
+  _outputs = get_target_outputs(":board-x.dtb")
+  devicetree_parsed("board-x-parsed") {
+    dtb = _outputs[0]
+    golden = "dts/board-x.dt.parsed"
+    visitors = [ ":board-x-visitors" ]
+    deps = [ ":board-x" ]
+  }
+  ```
+  Note: When using `devicetree` template, the actual binary output is produced
+  by the sub-target `${target_name}.dtb`. `get_target_outputs` should be called
+  on that sub-target.
+
 See  `devicetree.gni` file for more details.
 
 ## Including C header files

@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 group("tests") {
-  deps = [ "example-visitor:tests" ]
+  deps = [
+    "example-board:tests",
+    "example-visitor:tests",
+  ]
   testonly = true
 }

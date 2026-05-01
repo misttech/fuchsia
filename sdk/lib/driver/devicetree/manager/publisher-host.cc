@@ -43,7 +43,8 @@ zx::result<> PublisherHost::AddCompositeNodeSpec(
   fuchsia_driver_framework::CompositeNodeSpec spec;
   spec.name() = std::move(name);
   spec.parents2() = std::move(parents);
-  composite_node_specs_.push_back(std::move(spec));
+  composite_node_specs_.push_back(spec);
+  composite_node_spec_infos_.push_back({.spec = std::move(spec), .driver_host = driver_host});
   return zx::ok();
 }
 

@@ -25,3 +25,15 @@ bazel_input_file("test-dtb") {
   outputs = [ "$target_out_dir/example-board.dtb" ]
   gn_targets_name = "test-dtb"
 }
+
+devicetree_parsed("example-board-parsed") {
+  dtb = "$target_out_dir/example-board.dtb"
+  golden = "dts/example-board-parsed.golden"
+  visitors = [ "//sdk/lib/driver/devicetree/examples/example-visitor" ]
+  deps = [ ":example-board" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":example-board-parsed" ]
+}

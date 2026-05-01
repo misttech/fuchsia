@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/compiled_action.gni")
 import("//build/python/python_action.gni")
 import("//build/testing/golden_files.gni")
 import("//build/zircon/c_utils.gni")
@@ -435,6 +436,94 @@ template("devicetree") {
     public_deps = [
       ":${compiled_dtb_target}",
       ":${golden_dts_target}",
+    ]
+  }
+}
+
+# Defines a parsed devicetree output and verifies it against a golden file.
+#
+# This template runs the devicetree-parsed-dump tool on a compiled devicetree blob
+# (DTB) along with a set of visitor shared libraries to produce a text-based
+# parsed output. This output is then compared against a golden file.
+#
+# Parameters
+#
+#   * dtb (required)
+#     - Path to the .dtb file to dump.
+#     - Type: path
+#
+#   * golden (required)
+#     - Path to the golden file to compare against.
+#     - Type: path
+#
+#   * visitors (required)
+#     - List of labels to devicetree_visitor() targets. These visitors must be
+#       built for the host toolchain as they will be loaded by the dumper tool.
+#     - Type: list(label)
+#
+#   * deps, public_deps, testonly, visibility
+#     - Usual GN meaning.
+#
+template("devicetree_parsed") {
+  assert(defined(invoker.dtb), "dtb must be defined for $target_name")
+  assert(defined(invoker.golden), "golden must be defined for $target_name")
+  assert(defined(invoker.visitors), "visitors must be defined for $target_name")
+
+  generation_target = "${target_name}.gen"
+  parsed_output = "$target_gen_dir/$target_name.dt.parsed"
+
+  compiled_action(generation_target) {
+    forward_variables_from(invoker,
+                           [
+                             "deps",
+                             "public_deps",
+                             "testonly",
+                           ])
+    tool =
+        "//sdk/lib/driver/devicetree/manager/dump-parsed:devicetree-dump-parsed"
+
+    inputs = [ invoker.dtb ]
+
+    if (!defined(deps)) {
+      deps = []
+    }
+
+    args = [
+      rebase_path(invoker.dtb, root_build_dir),
+      rebase_path(parsed_output, root_build_dir),
+    ]
+
+    foreach(visitor_label, invoker.visitors) {
+      # Visitors must be built for the host toolchain.
+      _visitor = get_label_info(visitor_label, "label_no_toolchain")
+      _visitor += "($host_toolchain)"
+
+      _dir = get_label_info(_visitor, "root_out_dir")
+      _name = get_label_info(_visitor, "name")
+      _path = "$_dir/${_name}.so"
+      inputs += [ _path ]
+      deps += [ _visitor ]
+      args += [
+        "--visitor",
+        rebase_path(_path, root_build_dir),
+      ]
+    }
+
+    outputs = [ parsed_output ]
+  }
+
+  golden_files(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    deps = [ ":$generation_target" ]
+    comparisons = [
+      {
+        golden = invoker.golden
+        candidate = parsed_output
+      },
     ]
   }
 }

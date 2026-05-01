@@ -4,6 +4,8 @@
 
 import("//build/components.gni")
 
+import("//build/devicetree/devicetree_visitor.gni")
+
 group("tests") {
   deps = [
     "test:example-visitor-test($host_toolchain)",
@@ -12,11 +14,15 @@ group("tests") {
   testonly = true
 }
 
-source_set("example-visitor") {
+source_set("example-visitor-impl") {
   sources = [
     "example-visitor.cc",
     "example-visitor.h",
   ]
   public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
   deps = [ "//sdk/lib/driver/devicetree/visitors:registration" ]
+}
+
+devicetree_visitor("example-visitor") {
+  deps = [ ":example-visitor-impl" ]
 }

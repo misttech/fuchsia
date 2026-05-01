@@ -209,8 +209,6 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
                                                    fdf_devicetree::ReferenceNode& parent,
                                                    fdf_devicetree::PropertyCells specifiers,
                                                    std::optional<std::string_view> clock_name) {
-  auto& controller = GetController(*parent.phandle());
-
   if (specifiers.size_bytes() != 1 * sizeof(uint32_t)) {
     fdf::error("Clock reference '{}' has incorrect number of clock specifiers ({}) - expected 1.",
                child.name(), specifiers.size_bytes() / sizeof(uint32_t));
@@ -226,6 +224,8 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   fdf::debug("Clock ID added - Unique ID {}, Clock ID {:#x} name '{}' to controller '{}'", node_id,
              clock_id, name_string, parent.name());
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  auto& controller = GetController(*parent.phandle());
   auto& clock_nodes = controller.clock_nodes_metadata.clock_nodes();
   if (!clock_nodes.has_value()) {
     clock_nodes.emplace(std::vector<fuchsia_hardware_clockimpl::ClockNodeDescriptor>{});
@@ -235,6 +235,7 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
       .node_id = node_id,
       .name = name_string,
   }});
+#endif
 
   return AddChildNodeSpec(child, clock_id, node_id, clock_name);
 }
