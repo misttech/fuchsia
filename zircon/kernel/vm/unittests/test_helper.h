@@ -98,6 +98,11 @@ zx_status_t make_committed_pager_vmo(size_t num_pages, bool trap_dirty, bool res
 zx_status_t make_uncommitted_pager_vmo(size_t num_pages, bool trap_dirty, bool resizable,
                                        fbl::RefPtr<VmObjectPaged>* out_vmo);
 
+// Re-supplies |num_pages| to |vmo| starting at |page_offset|. |out_pages| is updated with the new
+// pages.
+zx_status_t supply_pager_vmo_pages(VmObjectPaged* vmo, uint64_t page_offset, uint64_t num_pages,
+                                   vm_page_t** out_pages);
+
 uint32_t test_rand(uint32_t seed);
 
 // fill a region of memory with a pattern based on the address of the region

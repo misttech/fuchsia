@@ -116,6 +116,48 @@ zx_status_t make_committed_pager_vmo(size_t num_pages, bool trap_dirty, bool res
                                             out_pages, out_vmo);
 }
 
+zx_status_t supply_pager_vmo_pages(VmObjectPaged* vmo, uint64_t page_offset, uint64_t num_pages,
+                                   vm_page_t** out_pages) {
+  // Disable the scanner so we can safely submit our aux vmo and query pages without eviction
+  // happening.
+  AutoVmScannerDisable scanner_disable;
+
+  fbl::RefPtr<VmObjectPaged> aux_vmo;
+  zx_status_t status = VmObjectPaged::Create(0, 0, num_pages * kPageSize, &aux_vmo);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  status = aux_vmo->CommitRange(0, num_pages * kPageSize);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  VmPageSpliceList splice_list;
+  status = aux_vmo->TakePages(0, num_pages * kPageSize, &splice_list);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  status = vmo->SupplyPages(page_offset * kPageSize, num_pages * kPageSize, &splice_list,
+                            SupplyOptions::PagerSupply);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  if (out_pages) {
+    for (uint64_t i = 0; i < num_pages; i++) {
+      status = vmo->GetPage((page_offset + i) * kPageSize, 0, nullptr, nullptr,
+                            &out_pages[page_offset + i], nullptr);
+      if (status != ZX_OK) {
+        return status;
+      }
+    }
+  }
+
+  return ZX_OK;
+}
+
 uint32_t test_rand(uint32_t seed) { return (seed = seed * 1664525 + 1013904223); }
 
 // fill a region of memory with a pattern based on the address of the region

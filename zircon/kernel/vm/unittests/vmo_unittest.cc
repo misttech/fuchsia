@@ -17,8 +17,8 @@ namespace vm_unittest {
 namespace {
 
 // Helper wrapper around reclaiming a page that returns the pages to the pmm.
-uint64_t reclaim_page(fbl::RefPtr<VmCowPages> vmo, vm_page_t* page, uint64_t offset,
-                      VmCowPages::EvictionAction hint_action, VmCompressor* compressor) {
+uint64_t reclaim(fbl::RefPtr<VmCowPages> vmo, vm_page_t* page, uint64_t offset,
+                 VmCowPages::EvictionAction hint_action, VmCompressor* compressor) {
   // If we've passed a compressor, it's expected we're testing compression.
   DEBUG_ASSERT(!compressor || !vmo->can_evict());
 
@@ -29,14 +29,37 @@ uint64_t reclaim_page(fbl::RefPtr<VmCowPages> vmo, vm_page_t* page, uint64_t off
   return 0;
 }
 
-uint64_t compress_page(fbl::RefPtr<VmObjectPaged> vmo, vm_page_t* page, uint64_t offset,
-                       VmCowPages::EvictionAction hint_action, VmCompressor* compressor) {
-  return reclaim_page(vmo->DebugGetCowPages(), page, offset, hint_action, compressor);
+// Simulate the reclamation thread.
+uint64_t reclaim(fbl::RefPtr<VmObjectPaged> vmo, vm_page_t* page, uint64_t offset,
+                 VmCowPages::EvictionAction hint_action) {
+  // Move to 'DontNeed' unless the page is dirty, as dirty pages should never be in the isolate
+  // queue.
+  if (!pmm_page_queues()->DebugPageIsPagerBackedDirty(page)) {
+    pmm_page_queues()->MoveToReclaimDontNeed(page);
+  }
+  return reclaim(vmo->DebugGetCowPages(), page, offset, hint_action, nullptr);
 }
 
+// Test compression.
+uint64_t compress_page(fbl::RefPtr<VmObjectPaged> vmo, vm_page_t* page, uint64_t offset,
+                       VmCowPages::EvictionAction hint_action, VmCompressor* compressor) {
+  fbl::RefPtr<VmCowPages> cow_pages = vmo->DebugGetCowPages();
+  // Reclamation won't compress if eviction is possible.
+  DEBUG_ASSERT(!cow_pages->can_evict());
+  return reclaim(cow_pages, page, offset, hint_action, compressor);
+}
+
+// Call ReclaimPageForEviction so it doesn't bitrot.
+// TODO(https://fxbug.dev/502706880): Fix up ReclaimPageForEviction as it is now only used in the
+// physical page provider with EvictionAction::Require.
 uint64_t evict_page(fbl::RefPtr<VmObjectPaged> vmo, vm_page_t* page, uint64_t offset,
                     VmCowPages::EvictionAction hint_action) {
-  return reclaim_page(vmo->DebugGetCowPages(), page, offset, hint_action, nullptr);
+  VmCowReclaimResult evicted =
+      vmo->DebugGetCowPages()->ReclaimPageForEviction(page, offset, hint_action);
+  if (evicted.is_ok()) {
+    return evicted.value().num_pages;
+  }
+  return 0;
 }
 
 // Creates a vm object.
@@ -1510,8 +1533,8 @@ bool vmo_clones_of_compressed_pages_test() {
     auto compressor = compression->AcquireCompressor();
 
     ASSERT_OK(compressor.get().Arm());
-    uint64_t reclaimed = reclaim_page(hidden_root, page, 0, VmCowPages::EvictionAction::FollowHint,
-                                      &compressor.get());
+    uint64_t reclaimed =
+        reclaim(hidden_root, page, 0, VmCowPages::EvictionAction::FollowHint, &compressor.get());
     EXPECT_EQ(reclaimed, 1u);
   }
   page = nullptr;
@@ -1583,8 +1606,8 @@ bool vmo_clone_kernel_mapped_compressed_test() {
     // Attempt to reclaim the page in the hidden parent. As the clone is a fully committed and
     // mapped VMO this should *not* cause any of its pages to be unmapped. If it did this violate
     // the requirement that kernel mappings are always pinned and mapped.
-    uint64_t reclaimed = reclaim_page(hidden_root, page, 0, VmCowPages::EvictionAction::FollowHint,
-                                      &compressor.get());
+    uint64_t reclaimed =
+        reclaim(hidden_root, page, 0, VmCowPages::EvictionAction::FollowHint, &compressor.get());
     EXPECT_EQ(reclaimed, 1u);
     page = nullptr;
   }
@@ -1683,7 +1706,10 @@ bool vmo_eviction_hints_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(pages[0], &queue));
   EXPECT_EQ(0u, queue);
 
-  // Evicting the page should fail.
+  // We should not be able to evict the page.
+  ASSERT_LT(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 2u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // Hint that the page is not needed again.
@@ -1697,6 +1723,9 @@ bool vmo_eviction_hints_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaimIsolate(pages[0]));
 
   // We should still not be able to evict the page, the AlwaysNeed hint is sticky.
+  ASSERT_LT(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 2u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // Accessing the page should move it out of the Isolate queue.
@@ -1716,10 +1745,17 @@ bool vmo_eviction_hints_test() {
   EXPECT_EQ(0u, queue);
 
   // We should still not be able to evict first page, the AlwaysNeed hint is sticky.
+  // ASSERT_LT(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 2u);
+  // EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+  //             vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // We should be able to evict first page when told to override the hint.
-  ASSERT_EQ(evict_page(vmo, pages[0], 0, VmCowPages::EvictionAction::IgnoreHint), 1u);
+  ASSERT_GE(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::IgnoreHint), 1u);
+  EXPECT_TRUE((vm::AttributionCounts{}) == vmo->GetAttributedMemoryInRange(0, kPageSize))
+
+  // Re-supply pages.
+  supply_pager_vmo_pages(vmo.get(), 0, 2, pages);
 
   // Hint that second page is always needed.
   ASSERT_OK(vmo->HintRange(kPageSize, kPageSize, VmObject::EvictionHint::AlwaysNeed));
@@ -1820,6 +1856,9 @@ bool vmo_eviction_hints_clone_test() {
   EXPECT_EQ(0u, queue);
 
   // Evicting the page should fail.
+  ASSERT_LT(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 2u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // Hinting should also work via a clone of a clone.
@@ -1847,7 +1886,14 @@ bool vmo_eviction_hints_clone_test() {
   EXPECT_EQ(0u, queue);
 
   // Evicting the page should fail.
+  ASSERT_LT(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 2u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 0u);
+
+  // Re supply the second page, in case it was evicted.
+  supply_pager_vmo_pages(vmo.get(), 1, 1, pages);
+  EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(pages[1], &queue));
 
   // Verify that hinting still works via the parent VMO.
   // Hint that the page is not needed again.
@@ -1957,6 +2003,55 @@ bool vmo_eviction_test() {
   EXPECT_EQ(ZX_OK, status);
   ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
   vmo->Unpin(0, kPageSize);
+
+  END_TEST;
+}
+
+bool vmo_reclamation_test() {
+  BEGIN_TEST;
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t kNumPages = 2;
+  constexpr size_t kAllocSize = kNumPages * kPageSize;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  vm_page_t* pages[kNumPages];
+  zx_status_t status =
+      make_committed_pager_vmo(1, /*trap_dirty=*/false, /*resizable=*/false, pages, &vmo);
+  ASSERT_EQ(ZX_OK, status);
+
+  // Reclamation should drop the number of committed pages.
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) == vmo->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, kAllocSize));
+  ASSERT_EQ(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 1u);
+  EXPECT_TRUE((vm::AttributionCounts{}) == vmo->GetAttributedMemory());
+  EXPECT_TRUE(verify_continuous_attribution_bytes(*vmo, 0));
+  EXPECT_GT(vmo->ReclamationEventCount(), 0u);
+
+  // Pinned pages should not be reclaimable.
+  status = make_committed_pager_vmo(kNumPages, /*trap_dirty=*/false, /*resizable=*/false, &pages[0],
+                                    &vmo);
+  ASSERT_EQ(ZX_OK, status);
+
+  status = vmo->CommitRangePinned(0, kAllocSize / 2, false);
+  EXPECT_EQ(ZX_OK, status);
+  ASSERT_LE(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 2u);
+  vmo->Unpin(0, kAllocSize / 2);
+
+  // Trying to reclaim from a VMO with no pages in isolate is considered an 'evict accesed' failure.
+  status = make_committed_pager_vmo(kNumPages, /*trap_dirty=*/false, /*resizable=*/false, &pages[0],
+                                    &vmo);
+  ASSERT_EQ(ZX_OK, status);
+
+  for (size_t i = 0; i < kNumPages; i++) {
+    EXPECT_FALSE(PageQueues::IsPageReclaimable(pages[i]));
+  }
+
+  auto reclaimed = vmo->DebugGetCowPages()->ReclaimPage(
+      pages[0], 0, VmCowPages::EvictionAction::FollowHint, nullptr);
+
+  EXPECT_TRUE(reclaimed.is_error());
+  EXPECT_EQ(reclaimed.error_value(), VmCowReclaimFailure::EvictAccessed);
 
   END_TEST;
 }
@@ -3282,6 +3377,9 @@ bool vmo_dirty_pages_test() {
   EXPECT_GT(pmm_page_queues()->QueueCounts().pager_backed_dirty, 0u);
 
   // Should not be able to evict a dirty page.
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // Accessing the page again should not move the page out of the dirty queue.
@@ -3312,6 +3410,9 @@ bool vmo_dirty_pages_writeback_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
 
   // Should not be able to evict a dirty page.
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // Begin writeback on the page. This should still keep the page in the dirty queue.
@@ -3320,6 +3421,9 @@ bool vmo_dirty_pages_writeback_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
 
   // Should not be able to evict a dirty page.
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // Accessing the page should not move the page out of the dirty queue either.
@@ -3328,6 +3432,9 @@ bool vmo_dirty_pages_writeback_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
 
   // Should not be able to evict a dirty page.
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // End writeback on the page. This should finally move the page out of the dirty queue.
@@ -3354,7 +3461,8 @@ bool vmo_dirty_pages_writeback_test() {
   EXPECT_EQ(0u, queue);
 
   // We should now be able to evict the page.
-  ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 1u);
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 1u);
+  EXPECT_TRUE((vm::AttributionCounts{}) == vmo->GetAttributedMemoryInRange(0, kPageSize))
 
   END_TEST;
 }
@@ -3385,6 +3493,9 @@ bool vmo_dirty_pages_with_hints_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
 
   // Should not be able to evict a dirty page.
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // Hint AlwaysNeed on the page. It should remain in the dirty queue.
@@ -3401,13 +3512,17 @@ bool vmo_dirty_pages_with_hints_test() {
   EXPECT_EQ(0u, queue);
 
   // Eviction should fail still because we hinted AlwaysNeed previously.
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
   EXPECT_FALSE(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(page, &queue));
   EXPECT_EQ(0u, queue);
 
   // Eviction should succeed if we ignore the hint.
-  ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::IgnoreHint), 1u);
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::IgnoreHint), 1u);
+  EXPECT_TRUE((vm::AttributionCounts{}) == vmo->GetAttributedMemoryInRange(0, kPageSize))
 
   // Reset the vmo and retry some of the same actions as before, this time dirtying
   // the page *after* hinting.
@@ -3432,6 +3547,9 @@ bool vmo_dirty_pages_with_hints_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
 
   // Should not be able to evict a dirty page.
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   END_TEST;
@@ -3886,11 +4004,16 @@ bool vmo_high_priority_reclaim_test() {
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsHighPriority(page));
   EXPECT_GT(pmm_page_queues()->QueueCounts().high_priority, 0u);
 
-  // Attempting to reclaim should fail.
+  // Attempting to evict should fail.
+  EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
+              vmo->GetAttributedMemoryInRange(0, kPageSize));
   EXPECT_EQ(evict_page(vmo, page, 0, VmCowPages::EvictionAction::IgnoreHint), 0u);
 
   // Page should still be in the queue.
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsHighPriority(page));
+
+  // Attempting to reclaim should fail.
+  ASSERT_EQ(reclaim(vmo, page, 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // Switch to a regular anonymous VMO.
   change_priority(-1);
@@ -4545,8 +4668,8 @@ bool vmo_zero_marker_transfer_test() {
     auto compressor = compression->AcquireCompressor();
     ASSERT_OK(compressor.get().Arm());
     // Attempt to reclaim the page in the hidden parent.
-    uint64_t reclaimed = reclaim_page(hidden_root, page, 0, VmCowPages::EvictionAction::FollowHint,
-                                      &compressor.get());
+    uint64_t reclaimed =
+        reclaim(hidden_root, page, 0, VmCowPages::EvictionAction::FollowHint, &compressor.get());
     EXPECT_EQ(reclaimed, 1u);
   }
   ASSERT_TRUE(hidden_root->DebugIsMarker(0));
@@ -4879,8 +5002,8 @@ static bool vmo_compress_to_marker_pager_test() {
     auto compressor = compression->AcquireCompressor();
     ASSERT_OK(compressor.get().Arm());
 
-    uint64_t reclaimed = reclaim_page(cow_pages_hidden, page, 0,
-                                      VmCowPages::EvictionAction::FollowHint, &compressor.get());
+    uint64_t reclaimed = reclaim(cow_pages_hidden, page, 0, VmCowPages::EvictionAction::FollowHint,
+                                 &compressor.get());
     EXPECT_EQ(reclaimed, 1u);
   }
 
@@ -4951,8 +5074,8 @@ static bool vmo_compress_to_marker_anon_test() {
     auto compressor = compression->AcquireCompressor();
     ASSERT_OK(compressor.get().Arm());
 
-    uint64_t reclaimed = reclaim_page(cow_pages_hidden, page, 0,
-                                      VmCowPages::EvictionAction::FollowHint, &compressor.get());
+    uint64_t reclaimed = reclaim(cow_pages_hidden, page, 0, VmCowPages::EvictionAction::FollowHint,
+                                 &compressor.get());
     EXPECT_EQ(reclaimed, 1u);
   }
 
@@ -5009,6 +5132,7 @@ VM_UNITTEST(vmo_eviction_hints_test)
 VM_UNITTEST(vmo_always_need_evicts_loaned_test)
 VM_UNITTEST(vmo_eviction_hints_clone_test)
 VM_UNITTEST(vmo_eviction_test)
+VM_UNITTEST(vmo_reclamation_test)
 VM_UNITTEST(vmo_validate_page_shares_test)
 VM_UNITTEST(vmo_attribution_clones_test)
 VM_UNITTEST(vmo_attribution_ops_test)

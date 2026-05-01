@@ -80,11 +80,21 @@ KCOUNTER(vm_vmo_range_update_from_parent_performed, "vm.vmo.range_updated_from_p
 KCOUNTER(vm_reclaim_fail_no_reclamation_strategy, "vm.reclaim.fail.no_reclamation_strategy")
 KCOUNTER(vm_reclaim_fail_discardable, "vm.reclaim.fail.discardable")
 KCOUNTER(vm_reclaim_fail_vmo_high_priority, "vm.reclaim.fail.vmo.high_priority")
+
+KCOUNTER(vm_reclaim_evict_single, "vm.reclaim.evict_single")
+KCOUNTER(vm_reclaim_evict_range, "vm.reclaim.evict_range")
+KCOUNTER(vm_reclaim_evict_range_fail, "vm.reclaim.evict_range.fail")
+KCOUNTER(vm_reclaim_evict_fail_range_accessed, "vm.reclaim.evict.fail.range_accessed")
+KCOUNTER(vm_reclaim_evict_range_pages, "vm.reclaim.evict_range_pages")
 KCOUNTER(vm_reclaim_evict_fail_page_pinned, "vm.reclaim.evict.fail.page.pinned")
 KCOUNTER(vm_reclaim_evict_fail_page_dirty, "vm.reclaim.evict.fail.page.dirty")
 KCOUNTER(vm_reclaim_evict_fail_page_accessed, "vm.reclaim.evict.fail.page.accessed")
 KCOUNTER(vm_reclaim_evict_fail_page_always_need, "vm.reclaim.evict.fail.page.always_need")
+KCOUNTER(vm_reclaim_evict_fail_page_queue, "vm.reclaim_evict_range_fail_queue")
 KCOUNTER(vm_reclaim_evict_fail_page_incorrect, "vm.reclaim.incorrect_page")
+KCOUNTER(vm_reclaim_evict_fail_page_vmo_high_priority,
+
+         "vm.reclaim.evict.fail.page.vmo_high_priority")
 KCOUNTER(vm_reclaim_compress_success, "vm.reclaim.compress.success")
 KCOUNTER(vm_reclaim_compress_fail, "vm.reclaim.compress.fail")
 KCOUNTER(vm_reclaim_compress_zero, "vm.reclaim.compress.zero")
@@ -198,22 +208,27 @@ VmObjectPaged* paged_backlink_locked(VmCowPages* cow) TA_REQ(cow->lock())
 
 // static
 void VmCowPages::DebugDumpReclaimCounters() {
-  printf("Failed reclaim evict_accessed %ld\n",
-         vm_reclaim_evict_fail_page_accessed.SumAcrossAllCpus());
-  printf("Failed reclaim compress_accessed %ld\n",
-         vm_reclaim_compress_fail_page_accessed.SumAcrossAllCpus());
+  // Per reclaim attempt.
+  printf("Failed reclaim: discardable %ld\n", vm_reclaim_fail_discardable.SumAcrossAllCpus());
+  printf("Failed reclaim: vmo high priority %ld\n",
+         vm_reclaim_fail_vmo_high_priority.SumAcrossAllCpus());
   printf("Failed reclaim no_strategy %ld\n",
          vm_reclaim_fail_no_reclamation_strategy.SumAcrossAllCpus());
-  printf("Failed reclaim always_need %ld\n",
-         vm_reclaim_evict_fail_page_always_need.SumAcrossAllCpus());
-  printf("Failed reclaim discardable %ld\n", vm_reclaim_fail_discardable.SumAcrossAllCpus());
-  printf("Failed reclaim incorrect_page %ld\n",
+  printf("Failed reclaim: evict range %ld\n", vm_reclaim_evict_range_fail.SumAcrossAllCpus());
+  printf("Failed reclaim: evict accessed range %ld\n",
+         vm_reclaim_evict_fail_page_accessed.SumAcrossAllCpus());
+  printf("Failed reclaim: incorrect_page %ld\n",
          vm_reclaim_evict_fail_page_incorrect.SumAcrossAllCpus());
-  printf("Failed reclaim high_priority %ld\n",
-         vm_reclaim_fail_vmo_high_priority.SumAcrossAllCpus());
-  printf("Failed reclaim pinned %ld\n", vm_reclaim_evict_fail_page_pinned.SumAcrossAllCpus());
-  printf("Failed reclaim dirty %ld\n", vm_reclaim_evict_fail_page_dirty.SumAcrossAllCpus());
-  printf("Failed reclaim uncached %ld\n", vm_reclaim_compress_fail_uncached.SumAcrossAllCpus());
+  // Per page.
+  printf("Failed page: always_need %ld\n",
+         vm_reclaim_evict_fail_page_always_need.SumAcrossAllCpus());
+  printf("Failed page: pinned %ld\n", vm_reclaim_evict_fail_page_pinned.SumAcrossAllCpus());
+  printf("Failed page: dirty %ld\n", vm_reclaim_evict_fail_page_dirty.SumAcrossAllCpus());
+  // Compression
+  printf("Failed reclaim: compress uncached %ld\n",
+         vm_reclaim_compress_fail_uncached.SumAcrossAllCpus());
+  printf("Failed reclaim: compress accessed %ld\n",
+         vm_reclaim_compress_fail_page_accessed.SumAcrossAllCpus());
 }
 
 uint32_t VmCowPages::DebugGetPopulatedSlotsCount() const {
@@ -7177,6 +7192,146 @@ ktl::optional<VmCowReclaimFailure> VmCowPages::CannotReclaimPageLocked(vm_page_t
   return ktl::nullopt;
 }
 
+VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t length,
+                                                       EvictionAction eviction_action) {
+  canary_.Assert();
+
+  DEBUG_ASSERT(can_evict());
+  DEBUG_ASSERT(eviction_action != EvictionAction::Require);
+
+  __UNINITIALIZED DeferredOps deferred(this);
+  Guard<CriticalMutex> guard{AssertOrderedLock, lock(), lock_order()};
+
+  // Remove any mappings to the range and harvest accessed bits to get up-to-date page queue info.
+  RangeChangeUpdateLocked(VmCowRange(offset, length), RangeChangeOp::UnmapAndHarvest, &deferred);
+
+  uint32_t num_failed_queue = 0;
+  auto can_reclaim_page = [this, &eviction_action,
+                           &num_failed_queue](vm_page_t* page) TA_REQ(lock()) {
+    DEBUG_ASSERT(is_page_dirty_tracked(page));
+
+    // High priority VMOs cannot have loaned pages.
+    DEBUG_ASSERT(!page->is_loaned() || high_priority_count_ == 0);
+
+    // Not allowed to reclaim range if high priority.
+    if (high_priority_count_ != 0) {
+      Pmm::Node().GetPageQueues()->MarkAccessed(page);
+      vm_reclaim_evict_fail_page_vmo_high_priority.Add(1);
+      return false;
+    }
+
+    // We cannot evict the page unless it is clean. If the page is dirty, it will already have been
+    // moved to the dirty page queue.
+    if (!is_page_clean(page)) {
+      DEBUG_ASSERT(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
+      DEBUG_ASSERT(!page->is_loaned());
+      vm_reclaim_evict_fail_page_dirty.Add(1);
+      return false;
+    }
+
+    // Do not evict if the |always_need| hint is set, unless we are told to ignore the eviction
+    // hint.
+    if (page->object.always_need == 1 && eviction_action == EvictionAction::FollowHint) {
+      DEBUG_ASSERT(!page->is_loaned());
+      // We still need to move the page from the tail of the LRU page queue(s) so that the eviction
+      // loop can make progress. Since this page is always needed, move it out of the way and into
+      // the MRU queue. Do this here while we hold the lock, instead of at the callsite.
+
+      Pmm::Node().GetPageQueues()->MarkAccessed(page);
+      vm_reclaim_evict_fail_page_always_need.Add(1);
+      return false;
+    }
+
+    // Pages must be reclaimable.
+    if (!is_page_reclaimable(page)) {
+      num_failed_queue++;
+      vm_reclaim_evict_fail_page_queue.Add(1);
+      return false;
+    }
+    // Pinned pages could be in use by DMA so we cannot safely reclaim them.
+    if (page->object.pin_count != 0) {
+      // Loaned pages should never end up pinned.
+      DEBUG_ASSERT(!page->is_loaned());
+      Pmm::Node().GetPageQueues()->MarkAccessed(page);
+      vm_reclaim_evict_fail_page_pinned.Add(1);
+      return false;
+    }
+
+    return true;
+  };
+
+  __UNINITIALIZED ScopedPageFreedList freed_list;
+  __UNINITIALIZED BatchPQRemove page_remover(freed_list);
+
+  uint32_t num_evicted_pages = 0;
+  uint32_t num_evicted_loaned = 0;
+  uint32_t num_failed_pages = 0;
+  page_list_.RemovePages(
+      [this, &can_reclaim_page, &num_evicted_pages, &num_evicted_loaned, &num_failed_pages,
+       &page_remover](VmPageOrMarker* p, uint64_t offset) {
+        if (p->IsPage()) {
+          vm_page_t* page = p->Page();
+          AssertHeld(lock_ref());
+          if (!can_reclaim_page(page)) {
+            num_failed_pages++;
+            return ZX_ERR_NEXT;
+          }
+
+          if (page->is_loaned()) {
+            num_evicted_loaned++;
+          } else {
+            num_evicted_pages++;
+          }
+          page_remover.PushContent(p);
+        } else {
+          return ZX_ERR_NEXT;
+        }
+        return ZX_ERR_NEXT;
+      },
+      offset, offset + length);
+
+  page_remover.Flush();
+  freed_list.FreePages(this);
+
+  if (num_evicted_pages + num_evicted_loaned == 0) {
+    vm_reclaim_evict_range_fail.Add(1);
+
+    // If all of the failures were from "wrong queue", consider the range accessed.
+    if (num_failed_pages == num_failed_queue) {
+      vm_reclaim_evict_fail_range_accessed.Add(1);
+      return fit::error(VmCowReclaimFailure::EvictAccessed);
+    }
+
+    return fit::error(VmCowReclaimFailure::Other);
+  }
+
+  char vmo_name[ZX_MAX_NAME_LEN] __UNINITIALIZED = "\0";
+  auto get_vmo_name = [&]() TA_REQ(lock()) __ALWAYS_INLINE {
+    if (paged_ref_) {
+      AssertHeld(paged_ref_->lock_ref());
+      paged_ref_->self_locked()->get_name_locked(vmo_name, sizeof(vmo_name));
+    }
+    return vmo_name;
+  };
+  VM_KTRACE_INSTANT(1, "evict_range", ("vmo_id", paged_ref_ ? paged_ref_->user_id() : 0),
+                    ("offset", offset), ("length", length), ("num_pages", num_evicted_pages),
+                    ("num_loaned_pages", num_evicted_pages), ("vmo_name", get_vmo_name()));
+
+  continuous_attribution_tracker_.Decrement(
+      static_cast<uint32_t>(num_evicted_pages + num_evicted_loaned));
+  vm_reclaim_evict_range.Add(1);
+  vm_reclaim_evict_range_pages.Add(static_cast<uint32_t>(num_evicted_pages + num_evicted_loaned));
+  reclamation_event_count_++;
+  VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
+  VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
+  CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
+  return fit::ok(VmCowReclaimSuccess{
+      .type = VmCowReclaimSuccess::Type::Evict,
+      .num_pages = num_evicted_pages,
+      .num_loaned_pages = num_evicted_loaned,
+  });
+}
+
 VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t offset,
                                                       EvictionAction eviction_action) {
   canary_.Assert();
@@ -7266,6 +7421,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   const bool loaned = page->is_loaned();
   RemovePageLocked(page, deferred);
 
+  vm_reclaim_evict_single.Add(1);
   reclamation_event_count_++;
   VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
   VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
@@ -7462,7 +7618,18 @@ VmCowReclaimResult VmCowPages::ReclaimPage(vm_page_t* page, uint64_t offset,
 
   // See if we can reclaim by eviction.
   if (can_evict()) {
-    return ReclaimPageForEviction(page, offset, hint_action);
+    // The EvictionAction::Require hint is used when a specific page is required to be evicted. This
+    // is used in the physical page borrower case.
+    // TODO(https://fxbug.dev/502706880): refactor this as as the reclamation code is diverging from
+    // the physical page provider case.
+    if (hint_action == EvictionAction::Require) {
+      return ReclaimPageForEviction(page, offset, hint_action);
+    }
+
+    // Evict pages in aligned batches of 16, which will correspond to a single VmPageListNode.
+    constexpr size_t eviction_length = 16 * kPageSize;
+    offset = ROUNDDOWN(offset, eviction_length);
+    return ReclaimRangeForEviction(offset, eviction_length, hint_action);
   }
   if (compressor && !page_source_ && !discardable_tracker_) {
     return ReclaimPageForCompression(page, offset, compressor);

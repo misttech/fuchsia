@@ -831,10 +831,16 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   zx_status_t ReplacePage(vm_page_t* before_page, uint64_t offset, bool with_loaned,
                           vm_page_t** after_page, AnonymousPageRequest* page_request)
       TA_EXCL(lock());
-  // Eviction wrapper, unlike ReclaimPage this wrapper can assume it just needs to evict, and has no
-  // requirements on updating any reclamation lists. Exposed for the physical page provider to
-  // reclaim loaned pages.
-  // Is also used as an internal helper by ReclaimPage.
+
+  // In the given range, evict any pages that are in `page_queue`. This function should be used when
+  // we want to evict for the purpose of freeing memory, and details on the specific page don't
+  // matter.
+  VmCowReclaimResult ReclaimRangeForEviction(uint64_t offset, size_t length,
+                                             EvictionAction eviction_action);
+
+  // Evict a specific page. Unlike ReclaimPage this wrapper can assume it just needs to evict,
+  // and has no requirements on updating any reclamation lists. Exposed for the physical page
+  // provider to reclaim loaned pages. Is also used as an internal helper by ReclaimPage.
   VmCowReclaimResult ReclaimPageForEviction(vm_page_t* page, uint64_t offset,
                                             EvictionAction eviction_action);
 
