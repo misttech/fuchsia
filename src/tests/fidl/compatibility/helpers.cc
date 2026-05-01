@@ -63,7 +63,8 @@ void ForSomeImpls(const Impls& impls, const AllowImplPair& allow, const TestBody
       builder.AddRoute(Route{.capabilities = {Protocol{"fidl.test.compatibility.Echo"}},
                              .source = ChildRef{proxy_component},
                              .targets = {ParentRef()}});
-      builder.AddRoute(Route{.capabilities = {Protocol{"fuchsia.logger.LogSink"}},
+      builder.AddRoute(Route{.capabilities = {Protocol{"fuchsia.logger.LogSink"},
+                                              Protocol{"fuchsia.kernel.VmexResource"}},
                              .source = ParentRef(),
                              .targets = {ChildRef{server_component}, ChildRef{proxy_component}}});
 
