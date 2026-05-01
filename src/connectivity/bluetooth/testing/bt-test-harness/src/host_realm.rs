@@ -102,7 +102,7 @@ pub async fn add_host_routes(
     builder
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: "fuchsia.bluetooth.LeSlowAdvMaxTxPower".parse()?,
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(-127)),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(127)),
         }))
         .await?;
     builder
@@ -120,7 +120,7 @@ pub async fn add_host_routes(
     builder
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: "fuchsia.bluetooth.LeFastAdvMaxTxPower".parse()?,
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(-127)),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(127)),
         }))
         .await?;
     builder
@@ -138,7 +138,7 @@ pub async fn add_host_routes(
     builder
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: "fuchsia.bluetooth.LeVeryFastAdvMaxTxPower".parse()?,
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(-127)),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int8(127)),
         }))
         .await?;
     builder
