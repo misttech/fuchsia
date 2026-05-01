@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
 use fuchsia_async::Task;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, Receiver, Sender};
@@ -96,6 +95,15 @@ pub enum GetFastbootEntriesError {
     IoError(#[from] std::io::Error),
 }
 
+#[derive(Error, Debug)]
+pub enum WatcherError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Notify error: {0}")]
+    Notify(#[from] notify::Error),
+}
+
 impl FromStr for FastbootEntry {
     type Err = ParseFastbootEntryError;
 
@@ -140,7 +148,7 @@ where
 pub fn recommended_watcher<F>(
     event_handler: F,
     watch_file: impl AsRef<Path>,
-) -> Result<FastbootFileWatcher>
+) -> Result<FastbootFileWatcher, WatcherError>
 where
     F: FastbootEventHandler,
 {
@@ -148,7 +156,7 @@ where
 }
 
 impl FastbootFileWatcher {
-    pub fn new<F>(event_handler: F, watch_file_path: impl AsRef<Path>) -> Result<Self>
+    pub fn new<F>(event_handler: F, watch_file_path: impl AsRef<Path>) -> Result<Self, WatcherError>
     where
         F: FastbootEventHandler,
     {
@@ -316,8 +324,23 @@ mod test {
     use pretty_assertions::assert_eq;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddrV6};
 
+    #[derive(Debug, thiserror::Error)]
+    pub enum TestError {
+        #[error("ParseFastbootMode: {0}")]
+        ParseMode(#[from] ParseFastbootModeError),
+
+        #[error("ParseFastbootEntry: {0}")]
+        ParseEntry(#[from] ParseFastbootEntryError),
+
+        #[error("Watcher: {0}")]
+        Watcher(#[from] WatcherError),
+
+        #[error("IO: {0}")]
+        Io(#[from] std::io::Error),
+    }
+
     #[fuchsia::test]
-    fn test_parse_fastboot_mode() -> Result<()> {
+    fn test_parse_fastboot_mode() -> Result<(), TestError> {
         let should_be_tcp = "tcp".parse::<FastbootMode>()?;
         assert_eq!(FastbootMode::TCP, should_be_tcp);
 
@@ -336,7 +359,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_parse_fastboot_entry() -> Result<()> {
+    fn test_parse_fastboot_entry() -> Result<(), TestError> {
         assert!("tcp:127.0.0.1:81111111111111111111".parse::<FastbootEntry>().is_err());
         assert!("tCp:127.0.0.1:811".parse::<FastbootEntry>().is_err());
         assert!("tCp:totally&not&an&ip&address:811".parse::<FastbootEntry>().is_err());
@@ -376,7 +399,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_display_fastboot_entry() -> Result<()> {
+    fn test_display_fastboot_entry() -> Result<(), TestError> {
         let entry = FastbootEntry {
             mode: FastbootMode::TCP,
             socket_addr: "127.0.0.1:8080".parse().unwrap(),
@@ -390,7 +413,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_get_fastboot_devices() -> Result<()> {
+    fn test_get_fastboot_devices() -> Result<(), TestError> {
         use std::io::Write;
         use tempfile::NamedTempFile;
 
