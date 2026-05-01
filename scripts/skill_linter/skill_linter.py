@@ -80,6 +80,7 @@ def _pre_process(text: str, tab_size: int) -> str:
     """Pre-processes text to standardize list item indentation.
 
     Fixes bullet points and numbered lists that have excessive spacing.
+    Skips lines within code blocks.
 
     Args:
       text: The input markdown text.
@@ -90,7 +91,18 @@ def _pre_process(text: str, tab_size: int) -> str:
     """
     lines = text.split("\n")
     processed = []
+    in_code_block = False
     for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            processed.append(line)
+            continue
+
+        if in_code_block:
+            processed.append(line)
+            continue
+
         # Match bullet points (-, *, +) at the start of the line with excessive spacing.
         # Capture group 1: indentation and bullet.
         # Capture group 2: extra spaces.
@@ -209,13 +221,52 @@ def _is_table_separator(line: str) -> bool:
     return "|" in line and bool(re.fullmatch(r"[|\-\s:]+", stripped))
 
 
-def format_markdown(
+def _get_table_line_indices(lines: list[str]) -> set[int]:
+    """Identifies all lines that are part of a markdown table.
+
+    Args:
+      lines: The markdown lines to evaluate.
+
+    Returns:
+      A set of integer indices representing table lines.
+    """
+    table_indices = set()
+    in_table = False
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            in_table = False
+            continue
+
+        if (
+            idx + 1 < len(lines)
+            and "|" in line
+            and _is_table_separator(lines[idx + 1])
+        ):
+            table_indices.add(idx)
+
+        if _is_table_separator(line):
+            in_table = True
+            table_indices.add(idx)
+            continue
+
+        if in_table:
+            if "|" not in line:
+                in_table = False
+            else:
+                table_indices.add(idx)
+
+    return table_indices
+
+
+def format_markdown_with_issues(
     text: str, *, tab_size: int = 4, width: int = LINE_LENGTH
-) -> str:
-    """Formats markdown text to fit within the specified width.
+) -> tuple[str, list[str]]:
+    """Formats markdown text and identifies specific linter issues.
 
     Identifies paragraphs, lists, code blocks, and tables to apply
-    appropriate formatting while preserving structure.
+    appropriate formatting while preserving structure. Tracks specific
+    issues like long lines, trailing whitespace, etc.
 
     Args:
       text: The input markdown text.
@@ -223,33 +274,80 @@ def format_markdown(
       width: Maximum line length (defaults to LINE_LENGTH).
 
     Returns:
-      The formatted markdown string.
+      A tuple containing the formatted markdown string and a list of detected issues.
     """
+    issues = []
+
+    raw_lines = text.split("\n")
+
+    in_code_block = False
+    has_consecutive_empty_lines = False
+    has_trailing_whitespace = False
+    consecutive_empty_count = 0
+
+    for line in raw_lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            consecutive_empty_count = 0
+            continue
+
+        if in_code_block:
+            continue
+
+        if not stripped:
+            consecutive_empty_count += 1
+            if consecutive_empty_count >= 2:
+                has_consecutive_empty_lines = True
+        else:
+            consecutive_empty_count = 0
+
+        stripped_len = len(line.rstrip(" \t"))
+        trailing_len = len(line) - stripped_len
+        if trailing_len > 0 and trailing_len != 2:
+            has_trailing_whitespace = True
+
+    if has_consecutive_empty_lines:
+        issues.append("consecutive empty lines")
+    if has_trailing_whitespace:
+        issues.append("trailing whitespace")
+
     preprocessed_text = _pre_process(text, tab_size)
+    if preprocessed_text != text:
+        issues.append("excessive list item spacing")
+
     lines = preprocessed_text.split("\n")
     formatted_lines = []
+    code_blocks: list[str] = []
+    current_code_block: list[str] = []
 
-    in_code_block: bool = False
+    in_code_block = False
     current_paragraph: list[str] = []
+    in_table = False
 
     def flush_paragraph() -> None:
         nonlocal current_paragraph
         formatted_lines.extend(_format_paragraph(current_paragraph, width))
         current_paragraph[:] = []
 
-    in_table = False
-
     for line in lines:
         stripped_line = line.strip()
 
         if stripped_line.startswith("```"):
             flush_paragraph()
+            if in_code_block:
+                current_code_block.append(line)
+                placeholder = f"__SKILL_LINTER_CODE_BLOCK_{len(code_blocks)}__"
+                code_blocks.append("\n".join(current_code_block))
+                formatted_lines.append(placeholder)
+                current_code_block = []
+            else:
+                current_code_block.append(line)
             in_code_block = not in_code_block
-            formatted_lines.append(line)
             continue
 
         if in_code_block:
-            formatted_lines.append(line)
+            current_code_block.append(line)
             continue
 
         if not stripped_line:
@@ -292,7 +390,63 @@ def format_markdown(
 
     flush_paragraph()
 
-    return _post_process("\n".join(formatted_lines))
+    # If a file ends inside a code block, preserve it.
+    if in_code_block and current_code_block:
+        placeholder = f"__SKILL_LINTER_CODE_BLOCK_{len(code_blocks)}__"
+        code_blocks.append("\n".join(current_code_block))
+        formatted_lines.append(placeholder)
+
+    formatted_text = _post_process("\n".join(formatted_lines))
+
+    for idx, code_block in enumerate(code_blocks):
+        placeholder = f"__SKILL_LINTER_CODE_BLOCK_{idx}__"
+        formatted_text = formatted_text.replace(placeholder, code_block)
+
+    prep_table_indices = _get_table_line_indices(lines)
+
+    in_code_block = False
+    has_long_lines = False
+    for idx, line in enumerate(lines):
+        if idx in prep_table_indices:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block:
+            continue
+        if not stripped:
+            continue
+        if len(line) > width:
+            has_long_lines = True
+            break
+
+    if has_long_lines:
+        issues.append(f"lines exceeding {width} characters")
+
+    if formatted_text != text and not issues:
+        issues.append("formatting inconsistencies")
+
+    return formatted_text, issues
+
+
+def format_markdown(
+    text: str, *, tab_size: int = 4, width: int = LINE_LENGTH
+) -> str:
+    """Formats markdown text to fit within the specified width.
+
+    Args:
+      text: The input markdown text.
+      tab_size: Indentation size for lists.
+      width: Maximum line length (defaults to LINE_LENGTH).
+
+    Returns:
+      The formatted markdown string.
+    """
+    formatted, _ = format_markdown_with_issues(
+        text, tab_size=tab_size, width=width
+    )
+    return formatted
 
 
 def _validate_name(
@@ -337,7 +491,7 @@ def _validate_name(
         suggested_name = _suggest_valid_name(name)
         if suggested_name != name:
             meta["name"] = suggested_name
-            fixes_applied.append(f'Fixed name to "{suggested_name}"')
+            fixes_applied.append(f'Fix name to "{suggested_name}"')
 
     if "<" in name or ">" in name:
         if not fixit:
@@ -386,7 +540,7 @@ def _validate_description(
             ).strip()
             if cleaned_description != description:
                 meta["description"] = cleaned_description
-                fixes_applied.append("Stripped XML tags from description.")
+                fixes_applied.append("Strip XML tags from description.")
             else:
                 errors.append(
                     'Field "description" cannot contain angle brackets (< or >).'
@@ -462,9 +616,12 @@ def _build_finding(
             "Suggested fixes:\n" + "\n".join(f"- {f}" for f in fixes_applied)
         )
 
+    finding_message = "\n\n".join(messages) or "Skill linter findings."
+    finding_message += "\n\nYou can run fx format-code to fix these issues."
+
     finding: Finding = {
         "filepath": rel_path,
-        "message": "\n\n".join(messages) or "Skill linter findings.",
+        "message": finding_message,
         "level": level,
     }
     if new_content != original_content:
@@ -539,16 +696,13 @@ def lint_single_skill(
     errors.extend(description_errors)
     fixes_applied.extend(description_fixes)
 
-    formatted_content = format_markdown(content)
+    formatted_content, markdown_issues = format_markdown_with_issues(content)
     if formatted_content != content:
+        issues_str = ", ".join(markdown_issues)
         if not fixit and not suggest_fix_in_json_mode:
-            warnings.append(
-                f"Markdown body contains text lines exceeding {LINE_LENGTH} characters limit."
-            )
+            warnings.append(f"Markdown body contains {issues_str}.")
         else:
-            fixes_applied.append(
-                f"Formatted markdown body to fit inside {LINE_LENGTH} characters limit."
-            )
+            fixes_applied.append(f"Address markdown body: {issues_str}.")
             content = formatted_content
 
     skill_name = os.path.basename(os.path.dirname(skill_file))
@@ -591,6 +745,11 @@ def lint_single_skill(
     if errors:
         for err in errors:
             logging.error(f"[{skill_name}] Error: {err}")
+
+    if (warnings or errors) and not suggest_fix_in_json_mode:
+        logging.warning(
+            f"[{skill_name}] You can run fx format-code to fix these issues."
+        )
 
     if stdout_mode:
         print(new_content, end="")

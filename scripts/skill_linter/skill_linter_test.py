@@ -31,6 +31,16 @@ class TestSkillLinter(unittest.TestCase):
         self.assertEqual(skill_linter._pre_process(text, 2), "1. item")
         self.assertEqual(skill_linter._pre_process(text, 4), "1.  item")
 
+        # Test that code blocks are ignored
+        text = '```diff\ndeps = [\n-  "//src/lib/ddk"\n]\n```'
+        self.assertEqual(skill_linter._pre_process(text, 4), text)
+
+        text = "```markdown\n-   Item 1\n*   Item 2\n+   Item 3\n1.   Numbered\n```"
+        self.assertEqual(skill_linter._pre_process(text, 4), text)
+
+        text = "```markdown\n# Header 1\n## Header 2\n```"
+        self.assertEqual(skill_linter._pre_process(text, 4), text)
+
     def test_post_process(self) -> None:
         # Test trailing whitespace removal and newlines
         text = "line with spaces    \nline 2"
@@ -104,6 +114,16 @@ class TestSkillLinter(unittest.TestCase):
         formatted = skill_linter.format_markdown(text)
         self.assertIn("```python\ndef foo():\n    pass\n```", formatted)
 
+        # Test complex markdown structures inside a code block
+        text = "```markdown\n-   item 1\n\n| col 1 | col 2 |\n|---|---|\n| a | b |\n\n# Header\n```"
+        formatted = skill_linter.format_markdown(text)
+        self.assertEqual(formatted, text + "\n")
+
+        # Test preservation of purely whitespace lines in code blocks
+        text = "```rust\nfn main() {\n    let x = 5;\n    \n    println!(x);\n}\n```"
+        formatted = skill_linter.format_markdown(text)
+        self.assertEqual(formatted, text + "\n")
+
     def test_format_markdown_tables(self) -> None:
         # Test that tables are preserved and not wrapped
         text = "| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |"
@@ -123,6 +143,28 @@ class TestSkillLinter(unittest.TestCase):
         text = "Line 1  \nLine 2"
         formatted = skill_linter.format_markdown(text)
         self.assertEqual(formatted, "Line 1  \nLine 2\n")
+
+    def test_format_markdown_with_issues_table_boundaries(self) -> None:
+        # Test that lines immediately following a table are correctly validated for width
+        text = "| Header |\n| --- |\n| Cell |\nThis is a very long text line immediately following the table with no newline."
+        _, issues = skill_linter.format_markdown_with_issues(text, width=20)
+        self.assertIn("lines exceeding 20 characters", issues)
+
+    def test_format_markdown_with_issues_tables_ignored(self) -> None:
+        text = "| Extremely long table header that exceeds eighty characters |\n| --- |\n| Cell without trailing spaces |\n"
+        _, issues = skill_linter.format_markdown_with_issues(text, width=20)
+        self.assertEqual(issues, [])
+
+    def test_format_markdown_with_issues_code_blocks_ignored(self) -> None:
+        text = "```python\ndef foo():\n\n\n    print('Trailing space here:   ')\n```\n"
+        _, issues = skill_linter.format_markdown_with_issues(text, width=80)
+        self.assertEqual(issues, [])
+
+    def test_format_markdown_with_issues_normal_text(self) -> None:
+        text = "Normal paragraph.\n\n\nAnother normal paragraph with trailing space    \n"
+        _, issues = skill_linter.format_markdown_with_issues(text, width=80)
+        self.assertIn("consecutive empty lines", issues)
+        self.assertIn("trailing whitespace", issues)
 
 
 if __name__ == "__main__":

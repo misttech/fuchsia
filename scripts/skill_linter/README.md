@@ -102,10 +102,12 @@ ensure consistency across all skills:
 - **Smart Exclusions**: The formatter detects and preserves the layout of
   elements that should not be wrapped:
 
-  - **Code Blocks**: Text inside triple backticks (`` ``` ``) is left
-    exactly as-is.
-  - **Tables**: Rows containing pipes (`|`) are detected and excluded
-    from wrapping.
+  - **Code Blocks**: Text inside triple backticks (`` ``` ``) is entirely
+    excluded from formatting, including line wrapping and list item spacing
+    adjustments, preserving it exactly as-is.
+  - **Tables**: Entire table structures (headers, separator rows, and body
+    cells) are detected and excluded from line length limits to avoid breaking
+    table layout formatting.
   - **Headers**: Lines starting with `#` (ATX headers) are ignored.
   - **Blockquotes**: Lines starting with `>` are ignored.
 
