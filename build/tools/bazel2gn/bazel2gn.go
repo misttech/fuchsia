@@ -503,6 +503,14 @@ func listExprToGN(expr *syntax.ListExpr, transformers []transformer) ([]string, 
 	ret := []string{"["}
 
 	for _, elm := range expr.List {
+		shouldSkip, err := hasSkipAnnotation(elm)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check skip annotation: %v", err)
+		}
+		if shouldSkip {
+			continue
+		}
+
 		elmLines, err := exprToGN(elm, transformers)
 		if err != nil {
 			return nil, fmt.Errorf("converting list element: %v", err)

@@ -1055,6 +1055,41 @@ go_binary(
 go_binary("baz") {
 }`,
 		},
+		{
+			name: "Skip list member with comment above",
+			bazel: `
+cc_library(
+	name = "foo",
+	copt = [
+		# @bazel2gn:skip
+		"-ffuchsia-api-level=4293918720",
+		"-Wno-vla-cxx-extension",
+	],
+)
+`,
+			wantGN: `source_set("foo") {
+	copt = [
+		"-Wno-vla-cxx-extension",
+	]
+}`,
+		},
+		{
+			name: "Skip list member with comment inline",
+			bazel: `
+cc_library(
+	name = "foo",
+	copt = [
+		"-ffuchsia-api-level=4293918720", # @bazel2gn:skip
+		"-Wno-vla-cxx-extension",
+	],
+)
+`,
+			wantGN: `source_set("foo") {
+	copt = [
+		"-Wno-vla-cxx-extension",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
