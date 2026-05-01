@@ -81,7 +81,13 @@ void VmDebugCompressor::CompressThread() {
     // Work through all items in the list and attempt to compress them.
     for (Entry entry = Pop(); entry.cow; entry = Pop()) {
       status = instance.get().Arm();
-      ASSERT(status == ZX_OK);
+      if (status != ZX_OK) {
+        // Arm() may fail with ZX_ERR_NO_MEMORY if it cannot allocate temporary resources.
+        // Since this is for random debug compression, we can safely skip this page and continue. We
+        // still want to process the rest of the list to drop RefPtrs to the VmCowPages which might
+        // be holding them alive.
+        continue;
+      }
       VmCowReclaimResult reclaimed = entry.cow->ReclaimPage(
           entry.page, entry.offset, VmCowPages::EvictionAction::IgnoreHint, &instance.get());
       if (reclaimed.is_ok()) {
