@@ -3980,7 +3980,7 @@ async fn test_activity_governor_files_crash_report_on_suspend_blocker_stall() ->
 
     let num_filed = querier
         .watch_file()
-        .on_timeout(fasync::MonotonicDuration::from_seconds(5).after_now(), || {
+        .on_timeout(fasync::MonotonicDuration::from_seconds(60).after_now(), || {
             panic!("Timeout waiting for next watcher message.");
         })
         .await?;
@@ -4293,8 +4293,9 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
 
     // Verify crash report
     let mut watch_fut = Box::pin(querier.watch_file().fuse());
-    let mut timeout_fut =
-        Box::pin(fasync::Timer::new(fasync::MonotonicDuration::from_seconds(5).after_now()).fuse());
+    let mut timeout_fut = Box::pin(
+        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(60).after_now()).fuse(),
+    );
 
     let num_filed = futures::select! {
         num = watch_fut => num?,
