@@ -12,6 +12,7 @@ rustc_library("fbl") {
   sources = [
     "src/canary.rs",
     "src/lib.rs",
+    "src/ring_buffer.rs",
   ]
   with_unit_tests = true
   test_deps = [ ":test_support" ]

@@ -9,5 +9,7 @@
 use zr as _;
 
 mod canary;
+mod ring_buffer;
 
 pub use canary::{Canary, magic};
+pub use ring_buffer::RingBuffer;
