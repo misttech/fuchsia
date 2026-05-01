@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/bazel_idk:defs.bzl", "idk_go_binary_host_tool")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
 go_library(
@@ -21,7 +21,7 @@ go_library(
         "cmd/resolve.go",
     ],
     cgo = True,
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         "//third_party/golibs:github.com/google/subcommands",
         "//tools/lib/color",
@@ -43,7 +43,7 @@ idk_go_binary_host_tool(
     #
     # Here we need to turn it off because `lib` needs CGO support, and pure mode disables CGO.
     pure = "off",  # @bazel2gn:skip
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
 go_test(
@@ -54,7 +54,7 @@ go_test(
     embed = [
         ":lib",
     ],
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
     ],
@@ -63,6 +63,6 @@ go_test(
 install_host_tools(
     name = "host",
     implementation_deps = [":device-finder"],
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     tool_output_names = ["device-finder"],
 )

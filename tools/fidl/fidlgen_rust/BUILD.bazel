@@ -2,14 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
 go_binary_host_tool(
     name = "fidlgen_rust",
     srcs = ["main.go"],
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = [
         "//build/bazel/rules/fidl:__subpackages__",
         # TODO(https://fxbug.dev/454452299): Remove this entry once Rust FIDL
@@ -26,6 +26,6 @@ go_binary_host_tool(
 install_host_tools(
     name = "host",
     implementation_deps = [":fidlgen_rust"],
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     tool_output_names = ["fidlgen_rust"],
 )

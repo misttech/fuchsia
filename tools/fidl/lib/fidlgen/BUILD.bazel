@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -22,7 +22,7 @@ go_library(
         "write_file_if_changed.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/fidl/lib/fidlgen",
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
 go_test(
@@ -37,7 +37,7 @@ go_test(
     embed = [
         ":fidlgen",
     ],
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
         "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",

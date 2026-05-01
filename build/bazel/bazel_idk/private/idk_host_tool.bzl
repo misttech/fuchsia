@@ -4,7 +4,7 @@
 
 """Rule for defining IDK host tools."""
 
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool", "go_binary_host_tool", "rustc_binary_host_tool")
 load(":idk_atom.bzl", "idk_atom")
 load(
@@ -27,8 +27,8 @@ def _idk_host_tool_impl(
         visibility):
     if not name.endswith("_idk"):
         fail('IDK atom `name`s must end with "_idk".')
-    if target_compatible_with != HOST_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+    if target_compatible_with != HOST_OS_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s`." % HOST_OS_CONSTRAINTS)
 
     if not output_name:
         output_name = idk_name
@@ -66,7 +66,7 @@ def _idk_host_tool_impl(
         atom_build_deps = [],
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         visibility = get_atom_visibility(visibility),
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = HOST_OS_CONSTRAINTS,
     )
 
 _idk_host_tool = macro(
@@ -113,10 +113,10 @@ GN note: The default relationship to `idk_name` is different from GN.""",
         # bazel2gn is no longer being used for host tools.
         # "target_compatible_with": None,
         "target_compatible_with": attr.string_list(
-            doc = "Standard meaning. Must be `HOST_CONSTRAINTS`.",
+            doc = "Standard meaning. Must be `HOST_OS_CONSTRAINTS`.",
             mandatory = False,
             configurable = False,
-            default = HOST_CONSTRAINTS,
+            default = HOST_OS_CONSTRAINTS,
         ),
     },
 )
@@ -139,8 +139,8 @@ _BINARY_HOST_TOOL_ATTRS = {
     # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
     # being used for host tools.
     "target_compatible_with": attr.string_list(
-        doc = "Standard meaning. Must be `HOST_CONSTRAINTS`.",
-        default = HOST_CONSTRAINTS,
+        doc = "Standard meaning. Must be `HOST_OS_CONSTRAINTS`.",
+        default = HOST_OS_CONSTRAINTS,
         configurable = False,
     ),
 }
@@ -152,14 +152,14 @@ def _idk_cc_binary_host_tool_impl(
         api_area,
         target_compatible_with,
         **kwargs):
-    if target_compatible_with != HOST_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+    if target_compatible_with != HOST_OS_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s`." % HOST_OS_CONSTRAINTS)
 
     binary_name = name
 
     cc_binary_host_tool(
         name = binary_name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = HOST_OS_CONSTRAINTS,
         **kwargs
     )
 
@@ -169,7 +169,7 @@ def _idk_cc_binary_host_tool_impl(
         category = category,
         api_area = api_area,
         tool = binary_name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = HOST_OS_CONSTRAINTS,
     )
 
 idk_cc_binary_host_tool = macro(
@@ -191,7 +191,7 @@ def idk_go_binary_host_tool(
         api_area,
         # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
         # being used for host tools.
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = HOST_OS_CONSTRAINTS,
         **kwargs):
     """Defines a host tool in the IDK for a `go_binary()` tool.
 
@@ -200,19 +200,19 @@ def idk_go_binary_host_tool(
         idk_name: The name of the tool in the IDK. Usually matches `name`.
         category: Publication level of the tool in the IDK. See _create_idk_atom().
         api_area: The API area responsible for maintaining this tool.
-        target_compatible_with: Standard meaning. Must be `HOST_CONSTRAINTS`.
+        target_compatible_with: Standard meaning. Must be `HOST_OS_CONSTRAINTS`.
         **kwargs: Passed to `go_binary()`.
 
     GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
     """
-    if target_compatible_with != HOST_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+    if target_compatible_with != HOST_OS_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s`." % HOST_OS_CONSTRAINTS)
 
     binary_name = name
 
     go_binary_host_tool(
         name = binary_name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = HOST_OS_CONSTRAINTS,
         **kwargs
     )
 
@@ -222,7 +222,7 @@ def idk_go_binary_host_tool(
         category = category,
         api_area = api_area,
         tool = binary_name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = HOST_OS_CONSTRAINTS,
     )
 
 def _idk_rustc_binary_host_tool_impl(
@@ -232,14 +232,14 @@ def _idk_rustc_binary_host_tool_impl(
         api_area,
         target_compatible_with,
         **kwargs):
-    if target_compatible_with != HOST_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+    if target_compatible_with != HOST_OS_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s`." % HOST_OS_CONSTRAINTS)
 
     binary_name = name
 
     rustc_binary_host_tool(
         name = binary_name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = HOST_OS_CONSTRAINTS,
         **kwargs
     )
 
@@ -249,7 +249,7 @@ def _idk_rustc_binary_host_tool_impl(
         category = category,
         api_area = api_area,
         tool = binary_name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = HOST_OS_CONSTRAINTS,
     )
 
 idk_rustc_binary_host_tool = macro(
