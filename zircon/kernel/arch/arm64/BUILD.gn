@@ -28,8 +28,7 @@ if (toolchain_environment == "kernel.phys" ||
     asmflags = cflags
     ldflags = cflags
 
-    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
-    rustflags = [ "--rust-is-too-dangerous-until-we-plumb-general-regs-only" ]
+    rustflags = [ "-Ctarget-feature=-neon,-sve,-sve2" ]
   }
 
   # Reserve a register (x20) to be called percpu_ptr in <lib/arch/asm.h>.
