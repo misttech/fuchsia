@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 #![allow(non_camel_case_types)]
+#![no_std]
 
-use std::fmt::{self, Debug};
-use std::hash::{Hash, Hasher};
-use std::sync::atomic::AtomicI32;
+use core::fmt::{self, Debug};
+use core::hash::{Hash, Hasher};
+use core::sync::atomic::AtomicI32;
 #[cfg(feature = "zerocopy")]
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
@@ -114,7 +115,7 @@ multiconst!(zx_koid_t, [
 
 multiconst!(zx_time_t, [
     ZX_TIME_INFINITE = i64::MAX;
-    ZX_TIME_INFINITE_PAST = ::std::i64::MIN;
+    ZX_TIME_INFINITE_PAST = ::core::i64::MIN;
 ]);
 
 multiconst!(zx_rights_t, [
@@ -996,7 +997,7 @@ pub struct zx_channel_iovec_t {
 impl Default for zx_channel_iovec_t {
     fn default() -> Self {
         Self {
-            buffer: std::ptr::null(),
+            buffer: core::ptr::null(),
             capacity: Default::default(),
             padding1: Default::default(),
         }
@@ -1466,9 +1467,9 @@ pub struct zx_thread_state_general_regs_t {
 }
 
 #[cfg(target_arch = "x86_64")]
-impl std::fmt::Debug for zx_thread_state_general_regs_t {
+impl core::fmt::Debug for zx_thread_state_general_regs_t {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct(std::any::type_name::<Self>())
+        f.debug_struct(core::any::type_name::<Self>())
             .field("rax", &format_args!("{:#x}", self.rax))
             .field("rbx", &format_args!("{:#x}", self.rbx))
             .field("rcx", &format_args!("{:#x}", self.rcx))
@@ -1540,16 +1541,16 @@ pub struct zx_thread_state_general_regs_t {
 }
 
 #[cfg(target_arch = "aarch64")]
-impl std::fmt::Debug for zx_thread_state_general_regs_t {
+impl core::fmt::Debug for zx_thread_state_general_regs_t {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct RegisterAsHex(u64);
-        impl std::fmt::Debug for RegisterAsHex {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        impl core::fmt::Debug for RegisterAsHex {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 write!(f, "{:#x}", self.0)
             }
         }
 
-        f.debug_struct(std::any::type_name::<Self>())
+        f.debug_struct(core::any::type_name::<Self>())
             .field("r", &self.r.map(RegisterAsHex))
             .field("lr", &format_args!("{:#x}", self.lr))
             .field("sp", &format_args!("{:#x}", self.sp))
@@ -1689,9 +1690,9 @@ pub struct zx_thread_state_general_regs_t {
 }
 
 #[cfg(target_arch = "riscv64")]
-impl std::fmt::Debug for zx_thread_state_general_regs_t {
+impl core::fmt::Debug for zx_thread_state_general_regs_t {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct(std::any::type_name::<Self>())
+        f.debug_struct(core::any::type_name::<Self>())
             .field("pc", &format_args!("{:#x}", self.pc))
             .field("ra", &format_args!("{:#x}", self.ra)) // x1
             .field("sp", &format_args!("{:#x}", self.sp)) // x2
@@ -2528,7 +2529,7 @@ struct_decl_macro! {
         pub data: [u8; ZX_LOG_RECORD_DATA_MAX],
     }
 }
-const_assert_eq!(std::mem::size_of::<zx_log_record_t>(), ZX_LOG_RECORD_MAX);
+const_assert_eq!(core::mem::size_of::<zx_log_record_t>(), ZX_LOG_RECORD_MAX);
 
 zx_log_record_t!(zx_log_record_t);
 
@@ -2942,6 +2943,9 @@ pub struct zx_wake_source_report_header_t {
 
 #[cfg(test)]
 mod test {
+    #[cfg(test)]
+    extern crate alloc;
+
     use super::*;
 
     #[test]
@@ -2979,7 +2983,7 @@ mod test {
             padding1: [-, -, -, -], \
             value: 333, \
             error_bound: 444 }";
-        assert_eq!(format!("{:?}", test_struct), expectation);
+        assert_eq!(alloc::format!("{:?}", test_struct), expectation);
     }
 }
 
