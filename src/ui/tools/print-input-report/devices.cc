@@ -184,6 +184,33 @@ void PrintDeviceInfo(Printer* printer,
   }
   printer->DecreaseIndent();
 
+  printer->Print("Manufacturer Name:\n");
+  printer->IncreaseIndent();
+  if (device_info.has_manufacturer_name()) {
+    printer->Print("%s\n", device_info.manufacturer_name().data());
+  } else {
+    printer->Print("None\n");
+  }
+  printer->DecreaseIndent();
+
+  printer->Print("Product Name:\n");
+  printer->IncreaseIndent();
+  if (device_info.has_product_name()) {
+    printer->Print("%s\n", device_info.product_name().data());
+  } else {
+    printer->Print("None\n");
+  }
+  printer->DecreaseIndent();
+
+  printer->Print("Serial Number:\n");
+  printer->IncreaseIndent();
+  if (device_info.has_serial_number()) {
+    printer->Print("%s\n", device_info.serial_number().data());
+  } else {
+    printer->Print("None\n");
+  }
+  printer->DecreaseIndent();
+
   printer->DecreaseIndent();
 }
 

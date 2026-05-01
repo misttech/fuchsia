@@ -764,6 +764,52 @@ TEST_F(PrintInputReport, PrintDeviceInfo) {
       "    0x1111\n",
       "  Polling Rate:\n",
       "    1000 usec\n",
+      "  Manufacturer Name:\n",
+      "    None\n",
+      "  Product Name:\n",
+      "    None\n",
+      "  Serial Number:\n",
+      "    None\n",
+  });
+
+  print_input_report::PrintInputDescriptor(std::string("test"), &printer, std::move(*client_));
+
+  loop_->RunUntilIdle();
+  printer.AssertSawAllStrings();
+}
+
+TEST_F(PrintInputReport, PrintDeviceInfoStrings) {
+  auto descriptor = std::make_unique<fuchsia::input::report::DeviceDescriptor>();
+  auto device_info = descriptor->mutable_device_information();
+
+  device_info->set_vendor_id(0x1234);
+  device_info->set_product_id(0x4321);
+  device_info->set_version(0x1111);
+  device_info->set_polling_rate(1000);
+  device_info->set_manufacturer_name("Google");
+  device_info->set_product_name("Fuchsia Device");
+  device_info->set_serial_number("1234567890");
+
+  fake_device_->SetDescriptor(std::move(descriptor));
+
+  FakePrinter printer;
+  printer.SetExpectedStrings(std::vector<std::string>{
+      "Descriptor from file: test\n",
+      "Device Info:\n",
+      "  Vendor ID:\n",
+      "    0x1234\n",
+      "  Product ID:\n",
+      "    0x4321\n",
+      "  Version:\n",
+      "    0x1111\n",
+      "  Polling Rate:\n",
+      "    1000 usec\n",
+      "  Manufacturer Name:\n",
+      "    Google\n",
+      "  Product Name:\n",
+      "    Fuchsia Device\n",
+      "  Serial Number:\n",
+      "    1234567890\n",
   });
 
   print_input_report::PrintInputDescriptor(std::string("test"), &printer, std::move(*client_));
