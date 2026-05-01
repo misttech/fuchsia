@@ -307,6 +307,10 @@ zx_status_t sys_vmar_map_iob(zx_handle_t handle, zx_vm_option_t options, size_t 
                              size_t region_length, user_out_ptr<vaddr_t> mapped_addr) {
   auto* up = ProcessDispatcher::GetCurrent();
 
+  if (options & ZX_VM_FAULT_BEYOND_STREAM_SIZE) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   // Lookup the VMAR dispatcher from handle.
   fbl::RefPtr<VmAddressRegionDispatcher> vmar;
   zx_rights_t vmar_rights;

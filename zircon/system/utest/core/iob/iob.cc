@@ -1854,4 +1854,26 @@ TEST(Iob, VmoKoid) {
   EXPECT_LT(new_vmos, 20);
 }
 
+// Regression test for b/504721827.
+TEST(Iob, VmarMapIobWithFaultBeyondStreamSizeReturnsError) {
+  zx::iob ep0, ep1;
+  zx_iob_region_t region = {};
+  region.type = ZX_IOB_REGION_TYPE_PRIVATE;
+  region.access = ZX_IOB_ACCESS_EP0_CAN_MAP_READ | ZX_IOB_ACCESS_EP0_CAN_MAP_WRITE;
+  region.size = 0x1000;
+  region.discipline.type = ZX_IOB_DISCIPLINE_TYPE_NONE;
+  region.private_region.options = 0;
+
+  ASSERT_OK(zx::iob::create(0, &region, 1, &ep0, &ep1));
+
+  zx_vaddr_t addr = 0;
+  // This used to crash the kernel due to a missing stream size manager.
+  // With the feature disabled, it should return ZX_ERR_INVALID_ARGS.
+  zx_status_t status = zx::vmar::root_self()->map_iob(
+      ZX_VM_PERM_READ | ZX_VM_MAP_RANGE | ZX_VM_FAULT_BEYOND_STREAM_SIZE | ZX_VM_ALLOW_FAULTS, 0,
+      ep0, 0, 0, 0x1000, &addr);
+
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, status);
+}
+
 }  // namespace
