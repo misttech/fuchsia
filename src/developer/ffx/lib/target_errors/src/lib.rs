@@ -93,6 +93,10 @@ pub enum FfxTargetError {
         target: Option<String>,
         logs: Option<String>,
     },
+
+    #[cfg(not(target_os = "fuchsia"))]
+    #[error("Communication with the daemon failed: {error}. Target: {}", target_string(.target))]
+    DaemonCommunicationError { target: Option<String>, error: std::sync::Arc<fidl::Error> },
 }
 
 pub fn target_string(matcher: &Option<String>) -> String {
@@ -143,6 +147,7 @@ impl IntoExitCode for FfxTargetError {
             FfxTargetError::TargetConnectionError { err, .. } => {
                 i32::try_from(err.into_primitive()).unwrap_or(1)
             }
+            FfxTargetError::DaemonCommunicationError { .. } => 1,
         }
     }
 }
@@ -166,6 +171,9 @@ impl Into<FfxError> for FfxTargetError {
                     target: target.clone(),
                     logs: logs.clone(),
                 }
+            }
+            FfxTargetError::DaemonCommunicationError { ref target, .. } => {
+                FfxError::DaemonError { err: Box::new(self.clone()), target: target.clone() }
             }
         }
     }

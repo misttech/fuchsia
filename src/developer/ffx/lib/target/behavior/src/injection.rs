@@ -143,6 +143,7 @@ impl Injection {
             &self.env_context,
         )
         .await
+        .map_err(anyhow::Error::from)
     }
 
     async fn target_factory_inner(&self) -> anyhow::Result<TargetProxy> {

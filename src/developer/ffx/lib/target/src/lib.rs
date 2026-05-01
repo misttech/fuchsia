@@ -82,7 +82,7 @@ pub async fn get_remote_proxy(
     proxy_timeout: Duration,
     mut target_info: Option<&mut Option<ffx::TargetInfo>>,
     context: &EnvironmentContext,
-) -> Result<RemoteControlProxy> {
+) -> std::result::Result<RemoteControlProxy, FfxTargetError> {
     let mut target_info_out = None;
     let res = loop {
         match get_remote_proxy_impl(
@@ -96,23 +96,25 @@ pub async fn get_remote_proxy(
         {
             Ok(p) => break Ok(p),
             Err(e) => {
-                let e = e.downcast::<FfxTargetError>()?;
-                let FfxTargetError::TargetConnectionError { err, .. } = e else {
-                    break Err(e.into());
-                };
-                match err {
-                    ffx::TargetConnectionError::KeyVerificationFailure
-                    | ffx::TargetConnectionError::InvalidArgument
-                    | ffx::TargetConnectionError::PermissionDenied => {
-                        break Err(anyhow::Error::new(e));
-                    }
+                match &e {
+                    FfxTargetError::TargetConnectionError { err, .. } => match err {
+                        ffx::TargetConnectionError::KeyVerificationFailure
+                        | ffx::TargetConnectionError::InvalidArgument
+                        | ffx::TargetConnectionError::PermissionDenied => {
+                            break Err(e.clone());
+                        }
+                        _ => {
+                            let retry_info = format!(
+                                "Retrying connection after non-fatal error encountered: {e}"
+                            );
+                            log::info!("{}", retry_info.as_str());
+                            // Insert a small delay to prevent too tight of a spinning loop.
+                            fuchsia_async::Timer::new(Duration::from_millis(20)).await;
+                            continue;
+                        }
+                    },
                     _ => {
-                        let retry_info =
-                            format!("Retrying connection after non-fatal error encountered: {e}");
-                        log::info!("{}", retry_info.as_str());
-                        // Insert a small delay to prevent too tight of a spinning loop.
-                        fuchsia_async::Timer::new(Duration::from_millis(20)).await;
-                        continue;
+                        break Err(e.clone());
                     }
                 }
             }
@@ -130,10 +132,16 @@ async fn get_remote_proxy_impl(
     proxy_timeout: &Duration,
     target_info: &mut Option<ffx::TargetInfo>,
     context: &EnvironmentContext,
-) -> Result<RemoteControlProxy> {
+) -> std::result::Result<RemoteControlProxy, FfxTargetError> {
     // See if we need to do local resolution. (Do it here not in
     // open_target_with_fut because o_t_w_f is not async)
-    let target_spec = resolve::maybe_locally_resolve_target_spec(target_spec, context).await?;
+    let target_spec = resolve::maybe_locally_resolve_target_spec(target_spec, context)
+        .await
+        .map_err(|_| FfxTargetError::OpenTargetError {
+            err: ffx::OpenTargetError::FailedDiscovery,
+            target: target_spec.clone().into(),
+            targets: vec![],
+        })?;
     let tsc = target_spec.clone();
     let (target_proxy, target_proxy_fut) =
         open_target_with_fut(&tsc, daemon_proxy.clone(), *proxy_timeout)?;
@@ -145,14 +153,17 @@ async fn get_remote_proxy_impl(
         select! {
             res = open_remote_control_fut => {
                 match res {
-                    Err(e) => {
+                    Err(_) => {
                         // Getting here is most likely the result of a PEER_CLOSED error, which
                         // may be because the target_proxy closure has propagated faster than
                         // the error (which can happen occasionally). To counter this, wait for
                         // the target proxy to complete, as it will likely only need to be
                         // polled once more (open_remote_control_fut partially depends on it).
-                        target_proxy_fut.await?;
-                        return Err(e.into());
+                        let _ = target_proxy_fut.await;
+                        return Err(FfxTargetError::DaemonError {
+                            err: DaemonError::ProtocolOpenError,
+                            target: target_spec.clone().into(),
+                        });
                     }
                     Ok(r) => break r,
                 }
@@ -160,15 +171,24 @@ async fn get_remote_proxy_impl(
             res = target_proxy_fut => res?,
         }
     };
-    let info = target_proxy.identity().await?;
+    let info =
+        target_proxy.identity().await.map_err(|e| FfxTargetError::DaemonCommunicationError {
+            target: target_spec.clone().into(),
+            error: std::sync::Arc::new(e),
+        })?;
     *target_info = Some(info.into());
     match res {
         Ok(_) => Ok(remote_proxy),
-        Err(err) => Err(anyhow::Error::new(FfxTargetError::TargetConnectionError {
+        Err(err) => Err(FfxTargetError::TargetConnectionError {
             err,
             target: target_spec.into(),
-            logs: Some(target_proxy.get_ssh_logs().await?),
-        })),
+            logs: Some(
+                target_proxy
+                    .get_ssh_logs()
+                    .await
+                    .unwrap_or_else(|_| "failed to get logs".to_string()),
+            ),
+        }),
     }
 }
 
@@ -184,7 +204,10 @@ pub fn open_target_with_fut<'a, 'b: 'a>(
     target: &'a TargetInfoQuery,
     daemon_proxy: DaemonProxy,
     target_timeout: Duration,
-) -> Result<(TargetProxy, impl Future<Output = Result<()>> + 'a)> {
+) -> std::result::Result<
+    (TargetProxy, impl Future<Output = std::result::Result<(), FfxTargetError>> + 'a),
+    FfxTargetError,
+> {
     let (tc_proxy, tc_server_end) = create_proxy::<TargetCollectionMarker>();
     let (target_proxy, target_server_end) = create_proxy::<TargetMarker>();
     let target_collection_fut = async move {
@@ -193,12 +216,16 @@ pub fn open_target_with_fut<'a, 'b: 'a>(
                 TargetCollectionMarker::PROTOCOL_NAME,
                 tc_server_end.into_channel(),
             )
-            .await?
+            .await
+            .map_err(|_| FfxTargetError::DaemonError {
+                err: DaemonError::ProtocolOpenError,
+                target: target.clone().into(),
+            })?
             .map_err(|err| FfxTargetError::DaemonError {
                 err: err.into(),
                 target: target.clone().into(),
             })?;
-        Result::<()>::Ok(())
+        Ok(())
     };
     let target_handle_fut = async move {
         timeout(
@@ -212,13 +239,17 @@ pub fn open_target_with_fut<'a, 'b: 'a>(
         .map_err(|_| FfxTargetError::DaemonError {
             err: DaemonError::Timeout,
             target: target.clone().into(),
-        })??
+        })?
+        .map_err(|_| FfxTargetError::DaemonError {
+            err: DaemonError::ProtocolOpenError,
+            target: target.clone().into(),
+        })?
         .map_err(|err| FfxTargetError::OpenTargetError {
             err,
             target: target.clone().into(),
             targets: vec![],
         })?;
-        Result::<()>::Ok(())
+        Ok(())
     };
     let fut = async move {
         let ((), ()) = futures::try_join!(target_collection_fut, target_handle_fut)?;
