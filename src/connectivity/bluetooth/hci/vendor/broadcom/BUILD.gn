@@ -40,7 +40,6 @@ source_set("common") {
   sources = [
     "bt_hci_broadcom.cc",
     "bt_hci_broadcom.h",
-    "packets.h",
   ]
 
   deps = [

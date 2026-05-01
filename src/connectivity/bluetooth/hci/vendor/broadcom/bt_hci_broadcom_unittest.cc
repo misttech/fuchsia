@@ -32,7 +32,6 @@
 #include "lib/fidl/cpp/wire/unknown_interaction_handler.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/bt_hci_broadcom_config.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.emb.h"
-#include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/synchronous_vfs.h"
@@ -669,7 +668,8 @@ TEST_F(BtHciBroadcomTest, ControllerReturnsEventSmallerThanEventHeader) {
 TEST_F(BtHciBroadcomTest, ControllerReturnsEventSmallerThanCommandComplete) {
   driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
     env.transport_device_.SetCustomizedReply(std::vector<uint8_t>(
-        kCommandCompleteEvent.data(), kCommandCompleteEvent.data() + sizeof(HciEventHeader)));
+        kCommandCompleteEvent.data(),
+        kCommandCompleteEvent.data() + pw::bluetooth::emboss::EventHeader::MaxSizeInBytes()));
   });
 
   SetFirmware();
@@ -814,7 +814,7 @@ TEST_F(BtHciBroadcomTest, VendorProtocolUnknownMethod) {
 }
 
 TEST_F(BtHciBroadcomInitializedTest, EncodeSetAclPrioritySuccessWithParametersHighSink) {
-  std::array<uint8_t, kBcmSetAclPriorityCmdSize> result_buffer;
+  std::array<uint8_t, SetAclPriorityCommand::MaxSizeInBytes()> result_buffer;
   fidl::Arena arena;
   auto builder = fhbt::wire::VendorSetAclPriorityParams::Builder(arena);
   builder.connection_handle(0xFF00);
@@ -828,20 +828,20 @@ TEST_F(BtHciBroadcomInitializedTest, EncodeSetAclPrioritySuccessWithParametersHi
 
   std::copy(result->value()->encoded.begin(), result->value()->encoded.end(),
             result_buffer.begin());
-  const std::array<uint8_t, kBcmSetAclPriorityCmdSize> kExpectedBuffer = {
+  const std::array<uint8_t, SetAclPriorityCommand::MaxSizeInBytes()> kExpectedBuffer = {
       0x1A,
       0xFD,  // OpCode
       0x04,  // size
       0x00,
-      0xFF,                  // handle
-      kBcmAclPriorityHigh,   // priority
-      kBcmAclDirectionSink,  // direction
+      0xFF,  // handle
+      0x01,  // priority (High)
+      0x01,  // direction (Sink)
   };
   EXPECT_EQ(result_buffer, kExpectedBuffer);
 }
 
 TEST_F(BtHciBroadcomInitializedTest, EncodeSetAclPrioritySuccessWithParametersNormalSource) {
-  std::array<uint8_t, kBcmSetAclPriorityCmdSize> result_buffer;
+  std::array<uint8_t, SetAclPriorityCommand::MaxSizeInBytes()> result_buffer;
   fidl::Arena arena;
   auto builder = fhbt::wire::VendorSetAclPriorityParams::Builder(arena);
   builder.connection_handle(0xFF00);
@@ -855,14 +855,14 @@ TEST_F(BtHciBroadcomInitializedTest, EncodeSetAclPrioritySuccessWithParametersNo
 
   std::copy(result->value()->encoded.begin(), result->value()->encoded.end(),
             result_buffer.begin());
-  const std::array<uint8_t, kBcmSetAclPriorityCmdSize> kExpectedBuffer = {
+  const std::array<uint8_t, SetAclPriorityCommand::MaxSizeInBytes()> kExpectedBuffer = {
       0x1A,
       0xFD,  // OpCode
       0x04,  // size
       0x00,
-      0xFF,                    // handle
-      kBcmAclPriorityNormal,   // priority
-      kBcmAclDirectionSource,  // direction
+      0xFF,  // handle
+      0x00,  // priority (Normal)
+      0x00,  // direction (Source)
   };
   EXPECT_EQ(result_buffer, kExpectedBuffer);
 }

@@ -37,13 +37,16 @@
 #include "lib/fpromise/promise.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/bt_hci_broadcom_config.h"
 #include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.emb.h"
-#include "src/connectivity/bluetooth/hci/vendor/broadcom/packets.h"
 #include "tools/power_config/lib/cpp/power_config.h"
 
 #include <pw_bluetooth/hci_events.emb.h>
 
 namespace bt_hci_broadcom {
 namespace {
+
+constexpr size_t kMaxCommandPacketPayloadSize = 255;
+constexpr size_t kMaxHciCommandSize =
+    CommandHeader::IntrinsicSizeInBytes() + kMaxCommandPacketPayloadSize;
 
 constexpr uint8_t kDefaultBrPowerCap = 72;
 constexpr uint8_t kDefaultEdrPowerCap = 60;
@@ -364,12 +367,12 @@ void BtHciBroadcom::GetFeatures(GetFeaturesCompleter::Sync& completer) {
 
 void BtHciBroadcom::EncodeCommand(EncodeCommandRequestView request,
                                   EncodeCommandCompleter::Sync& completer) {
-  uint8_t data_buffer[kBcmSetAclPriorityCmdSize];
+  uint8_t data_buffer[SetAclPriorityCommand::MaxSizeInBytes()];
   switch (request->Which()) {
     case fhbt::wire::VendorCommand::Tag::kSetAclPriority: {
       EncodeSetAclPriorityCommand(request->set_acl_priority(), data_buffer);
-      auto encoded_cmd =
-          fidl::VectorView<uint8_t>::FromExternal(data_buffer, kBcmSetAclPriorityCmdSize);
+      auto encoded_cmd = fidl::VectorView<uint8_t>::FromExternal(
+          data_buffer, SetAclPriorityCommand::MaxSizeInBytes());
       completer.ReplySuccess(encoded_cmd);
       return;
     }
@@ -487,21 +490,18 @@ void BtHciBroadcom::EncodeSetAclPriorityCommand(fhbt::wire::VendorSetAclPriority
                params.has_priority() ? "" : "priority", params.has_direction() ? "" : "direction");
     return;
   }
-  BcmSetAclPriorityCmd command = {
-      .header =
-          {
-              .opcode = htole16(kBcmSetAclPriorityCmdOpCode),
-              .parameter_total_size = sizeof(BcmSetAclPriorityCmd) - sizeof(HciCommandHeader),
-          },
-      .connection_handle = htole16(params.connection_handle()),
-      .priority = (params.priority() == fhbt::VendorAclPriority::kNormal) ? kBcmAclPriorityNormal
-                                                                          : kBcmAclPriorityHigh,
-      .direction = (params.direction() == fhbt::VendorAclDirection::kSource)
-                       ? kBcmAclDirectionSource
-                       : kBcmAclDirectionSink,
-  };
 
-  memcpy(out_buffer, &command, sizeof(command));
+  auto view = MakeSetAclPriorityCommandView(static_cast<uint8_t*>(out_buffer),
+                                            SetAclPriorityCommand::MaxSizeInBytes());
+  view.header().opcode().Write(BroadcomOpCode::SET_ACL_PRIORITY);
+  view.header().parameter_total_size().Write(SetAclPriorityCommand::parameter_size());
+  view.connection_handle().Write(params.connection_handle());
+  view.priority().Write((params.priority() == fhbt::VendorAclPriority::kNormal)
+                            ? AclPriority::NORMAL
+                            : AclPriority::HIGH);
+  view.direction().Write((params.direction() == fhbt::VendorAclDirection::kSource)
+                             ? AclDirection::SOURCE
+                             : AclDirection::SINK);
 }
 
 void BtHciBroadcom::OnReceivePacket(std::vector<uint8_t>& packet) {
@@ -828,18 +828,16 @@ void BtHciBroadcom::HandleWakeLeaseTimeout() {
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::SetBdaddr(
     const std::array<uint8_t, kMacAddrLen>& bdaddr) {
-  BcmSetBdaddrCmd command = {
-      .header =
-          {
-              .opcode = kBcmSetBdaddrCmdOpCode,
-              .parameter_total_size = sizeof(BcmSetBdaddrCmd) - sizeof(HciCommandHeader),
-          },
-      .bdaddr =
-          {// HCI expects little endian. Swap bytes
-           bdaddr[5], bdaddr[4], bdaddr[3], bdaddr[2], bdaddr[1], bdaddr[0]},
-  };
+  std::array<std::byte, SetBdaddrCommand::MaxSizeInBytes()> storage;
+  auto view = MakeSetBdaddrCommandView(&storage);
+  view.header().opcode().Write(BroadcomOpCode::SET_BD_ADDR);
+  view.header().parameter_total_size().Write(SetBdaddrCommand::parameter_size());
+  std::byte* raw_addr_storage = view.bdaddr().BackingStorage().data();
+  for (size_t i = 0; i < kMacAddrLen; ++i) {
+    raw_addr_storage[i] = static_cast<std::byte>(bdaddr[kMacAddrLen - 1 - i]);
+  }
 
-  return SendCommand(&command.header, sizeof(command)).and_then([](std::vector<uint8_t>&) {});
+  return SendCommand(view).and_then([](const std::vector<uint8_t>&) {});
 }
 
 fpromise::promise<void, zx_status_t> BtHciBroadcom::SetDefaultPowerCaps() {
@@ -934,13 +932,21 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::LoadFirmware(bool fast_downl
     view.fast_download_mode().Write(0x01);
     download_cmd_promise =
         SendCommand(view)
-            .and_then([this](std::vector<uint8_t>& /*event*/) {
-              return SendCommand(&kStartFirmwareDownloadCmd, sizeof(kStartFirmwareDownloadCmd));
+            .and_then([this](const std::vector<uint8_t>& /*event*/) {
+              std::array<std::byte, StartFirmwareDownloadCommand::MaxSizeInBytes()> storage;
+              auto view = MakeStartFirmwareDownloadCommandView(&storage);
+              view.header().opcode().Write(BroadcomOpCode::START_FIRMWARE_DOWNLOAD);
+              view.header().parameter_total_size().Write(
+                  StartFirmwareDownloadCommand::parameter_size());
+              return SendCommand(view);
             })
             .box();
   } else {
-    download_cmd_promise =
-        SendCommand(&kStartFirmwareDownloadCmd, sizeof(kStartFirmwareDownloadCmd));
+    std::array<std::byte, StartFirmwareDownloadCommand::MaxSizeInBytes()> storage;
+    auto view = MakeStartFirmwareDownloadCommandView(&storage);
+    view.header().opcode().Write(BroadcomOpCode::START_FIRMWARE_DOWNLOAD);
+    view.header().parameter_total_size().Write(StartFirmwareDownloadCommand::parameter_size());
+    download_cmd_promise = SendCommand(view);
   }
 
   return download_cmd_promise
@@ -1058,7 +1064,7 @@ zx_status_t BtHciBroadcom::SendVmoAsCommands(zx::vmo vmo, size_t size, bool fast
     size_t remaining = size - offset;
     size_t read_amount = (remaining > sizeof(buffer) ? sizeof(buffer) : remaining);
 
-    if (read_amount < sizeof(HciCommandHeader)) {
+    if (read_amount < CommandHeader::IntrinsicSizeInBytes()) {
       fdf::error("short HCI command in firmware download");
       return ZX_ERR_INTERNAL;
     }
@@ -1068,9 +1074,9 @@ zx_status_t BtHciBroadcom::SendVmoAsCommands(zx::vmo vmo, size_t size, bool fast
       return status;
     }
 
-    HciCommandHeader header;
-    std::memcpy(&header, buffer, sizeof(HciCommandHeader));
-    size_t length = header.parameter_total_size + sizeof(header);
+    auto header_view = MakeCommandHeaderView(buffer, CommandHeader::IntrinsicSizeInBytes());
+    size_t length =
+        header_view.parameter_total_size().Read() + CommandHeader::IntrinsicSizeInBytes();
     if (read_amount < length) {
       fdf::error("short HCI command in firmware download");
       return ZX_ERR_INTERNAL;
@@ -1084,7 +1090,7 @@ zx_status_t BtHciBroadcom::SendVmoAsCommands(zx::vmo vmo, size_t size, bool fast
       }
 
       // In Fast Download mode, only the Launch RAM command returns an event.
-      if (le16toh(header.opcode) == static_cast<uint16_t>(BroadcomOpCode::LAUNCH_RAM)) {
+      if (header_view.opcode().Read() == BroadcomOpCode::LAUNCH_RAM) {
         if (zx::result<std::vector<uint8_t>> res = ReadEventSync(); res.is_error()) {
           fdf::error("Failed to read event for Launch RAM command: {}",
                      zx_status_get_string(res.error_value()));

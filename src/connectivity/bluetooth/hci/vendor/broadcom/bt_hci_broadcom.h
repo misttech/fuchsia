@@ -25,8 +25,6 @@
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
 
-#include "packets.h"
-
 namespace bt_hci_broadcom {
 
 constexpr uint32_t kTargetBaudRate = 2000000;
