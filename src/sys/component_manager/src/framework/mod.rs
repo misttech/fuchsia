@@ -161,7 +161,7 @@ fn add_protocol<P: DiscoverableProtocolMarker>(
     });
     // Dictionary inserts succeed even when they return an error.
     let source = component.as_weak();
-    dict.insert(
+    let prev = dict.insert(
         P::PROTOCOL_NAME.parse().unwrap(),
         LaunchTaskOnReceive::new(
             capability_source,
@@ -174,8 +174,8 @@ fn add_protocol<P: DiscoverableProtocolMarker>(
         )
         .into_router()
         .into(),
-    )
-    .unwrap();
+    );
+    assert!(prev.is_none(), "conflict found in framework dictionary");
 }
 
 fn add_pkg_dir(component: &Arc<ComponentInstance>, dict: &Dictionary) {
@@ -215,5 +215,6 @@ fn add_pkg_dir(component: &Arc<ComponentInstance>, dict: &Dictionary) {
             .boxed()
         }),
     );
-    dict.insert("pkg".parse().unwrap(), launch_task_on_receive.into_dir_router().into()).unwrap();
+    let prev = dict.insert("pkg".parse().unwrap(), launch_task_on_receive.into_dir_router().into());
+    assert!(prev.is_none(), "conflict with pkg directory in framework dictionary");
 }

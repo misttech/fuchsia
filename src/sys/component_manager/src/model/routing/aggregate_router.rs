@@ -238,7 +238,9 @@ impl AggregateRouter {
                 let path = RelativePath::new(&entry.name).unwrap();
                 let sub_dir = source_dir.clone().with_subdir(path);
                 let name = entry.name.parse().expect("path returned from VFS is not a valid name");
-                aggregate_dictionary.insert(name, sub_dir.into()).expect(
+                let prev = aggregate_dictionary.insert(name, sub_dir.into());
+                assert!(
+                    prev.is_none(),
                     "failed to insert into aggregate dictionary, name collisions should be \
                             prevented by manifest validation",
                 );

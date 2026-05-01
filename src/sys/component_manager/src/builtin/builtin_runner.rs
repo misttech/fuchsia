@@ -539,16 +539,14 @@ impl ElfRunnerProgram {
             svc.insert(
                 fcrunner::ComponentRunnerMarker::PROTOCOL_NAME.parse().unwrap(),
                 elf_runner.into_sender(WeakComponentInstance::invalid()).into(),
-            )
-            .ok();
+            );
             svc.insert(
                 fattribution::ProviderMarker::PROTOCOL_NAME.parse().unwrap(),
                 snapshot_provider.into_sender(WeakComponentInstance::invalid()).into(),
-            )
-            .ok();
+            );
             svc
         };
-        output.insert(SVC.parse().unwrap(), Capability::Dictionary(svc)).ok();
+        output.insert(SVC.parse().unwrap(), Capability::Dictionary(svc));
 
         let this = Self { scope, output, job };
         this

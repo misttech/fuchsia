@@ -160,7 +160,11 @@ pub async fn serve_capability_store(
                     let value = store
                         .remove(&item.value)
                         .ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
-                    this.insert(key, value)
+                    if this.insert(key, value).is_some() {
+                        Err(fsandbox::CapabilityStoreError::ItemAlreadyExists)
+                    } else {
+                        Ok(())
+                    }
                 })();
                 responder.send(result)?;
             }
@@ -208,9 +212,7 @@ pub async fn serve_capability_store(
             fsandbox::CapabilityStoreRequest::DictionaryCopy { id, dest_id, responder } => {
                 let result = (|| {
                     let this = get_dictionary(&store, id)?;
-                    let dict = this
-                        .shallow_copy()
-                        .map_err(|_| fsandbox::CapabilityStoreError::NotDuplicatable)?;
+                    let dict = this.shallow_copy();
                     insert_capability(&mut store, dest_id, Capability::Dictionary(dict))
                 })();
                 responder.send(result)?

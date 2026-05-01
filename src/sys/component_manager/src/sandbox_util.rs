@@ -447,16 +447,16 @@ pub mod tests {
     #[fuchsia::test]
     async fn get_capability() {
         let sub_dict = Dictionary::new();
-        sub_dict
-            .insert("bar".parse().unwrap(), Capability::Dictionary(Dictionary::new()))
-            .expect("dict entry already exists");
+        let prev =
+            sub_dict.insert("bar".parse().unwrap(), Capability::Dictionary(Dictionary::new()));
+        assert!(prev.is_none(), "dict entry already exists");
         let (_, sender) = Connector::new();
-        sub_dict.insert("baz".parse().unwrap(), sender.into()).expect("dict entry already exists");
+        let prev = sub_dict.insert("baz".parse().unwrap(), sender.into());
+        assert!(prev.is_none(), "dict entry already exists");
 
         let test_dict = Dictionary::new();
-        test_dict
-            .insert("foo".parse().unwrap(), Capability::Dictionary(sub_dict))
-            .expect("dict entry already exists");
+        let prev = test_dict.insert("foo".parse().unwrap(), Capability::Dictionary(sub_dict));
+        assert!(prev.is_none(), "dict entry already exists");
 
         assert!(test_dict.get_capability(&RelativePath::dot()).is_some());
         assert!(test_dict.get_capability(&RelativePath::new("nonexistent").unwrap()).is_none());
@@ -472,7 +472,7 @@ pub mod tests {
         assert!(
             test_dict
                 .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dictionary::new().into())
-                .is_ok()
+                .is_none()
         );
         assert!(test_dict.get_capability(&RelativePath::new("foo/bar").unwrap()).is_some());
 
@@ -480,7 +480,7 @@ pub mod tests {
         assert!(
             test_dict
                 .insert_capability(&RelativePath::new("foo/baz").unwrap(), sender.into())
-                .is_ok()
+                .is_none()
         );
         assert!(test_dict.get_capability(&RelativePath::new("foo/baz").unwrap()).is_some());
     }
@@ -491,7 +491,7 @@ pub mod tests {
         assert!(
             test_dict
                 .insert_capability(&RelativePath::new("foo/bar").unwrap(), Dictionary::new().into())
-                .is_ok()
+                .is_none()
         );
         assert!(test_dict.get_capability(&RelativePath::new("foo/bar").unwrap()).is_some());
 
@@ -507,18 +507,18 @@ pub mod tests {
     async fn get_with_request_ok() {
         let bar = Dictionary::new();
         let data = Data::String("hello".into());
-        assert!(bar.insert_capability(&RelativePath::new("data").unwrap(), data.into()).is_ok());
+        assert!(bar.insert_capability(&RelativePath::new("data").unwrap(), data.into()).is_none());
         let bar_router = Router::<Dictionary>::new_ok(bar);
 
         let foo = Dictionary::new();
         assert!(
-            foo.insert_capability(&RelativePath::new("bar").unwrap(), bar_router.into()).is_ok()
+            foo.insert_capability(&RelativePath::new("bar").unwrap(), bar_router.into()).is_none()
         );
         let foo_router = Router::<Dictionary>::new_ok(foo);
 
         let dict = Dictionary::new();
         assert!(
-            dict.insert_capability(&RelativePath::new("foo").unwrap(), foo_router.into()).is_ok()
+            dict.insert_capability(&RelativePath::new("foo").unwrap(), foo_router.into()).is_none()
         );
 
         let request = RouteRequest {
@@ -546,7 +546,7 @@ pub mod tests {
         let foo = Router::<Dictionary>::new_error(RoutingError::SourceCapabilityIsVoid {
             moniker: Moniker::root(),
         });
-        assert!(dict.insert_capability(&RelativePath::new("foo").unwrap(), foo.into()).is_ok());
+        assert!(dict.insert_capability(&RelativePath::new("foo").unwrap(), foo.into()).is_none());
         let request = RouteRequest {
             availability: Some(Availability::Required.native_into_fidl()),
             ..Default::default()
@@ -602,7 +602,7 @@ pub mod tests {
 
         let foo = Dictionary::new();
         let foo = Router::<Dictionary>::new_ok(foo);
-        assert!(dict.insert_capability(&RelativePath::new("foo").unwrap(), foo.into()).is_ok());
+        assert!(dict.insert_capability(&RelativePath::new("foo").unwrap(), foo.into()).is_none());
 
         let request = RouteRequest {
             availability: Some(Availability::Required.native_into_fidl()),
@@ -829,7 +829,8 @@ pub mod tests {
     async fn lazy_get() {
         let source = Capability::Data(Data::String("hello".into()));
         let dict1 = Dictionary::new();
-        dict1.insert("source".parse().unwrap(), source).expect("dict entry already exists");
+        let prev = dict1.insert("source".parse().unwrap(), source);
+        assert!(prev.is_none(), "dict entry already exists");
 
         let base_router = Router::<Dictionary>::new_ok(dict1);
         let downscoped_router: Router<Data> = base_router.lazy_get(
@@ -856,19 +857,17 @@ pub mod tests {
     async fn lazy_get_deep() {
         let source = Capability::Data(Data::String("hello".into()));
         let dict1 = Dictionary::new();
-        dict1.insert("source".parse().unwrap(), source).expect("dict entry already exists");
+        let prev = dict1.insert("source".parse().unwrap(), source);
+        assert!(prev.is_none(), "dict entry already exists");
         let dict2 = Dictionary::new();
-        dict2
-            .insert("dict1".parse().unwrap(), Capability::Dictionary(dict1))
-            .expect("dict entry already exists");
+        let prev = dict2.insert("dict1".parse().unwrap(), Capability::Dictionary(dict1));
+        assert!(prev.is_none(), "dict entry already exists");
         let dict3 = Dictionary::new();
-        dict3
-            .insert("dict2".parse().unwrap(), Capability::Dictionary(dict2))
-            .expect("dict entry already exists");
+        let prev = dict3.insert("dict2".parse().unwrap(), Capability::Dictionary(dict2));
+        assert!(prev.is_none(), "dict entry already exists");
         let dict4 = Dictionary::new();
-        dict4
-            .insert("dict3".parse().unwrap(), Capability::Dictionary(dict3))
-            .expect("dict entry already exists");
+        let prev = dict4.insert("dict3".parse().unwrap(), Capability::Dictionary(dict3));
+        assert!(prev.is_none(), "dict entry already exists");
 
         let base_router = Router::<Dictionary>::new_ok(dict4);
         let downscoped_router: Router<Data> = base_router.lazy_get(
@@ -895,7 +894,8 @@ pub mod tests {
     async fn get_router_or_not_found() {
         let source = Router::<Data>::new_ok(Data::String("hello".into()));
         let dict1 = Dictionary::new();
-        dict1.insert("source".parse().unwrap(), source.into()).expect("dict entry already exists");
+        let prev = dict1.insert("source".parse().unwrap(), source.into());
+        assert!(prev.is_none(), "dict entry already exists");
 
         let router = dict1.get_router_or_not_found::<Data>(
             &RelativePath::new("source").unwrap(),
@@ -915,19 +915,18 @@ pub mod tests {
     async fn get_router_or_not_found_deep() {
         let source = Data::String("hello".into());
         let dict1 = Dictionary::new();
-        dict1.insert("source".parse().unwrap(), source.into()).expect("dict entry already exists");
+        let prev = dict1.insert("source".parse().unwrap(), source.into());
+        assert!(prev.is_none(), "dict entry already exists");
         let dict2 = Dictionary::new();
-        dict2
-            .insert("dict1".parse().unwrap(), Capability::Dictionary(dict1))
-            .expect("dict entry already exists");
+        let prev = dict2.insert("dict1".parse().unwrap(), Capability::Dictionary(dict1));
+        assert!(prev.is_none(), "dict entry already exists");
         let dict3 = Dictionary::new();
-        dict3
-            .insert("dict2".parse().unwrap(), Capability::Dictionary(dict2))
-            .expect("dict entry already exists");
+        let prev = dict3.insert("dict2".parse().unwrap(), Capability::Dictionary(dict2));
+        assert!(prev.is_none(), "dict entry already exists");
         let dict4 = Dictionary::new();
-        dict4
-            .insert("dict3".parse().unwrap(), Router::<Dictionary>::new_ok(dict3).into())
-            .expect("dict entry already exists");
+        let prev =
+            dict4.insert("dict3".parse().unwrap(), Router::<Dictionary>::new_ok(dict3).into());
+        assert!(prev.is_none(), "dict entry already exists");
 
         let router = dict4.get_router_or_not_found::<Data>(
             &RelativePath::new("dict3/dict2/dict1/source").unwrap(),

@@ -334,12 +334,11 @@ mod tests {
 
             // Create a dictionary and add the Sender to it.
             let dictionary = Dictionary::new();
-            dictionary
-                .insert(
-                    fecho::EchoMarker::DEBUG_NAME.parse().unwrap(),
-                    Capability::Connector(sender),
-                )
-                .expect("dict entry already exists");
+            let prev = dictionary.insert(
+                fecho::EchoMarker::DEBUG_NAME.parse().unwrap(),
+                Capability::Connector(sender),
+            );
+            assert!(prev.is_none(), "dict entry already exists");
 
             let (dictionary_handle, handle_other_end) = zx::EventPair::create();
             root.context.remote_capabilities().store(handle_other_end, dictionary).unwrap();
@@ -397,11 +396,11 @@ mod tests {
 
             // Create a dictionary and add the Sender to it.
             let dict = Dictionary::new();
-            dict.insert(
+            let prev = dict.insert(
                 fecho::EchoMarker::DEBUG_NAME.parse().unwrap(),
                 Capability::Connector(sender),
-            )
-            .expect("dict entry already exists");
+            );
+            assert!(prev.is_none(), "dict entry already exists");
 
             #[cfg(fuchsia_api_level_less_than = "HEAD")]
             {

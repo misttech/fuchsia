@@ -165,22 +165,17 @@ pub fn build_root_component_input(
             }
             _ => unreachable!("other types were filtered out above"),
         };
-        root_component_input
-            .capabilities()
-            .insert_capability(&name, router_capability.clone())
-            .expect("failed to insert builtin capability into dictionary");
+        root_component_input.capabilities().insert_capability(&name, router_capability.clone());
         if capability_type == CapabilityTypeName::Runner {
             root_component_input
                 .environment()
                 .runners()
-                .insert_capability(&name, router_capability)
-                .expect("failed to insert builtin runner into dictionary");
+                .insert_capability(&name, router_capability);
         } else if capability_type == CapabilityTypeName::Resolver {
             root_component_input
                 .environment()
                 .resolvers()
-                .insert_capability(&name, router_capability)
-                .expect("failed to insert builtin runner into dictionary");
+                .insert_capability(&name, router_capability);
         }
     }
     let event_stream_decls =
@@ -234,8 +229,7 @@ pub fn build_root_component_input(
             .build();
         root_component_input
             .capabilities()
-            .insert_capability(&event_stream_decl.name, porcelain_router.into())
-            .expect("failed to insert builtin capability into dictionary");
+            .insert_capability(&event_stream_decl.name, porcelain_router.into());
     }
     root_component_input
 }
@@ -307,23 +301,19 @@ impl Routable<Dictionary> for FrameworkRouter {
                     moniker: component.moniker().clone(),
                 },
             ));
-            framework_dict
-                .insert_capability(&name, router.into())
-                .expect("failed to insert framework capability into dictionary");
+            framework_dict.insert_capability(&name, router.into());
         }
         let pkg_name = cm_types::Name::new("pkg").unwrap();
-        framework_dict
-            .insert_capability(
-                &pkg_name,
-                new_debug_only_specific_router::<DirConnector>(CapabilitySource::Framework(
-                    FrameworkSource {
-                        capability: InternalCapability::Directory(pkg_name.clone()),
-                        moniker: component.moniker().clone(),
-                    },
-                ))
-                .into(),
-            )
-            .expect("failed to insert framework pkg directory capability into dictionary");
+        framework_dict.insert_capability(
+            &pkg_name,
+            new_debug_only_specific_router::<DirConnector>(CapabilitySource::Framework(
+                FrameworkSource {
+                    capability: InternalCapability::Directory(pkg_name.clone()),
+                    moniker: component.moniker().clone(),
+                },
+            ))
+            .into(),
+        );
         Ok(Some(framework_dict))
     }
 
@@ -349,9 +339,7 @@ pub fn build_capability_sourced_capabilities_dictionary(
                     moniker: component.moniker().clone(),
                 },
             ));
-            output
-                .insert_capability(&storage_decl.name, router.into())
-                .expect("failed to insert capability backed capability into dictionary");
+            output.insert_capability(&storage_decl.name, router.into());
         }
     }
     output
@@ -415,8 +403,7 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
                             moniker: self.component.moniker.clone(),
                         }),
                     );
-                    dict.insert_capability(&capability_name, router.into())
-                        .expect("can insert to dict");
+                    dict.insert_capability(&capability_name, router.into());
                 }
                 CapabilityTypeName::Config => {
                     let router = new_debug_only_specific_router::<Data>(
@@ -428,8 +415,7 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
                             moniker: self.component.moniker.clone(),
                         }),
                     );
-                    dict.insert_capability(&capability_name, router.into())
-                        .expect("can insert to dict");
+                    dict.insert_capability(&capability_name, router.into());
                 }
                 _ => unreachable!(
                     "Only protocol capabilities are supported through scrutinity in dynamic dicts at the moment"

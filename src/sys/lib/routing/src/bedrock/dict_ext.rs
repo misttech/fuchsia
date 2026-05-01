@@ -8,7 +8,6 @@ use capability_source::{CapabilitySource, RemotedAtSource};
 use cm_rust::CapabilityTypeName;
 use cm_types::{IterablePath, RelativePath};
 use fidl_fuchsia_component_runtime::RouteRequest;
-use fidl_fuchsia_component_sandbox as fsandbox;
 use itertools::Itertools;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
@@ -39,12 +38,13 @@ pub trait DictExt {
         T: CapabilityBound,
         Router<T>: TryFrom<Capability>;
 
-    /// Inserts the capability at the path. Intermediary dictionaries are created as needed.
+    /// Inserts the capability at the path. Intermediary dictionaries are created as needed. If
+    /// there's already a capability at the path, then the preexisting value is returned.
     fn insert_capability(
         &self,
         path: &impl IterablePath,
         capability: Capability,
-    ) -> Result<(), fsandbox::CapabilityStoreError>;
+    ) -> Option<Capability>;
 
     /// Removes the capability at the path, if it exists, and returns it.
     fn remove_capability(&self, path: &impl IterablePath) -> Option<Capability>;
@@ -252,7 +252,7 @@ impl DictExt for Dictionary {
         &self,
         path: &impl IterablePath,
         capability: Capability,
-    ) -> Result<(), fsandbox::CapabilityStoreError> {
+    ) -> Option<Capability> {
         let mut segments = path.iter_segments();
         let mut current_name = segments.next().expect("path must be non-empty");
         let mut current_dict = self.clone();
@@ -275,20 +275,17 @@ impl DictExt for Dictionary {
                                 });
 
                                 // Replace the entry in current_dict.
-                                current_dict.remove(current_name).unwrap();
-                                current_dict.insert(current_name.into(), new_router.into())?;
-
-                                return Ok(());
+                                return current_dict.insert(current_name.into(), new_router.into());
                             }
                             None => {
                                 let dict = Dictionary::new();
                                 current_dict.insert(
                                     current_name.into(),
                                     Capability::Dictionary(dict.clone()),
-                                )?;
+                                );
                                 dict
                             }
-                            _ => return Err(fsandbox::CapabilityStoreError::ItemNotFound),
+                            _ => return None,
                         }
                     };
                     current_dict = sub_dict;
@@ -540,7 +537,7 @@ impl Routable<Dictionary> for AdditiveDictionaryRouter {
         target: WeakInstanceToken,
     ) -> Result<Option<Dictionary>, RouterError> {
         let dictionary = match self.preexisting_router.route(request, target).await {
-            Ok(Some(dictionary)) => dictionary.shallow_copy().unwrap(),
+            Ok(Some(dictionary)) => dictionary.shallow_copy(),
             other_response => return other_response,
         };
         let _ = dictionary.insert_capability(&self.path, self.capability.clone());

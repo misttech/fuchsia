@@ -213,12 +213,11 @@ mod tests {
             .build();
         let input = ComponentInput::default();
         let (rx, connector) = Connector::new();
-        input
-            .insert_capability(
-                &BoundedName::from_str(LOG_SINK_PROTOCOL).unwrap(),
-                Capability::ConnectorRouter(Router::new_ok(connector)),
-            )
-            .unwrap();
+        let prev = input.insert_capability(
+            &BoundedName::from_str(LOG_SINK_PROTOCOL).unwrap(),
+            Capability::ConnectorRouter(Router::new_ok(connector)),
+        );
+        assert!(prev.is_none());
         let (instance, resolved_state) = new_instance_with_name(name, decl, input).await;
         (instance, resolved_state, rx)
     }

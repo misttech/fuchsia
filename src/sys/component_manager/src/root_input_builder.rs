@@ -121,21 +121,20 @@ impl RootInputBuilder {
         );
 
         let router = launch.into_router();
-        match self.input.insert_capability(
-            &name,
-            WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-                router,
-                CapabilityTypeName::Protocol,
-            )
-            .availability(Availability::Required)
-            .target_above_root(&self.top_instance)
-            .error_info(RouteRequestErrorInfo::for_builtin(CapabilityTypeName::Protocol, &name))
-            .error_reporter(NullErrorReporter {})
-            .build()
-            .into(),
-        ) {
-            Ok(()) => (),
-            Err(e) => warn!("failed to add {name} to root component input: {e:?}"),
+        let router = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
+            router,
+            CapabilityTypeName::Protocol,
+        )
+        .availability(Availability::Required)
+        .target_above_root(&self.top_instance)
+        .error_info(RouteRequestErrorInfo::for_builtin(CapabilityTypeName::Protocol, &name))
+        .error_reporter(NullErrorReporter {})
+        .build();
+        let prev = self.input.insert_capability(&name, router.into());
+        if prev.is_some() {
+            warn!(
+                "existing value in root component input was shadowed with built-in protocol {name}",
+            );
         }
     }
 
@@ -169,24 +168,24 @@ impl RootInputBuilder {
             }),
         );
         let router = launch.into_router();
-        match self.input.insert_capability(
+        let router = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
+            router,
+            CapabilityTypeName::Protocol,
+        )
+        .availability(Availability::Required)
+        .target_above_root(&self.top_instance)
+        .error_info(RouteRequestErrorInfo::for_builtin(
+            CapabilityTypeName::Protocol,
             &protocol.name,
-            WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-                router,
-                CapabilityTypeName::Protocol,
-            )
-            .availability(Availability::Required)
-            .target_above_root(&self.top_instance)
-            .error_info(RouteRequestErrorInfo::for_builtin(
-                CapabilityTypeName::Protocol,
-                &protocol.name,
-            ))
-            .error_reporter(NullErrorReporter {})
-            .build()
-            .into(),
-        ) {
-            Ok(()) => (),
-            Err(e) => warn!("failed to add {} to root component input: {e:?}", protocol.name),
+        ))
+        .error_reporter(NullErrorReporter {})
+        .build();
+        let prev = self.input.insert_capability(&protocol.name, router.into());
+        if prev.is_some() {
+            warn!(
+                "existing value in root component input was shadowed with namespace protocol {}",
+                protocol.name
+            );
         }
     }
 
@@ -274,10 +273,8 @@ impl RootInputBuilder {
         )))
         .error_reporter(RoutingFailureErrorReporter::new())
         .build();
-        match self.input.insert_capability(&directory.name, router.into()) {
-            Ok(()) => (),
-            Err(e) => warn!("failed to add {} to root component input: {e:?}", directory.name),
-        }
+        let prev = self.input.insert_capability(&directory.name, router.into());
+        assert!(prev.is_none(), "failed to add directory {} to root input", directory.name);
     }
 
     pub fn add_resolver(
@@ -379,19 +376,11 @@ impl RootInputBuilder {
         ))
         .error_reporter(NullErrorReporter {})
         .build();
-        if let Err(e) =
-            self.input.capabilities().insert_capability(&resolver_name, r.clone().into())
-        {
-            warn!(
-                "failed to add resolver {} to root component offered capabilities: {e:?}",
-                resolver_name
-            );
-        }
-        if let Err(e) =
-            self.input.environment().resolvers().insert_capability(&resolver_schema, r.into())
-        {
-            warn!("failed to add resolver {} to root component environment: {e:?}", resolver_schema)
-        }
+        let prev = self.input.capabilities().insert_capability(&resolver_name, r.clone().into());
+        assert!(prev.is_none(), "failed to add resolver {} to root input", resolver_name);
+        let prev =
+            self.input.environment().resolvers().insert_capability(&resolver_schema, r.into());
+        assert!(prev.is_none(), "failed to add resolver {} to root input", resolver_name);
     }
 
     pub fn add_runner_if_enabled(&mut self, runner: BuiltinRunner) {
@@ -446,13 +435,11 @@ impl RootInputBuilder {
         .error_info(RouteRequestErrorInfo::for_builtin(CapabilityTypeName::Runner, &name))
         .error_reporter(NullErrorReporter {})
         .build();
-        if let Err(e) = self.input.capabilities().insert_capability(&name, r.clone().into()) {
-            warn!("failed to add runner {} to root component offered capabilities: {e:?}", name);
-        }
+        let prev = self.input.capabilities().insert_capability(&name, r.clone().into());
+        assert!(prev.is_none(), "failed to add runner {name} to root input");
         if add_to_env {
-            if let Err(e) = self.input.environment().runners().insert_capability(&name, r.into()) {
-                warn!("failed to add runner {} to root component environment: {e:?}", name)
-            }
+            let prev = self.input.environment().runners().insert_capability(&name, r.into());
+            assert!(prev.is_none(), "failed to add runner {name} to root input");
         }
     }
 
@@ -504,12 +491,8 @@ impl RootInputBuilder {
         for event_type in EventType::values() {
             let name = Name::new(event_type.as_str()).unwrap();
             let router = Router::new(EventStreamRouter { event_type });
-            if let Err(e) = self.input.capabilities().insert_capability(&name, router.into()) {
-                warn!(
-                    "failed to add event_stream {} to root component offered capabilities: {e:?}",
-                    name
-                );
-            }
+            let prev = self.input.capabilities().insert_capability(&name, router.into());
+            assert!(prev.is_none(), "failed to add event_stream {name} to root input");
         }
     }
 

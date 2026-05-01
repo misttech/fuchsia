@@ -956,9 +956,8 @@ async fn create_child_with_dict() {
         }
     });
 
-    // CreateChild dictionary entries must be Open capabilities.
-    // TODO(https://fxbug.dev/319542502): Insert the external Router type, once it exists
-    dict.insert("hippo".parse().unwrap(), sender.into()).expect("dict entry already exists");
+    let prev = dict.insert("hippo".parse().unwrap(), sender.into());
+    assert!(prev.is_none(), "dictionary entry already exists");
 
     let test = RoutingTest::new("a", components).await;
     test.create_dynamic_child_with_args(

@@ -489,32 +489,26 @@ pub fn build_storage_admin_dictionary(
         });
         let storage_decl = storage_decl.clone();
         let weak_component = WeakComponentInstance::new(component);
-        storage_admin_dictionary
-            .insert(
-                storage_decl.name.clone(),
-                LaunchTaskOnReceive::new(
-                    capability_source,
-                    component.execution_scope.as_weak(),
-                    "storage admin protocol",
-                    Some(component.context.policy().clone()),
-                    Arc::new(move |channel, _target, _, _| {
-                        let storage_decl = storage_decl.clone();
-                        let weak_component = weak_component.clone();
-                        let stream =
-                            ServerEnd::<fsys::StorageAdminMarker>::new(channel).into_stream();
-                        async move {
-                            StorageAdmin::new(storage_decl, weak_component)
-                                .await?
-                                .serve(stream)
-                                .await
-                        }
-                        .boxed()
-                    }),
-                )
-                .into_router()
-                .into(),
+        storage_admin_dictionary.insert(
+            storage_decl.name.clone(),
+            LaunchTaskOnReceive::new(
+                capability_source,
+                component.execution_scope.as_weak(),
+                "storage admin protocol",
+                Some(component.context.policy().clone()),
+                Arc::new(move |channel, _target, _, _| {
+                    let storage_decl = storage_decl.clone();
+                    let weak_component = weak_component.clone();
+                    let stream = ServerEnd::<fsys::StorageAdminMarker>::new(channel).into_stream();
+                    async move {
+                        StorageAdmin::new(storage_decl, weak_component).await?.serve(stream).await
+                    }
+                    .boxed()
+                }),
             )
-            .unwrap();
+            .into_router()
+            .into(),
+        );
     }
     storage_admin_dictionary
 }

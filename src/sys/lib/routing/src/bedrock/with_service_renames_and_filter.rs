@@ -38,9 +38,9 @@ impl Routable<DirConnector> for ServiceRenameRouter {
                 for rename in &self.renames {
                     let path = cm_types::RelativePath::new(&rename.source_name).unwrap();
                     let dir_connector = source_services_directory.clone().with_subdir(path);
-                    target_services_dict
-                        .insert(rename.target_name.clone(), dir_connector.into())
-                        .expect("failed to insert into target services dict");
+                    let prev = target_services_dict
+                        .insert(rename.target_name.clone(), dir_connector.into());
+                    assert!(prev.is_none(), "failed to insert into target services dict");
                 }
                 let dir_entry = target_services_dict
                     .try_into_directory_entry(

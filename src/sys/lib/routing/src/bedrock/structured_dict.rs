@@ -4,7 +4,6 @@
 
 use crate::DictExt;
 use cm_types::{BorrowedName, IterablePath, Name};
-use fidl_fuchsia_component_sandbox as fsandbox;
 use runtime_capabilities::{Capability, Data, Dictionary};
 use std::fmt;
 use std::marker::PhantomData;
@@ -49,7 +48,7 @@ impl<T: StructuredDict> StructuredDict for StructuredDictMap<T> {
 
 #[allow(private_bounds)]
 impl<T: StructuredDict> StructuredDictMap<T> {
-    pub fn insert(&self, key: Name, value: T) -> Result<(), fsandbox::CapabilityStoreError> {
+    pub fn insert(&self, key: Name, value: T) -> Option<Capability> {
         let dict: Dictionary = value.into();
         self.inner.insert(key, dict.into())
     }
@@ -137,7 +136,7 @@ impl ComponentInput {
         let dict = Dictionary::new();
 
         if !environment.0.is_empty() {
-            dict.insert(ENVIRONMENT.clone(), Dictionary::from(environment).into()).unwrap();
+            dict.insert(ENVIRONMENT.clone(), Dictionary::from(environment).into());
         }
         Self(dict)
     }
@@ -146,14 +145,14 @@ impl ComponentInput {
     ///
     /// This is a shallow copy. Values are cloned, not copied, so are new references to the same
     /// underlying data.
-    pub fn shallow_copy(&self) -> Result<Self, ()> {
+    pub fn shallow_copy(&self) -> Self {
         // Note: We call [Dictionary::copy] on the nested [Dictionary]s, not the root [Dictionary],
         // because [Dictionary::copy] only goes one level deep and we want to copy the contents of
         // the inner sandboxes.
         let dest = Dictionary::new();
-        shallow_copy(&self.0, &dest, &*PARENT)?;
-        shallow_copy(&self.0, &dest, &*ENVIRONMENT)?;
-        Ok(Self(dest))
+        shallow_copy(&self.0, &dest, &*PARENT);
+        shallow_copy(&self.0, &dest, &*ENVIRONMENT);
+        Self(dest)
     }
 
     /// Returns the sub-dictionary containing capabilities routed by the component's parent.
@@ -170,7 +169,7 @@ impl ComponentInput {
         &self,
         path: &impl IterablePath,
         capability: Capability,
-    ) -> Result<(), fsandbox::CapabilityStoreError> {
+    ) -> Option<Capability> {
         self.capabilities().insert_capability(path, capability.into())
     }
 }
@@ -244,15 +243,15 @@ impl ComponentEnvironment {
         Some(Name::new(name).unwrap())
     }
 
-    pub fn shallow_copy(&self) -> Result<Self, ()> {
+    pub fn shallow_copy(&self) -> Self {
         // Note: We call [Dictionary::shallow_copy] on the nested [Dictionary]s, not the root
         // [Dictionary], because [Dictionary::shallow_copy] only goes one level deep and we want to
         // copy the contents of the inner sandboxes.
         let dest = Dictionary::new();
-        shallow_copy(&self.0, &dest, &*DEBUG)?;
-        shallow_copy(&self.0, &dest, &*RUNNERS)?;
-        shallow_copy(&self.0, &dest, &*RESOLVERS)?;
-        Ok(Self(dest))
+        shallow_copy(&self.0, &dest, &*DEBUG);
+        shallow_copy(&self.0, &dest, &*RUNNERS);
+        shallow_copy(&self.0, &dest, &*RESOLVERS);
+        Self(dest)
     }
 }
 
@@ -289,14 +288,14 @@ impl ComponentOutput {
     ///
     /// This is a shallow copy. Values are cloned, not copied, so are new references to the same
     /// underlying data.
-    pub fn shallow_copy(&self) -> Result<Self, ()> {
+    pub fn shallow_copy(&self) -> Self {
         // Note: We call [Dictionary::copy] on the nested [Dictionary]s, not the root [Dictionary],
         // because [Dictionary::copy] only goes one level deep and we want to copy the contents of
         // the inner sandboxes.
         let dest = Dictionary::new();
-        shallow_copy(&self.0, &dest, &*PARENT)?;
-        shallow_copy(&self.0, &dest, &*FRAMEWORK)?;
-        Ok(Self(dest))
+        shallow_copy(&self.0, &dest, &*PARENT);
+        shallow_copy(&self.0, &dest, &*FRAMEWORK);
+        Self(dest)
     }
 
     /// Returns the sub-dictionary containing capabilities routed to the component's parent.
@@ -318,14 +317,13 @@ impl From<ComponentOutput> for Dictionary {
     }
 }
 
-fn shallow_copy(src: &Dictionary, dest: &Dictionary, key: &Name) -> Result<(), ()> {
+fn shallow_copy(src: &Dictionary, dest: &Dictionary, key: &Name) {
     if let Some(d) = src.get(key) {
         let Capability::Dictionary(d) = d else {
             unreachable!("{key} entry must be a dictionary: {d:?}");
         };
-        dest.insert(key.clone(), d.shallow_copy()?.into()).ok();
+        dest.insert(key.clone(), d.shallow_copy().into());
     }
-    Ok(())
 }
 
 fn get_or_insert(this: &Dictionary, key: &Name) -> Dictionary {
@@ -352,20 +350,17 @@ mod tests {
     async fn structured_dict_map() {
         let dict1 = {
             let dict = Dictionary::new();
-            dict.insert("a".parse().unwrap(), Dictionary::new().into())
-                .expect("dict entry already exists");
+            dict.insert("a".parse().unwrap(), Dictionary::new().into());
             dict
         };
         let dict2 = {
             let dict = Dictionary::new();
-            dict.insert("b".parse().unwrap(), Dictionary::new().into())
-                .expect("dict entry already exists");
+            dict.insert("b".parse().unwrap(), Dictionary::new().into());
             dict
         };
         let dict2_alt = {
             let dict = Dictionary::new();
-            dict.insert("c".parse().unwrap(), Dictionary::new().into())
-                .expect("dict entry already exists");
+            dict.insert("c".parse().unwrap(), Dictionary::new().into());
             dict
         };
         let name1 = Name::new("1").unwrap();
@@ -373,18 +368,18 @@ mod tests {
 
         let map: StructuredDictMap<Dictionary> = Default::default();
         assert_matches!(map.get(&name1), None);
-        assert!(map.insert(name1.clone(), dict1).is_ok());
+        assert!(map.insert(name1.clone(), dict1).is_none());
         let d = map.get(&name1).unwrap();
         let key = DictKey::new("a").unwrap();
         assert_matches!(d.get(&key), Some(_));
 
-        assert!(map.insert(name2.clone(), dict2).is_ok());
+        assert!(map.insert(name2.clone(), dict2).is_none());
         let d = map.remove(&name2).unwrap();
         assert_matches!(map.remove(&name2), None);
         let key = DictKey::new("b").unwrap();
         assert_matches!(d.get(&key), Some(_));
 
-        assert!(map.insert(name2.clone(), dict2_alt).is_ok());
+        assert!(map.insert(name2.clone(), dict2_alt).is_none());
         let d = map.get(&name2).unwrap();
         let key = DictKey::new("c").unwrap();
         assert_matches!(d.get(&key), Some(_));

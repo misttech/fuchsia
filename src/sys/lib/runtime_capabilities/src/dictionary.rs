@@ -4,7 +4,6 @@
 
 use crate::{Capability, CapabilityBound};
 use derivative::Derivative;
-use fidl_fuchsia_component_sandbox as fsandbox;
 use fuchsia_sync::{Mutex, MutexGuard};
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
@@ -148,13 +147,9 @@ impl Dictionary {
         }
     }
 
-    /// Inserts an entry, mapping `key` to `capability`. If an entry already exists at `key`, a
-    /// `fsandbox::DictionaryError::AlreadyExists` will be returned.
-    pub fn insert(
-        &self,
-        key: Key,
-        capability: Capability,
-    ) -> Result<(), fsandbox::CapabilityStoreError> {
+    /// Inserts an entry, mapping `key` to `capability`. If an entry already exists at `key`, the
+    /// old value will be returned.
+    pub fn insert(&self, key: Key, capability: Capability) -> Option<Capability> {
         let DictInner { entries, update_notifiers, .. } = &mut *self.lock();
         entries.insert(key, capability, update_notifiers)
     }
@@ -183,7 +178,7 @@ impl Dictionary {
             Some(v) => v,
             None => {
                 let v = (default)();
-                entries.insert(key.clone(), v.clone(), update_notifiers).unwrap();
+                entries.insert(key.clone(), v.clone(), update_notifiers);
                 v
             }
         }
@@ -234,16 +229,14 @@ impl Dictionary {
     ///
     /// This is a shallow copy. Values are cloned, not copied, so are new references to the same
     /// underlying data.
-    ///
-    /// If any value in the dictionary could not be cloned, returns an error.
-    pub fn shallow_copy(&self) -> Result<Self, ()> {
+    pub fn shallow_copy(&self) -> Self {
         let copy = Self::new();
         {
             let DictInner { entries, .. } = &*self.lock();
             let mut copy = copy.lock();
-            copy.entries = entries.shallow_copy()?;
+            copy.entries = entries.shallow_copy();
         }
-        Ok(copy)
+        copy
     }
 
     /// Sends the name of an entry to the not found handler.
@@ -312,16 +305,16 @@ impl HybridMap {
     pub fn insert(
         &mut self,
         key: Key,
-        capability: Capability,
+        mut capability: Capability,
         update_notifiers: &mut UpdateNotifiers,
-    ) -> Result<(), fsandbox::CapabilityStoreError> {
+    ) -> Option<Capability> {
         match self {
             Self::Vec(vec) => match Self::sorted_vec_index_of(vec, &key) {
                 Ok(index) => {
                     update_notifiers.update(EntryUpdate::Remove(&key));
                     update_notifiers.update(EntryUpdate::Add(&key, &capability));
-                    vec[index].1 = capability;
-                    Err(fsandbox::CapabilityStoreError::ItemAlreadyExists)
+                    std::mem::swap(&mut capability, &mut vec[index].1);
+                    Some(capability)
                 }
                 Err(index) => {
                     update_notifiers.update(EntryUpdate::Add(&key, &capability));
@@ -329,11 +322,11 @@ impl HybridMap {
                         self.switch_to_map();
                         let Self::Map(map) = self else { unreachable!() };
                         map.insert(key, capability);
-                        Ok(())
+                        None
                     } else {
                         vec.reserve_exact(1);
                         vec.insert(index, (key, capability));
-                        Ok(())
+                        None
                     }
                 }
             },
@@ -341,13 +334,12 @@ impl HybridMap {
                 Entry::Occupied(mut occupied) => {
                     update_notifiers.update(EntryUpdate::Remove(occupied.key()));
                     update_notifiers.update(EntryUpdate::Add(occupied.key(), &capability));
-                    occupied.insert(capability);
-                    Err(fsandbox::CapabilityStoreError::ItemAlreadyExists)
+                    Some(occupied.insert(capability))
                 }
                 Entry::Vacant(vacant) => {
                     update_notifiers.update(EntryUpdate::Add(vacant.key(), &capability));
                     vacant.insert(capability);
-                    Ok(())
+                    None
                 }
             },
         }
@@ -390,7 +382,7 @@ impl HybridMap {
             return Ok(());
         }
 
-        // If any clone would fail, throw an error early and don't modify the Dictionary
+        // If any values would be overwritten, throw an error early and don't modify the Dictionary
         for (k, _) in other.iter() {
             let contains_key = match self {
                 Self::Vec(vec) => matches!(Self::sorted_vec_index_of(vec, k), Ok(_)),
@@ -405,32 +397,31 @@ impl HybridMap {
             // If at some point we will need to switch to a map then do it now.
             self.switch_to_map();
         } else if let Self::Vec(vec) = self {
-            // We're currently a Vec and won't need to convert to a Map so grow the Vec to the final
-            // size now.
+            // We're currently a Vec and won't need to convert to a Map so grow the Vec to the
+            // final size now.
             vec.reserve(other.len());
         }
         for (k, v) in other.iter() {
-            self.insert(k.clone(), v.clone(), update_notifiers)
-                .expect("append: insert should have succeeded");
+            self.insert(k.clone(), v.clone(), update_notifiers);
         }
         Ok(())
     }
 
-    pub fn shallow_copy(&self) -> Result<Self, ()> {
+    pub fn shallow_copy(&self) -> Self {
         match self {
             Self::Vec(vec) => {
                 let mut new_vec = Vec::with_capacity(vec.len());
                 for (key, value) in vec.iter() {
                     new_vec.push((key.clone(), value.clone()));
                 }
-                Ok(HybridMap::Vec(new_vec))
+                HybridMap::Vec(new_vec)
             }
             Self::Map(map) => {
                 let mut new_map = BTreeMap::new();
                 for (key, value) in map.iter() {
                     new_map.insert(key.clone(), value.clone());
                 }
-                Ok(HybridMap::Map(new_map))
+                HybridMap::Map(new_map)
             }
         }
     }

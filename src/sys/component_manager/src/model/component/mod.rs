@@ -557,8 +557,7 @@ impl ComponentInstance {
             .collection_inputs
             .get(&Name::new(&collection_name).unwrap())
             .expect("dict missing for declared collection")
-            .shallow_copy()
-            .map_err(|_| AddDynamicChildError::InvalidDictionary)?;
+            .shallow_copy();
 
         if child_args.dictionary.is_some() && child_args.additional_inputs.is_some() {
             return Err(AddDynamicChildError::DictionaryAndAdditionalInputsSet);
@@ -583,7 +582,7 @@ impl ComponentInstance {
                     c => c,
                 };
 
-                if let Err(_) = child_dict_entries.insert(key.clone(), router) {
+                if let Some(_) = child_dict_entries.insert(key.clone(), router) {
                     return Err(AddDynamicChildError::StaticRouteConflict { capability_name: key });
                 }
             }
@@ -605,7 +604,7 @@ impl ComponentInstance {
                     c => c,
                 };
 
-                if let Err(_) = child_dict_entries.insert(key.clone(), router) {
+                if let Some(_) = child_dict_entries.insert(key.clone(), router) {
                     return Err(AddDynamicChildError::StaticRouteConflict { capability_name: key });
                 }
             }

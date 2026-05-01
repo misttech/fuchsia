@@ -94,12 +94,12 @@ impl ProgramInput {
         config: Dictionary,
     ) -> Self {
         let inner = Dictionary::new();
-        inner.insert(NAMESPACE.clone(), namespace.into()).unwrap();
+        inner.insert(NAMESPACE.clone(), namespace.into());
         if let Some(runner) = runner {
-            inner.insert(RUNNER.clone(), runner.into()).unwrap();
+            inner.insert(RUNNER.clone(), runner.into());
         }
-        inner.insert(NUMBERED_HANDLES.clone(), Dictionary::new().into()).unwrap();
-        inner.insert(CONFIG.clone(), config.into()).unwrap();
+        inner.insert(NUMBERED_HANDLES.clone(), Dictionary::new().into());
+        inner.insert(CONFIG.clone(), config.into());
         ProgramInput { inner }
     }
 
@@ -132,7 +132,7 @@ impl ProgramInput {
     }
 
     fn set_runner(&self, capability: Capability) {
-        self.inner.insert(RUNNER.clone(), capability).unwrap()
+        let _ = self.inner.insert(RUNNER.clone(), capability);
     }
 
     /// All of the config capabilities that a program will use.
@@ -229,54 +229,40 @@ impl Default for ComponentSandbox {
 impl From<ComponentSandbox> for Dictionary {
     fn from(sandbox: ComponentSandbox) -> Dictionary {
         let sandbox_dictionary = Dictionary::new();
+        sandbox_dictionary.insert(
+            Name::new("framework").unwrap(),
+            sandbox.framework_router.lock().clone().into(),
+        );
+        sandbox_dictionary.insert(
+            Name::new("component_input").unwrap(),
+            Capability::Dictionary(sandbox.component_input.into()),
+        );
+        sandbox_dictionary.insert(
+            Name::new("component_output").unwrap(),
+            Capability::Dictionary(sandbox.component_output.into()),
+        );
+        sandbox_dictionary.insert(
+            Name::new("program_input").unwrap(),
+            Capability::Dictionary(sandbox.program_input.into()),
+        );
         sandbox_dictionary
-            .insert(Name::new("framework").unwrap(), sandbox.framework_router.lock().clone().into())
-            .unwrap();
-        sandbox_dictionary
-            .insert(
-                Name::new("component_input").unwrap(),
-                Capability::Dictionary(sandbox.component_input.into()),
-            )
-            .unwrap();
-        sandbox_dictionary
-            .insert(
-                Name::new("component_output").unwrap(),
-                Capability::Dictionary(sandbox.component_output.into()),
-            )
-            .unwrap();
-        sandbox_dictionary
-            .insert(
-                Name::new("program_input").unwrap(),
-                Capability::Dictionary(sandbox.program_input.into()),
-            )
-            .unwrap();
-        sandbox_dictionary
-            .insert(Name::new("program_output").unwrap(), sandbox.program_output_dict.into())
-            .unwrap();
-        sandbox_dictionary
-            .insert(
-                Name::new("capability_sourced").unwrap(),
-                sandbox.capability_sourced_capabilities_dict.into(),
-            )
-            .unwrap();
-        sandbox_dictionary
-            .insert(
-                Name::new("declared_dictionaries").unwrap(),
-                sandbox.declared_dictionaries.into(),
-            )
-            .unwrap();
-        sandbox_dictionary
-            .insert(
-                Name::new("child_inputs").unwrap(),
-                Capability::Dictionary(sandbox.child_inputs.into()),
-            )
-            .unwrap();
-        sandbox_dictionary
-            .insert(
-                Name::new("collection_inputs").unwrap(),
-                Capability::Dictionary(sandbox.collection_inputs.into()),
-            )
-            .unwrap();
+            .insert(Name::new("program_output").unwrap(), sandbox.program_output_dict.into());
+        sandbox_dictionary.insert(
+            Name::new("capability_sourced").unwrap(),
+            sandbox.capability_sourced_capabilities_dict.into(),
+        );
+        sandbox_dictionary.insert(
+            Name::new("declared_dictionaries").unwrap(),
+            sandbox.declared_dictionaries.into(),
+        );
+        sandbox_dictionary.insert(
+            Name::new("child_inputs").unwrap(),
+            Capability::Dictionary(sandbox.child_inputs.into()),
+        );
+        sandbox_dictionary.insert(
+            Name::new("collection_inputs").unwrap(),
+            Capability::Dictionary(sandbox.collection_inputs.into()),
+        );
         sandbox_dictionary
     }
 }
@@ -385,19 +371,17 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
     let collection_inputs: StructuredDictMap<ComponentInput> = Default::default();
 
     for environment_decl in &decl.environments {
-        environments
-            .insert(
-                environment_decl.name.clone(),
-                build_environment(
-                    component,
-                    &child_component_output_dictionary_routers,
-                    &component_input,
-                    environment_decl,
-                    &program_output_dict,
-                    &error_reporter,
-                ),
-            )
-            .ok();
+        let _ = environments.insert(
+            environment_decl.name.clone(),
+            build_environment(
+                component,
+                &child_component_output_dictionary_routers,
+                &component_input,
+                environment_decl,
+                &program_output_dict,
+                &error_reporter,
+            ),
+        );
     }
 
     for child in &decl.children {
@@ -412,7 +396,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
         }
         let input = ComponentInput::new(environment);
         let name = Name::new(child.name.as_str()).expect("child is static so name is not long");
-        child_inputs.insert(name, input).ok();
+        let _ = child_inputs.insert(name, input);
     }
 
     for collection in &decl.collections {
@@ -426,7 +410,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
             environment = component_input.environment();
         }
         let input = ComponentInput::new(environment);
-        collection_inputs.insert(collection.name.clone(), input).ok();
+        let _ = collection_inputs.insert(collection.name.clone(), input);
     }
 
     let mut dictionary_use_bundles = Vec::with_capacity(decl.uses.len());
@@ -456,15 +440,14 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 .error_info(first_use)
                 .error_reporter(error_reporter.clone())
                 .build();
-                if let Err(e) = program_input
+                let prev = program_input
                     .namespace()
-                    .insert_capability(first_use.path().unwrap(), aggregate.into())
-                {
-                    warn!(
-                        "failed to insert {} in program input dictionary: {e:?}",
-                        first_use.path().unwrap()
-                    )
-                }
+                    .insert_capability(first_use.path().unwrap(), aggregate.into());
+                assert!(
+                    prev.is_none(),
+                    "failed to insert {}: preexisting value",
+                    first_use.path().unwrap()
+                );
             }
             cm_rust::UseDecl::Service(_) => extend_dict_with_use::<DirConnector, _>(
                 component,
@@ -577,7 +560,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 let child_name = Name::new(child_ref.name.as_str())
                     .expect("child is static so name is not long");
                 if child_inputs.get(&child_name).is_none() {
-                    child_inputs.insert(child_name.clone(), Default::default()).ok();
+                    let _ = child_inputs.insert(child_name.clone(), Default::default());
                 }
                 child_inputs
                     .get(&child_name)
@@ -586,7 +569,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
             }
             cm_rust::offer::OfferTarget::Collection(name) => {
                 if collection_inputs.get(&name).is_none() {
-                    collection_inputs.insert(name.clone(), Default::default()).ok();
+                    let _ = collection_inputs.insert(name.clone(), Default::default());
                 }
                 collection_inputs
                     .get(&name)
@@ -598,9 +581,8 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     Some(dict) => dict,
                     None => {
                         let dict = Dictionary::new();
-                        declared_dictionaries
-                            .insert(name.clone(), Capability::Dictionary(dict.clone()))
-                            .ok();
+                        let _ = declared_dictionaries
+                            .insert(name.clone(), Capability::Dictionary(dict.clone()));
                         Capability::Dictionary(dict)
                     }
                 };
@@ -643,8 +625,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     aggregate_router_fn,
                 );
                 (get_target_dict)()
-                    .insert(first_offer.target_name().clone(), aggregate_router.into())
-                    .expect("failed to insert capability into target dict");
+                    .insert(first_offer.target_name().clone(), aggregate_router.into());
             }
             cm_rust::offer::OfferDecl::Config(_) => extend_dict_with_offer::<Data, _>(
                 component,
@@ -782,10 +763,13 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                     .error_info(*first_expose)
                     .error_reporter(error_reporter.clone())
                     .build();
-                component_output
-                    .capabilities()
-                    .insert(first_expose.target_name().clone(), router.into())
-                    .expect("failed to insert capability into target dict")
+                let target_name = first_expose.target_name().clone();
+                let prev = component_output.capabilities().insert(target_name, router.into());
+                assert!(
+                    prev.is_none(),
+                    "failed to insert {}: preexisting value",
+                    first_expose.target_name()
+                );
             }
             cm_rust::ExposeDecl::Config(_) => extend_dict_with_expose::<Data, _>(
                 component,
@@ -1022,11 +1006,7 @@ fn build_environment<C: ComponentInstanceInterface + 'static>(
 ) -> ComponentEnvironment {
     let mut environment = ComponentEnvironment::new();
     if environment_decl.extends == fdecl::EnvironmentExtends::Realm {
-        if let Ok(e) = component_input.environment().shallow_copy() {
-            environment = e;
-        } else {
-            warn!("failed to copy component_input.environment");
-        }
+        environment = component_input.environment().shallow_copy();
     }
     environment.set_name(&environment_decl.name);
     if let Some(stop_timeout_ms) = environment_decl.stop_timeout_ms {
@@ -1107,13 +1087,9 @@ fn build_environment<C: ComponentInstanceInterface + 'static>(
             CapabilityTypeName::Resolver => environment.resolvers(),
             c => panic!("unexpected capability type {}", c),
         };
-        match dict_to_insert_to.insert_capability(&target_name, router.into()) {
-            Ok(()) => (),
-            Err(_e) => {
-                // The only reason this will happen is if we're shadowing something else in the
-                // environment. `insert_capability` will still insert the new capability when it
-                // returns an error, so we can safely ignore this.
-            }
+        let prev = dict_to_insert_to.insert_capability(&target_name, router.into());
+        if prev.is_some() {
+            log::warn!("failed to insert {porcelain_type} {target_name}: preexisting value");
         }
     }
     environment
@@ -1176,10 +1152,10 @@ pub fn extend_dict_with_offers<C: ComponentInstanceInterface + 'static>(
                         error_reporter.clone(),
                         aggregate_router_fn,
                     );
-                    target_input
+                    let prev = target_input
                         .capabilities()
-                        .insert(first_offer.target_name().clone(), aggregate_router.into())
-                        .expect("failed to insert capability into target dict");
+                        .insert(first_offer.target_name().clone(), aggregate_router.into());
+                    assert!(prev.is_none(), "failed to insert capability into target dict");
                 }
             }
             cm_rust::offer::OfferDecl::Config(_) => extend_dict_with_offer::<Data, _>(
@@ -1299,7 +1275,7 @@ fn extend_dict_with_config_use<C: ComponentInstanceInterface + 'static>(
     };
 
     let availability = *config_use.availability();
-    match program_input.config().insert_capability(
+    let prev = program_input.config().insert_capability(
         &config_use.target_name,
         router
             .with_porcelain_with_default(porcelain_type)
@@ -1308,12 +1284,8 @@ fn extend_dict_with_config_use<C: ComponentInstanceInterface + 'static>(
             .error_info(config_use)
             .error_reporter(error_reporter)
             .into(),
-    ) {
-        Ok(()) => (),
-        Err(e) => {
-            warn!("failed to insert {} in program input dict: {e:?}", config_use.target_name)
-        }
-    }
+    );
+    assert!(prev.is_none(), "failed to insert {}: preexisting value", config_use.target_name);
 }
 
 fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
@@ -1361,9 +1333,8 @@ fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
         .collect::<Vec<_>>();
 
     let router = event_stream_use_router_fn(component, routers);
-    if let Err(e) = program_input.namespace().insert_capability(&target_path, router.into()) {
-        warn!("failed to insert {} in program input dict: {e:?}", target_path)
-    }
+    let prev = program_input.namespace().insert_capability(&target_path, router.into());
+    assert!(prev.is_none(), "failed to insert {target_path}: preexisting value");
 }
 
 fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
@@ -1514,22 +1485,18 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
             ..
         }) => {
             let numbered_handle = Name::from(*numbered_handle);
-            if let Err(e) =
-                program_input.numbered_handles().insert_capability(&numbered_handle, router.into())
-            {
-                warn!("failed to insert {} in program input dict: {e:?}", numbered_handle)
-            }
+            let prev =
+                program_input.numbered_handles().insert_capability(&numbered_handle, router.into());
+            assert!(prev.is_none(), "failed to insert {numbered_handle}: preexisting value");
         }
         cm_rust::UseDecl::Runner(_) => {
             assert!(program_input.runner().is_none(), "component can't use multiple runners");
             program_input.set_runner(router.into());
         }
         _ => {
-            if let Err(e) =
-                program_input.namespace().insert_capability(use_.path().unwrap(), router.into())
-            {
-                warn!("failed to insert {} in program input dict: {e:?}", use_.path().unwrap())
-            }
+            let prev =
+                program_input.namespace().insert_capability(use_.path().unwrap(), router.into());
+            assert!(prev.is_none(), "failed to insert {}: preexisting value", use_.path().unwrap());
         }
     }
 }
@@ -1580,14 +1547,9 @@ fn extend_dict_with_dictionary_use<C: ComponentInstanceInterface + 'static>(
             moniker: component.moniker().clone(),
         }),
     );
-    match program_input.namespace().insert_capability(path, router.into()) {
-        Ok(()) => (),
-        Err(_e) => {
-            // The only reason this will happen is if we're shadowing something else.
-            // `insert_capability` will still insert the new capability when it returns an error,
-            // so we can safely ignore this.
-        }
-    }
+    // This value will be `Some` if we're shadowing something else. This is fine in this case
+    // because we've already merged any preexisting value with what we're inserting.
+    let _ = program_input.namespace().insert_capability(path, router.into());
 }
 
 /// Builds a router that obtains a capability that the program uses from `parent`.
@@ -1760,10 +1722,8 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
         router_builder.build().into()
     };
 
-    match target_dict.insert_capability(target_name, router.into()) {
-        Ok(()) => (),
-        Err(e) => warn!("failed to insert {target_name} into target dict: {e:?}"),
-    }
+    let prev = target_dict.insert_capability(target_name, router.into());
+    assert!(prev.is_none(), "failed to insert {target_name}: preexisting value");
 }
 
 fn query_framework_router_or_not_found<T, C>(
@@ -1909,10 +1869,8 @@ fn extend_dict_with_expose<T, C: ComponentInstanceInterface + 'static>(
     if let cm_rust::ExposeDecl::Service(_) = expose {
         router_builder = router_builder.rights(Some(fio::R_STAR_DIR.into())).inherit_rights(true);
     };
-    match target_dict.insert_capability(target_name, router_builder.build().into()) {
-        Ok(()) => (),
-        Err(e) => warn!("failed to insert {target_name} into target_dict: {e:?}"),
-    }
+    let prev = target_dict.insert_capability(target_name, router_builder.build().into());
+    assert!(prev.is_none(), "failed to insert {target_name}: preexisting value");
 }
 
 struct UnavailableRouter<C: ComponentInstanceInterface> {

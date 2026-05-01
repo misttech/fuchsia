@@ -387,7 +387,8 @@ impl RoutingTest {
                     .boxed()
                 }),
             );
-            state.component_input.insert_capability(&name, launch.into_router().into()).unwrap();
+            let prev = state.component_input.insert_capability(&name, launch.into_router().into());
+            assert!(prev.is_none());
         }
 
         model.root().hooks.install(builder.additional_hooks.clone());

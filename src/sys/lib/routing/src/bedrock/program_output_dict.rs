@@ -18,7 +18,6 @@ use component_id_index::InstanceId;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
-use log::warn;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
 use runtime_capabilities::{
@@ -105,12 +104,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 }),
                 component.policy_checker().clone(),
             );
-            match program_output_dict.insert_capability(capability.name(), router.into()) {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failed to add {} to program output dict: {e:?}", capability.name())
-                }
-            }
+            let prev = program_output_dict.insert_capability(capability.name(), router.into());
+            assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::Directory(_) => {
             let router =
@@ -122,12 +117,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 }),
                 component.policy_checker().clone(),
             );
-            match program_output_dict.insert_capability(capability.name(), router.into()) {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failed to add {} to program output dict: {e:?}", capability.name())
-                }
-            }
+            let prev = program_output_dict.insert_capability(capability.name(), router.into());
+            assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::Storage(cm_rust::StorageDecl {
             name,
@@ -320,12 +311,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 },
                 _component_type: Default::default(),
             });
-            match program_output_dict.insert_capability(name, router.into()) {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failed to add {} to program output dict: {e:?}", name)
-                }
-            }
+            let prev = program_output_dict.insert_capability(name, router.into());
+            assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::Protocol(_)
         | cm_rust::CapabilityDecl::Runner(_)
@@ -338,12 +325,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 }),
                 component.policy_checker().clone(),
             );
-            match program_output_dict.insert_capability(capability.name(), router.into()) {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failed to add {} to program output dict: {e:?}", capability.name())
-                }
-            }
+            let prev = program_output_dict.insert_capability(capability.name(), router.into());
+            assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::Dictionary(d) => {
             extend_dict_with_dictionary(
@@ -384,12 +367,8 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             });
             let router = Router::new(ConfigRouter { data, source: source.clone() });
             let router = router.with_policy_check::<C>(source, component.policy_checker().clone());
-            match program_output_dict.insert_capability(capability.name(), router.into()) {
-                Ok(()) => (),
-                Err(e) => {
-                    warn!("failed to add {} to program output dict: {e:?}", capability.name())
-                }
-            }
+            let prev = program_output_dict.insert_capability(capability.name(), router.into());
+            assert!(prev.is_none(), "failed to insert {}: preexisting value", capability.name());
         }
         cm_rust::CapabilityDecl::EventStream(_) => {
             // Capabilities not supported in bedrock program output dict yet.
@@ -421,15 +400,11 @@ fn extend_dict_with_dictionary<C: ComponentInstanceInterface + 'static>(
         declared_dict = Some(dict);
     }
     if let Some(dict) = declared_dict {
-        match declared_dictionaries.insert_capability(&decl.name, dict.into()) {
-            Ok(()) => (),
-            Err(e) => warn!("failed to add {} to declared dicts: {e:?}", decl.name),
-        };
+        let prev = declared_dictionaries.insert_capability(&decl.name, dict.into());
+        assert!(prev.is_none(), "failed to insert {}: preexisting value", &decl.name);
     }
-    match program_output_dict.insert_capability(&decl.name, router.into()) {
-        Ok(()) => (),
-        Err(e) => warn!("failed to add {} to program output dict: {e:?}", decl.name),
-    }
+    let prev = program_output_dict.insert_capability(&decl.name, router.into());
+    assert!(prev.is_none(), "failed to insert {}: preexisting value", &decl.name);
 }
 
 /// Makes a router that always returns the given dictionary.

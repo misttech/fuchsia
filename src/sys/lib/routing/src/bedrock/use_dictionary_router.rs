@@ -96,7 +96,7 @@ impl Routable<Dictionary> for UseDictionaryRouter {
         for dictionary_router in self.dictionary_routers.iter() {
             futures_unordered.push(dictionary_router.route(request.clone(), target.clone()));
         }
-        let resulting_dictionary = self.original_dictionary.shallow_copy().unwrap();
+        let resulting_dictionary = self.original_dictionary.shallow_copy();
         while let Some(route_result) = futures_unordered.next().await {
             match route_result {
                 Ok(Some(other_dictionary)) => {

@@ -451,7 +451,7 @@ mod tests {
         let dict = new_dict(test_type);
 
         // Insert a Data into the Dictionary.
-        dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).unwrap();
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
         assert_eq!(adjusted_len(&dict, test_type), 1);
 
         let dict_ref = Capability::Dictionary(dict.clone())
@@ -533,11 +533,11 @@ mod tests {
 
         let dict = new_dict(test_type);
 
-        dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).unwrap();
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
         assert_eq!(adjusted_len(&dict, test_type), 1);
         let (ch, _) = fidl::Channel::create();
         let handle = Handle::new(ch.into_handle());
-        dict.insert("h".parse().unwrap(), Capability::Handle(handle)).unwrap();
+        assert!(dict.insert("h".parse().unwrap(), Capability::Handle(handle)).is_none());
 
         let dict_ref = Capability::Dictionary(dict.clone())
             .into_fsandbox_capability(WeakInstanceToken::new_invalid());
@@ -604,7 +604,7 @@ mod tests {
 
         // Create a Dictionary with a Data inside, and copy the Dictionary.
         let dict = new_dict(test_type);
-        dict.insert("data1".parse().unwrap(), Capability::Data(Data::Int64(1))).unwrap();
+        assert!(dict.insert("data1".parse().unwrap(), Capability::Data(Data::Int64(1))).is_none());
         store
             .import(
                 1,
@@ -924,8 +924,10 @@ mod tests {
         // Create a Dictionary with [NUM_ENTRIES] entries that have Data values.
         let dict = Dictionary::new();
         for i in 0..NUM_ENTRIES {
-            dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
-                .unwrap();
+            assert!(
+                dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
+                    .is_none()
+            );
         }
 
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
@@ -982,8 +984,10 @@ mod tests {
         // Create a Dictionary with [NUM_ENTRIES] entries that have Data values.
         let dict = Dictionary::new();
         for i in 0..NUM_ENTRIES {
-            dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
-                .unwrap();
+            assert!(
+                dict.insert(format!("{}", i).parse().unwrap(), Capability::Data(Data::Int64(1)))
+                    .is_none()
+            );
         }
 
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
@@ -1134,8 +1138,7 @@ mod tests {
     #[fuchsia::test]
     async fn try_into_open_error_not_supported() {
         let dict = Dictionary::new();
-        dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1)))
-            .expect("dict entry already exists");
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Data(Data::Int64(1))).is_none());
         let scope = ExecutionScope::new();
         assert_matches!(
             dict.try_into_directory_entry(scope, WeakInstanceToken::new_invalid()).err(),
@@ -1172,11 +1175,13 @@ mod tests {
     async fn try_into_open_success() {
         let dict = Dictionary::new();
         let mock_dir = Arc::new(MockDir(Counter::new(0)));
-        dict.insert(
-            CAP_KEY.clone(),
-            DirConnector::from_directory_entry(mock_dir.clone(), fio::PERM_READABLE).into(),
-        )
-        .expect("dict entry already exists");
+        assert!(
+            dict.insert(
+                CAP_KEY.clone(),
+                DirConnector::from_directory_entry(mock_dir.clone(), fio::PERM_READABLE).into(),
+            )
+            .is_none()
+        );
         let scope = ExecutionScope::new();
         let remote =
             dict.try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid()).unwrap();
@@ -1195,14 +1200,16 @@ mod tests {
     async fn try_into_open_success_nested() {
         let inner_dict = Dictionary::new();
         let mock_dir = Arc::new(MockDir(Counter::new(0)));
-        inner_dict
-            .insert(
-                CAP_KEY.clone(),
-                DirConnector::from_directory_entry(mock_dir.clone(), fio::PERM_READABLE).into(),
-            )
-            .expect("dict entry already exists");
+        assert!(
+            inner_dict
+                .insert(
+                    CAP_KEY.clone(),
+                    DirConnector::from_directory_entry(mock_dir.clone(), fio::PERM_READABLE).into(),
+                )
+                .is_none()
+        );
         let dict = Dictionary::new();
-        dict.insert(CAP_KEY.clone(), Capability::Dictionary(inner_dict)).unwrap();
+        assert!(dict.insert(CAP_KEY.clone(), Capability::Dictionary(inner_dict)).is_none());
 
         let scope = ExecutionScope::new();
         let remote = dict
@@ -1520,8 +1527,7 @@ mod tests {
         // added item.
         let fs = pseudo_directory! {};
         let dir_connector = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
-        dict.insert("a".parse().unwrap(), dir_connector.clone().into())
-            .expect("dict entry already exists");
+        assert!(dict.insert("a".parse().unwrap(), dir_connector.clone().into()).is_none());
 
         assert_eq!(
             fuchsia_fs::directory::readdir(&dir_proxy).await.unwrap(),
@@ -1537,7 +1543,7 @@ mod tests {
 
         // Add an item to the dictionary, and assert that the projected directory contains the
         // added item.
-        dict.insert("b".parse().unwrap(), dir_connector.into()).expect("dict entry already exists");
+        assert!(dict.insert("b".parse().unwrap(), dir_connector.into()).is_none());
         let mut readdir_results = fuchsia_fs::directory::readdir(&dir_proxy).await.unwrap();
         readdir_results.sort_by(|entry_1, entry_2| entry_1.name.cmp(&entry_2.name));
         assert_eq!(
@@ -1561,12 +1567,9 @@ mod tests {
         let dict = Dictionary::new();
         let fs = pseudo_directory! {};
         let dir_connector = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
-        dict.insert("a".parse().unwrap(), dir_connector.clone().into())
-            .expect("dict entry already exists");
-        dict.insert("b".parse().unwrap(), dir_connector.clone().into())
-            .expect("dict entry already exists");
-        dict.insert("c".parse().unwrap(), dir_connector.clone().into())
-            .expect("dict entry already exists");
+        assert!(dict.insert("a".parse().unwrap(), dir_connector.clone().into()).is_none());
+        assert!(dict.insert("b".parse().unwrap(), dir_connector.clone().into()).is_none());
+        assert!(dict.insert("c".parse().unwrap(), dir_connector.clone().into()).is_none());
 
         let scope = ExecutionScope::new();
         let remote = dict
@@ -1655,10 +1658,12 @@ mod tests {
         let inner_dict = Dictionary::new();
         let fs = pseudo_directory! {};
         let dir_connector = DirConnector::from_directory_entry(fs, fio::PERM_READABLE);
-        inner_dict.insert("x".parse().unwrap(), dir_connector.clone().into()).unwrap();
-        dict.insert("a".parse().unwrap(), dir_connector.clone().into()).unwrap();
-        dict.insert("b".parse().unwrap(), dir_connector.clone().into()).unwrap();
-        dict.insert("c".parse().unwrap(), Capability::Dictionary(inner_dict.clone())).unwrap();
+        assert!(inner_dict.insert("x".parse().unwrap(), dir_connector.clone().into()).is_none());
+        assert!(dict.insert("a".parse().unwrap(), dir_connector.clone().into()).is_none());
+        assert!(dict.insert("b".parse().unwrap(), dir_connector.clone().into()).is_none());
+        assert!(
+            dict.insert("c".parse().unwrap(), Capability::Dictionary(inner_dict.clone())).is_none()
+        );
 
         let scope = ExecutionScope::new();
         let remote = dict
@@ -1694,7 +1699,7 @@ mod tests {
         assert!(inner_dict.is_empty());
 
         // Adding to the empty Dictionary has no impact on the directory.
-        dict.insert("z".parse().unwrap(), dir_connector.clone().into()).unwrap();
+        assert!(dict.insert("z".parse().unwrap(), dir_connector.clone().into()).is_none());
         let mut readdir_results = fuchsia_fs::directory::readdir(&dir_proxy).await.unwrap();
         readdir_results.sort_by(|entry_1, entry_2| entry_1.name.cmp(&entry_2.name));
         assert_eq!(
@@ -1722,8 +1727,13 @@ mod tests {
                 for i in 1..=HYBRID_SWITCH_INSERTION_LEN {
                     // These items will come last in the order as long as all other keys begin with
                     // a capital letter
-                    dict.insert(format!("_{i}").parse().unwrap(), Capability::Data(Data::Int64(1)))
-                        .unwrap();
+                    assert!(
+                        dict.insert(
+                            format!("_{i}").parse().unwrap(),
+                            Capability::Data(Data::Int64(1))
+                        )
+                        .is_none()
+                    );
                 }
             }
         }

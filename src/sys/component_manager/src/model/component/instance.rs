@@ -74,7 +74,7 @@ use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
 use hooks::{CapabilityReceiver, EventPayload, EventType};
-use log::{error, warn};
+use log::warn;
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
 use runtime_capabilities::{
@@ -820,9 +820,7 @@ impl ResolvedInstanceState {
                 if let Some(_) = out_dict.remove_capability(path) {
                     warn!("injected capability will shadow the one at {path}");
                 }
-                if let Err(e) = out_dict.insert_capability(path, capability) {
-                    error!("failed to insert {} in target dict: {e:?}", path);
-                }
+                out_dict.insert_capability(path, capability);
             }
         }
     }

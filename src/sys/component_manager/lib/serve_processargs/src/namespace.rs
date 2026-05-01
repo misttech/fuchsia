@@ -89,8 +89,10 @@ impl NamespaceBuilder {
         };
 
         // Insert the capability into the Dict.
-        dict.insert(path.basename().into(), cap)
-            .map_err(|_| NamespaceError::Duplicate(path.clone().into()).into())
+        if dict.insert(path.basename().into(), cap).is_some() {
+            return Err(NamespaceError::Duplicate(path.clone().into()).into());
+        }
+        Ok(())
     }
 
     /// Add a capability `cap` at `path`. As a result, the framework will create a
