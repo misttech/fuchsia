@@ -776,6 +776,107 @@ TEST_F(FlatlandManagerTest, OnFramePresentedEvent) {
   RunLoopUntil([&info2] { return info2.has_value(); });
 }
 
+TEST_F(FlatlandManagerTest, SkipsOnFramePresentedComparison) {
+  // Client 1: skips_on_frame_presented = true
+  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland1;
+  flatland::FlatlandConfig config1;
+  config1.skips_on_frame_presented = true;
+  const scheduling::SessionId id1 =
+      manager_->CreateFlatland(flatland1.NewRequest(dispatcher()), config1);
+
+  std::optional<fuchsia::scenic::scheduling::FramePresentedInfo> info1;
+  flatland1.events().OnFramePresented =
+      [&info1](fuchsia::scenic::scheduling::FramePresentedInfo info) { info1 = std::move(info); };
+
+  // Client 2: skips_on_frame_presented = false
+  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland2;
+  flatland::FlatlandConfig config2;
+  config2.skips_on_frame_presented = false;
+  const scheduling::SessionId id2 =
+      manager_->CreateFlatland(flatland2.NewRequest(dispatcher()), config2);
+
+  std::optional<fuchsia::scenic::scheduling::FramePresentedInfo> info2;
+  flatland2.events().OnFramePresented =
+      [&info2](fuchsia::scenic::scheduling::FramePresentedInfo info) { info2 = std::move(info); };
+
+  RunLoopUntilIdle();
+
+  // Present both instances.
+  PRESENT(flatland1, id1, true);
+  PRESENT(flatland2, id2, true);
+
+  // Call OnFramePresented() with PresentIds for both sessions.
+  scheduling::PresentTimestamps timestamps{
+      .presented_time = zx::time(111),
+      .vsync_interval = zx::duration(11),
+  };
+
+  auto next_present_id1 = PopPendingPresent(id1);
+  auto next_present_id2 = PopPendingPresent(id2);
+
+  std::unordered_map<scheduling::SessionId,
+                     std::map<scheduling::PresentId, /*latched_time*/ zx::time>>
+      latch_times;
+  latch_times[id1] = {{next_present_id1, zx::time(123)}};
+  latch_times[id2] = {{next_present_id2, zx::time(456)}};
+
+  manager_->OnFramePresented(latch_times, timestamps);
+
+  // Wait until the event has fired for client 2.
+  RunLoopUntil([&info2] { return info2.has_value(); });
+
+  // Verify that client 1 did NOT receive OnFramePresented.
+  EXPECT_FALSE(info1.has_value());
+
+  // Verify that client 2 DID receive OnFramePresented.
+  EXPECT_TRUE(info2.has_value());
+}
+
+TEST_F(FlatlandManagerTest, SkipsPresentCreditsComparison) {
+  // Client 1: skips_present_credits = true
+  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland1;
+  flatland::FlatlandConfig config1;
+  config1.skips_present_credits = true;
+  const scheduling::SessionId id1 =
+      manager_->CreateFlatland(flatland1.NewRequest(dispatcher()), config1);
+
+  bool began1 = false;
+  flatland1.events().OnNextFrameBegin = [&began1](OnNextFrameBeginValues values) { began1 = true; };
+
+  // Client 2: skips_present_credits = false
+  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland2;
+  flatland::FlatlandConfig config2;
+  config2.skips_present_credits = false;
+  const scheduling::SessionId id2 =
+      manager_->CreateFlatland(flatland2.NewRequest(dispatcher()), config2);
+
+  bool began2 = false;
+  flatland2.events().OnNextFrameBegin = [&began2](OnNextFrameBeginValues values) { began2 = true; };
+
+  RunLoopUntilIdle();
+
+  // Present both instances.
+  PRESENT(flatland1, id1, true);
+  PRESENT(flatland2, id2, true);
+
+  // Update instances to trigger credits return.
+  auto next_present_id1 = PopPendingPresent(id1);
+  auto next_present_id2 = PopPendingPresent(id2);
+  manager_->UpdateInstances({{id1, next_present_id1}, {id2, next_present_id2}});
+
+  EXPECT_CALL(*mock_flatland_presenter_, GetFuturePresentationInfos());
+  manager_->SendHintsToStartRendering();
+
+  // Wait until the event has fired for client 2.
+  RunLoopUntil([&began2] { return began2; });
+
+  // Verify that client 1 did NOT receive OnNextFrameBegin.
+  EXPECT_FALSE(began1);
+
+  // Verify that client 2 DID receive OnNextFrameBegin.
+  EXPECT_TRUE(began2);
+}
+
 TEST_F(FlatlandManagerTest, ViewBoundProtocolsAreRegistered) {
   fuchsia::ui::views::ViewportCreationToken parent_token;
   fuchsia::ui::views::ViewCreationToken child_token;

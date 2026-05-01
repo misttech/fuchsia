@@ -110,7 +110,49 @@ TEST_F(TrustedFlatlandFactoryTest, CreateFlatland) {
 
   // Check that a new Flatland instance was created and is still alive.
   EXPECT_EQ(flatland_manager_->GetSessionCount(), 1ul);
-  FX_LOGS(INFO) << "HERE";
+}
+
+TEST_F(TrustedFlatlandFactoryTest, ToInternalConfig) {
+  // Test default values (all absent).
+  {
+    fuchsia_ui_composition::TrustedFlatlandConfig config;
+    auto internal_config = TrustedFlatlandFactoryImpl::ToInternalConfig(std::move(config));
+    EXPECT_FALSE(internal_config.schedule_asap);
+    EXPECT_FALSE(internal_config.pass_acquire_fences);
+    EXPECT_FALSE(internal_config.skips_present_credits);
+    EXPECT_FALSE(internal_config.skips_on_frame_presented);
+    EXPECT_TRUE(internal_config.use_trusted_flatland_api);
+  }
+
+  // Test all true.
+  {
+    fuchsia_ui_composition::TrustedFlatlandConfig config;
+    config.schedule_asap() = true;
+    config.pass_acquire_fences() = true;
+    config.skips_present_credits() = true;
+    config.skips_on_frame_presented() = true;
+
+    auto internal_config = TrustedFlatlandFactoryImpl::ToInternalConfig(std::move(config));
+    EXPECT_TRUE(internal_config.schedule_asap);
+    EXPECT_TRUE(internal_config.pass_acquire_fences);
+    EXPECT_TRUE(internal_config.skips_present_credits);
+    EXPECT_TRUE(internal_config.skips_on_frame_presented);
+    EXPECT_TRUE(internal_config.use_trusted_flatland_api);
+  }
+
+  // Test mix.
+  {
+    fuchsia_ui_composition::TrustedFlatlandConfig config;
+    config.schedule_asap() = true;
+    config.skips_on_frame_presented() = false;
+
+    auto internal_config = TrustedFlatlandFactoryImpl::ToInternalConfig(std::move(config));
+    EXPECT_TRUE(internal_config.schedule_asap);
+    EXPECT_FALSE(internal_config.pass_acquire_fences);
+    EXPECT_FALSE(internal_config.skips_present_credits);
+    EXPECT_FALSE(internal_config.skips_on_frame_presented);
+    EXPECT_TRUE(internal_config.use_trusted_flatland_api);
+  }
 }
 
 }  // namespace flatland

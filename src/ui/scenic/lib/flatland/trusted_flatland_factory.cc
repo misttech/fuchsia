@@ -18,17 +18,22 @@ void TrustedFlatlandFactoryImpl::CreateFlatland(CreateFlatlandRequest& request,
   completer.Reply(fit::ok());
 }
 
-void TrustedFlatlandFactoryImpl::CreateFlatland(
-    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> server_end,
-    fuchsia_ui_composition::TrustedFlatlandConfig config) {
-  FlatlandConfig flatland_config = {
+// static
+FlatlandConfig TrustedFlatlandFactoryImpl::ToInternalConfig(
+    const fuchsia_ui_composition::TrustedFlatlandConfig& config) {
+  return FlatlandConfig{
       .schedule_asap = config.schedule_asap().value_or(false),
       .pass_acquire_fences = config.pass_acquire_fences().value_or(false),
       .skips_present_credits = config.skips_present_credits().value_or(false),
+      .skips_on_frame_presented = config.skips_on_frame_presented().value_or(false),
       .use_trusted_flatland_api = true,
   };
+}
 
-  flatland_manager_->CreateFlatland(std::move(server_end), flatland_config);
+void TrustedFlatlandFactoryImpl::CreateFlatland(
+    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> server_end,
+    fuchsia_ui_composition::TrustedFlatlandConfig config) {
+  flatland_manager_->CreateFlatland(std::move(server_end), ToInternalConfig(config));
 }
 
 }  // namespace flatland

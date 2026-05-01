@@ -24,6 +24,9 @@ class TrustedFlatlandFactoryImpl
   void CreateFlatland(fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> server_end,
                       fuchsia_ui_composition::TrustedFlatlandConfig config);
 
+  static FlatlandConfig ToInternalConfig(
+      const fuchsia_ui_composition::TrustedFlatlandConfig& config);
+
   fidl::ProtocolHandler<fuchsia_ui_composition::TrustedFlatlandFactory> GetHandler() {
     return bindings_.CreateHandler(this, async_get_default_dispatcher(),
                                    fidl::kIgnoreBindingClosure);

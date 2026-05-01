@@ -506,8 +506,12 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
   FLATLAND_VERBOSE_LOG << "Flatland::Present() session_id=" << session_id_
                        << "  present_count=" << present_count_ << "  present_id=" << present_id;
 
-  present2_helper_.RegisterPresent(present_id,
-                                   /*present_received_time=*/uber_struct->creation_time);
+  if (!config_.skips_on_frame_presented) {
+    // Must avoid calling `RegisterPresent()` because when `skips_on_frame_presented == true`,
+    // `FlatlandManager` will avoid notifying this session that frames were presented.
+    present2_helper_.RegisterPresent(present_id,
+                                     /*present_received_time=*/uber_struct->creation_time);
+  }
 
   // TODO(https://fxbug.dev/414450649): the flow using this nonce is load-bearing; it is relied upon
   // by `//sdk/testing/sl4f/client/lib/src/trace_processing/metrics/flutter_frame_stats.dart`.
@@ -2165,9 +2169,15 @@ void Flatland::OnFramePresented(const std::map<scheduling::PresentId, zx::time>&
     }
   }
 
-  // TODO(https://fxbug.dev/42141795): remove `num_presents_allowed` from this event.  Clients
-  // should obtain this information from OnPresentProcessedValues().
-  present2_helper_.OnPresented(latched_times, present_times, /*num_presents_allowed=*/0);
+  if (!config_.skips_on_frame_presented) {
+    // TODO(https://fxbug.dev/42141795): remove `num_presents_allowed` from this event.  Clients
+    // should obtain this information from OnPresentProcessedValues().
+    present2_helper_.OnPresented(latched_times, present_times, /*num_presents_allowed=*/0);
+  } else {
+    // This is not harmful.  However, we expect that `FlatlandManager` will avoid calling this, to
+    // avoid posting this no-op call on this Flatland session's dispatcher.
+    FX_LOGS(WARNING) << "Skipping OnFramePresented for session_id=" << session_id_;
+  }
 }
 
 TransformHandle Flatland::GetRoot() const {

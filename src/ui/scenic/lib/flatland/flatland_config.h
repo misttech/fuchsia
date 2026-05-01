@@ -13,6 +13,7 @@ struct FlatlandConfig {
   bool schedule_asap = false;
   bool pass_acquire_fences = false;
   bool skips_present_credits = false;
+  bool skips_on_frame_presented = false;
   bool use_trusted_flatland_api = false;
 };
 

@@ -286,6 +286,8 @@ void FlatlandManager::SendHintsToStartRendering() {
   CheckIsOnMainThread();
 
   if (all_clients_opt_out_present_info_) {
+    // We know that no clients want to receive `-> OnNextFrameBegin`, so avoid the costly
+    // computation of `GetFuturePresentationInfos()` below.
     return;
   }
 
@@ -381,6 +383,11 @@ void FlatlandManager::SendFramePresented(
     const std::map<scheduling::PresentId, /*latched_time*/ zx::time>& latched_times,
     scheduling::PresentTimestamps present_times) {
   CheckIsOnMainThread();
+
+  if (instance->impl->config().skips_on_frame_presented) {
+    // This Flatland session has opted out of `-> OnFramePresented` events.
+    return;
+  }
 
   // The Flatland impl must be accessed on the thread it is bound to; post a task to that thread.
   std::weak_ptr<Flatland> weak_impl = instance->impl;
