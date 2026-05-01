@@ -102,7 +102,9 @@
         {{#if (eq device.cpu.architecture "x64")}}
             "-machine",
             {{#if (eq runtime.engine_type "qemu")}}
-                "q35,smbios-entry-point-type=32",
+                {{! QEMU 7.0 supports disabling the PS/2 controller. We disabled it since
+                    virtio-input devices are available. }}
+                "q35,smbios-entry-point-type=32,i8042=off",
             {{else}}
                 "q35",
             {{/if}}
