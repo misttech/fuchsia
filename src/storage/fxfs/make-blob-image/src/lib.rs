@@ -169,6 +169,7 @@ fn create_sparse_image(
         })
         .add_source(sparse::builder::DataSource::Skip(target_size - actual_size))
         .build(&mut output)
+        .map_err(anyhow::Error::from)
 }
 
 /// Builder used to construct a new Fxblob instance ready for flashing to a device.
@@ -472,7 +473,7 @@ pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<(
     // it will be able to parse that and iterate over the contents
     let mut source = fs::File::open(&image)?;
     let mut non_sparse_image = tempfile::NamedTempFile::new_in(&out_dir)?;
-    unsparse(&mut source, non_sparse_image.as_file_mut())?;
+    unsparse(&mut source, non_sparse_image.as_file_mut()).map_err(anyhow::Error::from)?;
 
     let device = DeviceHolder::new(FileBackedDevice::new(non_sparse_image.reopen()?, BLOCK_SIZE));
     let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;

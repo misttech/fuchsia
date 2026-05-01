@@ -187,9 +187,10 @@ where
             let sparse_files = match SparseReader::is_sparse_file(&mut file_handle) {
                 Ok(true) => {
                     log::debug!("Is already a sparse file. Building Reader");
-                    let mut reader = SparseReader::new(file_handle)?;
+                    let mut reader = SparseReader::new(file_handle).map_err(|e| anyhow!(e))?;
                     log::debug!("Building sparse image");
-                    resparse_sparse_img(&mut reader, &cmd.out_dir, download_size)?
+                    resparse_sparse_img(&mut reader, &cmd.out_dir, download_size)
+                        .map_err(|e| anyhow!(e))?
                 }
                 Err(_) | Ok(false) => {
                     log::debug!(
@@ -199,8 +200,8 @@ where
                     );
 
                     let filename = cmd.file.to_str().unwrap();
-                    let files =
-                        build_sparse_files(filename, filename, &cmd.out_dir, download_size)?;
+                    let files = build_sparse_files(filename, filename, &cmd.out_dir, download_size)
+                        .map_err(|e| anyhow!(e))?;
                     files
                 }
             };

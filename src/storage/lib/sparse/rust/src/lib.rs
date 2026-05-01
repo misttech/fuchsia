@@ -11,38 +11,147 @@ pub mod reader;
 
 use crate::format::{CHUNK_HEADER_SIZE, ChunkHeader, SPARSE_HEADER_SIZE, SparseHeader};
 use crate::reader::SparseReader;
-use anyhow::{Context, Result, bail, ensure};
+
 use core::fmt;
 use serde::de::DeserializeOwned;
+use thiserror::Error;
+
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use tempfile::{NamedTempFile, TempPath};
+#[cfg(target_os = "fuchsia")]
+use zx;
 
 // Size of blocks to write.  Note that the format supports varied block sizes; this is the preferred
 // size by this library.
 const BLK_SIZE: u32 = 0x1000;
 
-fn deserialize_from<'a, T: DeserializeOwned, R: Read + ?Sized>(source: &mut R) -> Result<T> {
+#[derive(Debug, Clone, Copy)]
+pub enum SparseDataType {
+    Header,
+    ChunkHeader,
+    FillValue,
+    Checksum,
+}
+
+impl std::fmt::Display for SparseDataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Header => write!(f, "header"),
+            Self::ChunkHeader => write!(f, "chunk header"),
+            Self::FillValue => write!(f, "fill value"),
+            Self::Checksum => write!(f, "checksum"),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum DeserializeError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Bincode error: {0}")]
+    Bincode(#[from] Box<bincode::ErrorKind>),
+}
+
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum UnalignedSource {
+    #[error("buffer length {0}")]
+    Buffer(usize),
+
+    #[error("Reader length {0}")]
+    Reader(u64),
+
+    #[error("Skip length {0}")]
+    Skip(u64),
+
+    #[error("Fill length {0}")]
+    Fill(u64),
+
+    #[error("Vmo size {0}")]
+    Vmo(u64),
+}
+
+#[derive(Debug, Error)]
+pub enum SparseError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Failed to deserialize {ty}: {source}")]
+    Deserialize {
+        ty: SparseDataType,
+        #[source]
+        source: DeserializeError,
+    },
+
+    #[error("Failed to serialize {ty}: {source}")]
+    Serialize {
+        ty: SparseDataType,
+        #[source]
+        source: Box<bincode::ErrorKind>,
+    },
+
+    #[error("Invalid sparse image header")]
+    InvalidHeader,
+
+    #[error("Invalid chunk header")]
+    InvalidChunkHeader,
+
+    #[error("Invalid chunk type {0}")]
+    InvalidChunkType(u16),
+
+    #[error("Given maximum download size ({0}) is less than the block size ({1})")]
+    MaxDownloadSizeTooSmall(u64, u32),
+
+    #[error("No source for Raw chunk")]
+    NoSourceForRawChunk,
+
+    #[error("Chunk is not block aligned")]
+    UnalignedChunk,
+
+    #[error("Failed to copy contents: {0}")]
+    CopyContents(#[source] std::io::Error),
+
+    #[error("Failed to fill contents: {0}")]
+    FillContents(#[source] std::io::Error),
+
+    #[error("Failed to skip contents: {0}")]
+    SkipContents(#[source] std::io::Error),
+
+    #[cfg(target_os = "fuchsia")]
+    #[error("Zircon error: {0}")]
+    Zircon(#[from] zx::Status),
+
+    #[error("Invalid {0}")]
+    UnalignedDataSource(UnalignedSource),
+
+    #[error("Sparse image would contain too many blocks")]
+    TooManyBlocks,
+}
+
+fn deserialize_from<'a, T: DeserializeOwned, R: Read + ?Sized>(
+    source: &mut R,
+) -> Result<T, DeserializeError> {
     let mut buf = vec![0u8; std::mem::size_of::<T>()];
-    source.read_exact(&mut buf[..]).context("Failed to read bytes")?;
-    Ok(bincode::deserialize(&buf[..])?)
+    source.read_exact(&mut buf[..])?;
+    bincode::deserialize(&buf[..]).map_err(Into::into)
 }
 
 /// A union trait for `Write` and `Seek` that also allows truncation.
 pub trait Writer: Write + Seek {
     /// Sets the length of the output stream.
-    fn set_len(&mut self, size: u64) -> Result<()>;
+    fn set_len(&mut self, size: u64) -> Result<(), SparseError>;
 }
 
 impl Writer for File {
-    fn set_len(&mut self, size: u64) -> Result<()> {
-        Ok(File::set_len(self, size)?)
+    fn set_len(&mut self, size: u64) -> Result<(), SparseError> {
+        File::set_len(self, size).map_err(SparseError::from)
     }
 }
 
 impl Writer for Cursor<Vec<u8>> {
-    fn set_len(&mut self, size: u64) -> Result<()> {
+    fn set_len(&mut self, size: u64) -> Result<(), SparseError> {
         Vec::resize(self.get_mut(), size as usize, 0u8);
         Ok(())
     }
@@ -104,23 +213,31 @@ impl Chunk {
     /// following the chunk header and any extra data; for a Raw chunk this means it will point at
     /// the data payload, and for other chunks it will point at the next chunk header (or EOF).
     /// `offset` is the current offset in the logical volume.
-    pub fn read_metadata<R: Read>(reader: &mut R, offset: u64, block_size: u32) -> Result<Self> {
-        let header: ChunkHeader =
-            deserialize_from(reader).context("Failed to read chunk header")?;
-        ensure!(header.valid(), "Invalid chunk header");
+    pub fn read_metadata<R: Read>(
+        reader: &mut R,
+        offset: u64,
+        block_size: u32,
+    ) -> Result<Self, SparseError> {
+        let header: ChunkHeader = deserialize_from(reader)
+            .map_err(|e| SparseError::Deserialize { ty: SparseDataType::ChunkHeader, source: e })?;
+        if !header.valid() {
+            return Err(SparseError::InvalidChunkHeader);
+        }
 
         let size = header.chunk_sz as u64 * block_size as u64;
         match header.chunk_type {
             format::CHUNK_TYPE_RAW => Ok(Self::Raw { start: offset, size }),
             format::CHUNK_TYPE_FILL => {
-                let value: u32 =
-                    deserialize_from(reader).context("Failed to deserialize fill value")?;
+                let value: u32 = deserialize_from(reader).map_err(|e| {
+                    SparseError::Deserialize { ty: SparseDataType::FillValue, source: e }
+                })?;
                 Ok(Self::Fill { start: offset, size, value })
             }
             format::CHUNK_TYPE_DONT_CARE => Ok(Self::DontCare { start: offset, size }),
             format::CHUNK_TYPE_CRC32 => {
-                let checksum: u32 =
-                    deserialize_from(reader).context("Failed to deserialize checksum")?;
+                let checksum: u32 = deserialize_from(reader).map_err(|e| {
+                    SparseError::Deserialize { ty: SparseDataType::Checksum, source: e }
+                })?;
                 Ok(Self::Crc32 { checksum })
             }
             // We already validated the chunk_type in `ChunkHeader::is_valid`.
@@ -194,8 +311,10 @@ impl Chunk {
         source: Option<&mut R>,
         dest: &mut W,
         block_size: u32,
-    ) -> Result<()> {
-        ensure!(self.valid(block_size), "Not writing invalid chunk",);
+    ) -> Result<(), SparseError> {
+        if !self.valid(block_size) {
+            return Err(SparseError::UnalignedChunk);
+        }
         let header = ChunkHeader::new(
             self.chunk_type(),
             0x0,
@@ -203,11 +322,14 @@ impl Chunk {
             self.chunk_data_len(),
         );
 
-        bincode::serialize_into(&mut *dest, &header)?;
+        bincode::serialize_into(&mut *dest, &header)
+            .map_err(|e| SparseError::Serialize { ty: SparseDataType::ChunkHeader, source: e })?;
 
         match self {
             Self::Raw { size, .. } => {
-                ensure!(source.is_some(), "No source for Raw chunk");
+                if source.is_none() {
+                    return Err(SparseError::NoSourceForRawChunk);
+                }
                 let n = std::io::copy(source.unwrap(), dest)?;
                 let size = *size as u64;
                 if n < size {
@@ -217,13 +339,19 @@ impl Chunk {
             }
             Self::Fill { value, .. } => {
                 // Serialize the value,
-                bincode::serialize_into(dest, value)?;
+                bincode::serialize_into(dest, value).map_err(|e| SparseError::Serialize {
+                    ty: SparseDataType::FillValue,
+                    source: e,
+                })?;
             }
             Self::DontCare { .. } => {
                 // DontCare has no data to write
             }
             Self::Crc32 { checksum } => {
-                bincode::serialize_into(dest, checksum)?;
+                bincode::serialize_into(dest, checksum).map_err(|e| SparseError::Serialize {
+                    ty: SparseDataType::Checksum,
+                    source: e,
+                })?;
             }
         }
         Ok(())
@@ -271,14 +399,19 @@ impl SparseFileWriter {
         self.chunks.iter().map(|c| c.output_size() as u64).sum()
     }
 
-    fn write<W: Write + Seek, R: Read + Seek>(&self, reader: &mut R, writer: &mut W) -> Result<()> {
+    fn write<W: Write + Seek, R: Read + Seek>(
+        &self,
+        reader: &mut R,
+        writer: &mut W,
+    ) -> Result<(), SparseError> {
         let header = SparseHeader::new(
             BLK_SIZE.try_into().unwrap(),          // Size of the blocks
             self.total_blocks(),                   // Total blocks in this image
             self.chunks.len().try_into().unwrap(), // Total chunks in this image
         );
 
-        bincode::serialize_into(&mut *writer, &header)?;
+        bincode::serialize_into(&mut *writer, &header)
+            .map_err(|e| SparseError::Serialize { ty: SparseDataType::Header, source: e })?;
 
         for chunk in &self.chunks {
             let mut reader = if let &Chunk::Raw { start, size } = chunk {
@@ -308,7 +441,7 @@ impl fmt::Display for SparseFileWriter {
 /// Example: A `FillChunk` with value 0 and size 1 is the last chunk
 /// in `v`, and `chunk` is a FillChunk with value 0 and size 1, after this,
 /// `v`'s last element will be a FillChunk with value 0 and size 2.
-fn add_sparse_chunk(r: &mut Vec<Chunk>, chunk: Chunk) -> Result<()> {
+fn add_sparse_chunk(r: &mut Vec<Chunk>, chunk: Chunk) -> Result<(), SparseError> {
     match r.last_mut() {
         // We've got something in the Vec... if they are both the same type,
         // merge them, otherwise, just push the new one
@@ -346,16 +479,22 @@ fn add_sparse_chunk(r: &mut Vec<Chunk>, chunk: Chunk) -> Result<()> {
 }
 
 /// Reads a sparse image from `source` and expands it to its unsparsed representation in `dest`.
-pub fn unsparse<W: Writer, R: Read + Seek>(source: &mut R, dest: &mut W) -> Result<()> {
-    let header: SparseHeader = deserialize_from(source).context("Failed to read header")?;
-    ensure!(header.valid(), "Invalid sparse image header {:?}", header);
+pub fn unsparse<W: Writer, R: Read + Seek>(
+    source: &mut R,
+    dest: &mut W,
+) -> Result<(), SparseError> {
+    let header: SparseHeader = deserialize_from(source)
+        .map_err(|e| SparseError::Deserialize { ty: SparseDataType::Header, source: e })?;
+    if !header.valid() {
+        return Err(SparseError::InvalidHeader);
+    }
 
     for _ in 0..header.total_chunks {
-        expand_chunk(source, dest, header.blk_sz).context("Failed to expand chunk")?;
+        expand_chunk(source, dest, header.blk_sz)?;
     }
     // Truncate output to its current seek offset, in case the last chunk we wrote was DontNeed.
     let offset = dest.stream_position()?;
-    dest.set_len(offset).context("Failed to truncate output")?;
+    dest.set_len(offset)?;
     dest.flush()?;
     Ok(())
 }
@@ -365,31 +504,37 @@ fn expand_chunk<R: Read + Seek, W: Write + Seek>(
     source: &mut R,
     dest: &mut W,
     block_size: u32,
-) -> Result<()> {
-    let header: ChunkHeader =
-        deserialize_from(source).context("Failed to deserialize chunk header")?;
-    ensure!(header.valid(), "Invalid chunk header {:x?}", header);
+) -> Result<(), SparseError> {
+    let header: ChunkHeader = deserialize_from(source)
+        .map_err(|e| SparseError::Deserialize { ty: SparseDataType::ChunkHeader, source: e })?;
+    if !header.valid() {
+        return Err(SparseError::InvalidChunkHeader);
+    }
     let size = (header.chunk_sz * block_size) as usize;
     match header.chunk_type {
         format::CHUNK_TYPE_RAW => {
             let limit = source.stream_position()? as usize + size;
             std::io::copy(&mut LimitedReader(source, limit), dest)
-                .context("Failed to copy contents")?;
+                .map_err(SparseError::CopyContents)?;
         }
         format::CHUNK_TYPE_FILL => {
-            let value: [u8; 4] =
-                deserialize_from(source).context("Failed to deserialize fill value")?;
+            let value: [u8; 4] = deserialize_from(source).map_err(|e| {
+                SparseError::Deserialize { ty: SparseDataType::FillValue, source: e }
+            })?;
             assert!(size % 4 == 0);
             let repeated = value.repeat(size / 4);
-            dest.write_all(&repeated).context("Failed to fill contents")?;
+            dest.write_all(&repeated).map_err(SparseError::FillContents)?;
         }
         format::CHUNK_TYPE_DONT_CARE => {
-            dest.seek(SeekFrom::Current(size as i64)).context("Failed to skip contents")?;
+            dest.seek(SeekFrom::Current(size as i64)).map_err(SparseError::SkipContents)?;
         }
         format::CHUNK_TYPE_CRC32 => {
-            let _: u32 = deserialize_from(source).context("Failed to deserialize fill value")?;
+            let _: u32 = deserialize_from(source).map_err(|e| SparseError::Deserialize {
+                ty: SparseDataType::Checksum,
+                source: e,
+            })?;
         }
-        _ => bail!("Invalid type {}", header.chunk_type),
+        _ => return Err(SparseError::InvalidChunkType(header.chunk_type)),
     };
     Ok(())
 }
@@ -402,13 +547,9 @@ fn expand_chunk<R: Read + Seek, W: Write + Seek>(
 fn resparse(
     sparse_file: SparseFileWriter,
     max_download_size: u64,
-) -> Result<Vec<SparseFileWriter>> {
+) -> Result<Vec<SparseFileWriter>, SparseError> {
     if max_download_size <= BLK_SIZE as u64 {
-        anyhow::bail!(
-            "Given maximum download size ({}) is less than the block size ({})",
-            max_download_size,
-            BLK_SIZE
-        );
+        return Err(SparseError::MaxDownloadSizeTooSmall(max_download_size, BLK_SIZE));
     }
     let mut ret = Vec::<SparseFileWriter>::new();
 
@@ -442,7 +583,7 @@ fn resparse(
                     if (file_len + curr_chunk_data_len) > max_download_size {
                         log::trace!(
                             "Current file size is: {} and adding another chunk of len: {} would \
-                             put us over our max: {}",
+                              put us over our max: {}",
                             file_len,
                             curr_chunk_data_len,
                             max_download_size
@@ -461,7 +602,7 @@ fn resparse(
                     }
                     log::trace!(
                         "chunk: {} curr_chunk_data_len: {} current file size: {} \
-                         max_download_size: {} diff: {}",
+                          max_download_size: {} diff: {}",
                         chunk_pos,
                         curr_chunk_data_len,
                         file_len,
@@ -500,7 +641,7 @@ pub fn resparse_sparse_img<R: Read + std::io::Seek>(
     reader: &mut SparseReader<R>,
     dir: &Path,
     max_download_size: u64,
-) -> Result<Vec<TempPath>> {
+) -> Result<Vec<TempPath>, SparseError> {
     log::debug!("Building writer from Reader");
     let mut chunks = vec![];
     // The sparse image we are reading from has a header and a chunk
@@ -558,13 +699,9 @@ pub fn build_sparse_files(
     file_to_upload: &str,
     dir: &Path,
     max_download_size: u64,
-) -> Result<Vec<TempPath>> {
+) -> Result<Vec<TempPath>, SparseError> {
     if max_download_size <= BLK_SIZE as u64 {
-        anyhow::bail!(
-            "Given maximum download size ({}) is less than the block size ({})",
-            max_download_size,
-            BLK_SIZE
-        );
+        return Err(SparseError::MaxDownloadSizeTooSmall(max_download_size, BLK_SIZE));
     }
     log::debug!("Building sparse files for: {}. File: {}", name, file_to_upload);
     let mut in_file = File::open(file_to_upload)?;
@@ -589,7 +726,11 @@ pub fn build_sparse_files(
             // bincode::deserialize to get the repeated four byte pattern from
             // the buffer so that it can be serialized later when we write
             // the sparse file with bincode::serialize.
-            let value: u32 = bincode::deserialize(&buf[0..4])?;
+            let value: u32 =
+                bincode::deserialize(&buf[0..4]).map_err(|e| SparseError::Deserialize {
+                    ty: SparseDataType::FillValue,
+                    source: DeserializeError::Bincode(e),
+                })?;
             // Add a fill chunk
             let fill = Chunk::Fill {
                 start: total_read as u64,

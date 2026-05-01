@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use crate::format::{CHUNK_HEADER_SIZE, SPARSE_HEADER_SIZE};
-use crate::{BLK_SIZE, Chunk, NO_SOURCE, SparseHeader};
-use anyhow::{Context, Result, ensure};
+use crate::{
+    BLK_SIZE, Chunk, NO_SOURCE, SparseDataType, SparseError, SparseHeader, UnalignedSource,
+};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 
@@ -96,45 +97,55 @@ impl SparseImageBuilder {
         built_size
     }
 
-    pub fn build<W: Write + Seek>(self, output: &mut W) -> Result<()> {
+    pub fn build<W: Write + Seek>(self, output: &mut W) -> Result<(), SparseError> {
         // We'll fill the header in later.
         output.seek(SeekFrom::Start(SPARSE_HEADER_SIZE as u64))?;
         let mut chunk_writer = ChunkWriter::new(self.block_size, output);
         for source in self.sources {
             match source {
                 DataSource::Buffer(buf) => {
-                    ensure!(
-                        buf.len() % self.block_size as usize == 0,
-                        "Invalid buffer length {}",
-                        buf.len()
-                    );
+                    if buf.len() % self.block_size as usize != 0 {
+                        return Err(SparseError::UnalignedDataSource(UnalignedSource::Buffer(
+                            buf.len(),
+                        )));
+                    }
                     for slice in buf.chunks(self.max_chunk_size as usize) {
                         chunk_writer
                             .write_raw_chunk(slice.len().try_into().unwrap(), Cursor::new(slice))?;
                     }
                 }
                 DataSource::Reader { mut reader, size } => {
-                    ensure!(size % self.block_size as u64 == 0, "Invalid Reader length {}", size);
+                    if size % self.block_size as u64 != 0 {
+                        return Err(SparseError::UnalignedDataSource(UnalignedSource::Reader(
+                            size,
+                        )));
+                    }
                     for size in ChunkedRange::new(0..size, self.max_chunk_size) {
                         chunk_writer.write_raw_chunk(size, (&mut reader).take(size as u64))?;
                     }
                 }
                 DataSource::Skip(size) => {
-                    ensure!(size % self.block_size as u64 == 0, "Invalid Skip length {}", size);
+                    if size % self.block_size as u64 != 0 {
+                        return Err(SparseError::UnalignedDataSource(UnalignedSource::Skip(size)));
+                    }
                     for size in ChunkedRange::new(0..size, self.max_chunk_size) {
                         chunk_writer.write_dont_care_chunk(size)?;
                     }
                 }
                 DataSource::Fill(value, count) => {
                     let size = count * std::mem::size_of::<u32>() as u64;
-                    ensure!(size % self.block_size as u64 == 0, "Invalid Fill length {}", size);
+                    if size % self.block_size as u64 != 0 {
+                        return Err(SparseError::UnalignedDataSource(UnalignedSource::Fill(size)));
+                    }
                     for size in ChunkedRange::new(0..size, self.max_chunk_size) {
                         chunk_writer.write_fill_chunk(size, value)?;
                     }
                 }
                 #[cfg(target_os = "fuchsia")]
                 DataSource::Vmo { vmo, size, mut offset } => {
-                    ensure!(size % self.block_size as u64 == 0, "Invalid Vmo size {}", size);
+                    if size % self.block_size as u64 != 0 {
+                        return Err(SparseError::UnalignedDataSource(UnalignedSource::Vmo(size)));
+                    }
                     let mut buffer =
                         vec![0; std::cmp::min(size as usize, self.max_chunk_size as usize)];
                     for size in ChunkedRange::new(0..size, self.max_chunk_size) {
@@ -150,14 +161,15 @@ impl SparseImageBuilder {
         let ChunkWriter { num_blocks, num_chunks, .. } = chunk_writer;
         output.seek(SeekFrom::Start(0))?;
         let header = SparseHeader::new(self.block_size, num_blocks, num_chunks);
-        bincode::serialize_into(&mut *output, &header)?;
+        bincode::serialize_into(&mut *output, &header)
+            .map_err(|e| SparseError::Serialize { ty: SparseDataType::Header, source: e })?;
 
         output.flush()?;
         Ok(())
     }
 
     #[cfg(target_os = "fuchsia")]
-    pub fn build_vmo(self) -> Result<zx::Vmo> {
+    pub fn build_vmo(self) -> Result<zx::Vmo, SparseError> {
         let vmo = zx::Vmo::create(self.built_size())?;
         let mut stream = zx::Stream::create(zx::StreamOptions::MODE_WRITE, &vmo, 0)?;
         self.build(&mut stream)?;
@@ -178,12 +190,16 @@ impl<'a, W: Write> ChunkWriter<'a, W> {
         Self { block_size, current_offset: 0, num_chunks: 0, num_blocks: 0, writer }
     }
 
-    fn write_chunk_impl<R: Read>(&mut self, chunk: Chunk, source: Option<&mut R>) -> Result<()> {
+    fn write_chunk_impl<R: Read>(
+        &mut self,
+        chunk: Chunk,
+        source: Option<&mut R>,
+    ) -> Result<(), SparseError> {
         chunk.write(source, &mut self.writer, self.block_size)?;
         self.num_blocks = self
             .num_blocks
             .checked_add(chunk.output_blocks(self.block_size))
-            .context("Sparse image would contain too many blocks")?;
+            .ok_or(SparseError::TooManyBlocks)?;
         // The number of blocks and chunks are both a u32. Each chunk contains at least 1 block so
         // the number of blocks will overflow above before the number of chunks.
         self.num_chunks += 1;
@@ -191,21 +207,21 @@ impl<'a, W: Write> ChunkWriter<'a, W> {
         Ok(())
     }
 
-    fn write_raw_chunk<R: Read>(&mut self, size: u32, mut source: R) -> Result<()> {
+    fn write_raw_chunk<R: Read>(&mut self, size: u32, mut source: R) -> Result<(), SparseError> {
         self.write_chunk_impl(
             Chunk::Raw { start: self.current_offset, size: size.into() },
             Some(&mut source),
         )
     }
 
-    fn write_dont_care_chunk(&mut self, size: u32) -> Result<()> {
+    fn write_dont_care_chunk(&mut self, size: u32) -> Result<(), SparseError> {
         self.write_chunk_impl(
             Chunk::DontCare { start: self.current_offset, size: size.into() },
             NO_SOURCE,
         )
     }
 
-    fn write_fill_chunk(&mut self, size: u32, value: u32) -> Result<()> {
+    fn write_fill_chunk(&mut self, size: u32, value: u32) -> Result<(), SparseError> {
         self.write_chunk_impl(
             Chunk::Fill { start: self.current_offset, size: size.into(), value },
             NO_SOURCE,

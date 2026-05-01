@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Chunk, SparseHeader, deserialize_from};
-use anyhow::{Context, Result, ensure};
+use crate::{Chunk, SparseDataType, SparseError, SparseHeader, deserialize_from};
+
 use byteorder::{ByteOrder as _, LE};
 use std::io::{Read, Seek, SeekFrom};
 
@@ -27,10 +27,12 @@ pub struct SparseReader<R> {
 impl<R: Read + Seek> SparseReader<R> {
     /// Attempts to create a SparseReader from the given image.  Returns failure if the image is
     /// malformed.
-    pub fn new(mut reader: R) -> Result<Self> {
-        let header: SparseHeader =
-            deserialize_from(&mut reader).context("Failed to read header")?;
-        ensure!(header.valid(), "Invalid header");
+    pub fn new(mut reader: R) -> std::result::Result<Self, SparseError> {
+        let header: SparseHeader = deserialize_from(&mut reader)
+            .map_err(|e| SparseError::Deserialize { ty: SparseDataType::Header, source: e })?;
+        if !header.valid() {
+            return Err(SparseError::InvalidHeader);
+        }
         let num_chunks = header.total_chunks as usize;
 
         let mut chunks = vec![];
@@ -49,7 +51,7 @@ impl<R: Read + Seek> SparseReader<R> {
             chunks.push((chunk, data_offset));
         }
 
-        reader.seek(SeekFrom::Start(0)).context("Failed to rewind reader")?;
+        reader.seek(SeekFrom::Start(0)).map_err(|e| SparseError::Io(e))?;
         Ok(Self { reader, offset: 0, size: offset, chunks, block_size: header.blk_sz })
     }
 
@@ -68,10 +70,11 @@ impl<R: Read + Seek> SparseReader<R> {
         None
     }
 
-    pub fn is_sparse_file(reader: &mut R) -> Result<bool> {
-        let header: SparseHeader = deserialize_from(reader)?;
+    pub fn is_sparse_file(reader: &mut R) -> std::result::Result<bool, SparseError> {
+        let header: SparseHeader = deserialize_from(reader)
+            .map_err(|e| SparseError::Deserialize { ty: SparseDataType::Header, source: e })?;
         let res = header.valid();
-        reader.seek(SeekFrom::Start(0)).context("Failed to rewind reader")?;
+        reader.seek(SeekFrom::Start(0)).map_err(|e| SparseError::Io(e))?;
         Ok(res)
     }
 
