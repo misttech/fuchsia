@@ -389,8 +389,7 @@ impl ResolvedInstanceState {
     ) -> Result<Self, ResolveActionError> {
         let weak_component = WeakComponentInstance::new(component);
 
-        let decl = resolved_component.decl.clone();
-
+        let decl = &resolved_component.decl;
         // Perform the policy check for debug capabilities now, instead of during routing. All the info we
         // need to perform this check is already available to us. This way, we don't have to propagate this
         // info to sandbox capabilities just so they can enforce the policy.
@@ -417,7 +416,7 @@ impl ResolvedInstanceState {
         };
 
         let capability_requested_receivers =
-            Self::initialize_capability_requested_hooks(&component, &decl, &component_input).await;
+            Self::initialize_capability_requested_hooks(&component, decl, &component_input).await;
 
         let mut state = Self {
             weak_component,
@@ -475,9 +474,10 @@ impl ResolvedInstanceState {
         }
         let child_outgoing_dictionary_routers =
             state.get_child_component_output_dictionary_routers();
+        let decl = &state.resolved_component.decl;
         let (program_output_dict, declared_dictionaries) = build_program_output_dictionary(
             component,
-            &decl,
+            decl,
             &component_input,
             &child_outgoing_dictionary_routers,
             &MyGenerator {},
@@ -486,11 +486,11 @@ impl ResolvedInstanceState {
         let component_sandbox = build_component_sandbox(
             &component,
             child_outgoing_dictionary_routers,
-            &decl,
+            decl,
             component_input,
             program_output_dict,
             get_framework_router(&component),
-            build_storage_admin_dictionary(component, &decl),
+            build_storage_admin_dictionary(component, &state.resolved_component.decl),
             declared_dictionaries,
             RoutingFailureErrorReporter::new(),
             &AggregateRouter::new,
