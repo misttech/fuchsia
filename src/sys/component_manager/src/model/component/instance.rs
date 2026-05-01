@@ -609,10 +609,10 @@ impl ResolvedInstanceState {
             node: Arc<dyn DirectoryEntry>,
         }
         impl runtime_capabilities::Connectable for OutgoingConnector {
-            fn send(&self, message: runtime_capabilities::Message) -> Result<(), ()> {
+            fn send(&self, channel: zx::Channel) -> Result<(), ()> {
                 let scope = ExecutionScope::new();
                 const FLAGS: fio::Flags = fio::Flags::PROTOCOL_SERVICE;
-                FLAGS.to_object_request(message.channel).handle(|object_request| {
+                FLAGS.to_object_request(channel).handle(|object_request| {
                     let path = vfs::path::Path::dot();
                     self.node.clone().open_entry(OpenRequest::new(
                         scope,

@@ -111,11 +111,11 @@ impl HookObserver {
                     let name = name.clone();
                     let sender = self.sender.clone();
                     self.weak_scope.spawn(async move {
-                        while let Some(message) = receiver.receive().await {
+                        while let Some(channel) = receiver.receive().await {
                             let payload = fcomponent::EventPayload::CapabilityRequested(
                                 fcomponent::CapabilityRequestedPayload {
                                     name: Some(name.clone()),
-                                    capability: Some(message.channel),
+                                    capability: Some(channel),
                                     ..Default::default()
                                 },
                             );

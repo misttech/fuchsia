@@ -945,10 +945,10 @@ async fn create_child_with_dict() {
     let _task = fasync::Task::spawn(async move {
         let mut tasks = fasync::TaskGroup::new();
         loop {
-            let Some(message) = receiver.receive().await else {
+            let Some(channel) = receiver.receive().await else {
                 return;
             };
-            let server_end = ServerEnd::<echo::EchoMarker>::new(message.channel);
+            let server_end = ServerEnd::<echo::EchoMarker>::new(channel);
             let stream: echo::EchoRequestStream = server_end.into_stream();
             tasks.spawn(async move {
                 EchoProtocol::serve(stream).await.expect("failed to serve Echo");
@@ -3334,7 +3334,7 @@ async fn source_component_stopping_when_routing() {
             .expect("capability not available");
 
         // Connect to the capability.
-        conn.send(runtime_capabilities::Message { channel: server_end }).unwrap()
+        conn.send(server_end).unwrap()
     };
 
     // Both should complete after the response delay has passed.
@@ -3405,7 +3405,7 @@ async fn source_component_stopped_after_routing_before_open() {
 
     // Connect to the capability. The component should be started again.
     let (client_end, server_end) = zx::Channel::create();
-    conn.send(runtime_capabilities::Message { channel: server_end }).unwrap();
+    conn.send(server_end).unwrap();
 
     let server_end = open_request_rx.next().await.unwrap();
     assert_eq!(
@@ -3469,7 +3469,7 @@ async fn source_component_shutdown_after_routing_before_open() {
 
     // Connect to the capability. The request will fail and the component is not started.
     let (client_end, server_end) = zx::Channel::create();
-    conn.send(runtime_capabilities::Message { channel: server_end }).unwrap();
+    conn.send(server_end).unwrap();
     fasync::OnSignals::new(&client_end, zx::Signals::CHANNEL_PEER_CLOSED).await.unwrap();
     assert!(!root.is_started().await);
 }

@@ -13,12 +13,12 @@ impl Receiver {
         let mut on_closed = pin!(receiver_proxy.on_closed());
         loop {
             match future::select(pin!(self.receive()), on_closed).await {
-                Either::Left((msg, fut)) => {
+                Either::Left((channel, fut)) => {
                     on_closed = fut;
-                    let Some(msg) = msg else {
+                    let Some(channel) = channel else {
                         return;
                     };
-                    if let Err(_) = receiver_proxy.receive(msg.channel) {
+                    if let Err(_) = receiver_proxy.receive(channel) {
                         return;
                     }
                 }

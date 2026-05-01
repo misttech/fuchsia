@@ -135,7 +135,7 @@ fn connect_to_heapdump(builtin_environment: &BuiltinEnvironment) {
             }
         };
         let (client_end, server_end) = zx::Channel::create();
-        match heapdump_connector.send(runtime_capabilities::Message { channel: server_end }) {
+        match heapdump_connector.send(server_end) {
             Ok(_) => heapdump::bind_with_channel(client_end),
             Err(e) => error!("Failed to send handle to heapdump collector: {:?}", e),
         };

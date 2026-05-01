@@ -23,7 +23,7 @@ use router_error::{Explain, RouterError};
 use routing::error::RoutingError;
 use runtime_capabilities::{
     Capability, CapabilityBound, Connectable, Connector, Data, Dictionary, DirConnectable,
-    DirConnector, Message, RemotableCapability, Routable, Router, WeakInstanceToken,
+    DirConnector, RemotableCapability, Routable, Router, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -266,7 +266,7 @@ impl Capabilities {
                     ..
                 } => {
                     let res = self.remote_capabilities.get(connector).map(|c: Connector| {
-                        let _ = c.send(Message { channel });
+                        let _ = c.send(channel);
                     });
                     let _ = responder.send(res);
                 }
@@ -465,8 +465,8 @@ struct RemoteReceiver {
 }
 
 impl Connectable for RemoteReceiver {
-    fn send(&self, message: Message) -> Result<(), ()> {
-        let _ = self.remote_receiver.receive(message.channel);
+    fn send(&self, channel: zx::Channel) -> Result<(), ()> {
+        let _ = self.remote_receiver.receive(channel);
         Ok(())
     }
 }

@@ -4,7 +4,7 @@
 
 use crate::dictionary::Key;
 use crate::fidl::{IntoFsandboxCapability, RemotableCapability, registry};
-use crate::{Capability, Connector, Dictionary, DirConnector, Message, WeakInstanceToken};
+use crate::{Capability, Connector, Dictionary, DirConnector, WeakInstanceToken};
 use cm_types::RelativePath;
 use fidl::handle::Signals;
 use fidl_fuchsia_component_decl as fdecl;
@@ -80,7 +80,7 @@ pub async fn serve_capability_store(
             fsandbox::CapabilityStoreRequest::ConnectorOpen { id, server_end, responder } => {
                 let result = (|| {
                     let this = get_connector(&store, id)?;
-                    let _ = this.send(Message { channel: server_end });
+                    let _ = this.send(server_end);
                     Ok(())
                 })();
                 responder.send(result)?;

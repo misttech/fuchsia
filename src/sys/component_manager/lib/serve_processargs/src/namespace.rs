@@ -452,7 +452,7 @@ mod tests {
             .unwrap();
 
         // Make sure the server_end is received, and test connectivity.
-        let server_end: zx::Channel = receiver.receive().await.unwrap().channel.into();
+        let server_end = receiver.receive().await.unwrap();
         client_end.signal_peer(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
         server_end.wait_one(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE_PAST).unwrap();
     }

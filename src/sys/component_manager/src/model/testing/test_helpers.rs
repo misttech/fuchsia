@@ -24,7 +24,7 @@ use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use hooks::{EventType, HooksRegistration};
 use moniker::{BorrowedChildName, ChildName, Moniker};
-use runtime_capabilities::{Capability, Message};
+use runtime_capabilities::Capability;
 use std::collections::HashSet;
 use std::sync::Arc;
 use zx::{self as zx, Koid};
@@ -569,7 +569,7 @@ pub async fn new_event_stream(
         other_response => panic!("unexpected router response: {:?}", other_response),
     };
     let (proxy, server_end) = fidl::endpoints::create_proxy::<fcomponent::EventStreamMarker>();
-    connector.send(Message { channel: server_end.into_channel() }).unwrap();
+    connector.send(server_end.into_channel()).unwrap();
     proxy.wait_for_ready().await.unwrap();
     proxy
 }

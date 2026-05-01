@@ -69,8 +69,7 @@ use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::{Explain, RouterError};
 use runner::component::StopInfo;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dictionary, DirConnector, Message, Routable, Router,
-    WeakInstanceToken,
+    Capability, Connector, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
 };
 use std::clone::Clone;
 use std::collections::{HashMap, HashSet};
@@ -1476,14 +1475,12 @@ probably not intended: {}",
             // capability for new routes.
             Some(resolver_connector) => {
                 let (proxy, server_end) = create_proxy::<fresolution::ResolverMarker>();
-                resolver_connector.send(Message { channel: server_end.into_channel() }).map_err(
-                    |_| {
-                        ResolverError::routing_error(RoutingError::BedrockFailedToSend {
-                            moniker: self.moniker.clone().into(),
-                            capability_id: component_address.scheme().to_string(),
-                        })
-                    },
-                )?;
+                resolver_connector.send(server_end.into_channel()).map_err(|_| {
+                    ResolverError::routing_error(RoutingError::BedrockFailedToSend {
+                        moniker: self.moniker.clone().into(),
+                        capability_id: component_address.scheme().to_string(),
+                    })
+                })?;
                 proxy
             }
             None => {

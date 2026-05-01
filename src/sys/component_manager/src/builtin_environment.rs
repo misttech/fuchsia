@@ -99,7 +99,7 @@ use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use hooks::EventType;
 use log::{error, info, warn};
-use runtime_capabilities::{Capability, Message};
+use runtime_capabilities::Capability;
 use std::sync::Arc;
 use vfs::ToObjectRequest;
 use vfs::directory::entry::OpenRequest;
@@ -1305,7 +1305,7 @@ impl BuiltinEnvironment {
 
             service_fs.dir("svc").add_service_connector(
                 move |server_end: ServerEnd<fcomponent::EventStreamMarker>| {
-                    let _ = connector.send(Message { channel: server_end.into_channel() });
+                    let _ = connector.send(server_end.into_channel());
                 },
             );
         }

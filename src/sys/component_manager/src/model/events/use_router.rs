@@ -132,13 +132,13 @@ impl EventStreamUseReceiver {
     }
 
     async fn run(self) {
-        while let Some(message) = self.receiver.receive().await {
+        while let Some(channel) = self.receiver.receive().await {
             let Ok(target_component) = self.weak_target_component.upgrade() else {
                 return;
             };
             let (hooks, mpsc_receiver) = self.set_up_hooks(&target_component).await;
             target_component.execution_scope.spawn(Self::handle_stream(
-                message.channel,
+                channel,
                 mpsc_receiver,
                 hooks,
             ));

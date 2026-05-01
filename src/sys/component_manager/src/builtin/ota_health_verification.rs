@@ -15,7 +15,7 @@ use fuchsia_inspect::ArrayProperty;
 use futures::TryStreamExt;
 use moniker::{ExtendedMoniker, Moniker};
 use router_error::RouterError;
-use runtime_capabilities::{Capability, Message};
+use runtime_capabilities::Capability;
 use std::sync::{Arc, Weak};
 
 #[derive(Debug, Clone)]
@@ -176,11 +176,9 @@ async fn open_protocol(
         };
 
     let (proxy, server_end) = create_proxy::<fupdate::ComponentOtaHealthCheckMarker>();
-    connector.send(Message { channel: server_end.into_channel() }).map_err(|_| {
-        RoutingError::BedrockFailedToSend {
-            moniker: ExtendedMoniker::from(moniker.clone()),
-            capability_id: fupdate::ComponentOtaHealthCheckMarker::PROTOCOL_NAME.to_string(),
-        }
+    connector.send(server_end.into_channel()).map_err(|_| RoutingError::BedrockFailedToSend {
+        moniker: ExtendedMoniker::from(moniker.clone()),
+        capability_id: fupdate::ComponentOtaHealthCheckMarker::PROTOCOL_NAME.to_string(),
     })?;
     Ok(proxy)
 }

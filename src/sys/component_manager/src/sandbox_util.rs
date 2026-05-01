@@ -24,8 +24,7 @@ use log::warn;
 use router_error::{Explain, RouterError};
 use routing::subdir::SubDir;
 use runtime_capabilities::{
-    Connectable, Connector, DirConnectable, DirConnector, Message, Routable, Router,
-    WeakInstanceToken,
+    Connectable, Connector, DirConnectable, DirConnector, Routable, Router, WeakInstanceToken,
 };
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -100,9 +99,9 @@ impl LaunchTaskOnReceive {
         }
 
         impl Connectable for TaskAndTarget {
-            fn send(&self, message: Message) -> Result<(), ()> {
+            fn send(&self, channel: zx::Channel) -> Result<(), ()> {
                 self.task.launch_task(
-                    message.channel,
+                    channel,
                     self.target.clone(),
                     RelativePath::dot(),
                     fio::PERM_READABLE,
@@ -335,17 +334,16 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
                     target_token: WeakInstanceToken,
                 }
                 impl Connectable for OnReadable {
-                    fn send(&self, message: Message) -> Result<(), ()> {
+                    fn send(&self, channel: zx::Channel) -> Result<(), ()> {
                         let router = self.router.clone();
                         let target = self.target.clone();
                         let target_token = self.target_token.clone();
                         self.scope.spawn(async move {
-                            let Message { channel } = message;
                             match Self::send_inner(&router, &target, &channel, target_token).await {
                                 Ok(conn) => {
                                     // We're in an async task, and the original function already
                                     // returned Ok. There's nothing we can do with this result.
-                                    let _ = conn.send(Message { channel });
+                                    let _ = conn.send(channel);
                                 }
                                 Err(e) => {
                                     let _ = channel.close_with_epitaph(e);

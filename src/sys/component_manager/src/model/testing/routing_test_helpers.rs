@@ -40,7 +40,7 @@ use futures::prelude::*;
 use hooks::HooksRegistration;
 use moniker::Moniker;
 use router_error::Explain;
-use runtime_capabilities::{Capability, Message};
+use runtime_capabilities::Capability;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
@@ -1529,7 +1529,7 @@ pub mod capability_util {
             .expect("unexpected router response");
 
         let (echo_proxy, server_end) = endpoints::create_proxy::<echo::EchoMarker>();
-        connector.send(Message { channel: server_end.into_channel() }).unwrap();
+        connector.send(server_end.into_channel()).unwrap();
         call_echo_and_validate_result(echo_proxy, expected_res).await;
     }
 

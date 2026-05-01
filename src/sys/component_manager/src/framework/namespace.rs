@@ -325,9 +325,9 @@ mod tests {
             // Serve an Echo request handler on the Receiver.
             tasks.spawn(async move {
                 loop {
-                    let msg = receiver.receive().await.unwrap();
+                    let channel = receiver.receive().await.unwrap();
                     let stream: fecho::EchoRequestStream =
-                        ServerEnd::<fecho::EchoMarker>::from(msg.channel).into_stream();
+                        ServerEnd::<fecho::EchoMarker>::from(channel).into_stream();
                     handle_echo_request_stream(response, stream).await;
                 }
             });
@@ -387,9 +387,9 @@ mod tests {
 
             // Serve an Echo request handler on the Receiver.
             tasks.spawn(async move {
-                while let Some(msg) = receiver.receive().await {
+                while let Some(channel) = receiver.receive().await {
                     let stream: fecho::EchoRequestStream =
-                        ServerEnd::<fecho::EchoMarker>::from(msg.channel).into_stream();
+                        ServerEnd::<fecho::EchoMarker>::from(channel).into_stream();
                     handle_echo_request_stream("hello", stream).await;
                 }
             });

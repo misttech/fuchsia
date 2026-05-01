@@ -3,31 +3,19 @@
 // found in the LICENSE file.
 
 use crate::{CapabilityBound, Receiver};
-use fidl_fuchsia_component_sandbox as fsandbox;
 use futures::channel::mpsc;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-#[derive(Debug)]
-pub struct Message {
-    pub channel: fidl::Channel,
-}
-
-impl From<fsandbox::ProtocolPayload> for Message {
-    fn from(payload: fsandbox::ProtocolPayload) -> Self {
-        Message { channel: payload.channel }
-    }
-}
-
 /// Types that implement [`Connectable`] let the holder send channels
 /// to them.
 pub trait Connectable: Send + Sync + Debug {
-    fn send(&self, message: Message) -> Result<(), ()>;
+    fn send(&self, channel: fidl::Channel) -> Result<(), ()>;
 }
 
-impl Connectable for mpsc::UnboundedSender<crate::Message> {
-    fn send(&self, message: Message) -> Result<(), ()> {
-        self.unbounded_send(message).map_err(|_| ())
+impl Connectable for mpsc::UnboundedSender<fidl::Channel> {
+    fn send(&self, channel: fidl::Channel) -> Result<(), ()> {
+        self.unbounded_send(channel).map_err(|_| ())
     }
 }
 
@@ -55,14 +43,14 @@ impl Connector {
         Self { inner: Arc::new(connector) }
     }
 
-    pub fn send(&self, msg: Message) -> Result<(), ()> {
-        self.inner.send(msg)
+    pub fn send(&self, channel: fidl::Channel) -> Result<(), ()> {
+        self.inner.send(channel)
     }
 }
 
 impl Connectable for Connector {
-    fn send(&self, message: Message) -> Result<(), ()> {
-        self.send(message)
+    fn send(&self, channel: fidl::Channel) -> Result<(), ()> {
+        self.send(channel)
     }
 }
 
@@ -70,6 +58,7 @@ impl Connectable for Connector {
 mod tests {
     use super::*;
     use fidl::handle::{Channel, HandleBased, Rights};
+    use fidl_fuchsia_component_sandbox as fsandbox;
 
     // NOTE: sending-and-receiving tests are written in `receiver.rs`.
 
@@ -81,7 +70,7 @@ mod tests {
 
         // Send a channel through the Connector.
         let (ch1, _ch2) = Channel::create();
-        sender.send_channel(ch1).unwrap();
+        sender.send(ch1).unwrap();
 
         // Convert the Sender to a FIDL token.
         let connector: fsandbox::Connector = sender.into();
@@ -101,7 +90,7 @@ mod tests {
 
         // Send a channel through the cloned Sender.
         let (ch1, _ch2) = Channel::create();
-        connector_clone.send_channel(ch1).unwrap();
+        connector_clone.send(ch1).unwrap();
 
         // The Receiver should receive two channels, one from each connector.
         for _ in 0..2 {

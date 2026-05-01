@@ -18,7 +18,7 @@ mod router;
 pub mod fidl;
 
 pub use self::capability::{Capability, CapabilityBound, ConversionError, RemoteError};
-pub use self::connector::{Connectable, Connector, Message};
+pub use self::connector::{Connectable, Connector};
 pub use self::data::Data;
 pub use self::dictionary::{
     Dictionary, EntryUpdate, Key as DictKey, UpdateNotifierFn, UpdateNotifierRetention,

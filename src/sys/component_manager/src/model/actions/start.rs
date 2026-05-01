@@ -39,7 +39,7 @@ use num_traits::cast::FromPrimitive;
 use router_error::RouterError;
 use routing::bedrock::request_metadata::runner_metadata;
 use runtime_capabilities::{
-    Capability, Connector, Dictionary, DirConnector, Message, Router, WeakInstanceToken,
+    Capability, Connector, Dictionary, DirConnector, Router, WeakInstanceToken,
 };
 use serve_processargs::NamespaceBuilder;
 use std::sync::Arc;
@@ -130,14 +130,14 @@ fn open_protocols_with_numbered_handle(
                             // the router should handle logging in the event of an error
                             if let Ok(Some(c)) = router.route(RouteRequest::default(), target).await
                             {
-                                let _ = c.send(runtime_capabilities::Message { channel: server });
+                                let _ = c.send(server);
                             }
                         });
                         handle_info_from(client, numbered_handle)
                     }
                     Some(Capability::Connector(c)) => {
                         let (client, server) = fidl::Channel::create();
-                        let _ = c.send(runtime_capabilities::Message { channel: server });
+                        let _ = c.send(server);
                         handle_info_from(client, numbered_handle)
                     }
                     Some(_) => {
@@ -503,16 +503,16 @@ async fn open_runner(
         // capability for new routes.
         Some(runner_connector) => {
             let (proxy, server_end) = create_proxy::<fcrunner::ComponentRunnerMarker>();
-            runner_connector.send(Message { channel: server_end.into_channel() }).map_err(
-                |_| StartActionError::ResolveRunnerError {
+            runner_connector.send(server_end.into_channel()).map_err(|_| {
+                StartActionError::ResolveRunnerError {
                     moniker: component.moniker.clone(),
                     err: Box::new(RouterError::from(RoutingError::BedrockFailedToSend {
                         moniker: component.moniker.clone().into(),
                         capability_id: runner_name.to_string(),
                     })),
                     runner: runner_name.clone(),
-                },
-            )?;
+                }
+            })?;
             Ok(Some(RemoteRunner::new(proxy)))
         }
         _ => Err(StartActionError::ResolveRunnerError {

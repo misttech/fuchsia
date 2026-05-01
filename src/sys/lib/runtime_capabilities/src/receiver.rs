@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{DirConnectorMessage, Message};
+use crate::DirConnectorMessage;
 use derivative::Derivative;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver};
@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub struct Receiver {
     /// `inner` uses an async mutex because it will be locked across an await point
     /// when asynchronously waiting for the next message.
-    inner: Arc<Mutex<UnboundedReceiver<Message>>>,
+    inner: Arc<Mutex<UnboundedReceiver<fidl::Channel>>>,
 }
 
 impl Clone for Receiver {
@@ -27,13 +27,13 @@ impl Clone for Receiver {
 }
 
 impl Receiver {
-    pub fn new(receiver: mpsc::UnboundedReceiver<crate::Message>) -> Self {
+    pub fn new(receiver: mpsc::UnboundedReceiver<fidl::Channel>) -> Self {
         Self { inner: Arc::new(Mutex::new(receiver)) }
     }
 
     /// Waits to receive a message, or return `None` if there are no more messages and all
     /// senders are dropped.
-    pub async fn receive(&self) -> Option<Message> {
+    pub async fn receive(&self) -> Option<fidl::Channel> {
         let mut receiver_guard = self.inner.lock().await;
         receiver_guard.next().await
     }
@@ -89,12 +89,12 @@ mod tests {
         let (receiver, sender) = Connector::new();
 
         let (ch1, ch2) = zx::Channel::create();
-        sender.send_channel(ch1).unwrap();
+        sender.send(ch1).unwrap();
 
-        let message = receiver.receive().await.unwrap();
+        let channel = receiver.receive().await.unwrap();
 
         // Check connectivity.
-        message.channel.signal_peer(zx::Signals::empty(), zx::Signals::USER_1).unwrap();
+        channel.signal_peer(zx::Signals::empty(), zx::Signals::USER_1).unwrap();
         ch2.wait_one(zx::Signals::USER_1, zx::MonotonicInstant::INFINITE).unwrap();
     }
 
@@ -105,7 +105,7 @@ mod tests {
         drop(receiver);
 
         let (ch1, _ch2) = zx::Channel::create();
-        sender.send_channel(ch1).unwrap_err();
+        sender.send(ch1).unwrap_err();
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
         let (receiver, sender) = Connector::new();
 
         let (ch1, _ch2) = zx::Channel::create();
-        sender.send_channel(ch1).unwrap();
+        sender.send(ch1).unwrap();
 
         // Even if all the senders are closed after sending a message, it should still be
         // possible to receive that message.
@@ -149,7 +149,7 @@ mod tests {
         let (receiver, sender) = Connector::new();
 
         let (ch1, ch2) = zx::Channel::create();
-        sender.send_channel(ch1).unwrap();
+        sender.send(ch1).unwrap();
 
         let (receiver_proxy, mut receiver_stream) =
             fidl::endpoints::create_proxy_and_stream::<fsandbox::ReceiverMarker>();

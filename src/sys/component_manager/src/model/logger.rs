@@ -103,7 +103,7 @@ impl LoggerCache {
         scope.spawn(async move {
             // the router itself should handle logging things in event of an error
             if let Ok(Some(c)) = router.route(RouteRequest::default(), target).await {
-                let _ = c.send(runtime_capabilities::Message { channel: server.into() });
+                let _ = c.send(server.into());
             }
         });
 
