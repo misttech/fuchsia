@@ -40,12 +40,25 @@ impl LibContext {
         let signal_handler_thread = std::thread::spawn(move || {
             // Signal behavior for both is the same: say we've been interrupted and then let the
             // above handle that.
-            for _s in sig_watcher.forever() {
-                match signal_sender.try_send(()) {
-                    Ok(()) => {}
+            for s in sig_watcher.forever() {
+                let debug_str = match s {
+                    signal::SIGINT => "SIGINT",
+                    signal::SIGTERM => "SIGTERM",
+                    _ => unreachable!(),
+                };
+                log::info!("Received signal '{debug_str}'. Sending interrupt message to thread.");
+                match signal_sender.try_send(s) {
+                    Ok(()) => {
+                        log::info!("signal interrupt sent successfully");
+                    }
                     Err(e) => match e {
-                        async_channel::TrySendError::Full(_) => {}
-                        async_channel::TrySendError::Closed(_) => break,
+                        async_channel::TrySendError::Full(_) => {
+                            log::info!("signal interrupt queue full.");
+                        }
+                        async_channel::TrySendError::Closed(_) => {
+                            log::info!("signal interupt queue closed.");
+                            break;
+                        }
                     },
                 }
             }
@@ -151,7 +164,7 @@ impl LibContext {
 
 fn new_command_thread(
     receiver: async_channel::Receiver<LibraryCommand>,
-    sigint_receiver: async_channel::Receiver<()>,
+    sigint_receiver: async_channel::Receiver<i32>,
     notifier: Notifier,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(|| {
@@ -163,7 +176,9 @@ fn new_command_thread(
                 // the REPL, as a user could potentially pre-load some signals before hitting the
                 // command itself. In the event that SIGINT is received by a real program this
                 // section of code won't matter anyway.
-                let _ = sigint_receiver.try_recv();
+                if let Ok(_) = sigint_receiver.try_recv() {
+                    log::info!("received signal before command, (this will have been received by the caller). Ignoring");
+                }
                 if let LibraryCommand::ShutdownLib = cmd {
                     // Dropping the notifier will cause spawned tasks to be dropped.
                     *notifier.lock().await = None;
@@ -171,7 +186,8 @@ fn new_command_thread(
                 }
                 let cmd_fut = cmd.run();
                 let _ = futures_lite::FutureExt::or(cmd_fut, async {
-                    sigint_receiver.recv().await.unwrap()
+                    sigint_receiver.recv().await.unwrap();
+                    log::info!("command thread received signal.");
                 })
                 .await;
             }
