@@ -30,6 +30,8 @@ bazel2gn_verification_targets = [
   "//sdk/rust/zx-types:verify_bazel2gn",
   "//src/connectivity/network/netstack/udp_serde:verify_bazel2gn",
   "//src/connectivity/network/testing/conformance/parseoutput:verify_bazel2gn",
+  "//src/developer/ffx/fidl/usb:verify_bazel2gn",
+  "//src/developer/ffx/fidl:verify_bazel2gn",
   "//src/developer/ffx/lib/netext:verify_bazel2gn",
   "//src/lib/fidl/rust/fidl:verify_bazel2gn",
   "//src/lib/fidl/rust_constants:verify_bazel2gn",

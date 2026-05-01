@@ -61,6 +61,7 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_idk",
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_idk",
     "//sdk/fidl/fuchsia.hardware.temperature:fuchsia.hardware.temperature_idk",
+    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_idk",
     "//sdk/fidl/fuchsia.images:fuchsia.images_idk",
     "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
     "//sdk/fidl/fuchsia.input:fuchsia.input_idk",
@@ -210,6 +211,8 @@ PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
 # None are included in the IDK, but they may be used by host tools in the IDK.
 HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
+    "//sdk/fidl/fuchsia.developer.ffxdaemonlifecycle:fuchsia.developer.ffxdaemonlifecycle_idk",
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_idk",
     "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_idk",
     "//sdk/fidl/fuchsia.fdomain:fuchsia.fdomain_idk",
     "//sdk/fidl/fuchsia.memory.debug:fuchsia.memory.debug_idk",
